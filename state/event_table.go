@@ -13,15 +13,12 @@ type Event struct {
 	JSON []byte `db:"event"`
 }
 
+// EventTable stores events. A unique numeric ID is associated with each event.
 type EventTable struct {
-	db *sqlx.DB
 }
 
-func NewEventTable(postgresURI string) *EventTable {
-	db, err := sqlx.Open("postgres", postgresURI)
-	if err != nil {
-		log.Panic().Err(err).Str("uri", postgresURI).Msg("failed to open SQL DB")
-	}
+// NewEventTable makes a new EventTable
+func NewEventTable(db *sqlx.DB) *EventTable {
 	// make sure tables are made
 	db.MustExec(`
 	CREATE SEQUENCE IF NOT EXISTS syncv3_event_nids_seq;
@@ -31,12 +28,12 @@ func NewEventTable(postgresURI string) *EventTable {
 		event JSONB NOT NULL
 	);
 	`)
-	return &EventTable{
-		db: db,
-	}
+	return &EventTable{}
 }
 
-func (t *EventTable) Insert(events []Event) error {
+// Insert events into the event table. Returns the number of rows added. If the number of rows is >0,
+// and the list of events is in sync stream order, it can be inferred that the last element(s) are new.
+func (t *EventTable) Insert(txn *sqlx.Tx, events []Event) (int, error) {
 	// ensure event_id is set
 	for i := range events {
 		ev := events[i]
@@ -45,32 +42,46 @@ func (t *EventTable) Insert(events []Event) error {
 		}
 		eventIDResult := gjson.GetBytes(ev.JSON, "event_id")
 		if !eventIDResult.Exists() || eventIDResult.Str == "" {
-			return fmt.Errorf("event JSON missing event_id key")
+			return 0, fmt.Errorf("event JSON missing event_id key")
 		}
 		ev.ID = eventIDResult.Str
 		events[i] = ev
 	}
-	_, err := t.db.NamedExec(`INSERT INTO syncv3_events (event_id, event)
+	result, err := txn.NamedExec(`INSERT INTO syncv3_events (event_id, event)
         VALUES (:event_id, :event) ON CONFLICT (event_id) DO NOTHING`, events)
-	return err
+	if err != nil {
+		return 0, err
+	}
+	ra, err := result.RowsAffected()
+	return int(ra), err
 }
 
-func (t *EventTable) SelectByNIDs(nids []int) (events []Event, err error) {
-	query, args, err := sqlx.In("SELECT * FROM syncv3_events WHERE event_nid IN (?);", nids)
-	query = t.db.Rebind(query)
+func (t *EventTable) SelectByNIDs(txn *sqlx.Tx, nids []int64) (events []Event, err error) {
+	query, args, err := sqlx.In("SELECT event_nid, event_id, event FROM syncv3_events WHERE event_nid IN (?) ORDER BY event_nid ASC;", nids)
+	query = txn.Rebind(query)
 	if err != nil {
 		return nil, err
 	}
-	err = t.db.Select(&events, query, args...)
+	err = txn.Select(&events, query, args...)
 	return
 }
 
-func (t *EventTable) SelectByIDs(ids []string) (events []Event, err error) {
-	query, args, err := sqlx.In("SELECT * FROM syncv3_events WHERE event_id IN (?);", ids)
-	query = t.db.Rebind(query)
+func (t *EventTable) SelectByIDs(txn *sqlx.Tx, ids []string) (events []Event, err error) {
+	query, args, err := sqlx.In("SELECT event_nid, event_id, event FROM syncv3_events WHERE event_id IN (?);", ids)
+	query = txn.Rebind(query)
 	if err != nil {
 		return nil, err
 	}
-	err = t.db.Select(&events, query, args...)
+	err = txn.Select(&events, query, args...)
+	return
+}
+
+func (t *EventTable) SelectNIDsByIDs(txn *sqlx.Tx, ids []string) (nids []int64, err error) {
+	query, args, err := sqlx.In("SELECT event_nid FROM syncv3_events WHERE event_id IN (?);", ids)
+	query = txn.Rebind(query)
+	if err != nil {
+		return nil, err
+	}
+	err = txn.Select(&nids, query, args...)
 	return
 }

@@ -1,32 +1,41 @@
 package state
 
 import (
-	"database/sql"
 	"sync"
 	"testing"
+
+	"github.com/jmoiron/sqlx"
 )
 
 func TestSnapshotRefCountTable(t *testing.T) {
-	table := NewSnapshotRefCountsTable("user=kegan dbname=syncv3 sslmode=disable")
-	tx, err := table.db.Begin()
+	db, err := sqlx.Open("postgres", "user=kegan dbname=syncv3 sslmode=disable")
+	if err != nil {
+		t.Fatalf("failed to open SQL db: %s", err)
+	}
+	table := NewSnapshotRefCountsTable(db)
+	tx, err := db.Beginx()
 	if err != nil {
 		t.Fatalf("failed to start txn: %s", err)
 	}
+	defer tx.Rollback()
 	snapshotID := 100
 	assertIncrement(t, tx, table, snapshotID, 1)
 	assertIncrement(t, tx, table, snapshotID, 2)
 	assertDecrement(t, tx, table, snapshotID, 1)
 	assertDecrement(t, tx, table, snapshotID, 0)
-	tx.Commit()
 }
 
 func TestSnapshotRefCountTableConcurrent(t *testing.T) {
-	table := NewSnapshotRefCountsTable("user=kegan dbname=syncv3 sslmode=disable")
-	tx1, err := table.db.Begin()
+	db, err := sqlx.Open("postgres", "user=kegan dbname=syncv3 sslmode=disable")
+	if err != nil {
+		t.Fatalf("failed to open SQL db: %s", err)
+	}
+	table := NewSnapshotRefCountsTable(db)
+	tx1, err := db.Beginx()
 	if err != nil {
 		t.Fatalf("failed to start txn1: %s", err)
 	}
-	tx2, err := table.db.Begin()
+	tx2, err := db.Beginx()
 	if err != nil {
 		t.Fatalf("failed to start txn2: %s", err)
 	}
@@ -36,7 +45,7 @@ func TestSnapshotRefCountTableConcurrent(t *testing.T) {
 	// so we should get 4 as the value
 	var wg sync.WaitGroup
 	wg.Add(2)
-	incrBy2 := func(tx *sql.Tx) {
+	incrBy2 := func(tx *sqlx.Tx) {
 		defer wg.Done()
 		_, err = table.Increment(tx, snapshotID)
 		if err != nil {
@@ -56,16 +65,19 @@ func TestSnapshotRefCountTableConcurrent(t *testing.T) {
 	go incrBy2(tx2)
 	wg.Wait()
 
-	tx3, err := table.db.Begin()
+	tx3, err := db.Beginx()
 	if err != nil {
 		t.Fatalf("failed to start txn3: %s", err)
 	}
 	// 4-1=3
 	assertDecrement(t, tx3, table, snapshotID, 3)
+	assertDecrement(t, tx3, table, snapshotID, 2)
+	assertDecrement(t, tx3, table, snapshotID, 1)
+	assertDecrement(t, tx3, table, snapshotID, 0)
 	tx3.Commit()
 }
 
-func assertIncrement(t *testing.T, tx *sql.Tx, table *SnapshotRefCountsTable, snapshotID int, wantVal int) {
+func assertIncrement(t *testing.T, tx *sqlx.Tx, table *SnapshotRefCountsTable, snapshotID int, wantVal int) {
 	t.Helper()
 	count, err := table.Increment(tx, snapshotID)
 	if err != nil {
@@ -76,7 +88,7 @@ func assertIncrement(t *testing.T, tx *sql.Tx, table *SnapshotRefCountsTable, sn
 	}
 }
 
-func assertDecrement(t *testing.T, tx *sql.Tx, table *SnapshotRefCountsTable, snapshotID int, wantVal int) {
+func assertDecrement(t *testing.T, tx *sqlx.Tx, table *SnapshotRefCountsTable, snapshotID int, wantVal int) {
 	t.Helper()
 	count, err := table.Decrement(tx, snapshotID)
 	if err != nil {
