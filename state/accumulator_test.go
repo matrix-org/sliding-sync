@@ -23,6 +23,7 @@ func TestAccumulator(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to start assert txn: %s", err)
 	}
+	defer txn.Rollback()
 
 	// There should be one snapshot on the current state
 	snapID, err := accumulator.roomsTable.CurrentSnapshotID(txn, roomID)
@@ -63,5 +64,11 @@ func TestAccumulator(t *testing.T) {
 	}
 	if len(emptyRefs) > 0 {
 		t.Fatalf("got %d empty refs, want none", len(emptyRefs))
+	}
+
+	// Subsequent calls do nothing and are not an error
+	err = accumulator.Initialise(roomID, roomEvents)
+	if err != nil {
+		t.Fatalf("falied to Initialise accumulator: %s", err)
 	}
 }

@@ -4,12 +4,14 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"sync"
 
 	"github.com/jmoiron/sqlx"
 	"github.com/lib/pq"
 	"github.com/rs/zerolog"
+	"github.com/tidwall/gjson"
 )
+
+// TODO: event table needs room_id for querying timeline
 
 var log = zerolog.New(os.Stdout).With().Timestamp().Logger().Output(zerolog.ConsoleWriter{
 	Out:        os.Stderr,
@@ -23,10 +25,6 @@ var log = zerolog.New(os.Stdout).With().Timestamp().Logger().Output(zerolog.Cons
 // Accumulate function for timeline events. v2 sync must be called with a large enough timeline.limit
 // for this to work!
 type Accumulator struct {
-	mu *sync.Mutex // lock for locks
-	// TODO: unbounded on number of rooms
-	locks map[string]*sync.Mutex // room_id -> mutex
-
 	db                    *sqlx.DB
 	roomsTable            *RoomsTable
 	eventsTable           *EventTable
@@ -41,25 +39,11 @@ func NewAccumulator(postgresURI string) *Accumulator {
 	}
 	return &Accumulator{
 		db:                    db,
-		mu:                    &sync.Mutex{},
-		locks:                 make(map[string]*sync.Mutex),
 		roomsTable:            NewRoomsTable(db),
 		eventsTable:           NewEventTable(db),
 		snapshotTable:         NewSnapshotsTable(db),
 		snapshotRefCountTable: NewSnapshotRefCountsTable(db),
 	}
-}
-
-// obtain a per-room lock
-func (a *Accumulator) mutex(roomID string) *sync.Mutex {
-	a.mu.Lock()
-	defer a.mu.Unlock()
-	lock, ok := a.locks[roomID]
-	if !ok {
-		lock = &sync.Mutex{}
-		a.locks[roomID] = lock
-	}
-	return lock
 }
 
 // clearSnapshots deletes all snapshots with 0 refs to it
@@ -89,6 +73,19 @@ func (a *Accumulator) moveSnapshotRef(txn *sqlx.Tx, from, to int) error {
 	}
 	_, err := a.snapshotRefCountTable.Increment(txn, to)
 	return err
+}
+
+func (a *Accumulator) strippedEventsForSnapshot(txn *sqlx.Tx, snapID int) (StrippedEvents, error) {
+	snapshot, err := a.snapshotTable.Select(txn, snapID)
+	if err != nil {
+		return nil, err
+	}
+	// pull stripped events as this may be huge (think Matrix HQ)
+	return a.eventsTable.SelectStrippedEventsByNIDs(txn, snapshot.Events)
+}
+
+func (a *Accumulator) calculateNewSnapshot(old StrippedEvents, new StrippedEvents) (StrippedEvents, error) {
+	return nil, nil
 }
 
 // Initialise starts a new sync accumulator for the given room using the given state as a baseline.
@@ -166,7 +163,8 @@ func (a *Accumulator) Initialise(roomID string, state []json.RawMessage) error {
 	})
 }
 
-// Accumulate internal state from a user's sync response. Locks per-room.
+// Accumulate internal state from a user's sync response. The timeline order MUST be in the order
+// received from the server.
 //
 // This function does several things:
 // - It ensures all events are persisted in the database. This is shared amongst users.
@@ -181,7 +179,76 @@ func (a *Accumulator) Accumulate(roomID string, timeline []json.RawMessage) erro
 		return nil
 	}
 	return WithTransaction(a.db, func(txn *sqlx.Tx) error {
-		return nil
+		// Insert the events
+		events := make([]Event, len(timeline))
+		for i := range events {
+			events[i] = Event{
+				JSON: timeline[i],
+			}
+		}
+		numNew, err := a.eventsTable.Insert(txn, events)
+		if err != nil {
+			return err
+		}
+		if numNew == 0 {
+			// nothing to do, we already know about these events
+			return nil
+		}
+
+		// The last numNew events are new, extract any that are state events
+		newEvents := timeline[len(timeline)-numNew:]
+		var newStateEvents []json.RawMessage
+		var newStateEventIDs []string
+		for _, ev := range newEvents {
+			if gjson.GetBytes(ev, "state_key").Exists() {
+				newStateEvents = append(newStateEvents, ev)
+				newStateEventIDs = append(newStateEventIDs, gjson.GetBytes(ev, "event_id").Str)
+			}
+		}
+
+		// No state events, nothing else to do
+		if len(newStateEvents) == 0 {
+			return nil
+		}
+
+		// State events exist in this timeline, so make a new snapshot
+		// by pulling out the current snapshot and adding these state events
+		snapID, err := a.roomsTable.CurrentSnapshotID(txn, roomID)
+		if err != nil {
+			return err
+		}
+		if snapID == 0 {
+			log.Error().Str("room_id", roomID).Msg(
+				"Accumulator.Accumulate: room has no current snapshot, probably because Initialise was never called. This is a bug.",
+			)
+			return fmt.Errorf("room not initialised yet!")
+		}
+		oldStripped, err := a.strippedEventsForSnapshot(txn, snapID)
+		if err != nil {
+			return err
+		}
+		// pull stripped events for the state we just inserted
+		newStripped, err := a.eventsTable.SelectStrippedEventsByIDs(txn, newStateEventIDs)
+		if err != nil {
+			return err
+		}
+		currentStripped, err := a.calculateNewSnapshot(oldStripped, newStripped)
+		if err != nil {
+			return err
+		}
+		newSnapshot := &SnapshotRow{
+			RoomID: roomID,
+			Events: currentStripped.NIDs(),
+		}
+		if err = a.snapshotTable.Insert(txn, newSnapshot); err != nil {
+			return err
+		}
+
+		// swap the current snapshot over to this new snapshot and handle ref counters
+		if err = a.roomsTable.UpdateCurrentSnapshotID(txn, roomID, newSnapshot.SnapshotID); err != nil {
+			return err
+		}
+		return a.moveSnapshotRef(txn, snapID, newSnapshot.SnapshotID)
 	})
 }
 

@@ -20,15 +20,15 @@ func TestEventTable(t *testing.T) {
 	events := []Event{
 		{
 			ID:   "100",
-			JSON: []byte(`{"event_id":"100", "foo":"bar"}`),
+			JSON: []byte(`{"event_id":"100", "foo":"bar", "type": "T1", "state_key":"S1"}`),
 		},
 		{
 			ID:   "101",
-			JSON: []byte(`{"event_id":"101",  "foo":"bar"}`),
+			JSON: []byte(`{"event_id":"101",  "foo":"bar", "type": "T2", "state_key":"S2"}`),
 		},
 		{
 			// ID is optional, it will pull event_id out if it's missing
-			JSON: []byte(`{"event_id":"102", "foo":"bar"}`),
+			JSON: []byte(`{"event_id":"102", "foo":"bar", "type": "T3", "state_key":""}`),
 		},
 	}
 	numNew, err := table.Insert(txn, events)
@@ -96,4 +96,37 @@ func TestEventTable(t *testing.T) {
 		t.Fatalf("SelectByNIDs returned %d events, wanted none", len(events))
 	}
 
+	// pulling stripped events by NID is ok
+	strippedEvents, err := table.SelectStrippedEventsByNIDs(txn, nids)
+	if err != nil {
+		t.Fatalf("SelectStrippedEventsByNIDs failed: %s", err)
+	}
+	if len(strippedEvents) != 3 {
+		t.Fatalf("SelectStrippedEventsByNIDs returned %d events, want 3", len(strippedEvents))
+	}
+	verifyStripped := func(stripped []StrippedEvent) {
+		wantTypes := []string{"T1", "T2", "T3"}
+		wantKeys := []string{"S1", "S2", ""}
+		for i := range stripped {
+			if stripped[i].Type != wantTypes[i] {
+				t.Errorf("Stripped event %d type mismatch: got %s want %s", i, stripped[i].Type, wantTypes[i])
+			}
+			if stripped[i].StateKey != wantKeys[i] {
+				t.Errorf("Stripped event %d state_key mismatch: got %s want %s", i, stripped[i].StateKey, wantKeys[i])
+			}
+			if stripped[i].NID != nids[i] {
+				t.Errorf("Stripped event %d nid mismatch: got %d want %d", i, stripped[i].NID, nids[i])
+			}
+		}
+	}
+	verifyStripped(strippedEvents)
+	// pulling stripped events by ID is ok
+	strippedEvents, err = table.SelectStrippedEventsByIDs(txn, []string{"100", "101", "102"})
+	if err != nil {
+		t.Fatalf("SelectStrippedEventsByIDs failed: %s", err)
+	}
+	if len(strippedEvents) != 3 {
+		t.Fatalf("SelectStrippedEventsByIDs returned %d events, want 3", len(strippedEvents))
+	}
+	verifyStripped(strippedEvents)
 }

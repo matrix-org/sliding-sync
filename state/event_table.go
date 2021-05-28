@@ -13,6 +13,20 @@ type Event struct {
 	JSON []byte `db:"event"`
 }
 
+type StrippedEvent struct {
+	NID      int64  `db:"event_nid"`
+	Type     string `db:"type"`
+	StateKey string `db:"state_key"`
+}
+type StrippedEvents []StrippedEvent
+
+func (se StrippedEvents) NIDs() (result []int64) {
+	for _, s := range se {
+		result = append(result, s.NID)
+	}
+	return
+}
+
 // EventTable stores events. A unique numeric ID is associated with each event.
 type EventTable struct {
 }
@@ -84,4 +98,26 @@ func (t *EventTable) SelectNIDsByIDs(txn *sqlx.Tx, ids []string) (nids []int64, 
 	}
 	err = txn.Select(&nids, query, args...)
 	return
+}
+
+func (t *EventTable) SelectStrippedEventsByNIDs(txn *sqlx.Tx, nids []int64) (StrippedEvents, error) {
+	query, args, err := sqlx.In("SELECT event_nid, event->>'type' as type, event->>'state_key' as state_key FROM syncv3_events WHERE event_nid IN (?) ORDER BY event_nid ASC;", nids)
+	query = txn.Rebind(query)
+	if err != nil {
+		return nil, err
+	}
+	var events []StrippedEvent
+	err = txn.Select(&events, query, args...)
+	return events, err
+}
+
+func (t *EventTable) SelectStrippedEventsByIDs(txn *sqlx.Tx, ids []string) (StrippedEvents, error) {
+	query, args, err := sqlx.In("SELECT event_nid, event->>'type' as type, event->>'state_key' as state_key FROM syncv3_events WHERE event_id IN (?) ORDER BY event_nid ASC;", ids)
+	query = txn.Rebind(query)
+	if err != nil {
+		return nil, err
+	}
+	var events []StrippedEvent
+	err = txn.Select(&events, query, args...)
+	return events, err
 }
