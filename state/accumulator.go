@@ -84,8 +84,41 @@ func (a *Accumulator) strippedEventsForSnapshot(txn *sqlx.Tx, snapID int) (Strip
 	return a.eventsTable.SelectStrippedEventsByNIDs(txn, snapshot.Events)
 }
 
+// calculateNewSnapshot works out the new snapshot by combining an old and new snapshot. Events get replaced
+// if the tuple of event type/state_key match. A new slice is returning (the inputs are not modified)
 func (a *Accumulator) calculateNewSnapshot(old StrippedEvents, new StrippedEvents) (StrippedEvents, error) {
-	return nil, nil
+	// TODO: implement dendrite's binary tree diff algorithm
+	tupleKey := func(e StrippedEvent) string {
+		// 0x1f = unit separator
+		return e.Type + "\x1f" + e.StateKey
+	}
+	tupleToNew := make(map[string]StrippedEvent)
+	for _, e := range new {
+		tupleToNew[tupleKey(e)] = e
+	}
+	var result StrippedEvents
+	for _, e := range old {
+		newEvent := tupleToNew[tupleKey(e)]
+		if newEvent.NID > 0 {
+			result = append(result, StrippedEvent{
+				NID:      newEvent.NID,
+				Type:     e.Type,
+				StateKey: e.StateKey,
+			})
+			delete(tupleToNew, tupleKey(e))
+		} else {
+			result = append(result, StrippedEvent{
+				NID:      e.NID,
+				Type:     e.Type,
+				StateKey: e.StateKey,
+			})
+		}
+	}
+	// add genuinely new state events from new
+	for _, newEvent := range tupleToNew {
+		result = append(result, newEvent)
+	}
+	return result, nil
 }
 
 // Initialise starts a new sync accumulator for the given room using the given state as a baseline.
@@ -168,12 +201,13 @@ func (a *Accumulator) Initialise(roomID string, state []json.RawMessage) error {
 //
 // This function does several things:
 // - It ensures all events are persisted in the database. This is shared amongst users.
-// - If the last event in the timeline has been stored before, then it short circuits and returns.
-//   This is because we must have already processed this in order for the event to exist in the database,
-//   and the sync stream is already linearised for us.
-// - Else it creates a new room state snapshot (as this now represents the current state)
+// - If all events have been stored before, then it short circuits and returns.
+//   This is because we must have already processed this part of the timeline in order for the event
+//   to exist in the database, and the sync stream is already linearised for us.
+// - Else it creates a new room state snapshot if the timeline contains state events (as this now represents the current state)
 // - It checks if there are outstanding references for the previous snapshot, and if not, removes the old snapshot from the database.
 //   References are made when clients have synced up to a given snapshot (hence may paginate at that point).
+//   The server itself also holds a ref to the current state, which is then moved to the new current state.
 func (a *Accumulator) Accumulate(roomID string, timeline []json.RawMessage) error {
 	if len(timeline) == 0 {
 		return nil
