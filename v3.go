@@ -12,6 +12,7 @@ import (
 
 	"github.com/gorilla/mux"
 	"github.com/justinas/alice"
+	"github.com/matrix-org/sync-v3/state"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/hlog"
 )
@@ -45,7 +46,8 @@ func RunSyncV3Server(destinationServer, bindAddr, postgresDBURI string) {
 			},
 			DestinationServer: destinationServer,
 		},
-		Sessions: NewSessions(postgresDBURI),
+		Sessions:    NewSessions(postgresDBURI),
+		Accumulator: state.NewAccumulator(postgresDBURI),
 	}
 
 	// HTTP path routing
@@ -61,8 +63,9 @@ func RunSyncV3Server(destinationServer, bindAddr, postgresDBURI string) {
 }
 
 type SyncV3Handler struct {
-	V2       *V2
-	Sessions *Sessions
+	V2          *V2
+	Sessions    *Sessions
+	Accumulator *state.Accumulator
 }
 
 func (h *SyncV3Handler) ServeHTTP(w http.ResponseWriter, req *http.Request) {
@@ -112,7 +115,7 @@ func (h *SyncV3Handler) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	// populate tables
+	h.accumulate(v2res)
 
 	// return data based on filters
 
@@ -129,6 +132,22 @@ func (h *SyncV3Handler) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	}.String())
 	w.WriteHeader(200)
 	w.Write(v3res)
+}
+
+func (h *SyncV3Handler) accumulate(res *SyncV2Response) {
+	for roomID, roomData := range res.Rooms.Join {
+		if len(roomData.State.Events) > 0 {
+			err := h.Accumulator.Initialise(roomID, roomData.State.Events)
+			if err != nil {
+				log.Err(err).Str("room_id", roomID).Int("num_state_events", len(roomData.State.Events)).Msg("Accumulator.Initialise failed")
+			}
+		}
+		err := h.Accumulator.Accumulate(roomID, roomData.Timeline.Events)
+		if err != nil {
+			log.Err(err).Str("room_id", roomID).Int("num_timeline_events", len(roomData.Timeline.Events)).Msg("Accumulator.Accumulate failed")
+		}
+	}
+	log.Info().Int("num_rooms", len(res.Rooms.Join)).Msg("accumulated data")
 }
 
 type jsonError struct {

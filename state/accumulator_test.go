@@ -152,30 +152,49 @@ func TestAccumulatorAccumulate(t *testing.T) {
 	}
 }
 
-/*
 func TestAccumulatorDelta(t *testing.T) {
-	roomID := "!TestAccumulatorAccumulate:localhost"
-	roomEvents := []json.RawMessage{
-		[]byte(`{"event_id":"D", "type":"m.room.create", "state_key":"", "content":{"creator":"@me:localhost"}}`),
-		[]byte(`{"event_id":"E", "type":"m.room.member", "state_key":"@me:localhost", "content":{"membership":"join"}}`),
-		[]byte(`{"event_id":"F", "type":"m.room.join_rules", "state_key":"", "content":{"join_rule":"public"}}`),
-	}
+	roomID := "!TestAccumulatorDelta:localhost"
 	accumulator := NewAccumulator(postgresConnectionString)
-	err := accumulator.Initialise(roomID, roomEvents)
+	err := accumulator.Initialise(roomID, nil)
 	if err != nil {
 		t.Fatalf("failed to Initialise accumulator: %s", err)
 	}
-
-	// accumulate new state makes a new snapshot and removes the old snapshot
-	newEvents := []json.RawMessage{
-		// non-state event does nothing
-		[]byte(`{"event_id":"G", "type":"m.room.message","content":{"body":"Hello World","msgtype":"m.text"}}`),
-		// join_rules should clobber the one from initialise
-		[]byte(`{"event_id":"H", "type":"m.room.join_rules", "state_key":"", "content":{"join_rule":"public"}}`),
-		// new state event should be added to the snapshot
-		[]byte(`{"event_id":"I", "type":"m.room.history_visibility", "state_key":"", "content":{"visibility":"public"}}`),
+	roomEvents := []json.RawMessage{
+		[]byte(`{"event_id":"aD", "type":"m.room.create", "state_key":"", "content":{"creator":"@me:localhost"}}`),
+		[]byte(`{"event_id":"aE", "type":"m.room.member", "state_key":"@me:localhost", "content":{"membership":"join"}}`),
+		[]byte(`{"event_id":"aF", "type":"m.room.join_rules", "state_key":"", "content":{"join_rule":"public"}}`),
+		[]byte(`{"event_id":"aG", "type":"m.room.message","content":{"body":"Hello World","msgtype":"m.text"}}`),
+		[]byte(`{"event_id":"aH", "type":"m.room.join_rules", "state_key":"", "content":{"join_rule":"public"}}`),
+		[]byte(`{"event_id":"aI", "type":"m.room.history_visibility", "state_key":"", "content":{"visibility":"public"}}`),
 	}
-	if err = accumulator.Accumulate(roomID, newEvents); err != nil {
+	if err = accumulator.Accumulate(roomID, roomEvents); err != nil {
 		t.Fatalf("failed to Accumulate: %s", err)
 	}
-} */
+
+	// Draw the create event, tests limits
+	events, position, err := accumulator.Delta(roomID, EventsStart, 1)
+	if err != nil {
+		t.Fatalf("failed to Delta: %s", err)
+	}
+	if len(events) != 1 {
+		t.Fatalf("failed to get events from Delta, got %d want 1", len(events))
+	}
+	if gjson.GetBytes(events[0], "event_id").Str != gjson.GetBytes(roomEvents[0], "event_id").Str {
+		t.Fatalf("failed to draw first event, got %s want %s", string(events[0]), string(roomEvents[0]))
+	}
+	if position == 0 {
+		t.Errorf("Delta returned zero position")
+	}
+
+	// Draw up to the end
+	events, position, err = accumulator.Delta(roomID, position, 1000)
+	if err != nil {
+		t.Fatalf("failed to Delta: %s", err)
+	}
+	if len(events) != len(roomEvents)-1 {
+		t.Fatalf("failed to get events from Delta, got %d want %d", len(events), len(roomEvents)-1)
+	}
+	if position == 0 {
+		t.Errorf("Delta returned zero position")
+	}
+}

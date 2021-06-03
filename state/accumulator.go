@@ -247,19 +247,33 @@ func (a *Accumulator) Accumulate(roomID string, timeline []json.RawMessage) erro
 
 		// State events exist in this timeline, so make a new snapshot
 		// by pulling out the current snapshot and adding these state events
+		var oldStripped []StrippedEvent
 		snapID, err := a.roomsTable.CurrentSnapshotID(txn, roomID)
 		if err != nil {
 			return err
 		}
 		if snapID == 0 {
-			log.Error().Str("room_id", roomID).Msg(
-				"Accumulator.Accumulate: room has no current snapshot, probably because Initialise was never called. This is a bug.",
-			)
-			return fmt.Errorf("room not initialised yet!")
-		}
-		oldStripped, err := a.strippedEventsForSnapshot(txn, snapID)
-		if err != nil {
-			return err
+			// a missing snapshot is only okay if this is the start of the room, so we should have a create
+			// event in this list somewhere: verify it.
+			hasCreateEvent := false
+			for _, stateEvent := range newStateEvents {
+				if gjson.GetBytes(stateEvent, "type").Str == "m.room.create" {
+					hasCreateEvent = true
+					break
+				}
+			}
+			if !hasCreateEvent {
+				log.Error().Str("room_id", roomID).Msg(
+					"Accumulator.Accumulate: room has no current snapshot, and the timeline provided has no create event. " +
+						"Either Initialise should be called OR Accumulate with a create event to set up the snapshot. This is a bug.",
+				)
+				return fmt.Errorf("room not initialised yet!")
+			}
+		} else {
+			oldStripped, err = a.strippedEventsForSnapshot(txn, snapID)
+			if err != nil {
+				return err
+			}
 		}
 		// pull stripped events for the state we just inserted
 		newStripped, err := a.eventsTable.SelectStrippedEventsByIDs(txn, newStateEventIDs)
@@ -297,6 +311,9 @@ func (a *Accumulator) Delta(roomID string, lastEventNID int64, limit int) (event
 	events, err := a.eventsTable.SelectEventsBetween(txn, roomID, lastEventNID, EventsEnd, limit)
 	if err != nil {
 		return nil, 0, err
+	}
+	if len(events) == 0 {
+		return nil, lastEventNID, nil
 	}
 	eventsJSON = make([]json.RawMessage, len(events))
 	for i := range events {

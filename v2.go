@@ -67,18 +67,18 @@ type SyncV2Response struct {
 // JoinResponse represents a /sync response for a room which is under the 'join' or 'peek' key.
 type SyncV2JoinResponse struct {
 	State struct {
-		Events []gomatrixserverlib.ClientEvent `json:"events"`
+		Events []json.RawMessage `json:"events"`
 	} `json:"state"`
 	Timeline struct {
-		Events    []gomatrixserverlib.ClientEvent `json:"events"`
-		Limited   bool                            `json:"limited"`
-		PrevBatch string                          `json:"prev_batch,omitempty"`
+		Events    []json.RawMessage `json:"events"`
+		Limited   bool              `json:"limited"`
+		PrevBatch string            `json:"prev_batch,omitempty"`
 	} `json:"timeline"`
 	Ephemeral struct {
-		Events []gomatrixserverlib.ClientEvent `json:"events"`
+		Events []json.RawMessage `json:"events"`
 	} `json:"ephemeral"`
 	AccountData struct {
-		Events []gomatrixserverlib.ClientEvent `json:"events"`
+		Events []json.RawMessage `json:"events"`
 	} `json:"account_data"`
 }
 
