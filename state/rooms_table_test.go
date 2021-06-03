@@ -7,7 +7,7 @@ import (
 )
 
 func TestRoomsTable(t *testing.T) {
-	db, err := sqlx.Open("postgres", "user=kegan dbname=syncv3 sslmode=disable")
+	db, err := sqlx.Open("postgres", postgresConnectionString)
 	if err != nil {
 		t.Fatalf("failed to open SQL db: %s", err)
 	}

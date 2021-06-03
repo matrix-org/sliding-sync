@@ -15,7 +15,7 @@ func TestAccumulatorInitialise(t *testing.T) {
 		[]byte(`{"event_id":"C", "type":"m.room.join_rules", "state_key":"", "content":{"join_rule":"public"}}`),
 	}
 	roomEventIDs := []string{"A", "B", "C"}
-	accumulator := NewAccumulator("user=kegan dbname=syncv3 sslmode=disable")
+	accumulator := NewAccumulator(postgresConnectionString)
 	err := accumulator.Initialise(roomID, roomEvents)
 	if err != nil {
 		t.Fatalf("falied to Initialise accumulator: %s", err)
@@ -82,7 +82,7 @@ func TestAccumulatorAccumulate(t *testing.T) {
 		[]byte(`{"event_id":"E", "type":"m.room.member", "state_key":"@me:localhost", "content":{"membership":"join"}}`),
 		[]byte(`{"event_id":"F", "type":"m.room.join_rules", "state_key":"", "content":{"join_rule":"public"}}`),
 	}
-	accumulator := NewAccumulator("user=kegan dbname=syncv3 sslmode=disable")
+	accumulator := NewAccumulator(postgresConnectionString)
 	err := accumulator.Initialise(roomID, roomEvents)
 	if err != nil {
 		t.Fatalf("failed to Initialise accumulator: %s", err)
@@ -151,3 +151,31 @@ func TestAccumulatorAccumulate(t *testing.T) {
 		t.Fatalf("failed to Accumulate: %s", err)
 	}
 }
+
+/*
+func TestAccumulatorDelta(t *testing.T) {
+	roomID := "!TestAccumulatorAccumulate:localhost"
+	roomEvents := []json.RawMessage{
+		[]byte(`{"event_id":"D", "type":"m.room.create", "state_key":"", "content":{"creator":"@me:localhost"}}`),
+		[]byte(`{"event_id":"E", "type":"m.room.member", "state_key":"@me:localhost", "content":{"membership":"join"}}`),
+		[]byte(`{"event_id":"F", "type":"m.room.join_rules", "state_key":"", "content":{"join_rule":"public"}}`),
+	}
+	accumulator := NewAccumulator(postgresConnectionString)
+	err := accumulator.Initialise(roomID, roomEvents)
+	if err != nil {
+		t.Fatalf("failed to Initialise accumulator: %s", err)
+	}
+
+	// accumulate new state makes a new snapshot and removes the old snapshot
+	newEvents := []json.RawMessage{
+		// non-state event does nothing
+		[]byte(`{"event_id":"G", "type":"m.room.message","content":{"body":"Hello World","msgtype":"m.text"}}`),
+		// join_rules should clobber the one from initialise
+		[]byte(`{"event_id":"H", "type":"m.room.join_rules", "state_key":"", "content":{"join_rule":"public"}}`),
+		// new state event should be added to the snapshot
+		[]byte(`{"event_id":"I", "type":"m.room.history_visibility", "state_key":"", "content":{"visibility":"public"}}`),
+	}
+	if err = accumulator.Accumulate(roomID, newEvents); err != nil {
+		t.Fatalf("failed to Accumulate: %s", err)
+	}
+} */

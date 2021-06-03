@@ -2,15 +2,22 @@ package state
 
 import (
 	"fmt"
+	"math"
 
 	"github.com/jmoiron/sqlx"
 	"github.com/tidwall/gjson"
 )
 
+const (
+	EventsStart = -1
+	EventsEnd   = math.MaxInt64 - 1
+)
+
 type Event struct {
-	NID  int    `db:"event_nid"`
-	ID   string `db:"event_id"`
-	JSON []byte `db:"event"`
+	NID    int    `db:"event_nid"`
+	ID     string `db:"event_id"`
+	RoomID string `db:"room_id"`
+	JSON   []byte `db:"event"`
 }
 
 type StrippedEvent struct {
@@ -39,6 +46,7 @@ func NewEventTable(db *sqlx.DB) *EventTable {
 	CREATE TABLE IF NOT EXISTS syncv3_events (
 		event_nid BIGINT PRIMARY KEY NOT NULL DEFAULT nextval('syncv3_event_nids_seq'),
 		event_id TEXT NOT NULL UNIQUE,
+		room_id TEXT NOT NULL,
 		event JSONB NOT NULL
 	);
 	`)
@@ -51,18 +59,24 @@ func (t *EventTable) Insert(txn *sqlx.Tx, events []Event) (int, error) {
 	// ensure event_id is set
 	for i := range events {
 		ev := events[i]
-		if ev.ID != "" {
-			continue
+		if ev.RoomID == "" {
+			roomIDResult := gjson.GetBytes(ev.JSON, "room_id")
+			if !roomIDResult.Exists() || roomIDResult.Str == "" {
+				return 0, fmt.Errorf("event missing room_id key")
+			}
+			ev.RoomID = roomIDResult.Str
 		}
-		eventIDResult := gjson.GetBytes(ev.JSON, "event_id")
-		if !eventIDResult.Exists() || eventIDResult.Str == "" {
-			return 0, fmt.Errorf("event JSON missing event_id key")
+		if ev.ID == "" {
+			eventIDResult := gjson.GetBytes(ev.JSON, "event_id")
+			if !eventIDResult.Exists() || eventIDResult.Str == "" {
+				return 0, fmt.Errorf("event JSON missing event_id key")
+			}
+			ev.ID = eventIDResult.Str
 		}
-		ev.ID = eventIDResult.Str
 		events[i] = ev
 	}
-	result, err := txn.NamedExec(`INSERT INTO syncv3_events (event_id, event)
-        VALUES (:event_id, :event) ON CONFLICT (event_id) DO NOTHING`, events)
+	result, err := txn.NamedExec(`INSERT INTO syncv3_events (event_id, room_id, event)
+        VALUES (:event_id, :room_id, :event) ON CONFLICT (event_id) DO NOTHING`, events)
 	if err != nil {
 		return 0, err
 	}
@@ -119,5 +133,13 @@ func (t *EventTable) SelectStrippedEventsByIDs(txn *sqlx.Tx, ids []string) (Stri
 	}
 	var events []StrippedEvent
 	err = txn.Select(&events, query, args...)
+	return events, err
+}
+
+func (t *EventTable) SelectEventsBetween(txn *sqlx.Tx, roomID string, lowerExclusive, upperInclusive int64, limit int) ([]Event, error) {
+	var events []Event
+	err := txn.Select(&events, `SELECT event_nid, event FROM syncv3_events WHERE event_nid > $1 AND event_nid <= $2 AND room_id = $3 LIMIT $4`,
+		lowerExclusive, upperInclusive, roomID, limit,
+	)
 	return events, err
 }

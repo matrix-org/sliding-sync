@@ -9,7 +9,7 @@ import (
 )
 
 func TestSnapshotTable(t *testing.T) {
-	db, err := sqlx.Open("postgres", "user=kegan dbname=syncv3 sslmode=disable")
+	db, err := sqlx.Open("postgres", postgresConnectionString)
 	if err != nil {
 		t.Fatalf("failed to open SQL db: %s", err)
 	}
@@ -17,6 +17,7 @@ func TestSnapshotTable(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to start txn: %s", err)
 	}
+	defer txn.Rollback()
 	table := NewSnapshotsTable(db)
 
 	// Insert a snapshot

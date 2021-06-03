@@ -11,8 +11,6 @@ import (
 	"github.com/tidwall/gjson"
 )
 
-// TODO: event table needs room_id for querying timeline
-
 var log = zerolog.New(os.Stdout).With().Timestamp().Logger().Output(zerolog.ConsoleWriter{
 	Out:        os.Stderr,
 	TimeFormat: "15:04:05",
@@ -149,7 +147,8 @@ func (a *Accumulator) Initialise(roomID string, state []json.RawMessage) error {
 		events := make([]Event, len(state))
 		for i := range events {
 			events[i] = Event{
-				JSON: state[i],
+				JSON:   state[i],
+				RoomID: roomID,
 			}
 		}
 		numNew, err := a.eventsTable.Insert(txn, events)
@@ -217,7 +216,8 @@ func (a *Accumulator) Accumulate(roomID string, timeline []json.RawMessage) erro
 		events := make([]Event, len(timeline))
 		for i := range events {
 			events[i] = Event{
-				JSON: timeline[i],
+				JSON:   timeline[i],
+				RoomID: roomID,
 			}
 		}
 		numNew, err := a.eventsTable.Insert(txn, events)
@@ -284,6 +284,25 @@ func (a *Accumulator) Accumulate(roomID string, timeline []json.RawMessage) erro
 		}
 		return a.moveSnapshotRef(txn, snapID, newSnapshot.SnapshotID)
 	})
+}
+
+// Delta returns a list of events of at most `limit` for the room not including `lastEventNID`.
+// Returns the latest NID of the last event (most recent)
+func (a *Accumulator) Delta(roomID string, lastEventNID int64, limit int) (eventsJSON []json.RawMessage, latest int64, err error) {
+	txn, err := a.db.Beginx()
+	if err != nil {
+		return nil, 0, err
+	}
+	defer txn.Commit()
+	events, err := a.eventsTable.SelectEventsBetween(txn, roomID, lastEventNID, EventsEnd, limit)
+	if err != nil {
+		return nil, 0, err
+	}
+	eventsJSON = make([]json.RawMessage, len(events))
+	for i := range events {
+		eventsJSON[i] = events[i].JSON
+	}
+	return eventsJSON, int64(events[len(events)-1].NID), nil
 }
 
 // WithTransaction runs a block of code passing in an SQL transaction
