@@ -153,7 +153,7 @@ func (a *Accumulator) Initialise(roomID string, state []json.RawMessage) error {
 		}
 		numNew, err := a.eventsTable.Insert(txn, events)
 		if err != nil {
-			return err
+			return fmt.Errorf("failed to insert events: %w", err)
 		}
 		if numNew == 0 {
 			// we don't have a current snapshot for this room but yet no events are new,
@@ -171,7 +171,7 @@ func (a *Accumulator) Initialise(roomID string, state []json.RawMessage) error {
 		}
 		nids, err := a.eventsTable.SelectNIDsByIDs(txn, eventIDs)
 		if err != nil {
-			return err
+			return fmt.Errorf("failed to select NIDs for inserted events: %w", err)
 		}
 
 		// Make a current snapshot
@@ -181,7 +181,7 @@ func (a *Accumulator) Initialise(roomID string, state []json.RawMessage) error {
 		}
 		err = a.snapshotTable.Insert(txn, snapshot)
 		if err != nil {
-			return err
+			return fmt.Errorf("failed to insert snapshot: %w", err)
 		}
 
 		// Increment the ref counter
@@ -199,14 +199,14 @@ func (a *Accumulator) Initialise(roomID string, state []json.RawMessage) error {
 // received from the server.
 //
 // This function does several things:
-// - It ensures all events are persisted in the database. This is shared amongst users.
-// - If all events have been stored before, then it short circuits and returns.
-//   This is because we must have already processed this part of the timeline in order for the event
-//   to exist in the database, and the sync stream is already linearised for us.
-// - Else it creates a new room state snapshot if the timeline contains state events (as this now represents the current state)
-// - It checks if there are outstanding references for the previous snapshot, and if not, removes the old snapshot from the database.
-//   References are made when clients have synced up to a given snapshot (hence may paginate at that point).
-//   The server itself also holds a ref to the current state, which is then moved to the new current state.
+//   - It ensures all events are persisted in the database. This is shared amongst users.
+//   - If all events have been stored before, then it short circuits and returns.
+//     This is because we must have already processed this part of the timeline in order for the event
+//     to exist in the database, and the sync stream is already linearised for us.
+//   - Else it creates a new room state snapshot if the timeline contains state events (as this now represents the current state)
+//   - It checks if there are outstanding references for the previous snapshot, and if not, removes the old snapshot from the database.
+//     References are made when clients have synced up to a given snapshot (hence may paginate at that point).
+//     The server itself also holds a ref to the current state, which is then moved to the new current state.
 func (a *Accumulator) Accumulate(roomID string, timeline []json.RawMessage) error {
 	if len(timeline) == 0 {
 		return nil

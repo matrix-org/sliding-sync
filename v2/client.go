@@ -1,4 +1,4 @@
-package syncv3
+package v2
 
 import (
 	"encoding/json"
@@ -8,40 +8,44 @@ import (
 	"github.com/matrix-org/gomatrixserverlib"
 )
 
-type V2 struct {
+// Client represents a Sync v2 Client.
+// One client can be shared among many users.
+type Client struct {
 	Client            *http.Client
 	DestinationServer string
 }
 
-func (v *V2) DoSyncV2(authHeader, since string) (*SyncV2Response, error) {
-	qps := ""
+// DoSyncV2 performs a sync v2 request. Returns the sync response and the response status code
+// or an error
+func (v *Client) DoSyncV2(authHeader, since string) (*SyncResponse, int, error) {
+	qps := "?timeout=30000"
 	if since != "" {
-		qps = "?since=" + since
+		qps += "&since=" + since
 	}
 	req, err := http.NewRequest(
 		"GET", v.DestinationServer+"/_matrix/client/r0/sync"+qps, nil,
 	)
 	req.Header.Set("Authorization", authHeader)
 	if err != nil {
-		return nil, fmt.Errorf("DoSyncV2: NewRequest failed: %w", err)
+		return nil, 0, fmt.Errorf("DoSyncV2: NewRequest failed: %w", err)
 	}
 	res, err := v.Client.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("DoSyncV2: request failed: %w", err)
+		return nil, 0, fmt.Errorf("DoSyncV2: request failed: %w", err)
 	}
 	switch res.StatusCode {
 	case 200:
-		var svr SyncV2Response
+		var svr SyncResponse
 		if err := json.NewDecoder(res.Body).Decode(&svr); err != nil {
-			return nil, fmt.Errorf("DoSyncV2: response body decode JSON failed: %w", err)
+			return nil, 0, fmt.Errorf("DoSyncV2: response body decode JSON failed: %w", err)
 		}
-		return &svr, nil
+		return &svr, 200, nil
 	default:
-		return nil, fmt.Errorf("DoSyncV2: response returned %s", res.Status)
+		return nil, res.StatusCode, fmt.Errorf("DoSyncV2: response returned %s", res.Status)
 	}
 }
 
-type SyncV2Response struct {
+type SyncResponse struct {
 	NextBatch   string `json:"next_batch"`
 	AccountData struct {
 		Events []gomatrixserverlib.ClientEvent `json:"events,omitempty"`

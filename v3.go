@@ -8,11 +8,13 @@ import (
 	"net/http"
 	"os"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/gorilla/mux"
 	"github.com/justinas/alice"
 	"github.com/matrix-org/sync-v3/state"
+	v2 "github.com/matrix-org/sync-v3/v2"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/hlog"
 )
@@ -40,7 +42,7 @@ func RunSyncV3Server(destinationServer, bindAddr, postgresDBURI string) {
 
 	// dependency inject all components together
 	sh := &SyncV3Handler{
-		V2: &V2{
+		V2: &v2.Client{
 			Client: &http.Client{
 				Timeout: 120 * time.Second,
 			},
@@ -48,6 +50,8 @@ func RunSyncV3Server(destinationServer, bindAddr, postgresDBURI string) {
 		},
 		Sessions:    NewSessions(postgresDBURI),
 		Accumulator: state.NewAccumulator(postgresDBURI),
+		Pollers:     make(map[string]*v2.Poller),
+		pollerMu:    &sync.Mutex{},
 	}
 
 	// HTTP path routing
@@ -63,9 +67,12 @@ func RunSyncV3Server(destinationServer, bindAddr, postgresDBURI string) {
 }
 
 type SyncV3Handler struct {
-	V2          *V2
+	V2          *v2.Client
 	Sessions    *Sessions
 	Accumulator *state.Accumulator
+
+	pollerMu *sync.Mutex
+	Pollers  map[string]*v2.Poller // device_id -> poller
 }
 
 func (h *SyncV3Handler) ServeHTTP(w http.ResponseWriter, req *http.Request) {
@@ -106,48 +113,40 @@ func (h *SyncV3Handler) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 		sincev2 = tokv3.v2token
 	}
 
-	// query for the data
-	v2res, err := h.V2.DoSyncV2(req.Header.Get("Authorization"), sincev2)
-	if err != nil {
-		log.Warn().Err(err).Msg("DoSyncV2 failed")
-		w.WriteHeader(502)
-		w.Write(asJSONError(err))
-		return
-	}
-
-	h.accumulate(v2res)
+	// make sure we have a poller for this device
+	h.ensurePolling(req.Header.Get("Authorization"), session.DeviceID, sincev2)
 
 	// return data based on filters
 
-	v3res, err := json.Marshal(v2res)
-	if err != nil {
-		w.WriteHeader(500)
-		w.Write(asJSONError(err))
-		return
-	}
-	w.Header().Set("X-Matrix-Sync-V3", v3token{
-		v2token:   v2res.NextBatch,
+	w.WriteHeader(200)
+	w.Write([]byte(v3token{
+		v2token:   "v2tokengoeshere",
 		sessionID: session.ID,
 		filterIDs: []string{},
-	}.String())
-	w.WriteHeader(200)
-	w.Write(v3res)
+	}.String()))
 }
 
-func (h *SyncV3Handler) accumulate(res *SyncV2Response) {
-	for roomID, roomData := range res.Rooms.Join {
-		if len(roomData.State.Events) > 0 {
-			err := h.Accumulator.Initialise(roomID, roomData.State.Events)
-			if err != nil {
-				log.Err(err).Str("room_id", roomID).Int("num_state_events", len(roomData.State.Events)).Msg("Accumulator.Initialise failed")
-			}
-		}
-		err := h.Accumulator.Accumulate(roomID, roomData.Timeline.Events)
-		if err != nil {
-			log.Err(err).Str("room_id", roomID).Int("num_timeline_events", len(roomData.Timeline.Events)).Msg("Accumulator.Accumulate failed")
-		}
+// ensurePolling makes sure there is a poller for this device, making one if need be.
+// Blocks until at least 1 sync is done if and only if the poller was just created.
+// This ensures that calls to the database will return data.
+func (h *SyncV3Handler) ensurePolling(authHeader, deviceID, since string) {
+	h.pollerMu.Lock()
+	poller, ok := h.Pollers[deviceID]
+	// either no poller exists or it did but it died
+	if ok && !poller.Terminated {
+		h.pollerMu.Unlock()
+		return
 	}
-	log.Info().Int("num_rooms", len(res.Rooms.Join)).Msg("accumulated data")
+	// replace the poller
+	poller = v2.NewPoller(authHeader, deviceID, h.V2, h.Accumulator)
+	var wg sync.WaitGroup
+	wg.Add(1)
+	go poller.Poll(since, func() {
+		wg.Done()
+	})
+	h.Pollers[deviceID] = poller
+	h.pollerMu.Unlock()
+	wg.Wait()
 }
 
 type jsonError struct {
