@@ -14,7 +14,8 @@ import (
 	"github.com/gorilla/mux"
 	"github.com/justinas/alice"
 	"github.com/matrix-org/sync-v3/state"
-	v2 "github.com/matrix-org/sync-v3/v2"
+	"github.com/matrix-org/sync-v3/sync2"
+	"github.com/matrix-org/sync-v3/sync3"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/hlog"
 )
@@ -42,7 +43,7 @@ func RunSyncV3Server(destinationServer, bindAddr, postgresDBURI string) {
 
 	// dependency inject all components together
 	sh := &SyncV3Handler{
-		V2: &v2.Client{
+		V2: &sync2.Client{
 			Client: &http.Client{
 				Timeout: 120 * time.Second,
 			},
@@ -50,7 +51,7 @@ func RunSyncV3Server(destinationServer, bindAddr, postgresDBURI string) {
 		},
 		Sessions:    NewSessions(postgresDBURI),
 		Accumulator: state.NewAccumulator(postgresDBURI),
-		Pollers:     make(map[string]*v2.Poller),
+		Pollers:     make(map[string]*sync2.Poller),
 		pollerMu:    &sync.Mutex{},
 	}
 
@@ -67,12 +68,12 @@ func RunSyncV3Server(destinationServer, bindAddr, postgresDBURI string) {
 }
 
 type SyncV3Handler struct {
-	V2          *v2.Client
+	V2          *sync2.Client
 	Sessions    *Sessions
 	Accumulator *state.Accumulator
 
 	pollerMu *sync.Mutex
-	Pollers  map[string]*v2.Poller // device_id -> poller
+	Pollers  map[string]*sync2.Poller // device_id -> poller
 }
 
 func (h *SyncV3Handler) ServeHTTP(w http.ResponseWriter, req *http.Request) {
@@ -85,19 +86,19 @@ func (h *SyncV3Handler) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	}
 	// Get or create a Session
 	var session *Session
-	var tokv3 *v3token
+	var tokv3 *sync3.Token
 	sincev3 := req.URL.Query().Get("since")
 	if sincev3 == "" {
 		session, err = h.Sessions.NewSession(deviceID)
 	} else {
-		tokv3, err = newSyncV3Token(sincev3)
+		tokv3, err = sync3.NewSyncToken(sincev3)
 		if err != nil {
 			log.Warn().Err(err).Msg("failed to parse sync v3 token")
 			w.WriteHeader(400)
 			w.Write(asJSONError(err))
 			return
 		}
-		session, err = h.Sessions.Session(tokv3.sessionID, deviceID)
+		session, err = h.Sessions.Session(tokv3.SessionID, deviceID)
 	}
 	if err != nil {
 		log.Warn().Err(err).Str("device", deviceID).Msg("failed to ensure Session existed for device")
@@ -110,7 +111,7 @@ func (h *SyncV3Handler) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	// map sync v3 token to sync v2 token
 	var sincev2 string
 	if tokv3 != nil {
-		sincev2 = tokv3.v2token
+		sincev2 = tokv3.V2token
 	}
 
 	// make sure we have a poller for this device
@@ -119,10 +120,10 @@ func (h *SyncV3Handler) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	// return data based on filters
 
 	w.WriteHeader(200)
-	w.Write([]byte(v3token{
-		v2token:   "v2tokengoeshere",
-		sessionID: session.ID,
-		filterIDs: []string{},
+	w.Write([]byte(sync3.Token{
+		V2token:   "v2tokengoeshere",
+		SessionID: session.ID,
+		FilterIDs: []string{},
 	}.String()))
 }
 
@@ -138,7 +139,7 @@ func (h *SyncV3Handler) ensurePolling(authHeader, deviceID, since string) {
 		return
 	}
 	// replace the poller
-	poller = v2.NewPoller(authHeader, deviceID, h.V2, h.Accumulator)
+	poller = sync2.NewPoller(authHeader, deviceID, h.V2, h.Accumulator)
 	var wg sync.WaitGroup
 	wg.Add(1)
 	go poller.Poll(since, func() {

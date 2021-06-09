@@ -1,4 +1,4 @@
-package v2
+package sync2
 
 import (
 	"encoding/json"
