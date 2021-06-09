@@ -49,7 +49,7 @@ func RunSyncV3Server(destinationServer, bindAddr, postgresDBURI string) {
 			},
 			DestinationServer: destinationServer,
 		},
-		Sessions:    NewSessions(postgresDBURI),
+		Sessions:    sync3.NewSessions(postgresDBURI),
 		Accumulator: state.NewAccumulator(postgresDBURI),
 		Pollers:     make(map[string]*sync2.Poller),
 		pollerMu:    &sync.Mutex{},
@@ -67,9 +67,18 @@ func RunSyncV3Server(destinationServer, bindAddr, postgresDBURI string) {
 	}
 }
 
+type handlerError struct {
+	StatusCode int
+	err        error
+}
+
+func (e *handlerError) Error() string {
+	return fmt.Sprintf("HTTP %d : %s", e.StatusCode, e.err.Error())
+}
+
 type SyncV3Handler struct {
 	V2          *sync2.Client
-	Sessions    *Sessions
+	Sessions    *sync3.Sessions
 	Accumulator *state.Accumulator
 
 	pollerMu *sync.Mutex
@@ -77,16 +86,44 @@ type SyncV3Handler struct {
 }
 
 func (h *SyncV3Handler) ServeHTTP(w http.ResponseWriter, req *http.Request) {
+	err := h.serve(w, req)
+	if err != nil {
+		w.WriteHeader(err.StatusCode)
+		w.Write(asJSONError(err))
+	}
+}
+
+func (h *SyncV3Handler) serve(w http.ResponseWriter, req *http.Request) *handlerError {
+	// Get or create a Session
+	session, _, err := h.getOrCreateSession(req)
+	if err != nil {
+		return err
+	}
+	log.Info().Str("session", session.ID).Str("device", session.DeviceID).Msg("recv /v3/sync")
+
+	// make sure we have a poller for this device
+	h.ensurePolling(req.Header.Get("Authorization"), session)
+
+	// return data based on filters
+
+	w.WriteHeader(200)
+	w.Write([]byte(sync3.Token{
+		SessionID: session.ID,
+		FilterIDs: []string{},
+	}.String()))
+	return nil
+}
+
+// getOrCreateSession retrieves an existing session if ?since= is set, else makes a new session.
+// Returns a session or an error. Returns a token if and only if there is an existing session.
+func (h *SyncV3Handler) getOrCreateSession(req *http.Request) (*sync3.Session, *sync3.Token, *handlerError) {
+	var session *sync3.Session
+	var tokv3 *sync3.Token
 	deviceID, err := deviceIDFromRequest(req)
 	if err != nil {
 		log.Warn().Err(err).Msg("failed to get device ID from request")
-		w.WriteHeader(400)
-		w.Write(asJSONError(err))
-		return
+		return nil, nil, &handlerError{400, err}
 	}
-	// Get or create a Session
-	var session *Session
-	var tokv3 *sync3.Token
 	sincev3 := req.URL.Query().Get("since")
 	if sincev3 == "" {
 		session, err = h.Sessions.NewSession(deviceID)
@@ -94,58 +131,36 @@ func (h *SyncV3Handler) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 		tokv3, err = sync3.NewSyncToken(sincev3)
 		if err != nil {
 			log.Warn().Err(err).Msg("failed to parse sync v3 token")
-			w.WriteHeader(400)
-			w.Write(asJSONError(err))
-			return
+			return nil, nil, &handlerError{400, err}
 		}
 		session, err = h.Sessions.Session(tokv3.SessionID, deviceID)
 	}
 	if err != nil {
 		log.Warn().Err(err).Str("device", deviceID).Msg("failed to ensure Session existed for device")
-		w.WriteHeader(500)
-		w.Write(asJSONError(err))
-		return
+		return nil, nil, &handlerError{500, err}
 	}
-	log.Info().Str("session", session.ID).Str("device", session.DeviceID).Msg("recv /v3/sync")
-
-	// map sync v3 token to sync v2 token
-	var sincev2 string
-	if tokv3 != nil {
-		sincev2 = tokv3.V2token
-	}
-
-	// make sure we have a poller for this device
-	h.ensurePolling(req.Header.Get("Authorization"), session.DeviceID, sincev2)
-
-	// return data based on filters
-
-	w.WriteHeader(200)
-	w.Write([]byte(sync3.Token{
-		V2token:   "v2tokengoeshere",
-		SessionID: session.ID,
-		FilterIDs: []string{},
-	}.String()))
+	return session, tokv3, nil
 }
 
 // ensurePolling makes sure there is a poller for this device, making one if need be.
 // Blocks until at least 1 sync is done if and only if the poller was just created.
 // This ensures that calls to the database will return data.
-func (h *SyncV3Handler) ensurePolling(authHeader, deviceID, since string) {
+func (h *SyncV3Handler) ensurePolling(authHeader string, session *sync3.Session) {
 	h.pollerMu.Lock()
-	poller, ok := h.Pollers[deviceID]
+	poller, ok := h.Pollers[session.DeviceID]
 	// either no poller exists or it did but it died
 	if ok && !poller.Terminated {
 		h.pollerMu.Unlock()
 		return
 	}
 	// replace the poller
-	poller = sync2.NewPoller(authHeader, deviceID, h.V2, h.Accumulator)
+	poller = sync2.NewPoller(authHeader, session.DeviceID, h.V2, h.Accumulator, h.Sessions)
 	var wg sync.WaitGroup
 	wg.Add(1)
-	go poller.Poll(since, func() {
+	go poller.Poll(session.Since, func() {
 		wg.Done()
 	})
-	h.Pollers[deviceID] = poller
+	h.Pollers[session.DeviceID] = poller
 	h.pollerMu.Unlock()
 	wg.Wait()
 }

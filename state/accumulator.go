@@ -7,6 +7,7 @@ import (
 
 	"github.com/jmoiron/sqlx"
 	"github.com/lib/pq"
+	"github.com/matrix-org/sync-v3/sqlutil"
 	"github.com/rs/zerolog"
 	"github.com/tidwall/gjson"
 )
@@ -130,7 +131,7 @@ func (a *Accumulator) Initialise(roomID string, state []json.RawMessage) error {
 	if len(state) == 0 {
 		return nil
 	}
-	return WithTransaction(a.db, func(txn *sqlx.Tx) error {
+	return sqlutil.WithTransaction(a.db, func(txn *sqlx.Tx) error {
 		// Attempt to short-circuit. This has to be done inside a transaction to make sure
 		// we don't race with multiple calls to Initialise with the same room ID.
 		snapshotID, err := a.roomsTable.CurrentSnapshotID(txn, roomID)
@@ -211,7 +212,7 @@ func (a *Accumulator) Accumulate(roomID string, timeline []json.RawMessage) erro
 	if len(timeline) == 0 {
 		return nil
 	}
-	return WithTransaction(a.db, func(txn *sqlx.Tx) error {
+	return sqlutil.WithTransaction(a.db, func(txn *sqlx.Tx) error {
 		// Insert the events
 		events := make([]Event, len(timeline))
 		for i := range events {
@@ -320,33 +321,4 @@ func (a *Accumulator) Delta(roomID string, lastEventNID int64, limit int) (event
 		eventsJSON[i] = events[i].JSON
 	}
 	return eventsJSON, int64(events[len(events)-1].NID), nil
-}
-
-// WithTransaction runs a block of code passing in an SQL transaction
-// If the code returns an error or panics then the transactions is rolled back
-// Otherwise the transaction is committed.
-func WithTransaction(db *sqlx.DB, fn func(txn *sqlx.Tx) error) (err error) {
-	txn, err := db.Beginx()
-	if err != nil {
-		return fmt.Errorf("WithTransaction.Begin: %w", err)
-	}
-
-	defer func() {
-		panicErr := recover()
-		if err == nil && panicErr != nil {
-			err = fmt.Errorf("panic: %v", panicErr)
-		}
-		var txnErr error
-		if err != nil {
-			txnErr = txn.Rollback()
-		} else {
-			txnErr = txn.Commit()
-		}
-		if txnErr != nil && err == nil {
-			err = fmt.Errorf("WithTransaction failed to commit/rollback: %w", txnErr)
-		}
-	}()
-
-	err = fn(txn)
-	return
 }

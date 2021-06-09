@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/matrix-org/sync-v3/state"
+	"github.com/matrix-org/sync-v3/sync3"
 	"github.com/rs/zerolog"
 )
 
@@ -15,17 +16,19 @@ type Poller struct {
 	DeviceID            string
 	Client              *Client
 	Accumulator         *state.Accumulator
+	Sessions            *sync3.Sessions
 	// flag set to true when poll() returns due to expired access tokens
 	Terminated bool
 	logger     zerolog.Logger
 }
 
-func NewPoller(authHeader, deviceID string, client *Client, accumulator *state.Accumulator) *Poller {
+func NewPoller(authHeader, deviceID string, client *Client, accumulator *state.Accumulator, sessions *sync3.Sessions) *Poller {
 	return &Poller{
 		AuthorizationHeader: authHeader,
 		DeviceID:            deviceID,
 		Client:              client,
 		Accumulator:         accumulator,
+		Sessions:            sessions,
 		Terminated:          false,
 		logger: zerolog.New(os.Stdout).With().Timestamp().Logger().With().Str("device", deviceID).Logger().Output(zerolog.ConsoleWriter{
 			Out:        os.Stderr,
@@ -37,7 +40,7 @@ func NewPoller(authHeader, deviceID string, client *Client, accumulator *state.A
 // Poll will block forever, repeatedly calling v2 sync. Do this in a goroutine.
 // Returns if the access token gets invalidated. Invokes the callback on first success.
 func (p *Poller) Poll(since string, callback func()) {
-	p.logger.Info().Msg("v2 poll loop started")
+	p.logger.Info().Str("since", since).Msg("v2 poll loop started")
 	failCount := 0
 	firstTime := true
 	for {
@@ -63,6 +66,13 @@ func (p *Poller) Poll(since string, callback func()) {
 		failCount = 0
 		p.accumulate(resp)
 		since = resp.NextBatch
+		// persist the since token (TODO: this could get slow if we hammer the DB too much)
+		err = p.Sessions.UpdateDeviceSince(p.DeviceID, since)
+		if err != nil {
+			// non-fatal
+			p.logger.Warn().Str("since", since).Err(err).Msg("failed to persist new since value")
+		}
+
 		if firstTime {
 			firstTime = false
 			callback()
