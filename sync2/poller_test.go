@@ -223,8 +223,8 @@ func (a *mockAccumulator) Initialise(roomID string, state []json.RawMessage) err
 	a.states[roomID] = state
 	return nil
 }
-func (a *mockAccumulator) SetTyping(roomID string, userIDs []string) error {
-	return nil
+func (a *mockAccumulator) SetTyping(roomID string, userIDs []string) (int, error) {
+	return 0, nil
 }
 
 type mockSessions struct {
