@@ -117,7 +117,7 @@ func (p *Poller) accumulate(res *SyncResponse) {
 						userIDs = append(userIDs, u.Str)
 					}
 				}
-				err = p.accumulator.SetTyping(roomID, userIDs)
+				_, err = p.accumulator.SetTyping(roomID, userIDs)
 				if err != nil {
 					p.logger.Err(err).Str("room_id", roomID).Strs("user_ids", userIDs).Msg("Accumulator: failed to set typing")
 				}
@@ -141,5 +141,5 @@ type clientInterface interface {
 type accumulatorInterface interface {
 	Accumulate(roomID string, timeline []json.RawMessage) error
 	Initialise(roomID string, state []json.RawMessage) error
-	SetTyping(roomID string, userIDs []string) error
+	SetTyping(roomID string, userIDs []string) (int, error)
 }

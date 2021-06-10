@@ -325,12 +325,13 @@ func (a *Accumulator) Delta(roomID string, lastEventNID int64, limit int) (event
 	return eventsJSON, int64(events[len(events)-1].NID), nil
 }
 
-// Typing returns who is currently typing in this room
-func (a *Accumulator) Typing(roomID string) ([]string, error) {
-	return a.typingTable.Typing(roomID)
+// Typing returns who is currently typing in this room along with the latest stream ID.
+func (a *Accumulator) Typing(roomID string, streamID int) ([]string, int, error) {
+	return a.typingTable.Typing(roomID, streamID)
 }
 
-// SetTyping sets who is typing in the room. An empty list removes all typing users.
-func (a *Accumulator) SetTyping(roomID string, userIDs []string) error {
+// SetTyping sets who is typing in the room. An empty list removes all typing users. Returns the
+// stream ID of the newly inserted typing users.
+func (a *Accumulator) SetTyping(roomID string, userIDs []string) (int, error) {
 	return a.typingTable.SetTyping(roomID, userIDs)
 }
