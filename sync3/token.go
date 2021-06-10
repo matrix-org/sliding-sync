@@ -26,8 +26,12 @@ func NewSyncToken(since string) (*Token, error) {
 		return nil, fmt.Errorf("not a sync v3 token: %s", since)
 	}
 	filters := strings.TrimPrefix(segments[2], "F")
+	filterIDs := strings.Split(filters, "-")
+	if len(filters) == 0 {
+		filterIDs = nil
+	}
 	return &Token{
 		SessionID: strings.TrimPrefix(segments[1], "S"),
-		FilterIDs: strings.Split(filters, "-"),
+		FilterIDs: filterIDs,
 	}, nil
 }
