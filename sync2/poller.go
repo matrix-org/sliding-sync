@@ -9,6 +9,7 @@ import (
 	"github.com/matrix-org/sync-v3/state"
 	"github.com/matrix-org/sync-v3/sync3"
 	"github.com/rs/zerolog"
+	"github.com/tidwall/gjson"
 )
 
 // alias time.Sleep so tests can monkey patch it out
@@ -104,6 +105,24 @@ func (p *Poller) accumulate(res *SyncResponse) {
 		if err != nil {
 			p.logger.Err(err).Str("room_id", roomID).Int("num_timeline_events", len(roomData.Timeline.Events)).Msg("Accumulator.Accumulate failed")
 		}
+		for _, ephEvent := range roomData.Ephemeral.Events {
+			if gjson.GetBytes(ephEvent, "type").Str == "m.typing" {
+				users := gjson.GetBytes(ephEvent, "content.user_ids")
+				if !users.IsArray() {
+					continue // malformed event
+				}
+				var userIDs []string
+				for _, u := range users.Array() {
+					if u.Str != "" {
+						userIDs = append(userIDs, u.Str)
+					}
+				}
+				err = p.accumulator.SetTyping(roomID, userIDs)
+				if err != nil {
+					p.logger.Err(err).Str("room_id", roomID).Strs("user_ids", userIDs).Msg("Accumulator: failed to set typing")
+				}
+			}
+		}
 	}
 	p.logger.Info().Int("num_rooms", len(res.Rooms.Join)).Msg("accumulated data")
 }
@@ -122,4 +141,5 @@ type clientInterface interface {
 type accumulatorInterface interface {
 	Accumulate(roomID string, timeline []json.RawMessage) error
 	Initialise(roomID string, state []json.RawMessage) error
+	SetTyping(roomID string, userIDs []string) error
 }

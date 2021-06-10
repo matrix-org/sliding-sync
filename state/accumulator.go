@@ -29,6 +29,7 @@ type Accumulator struct {
 	eventsTable           *EventTable
 	snapshotTable         *SnapshotTable
 	snapshotRefCountTable *SnapshotRefCountsTable
+	typingTable           *TypingTable
 }
 
 func NewAccumulator(postgresURI string) *Accumulator {
@@ -42,6 +43,7 @@ func NewAccumulator(postgresURI string) *Accumulator {
 		eventsTable:           NewEventTable(db),
 		snapshotTable:         NewSnapshotsTable(db),
 		snapshotRefCountTable: NewSnapshotRefCountsTable(db),
+		typingTable:           NewTypingTable(db),
 	}
 }
 
@@ -321,4 +323,14 @@ func (a *Accumulator) Delta(roomID string, lastEventNID int64, limit int) (event
 		eventsJSON[i] = events[i].JSON
 	}
 	return eventsJSON, int64(events[len(events)-1].NID), nil
+}
+
+// Typing returns who is currently typing in this room
+func (a *Accumulator) Typing(roomID string) ([]string, error) {
+	return a.typingTable.Typing(roomID)
+}
+
+// SetTyping sets who is typing in the room. An empty list removes all typing users.
+func (a *Accumulator) SetTyping(roomID string, userIDs []string) error {
+	return a.typingTable.SetTyping(roomID, userIDs)
 }

@@ -223,6 +223,9 @@ func (a *mockAccumulator) Initialise(roomID string, state []json.RawMessage) err
 	a.states[roomID] = state
 	return nil
 }
+func (a *mockAccumulator) SetTyping(roomID string, userIDs []string) error {
+	return nil
+}
 
 type mockSessions struct {
 	deviceIDToSince map[string]string
