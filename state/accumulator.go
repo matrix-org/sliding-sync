@@ -30,6 +30,7 @@ type Accumulator struct {
 	snapshotTable         *SnapshotTable
 	snapshotRefCountTable *SnapshotRefCountsTable
 	typingTable           *TypingTable
+	membershipLogTable    *MembershipLogTable
 }
 
 func NewAccumulator(postgresURI string) *Accumulator {
@@ -44,6 +45,7 @@ func NewAccumulator(postgresURI string) *Accumulator {
 		snapshotTable:         NewSnapshotsTable(db),
 		snapshotRefCountTable: NewSnapshotRefCountsTable(db),
 		typingTable:           NewTypingTable(db),
+		membershipLogTable:    NewMembershipLogTable(db),
 	}
 }
 
@@ -210,6 +212,7 @@ func (a *Accumulator) Initialise(roomID string, state []json.RawMessage) error {
 //   - It checks if there are outstanding references for the previous snapshot, and if not, removes the old snapshot from the database.
 //     References are made when clients have synced up to a given snapshot (hence may paginate at that point).
 //     The server itself also holds a ref to the current state, which is then moved to the new current state.
+//   - It adds entries to the membership log for membership events.
 func (a *Accumulator) Accumulate(roomID string, timeline []json.RawMessage) error {
 	if len(timeline) == 0 {
 		return nil
@@ -236,10 +239,30 @@ func (a *Accumulator) Accumulate(roomID string, timeline []json.RawMessage) erro
 		newEvents := timeline[len(timeline)-numNew:]
 		var newStateEvents []json.RawMessage
 		var newStateEventIDs []string
+		var membershipEventIDs []string
 		for _, ev := range newEvents {
-			if gjson.GetBytes(ev, "state_key").Exists() {
+			newEvent := gjson.ParseBytes(ev)
+			newEventID := newEvent.Get("event_id").Str
+			if newEvent.Get("state_key").Exists() {
 				newStateEvents = append(newStateEvents, ev)
-				newStateEventIDs = append(newStateEventIDs, gjson.GetBytes(ev, "event_id").Str)
+				newStateEventIDs = append(newStateEventIDs, newEventID)
+				if newEvent.Get("type").Str == "m.room.member" {
+					// membership event possibly, make sure the membership has changed else
+					// things like display name changes will count as membership events :(
+					prevMembership := "leave"
+					pm := newEvent.Get("prev_content.membership")
+					if pm.Exists() && pm.Str != "" {
+						prevMembership = pm.Str
+					}
+					currMembership := "leave"
+					cm := newEvent.Get("content.membership")
+					if cm.Exists() && cm.Str != "" {
+						currMembership = cm.Str
+					}
+					if prevMembership != currMembership { // membership was changed
+						membershipEventIDs = append(membershipEventIDs, newEventID)
+					}
+				}
 			}
 		}
 
@@ -285,21 +308,42 @@ func (a *Accumulator) Accumulate(roomID string, timeline []json.RawMessage) erro
 		}
 		currentStripped, err := a.calculateNewSnapshot(oldStripped, newStripped)
 		if err != nil {
-			return err
+			return fmt.Errorf("failed to calculate new snapshot: %w", err)
 		}
 		newSnapshot := &SnapshotRow{
 			RoomID: roomID,
 			Events: currentStripped.NIDs(),
 		}
 		if err = a.snapshotTable.Insert(txn, newSnapshot); err != nil {
-			return err
+			return fmt.Errorf("failed to insert new snapshot: %w", err)
 		}
 
 		// swap the current snapshot over to this new snapshot and handle ref counters
 		if err = a.roomsTable.UpdateCurrentSnapshotID(txn, roomID, newSnapshot.SnapshotID); err != nil {
-			return err
+			return fmt.Errorf("failed to UpdateCurrentSnapshotID to %d: %w", newSnapshot.SnapshotID, err)
 		}
-		return a.moveSnapshotRef(txn, snapID, newSnapshot.SnapshotID)
+		if err = a.moveSnapshotRef(txn, snapID, newSnapshot.SnapshotID); err != nil {
+			return fmt.Errorf("failed to move snapshot ref: %w", err)
+		}
+
+		// Add membership logs if this update includes membership changes
+		if len(membershipEventIDs) > 0 {
+			storedMembershipEvents, err := a.eventsTable.SelectByIDs(txn, membershipEventIDs)
+			if err != nil {
+				return err
+			}
+			if len(storedMembershipEvents) != len(membershipEventIDs) {
+				return fmt.Errorf("SelectByIDs returned fewer membership events than requested, got %d want %d", len(storedMembershipEvents), len(membershipEventIDs))
+			}
+			for _, ev := range storedMembershipEvents {
+				target := gjson.GetBytes(ev.JSON, "state_key").Str
+				err = a.membershipLogTable.AppendMembership(txn, int64(ev.NID), roomID, target)
+				if err != nil {
+					return fmt.Errorf("AppendMembership failed: %w", err)
+				}
+			}
+		}
+		return nil
 	})
 }
 

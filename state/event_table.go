@@ -103,7 +103,7 @@ func (t *EventTable) SelectByNIDs(txn *sqlx.Tx, nids []int64) (events []Event, e
 }
 
 func (t *EventTable) SelectByIDs(txn *sqlx.Tx, ids []string) (events []Event, err error) {
-	query, args, err := sqlx.In("SELECT event_nid, event_id, event FROM syncv3_events WHERE event_id IN (?);", ids)
+	query, args, err := sqlx.In("SELECT event_nid, event_id, event FROM syncv3_events WHERE event_id IN (?) ORDER BY event_nid ASC;", ids)
 	query = txn.Rebind(query)
 	if err != nil {
 		return nil, err
@@ -113,7 +113,7 @@ func (t *EventTable) SelectByIDs(txn *sqlx.Tx, ids []string) (events []Event, er
 }
 
 func (t *EventTable) SelectNIDsByIDs(txn *sqlx.Tx, ids []string) (nids []int64, err error) {
-	query, args, err := sqlx.In("SELECT event_nid FROM syncv3_events WHERE event_id IN (?);", ids)
+	query, args, err := sqlx.In("SELECT event_nid FROM syncv3_events WHERE event_id IN (?) ORDER BY event_nid ASC;", ids)
 	query = txn.Rebind(query)
 	if err != nil {
 		return nil, err
@@ -141,12 +141,18 @@ func (t *EventTable) SelectStrippedEventsByIDs(txn *sqlx.Tx, ids []string) (Stri
 	}
 	var events []StrippedEvent
 	err = txn.Select(&events, query, args...)
+	// we often call this function to pull out nids for events we just inserted, so it's important that
+	// we grab all the events else we might miss putting some events into a snapshot
+	if len(ids) != len(events) {
+		diff := len(ids) - len(events)
+		return nil, fmt.Errorf("%d events are missing in the database from this list: %v", diff, ids)
+	}
 	return events, err
 }
 
 func (t *EventTable) SelectEventsBetween(txn *sqlx.Tx, roomID string, lowerExclusive, upperInclusive int64, limit int) ([]Event, error) {
 	var events []Event
-	err := txn.Select(&events, `SELECT event_nid, event FROM syncv3_events WHERE event_nid > $1 AND event_nid <= $2 AND room_id = $3 LIMIT $4`,
+	err := txn.Select(&events, `SELECT event_nid, event FROM syncv3_events WHERE event_nid > $1 AND event_nid <= $2 AND room_id = $3 ORDER BY event_nid ASC LIMIT $4`,
 		lowerExclusive, upperInclusive, roomID, limit,
 	)
 	return events, err
