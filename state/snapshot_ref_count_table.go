@@ -34,13 +34,13 @@ func (s *SnapshotRefCountsTable) DeleteEmptyRefs(txn *sqlx.Tx) (emptyRefs []int,
 	return
 }
 
-// Select a row based on its snapshot ID.
+// Decrement the ref counter for the snapshot ID by one. Returns the current ref counter.
 func (s *SnapshotRefCountsTable) Decrement(txn *sqlx.Tx, snapshotID int) (count int, err error) {
 	err = txn.QueryRow(`UPDATE syncv3_snapshot_ref_counts SET ref_count = syncv3_snapshot_ref_counts.ref_count - 1 WHERE snapshot_id=$1 RETURNING ref_count`, snapshotID).Scan(&count)
 	return
 }
 
-// Insert the row. Modifies SnapshotID to be the inserted primary key.
+// Increment the ref counter for the snapshot ID by one. Returns the current ref counter.
 func (s *SnapshotRefCountsTable) Increment(txn *sqlx.Tx, snapshotID int) (count int, err error) {
 	err = txn.QueryRow(`INSERT INTO syncv3_snapshot_ref_counts(snapshot_id, ref_count) VALUES ($1, $2)
 	ON CONFLICT (snapshot_id) DO UPDATE SET ref_count=syncv3_snapshot_ref_counts.ref_count+1 RETURNING ref_count`, snapshotID, 1).Scan(&count)

@@ -73,7 +73,8 @@ func (t *MembershipLogTable) MembershipsBetween(txn *sqlx.Tx, fromNIDExcl, toNID
 // DeleteLogs between the given event NIDs for the given room ID.
 // from is inclusive to allow references to the last snapshot.
 // to is exlcusive to allow references to the current snapshot.
-// Call this when removing snapshots. Returns the number of logs removed.
+// Call this when removing snapshots. Returns the number of logs removed. Snapshots are only removed
+// when clients advance their snapshot position.
 func (t *MembershipLogTable) DeleteLogs(txn *sqlx.Tx, fromNIDIncl, toNIDExcl int64, roomID string) (int64, error) {
 	result, err := txn.Exec(
 		`DELETE FROM syncv3_membership_logs WHERE room_id = $1 AND event_nid >= $2 AND event_nid < $3`,

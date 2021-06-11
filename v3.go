@@ -45,7 +45,7 @@ func RunSyncV3Server(destinationServer, bindAddr, postgresDBURI string) {
 	sh := &SyncV3Handler{
 		V2: &sync2.Client{
 			Client: &http.Client{
-				Timeout: 120 * time.Second,
+				Timeout: 5 * time.Minute,
 			},
 			DestinationServer: destinationServer,
 		},
@@ -157,7 +157,7 @@ func (h *SyncV3Handler) ensurePolling(authHeader string, session *sync3.Session)
 	poller = sync2.NewPoller(authHeader, session.DeviceID, h.V2, h.Accumulator, h.Sessions)
 	var wg sync.WaitGroup
 	wg.Add(1)
-	go poller.Poll(session.Since, func() {
+	go poller.Poll(session.V2Since, func() {
 		wg.Done()
 	})
 	h.Pollers[session.DeviceID] = poller

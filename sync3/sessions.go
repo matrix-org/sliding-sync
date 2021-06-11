@@ -23,7 +23,7 @@ type Session struct {
 	DeviceID        string `db:"device_id"`
 	LastToDeviceACK string `db:"last_to_device_ack"`
 
-	Since string `db:"since"`
+	V2Since string `db:"since"`
 }
 
 type Sessions struct {
@@ -95,7 +95,7 @@ func (s *Sessions) NewSession(deviceID string) (*Session, error) {
 		session = &Session{
 			ID:       id,
 			DeviceID: deviceID,
-			Since:    since,
+			V2Since:  since,
 		}
 		return nil
 	})
