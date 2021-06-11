@@ -2,6 +2,7 @@ package state
 
 import (
 	"encoding/json"
+	"reflect"
 	"testing"
 
 	"github.com/tidwall/gjson"
@@ -196,5 +197,87 @@ func TestAccumulatorDelta(t *testing.T) {
 	}
 	if position == 0 {
 		t.Errorf("Delta returned zero position")
+	}
+}
+
+func TestAccumulatorMembershipLogs(t *testing.T) {
+	roomID := "!TestAccumulatorMembershipLogs:localhost"
+	accumulator := NewAccumulator(postgresConnectionString)
+	err := accumulator.Initialise(roomID, nil)
+	if err != nil {
+		t.Fatalf("failed to Initialise accumulator: %s", err)
+	}
+	roomEventIDs := []string{
+		"b1", "b2", "b3", "b4", "b5", "b6", "b7", "b8",
+	}
+	roomEvents := []json.RawMessage{
+		[]byte(`{"event_id":"` + roomEventIDs[0] + `", "type":"m.room.create", "state_key":"", "content":{"creator":"@me:localhost"}}`),
+		// @me joins
+		[]byte(`{"event_id":"` + roomEventIDs[1] + `", "type":"m.room.member", "state_key":"@me:localhost", "content":{"membership":"join"}}`),
+		[]byte(`{"event_id":"` + roomEventIDs[2] + `", "type":"m.room.join_rules", "state_key":"", "content":{"join_rule":"public"}}`),
+		// @alice joins
+		[]byte(`{"event_id":"` + roomEventIDs[3] + `", "type":"m.room.member", "state_key":"@alice:localhost", "content":{"membership":"join"}}`),
+		[]byte(`{"event_id":"` + roomEventIDs[4] + `", "type":"m.room.message","content":{"body":"Hello World","msgtype":"m.text"}}`),
+		// @me changes display name
+		[]byte(`{"event_id":"` + roomEventIDs[5] + `", "type":"m.room.member", "state_key":"@me:localhost","prev_content":{"membership":"join"}, "content":{"membership":"join", "displayname":"Me"}}`),
+		// @me invites @bob
+		[]byte(`{"event_id":"` + roomEventIDs[6] + `", "type":"m.room.member", "state_key":"@bob:localhost", "content":{"membership":"invite"}, "sender":"@me:localhost"}`),
+		// @me leaves the room
+		[]byte(`{"event_id":"` + roomEventIDs[7] + `", "type":"m.room.member", "state_key":"@me:localhost", "prev_content":{"membership":"join", "displayname":"Me"}, "content":{"membership":"leave"}}`),
+	}
+	if err = accumulator.Accumulate(roomID, roomEvents); err != nil {
+		t.Fatalf("failed to Accumulate: %s", err)
+	}
+	txn, err := accumulator.db.Beginx()
+	if err != nil {
+		t.Fatalf("failed to start assert txn: %s", err)
+	}
+	defer txn.Rollback()
+
+	// Begin assertions
+
+	// Pull nids for these events
+	insertedEvents, err := accumulator.eventsTable.SelectByIDs(txn, roomEventIDs)
+	if err != nil {
+		t.Fatalf("Failed to select accumulated events: %s", err)
+	}
+	testCases := []struct {
+		startExcl int64
+		endIncl   int64
+		target    string
+		wantNIDs  []int64
+	}{
+		{
+			startExcl: MembershipLogOffsetStart,
+			endIncl:   int64(insertedEvents[len(insertedEvents)-1].NID),
+			target:    "@me:localhost",
+			// join then leave
+			wantNIDs: []int64{int64(insertedEvents[1].NID), int64(insertedEvents[7].NID)},
+		},
+		{
+			startExcl: MembershipLogOffsetStart,
+			endIncl:   int64(insertedEvents[len(insertedEvents)-1].NID),
+			target:    "@bob:localhost",
+			// invite
+			wantNIDs: []int64{int64(insertedEvents[6].NID)},
+		},
+		{
+			startExcl: int64(insertedEvents[2].NID),
+			endIncl:   int64(insertedEvents[6].NID),
+			target:    "@me:localhost",
+			// nothing for this user in this gap
+			wantNIDs: nil,
+		},
+	}
+	for _, tc := range testCases {
+		gotNIDs, err := accumulator.membershipLogTable.MembershipsBetween(
+			txn, tc.startExcl, tc.endIncl, tc.target,
+		)
+		if err != nil {
+			t.Fatalf("failed to MembershipsBetween: %s", err)
+		}
+		if !reflect.DeepEqual(gotNIDs, tc.wantNIDs) {
+			t.Errorf("MembershipsBetween got wrong nids, got %v want %v", gotNIDs, tc.wantNIDs)
+		}
 	}
 }
