@@ -161,8 +161,8 @@ func TestAccumulatorDelta(t *testing.T) {
 		t.Fatalf("failed to Initialise accumulator: %s", err)
 	}
 	roomEvents := []json.RawMessage{
-		[]byte(`{"event_id":"aD", "type":"m.room.create", "state_key":"", "content":{"creator":"@me:localhost"}}`),
-		[]byte(`{"event_id":"aE", "type":"m.room.member", "state_key":"@me:localhost", "content":{"membership":"join"}}`),
+		[]byte(`{"event_id":"aD", "type":"m.room.create", "state_key":"", "content":{"creator":"@TestAccumulatorDelta:localhost"}}`),
+		[]byte(`{"event_id":"aE", "type":"m.room.member", "state_key":"@TestAccumulatorDelta:localhost", "content":{"membership":"join"}}`),
 		[]byte(`{"event_id":"aF", "type":"m.room.join_rules", "state_key":"", "content":{"join_rule":"public"}}`),
 		[]byte(`{"event_id":"aG", "type":"m.room.message","content":{"body":"Hello World","msgtype":"m.text"}}`),
 		[]byte(`{"event_id":"aH", "type":"m.room.join_rules", "state_key":"", "content":{"join_rule":"public"}}`),
@@ -277,7 +277,7 @@ func TestAccumulatorMembershipLogs(t *testing.T) {
 			t.Fatalf("failed to MembershipsBetween: %s", err)
 		}
 		if !reflect.DeepEqual(gotNIDs, tc.wantNIDs) {
-			t.Errorf("MembershipsBetween got wrong nids, got %v want %v", gotNIDs, tc.wantNIDs)
+			t.Errorf("MembershipsBetween(%d,%d) got wrong nids, got %v want %v", tc.startExcl, tc.endIncl, gotNIDs, tc.wantNIDs)
 		}
 	}
 }

@@ -19,46 +19,46 @@ func TestMembershipLogTable(t *testing.T) {
 	defer tx.Commit()
 
 	// Test inserting membership logs
-	roomID := "!foo:bar"
-	targetUser := "@alice:localhost"
+	roomID := "!TestMembershipLogTable:localhost"
+	targetUser := "@TestMembershipLogTable:localhost"
 	entries := []struct {
 		roomID     string
 		eventNID   int64
 		targetUser string
 	}{
 		{
-			eventNID:   1,
+			eventNID:   101,
 			roomID:     roomID,
 			targetUser: targetUser,
 		},
 		{
-			eventNID:   3,
+			eventNID:   103,
 			roomID:     "a different room",
 			targetUser: targetUser,
 		},
 		{
-			eventNID:   10,
+			eventNID:   110,
 			roomID:     roomID,
 			targetUser: "@a-different-user:localhost",
 		},
 		{
-			eventNID:   11,
+			eventNID:   111,
 			roomID:     "different room again",
 			targetUser: "@a-different-user-again:localhost",
 		},
 		{
-			eventNID:   15,
+			eventNID:   115,
 			roomID:     roomID,
 			targetUser: targetUser,
 		},
 		{
-			eventNID:   19,
+			eventNID:   119,
 			roomID:     roomID,
 			targetUser: targetUser,
 		},
 		// duplicate ok
 		{
-			eventNID:   19,
+			eventNID:   119,
 			roomID:     roomID,
 			targetUser: targetUser,
 		},
@@ -82,21 +82,21 @@ func TestMembershipLogTable(t *testing.T) {
 			startExcl: MembershipLogOffsetStart,
 			endIncl:   999,
 			target:    targetUser,
-			wantNIDs:  []int64{1, 3, 15, 19},
+			wantNIDs:  []int64{101, 103, 115, 119},
 		},
 		// middle entries (no results)
 		{
-			startExcl: 3,
-			endIncl:   11,
+			startExcl: 103,
+			endIncl:   111,
 			target:    targetUser,
 			wantNIDs:  nil,
 		},
 		// last entry
 		{
-			startExcl: 17,
-			endIncl:   19,
+			startExcl: 117,
+			endIncl:   119,
 			target:    targetUser,
-			wantNIDs:  []int64{19},
+			wantNIDs:  []int64{119},
 		},
 		// random user
 		{
@@ -122,7 +122,7 @@ func TestMembershipLogTable(t *testing.T) {
 	}
 
 	// Test deleting membership logs
-	numDeleted, err := table.DeleteLogs(tx, 1, 19, roomID)
+	numDeleted, err := table.DeleteLogs(tx, 101, 119, roomID)
 	if err != nil {
 		t.Fatalf("failed to DeleteLogs: %s", err)
 	}
