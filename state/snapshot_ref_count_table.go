@@ -4,45 +4,42 @@ import (
 	"github.com/jmoiron/sqlx"
 )
 
-// SnapshotRefCountsTable maintains a counter per room snapshot which represents
-// how many clients have this snapshot as their 'latest' state. These snapshots
-// are paginatable by clients.
+// SnapshotRefCountsTable maintains a list of entities who are aware of certain snapshots, aka
+// clients who have this snapshot as their 'latest' state. These snapshots
+// are paginatable by clients. Each entity can only have 1 snapshot for each room.
 //
-// The current state snapshot for a room always has a ref count > 0 (the reference is held by the server, not any clients)
-// to prevent the current state snapshot from being garbage collected.
+// Entities are any string value to decouple this implementation from sync v3 semantics. In practice,
+// entities are confirmed/unconfirmed sync sessions.
 type SnapshotRefCountsTable struct {
 }
 
 func NewSnapshotRefCountsTable(db *sqlx.DB) *SnapshotRefCountsTable {
-	// make sure tables are made
 	db.MustExec(`
 	CREATE TABLE IF NOT EXISTS syncv3_snapshot_ref_counts (
-		snapshot_id BIGINT PRIMARY KEY NOT NULL,
-		ref_count BIGINT NOT NULL
+		entity TEXT NOT NULL,
+		snapshot_id BIGINT NOT NULL,
+		room_id TEXT NOT NULL,
+		UNIQUE(entity, room_id)
 	);
 	`)
 	return &SnapshotRefCountsTable{}
 }
 
-// DeleteEmptyRefs removes snapshot ref counts which are 0 and returns the snapshot IDs of the affected rows.
-func (s *SnapshotRefCountsTable) DeleteEmptyRefs(txn *sqlx.Tx) (emptyRefs []int, err error) {
-	err = txn.Select(&emptyRefs, `SELECT snapshot_id FROM syncv3_snapshot_ref_counts WHERE ref_count = 0`)
-	if err != nil {
-		return
-	}
-	_, err = txn.Exec(`DELETE FROM syncv3_snapshot_ref_counts WHERE ref_count = 0`)
-	return
+// MoveSnapshotRefForEntity migrates the snapshot for the current entity's room ID. If there is no existing
+// snapshot for this room, entity tuple then one is created
+func (s *SnapshotRefCountsTable) MoveSnapshotRefForEntity(txn *sqlx.Tx, entity, roomID string, snapshotID int) error {
+	_, err := txn.Exec(
+		`INSERT INTO syncv3_snapshot_ref_counts(entity, room_id, snapshot_id) VALUES($1, $2, $3)
+		ON CONFLICT (entity, room_id) DO UPDATE SET snapshot_id = $3`,
+		entity, roomID, snapshotID,
+	)
+	return err
 }
 
-// Decrement the ref counter for the snapshot ID by one. Returns the current ref counter.
-func (s *SnapshotRefCountsTable) Decrement(txn *sqlx.Tx, snapshotID int) (count int, err error) {
-	err = txn.QueryRow(`UPDATE syncv3_snapshot_ref_counts SET ref_count = syncv3_snapshot_ref_counts.ref_count - 1 WHERE snapshot_id=$1 RETURNING ref_count`, snapshotID).Scan(&count)
-	return
-}
-
-// Increment the ref counter for the snapshot ID by one. Returns the current ref counter.
-func (s *SnapshotRefCountsTable) Increment(txn *sqlx.Tx, snapshotID int) (count int, err error) {
-	err = txn.QueryRow(`INSERT INTO syncv3_snapshot_ref_counts(snapshot_id, ref_count) VALUES ($1, $2)
-	ON CONFLICT (snapshot_id) DO UPDATE SET ref_count=syncv3_snapshot_ref_counts.ref_count+1 RETURNING ref_count`, snapshotID, 1).Scan(&count)
+// NumRefs counts the number of references for this snapshot ID.
+func (s *SnapshotRefCountsTable) NumRefs(txn *sqlx.Tx, snapshotID int) (count int, err error) {
+	err = txn.QueryRow(
+		`SELECT count(*) FROM syncv3_snapshot_ref_counts WHERE snapshot_id=$1`, snapshotID,
+	).Scan(&count)
 	return
 }

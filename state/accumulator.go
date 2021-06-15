@@ -31,6 +31,7 @@ type Accumulator struct {
 	snapshotRefCountTable *SnapshotRefCountsTable
 	typingTable           *TypingTable
 	membershipLogTable    *MembershipLogTable
+	entityName            string
 }
 
 func NewAccumulator(postgresURI string) *Accumulator {
@@ -46,36 +47,8 @@ func NewAccumulator(postgresURI string) *Accumulator {
 		snapshotRefCountTable: NewSnapshotRefCountsTable(db),
 		typingTable:           NewTypingTable(db),
 		membershipLogTable:    NewMembershipLogTable(db),
+		entityName:            "server",
 	}
-}
-
-// clearSnapshots deletes all snapshots with 0 refs to it
-func (a *Accumulator) clearSnapshots(txn *sqlx.Tx) {
-	snapshotIDs, err := a.snapshotRefCountTable.DeleteEmptyRefs(txn)
-	if err != nil {
-		log.Err(err).Msg("failed to DeleteEmptyRefs")
-		return
-	}
-	err = a.snapshotTable.Delete(txn, snapshotIDs)
-	if err != nil {
-		log.Err(err).Ints("snapshots", snapshotIDs).Msg("failed to delete snapshot IDs")
-	}
-}
-
-// moveSnapshotRef decrements the from snapshot ID and increments the to snapshot ID
-// Clears the from snapshot if there are 0 refs to it
-func (a *Accumulator) moveSnapshotRef(txn *sqlx.Tx, from, to int) error {
-	if from != 0 {
-		count, err := a.snapshotRefCountTable.Decrement(txn, from)
-		if err != nil {
-			return err
-		}
-		if count == 0 {
-			a.clearSnapshots(txn)
-		}
-	}
-	_, err := a.snapshotRefCountTable.Increment(txn, to)
-	return err
 }
 
 func (a *Accumulator) strippedEventsForSnapshot(txn *sqlx.Tx, snapID int) (StrippedEvents, error) {
@@ -190,7 +163,7 @@ func (a *Accumulator) Initialise(roomID string, state []json.RawMessage) error {
 		}
 
 		// Increment the ref counter
-		err = a.moveSnapshotRef(txn, 0, snapshot.SnapshotID)
+		err = a.snapshotRefCountTable.MoveSnapshotRefForEntity(txn, a.entityName, roomID, snapshot.SnapshotID)
 		if err != nil {
 			return err
 		}
@@ -322,7 +295,7 @@ func (a *Accumulator) Accumulate(roomID string, timeline []json.RawMessage) erro
 		if err = a.roomsTable.UpdateCurrentSnapshotID(txn, roomID, newSnapshot.SnapshotID); err != nil {
 			return fmt.Errorf("failed to UpdateCurrentSnapshotID to %d: %w", newSnapshot.SnapshotID, err)
 		}
-		if err = a.moveSnapshotRef(txn, snapID, newSnapshot.SnapshotID); err != nil {
+		if err = a.snapshotRefCountTable.MoveSnapshotRefForEntity(txn, a.entityName, roomID, newSnapshot.SnapshotID); err != nil {
 			return fmt.Errorf("failed to move snapshot ref: %w", err)
 		}
 

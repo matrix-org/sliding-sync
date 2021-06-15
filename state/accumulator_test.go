@@ -61,12 +61,12 @@ func TestAccumulatorInitialise(t *testing.T) {
 	}
 
 	// the ref counter should be 1 for this snapshot
-	emptyRefs, err := accumulator.snapshotRefCountTable.DeleteEmptyRefs(txn)
+	numRefs, err := accumulator.snapshotRefCountTable.NumRefs(txn, snapID)
 	if err != nil {
-		t.Fatalf("failed to delete empty refs: %s", err)
+		t.Fatalf("failed to check num refs: %s", err)
 	}
-	if len(emptyRefs) > 0 {
-		t.Fatalf("got %d empty refs, want none", len(emptyRefs))
+	if numRefs != 1 {
+		t.Fatalf("got %d empty refs, want 1", numRefs)
 	}
 
 	// Subsequent calls do nothing and are not an error

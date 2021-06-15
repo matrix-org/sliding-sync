@@ -1,7 +1,6 @@
 package state
 
 import (
-	"sync"
 	"testing"
 
 	"github.com/jmoiron/sqlx"
@@ -18,83 +17,35 @@ func TestSnapshotRefCountTable(t *testing.T) {
 		t.Fatalf("failed to start txn: %s", err)
 	}
 	defer tx.Rollback()
-	snapshotID := 100
-	assertIncrement(t, tx, table, snapshotID, 1)
-	assertIncrement(t, tx, table, snapshotID, 2)
-	assertDecrement(t, tx, table, snapshotID, 1)
-	assertDecrement(t, tx, table, snapshotID, 0)
+	snapshotID := 1010101
+	roomID := "!TestSnapshotRefCountTable:localhost"
+	// add 3 refs to the same snapshot then migrate one and check
+	moveSnapshotRef(t, tx, table, "server", roomID, snapshotID)
+	moveSnapshotRef(t, tx, table, "alice", roomID, snapshotID)
+	moveSnapshotRef(t, tx, table, "bob", roomID, snapshotID)
+	moveSnapshotRef(t, tx, table, "server", roomID, snapshotID+1)
+
+	// make sure the ref counts are correct
+	checkNumRefs(t, tx, table, snapshotID, 2)     // alice and bob
+	checkNumRefs(t, tx, table, snapshotID+1, 1)   // server was migrated to here
+	checkNumRefs(t, tx, table, snapshotID+999, 0) // bad snapshot ID = 0
 }
 
-func TestSnapshotRefCountTableConcurrent(t *testing.T) {
-	db, err := sqlx.Open("postgres", postgresConnectionString)
-	if err != nil {
-		t.Fatalf("failed to open SQL db: %s", err)
-	}
-	table := NewSnapshotRefCountsTable(db)
-	tx1, err := db.Beginx()
-	if err != nil {
-		t.Fatalf("failed to start txn1: %s", err)
-	}
-	tx2, err := db.Beginx()
-	if err != nil {
-		t.Fatalf("failed to start txn2: %s", err)
-	}
-	snapshotID := 101
-
-	// two goroutines increment by two, one should be blocked behind the other
-	// so we should get 4 as the value
-	var wg sync.WaitGroup
-	wg.Add(2)
-	incrBy2 := func(tx *sqlx.Tx) {
-		defer wg.Done()
-		_, err = table.Increment(tx, snapshotID)
-		if err != nil {
-			t.Fatalf("failed to increment: %s", err)
-		}
-		_, err = table.Increment(tx, snapshotID)
-		if err != nil {
-			t.Fatalf("failed to increment: %s", err)
-		}
-		err = tx.Commit()
-		if err != nil {
-			t.Fatalf("failed to commit: %s", err)
-		}
-	}
-
-	go incrBy2(tx1)
-	go incrBy2(tx2)
-	wg.Wait()
-
-	tx3, err := db.Beginx()
-	if err != nil {
-		t.Fatalf("failed to start txn3: %s", err)
-	}
-	// 4-1=3
-	assertDecrement(t, tx3, table, snapshotID, 3)
-	assertDecrement(t, tx3, table, snapshotID, 2)
-	assertDecrement(t, tx3, table, snapshotID, 1)
-	assertDecrement(t, tx3, table, snapshotID, 0)
-	tx3.Commit()
-}
-
-func assertIncrement(t *testing.T, tx *sqlx.Tx, table *SnapshotRefCountsTable, snapshotID int, wantVal int) {
+func moveSnapshotRef(t *testing.T, tx *sqlx.Tx, table *SnapshotRefCountsTable, entity, roomID string, snapID int) {
 	t.Helper()
-	count, err := table.Increment(tx, snapshotID)
+	err := table.MoveSnapshotRefForEntity(tx, entity, roomID, snapID)
 	if err != nil {
-		t.Fatalf("failed to increment: %s", err)
-	}
-	if count != wantVal {
-		t.Fatalf("count didn't increment to %v: got %v", wantVal, count)
+		t.Fatalf("MoveSnapshotRefForEntity: %s", err)
 	}
 }
 
-func assertDecrement(t *testing.T, tx *sqlx.Tx, table *SnapshotRefCountsTable, snapshotID int, wantVal int) {
+func checkNumRefs(t *testing.T, tx *sqlx.Tx, table *SnapshotRefCountsTable, snapID, wantCount int) {
 	t.Helper()
-	count, err := table.Decrement(tx, snapshotID)
+	gotCount, err := table.NumRefs(tx, snapID)
 	if err != nil {
-		t.Fatalf("failed to decrement: %s", err)
+		t.Fatalf("NumRefs: %s", err)
 	}
-	if count != wantVal {
-		t.Fatalf("count didn't decrement to %v: got %v", wantVal, count)
+	if wantCount != gotCount {
+		t.Errorf("NumRefs got %d want %d", gotCount, wantCount)
 	}
 }
