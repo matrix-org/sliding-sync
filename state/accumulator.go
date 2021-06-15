@@ -223,7 +223,7 @@ func (a *Accumulator) Accumulate(roomID string, timeline []json.RawMessage) erro
 					// membership event possibly, make sure the membership has changed else
 					// things like display name changes will count as membership events :(
 					prevMembership := "leave"
-					pm := newEvent.Get("prev_content.membership")
+					pm := newEvent.Get("unsigned.prev_content.membership")
 					if pm.Exists() && pm.Str != "" {
 						prevMembership = pm.Str
 					}
