@@ -5,6 +5,7 @@ import (
 	"reflect"
 	"testing"
 
+	"github.com/jmoiron/sqlx"
 	"github.com/tidwall/gjson"
 )
 
@@ -16,8 +17,12 @@ func TestAccumulatorInitialise(t *testing.T) {
 		[]byte(`{"event_id":"C", "type":"m.room.join_rules", "state_key":"", "content":{"join_rule":"public"}}`),
 	}
 	roomEventIDs := []string{"A", "B", "C"}
-	accumulator := NewAccumulator(postgresConnectionString)
-	err := accumulator.Initialise(roomID, roomEvents)
+	db, err := sqlx.Open("postgres", postgresConnectionString)
+	if err != nil {
+		t.Fatalf("failed to open SQL db: %s", err)
+	}
+	accumulator := NewAccumulator(db)
+	err = accumulator.Initialise(roomID, roomEvents)
 	if err != nil {
 		t.Fatalf("falied to Initialise accumulator: %s", err)
 	}
@@ -83,8 +88,12 @@ func TestAccumulatorAccumulate(t *testing.T) {
 		[]byte(`{"event_id":"E", "type":"m.room.member", "state_key":"@me:localhost", "content":{"membership":"join"}}`),
 		[]byte(`{"event_id":"F", "type":"m.room.join_rules", "state_key":"", "content":{"join_rule":"public"}}`),
 	}
-	accumulator := NewAccumulator(postgresConnectionString)
-	err := accumulator.Initialise(roomID, roomEvents)
+	db, err := sqlx.Open("postgres", postgresConnectionString)
+	if err != nil {
+		t.Fatalf("failed to open SQL db: %s", err)
+	}
+	accumulator := NewAccumulator(db)
+	err = accumulator.Initialise(roomID, roomEvents)
 	if err != nil {
 		t.Fatalf("failed to Initialise accumulator: %s", err)
 	}
@@ -155,8 +164,12 @@ func TestAccumulatorAccumulate(t *testing.T) {
 
 func TestAccumulatorDelta(t *testing.T) {
 	roomID := "!TestAccumulatorDelta:localhost"
-	accumulator := NewAccumulator(postgresConnectionString)
-	err := accumulator.Initialise(roomID, nil)
+	db, err := sqlx.Open("postgres", postgresConnectionString)
+	if err != nil {
+		t.Fatalf("failed to open SQL db: %s", err)
+	}
+	accumulator := NewAccumulator(db)
+	err = accumulator.Initialise(roomID, nil)
 	if err != nil {
 		t.Fatalf("failed to Initialise accumulator: %s", err)
 	}
@@ -202,8 +215,12 @@ func TestAccumulatorDelta(t *testing.T) {
 
 func TestAccumulatorMembershipLogs(t *testing.T) {
 	roomID := "!TestAccumulatorMembershipLogs:localhost"
-	accumulator := NewAccumulator(postgresConnectionString)
-	err := accumulator.Initialise(roomID, nil)
+	db, err := sqlx.Open("postgres", postgresConnectionString)
+	if err != nil {
+		t.Fatalf("failed to open SQL db: %s", err)
+	}
+	accumulator := NewAccumulator(db)
+	err = accumulator.Initialise(roomID, nil)
 	if err != nil {
 		t.Fatalf("failed to Initialise accumulator: %s", err)
 	}

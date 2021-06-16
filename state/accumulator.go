@@ -29,23 +29,17 @@ type Accumulator struct {
 	eventsTable           *EventTable
 	snapshotTable         *SnapshotTable
 	snapshotRefCountTable *SnapshotRefCountsTable
-	typingTable           *TypingTable
 	membershipLogTable    *MembershipLogTable
 	entityName            string
 }
 
-func NewAccumulator(postgresURI string) *Accumulator {
-	db, err := sqlx.Open("postgres", postgresURI)
-	if err != nil {
-		log.Panic().Err(err).Str("uri", postgresURI).Msg("failed to open SQL DB")
-	}
+func NewAccumulator(db *sqlx.DB) *Accumulator {
 	return &Accumulator{
 		db:                    db,
 		roomsTable:            NewRoomsTable(db),
 		eventsTable:           NewEventTable(db),
 		snapshotTable:         NewSnapshotsTable(db),
 		snapshotRefCountTable: NewSnapshotRefCountsTable(db),
-		typingTable:           NewTypingTable(db),
 		membershipLogTable:    NewMembershipLogTable(db),
 		entityName:            "server",
 	}
@@ -340,15 +334,4 @@ func (a *Accumulator) Delta(roomID string, lastEventNID int64, limit int) (event
 		eventsJSON[i] = events[i].JSON
 	}
 	return eventsJSON, int64(events[len(events)-1].NID), nil
-}
-
-// Typing returns who is currently typing in this room along with the latest stream ID.
-func (a *Accumulator) Typing(roomID string, streamID int) ([]string, int, error) {
-	return a.typingTable.Typing(roomID, streamID)
-}
-
-// SetTyping sets who is typing in the room. An empty list removes all typing users. Returns the
-// stream ID of the newly inserted typing users.
-func (a *Accumulator) SetTyping(roomID string, userIDs []string) (int, error) {
-	return a.typingTable.SetTyping(roomID, userIDs)
 }

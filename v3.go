@@ -49,10 +49,10 @@ func RunSyncV3Server(destinationServer, bindAddr, postgresDBURI string) {
 			},
 			DestinationServer: destinationServer,
 		},
-		Sessions:    sync3.NewSessions(postgresDBURI),
-		Accumulator: state.NewAccumulator(postgresDBURI),
-		Pollers:     make(map[string]*sync2.Poller),
-		pollerMu:    &sync.Mutex{},
+		Sessions: sync3.NewSessions(postgresDBURI),
+		Storage:  state.NewStorage(postgresDBURI),
+		Pollers:  make(map[string]*sync2.Poller),
+		pollerMu: &sync.Mutex{},
 	}
 
 	// HTTP path routing
@@ -77,9 +77,9 @@ func (e *handlerError) Error() string {
 }
 
 type SyncV3Handler struct {
-	V2          *sync2.Client
-	Sessions    *sync3.Sessions
-	Accumulator *state.Accumulator
+	V2       *sync2.Client
+	Sessions *sync3.Sessions
+	Storage  *state.Storage
 
 	pollerMu *sync.Mutex
 	Pollers  map[string]*sync2.Poller // device_id -> poller
@@ -154,7 +154,7 @@ func (h *SyncV3Handler) ensurePolling(authHeader string, session *sync3.Session)
 		return
 	}
 	// replace the poller
-	poller = sync2.NewPoller(authHeader, session.DeviceID, h.V2, h.Accumulator, h.Sessions)
+	poller = sync2.NewPoller(authHeader, session.DeviceID, h.V2, h.Storage, h.Sessions)
 	var wg sync.WaitGroup
 	wg.Add(1)
 	go poller.Poll(session.V2Since, func() {

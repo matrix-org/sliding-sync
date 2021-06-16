@@ -15,12 +15,12 @@ import (
 // alias time.Sleep so tests can monkey patch it out
 var timeSleep = time.Sleep
 
-// Poller can automatically poll the sync v2 endpoint and accumulate the responses in the accumulator
+// Poller can automatically poll the sync v2 endpoint and accumulate the responses in storage
 type Poller struct {
 	authorizationHeader string
 	deviceID            string
 	client              clientInterface
-	accumulator         accumulatorInterface
+	storage             storageInterface
 	sessions            sessionsInterface
 	logger              zerolog.Logger
 
@@ -28,16 +28,16 @@ type Poller struct {
 	Terminated bool
 }
 
-func NewPoller(authHeader, deviceID string, client *Client, accumulator *state.Accumulator, sessions *sync3.Sessions) *Poller {
-	return newPoller(authHeader, deviceID, client, accumulator, sessions)
+func NewPoller(authHeader, deviceID string, client *Client, storage *state.Storage, sessions *sync3.Sessions) *Poller {
+	return newPoller(authHeader, deviceID, client, storage, sessions)
 }
 
-func newPoller(authHeader, deviceID string, client clientInterface, accumulator accumulatorInterface, sessions sessionsInterface) *Poller {
+func newPoller(authHeader, deviceID string, client clientInterface, storage storageInterface, sessions sessionsInterface) *Poller {
 	return &Poller{
 		authorizationHeader: authHeader,
 		deviceID:            deviceID,
 		client:              client,
-		accumulator:         accumulator,
+		storage:             storage,
 		sessions:            sessions,
 		Terminated:          false,
 		logger: zerolog.New(os.Stdout).With().Timestamp().Logger().With().Str("device", deviceID).Logger().Output(zerolog.ConsoleWriter{
@@ -96,12 +96,12 @@ func (p *Poller) accumulate(res *SyncResponse) {
 	}
 	for roomID, roomData := range res.Rooms.Join {
 		if len(roomData.State.Events) > 0 {
-			err := p.accumulator.Initialise(roomID, roomData.State.Events)
+			err := p.storage.Initialise(roomID, roomData.State.Events)
 			if err != nil {
 				p.logger.Err(err).Str("room_id", roomID).Int("num_state_events", len(roomData.State.Events)).Msg("Accumulator.Initialise failed")
 			}
 		}
-		err := p.accumulator.Accumulate(roomID, roomData.Timeline.Events)
+		err := p.storage.Accumulate(roomID, roomData.Timeline.Events)
 		if err != nil {
 			p.logger.Err(err).Str("room_id", roomID).Int("num_timeline_events", len(roomData.Timeline.Events)).Msg("Accumulator.Accumulate failed")
 		}
@@ -117,7 +117,7 @@ func (p *Poller) accumulate(res *SyncResponse) {
 						userIDs = append(userIDs, u.Str)
 					}
 				}
-				_, err = p.accumulator.SetTyping(roomID, userIDs)
+				_, err = p.storage.SetTyping(roomID, userIDs)
 				if err != nil {
 					p.logger.Err(err).Str("room_id", roomID).Strs("user_ids", userIDs).Msg("Accumulator: failed to set typing")
 				}
@@ -137,8 +137,8 @@ type clientInterface interface {
 	DoSyncV2(authHeader, since string) (*SyncResponse, int, error)
 }
 
-// the subset of Accumulator which the poller uses, mocked for tests
-type accumulatorInterface interface {
+// the subset of Storage which the poller uses, mocked for tests
+type storageInterface interface {
 	Accumulate(roomID string, timeline []json.RawMessage) error
 	Initialise(roomID string, state []json.RawMessage) error
 	SetTyping(roomID string, userIDs []string) (int, error)
