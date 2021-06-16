@@ -15,7 +15,6 @@ func TestEventTable(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to start txn: %s", err)
 	}
-	defer txn.Rollback()
 	table := NewEventTable(db)
 	events := []Event{
 		{
@@ -38,6 +37,13 @@ func TestEventTable(t *testing.T) {
 	if numNew != len(events) {
 		t.Fatalf("wanted %d new events, got %d", len(events), numNew)
 	}
+	txn.Commit()
+
+	txn, err = db.Beginx()
+	if err != nil {
+		t.Fatalf("failed to start txn: %s", err)
+	}
+	defer txn.Rollback()
 	// duplicate insert is ok
 	numNew, err = table.Insert(txn, events)
 	if err != nil {
@@ -72,6 +78,21 @@ func TestEventTable(t *testing.T) {
 	}
 	if len(gotnids) != 3 {
 		t.Fatalf("SelectNIDsByIDs returned %d events, want 3", len(gotnids))
+	}
+
+	// find max and query it
+	var wantHighestNID int64
+	for _, nid := range gotnids {
+		if nid > wantHighestNID {
+			wantHighestNID = nid
+		}
+	}
+	gotHighestNID, err := table.SelectHighestNID()
+	if err != nil {
+		t.Fatalf("SelectHighestNID returned error: %s", err)
+	}
+	if wantHighestNID != gotHighestNID {
+		t.Errorf("SelectHighestNID didn't select highest, got %d want %d", gotHighestNID, wantHighestNID)
 	}
 
 	var nids []int64

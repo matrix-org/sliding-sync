@@ -23,17 +23,19 @@ func TestNewSyncToken(t *testing.T) {
 		},
 		{
 			// with filters
-			in: "V3_S1_F2-3-4-5-6",
+			in: "V3_S1_12_F2-3-4-5-6",
 			outToken: &Token{
 				SessionID: 1,
+				NID:       12,
 				FilterIDs: []string{"2", "3", "4", "5", "6"},
 			},
 		},
 		{
 			// without filters
-			in: "V3_S1_F",
+			in: "V3_S1_33_F",
 			outToken: &Token{
 				SessionID: 1,
+				NID:       33,
 			},
 		},
 	}

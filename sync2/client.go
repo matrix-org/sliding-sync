@@ -3,9 +3,11 @@ package sync2
 import (
 	"encoding/json"
 	"fmt"
+	"io/ioutil"
 	"net/http"
 
 	"github.com/matrix-org/gomatrixserverlib"
+	"github.com/tidwall/gjson"
 )
 
 // Client represents a Sync v2 Client.
@@ -13,6 +15,27 @@ import (
 type Client struct {
 	Client            *http.Client
 	DestinationServer string
+}
+
+func (v *Client) WhoAmI(authHeader string) (string, error) {
+	req, err := http.NewRequest("GET", v.DestinationServer+"/_matrix/client/r0/account/whoami", nil)
+	if err != nil {
+		return "", err
+	}
+	req.Header.Set("Authorization", authHeader)
+	res, err := v.Client.Do(req)
+	if err != nil {
+		return "", err
+	}
+	if res.StatusCode != 200 {
+		return "", fmt.Errorf("/whoami returned HTTP %d", res.StatusCode)
+	}
+	defer res.Body.Close()
+	body, err := ioutil.ReadAll(res.Body)
+	if err != nil {
+		return "", err
+	}
+	return gjson.GetBytes(body, "user_id").Str, nil
 }
 
 // DoSyncV2 performs a sync v2 request. Returns the sync response and the response status code

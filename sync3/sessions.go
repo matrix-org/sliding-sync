@@ -20,6 +20,7 @@ var log = zerolog.New(os.Stdout).With().Timestamp().Logger().Output(zerolog.Cons
 // after a configurable period of inactivity.
 type Session struct {
 	ID                   int64  `db:"session_id"`
+	UserID               string `db:"user_id"`
 	DeviceID             string `db:"device_id"`
 	LastToDeviceACK      string `db:"last_to_device_ack"`
 	LastConfirmedToken   string `db:"last_confirmed_token"`
@@ -49,7 +50,7 @@ func NewSessions(postgresURI string) *Sessions {
 		CONSTRAINT syncv3_sessions_unique UNIQUE (device_id, session_id)
 	);
 	CREATE TABLE IF NOT EXISTS syncv3_sessions_v2devices (
-		-- user_id TEXT NOT NULL, (we don't know the user ID from the access token alone, at least in dendrite!)
+		user_id TEXT NOT NULL,
 		device_id TEXT PRIMARY KEY,
 		since TEXT NOT NULL
 	);
@@ -75,9 +76,9 @@ func (s *Sessions) NewSession(deviceID string) (*Session, error) {
 		// make sure there is a device entry for this device ID. If one already exists, don't clobber
 		// the since value else we'll forget our position!
 		result, err := txn.Exec(`
-			INSERT INTO syncv3_sessions_v2devices(device_id, since) VALUES($1,$2)
+			INSERT INTO syncv3_sessions_v2devices(device_id, since, user_id) VALUES($1,$2,$3)
 			ON CONFLICT (device_id) DO NOTHING`,
-			deviceID, "",
+			deviceID, "", "",
 		)
 		if err != nil {
 			return err
@@ -95,7 +96,8 @@ func (s *Sessions) NewSession(deviceID string) (*Session, error) {
 
 		// Return the since value as we may start a new poller with this session.
 		var since string
-		err = txn.QueryRow("SELECT since FROM syncv3_sessions_v2devices WHERE device_id = $1", deviceID).Scan(&since)
+		var userID string
+		err = txn.QueryRow("SELECT since, user_id FROM syncv3_sessions_v2devices WHERE device_id = $1", deviceID).Scan(&since, &userID)
 		if err != nil {
 			return err
 		}
@@ -103,6 +105,7 @@ func (s *Sessions) NewSession(deviceID string) (*Session, error) {
 			ID:       id,
 			DeviceID: deviceID,
 			V2Since:  since,
+			UserID:   userID,
 		}
 		return nil
 	})
@@ -111,8 +114,10 @@ func (s *Sessions) NewSession(deviceID string) (*Session, error) {
 
 func (s *Sessions) Session(sessionID int64, deviceID string) (*Session, error) {
 	var result Session
+	// Important not just to use sessionID as that can be set by anyone as a query param
+	// Only the device ID is secure (it's a hash of the bearer token)
 	err := s.db.Get(&result,
-		`SELECT last_to_device_ack, last_confirmed_token, last_unconfirmed_token, since FROM syncv3_sessions
+		`SELECT last_to_device_ack, last_confirmed_token, last_unconfirmed_token, since, user_id FROM syncv3_sessions
 		LEFT JOIN syncv3_sessions_v2devices
 		ON syncv3_sessions.device_id = syncv3_sessions_v2devices.device_id
 		WHERE session_id=$1 AND syncv3_sessions.device_id=$2`,
@@ -140,5 +145,10 @@ func (s *Sessions) UpdateLastTokens(sessionID int64, confirmed, unconfirmed stri
 
 func (s *Sessions) UpdateDeviceSince(deviceID, since string) error {
 	_, err := s.db.Exec(`UPDATE syncv3_sessions_v2devices SET since = $1 WHERE device_id = $2`, since, deviceID)
+	return err
+}
+
+func (s *Sessions) UpdateUserIDForDevice(deviceID, userID string) error {
+	_, err := s.db.Exec(`UPDATE syncv3_sessions_v2devices SET user_id = $1 WHERE device_id = $2`, userID, deviceID)
 	return err
 }

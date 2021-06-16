@@ -21,6 +21,9 @@ func TestSessions(t *testing.T) {
 	if err = sessions.UpdateLastTokens(session.ID, "conf", "unconf"); err != nil {
 		t.Fatalf("UpdateLastTokens returned error: %s", err)
 	}
+	if err = sessions.UpdateUserIDForDevice(deviceID, "@alice:localhost"); err != nil {
+		t.Fatalf("UpdateUserIDForDevice returned error: %s", err)
+	}
 
 	// now check that session retrieval has the latest values
 	session, err = sessions.Session(session.ID, deviceID)
@@ -31,13 +34,15 @@ func TestSessions(t *testing.T) {
 	assertEqual(t, session.LastConfirmedToken, "conf", "Session.LastConfirmedToken mismatch")
 	assertEqual(t, session.LastUnconfirmedToken, "unconf", "Session.LastUnconfirmedToken mismatch")
 	assertEqual(t, session.V2Since, "s1", "Session.V2Since mismatch")
+	assertEqual(t, session.UserID, "@alice:localhost", "Session.UserID mismatch")
 
-	// now check new sessions remember the v2 since value for this device
+	// now check new sessions remember the v2 since value and user ID for this device
 	s2, err := sessions.NewSession(deviceID)
 	if err != nil {
 		t.Fatalf("NewSession returned error: %s", err)
 	}
 	assertEqual(t, s2.V2Since, "s1", "Session.V2Since mismatch")
+	assertEqual(t, s2.UserID, "@alice:localhost", "Session.UserID mismatch")
 }
 
 func assertEqual(t *testing.T, got, want, msg string) {

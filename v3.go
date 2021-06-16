@@ -14,6 +14,7 @@ import (
 	"github.com/gorilla/mux"
 	"github.com/justinas/alice"
 	"github.com/matrix-org/sync-v3/state"
+	"github.com/matrix-org/sync-v3/streams"
 	"github.com/matrix-org/sync-v3/sync2"
 	"github.com/matrix-org/sync-v3/sync3"
 	"github.com/rs/zerolog"
@@ -94,23 +95,64 @@ func (h *SyncV3Handler) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 }
 
 func (h *SyncV3Handler) serve(w http.ResponseWriter, req *http.Request) *handlerError {
-	// Get or create a Session
-	session, _, err := h.getOrCreateSession(req)
-	if err != nil {
-		return err
+	session, tokv3, herr := h.getOrCreateSession(req)
+	if herr != nil {
+		return herr
 	}
 	log.Info().Int64("session", session.ID).Str("device", session.DeviceID).Msg("recv /v3/sync")
 
 	// make sure we have a poller for this device
 	h.ensurePolling(req.Header.Get("Authorization"), session)
 
-	// return data based on filters
+	// fetch the latest value which we'll base our response on
+	latestNID, err := h.Storage.LatestEventNID()
+	if err != nil {
+		return &handlerError{
+			err:        err,
+			StatusCode: 500,
+		}
+	}
+	upcoming := sync3.Token{
+		SessionID: session.ID,
+		NID:       latestNID,
+	}
+	var from int64
+	if tokv3 != nil {
+		from = tokv3.NID
+	}
+
+	// TODO: read filters
+	// TODO: read streams
+	filter := &streams.FilterRoomList{
+		EntriesPerBatch:      5,
+		RoomNameSize:         70,
+		IncludeRoomAvatarMXC: false,
+		SummaryEventTypes:    []string{"m.room.message", "m.room.member"},
+	}
+	stream := streams.NewRoomList(h.Storage)
+	_, _, err = stream.Process(session.DeviceID, from, latestNID, "", filter)
+	if err != nil {
+		return &handlerError{
+			err:        err,
+			StatusCode: 500,
+		}
+	}
+
+	// finally update our records: confirm that the client received the token they sent us, and mark this
+	// response as unconfirmed
+	var confirmed string
+	if tokv3 != nil {
+		confirmed = tokv3.String()
+	}
+	if err := h.Sessions.UpdateLastTokens(session.ID, confirmed, upcoming.String()); err != nil {
+		return &handlerError{
+			err:        err,
+			StatusCode: 500,
+		}
+	}
 
 	w.WriteHeader(200)
-	w.Write([]byte(sync3.Token{
-		SessionID: session.ID,
-		FilterIDs: []string{},
-	}.String()))
+	w.Write([]byte(upcoming.String()))
 	return nil
 }
 
@@ -139,6 +181,16 @@ func (h *SyncV3Handler) getOrCreateSession(req *http.Request) (*sync3.Session, *
 		log.Warn().Err(err).Str("device", deviceID).Msg("failed to ensure Session existed for device")
 		return nil, nil, &handlerError{500, err}
 	}
+	if session.UserID == "" {
+		// we need to work out the user ID to do membership queries
+		userID, err := h.userIDFromRequest(req)
+		if err != nil {
+			log.Warn().Err(err).Msg("failed to work out user ID from request")
+			return nil, nil, &handlerError{400, err}
+		}
+		session.UserID = userID
+		h.Sessions.UpdateUserIDForDevice(deviceID, userID)
+	}
 	return session, tokv3, nil
 }
 
@@ -163,6 +215,10 @@ func (h *SyncV3Handler) ensurePolling(authHeader string, session *sync3.Session)
 	h.Pollers[session.DeviceID] = poller
 	h.pollerMu.Unlock()
 	wg.Wait()
+}
+
+func (h *SyncV3Handler) userIDFromRequest(req *http.Request) (string, error) {
+	return h.V2.WhoAmI(req.Header.Get("Authorization"))
 }
 
 type jsonError struct {

@@ -36,6 +36,7 @@ func (se StrippedEvents) NIDs() (result []int64) {
 
 // EventTable stores events. A unique numeric ID is associated with each event.
 type EventTable struct {
+	db *sqlx.DB
 }
 
 // NewEventTable makes a new EventTable
@@ -50,7 +51,14 @@ func NewEventTable(db *sqlx.DB) *EventTable {
 		event JSONB NOT NULL
 	);
 	`)
-	return &EventTable{}
+	return &EventTable{db}
+}
+
+func (t *EventTable) SelectHighestNID() (highest int64, err error) {
+	err = t.db.QueryRow(
+		`SELECT MAX(event_nid) as e FROM syncv3_events`,
+	).Scan(&highest)
+	return
 }
 
 // Insert events into the event table. Returns the number of rows added. If the number of rows is >0,
