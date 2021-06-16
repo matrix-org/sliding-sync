@@ -1,4 +1,4 @@
-package state
+package sync3
 
 import (
 	"fmt"
@@ -12,7 +12,7 @@ var postgresConnectionString = "user=xxxxx dbname=syncv3_test sslmode=disable"
 
 func createLocalDB() string {
 	fmt.Println("Note: tests require a postgres install accessible to the current user")
-	dbName := "syncv3_state_test"
+	dbName := "syncv3_sync3_test"
 	exec.Command("dropdb", dbName).Run()
 	if err := exec.Command("createdb", dbName).Run(); err != nil {
 		fmt.Println("createdb failed: ", err)

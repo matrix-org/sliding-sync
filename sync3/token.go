@@ -2,19 +2,20 @@ package sync3
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 )
 
 // V3_S1_F2-3-4-5-6
 // "V3_" $SESSION "_" $FILTERS
 type Token struct {
-	SessionID string
+	SessionID int64
 	FilterIDs []string
 }
 
 func (t Token) String() string {
 	filters := strings.Join(t.FilterIDs, "-")
-	return fmt.Sprintf("V3_S%s_F%s", t.SessionID, filters)
+	return fmt.Sprintf("V3_S%d_F%s", t.SessionID, filters)
 }
 
 func NewSyncToken(since string) (*Token, error) {
@@ -30,8 +31,13 @@ func NewSyncToken(since string) (*Token, error) {
 	if len(filters) == 0 {
 		filterIDs = nil
 	}
+	sidstr := strings.TrimPrefix(segments[1], "S")
+	sid, err := strconv.ParseInt(sidstr, 10, 64)
+	if err != nil {
+		return nil, fmt.Errorf("invalid session: %s", sidstr)
+	}
 	return &Token{
-		SessionID: strings.TrimPrefix(segments[1], "S"),
+		SessionID: sid,
 		FilterIDs: filterIDs,
 	}, nil
 }

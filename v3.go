@@ -99,7 +99,7 @@ func (h *SyncV3Handler) serve(w http.ResponseWriter, req *http.Request) *handler
 	if err != nil {
 		return err
 	}
-	log.Info().Str("session", session.ID).Str("device", session.DeviceID).Msg("recv /v3/sync")
+	log.Info().Int64("session", session.ID).Str("device", session.DeviceID).Msg("recv /v3/sync")
 
 	// make sure we have a poller for this device
 	h.ensurePolling(req.Header.Get("Authorization"), session)
