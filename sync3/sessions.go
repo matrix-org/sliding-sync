@@ -2,6 +2,7 @@ package sync3
 
 import (
 	"database/sql"
+	"encoding/json"
 	"os"
 
 	"github.com/jmoiron/sqlx"
@@ -53,6 +54,13 @@ func NewSessions(postgresURI string) *Sessions {
 		user_id TEXT NOT NULL,
 		device_id TEXT PRIMARY KEY,
 		since TEXT NOT NULL
+	);
+	CREATE SEQUENCE IF NOT EXISTS syncv3_filter_id_seq;
+	CREATE TABLE IF NOT EXISTS syncv3_filters (
+		filter_id BIGINT PRIMARY KEY DEFAULT nextval('syncv3_filter_id_seq'),
+		session_id BIGINT NOT NULL,
+		api_name TEXT NOT NULL,
+		req_params TEXT NOT NULL
 	);
 	`)
 	return &Sessions{
@@ -151,4 +159,19 @@ func (s *Sessions) UpdateDeviceSince(deviceID, since string) error {
 func (s *Sessions) UpdateUserIDForDevice(deviceID, userID string) error {
 	_, err := s.db.Exec(`UPDATE syncv3_sessions_v2devices SET user_id = $1 WHERE device_id = $2`, userID, deviceID)
 	return err
+}
+
+// Update a filter with the latest delta from the client. If filters with this apiName already exists for this session,
+// the filter will be updated and a new filter ID will be returned. If the filter does not exist yet, a new filter ID
+// will be made. This ensures we never delete filter IDs for a session to allow for replayability of requests. Filters
+// are only deleted when the session is deleted.
+func (s *Sessions) UpdateFilter(sessionID int64, apiName string, jsonBlob json.RawMessage) (filterID int64, err error) {
+	return 0, nil
+}
+
+// Filters returns the filters for the session ID and filter IDs given. If a filter ID is given which is unknown, an
+// error is returned as filters should always be known to the server. Callers should call UpdateFilter first with the
+// clients new filters before calling this function, to ensure that their filter deltas have been applied and persisted.
+func (s *Sessions) Filters(sessionID int64, filterIDs []int64) (*Request, error) {
+	return nil, nil
 }

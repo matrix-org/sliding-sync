@@ -123,13 +123,18 @@ in the first 5 room members for example, then you can set `limit: 5` and ignore 
 clients which are keeping up-to-date with room members and those who are just interested in the first page
 of results, clients MUST specify `p.since = "1"` to indicate the first page of results. This makes `"1"` a
 sentinel constant value in pagination to indicate "the first page of results". If you don't do this, the server
-will just send back deltas from the last `since` value, which won't contain the first 5 members.
+will just send back deltas from the last `since` value, which won't necessarily contain the first 5 members
+of your chosen sort order (e.g alphabetically).
 
 ## Streams
 
 ### Typing Stream
 
-TODO
+Request Parameters:
+ - `room_id` (string): The room ID to track typing notifications in.
+
+Response fields:
+ - `events` ([]EDU): A list of typing EDUs.
 
 ### To Device Stream
 
