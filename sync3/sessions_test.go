@@ -2,6 +2,8 @@ package sync3
 
 import (
 	"testing"
+
+	"github.com/matrix-org/sync-v3/streams"
 )
 
 func TestSessions(t *testing.T) {
@@ -43,6 +45,27 @@ func TestSessions(t *testing.T) {
 	}
 	assertEqual(t, s2.V2Since, "s1", "Session.V2Since mismatch")
 	assertEqual(t, s2.UserID, "@alice:localhost", "Session.UserID mismatch")
+
+	// check filters work
+	wantReq := &Request{
+		Typing: &streams.FilterTyping{
+			RoomID: "!foo:bar",
+		},
+	}
+	fid, err := sessions.InsertFilter(session.ID, wantReq)
+	if err != nil {
+		t.Fatalf("InsertFilter failed: %s", err)
+	}
+	if fid == 0 {
+		t.Fatalf("wanted non-zero filter ID, got %d", fid)
+	}
+	f, err := sessions.Filter(session.ID, fid)
+	if err != nil {
+		t.Fatalf("Filter returned an error: %s", err)
+	}
+	if f.Typing.RoomID != wantReq.Typing.RoomID {
+		t.Fatalf("Returned filter is corrupt, bad room ID: got %v want %v", f.Typing.RoomID, wantReq.Typing.RoomID)
+	}
 }
 
 func assertEqual(t *testing.T, got, want, msg string) {

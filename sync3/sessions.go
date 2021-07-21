@@ -2,6 +2,7 @@ package sync3
 
 import (
 	"database/sql"
+	"encoding/json"
 	"os"
 
 	"github.com/jmoiron/sqlx"
@@ -159,16 +160,29 @@ func (s *Sessions) UpdateUserIDForDevice(deviceID, userID string) error {
 	return err
 }
 
-// Update a filter with the latest delta from the client. If filters with this apiName already exists for this session,
-// the filter will be updated and a new filter ID will be returned. If the filter does not exist yet, a new filter ID
-// will be made. This ensures we never delete filter IDs for a session to allow for replayability of requests. Filters
-// are only deleted when the session is deleted.
-func (s *Sessions) UpdateFilter(sessionID int64, req *Request) (filterID int64, err error) {
-	return 0, nil
+// Insert a new filter for this session. The returned filter ID should be inserted into the since token
+// so the request filter can be extracted again.
+func (s *Sessions) InsertFilter(sessionID int64, req *Request) (filterID int64, err error) {
+	j, err := json.Marshal(req)
+	if err != nil {
+		return 0, err
+	}
+	err = s.db.QueryRow(`INSERT INTO syncv3_filters(session_id, req_json) VALUES($1,$2) RETURNING filter_id`, sessionID, string(j)).Scan(&filterID)
+	return
 }
 
-// Filters returns the filters for the session ID and filter ID given. If a filter ID is given which is unknown, an
+// Filter returns the filter for the session ID and filter ID given. If a filter ID is given which is unknown, an
 // error is returned as filters should always be known to the server.
-func (s *Sessions) Filters(sessionID int64, filterID int64) (*Request, error) {
-	return nil, nil
+func (s *Sessions) Filter(sessionID int64, filterID int64) (*Request, error) {
+	// we need the session ID to make sure users can't use other user's filters
+	var j string
+	err := s.db.QueryRow(`SELECT req_json FROM syncv3_filters WHERE session_id=$1 AND filter_id=$2`, sessionID, filterID).Scan(&j)
+	if err != nil {
+		return nil, err // ErrNoRows is expected and is an error
+	}
+	var req Request
+	if err := json.Unmarshal([]byte(j), &req); err != nil {
+		return nil, err
+	}
+	return &req, nil
 }

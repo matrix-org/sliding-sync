@@ -251,8 +251,8 @@ func (h *SyncV3Handler) parseRequest(req *http.Request, tok *sync3.Token, sessio
 	existing := &sync3.Request{} // first request
 	var err error
 	if tok != nil && tok.FilterID != 0 {
-		// load existing filters
-		existing, err = h.Sessions.Filters(tok.SessionID, tok.FilterID)
+		// load existing filter
+		existing, err = h.Sessions.Filter(tok.SessionID, tok.FilterID)
 		if err != nil {
 			return nil, 0, &handlerError{
 				StatusCode: 400,
@@ -272,7 +272,7 @@ func (h *SyncV3Handler) parseRequest(req *http.Request, tok *sync3.Token, sessio
 	var filterID int64
 	if existing.ApplyDeltas(&delta) {
 		// persist new filters if there were deltas
-		filterID, err = h.Sessions.UpdateFilter(session.ID, existing)
+		filterID, err = h.Sessions.InsertFilter(session.ID, existing)
 		if err != nil {
 			return nil, 0, &handlerError{
 				StatusCode: 500,
