@@ -23,7 +23,8 @@ func NewSnapshotsTable(db *sqlx.DB) *SnapshotTable {
 	CREATE TABLE IF NOT EXISTS syncv3_snapshots (
 		snapshot_id BIGINT PRIMARY KEY DEFAULT nextval('syncv3_snapshots_seq'),
 		room_id TEXT NOT NULL,
-		events BIGINT[] NOT NULL
+		events BIGINT[] NOT NULL,
+		UNIQUE(snapshot_id, room_id)
 	);
 	`)
 	return &SnapshotTable{}
