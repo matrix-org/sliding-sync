@@ -13,7 +13,6 @@ import (
 
 	"github.com/gorilla/mux"
 	"github.com/matrix-org/sync-v3/state"
-	"github.com/matrix-org/sync-v3/streams"
 	"github.com/matrix-org/sync-v3/sync2"
 	"github.com/matrix-org/sync-v3/sync3"
 	"github.com/rs/zerolog"
@@ -130,28 +129,39 @@ func (h *SyncV3Handler) serve(w http.ResponseWriter, req *http.Request) *handler
 		SessionID: session.ID,
 		NID:       latestNID,
 	}
-	var from int64
-	if tokv3 != nil {
-		from = tokv3.NID
+	/*
+		var from int64
+		if tokv3 != nil {
+			from = tokv3.NID
+		} */
+
+	// read filters and mux in to form complete request
+	_, filterID, herr := h.parseRequest(req, tokv3, session)
+	if herr != nil {
+		return herr
+	}
+	// if there was a change to the filters, update the filter ID
+	if filterID != 0 {
+		upcoming.FilterID = filterID
 	}
 
-	// TODO: read filters
-	// TODO: read streams
-	f := false
-	filter := &streams.FilterRoomList{
-		EntriesPerBatch:      5,
-		RoomNameSize:         70,
-		IncludeRoomAvatarMXC: &f,
-		SummaryEventTypes:    []string{"m.room.message", "m.room.member"},
-	}
-	stream := streams.NewRoomList(h.Storage)
-	_, _, err = stream.Process(session.DeviceID, from, latestNID, "", filter)
-	if err != nil {
-		return &handlerError{
-			err:        err,
-			StatusCode: 500,
+	// TODO: invoke streams to get responses
+	/*
+		f := false
+		filter := &streams.FilterRoomList{
+			EntriesPerBatch:      5,
+			RoomNameSize:         70,
+			IncludeRoomAvatarMXC: &f,
+			SummaryEventTypes:    []string{"m.room.message", "m.room.member"},
 		}
-	}
+		stream := streams.NewRoomList(h.Storage)
+		_, _, err = stream.Process(session.DeviceID, from, latestNID, "", filter)
+		if err != nil {
+			return &handlerError{
+				err:        err,
+				StatusCode: 500,
+			}
+		} */
 
 	// finally update our records: confirm that the client received the token they sent us, and mark this
 	// response as unconfirmed
@@ -167,7 +177,12 @@ func (h *SyncV3Handler) serve(w http.ResponseWriter, req *http.Request) *handler
 	}
 
 	w.WriteHeader(200)
-	w.Write([]byte(upcoming.String()))
+	resp := sync3.Response{
+		Next: upcoming.String(),
+	}
+	if err := json.NewEncoder(w).Encode(&resp); err != nil {
+		log.Warn().Err(err).Msg("failed to marshal response")
+	}
 	return nil
 }
 
@@ -230,6 +245,43 @@ func (h *SyncV3Handler) ensurePolling(authHeader string, session *sync3.Session)
 	h.Pollers[session.DeviceID] = poller
 	h.pollerMu.Unlock()
 	wg.Wait()
+}
+
+func (h *SyncV3Handler) parseRequest(req *http.Request, tok *sync3.Token, session *sync3.Session) (*sync3.Request, int64, *handlerError) {
+	existing := &sync3.Request{} // first request
+	var err error
+	if tok != nil && tok.FilterID != 0 {
+		// load existing filters
+		existing, err = h.Sessions.Filters(tok.SessionID, tok.FilterID)
+		if err != nil {
+			return nil, 0, &handlerError{
+				StatusCode: 400,
+				err:        fmt.Errorf("failed to load filters from sync token: %s", err),
+			}
+		}
+	}
+	// load new delta from request
+	defer req.Body.Close()
+	var delta sync3.Request
+	if err := json.NewDecoder(req.Body).Decode(&delta); err != nil {
+		return nil, 0, &handlerError{
+			StatusCode: 400,
+			err:        fmt.Errorf("failed to parse request body as JSON: %s", err),
+		}
+	}
+	var filterID int64
+	if existing.ApplyDeltas(&delta) {
+		// persist new filters if there were deltas
+		filterID, err = h.Sessions.UpdateFilter(session.ID, existing)
+		if err != nil {
+			return nil, 0, &handlerError{
+				StatusCode: 500,
+				err:        fmt.Errorf("failed to persist filters: %s", err),
+			}
+		}
+	}
+
+	return existing, filterID, nil
 }
 
 func (h *SyncV3Handler) userIDFromRequest(req *http.Request) (string, error) {
