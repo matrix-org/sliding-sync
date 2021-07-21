@@ -41,7 +41,7 @@ func (s *server) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 func RunSyncV3Server(destinationServer, bindAddr, postgresDBURI string) {
 	// dependency inject all components together
 	sh := &SyncV3Handler{
-		V2: &sync2.Client{
+		V2: &sync2.HTTPClient{
 			Client: &http.Client{
 				Timeout: 5 * time.Minute,
 			},
@@ -91,7 +91,7 @@ func (e *handlerError) Error() string {
 }
 
 type SyncV3Handler struct {
-	V2       *sync2.Client
+	V2       sync2.Client
 	Sessions *sync3.Sessions
 	Storage  *state.Storage
 

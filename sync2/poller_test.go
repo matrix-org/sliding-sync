@@ -209,6 +209,9 @@ type mockClient struct {
 func (c *mockClient) DoSyncV2(authHeader, since string) (*SyncResponse, int, error) {
 	return c.fn(authHeader, since)
 }
+func (c *mockClient) WhoAmI(authHeader string) (string, error) {
+	return "@alice:localhost", nil
+}
 
 type mockAccumulator struct {
 	states    map[string][]json.RawMessage

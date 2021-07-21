@@ -19,7 +19,7 @@ var timeSleep = time.Sleep
 type Poller struct {
 	authorizationHeader string
 	deviceID            string
-	client              clientInterface
+	client              Client
 	storage             storageInterface
 	sessions            sessionsInterface
 	logger              zerolog.Logger
@@ -28,11 +28,11 @@ type Poller struct {
 	Terminated bool
 }
 
-func NewPoller(authHeader, deviceID string, client *Client, storage *state.Storage, sessions *sync3.Sessions) *Poller {
+func NewPoller(authHeader, deviceID string, client Client, storage *state.Storage, sessions *sync3.Sessions) *Poller {
 	return newPoller(authHeader, deviceID, client, storage, sessions)
 }
 
-func newPoller(authHeader, deviceID string, client clientInterface, storage storageInterface, sessions sessionsInterface) *Poller {
+func newPoller(authHeader, deviceID string, client Client, storage storageInterface, sessions sessionsInterface) *Poller {
 	return &Poller{
 		authorizationHeader: authHeader,
 		deviceID:            deviceID,

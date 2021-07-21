@@ -10,14 +10,19 @@ import (
 	"github.com/tidwall/gjson"
 )
 
-// Client represents a Sync v2 Client.
+type Client interface {
+	WhoAmI(authHeader string) (string, error)
+	DoSyncV2(authHeader, since string) (*SyncResponse, int, error)
+}
+
+// HTTPClient represents a Sync v2 Client.
 // One client can be shared among many users.
-type Client struct {
+type HTTPClient struct {
 	Client            *http.Client
 	DestinationServer string
 }
 
-func (v *Client) WhoAmI(authHeader string) (string, error) {
+func (v *HTTPClient) WhoAmI(authHeader string) (string, error) {
 	req, err := http.NewRequest("GET", v.DestinationServer+"/_matrix/client/r0/account/whoami", nil)
 	if err != nil {
 		return "", err
@@ -40,7 +45,7 @@ func (v *Client) WhoAmI(authHeader string) (string, error) {
 
 // DoSyncV2 performs a sync v2 request. Returns the sync response and the response status code
 // or an error
-func (v *Client) DoSyncV2(authHeader, since string) (*SyncResponse, int, error) {
+func (v *HTTPClient) DoSyncV2(authHeader, since string) (*SyncResponse, int, error) {
 	qps := "?timeout=30000"
 	if since != "" {
 		qps += "&since=" + since

@@ -7,9 +7,8 @@ import (
 	"os/user"
 )
 
-func createLocalDB() string {
+func createLocalDB(dbName string) string {
 	fmt.Println("Note: tests require a postgres install accessible to the current user")
-	dbName := "syncv3_state_test"
 	exec.Command("dropdb", dbName).Run()
 	if err := exec.Command("createdb", dbName).Run(); err != nil {
 		fmt.Println("createdb failed: ", err)
@@ -27,7 +26,7 @@ func currentUser() string {
 	return user.Username
 }
 
-func PrepareDBConnectionString() (connStr string) {
+func PrepareDBConnectionString(wantDBName string) (connStr string) {
 	// Required vars: user and db
 	// We'll try to infer from the local env if they are missing
 	user := os.Getenv("POSTGRES_USER")
@@ -36,7 +35,7 @@ func PrepareDBConnectionString() (connStr string) {
 	}
 	dbName := os.Getenv("POSTGRES_DB")
 	if dbName == "" {
-		dbName = createLocalDB()
+		dbName = createLocalDB(wantDBName)
 	}
 	connStr = fmt.Sprintf(
 		"user=%s dbname=%s sslmode=disable",

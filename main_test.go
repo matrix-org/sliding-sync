@@ -1,4 +1,4 @@
-package sync3
+package syncv3
 
 import (
 	"os"
@@ -10,7 +10,7 @@ import (
 var postgresConnectionString = "user=xxxxx dbname=syncv3_test sslmode=disable"
 
 func TestMain(m *testing.M) {
-	postgresConnectionString = testutils.PrepareDBConnectionString("syncv3_test_sync3")
+	postgresConnectionString = testutils.PrepareDBConnectionString("syncv3_test_main")
 	exitCode := m.Run()
 	os.Exit(exitCode)
 }
