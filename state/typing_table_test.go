@@ -32,7 +32,7 @@ func TestTypingTable(t *testing.T) {
 			t.Errorf("SetTyping: streamID returned should always be increasing but it wasn't, got %d, last %d", streamID, lastStreamID)
 		}
 		lastStreamID = streamID
-		gotUserIDs, err := table.Typing(roomID, streamID-1, streamID)
+		gotUserIDs, _, err := table.Typing(roomID, streamID-1)
 		if err != nil {
 			t.Fatalf("failed to Typing: %s", err)
 		}

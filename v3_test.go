@@ -143,15 +143,14 @@ func TestHandler(t *testing.T) {
 	}
 
 	// Check that the response returns bob typing
-	_ = parseResponse(t, w.Body)
-	/*
-		if resp.Typing == nil {
-			t.Fatalf("no typing response, wanted one")
-		}
-		if len(resp.Typing.UserIDs) != 1 {
-			t.Fatalf("typing got %d users, want 1: %v", len(resp.Typing.UserIDs), resp.Typing.UserIDs)
-		}
-		if resp.Typing.UserIDs[0] != bob {
-			t.Fatalf("typing got %s want %s", resp.Typing.UserIDs[0], bob)
-		} */
+	resp = parseResponse(t, w.Body)
+	if resp.Typing == nil {
+		t.Fatalf("no typing response, wanted one")
+	}
+	if len(resp.Typing.UserIDs) != 1 {
+		t.Fatalf("typing got %d users, want 1: %v", len(resp.Typing.UserIDs), resp.Typing.UserIDs)
+	}
+	if resp.Typing.UserIDs[0] != bob {
+		t.Fatalf("typing got %s want %s", resp.Typing.UserIDs[0], bob)
+	}
 }

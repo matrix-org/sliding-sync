@@ -116,7 +116,7 @@ func (h *SyncV3Handler) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 }
 
 func (h *SyncV3Handler) serve(w http.ResponseWriter, req *http.Request) *handlerError {
-	session, tokv3, herr := h.getOrCreateSession(req)
+	session, fromToken, herr := h.getOrCreateSession(req)
 	if herr != nil {
 		return herr
 	}
@@ -139,13 +139,8 @@ func (h *SyncV3Handler) serve(w http.ResponseWriter, req *http.Request) *handler
 		NID:       latestNID,
 	}
 
-	var from int64
-	if tokv3 != nil {
-		from = tokv3.NID
-	}
-
 	// read filters and mux in to form complete request
-	syncReq, filterID, herr := h.parseRequest(req, tokv3, session)
+	syncReq, filterID, herr := h.parseRequest(req, fromToken, session)
 	if herr != nil {
 		return herr
 	}
@@ -155,29 +150,29 @@ func (h *SyncV3Handler) serve(w http.ResponseWriter, req *http.Request) *handler
 	}
 
 	// start making the response
-	resp := sync3.Response{
-		Next: upcoming.String(),
-	}
+	resp := sync3.Response{}
 
 	// invoke streams to get responses
 	if syncReq.Typing != nil {
-		typingResp, err := h.typingStream.Process(session.UserID, from, latestNID, syncReq.Typing)
+		typingResp, typingTo, err := h.typingStream.Process(session.UserID, fromToken.TypingID, syncReq.Typing)
 		if err != nil {
 			return &handlerError{
 				StatusCode: 500,
 				err:        fmt.Errorf("typing stream: %s", err),
 			}
 		}
+		upcoming.TypingID = typingTo
 		resp.Typing = typingResp
 	}
 
+	resp.Next = upcoming.String()
+
 	// finally update our records: confirm that the client received the token they sent us, and mark this
 	// response as unconfirmed
-	var confirmed string
-	if tokv3 != nil {
-		confirmed = tokv3.String()
-	}
-	log.Info().Int64("session", session.ID).Str("since", confirmed).Str("new_since", upcoming.String()).Msg("responding")
+	confirmed := fromToken.String()
+	log.Info().Int64("session", session.ID).Str("since", confirmed).Str("new_since", upcoming.String()).Bool(
+		"typing_stream", syncReq.Typing != nil,
+	).Msg("responding")
 	if err := h.Sessions.UpdateLastTokens(session.ID, confirmed, upcoming.String()); err != nil {
 		return &handlerError{
 			err:        err,
@@ -193,7 +188,7 @@ func (h *SyncV3Handler) serve(w http.ResponseWriter, req *http.Request) *handler
 }
 
 // getOrCreateSession retrieves an existing session if ?since= is set, else makes a new session.
-// Returns a session or an error. Returns a token if and only if there is an existing session.
+// Returns a session or an error.
 func (h *SyncV3Handler) getOrCreateSession(req *http.Request) (*sync3.Session, *sync3.Token, *handlerError) {
 	log := hlog.FromRequest(req)
 	var session *sync3.Session
@@ -228,6 +223,11 @@ func (h *SyncV3Handler) getOrCreateSession(req *http.Request) (*sync3.Session, *
 		session.UserID = userID
 		h.Sessions.UpdateUserIDForDevice(deviceID, userID)
 	}
+	if tokv3 == nil {
+		tokv3 = &sync3.Token{
+			SessionID: session.ID,
+		}
+	}
 	return session, tokv3, nil
 }
 
@@ -257,7 +257,7 @@ func (h *SyncV3Handler) ensurePolling(authHeader string, session *sync3.Session,
 func (h *SyncV3Handler) parseRequest(req *http.Request, tok *sync3.Token, session *sync3.Session) (*sync3.Request, int64, *handlerError) {
 	existing := &sync3.Request{} // first request
 	var err error
-	if tok != nil && tok.FilterID != 0 {
+	if tok.FilterID != 0 {
 		// load existing filter
 		existing, err = h.Sessions.Filter(tok.SessionID, tok.FilterID)
 		if err != nil {

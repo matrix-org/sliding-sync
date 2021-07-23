@@ -22,5 +22,13 @@ func (r *Request) ApplyDeltas(req2 *Request) bool {
 			r.RoomList = r.RoomList.Combine(req2.RoomList)
 		}
 	}
+	if req2.Typing != nil {
+		deltasExist = true
+		if r.Typing == nil {
+			r.Typing = req2.Typing
+		} else {
+			r.Typing = r.Typing.Combine(req2.Typing)
+		}
+	}
 	return deltasExist
 }
