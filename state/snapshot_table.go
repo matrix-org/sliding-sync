@@ -14,6 +14,7 @@ type SnapshotRow struct {
 // SnapshotTable stores room state snapshots. Each snapshot has a unique numeric ID.
 // Not every event will be associated with a snapshot.
 type SnapshotTable struct {
+	db *sqlx.DB
 }
 
 func NewSnapshotsTable(db *sqlx.DB) *SnapshotTable {
@@ -27,7 +28,27 @@ func NewSnapshotsTable(db *sqlx.DB) *SnapshotTable {
 		UNIQUE(snapshot_id, room_id)
 	);
 	`)
-	return &SnapshotTable{}
+	return &SnapshotTable{db}
+}
+
+func (t *SnapshotTable) CurrentSnapshots() (map[string][]int64, error) {
+	rows, err := t.db.Query(
+		`SELECT room_id, events FROM syncv3_snapshots JOIN syncv3_rooms ON syncv3_snapshots.snapshot_id = syncv3_rooms.current_snapshot_id`,
+	)
+	if err != nil {
+		return nil, err
+	}
+	result := make(map[string][]int64)
+	defer rows.Close()
+	for rows.Next() {
+		var eventNIDs pq.Int64Array
+		var roomID string
+		if err = rows.Scan(&roomID, &eventNIDs); err != nil {
+			return nil, err
+		}
+		result[roomID] = eventNIDs
+	}
+	return result, nil
 }
 
 // Select a row based on its snapshot ID.

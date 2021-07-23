@@ -121,6 +121,13 @@ func NewSyncV3Handler(v2Client sync2.Client, postgresDBURI string) *SyncV3Handle
 	}
 	latestToken.TypingID = typingID
 	sh.Notifier = notifier.NewNotifier(latestToken)
+	// TODO: load up the membership states so the notifier knows who to wake up
+	/*
+		roomIDToUserIDs, err := sh.Storage.AllJoinedMembers()
+		if err != nil {
+			panic(err)
+		}
+		sh.Notifier.Load(roomIDToUserIDs) */
 	return sh
 }
 
@@ -138,7 +145,7 @@ func (h *SyncV3Handler) serve(w http.ResponseWriter, req *http.Request) *handler
 		return herr
 	}
 	log := hlog.FromRequest(req).With().Int64("session", session.ID).Logger()
-	log.Info().Str("device", session.DeviceID).Str("user_id", session.UserID).Msg("recv /v3/sync")
+	log.Info().Str("device", session.DeviceID).Str("user_id", session.UserID).Str("since", req.URL.Query().Get("since")).Str("from", fromToken.String()).Msg("recv /v3/sync")
 
 	// make sure we have a poller for this device
 	h.ensurePolling(req.Header.Get("Authorization"), session, log)
@@ -157,20 +164,9 @@ func (h *SyncV3Handler) serve(w http.ResponseWriter, req *http.Request) *handler
 			err:        fmt.Errorf("?timeout= isn't an integer"),
 		}
 	}
-	if !shouldReturnImmediately(fromToken, &upcoming, timeoutMs) {
-		// from == upcoming so we need to block for up to timeoutMs for a new event to come in
-		log.Info().Int64("timeout_ms", timeoutMs).Msg("blocking")
-		newUpcoming := h.waitForEvents(req.Context(), session, *fromToken, time.Duration(timeoutMs)*time.Millisecond)
-		if newUpcoming == nil {
-			// no data
-			w.WriteHeader(200)
-			w.Write([]byte(`{}`))
-			return nil
-		}
-		upcoming = *newUpcoming
-	}
 
-	// read filters and mux in to form complete request
+	// read filters and mux in to form complete request. We MUST do this before waiting on sync streams
+	// so that we update filters even in the event that we time out
 	syncReq, filterID, herr := h.parseRequest(req, fromToken, session)
 	if herr != nil {
 		return herr
@@ -178,6 +174,23 @@ func (h *SyncV3Handler) serve(w http.ResponseWriter, req *http.Request) *handler
 	// if there was a change to the filters, update the filter ID
 	if filterID != 0 {
 		upcoming.FilterID = filterID
+	}
+
+	if !shouldReturnImmediately(fromToken, &upcoming, timeoutMs) {
+		// from == upcoming so we need to block for up to timeoutMs for a new event to come in
+		log.Info().Int64("timeout_ms", timeoutMs).Msg("blocking")
+		newUpcoming := h.waitForEvents(req.Context(), session, *fromToken, time.Duration(timeoutMs)*time.Millisecond)
+		if newUpcoming == nil {
+			// no data
+			w.WriteHeader(200)
+			var result sync3.Response
+			result.Next = upcoming.String()
+			if err := json.NewEncoder(w).Encode(&result); err != nil {
+				log.Warn().Err(err).Msg("failed to marshal response")
+			}
+			return nil
+		}
+		upcoming.ApplyUpdates(*newUpcoming)
 	}
 
 	// start making the response
@@ -321,12 +334,37 @@ func (h *SyncV3Handler) Accumulate(roomID string, timeline []json.RawMessage) er
 
 // Called from the v2 poller, implements V2DataReceiver
 func (h *SyncV3Handler) Initialise(roomID string, state []json.RawMessage) error {
-	return h.Storage.Initialise(roomID, state)
+	added, err := h.Storage.Initialise(roomID, state)
+	if err != nil {
+		return err
+	}
+	if added {
+		for _, eventJSON := range state {
+			event := gjson.ParseBytes(eventJSON)
+			if event.Get("type").Str == "m.room.member" {
+				target := event.Get("state_key").Str
+				membership := event.Get("content.membership").Str
+				if membership == "join" {
+					h.Notifier.AddJoinedUser(roomID, target)
+				} else if membership == "ban" || membership == "leave" {
+					h.Notifier.RemoveJoinedUser(roomID, target)
+				}
+			}
+		}
+	}
+	return nil
 }
 
 // Called from the v2 poller, implements V2DataReceiver
 func (h *SyncV3Handler) SetTyping(roomID string, userIDs []string) (int64, error) {
-	return h.Storage.SetTyping(roomID, userIDs)
+	typingID, err := h.Storage.SetTyping(roomID, userIDs)
+	if err != nil {
+		return 0, err
+	}
+	var updateToken sync3.Token
+	updateToken.TypingID = typingID
+	h.Notifier.OnNewTyping(roomID, updateToken)
+	return typingID, nil
 }
 
 func (h *SyncV3Handler) parseRequest(req *http.Request, tok *sync3.Token, session *sync3.Session) (*sync3.Request, int64, *handlerError) {

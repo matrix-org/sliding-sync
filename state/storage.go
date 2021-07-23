@@ -43,8 +43,17 @@ func (s *Storage) Accumulate(roomID string, timeline []json.RawMessage) (int, er
 	return s.accumulator.Accumulate(roomID, timeline)
 }
 
-func (s *Storage) Initialise(roomID string, state []json.RawMessage) error {
+func (s *Storage) Initialise(roomID string, state []json.RawMessage) (bool, error) {
 	return s.accumulator.Initialise(roomID, state)
+}
+
+func (s *Storage) AllJoinedMembers() (map[string][]string, error) {
+	// TODO
+	_, err := s.accumulator.snapshotTable.CurrentSnapshots()
+	if err != nil {
+		return nil, err
+	}
+	return nil, nil
 }
 
 // Typing returns who is currently typing in this room along with the latest stream ID.

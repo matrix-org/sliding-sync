@@ -93,16 +93,18 @@ func (a *Accumulator) calculateNewSnapshot(old StrippedEvents, new StrippedEvent
 
 // Initialise starts a new sync accumulator for the given room using the given state as a baseline.
 // This will only take effect if this is the first time the v3 server has seen this room, and it wasn't
-// possible to get all events up to the create event (e.g Matrix HQ).
+// possible to get all events up to the create event (e.g Matrix HQ). Returns true if this call actually
+// added new events
 //
 // This function:
 // - Stores these events
 // - Sets up the current snapshot based on the state list given.
-func (a *Accumulator) Initialise(roomID string, state []json.RawMessage) error {
+func (a *Accumulator) Initialise(roomID string, state []json.RawMessage) (bool, error) {
 	if len(state) == 0 {
-		return nil
+		return false, nil
 	}
-	return sqlutil.WithTransaction(a.db, func(txn *sqlx.Tx) error {
+	addedEvents := false
+	err := sqlutil.WithTransaction(a.db, func(txn *sqlx.Tx) error {
 		// Attempt to short-circuit. This has to be done inside a transaction to make sure
 		// we don't race with multiple calls to Initialise with the same room ID.
 		snapshotID, err := a.roomsTable.CurrentSnapshotID(txn, roomID)
@@ -161,10 +163,11 @@ func (a *Accumulator) Initialise(roomID string, state []json.RawMessage) error {
 		if err != nil {
 			return err
 		}
-
+		addedEvents = true
 		// Set the snapshot ID as the current state
 		return a.roomsTable.UpdateCurrentSnapshotID(txn, roomID, snapshot.SnapshotID)
 	})
+	return addedEvents, err
 }
 
 // Accumulate internal state from a user's sync response. The timeline order MUST be in the order

@@ -103,9 +103,9 @@ func doSync3Request(t *testing.T, server http.Handler, authHeader, since string,
 	t.Helper()
 	w := httptest.NewRecorder()
 	w.Body = bytes.NewBuffer(nil)
-	path := "/_matrix/client/v3/sync"
+	path := "/_matrix/client/v3/sync?timeout=1000"
 	if since != "" {
-		path += "?since=" + since
+		path += "&since=" + since
 	}
 	req := httptest.NewRequest("POST", path, bytes.NewBuffer(marshalJSON(t, reqBody)))
 	req.Header.Set("Authorization", authHeader)

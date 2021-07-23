@@ -22,9 +22,12 @@ func TestAccumulatorInitialise(t *testing.T) {
 		t.Fatalf("failed to open SQL db: %s", err)
 	}
 	accumulator := NewAccumulator(db)
-	err = accumulator.Initialise(roomID, roomEvents)
+	added, err := accumulator.Initialise(roomID, roomEvents)
 	if err != nil {
 		t.Fatalf("falied to Initialise accumulator: %s", err)
+	}
+	if !added {
+		t.Fatalf("didn't add events, wanted it to")
 	}
 
 	txn, err := accumulator.db.Beginx()
@@ -75,9 +78,12 @@ func TestAccumulatorInitialise(t *testing.T) {
 	}
 
 	// Subsequent calls do nothing and are not an error
-	err = accumulator.Initialise(roomID, roomEvents)
+	added, err = accumulator.Initialise(roomID, roomEvents)
 	if err != nil {
 		t.Fatalf("falied to Initialise accumulator: %s", err)
+	}
+	if added {
+		t.Fatalf("added events when it shouldn't have")
 	}
 }
 
@@ -93,7 +99,7 @@ func TestAccumulatorAccumulate(t *testing.T) {
 		t.Fatalf("failed to open SQL db: %s", err)
 	}
 	accumulator := NewAccumulator(db)
-	err = accumulator.Initialise(roomID, roomEvents)
+	_, err = accumulator.Initialise(roomID, roomEvents)
 	if err != nil {
 		t.Fatalf("failed to Initialise accumulator: %s", err)
 	}
@@ -173,7 +179,7 @@ func TestAccumulatorDelta(t *testing.T) {
 		t.Fatalf("failed to open SQL db: %s", err)
 	}
 	accumulator := NewAccumulator(db)
-	err = accumulator.Initialise(roomID, nil)
+	_, err = accumulator.Initialise(roomID, nil)
 	if err != nil {
 		t.Fatalf("failed to Initialise accumulator: %s", err)
 	}
@@ -224,7 +230,7 @@ func TestAccumulatorMembershipLogs(t *testing.T) {
 		t.Fatalf("failed to open SQL db: %s", err)
 	}
 	accumulator := NewAccumulator(db)
-	err = accumulator.Initialise(roomID, nil)
+	_, err = accumulator.Initialise(roomID, nil)
 	if err != nil {
 		t.Fatalf("failed to Initialise accumulator: %s", err)
 	}

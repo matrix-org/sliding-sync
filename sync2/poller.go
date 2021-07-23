@@ -91,19 +91,19 @@ func (p *Poller) accumulate(res *SyncResponse) {
 		p.logger.Info().Msg("Poller: no rooms in join response")
 		return
 	}
-	initCalls := 0
-	accumCalls := 0
+	stateCalls := 0
+	timelineCalls := 0
 	typingCalls := 0
 	for roomID, roomData := range res.Rooms.Join {
 		if len(roomData.State.Events) > 0 {
-			initCalls++
+			stateCalls++
 			err := p.receiver.Initialise(roomID, roomData.State.Events)
 			if err != nil {
 				p.logger.Err(err).Str("room_id", roomID).Int("num_state_events", len(roomData.State.Events)).Msg("Poller: V2DataReceiver.Initialise failed")
 			}
 		}
 		if len(roomData.Timeline.Events) > 0 {
-			accumCalls++
+			timelineCalls++
 			err := p.receiver.Accumulate(roomID, roomData.Timeline.Events)
 			if err != nil {
 				p.logger.Err(err).Str("room_id", roomID).Int("num_timeline_events", len(roomData.Timeline.Events)).Msg("Poller: V2DataReceiver.Accumulate failed")
@@ -132,6 +132,6 @@ func (p *Poller) accumulate(res *SyncResponse) {
 	p.logger.Info().Ints(
 		"rooms [invite,join,leave]", []int{len(res.Rooms.Invite), len(res.Rooms.Join), len(res.Rooms.Leave)},
 	).Ints(
-		"storage [inits,accum,typing]", []int{initCalls, accumCalls, typingCalls},
+		"storage [states,timelines,typing]", []int{stateCalls, timelineCalls, typingCalls},
 	).Msg("Poller: accumulated data")
 }

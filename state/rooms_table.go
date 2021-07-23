@@ -7,8 +7,7 @@ import (
 )
 
 // RoomsTable stores the current snapshot for a room.
-type RoomsTable struct {
-}
+type RoomsTable struct{}
 
 func NewRoomsTable(db *sqlx.DB) *RoomsTable {
 	// make sure tables are made

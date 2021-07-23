@@ -87,11 +87,11 @@ func (n *Notifier) OnNewEvent(
 			// Manually append the new user's ID so they get notified
 			// along all members in the room
 			usersToNotify = append(usersToNotify, targetUserID)
-			n.addJoinedUser(roomID, targetUserID)
+			n.AddJoinedUser(roomID, targetUserID)
 		case gomatrixserverlib.Leave:
 			fallthrough
 		case gomatrixserverlib.Ban:
-			n.removeJoinedUser(roomID, targetUserID)
+			n.RemoveJoinedUser(roomID, targetUserID)
 		}
 
 		n.wakeupUsers(usersToNotify, peekingDevicesToNotify, n.currPos)
@@ -214,9 +214,8 @@ func (n *Notifier) GetListener(ctx context.Context, session sync3.Session) UserD
 }
 
 // Load the membership states required to notify users correctly.
-func (n *Notifier) Load(ctx context.Context, roomIDToUserIDs map[string][]string) error {
+func (n *Notifier) Load(roomIDToUserIDs map[string][]string) {
 	n.setUsersJoinedToRooms(roomIDToUserIDs)
-	return nil
 }
 
 // CurrentPosition returns the current sync position
@@ -328,7 +327,7 @@ func (n *Notifier) fetchUserStreams(userID string) []*UserDeviceStream {
 }
 
 // Not thread-safe: must be called on the OnNewEvent goroutine only
-func (n *Notifier) addJoinedUser(roomID, userID string) {
+func (n *Notifier) AddJoinedUser(roomID, userID string) {
 	if _, ok := n.roomIDToJoinedUsers[roomID]; !ok {
 		n.roomIDToJoinedUsers[roomID] = make(userIDSet)
 	}
@@ -336,7 +335,7 @@ func (n *Notifier) addJoinedUser(roomID, userID string) {
 }
 
 // Not thread-safe: must be called on the OnNewEvent goroutine only
-func (n *Notifier) removeJoinedUser(roomID, userID string) {
+func (n *Notifier) RemoveJoinedUser(roomID, userID string) {
 	if _, ok := n.roomIDToJoinedUsers[roomID]; !ok {
 		n.roomIDToJoinedUsers[roomID] = make(userIDSet)
 	}
