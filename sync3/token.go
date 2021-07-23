@@ -15,6 +15,16 @@ type Token struct {
 	FilterID  int64
 }
 
+func (t Token) IsAfter(x Token) bool {
+	if t.NID > x.NID {
+		return true
+	}
+	if t.TypingID > x.TypingID {
+		return true
+	}
+	return false
+}
+
 func (t Token) String() string {
 	var filterID string
 	if t.FilterID != 0 {

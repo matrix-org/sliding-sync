@@ -186,6 +186,8 @@ func TestPollerBackoff(t *testing.T) {
 		if d != wantBackoffDuration {
 			t.Errorf("time.Sleep called incorrectly: got %v want %v", d, wantBackoffDuration)
 		}
+		// actually sleep to make sure async actions can happen if any
+		time.Sleep(1 * time.Millisecond)
 	}
 	var wg sync.WaitGroup
 	wg.Add(1)

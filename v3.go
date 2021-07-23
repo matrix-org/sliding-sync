@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -120,11 +121,11 @@ func (h *SyncV3Handler) serve(w http.ResponseWriter, req *http.Request) *handler
 	if herr != nil {
 		return herr
 	}
-	log := hlog.FromRequest(req)
-	log.Info().Int64("session", session.ID).Str("device", session.DeviceID).Str("user_id", session.UserID).Msg("recv /v3/sync")
+	log := hlog.FromRequest(req).With().Int64("session", session.ID).Logger()
+	log.Info().Str("device", session.DeviceID).Str("user_id", session.UserID).Msg("recv /v3/sync")
 
 	// make sure we have a poller for this device
-	h.ensurePolling(req.Header.Get("Authorization"), session, log.With().Int64("session", session.ID).Logger())
+	h.ensurePolling(req.Header.Get("Authorization"), session, log)
 
 	// fetch the latest value which we'll base our response on
 	latestNID, err := h.Storage.LatestEventNID()
@@ -137,6 +138,22 @@ func (h *SyncV3Handler) serve(w http.ResponseWriter, req *http.Request) *handler
 	upcoming := sync3.Token{
 		SessionID: session.ID,
 		NID:       latestNID,
+	}
+	timeout := req.URL.Query().Get("timeout")
+	if timeout == "" {
+		timeout = "0"
+	}
+	timeoutMs, err := strconv.ParseInt(timeout, 10, 64)
+	if err != nil {
+		return &handlerError{
+			StatusCode: 400,
+			err:        fmt.Errorf("?timeout= isn't an integer"),
+		}
+	}
+	if !shouldReturnImmediately(fromToken, &upcoming, timeoutMs) {
+		// from == upcoming so we need to block for up to timeoutMs for a new event to come in
+		// TODO
+		log.Info().Int64("timeout_ms", timeoutMs).Msg("blocking")
 	}
 
 	// read filters and mux in to form complete request
@@ -170,7 +187,7 @@ func (h *SyncV3Handler) serve(w http.ResponseWriter, req *http.Request) *handler
 	// finally update our records: confirm that the client received the token they sent us, and mark this
 	// response as unconfirmed
 	confirmed := fromToken.String()
-	log.Info().Int64("session", session.ID).Str("since", confirmed).Str("new_since", upcoming.String()).Bool(
+	log.Info().Str("since", confirmed).Str("new_since", upcoming.String()).Bool(
 		"typing_stream", syncReq.Typing != nil,
 	).Msg("responding")
 	if err := h.Sessions.UpdateLastTokens(session.ID, confirmed, upcoming.String()); err != nil {
@@ -315,4 +332,11 @@ func deviceIDFromRequest(req *http.Request) (string, error) {
 	hash := sha256.New()
 	hash.Write([]byte(accessToken))
 	return hex.EncodeToString(hash.Sum(nil)), nil
+}
+
+func shouldReturnImmediately(fromToken, upcoming *sync3.Token, timeoutMs int64) bool {
+	if timeoutMs == 0 {
+		return true
+	}
+	return upcoming.IsAfter(*fromToken)
 }
