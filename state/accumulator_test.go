@@ -107,8 +107,12 @@ func TestAccumulatorAccumulate(t *testing.T) {
 		// new state event should be added to the snapshot
 		[]byte(`{"event_id":"I", "type":"m.room.history_visibility", "state_key":"", "content":{"visibility":"public"}}`),
 	}
-	if err = accumulator.Accumulate(roomID, newEvents); err != nil {
+	var numNew int
+	if numNew, err = accumulator.Accumulate(roomID, newEvents); err != nil {
 		t.Fatalf("failed to Accumulate: %s", err)
+	}
+	if numNew != len(newEvents) {
+		t.Fatalf("got %d new events, want %d", numNew, len(newEvents))
 	}
 
 	// Begin assertions
@@ -157,7 +161,7 @@ func TestAccumulatorAccumulate(t *testing.T) {
 	}
 
 	// subsequent calls do nothing and are not an error
-	if err = accumulator.Accumulate(roomID, newEvents); err != nil {
+	if _, err = accumulator.Accumulate(roomID, newEvents); err != nil {
 		t.Fatalf("failed to Accumulate: %s", err)
 	}
 }
@@ -181,7 +185,7 @@ func TestAccumulatorDelta(t *testing.T) {
 		[]byte(`{"event_id":"aH", "type":"m.room.join_rules", "state_key":"", "content":{"join_rule":"public"}}`),
 		[]byte(`{"event_id":"aI", "type":"m.room.history_visibility", "state_key":"", "content":{"visibility":"public"}}`),
 	}
-	if err = accumulator.Accumulate(roomID, roomEvents); err != nil {
+	if _, err = accumulator.Accumulate(roomID, roomEvents); err != nil {
 		t.Fatalf("failed to Accumulate: %s", err)
 	}
 
@@ -242,7 +246,7 @@ func TestAccumulatorMembershipLogs(t *testing.T) {
 		// @me leaves the room
 		[]byte(`{"event_id":"` + roomEventIDs[7] + `", "type":"m.room.member", "state_key":"@me:localhost","unsigned":{"prev_content":{"membership":"join", "displayname":"Me"}}, "content":{"membership":"leave"}}`),
 	}
-	if err = accumulator.Accumulate(roomID, roomEvents); err != nil {
+	if _, err = accumulator.Accumulate(roomID, roomEvents); err != nil {
 		t.Fatalf("failed to Accumulate: %s", err)
 	}
 	txn, err := accumulator.db.Beginx()

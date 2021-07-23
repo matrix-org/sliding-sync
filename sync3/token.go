@@ -25,6 +25,11 @@ func (t *Token) IsAfter(x Token) bool {
 	return false
 }
 
+func (t *Token) AssociateWithUser(userToken Token) {
+	t.SessionID = userToken.SessionID
+	t.FilterID = userToken.FilterID
+}
+
 func (t *Token) ApplyUpdates(other Token) {
 	if other.NID > t.NID {
 		t.NID = other.NID

@@ -5,8 +5,6 @@ import (
 	"math"
 	"time"
 
-	"github.com/matrix-org/sync-v3/state"
-	"github.com/matrix-org/sync-v3/sync3"
 	"github.com/rs/zerolog"
 	"github.com/tidwall/gjson"
 )
@@ -14,30 +12,32 @@ import (
 // alias time.Sleep so tests can monkey patch it out
 var timeSleep = time.Sleep
 
+// V2DataReceiver is the receiver for all the v2 sync data the poller gets
+type V2DataReceiver interface {
+	UpdateDeviceSince(deviceID, since string) error
+	Accumulate(roomID string, timeline []json.RawMessage) error
+	Initialise(roomID string, state []json.RawMessage) error
+	SetTyping(roomID string, userIDs []string) (int64, error)
+}
+
 // Poller can automatically poll the sync v2 endpoint and accumulate the responses in storage
 type Poller struct {
 	authorizationHeader string
 	deviceID            string
 	client              Client
-	storage             storageInterface
-	sessions            sessionsInterface
+	receiver            V2DataReceiver
 	logger              zerolog.Logger
 
 	// flag set to true when poll() returns due to expired access tokens
 	Terminated bool
 }
 
-func NewPoller(authHeader, deviceID string, client Client, storage *state.Storage, sessions *sync3.Sessions, logger zerolog.Logger) *Poller {
-	return newPoller(authHeader, deviceID, client, storage, sessions, logger)
-}
-
-func newPoller(authHeader, deviceID string, client Client, storage storageInterface, sessions sessionsInterface, logger zerolog.Logger) *Poller {
+func NewPoller(authHeader, deviceID string, client Client, receiver V2DataReceiver, logger zerolog.Logger) *Poller {
 	return &Poller{
 		authorizationHeader: authHeader,
 		deviceID:            deviceID,
 		client:              client,
-		storage:             storage,
-		sessions:            sessions,
+		receiver:            receiver,
 		Terminated:          false,
 		logger:              logger,
 	}
@@ -73,10 +73,10 @@ func (p *Poller) Poll(since string, callback func()) {
 		p.accumulate(resp)
 		since = resp.NextBatch
 		// persist the since token (TODO: this could get slow if we hammer the DB too much)
-		err = p.sessions.UpdateDeviceSince(p.deviceID, since)
+		err = p.receiver.UpdateDeviceSince(p.deviceID, since)
 		if err != nil {
 			// non-fatal
-			p.logger.Warn().Str("since", since).Err(err).Msg("Poller: failed to persist new since value")
+			p.logger.Warn().Str("since", since).Err(err).Msg("Poller: V2DataReceiver failed to persist new since value")
 		}
 
 		if firstTime {
@@ -97,16 +97,16 @@ func (p *Poller) accumulate(res *SyncResponse) {
 	for roomID, roomData := range res.Rooms.Join {
 		if len(roomData.State.Events) > 0 {
 			initCalls++
-			err := p.storage.Initialise(roomID, roomData.State.Events)
+			err := p.receiver.Initialise(roomID, roomData.State.Events)
 			if err != nil {
-				p.logger.Err(err).Str("room_id", roomID).Int("num_state_events", len(roomData.State.Events)).Msg("Poller: Accumulator.Initialise failed")
+				p.logger.Err(err).Str("room_id", roomID).Int("num_state_events", len(roomData.State.Events)).Msg("Poller: V2DataReceiver.Initialise failed")
 			}
 		}
 		if len(roomData.Timeline.Events) > 0 {
 			accumCalls++
-			err := p.storage.Accumulate(roomID, roomData.Timeline.Events)
+			err := p.receiver.Accumulate(roomID, roomData.Timeline.Events)
 			if err != nil {
-				p.logger.Err(err).Str("room_id", roomID).Int("num_timeline_events", len(roomData.Timeline.Events)).Msg("Poller: Accumulator.Accumulate failed")
+				p.logger.Err(err).Str("room_id", roomID).Int("num_timeline_events", len(roomData.Timeline.Events)).Msg("Poller: V2DataReceiver.Accumulate failed")
 			}
 		}
 		for _, ephEvent := range roomData.Ephemeral.Events {
@@ -122,9 +122,9 @@ func (p *Poller) accumulate(res *SyncResponse) {
 					}
 				}
 				typingCalls++
-				_, err := p.storage.SetTyping(roomID, userIDs)
+				_, err := p.receiver.SetTyping(roomID, userIDs)
 				if err != nil {
-					p.logger.Err(err).Str("room_id", roomID).Strs("user_ids", userIDs).Msg("Poller: failed to SetTyping")
+					p.logger.Err(err).Str("room_id", roomID).Strs("user_ids", userIDs).Msg("Poller: V2DataReceiver failed to SetTyping")
 				}
 			}
 		}
@@ -134,16 +134,4 @@ func (p *Poller) accumulate(res *SyncResponse) {
 	).Ints(
 		"storage [inits,accum,typing]", []int{initCalls, accumCalls, typingCalls},
 	).Msg("Poller: accumulated data")
-}
-
-// the subset of Sessions which the poller uses, mocked for tests
-type sessionsInterface interface {
-	UpdateDeviceSince(deviceID, since string) error
-}
-
-// the subset of Storage which the poller uses, mocked for tests
-type storageInterface interface {
-	Accumulate(roomID string, timeline []json.RawMessage) error
-	Initialise(roomID string, state []json.RawMessage) error
-	SetTyping(roomID string, userIDs []string) (int64, error)
 }

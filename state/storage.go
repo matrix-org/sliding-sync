@@ -39,7 +39,7 @@ func (s *Storage) LatestTypingID() (int64, error) {
 	return s.typingTable.SelectHighestID()
 }
 
-func (s *Storage) Accumulate(roomID string, timeline []json.RawMessage) error {
+func (s *Storage) Accumulate(roomID string, timeline []json.RawMessage) (int, error) {
 	return s.accumulator.Accumulate(roomID, timeline)
 }
 

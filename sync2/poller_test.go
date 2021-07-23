@@ -23,7 +23,7 @@ func TestPollerPollFromNothing(t *testing.T) {
 		json.RawMessage(`{"event":3}`),
 	}
 	hasPolledSuccessfully := false
-	accumulator, client, sessions := newMocks(func(authHeader, since string) (*SyncResponse, int, error) {
+	accumulator, client := newMocks(func(authHeader, since string) (*SyncResponse, int, error) {
 		if since == "" {
 			var joinResp SyncV2JoinResponse
 			joinResp.State.Events = roomState
@@ -44,7 +44,7 @@ func TestPollerPollFromNothing(t *testing.T) {
 	})
 	var wg sync.WaitGroup
 	wg.Add(1)
-	poller := newPoller("Authorization: hello world", deviceID, client, accumulator, sessions, zerolog.New(os.Stderr))
+	poller := NewPoller("Authorization: hello world", deviceID, client, accumulator, zerolog.New(os.Stderr))
 	go func() {
 		defer wg.Done()
 		poller.Poll("", func() {
@@ -58,8 +58,8 @@ func TestPollerPollFromNothing(t *testing.T) {
 	if len(accumulator.states[roomID]) != len(roomState) {
 		t.Errorf("did not accumulate initial state for room, got %d events want %d", len(accumulator.states[roomID]), len(roomState))
 	}
-	if sessions.deviceIDToSince[deviceID] != nextSince {
-		t.Errorf("did not persist latest since token, got %s want %s", sessions.deviceIDToSince[deviceID], nextSince)
+	if accumulator.deviceIDToSince[deviceID] != nextSince {
+		t.Errorf("did not persist latest since token, got %s want %s", accumulator.deviceIDToSince[deviceID], nextSince)
 	}
 }
 
@@ -89,7 +89,7 @@ func TestPollerPollFromExisting(t *testing.T) {
 		},
 	}
 	hasPolledSuccessfully := false
-	accumulator, client, sessions := newMocks(func(authHeader, since string) (*SyncResponse, int, error) {
+	accumulator, client := newMocks(func(authHeader, since string) (*SyncResponse, int, error) {
 		if since == "" {
 			t.Errorf("called DoSyncV2 with an empty since token")
 			return nil, 401, fmt.Errorf("fail")
@@ -121,7 +121,7 @@ func TestPollerPollFromExisting(t *testing.T) {
 	})
 	var wg sync.WaitGroup
 	wg.Add(1)
-	poller := newPoller("Authorization: hello world", deviceID, client, accumulator, sessions, zerolog.New(os.Stderr))
+	poller := NewPoller("Authorization: hello world", deviceID, client, accumulator, zerolog.New(os.Stderr))
 	go func() {
 		defer wg.Done()
 		poller.Poll(since, func() {
@@ -136,8 +136,8 @@ func TestPollerPollFromExisting(t *testing.T) {
 		t.Errorf("did not accumulate timelines for room, got %d events want %d", len(accumulator.timelines[roomID]), 10)
 	}
 	wantSince := fmt.Sprintf("%d", len(roomTimelineResponses))
-	if sessions.deviceIDToSince[deviceID] != wantSince {
-		t.Errorf("did not persist latest since token, got %s want %s", sessions.deviceIDToSince[deviceID], wantSince)
+	if accumulator.deviceIDToSince[deviceID] != wantSince {
+		t.Errorf("did not persist latest since token, got %s want %s", accumulator.deviceIDToSince[deviceID], wantSince)
 	}
 }
 
@@ -173,7 +173,7 @@ func TestPollerBackoff(t *testing.T) {
 	}
 	errorResponsesIndex := 0
 	var wantBackoffDuration time.Duration
-	accumulator, client, sessions := newMocks(func(authHeader, since string) (*SyncResponse, int, error) {
+	accumulator, client := newMocks(func(authHeader, since string) (*SyncResponse, int, error) {
 		if errorResponsesIndex >= len(errorResponses) {
 			return nil, 401, fmt.Errorf("terminated")
 		}
@@ -191,7 +191,7 @@ func TestPollerBackoff(t *testing.T) {
 	}
 	var wg sync.WaitGroup
 	wg.Add(1)
-	poller := newPoller("Authorization: hello world", deviceID, client, accumulator, sessions, zerolog.New(os.Stderr))
+	poller := NewPoller("Authorization: hello world", deviceID, client, accumulator, zerolog.New(os.Stderr))
 	go func() {
 		defer wg.Done()
 		poller.Poll("some_since_value", func() {
@@ -218,42 +218,36 @@ func (c *mockClient) WhoAmI(authHeader string) (string, error) {
 	return "@alice:localhost", nil
 }
 
-type mockAccumulator struct {
-	states    map[string][]json.RawMessage
-	timelines map[string][]json.RawMessage
-}
-
-func (a *mockAccumulator) Accumulate(roomID string, timeline []json.RawMessage) error {
-	a.timelines[roomID] = append(a.timelines[roomID], timeline...)
-	return nil
-}
-func (a *mockAccumulator) Initialise(roomID string, state []json.RawMessage) error {
-	a.states[roomID] = state
-	return nil
-}
-func (a *mockAccumulator) SetTyping(roomID string, userIDs []string) (int64, error) {
-	return 0, nil
-}
-
-type mockSessions struct {
+type mockDataReceiver struct {
+	states          map[string][]json.RawMessage
+	timelines       map[string][]json.RawMessage
 	deviceIDToSince map[string]string
 }
 
-func (s *mockSessions) UpdateDeviceSince(deviceID, since string) error {
+func (a *mockDataReceiver) Accumulate(roomID string, timeline []json.RawMessage) error {
+	a.timelines[roomID] = append(a.timelines[roomID], timeline...)
+	return nil
+}
+func (a *mockDataReceiver) Initialise(roomID string, state []json.RawMessage) error {
+	a.states[roomID] = state
+	return nil
+}
+func (a *mockDataReceiver) SetTyping(roomID string, userIDs []string) (int64, error) {
+	return 0, nil
+}
+func (s *mockDataReceiver) UpdateDeviceSince(deviceID, since string) error {
 	s.deviceIDToSince[deviceID] = since
 	return nil
 }
 
-func newMocks(doSyncV2 func(authHeader, since string) (*SyncResponse, int, error)) (*mockAccumulator, *mockClient, *mockSessions) {
+func newMocks(doSyncV2 func(authHeader, since string) (*SyncResponse, int, error)) (*mockDataReceiver, *mockClient) {
 	client := &mockClient{
 		fn: doSyncV2,
 	}
-	accumulator := &mockAccumulator{
-		states:    make(map[string][]json.RawMessage),
-		timelines: make(map[string][]json.RawMessage),
-	}
-	sessions := &mockSessions{
+	accumulator := &mockDataReceiver{
+		states:          make(map[string][]json.RawMessage),
+		timelines:       make(map[string][]json.RawMessage),
 		deviceIDToSince: make(map[string]string),
 	}
-	return accumulator, client, sessions
+	return accumulator, client
 }

@@ -61,7 +61,7 @@ func NewNotifier(currPos sync3.Token) *Notifier {
 // Typically a consumer supplies a posUpdate with the latest sync position for the
 // event type it handles, leaving other fields as 0.
 func (n *Notifier) OnNewEvent(
-	ev *gomatrixserverlib.HeaderedEvent, roomID string, userIDs []string,
+	roomID, sender, eventType, stateKey, membership string, userIDs []string,
 	posUpdate sync3.Token,
 ) {
 	// update the current position then notify relevant /sync streams.
@@ -72,35 +72,26 @@ func (n *Notifier) OnNewEvent(
 	n.currPos.ApplyUpdates(posUpdate)
 	n.removeEmptyUserStreams()
 
-	if ev != nil {
+	if eventType == "m.room.member" {
 		// Map this event's room_id to a list of joined users, and wake them up.
-		usersToNotify := n.joinedUsers(ev.RoomID())
+		usersToNotify := n.joinedUsers(roomID)
 		// Map this event's room_id to a list of peeking devices, and wake them up.
-		peekingDevicesToNotify := n.PeekingDevices(ev.RoomID())
+		peekingDevicesToNotify := n.PeekingDevices(roomID)
 		// If this is an invite, also add in the invitee to this list.
-		if ev.Type() == "m.room.member" && ev.StateKey() != nil {
-			targetUserID := *ev.StateKey()
-			membership, err := ev.Membership()
-			if err != nil {
-				n.logger.Error().Err(err).Str("event_id", ev.EventID()).Msg(
-					"Notifier.OnNewEvent: Failed to unmarshal member event",
-				)
-			} else {
-				// Keep the joined user map up-to-date
-				switch membership {
-				case gomatrixserverlib.Invite:
-					usersToNotify = append(usersToNotify, targetUserID)
-				case gomatrixserverlib.Join:
-					// Manually append the new user's ID so they get notified
-					// along all members in the room
-					usersToNotify = append(usersToNotify, targetUserID)
-					n.addJoinedUser(ev.RoomID(), targetUserID)
-				case gomatrixserverlib.Leave:
-					fallthrough
-				case gomatrixserverlib.Ban:
-					n.removeJoinedUser(ev.RoomID(), targetUserID)
-				}
-			}
+		targetUserID := stateKey
+		// Keep the joined user map up-to-date
+		switch membership {
+		case gomatrixserverlib.Invite:
+			usersToNotify = append(usersToNotify, targetUserID)
+		case gomatrixserverlib.Join:
+			// Manually append the new user's ID so they get notified
+			// along all members in the room
+			usersToNotify = append(usersToNotify, targetUserID)
+			n.addJoinedUser(roomID, targetUserID)
+		case gomatrixserverlib.Leave:
+			fallthrough
+		case gomatrixserverlib.Ban:
+			n.removeJoinedUser(roomID, targetUserID)
 		}
 
 		n.wakeupUsers(usersToNotify, peekingDevicesToNotify, n.currPos)
@@ -217,6 +208,8 @@ func (n *Notifier) GetListener(ctx context.Context, session sync3.Session) UserD
 
 	n.removeEmptyUserStreams()
 
+	// TODO: session ID not device ID
+	// TODO: Need to apply the filters so we don't wake up the device for data it won't see
 	return n.fetchUserDeviceStream(session.UserID, session.DeviceID, true).GetListener(ctx)
 }
 
@@ -277,7 +270,6 @@ func (n *Notifier) wakeupUsers(userIDs []string, peekingDevices []PeekingDevice,
 	}
 
 	for _, peekingDevice := range peekingDevices {
-		// TODO: don't bother waking up for devices whose users we already woke up
 		if stream := n.fetchUserDeviceStream(peekingDevice.UserID, peekingDevice.DeviceID, false); stream != nil {
 			stream.Broadcast(newPos) // wake up all goroutines Wait()ing on this stream
 		}
@@ -312,7 +304,6 @@ func (n *Notifier) fetchUserDeviceStream(userID, deviceID string, makeIfNotExist
 		if !makeIfNotExists {
 			return nil
 		}
-		// TODO: Unbounded growth of streams (1 per user)
 		if stream = NewUserDeviceStream(userID, deviceID, n.currPos); stream != nil {
 			n.userDeviceStreams[userID][deviceID] = stream
 		}
@@ -374,7 +365,6 @@ func (n *Notifier) removePeekingDevice(roomID, userID, deviceID string) {
 	if _, ok := n.roomIDToPeekingDevices[roomID]; !ok {
 		n.roomIDToPeekingDevices[roomID] = make(peekingDeviceSet)
 	}
-	// XXX: is this going to work as a key?
 	n.roomIDToPeekingDevices[roomID].remove(PeekingDevice{UserID: userID, DeviceID: deviceID})
 }
 

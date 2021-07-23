@@ -1,6 +1,6 @@
 package sync3
 
-import "github.com/matrix-org/sync-v3/streams"
+import "github.com/matrix-org/sync-v3/sync3/streams"
 
 // Request represents a sync v3 request
 //

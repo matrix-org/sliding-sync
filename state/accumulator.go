@@ -168,7 +168,7 @@ func (a *Accumulator) Initialise(roomID string, state []json.RawMessage) error {
 }
 
 // Accumulate internal state from a user's sync response. The timeline order MUST be in the order
-// received from the server.
+// received from the server. Returns the number of new events in the timeline.
 //
 // This function does several things:
 //   - It ensures all events are persisted in the database. This is shared amongst users.
@@ -180,11 +180,11 @@ func (a *Accumulator) Initialise(roomID string, state []json.RawMessage) error {
 //     References are made when clients have synced up to a given snapshot (hence may paginate at that point).
 //     The server itself also holds a ref to the current state, which is then moved to the new current state.
 //   - It adds entries to the membership log for membership events.
-func (a *Accumulator) Accumulate(roomID string, timeline []json.RawMessage) error {
+func (a *Accumulator) Accumulate(roomID string, timeline []json.RawMessage) (numNew int, err error) {
 	if len(timeline) == 0 {
-		return nil
+		return 0, nil
 	}
-	return sqlutil.WithTransaction(a.db, func(txn *sqlx.Tx) error {
+	err = sqlutil.WithTransaction(a.db, func(txn *sqlx.Tx) error {
 		// Insert the events
 		events := make([]Event, len(timeline))
 		for i := range events {
@@ -193,7 +193,7 @@ func (a *Accumulator) Accumulate(roomID string, timeline []json.RawMessage) erro
 				RoomID: roomID,
 			}
 		}
-		numNew, err := a.eventsTable.Insert(txn, events)
+		numNew, err = a.eventsTable.Insert(txn, events)
 		if err != nil {
 			return err
 		}
@@ -312,6 +312,7 @@ func (a *Accumulator) Accumulate(roomID string, timeline []json.RawMessage) erro
 		}
 		return nil
 	})
+	return numNew, err
 }
 
 // Delta returns a list of events of at most `limit` for the room not including `lastEventNID`.

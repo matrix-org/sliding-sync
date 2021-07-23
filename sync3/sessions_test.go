@@ -3,7 +3,7 @@ package sync3
 import (
 	"testing"
 
-	"github.com/matrix-org/sync-v3/streams"
+	"github.com/matrix-org/sync-v3/sync3/streams"
 )
 
 func TestSessions(t *testing.T) {

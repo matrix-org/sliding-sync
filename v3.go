@@ -1,6 +1,7 @@
 package syncv3
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -14,12 +15,13 @@ import (
 
 	"github.com/gorilla/mux"
 	"github.com/matrix-org/sync-v3/state"
-	"github.com/matrix-org/sync-v3/streams"
 	"github.com/matrix-org/sync-v3/sync2"
 	"github.com/matrix-org/sync-v3/sync3"
 	"github.com/matrix-org/sync-v3/sync3/notifier"
+	"github.com/matrix-org/sync-v3/sync3/streams"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/hlog"
+	"github.com/tidwall/gjson"
 )
 
 type server struct {
@@ -142,17 +144,8 @@ func (h *SyncV3Handler) serve(w http.ResponseWriter, req *http.Request) *handler
 	h.ensurePolling(req.Header.Get("Authorization"), session, log)
 
 	// fetch the latest value which we'll base our response on
-	latestNID, err := h.Storage.LatestEventNID()
-	if err != nil {
-		return &handlerError{
-			err:        err,
-			StatusCode: 500,
-		}
-	}
-	upcoming := sync3.Token{
-		SessionID: session.ID,
-		NID:       latestNID,
-	}
+	upcoming := h.Notifier.CurrentPosition()
+	upcoming.AssociateWithUser(*fromToken)
 	timeout := req.URL.Query().Get("timeout")
 	if timeout == "" {
 		timeout = "0"
@@ -166,8 +159,15 @@ func (h *SyncV3Handler) serve(w http.ResponseWriter, req *http.Request) *handler
 	}
 	if !shouldReturnImmediately(fromToken, &upcoming, timeoutMs) {
 		// from == upcoming so we need to block for up to timeoutMs for a new event to come in
-		// TODO
 		log.Info().Int64("timeout_ms", timeoutMs).Msg("blocking")
+		newUpcoming := h.waitForEvents(req.Context(), session, *fromToken, time.Duration(timeoutMs)*time.Millisecond)
+		if newUpcoming == nil {
+			// no data
+			w.WriteHeader(200)
+			w.Write([]byte(`{}`))
+			return nil
+		}
+		upcoming = *newUpcoming
 	}
 
 	// read filters and mux in to form complete request
@@ -244,6 +244,9 @@ func (h *SyncV3Handler) getOrCreateSession(req *http.Request) (*sync3.Session, *
 		log.Warn().Err(err).Str("device", deviceID).Msg("failed to ensure Session existed for device")
 		return nil, nil, &handlerError{500, err}
 	}
+	if session == nil {
+		return nil, nil, &handlerError{400, fmt.Errorf("unknown session; since = %s session ID = %d device ID = %s", sincev3, tokv3.SessionID, deviceID)}
+	}
 	if session.UserID == "" {
 		// we need to work out the user ID to do membership queries
 		userID, err := h.userIDFromRequest(req)
@@ -274,7 +277,7 @@ func (h *SyncV3Handler) ensurePolling(authHeader string, session *sync3.Session,
 		return
 	}
 	// replace the poller
-	poller = sync2.NewPoller(authHeader, session.DeviceID, h.V2, h.Storage, h.Sessions, logger)
+	poller = sync2.NewPoller(authHeader, session.DeviceID, h.V2, h, logger)
 	var wg sync.WaitGroup
 	wg.Add(1)
 	go poller.Poll(session.V2Since, func() {
@@ -283,6 +286,47 @@ func (h *SyncV3Handler) ensurePolling(authHeader string, session *sync3.Session,
 	h.Pollers[session.DeviceID] = poller
 	h.pollerMu.Unlock()
 	wg.Wait()
+}
+
+// Called from the v2 poller, implements V2DataReceiver
+func (h *SyncV3Handler) UpdateDeviceSince(deviceID, since string) error {
+	return h.Sessions.UpdateDeviceSince(deviceID, since)
+}
+
+// Called from the v2 poller, implements V2DataReceiver
+func (h *SyncV3Handler) Accumulate(roomID string, timeline []json.RawMessage) error {
+	numNew, err := h.Storage.Accumulate(roomID, timeline)
+	if err != nil {
+		return err
+	}
+	if numNew == 0 {
+		return nil
+	}
+	var updateToken sync3.Token
+	// TODO: read from memory, persist in Storage?
+	updateToken.NID, err = h.Storage.LatestEventNID()
+	if err != nil {
+		return err
+	}
+	newEvents := timeline[len(timeline)-numNew:]
+	for _, eventJSON := range newEvents {
+		event := gjson.ParseBytes(eventJSON)
+		h.Notifier.OnNewEvent(
+			roomID, event.Get("sender").Str, event.Get("type").Str,
+			event.Get("state_key").Str, event.Get("content.membership").Str, nil, updateToken,
+		)
+	}
+	return nil
+}
+
+// Called from the v2 poller, implements V2DataReceiver
+func (h *SyncV3Handler) Initialise(roomID string, state []json.RawMessage) error {
+	return h.Storage.Initialise(roomID, state)
+}
+
+// Called from the v2 poller, implements V2DataReceiver
+func (h *SyncV3Handler) SetTyping(roomID string, userIDs []string) (int64, error) {
+	return h.Storage.SetTyping(roomID, userIDs)
 }
 
 func (h *SyncV3Handler) parseRequest(req *http.Request, tok *sync3.Token, session *sync3.Session) (*sync3.Request, int64, *handlerError) {
@@ -324,6 +368,23 @@ func (h *SyncV3Handler) parseRequest(req *http.Request, tok *sync3.Token, sessio
 
 func (h *SyncV3Handler) userIDFromRequest(req *http.Request) (string, error) {
 	return h.V2.WhoAmI(req.Header.Get("Authorization"))
+}
+
+func (h *SyncV3Handler) waitForEvents(ctx context.Context, session *sync3.Session, since sync3.Token, timeout time.Duration) *sync3.Token {
+	listener := h.Notifier.GetListener(ctx, *session)
+	defer listener.Close()
+	select {
+	case <-ctx.Done():
+		// caller gave up
+		return nil
+	case <-time.After(timeout):
+		// timed out
+		return nil
+	case <-listener.GetNotifyChannel(since):
+		// new data!
+		p := listener.GetSyncPosition()
+		return &p
+	}
 }
 
 type jsonError struct {
