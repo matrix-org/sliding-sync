@@ -17,6 +17,7 @@ import (
 	"github.com/matrix-org/sync-v3/streams"
 	"github.com/matrix-org/sync-v3/sync2"
 	"github.com/matrix-org/sync-v3/sync3"
+	"github.com/matrix-org/sync-v3/sync3/notifier"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/hlog"
 )
@@ -89,6 +90,7 @@ type SyncV3Handler struct {
 	V2       sync2.Client
 	Sessions *sync3.Sessions
 	Storage  *state.Storage
+	Notifier *notifier.Notifier
 
 	typingStream *streams.Typing
 
@@ -105,6 +107,18 @@ func NewSyncV3Handler(v2Client sync2.Client, postgresDBURI string) *SyncV3Handle
 		pollerMu: &sync.Mutex{},
 	}
 	sh.typingStream = streams.NewTyping(sh.Storage)
+	latestToken := sync3.Token{}
+	nid, err := sh.Storage.LatestEventNID()
+	if err != nil {
+		panic(err)
+	}
+	latestToken.NID = nid
+	typingID, err := sh.Storage.LatestTypingID()
+	if err != nil {
+		panic(err)
+	}
+	latestToken.TypingID = typingID
+	sh.Notifier = notifier.NewNotifier(latestToken)
 	return sh
 }
 

@@ -35,6 +35,10 @@ func (s *Storage) LatestEventNID() (int64, error) {
 	return s.accumulator.eventsTable.SelectHighestNID()
 }
 
+func (s *Storage) LatestTypingID() (int64, error) {
+	return s.typingTable.SelectHighestID()
+}
+
 func (s *Storage) Accumulate(roomID string, timeline []json.RawMessage) error {
 	return s.accumulator.Accumulate(roomID, timeline)
 }

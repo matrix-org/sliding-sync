@@ -1,6 +1,7 @@
 package state
 
 import (
+	"database/sql"
 	"fmt"
 	"math"
 
@@ -55,9 +56,13 @@ func NewEventTable(db *sqlx.DB) *EventTable {
 }
 
 func (t *EventTable) SelectHighestNID() (highest int64, err error) {
+	var result sql.NullInt64
 	err = t.db.QueryRow(
 		`SELECT MAX(event_nid) as e FROM syncv3_events`,
-	).Scan(&highest)
+	).Scan(&result)
+	if result.Valid {
+		highest = result.Int64
+	}
 	return
 }
 

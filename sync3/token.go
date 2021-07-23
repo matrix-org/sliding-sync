@@ -15,7 +15,7 @@ type Token struct {
 	FilterID  int64
 }
 
-func (t Token) IsAfter(x Token) bool {
+func (t *Token) IsAfter(x Token) bool {
 	if t.NID > x.NID {
 		return true
 	}
@@ -25,7 +25,16 @@ func (t Token) IsAfter(x Token) bool {
 	return false
 }
 
-func (t Token) String() string {
+func (t *Token) ApplyUpdates(other Token) {
+	if other.NID > t.NID {
+		t.NID = other.NID
+	}
+	if other.TypingID > t.TypingID {
+		t.TypingID = other.TypingID
+	}
+}
+
+func (t *Token) String() string {
 	var filterID string
 	if t.FilterID != 0 {
 		filterID = fmt.Sprintf("%d", t.FilterID)

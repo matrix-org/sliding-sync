@@ -27,6 +27,17 @@ func NewTypingTable(db *sqlx.DB) *TypingTable {
 	return &TypingTable{db}
 }
 
+func (t *TypingTable) SelectHighestID() (id int64, err error) {
+	var result sql.NullInt64
+	err = t.db.QueryRow(
+		`SELECT MAX(stream_id) FROM syncv3_typing`,
+	).Scan(&result)
+	if result.Valid {
+		id = result.Int64
+	}
+	return
+}
+
 func (t *TypingTable) SetTyping(roomID string, userIDs []string) (streamID int64, err error) {
 	if userIDs == nil {
 		userIDs = []string{}

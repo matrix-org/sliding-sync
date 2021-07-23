@@ -46,4 +46,11 @@ func TestTypingTable(t *testing.T) {
 	setAndCheck()
 	userIDs = []string{}
 	setAndCheck()
+	highest, err := table.SelectHighestID()
+	if err != nil {
+		t.Fatalf("SelectHighestID: %s", err)
+	}
+	if highest != lastStreamID {
+		t.Fatalf("SelectHighestID: got %d want %d", highest, lastStreamID)
+	}
 }
