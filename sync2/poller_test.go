@@ -3,10 +3,13 @@ package sync2
 import (
 	"encoding/json"
 	"fmt"
+	"os"
 	"strconv"
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/rs/zerolog"
 )
 
 // Check that a call to Poll starts polling and accumulating, and terminates on 401s.
@@ -41,7 +44,7 @@ func TestPollerPollFromNothing(t *testing.T) {
 	})
 	var wg sync.WaitGroup
 	wg.Add(1)
-	poller := newPoller("Authorization: hello world", deviceID, client, accumulator, sessions)
+	poller := newPoller("Authorization: hello world", deviceID, client, accumulator, sessions, zerolog.New(os.Stderr))
 	go func() {
 		defer wg.Done()
 		poller.Poll("", func() {
@@ -118,7 +121,7 @@ func TestPollerPollFromExisting(t *testing.T) {
 	})
 	var wg sync.WaitGroup
 	wg.Add(1)
-	poller := newPoller("Authorization: hello world", deviceID, client, accumulator, sessions)
+	poller := newPoller("Authorization: hello world", deviceID, client, accumulator, sessions, zerolog.New(os.Stderr))
 	go func() {
 		defer wg.Done()
 		poller.Poll(since, func() {
@@ -186,7 +189,7 @@ func TestPollerBackoff(t *testing.T) {
 	}
 	var wg sync.WaitGroup
 	wg.Add(1)
-	poller := newPoller("Authorization: hello world", deviceID, client, accumulator, sessions)
+	poller := newPoller("Authorization: hello world", deviceID, client, accumulator, sessions, zerolog.New(os.Stderr))
 	go func() {
 		defer wg.Done()
 		poller.Poll("some_since_value", func() {
@@ -226,7 +229,7 @@ func (a *mockAccumulator) Initialise(roomID string, state []json.RawMessage) err
 	a.states[roomID] = state
 	return nil
 }
-func (a *mockAccumulator) SetTyping(roomID string, userIDs []string) (int, error) {
+func (a *mockAccumulator) SetTyping(roomID string, userIDs []string) (int64, error) {
 	return 0, nil
 }
 

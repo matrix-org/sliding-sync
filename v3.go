@@ -13,16 +13,12 @@ import (
 
 	"github.com/gorilla/mux"
 	"github.com/matrix-org/sync-v3/state"
+	"github.com/matrix-org/sync-v3/streams"
 	"github.com/matrix-org/sync-v3/sync2"
 	"github.com/matrix-org/sync-v3/sync3"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/hlog"
 )
-
-var log = zerolog.New(os.Stdout).With().Timestamp().Logger().Output(zerolog.ConsoleWriter{
-	Out:        os.Stderr,
-	TimeFormat: "15:04:05",
-})
 
 type server struct {
 	chain []func(next http.Handler) http.Handler
@@ -39,19 +35,17 @@ func (s *server) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 
 // RunSyncV3Server is the main entry point to the server
 func RunSyncV3Server(destinationServer, bindAddr, postgresDBURI string) {
+	logger := zerolog.New(os.Stdout).With().Timestamp().Logger().Output(zerolog.ConsoleWriter{
+		Out:        os.Stderr,
+		TimeFormat: "15:04:05",
+	})
 	// dependency inject all components together
-	sh := &SyncV3Handler{
-		V2: &sync2.HTTPClient{
-			Client: &http.Client{
-				Timeout: 5 * time.Minute,
-			},
-			DestinationServer: destinationServer,
+	sh := NewSyncV3Handler(&sync2.HTTPClient{
+		Client: &http.Client{
+			Timeout: 5 * time.Minute,
 		},
-		Sessions: sync3.NewSessions(postgresDBURI),
-		Storage:  state.NewStorage(postgresDBURI),
-		Pollers:  make(map[string]*sync2.Poller),
-		pollerMu: &sync.Mutex{},
-	}
+		DestinationServer: destinationServer,
+	}, postgresDBURI)
 
 	// HTTP path routing
 	r := mux.NewRouter()
@@ -59,7 +53,7 @@ func RunSyncV3Server(destinationServer, bindAddr, postgresDBURI string) {
 
 	srv := &server{
 		chain: []func(next http.Handler) http.Handler{
-			hlog.NewHandler(log),
+			hlog.NewHandler(logger),
 			hlog.AccessHandler(func(r *http.Request, status, size int, duration time.Duration) {
 				hlog.FromRequest(r).Info().
 					Str("method", r.Method).
@@ -75,9 +69,9 @@ func RunSyncV3Server(destinationServer, bindAddr, postgresDBURI string) {
 	}
 
 	// Block forever
-	log.Info().Msgf("listening on %s", bindAddr)
+	logger.Info().Msgf("listening on %s", bindAddr)
 	if err := http.ListenAndServe(bindAddr, srv); err != nil {
-		log.Fatal().Err(err).Msg("failed to listen and serve")
+		logger.Fatal().Err(err).Msg("failed to listen and serve")
 	}
 }
 
@@ -95,8 +89,22 @@ type SyncV3Handler struct {
 	Sessions *sync3.Sessions
 	Storage  *state.Storage
 
+	typingStream *streams.Typing
+
 	pollerMu *sync.Mutex
 	Pollers  map[string]*sync2.Poller // device_id -> poller
+}
+
+func NewSyncV3Handler(v2Client sync2.Client, postgresDBURI string) *SyncV3Handler {
+	sh := &SyncV3Handler{
+		V2:       v2Client,
+		Sessions: sync3.NewSessions(postgresDBURI),
+		Storage:  state.NewStorage(postgresDBURI),
+		Pollers:  make(map[string]*sync2.Poller),
+		pollerMu: &sync.Mutex{},
+	}
+	sh.typingStream = streams.NewTyping(sh.Storage)
+	return sh
 }
 
 func (h *SyncV3Handler) ServeHTTP(w http.ResponseWriter, req *http.Request) {
@@ -112,10 +120,11 @@ func (h *SyncV3Handler) serve(w http.ResponseWriter, req *http.Request) *handler
 	if herr != nil {
 		return herr
 	}
-	log.Info().Int64("session", session.ID).Str("device", session.DeviceID).Msg("recv /v3/sync")
+	log := hlog.FromRequest(req)
+	log.Info().Int64("session", session.ID).Str("device", session.DeviceID).Str("user_id", session.UserID).Msg("recv /v3/sync")
 
 	// make sure we have a poller for this device
-	h.ensurePolling(req.Header.Get("Authorization"), session)
+	h.ensurePolling(req.Header.Get("Authorization"), session, log.With().Int64("session", session.ID).Logger())
 
 	// fetch the latest value which we'll base our response on
 	latestNID, err := h.Storage.LatestEventNID()
@@ -129,14 +138,14 @@ func (h *SyncV3Handler) serve(w http.ResponseWriter, req *http.Request) *handler
 		SessionID: session.ID,
 		NID:       latestNID,
 	}
-	/*
-		var from int64
-		if tokv3 != nil {
-			from = tokv3.NID
-		} */
+
+	var from int64
+	if tokv3 != nil {
+		from = tokv3.NID
+	}
 
 	// read filters and mux in to form complete request
-	_, filterID, herr := h.parseRequest(req, tokv3, session)
+	syncReq, filterID, herr := h.parseRequest(req, tokv3, session)
 	if herr != nil {
 		return herr
 	}
@@ -145,23 +154,22 @@ func (h *SyncV3Handler) serve(w http.ResponseWriter, req *http.Request) *handler
 		upcoming.FilterID = filterID
 	}
 
-	// TODO: invoke streams to get responses
-	/*
-		f := false
-		filter := &streams.FilterRoomList{
-			EntriesPerBatch:      5,
-			RoomNameSize:         70,
-			IncludeRoomAvatarMXC: &f,
-			SummaryEventTypes:    []string{"m.room.message", "m.room.member"},
-		}
-		stream := streams.NewRoomList(h.Storage)
-		_, _, err = stream.Process(session.DeviceID, from, latestNID, "", filter)
+	// start making the response
+	resp := sync3.Response{
+		Next: upcoming.String(),
+	}
+
+	// invoke streams to get responses
+	if syncReq.Typing != nil {
+		typingResp, err := h.typingStream.Process(session.UserID, from, latestNID, syncReq.Typing)
 		if err != nil {
 			return &handlerError{
-				err:        err,
 				StatusCode: 500,
+				err:        fmt.Errorf("typing stream: %s", err),
 			}
-		} */
+		}
+		resp.Typing = typingResp
+	}
 
 	// finally update our records: confirm that the client received the token they sent us, and mark this
 	// response as unconfirmed
@@ -169,6 +177,7 @@ func (h *SyncV3Handler) serve(w http.ResponseWriter, req *http.Request) *handler
 	if tokv3 != nil {
 		confirmed = tokv3.String()
 	}
+	log.Info().Int64("session", session.ID).Str("since", confirmed).Str("new_since", upcoming.String()).Msg("responding")
 	if err := h.Sessions.UpdateLastTokens(session.ID, confirmed, upcoming.String()); err != nil {
 		return &handlerError{
 			err:        err,
@@ -177,9 +186,6 @@ func (h *SyncV3Handler) serve(w http.ResponseWriter, req *http.Request) *handler
 	}
 
 	w.WriteHeader(200)
-	resp := sync3.Response{
-		Next: upcoming.String(),
-	}
 	if err := json.NewEncoder(w).Encode(&resp); err != nil {
 		log.Warn().Err(err).Msg("failed to marshal response")
 	}
@@ -189,6 +195,7 @@ func (h *SyncV3Handler) serve(w http.ResponseWriter, req *http.Request) *handler
 // getOrCreateSession retrieves an existing session if ?since= is set, else makes a new session.
 // Returns a session or an error. Returns a token if and only if there is an existing session.
 func (h *SyncV3Handler) getOrCreateSession(req *http.Request) (*sync3.Session, *sync3.Token, *handlerError) {
+	log := hlog.FromRequest(req)
 	var session *sync3.Session
 	var tokv3 *sync3.Token
 	deviceID, err := deviceIDFromRequest(req)
@@ -227,7 +234,7 @@ func (h *SyncV3Handler) getOrCreateSession(req *http.Request) (*sync3.Session, *
 // ensurePolling makes sure there is a poller for this device, making one if need be.
 // Blocks until at least 1 sync is done if and only if the poller was just created.
 // This ensures that calls to the database will return data.
-func (h *SyncV3Handler) ensurePolling(authHeader string, session *sync3.Session) {
+func (h *SyncV3Handler) ensurePolling(authHeader string, session *sync3.Session, logger zerolog.Logger) {
 	h.pollerMu.Lock()
 	poller, ok := h.Pollers[session.DeviceID]
 	// either no poller exists or it did but it died
@@ -236,7 +243,7 @@ func (h *SyncV3Handler) ensurePolling(authHeader string, session *sync3.Session)
 		return
 	}
 	// replace the poller
-	poller = sync2.NewPoller(authHeader, session.DeviceID, h.V2, h.Storage, h.Sessions)
+	poller = sync2.NewPoller(authHeader, session.DeviceID, h.V2, h.Storage, h.Sessions, logger)
 	var wg sync.WaitGroup
 	wg.Add(1)
 	go poller.Poll(session.V2Since, func() {

@@ -18,7 +18,7 @@ func TestTypingTable(t *testing.T) {
 	}
 	roomID := "!foo:localhost"
 	table := NewTypingTable(db)
-	lastStreamID := -1
+	lastStreamID := int64(-1)
 
 	setAndCheck := func() {
 		streamID, err := table.SetTyping(roomID, userIDs)
@@ -32,15 +32,12 @@ func TestTypingTable(t *testing.T) {
 			t.Errorf("SetTyping: streamID returned should always be increasing but it wasn't, got %d, last %d", streamID, lastStreamID)
 		}
 		lastStreamID = streamID
-		gotUserIDs, newStreamID, err := table.Typing(roomID, streamID-1)
+		gotUserIDs, err := table.Typing(roomID, streamID-1, streamID)
 		if err != nil {
 			t.Fatalf("failed to Typing: %s", err)
 		}
 		if !reflect.DeepEqual(gotUserIDs, userIDs) {
 			t.Errorf("got typing users %v want %v", gotUserIDs, userIDs)
-		}
-		if newStreamID != streamID {
-			t.Errorf("Typing did not return the same stream ID as SetTyping, got %d want %d", newStreamID, streamID)
 		}
 	}
 	setAndCheck()

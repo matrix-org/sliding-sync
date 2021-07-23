@@ -27,7 +27,7 @@ func NewTypingTable(db *sqlx.DB) *TypingTable {
 	return &TypingTable{db}
 }
 
-func (t *TypingTable) SetTyping(roomID string, userIDs []string) (streamID int, err error) {
+func (t *TypingTable) SetTyping(roomID string, userIDs []string) (streamID int64, err error) {
 	if userIDs == nil {
 		userIDs = []string{}
 	}
@@ -39,13 +39,13 @@ func (t *TypingTable) SetTyping(roomID string, userIDs []string) (streamID int, 
 	return streamID, err
 }
 
-func (t *TypingTable) Typing(roomID string, streamID int) (userIDs []string, newStreamID int, err error) {
+func (t *TypingTable) Typing(roomID string, fromStreamIDExcl, toStreamIDIncl int64) (userIDs []string, err error) {
 	var userIDsArray pq.StringArray
 	err = t.db.QueryRow(
-		`SELECT stream_id, user_ids FROM syncv3_typing WHERE room_id=$1 AND stream_id > $2`, roomID, streamID,
-	).Scan(&newStreamID, &userIDsArray)
+		`SELECT user_ids FROM syncv3_typing WHERE room_id=$1 AND stream_id > $2 AND stream_id <= $3`, roomID, fromStreamIDExcl, toStreamIDIncl,
+	).Scan(&userIDsArray)
 	if err == sql.ErrNoRows {
 		err = nil
 	}
-	return userIDsArray, newStreamID, err
+	return userIDsArray, err
 }

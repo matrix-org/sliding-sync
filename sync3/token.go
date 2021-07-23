@@ -6,11 +6,12 @@ import (
 	"strings"
 )
 
-// V3_S1_57423_F9
-// "V3_S" $SESSION "_" $NID "_F" $FILTER
+// V3_S1_57423_123_F9
+// "V3_S" $SESSION "_" $NID "_" $TYPING "_F" $FILTER
 type Token struct {
 	SessionID int64
 	NID       int64
+	TypingID  int64
 	FilterID  int64
 }
 
@@ -19,18 +20,18 @@ func (t Token) String() string {
 	if t.FilterID != 0 {
 		filterID = fmt.Sprintf("%d", t.FilterID)
 	}
-	return fmt.Sprintf("V3_S%d_%d_F%s", t.SessionID, t.NID, filterID)
+	return fmt.Sprintf("V3_S%d_%d_%d_F%s", t.SessionID, t.NID, t.TypingID, filterID)
 }
 
 func NewSyncToken(since string) (*Token, error) {
-	segments := strings.SplitN(since, "_", 4)
-	if len(segments) != 4 {
+	segments := strings.SplitN(since, "_", 5)
+	if len(segments) != 5 {
 		return nil, fmt.Errorf("not a sync v3 token")
 	}
 	if segments[0] != "V3" {
 		return nil, fmt.Errorf("not a sync v3 token: %s", since)
 	}
-	filterstr := strings.TrimPrefix(segments[3], "F")
+	filterstr := strings.TrimPrefix(segments[4], "F")
 	var fid int64
 	var err error
 	if len(filterstr) > 0 {
@@ -47,11 +48,16 @@ func NewSyncToken(since string) (*Token, error) {
 	}
 	nid, err := strconv.ParseInt(segments[2], 10, 64)
 	if err != nil {
-		return nil, fmt.Errorf("invalid nid: %s", sidstr)
+		return nil, fmt.Errorf("invalid nid: %s", segments[2])
+	}
+	typingid, err := strconv.ParseInt(segments[3], 10, 64)
+	if err != nil {
+		return nil, fmt.Errorf("invalid typing: %s", segments[3])
 	}
 	return &Token{
 		SessionID: sid,
 		NID:       nid,
 		FilterID:  fid,
+		TypingID:  typingid,
 	}, nil
 }

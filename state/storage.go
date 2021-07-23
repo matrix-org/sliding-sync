@@ -44,12 +44,12 @@ func (s *Storage) Initialise(roomID string, state []json.RawMessage) error {
 }
 
 // Typing returns who is currently typing in this room along with the latest stream ID.
-func (s *Storage) Typing(roomID string, streamID int) ([]string, int, error) {
-	return s.typingTable.Typing(roomID, streamID)
+func (s *Storage) Typing(roomID string, fromStreamIDExcl, toStreamIDIncl int64) ([]string, error) {
+	return s.typingTable.Typing(roomID, fromStreamIDExcl, toStreamIDIncl)
 }
 
 // SetTyping sets who is typing in the room. An empty list removes all typing users. Returns the
 // stream ID of the newly inserted typing users.
-func (s *Storage) SetTyping(roomID string, userIDs []string) (int, error) {
+func (s *Storage) SetTyping(roomID string, userIDs []string) (int64, error) {
 	return s.typingTable.SetTyping(roomID, userIDs)
 }

@@ -3,7 +3,6 @@ package sync2
 import (
 	"encoding/json"
 	"math"
-	"os"
 	"time"
 
 	"github.com/matrix-org/sync-v3/state"
@@ -28,11 +27,11 @@ type Poller struct {
 	Terminated bool
 }
 
-func NewPoller(authHeader, deviceID string, client Client, storage *state.Storage, sessions *sync3.Sessions) *Poller {
-	return newPoller(authHeader, deviceID, client, storage, sessions)
+func NewPoller(authHeader, deviceID string, client Client, storage *state.Storage, sessions *sync3.Sessions, logger zerolog.Logger) *Poller {
+	return newPoller(authHeader, deviceID, client, storage, sessions, logger)
 }
 
-func newPoller(authHeader, deviceID string, client Client, storage storageInterface, sessions sessionsInterface) *Poller {
+func newPoller(authHeader, deviceID string, client Client, storage storageInterface, sessions sessionsInterface, logger zerolog.Logger) *Poller {
 	return &Poller{
 		authorizationHeader: authHeader,
 		deviceID:            deviceID,
@@ -40,35 +39,32 @@ func newPoller(authHeader, deviceID string, client Client, storage storageInterf
 		storage:             storage,
 		sessions:            sessions,
 		Terminated:          false,
-		logger: zerolog.New(os.Stdout).With().Timestamp().Logger().With().Str("device", deviceID).Logger().Output(zerolog.ConsoleWriter{
-			Out:        os.Stderr,
-			TimeFormat: "15:04:05",
-		}),
+		logger:              logger,
 	}
 }
 
 // Poll will block forever, repeatedly calling v2 sync. Do this in a goroutine.
 // Returns if the access token gets invalidated. Invokes the callback on first success.
 func (p *Poller) Poll(since string, callback func()) {
-	p.logger.Info().Str("since", since).Msg("v2 poll loop started")
+	p.logger.Info().Str("since", since).Msg("Poller: v2 poll loop started")
 	failCount := 0
 	firstTime := true
 	for {
 		if failCount > 0 {
 			waitTime := time.Duration(math.Pow(2, float64(failCount))) * time.Second
-			p.logger.Warn().Str("duration", waitTime.String()).Msg("waiting before next poll")
+			p.logger.Warn().Str("duration", waitTime.String()).Msg("Poller: waiting before next poll")
 			timeSleep(waitTime)
 		}
-		p.logger.Info().Str("since", since).Msg("requesting data")
+		p.logger.Info().Str("since", since).Msg("Poller: requesting data")
 		resp, statusCode, err := p.client.DoSyncV2(p.authorizationHeader, since)
 		if err != nil {
 			// check if temporary
 			if statusCode != 401 {
-				p.logger.Warn().Int("code", statusCode).Err(err).Msg("sync v2 poll returned temporary error")
+				p.logger.Warn().Int("code", statusCode).Err(err).Msg("Poller: sync v2 poll returned temporary error")
 				failCount += 1
 				continue
 			} else {
-				p.logger.Warn().Msg("access token has been invalidated, terminating loop")
+				p.logger.Warn().Msg("Poller: access token has been invalidated, terminating loop")
 				p.Terminated = true
 				return
 			}
@@ -80,7 +76,7 @@ func (p *Poller) Poll(since string, callback func()) {
 		err = p.sessions.UpdateDeviceSince(p.deviceID, since)
 		if err != nil {
 			// non-fatal
-			p.logger.Warn().Str("since", since).Err(err).Msg("failed to persist new since value")
+			p.logger.Warn().Str("since", since).Err(err).Msg("Poller: failed to persist new since value")
 		}
 
 		if firstTime {
@@ -92,18 +88,26 @@ func (p *Poller) Poll(since string, callback func()) {
 
 func (p *Poller) accumulate(res *SyncResponse) {
 	if len(res.Rooms.Join) == 0 {
+		p.logger.Info().Msg("Poller: no rooms in join response")
 		return
 	}
+	initCalls := 0
+	accumCalls := 0
+	typingCalls := 0
 	for roomID, roomData := range res.Rooms.Join {
 		if len(roomData.State.Events) > 0 {
+			initCalls++
 			err := p.storage.Initialise(roomID, roomData.State.Events)
 			if err != nil {
-				p.logger.Err(err).Str("room_id", roomID).Int("num_state_events", len(roomData.State.Events)).Msg("Accumulator.Initialise failed")
+				p.logger.Err(err).Str("room_id", roomID).Int("num_state_events", len(roomData.State.Events)).Msg("Poller: Accumulator.Initialise failed")
 			}
 		}
-		err := p.storage.Accumulate(roomID, roomData.Timeline.Events)
-		if err != nil {
-			p.logger.Err(err).Str("room_id", roomID).Int("num_timeline_events", len(roomData.Timeline.Events)).Msg("Accumulator.Accumulate failed")
+		if len(roomData.Timeline.Events) > 0 {
+			accumCalls++
+			err := p.storage.Accumulate(roomID, roomData.Timeline.Events)
+			if err != nil {
+				p.logger.Err(err).Str("room_id", roomID).Int("num_timeline_events", len(roomData.Timeline.Events)).Msg("Poller: Accumulator.Accumulate failed")
+			}
 		}
 		for _, ephEvent := range roomData.Ephemeral.Events {
 			if gjson.GetBytes(ephEvent, "type").Str == "m.typing" {
@@ -117,14 +121,19 @@ func (p *Poller) accumulate(res *SyncResponse) {
 						userIDs = append(userIDs, u.Str)
 					}
 				}
-				_, err = p.storage.SetTyping(roomID, userIDs)
+				typingCalls++
+				_, err := p.storage.SetTyping(roomID, userIDs)
 				if err != nil {
-					p.logger.Err(err).Str("room_id", roomID).Strs("user_ids", userIDs).Msg("Accumulator: failed to set typing")
+					p.logger.Err(err).Str("room_id", roomID).Strs("user_ids", userIDs).Msg("Poller: failed to SetTyping")
 				}
 			}
 		}
 	}
-	p.logger.Info().Int("num_rooms", len(res.Rooms.Join)).Msg("accumulated data")
+	p.logger.Info().Ints(
+		"rooms [invite,join,leave]", []int{len(res.Rooms.Invite), len(res.Rooms.Join), len(res.Rooms.Leave)},
+	).Ints(
+		"storage [inits,accum,typing]", []int{initCalls, accumCalls, typingCalls},
+	).Msg("Poller: accumulated data")
 }
 
 // the subset of Sessions which the poller uses, mocked for tests
@@ -132,14 +141,9 @@ type sessionsInterface interface {
 	UpdateDeviceSince(deviceID, since string) error
 }
 
-// the subset of Client which the poller uses, mocked for tests
-type clientInterface interface {
-	DoSyncV2(authHeader, since string) (*SyncResponse, int, error)
-}
-
 // the subset of Storage which the poller uses, mocked for tests
 type storageInterface interface {
 	Accumulate(roomID string, timeline []json.RawMessage) error
 	Initialise(roomID string, state []json.RawMessage) error
-	SetTyping(roomID string, userIDs []string) (int, error)
+	SetTyping(roomID string, userIDs []string) (int64, error)
 }
