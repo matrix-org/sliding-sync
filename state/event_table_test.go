@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/jmoiron/sqlx"
+	"github.com/matrix-org/sync-v3/sqlutil"
 )
 
 func TestEventTable(t *testing.T) {
@@ -279,6 +280,7 @@ func TestChunkify(t *testing.T) {
 			NID: i,
 		}
 	}
+	eventChunker := EventChunker(events)
 	testCases := []struct {
 		name             string
 		numParamsPerStmt int
@@ -319,16 +321,17 @@ func TestChunkify(t *testing.T) {
 	for _, tc := range testCases {
 		testCase := tc
 		t.Run(testCase.name, func(t *testing.T) {
-			chunks := chunkify(testCase.numParamsPerStmt, testCase.maxParamsPerCall, events)
+			chunks := sqlutil.Chunkify(testCase.numParamsPerStmt, testCase.maxParamsPerCall, eventChunker)
 			if len(chunks) != len(testCase.chunkSizes) {
 				t.Fatalf("got %d chunks, want %d", len(chunks), len(testCase.chunkSizes))
 			}
 			eventNID := 0
 			for i := 0; i < len(chunks); i++ {
-				if len(chunks[i]) != testCase.chunkSizes[i] {
-					t.Errorf("chunk %d got %d elements, want %d", i, len(chunks[i]), testCase.chunkSizes[i])
+				if chunks[i].Len() != testCase.chunkSizes[i] {
+					t.Errorf("chunk %d got %d elements, want %d", i, chunks[i].Len(), testCase.chunkSizes[i])
 				}
-				for j, ev := range chunks[i] {
+				eventChunk := chunks[i].(EventChunker)
+				for j, ev := range eventChunk {
 					if ev.NID != eventNID {
 						t.Errorf("chunk %d got wrong event in position %d: got NID %d want NID %d", i, j, ev.NID, eventNID)
 					}

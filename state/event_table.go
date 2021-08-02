@@ -6,6 +6,7 @@ import (
 	"math"
 
 	"github.com/jmoiron/sqlx"
+	"github.com/matrix-org/sync-v3/sqlutil"
 	"github.com/tidwall/gjson"
 )
 
@@ -88,7 +89,7 @@ func (t *EventTable) Insert(txn *sqlx.Tx, events []Event) (int, error) {
 		}
 		events[i] = ev
 	}
-	chunks := chunkify(3, 65535, events)
+	chunks := sqlutil.Chunkify(3, 65535, EventChunker(events))
 	var rowsAffected int64
 	for _, chunk := range chunks {
 		result, err := txn.NamedExec(`INSERT INTO syncv3_events (event_id, room_id, event)
@@ -171,29 +172,11 @@ func (t *EventTable) SelectEventsBetween(txn *sqlx.Tx, roomID string, lowerExclu
 	return events, err
 }
 
-// chunkify will break up things to be inserted based on the number of params in the statement.
-// It is required because postgres has a limit on the number of params in a single statement (65535).
-// Inserting events using NamedExec involves 3n params (n=number of events), meaning it's easy to hit
-// the limit in rooms like Matrix HQ. This function breaks up the events into chunks which can be
-// batch inserted in multiple statements. Without this, you'll see errors like:
-//     "pq: got 95331 parameters but PostgreSQL only supports 65535 parameters"
-func chunkify(numParamsPerStmt, maxParamsPerCall int, entries []Event) [][]Event {
-	// common case, most things are small
-	if (len(entries) * numParamsPerStmt) <= maxParamsPerCall {
-		return [][]Event{
-			entries,
-		}
-	}
-	var chunks [][]Event
-	// work out how many events can fit in a chunk
-	numEntriesPerChunk := (maxParamsPerCall / numParamsPerStmt)
-	for i := 0; i < len(entries); i += numEntriesPerChunk {
-		endIndex := i + numEntriesPerChunk
-		if endIndex > len(entries) {
-			endIndex = len(entries)
-		}
-		chunks = append(chunks, entries[i:endIndex])
-	}
+type EventChunker []Event
 
-	return chunks
+func (c EventChunker) Len() int {
+	return len(c)
+}
+func (c EventChunker) Subslice(i, j int) sqlutil.Chunker {
+	return c[i:j]
 }

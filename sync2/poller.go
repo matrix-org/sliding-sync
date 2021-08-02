@@ -5,6 +5,7 @@ import (
 	"math"
 	"time"
 
+	"github.com/matrix-org/gomatrixserverlib"
 	"github.com/rs/zerolog"
 	"github.com/tidwall/gjson"
 )
@@ -18,6 +19,9 @@ type V2DataReceiver interface {
 	Accumulate(roomID string, timeline []json.RawMessage) error
 	Initialise(roomID string, state []json.RawMessage) error
 	SetTyping(roomID string, userIDs []string) (int64, error)
+	// Add messages for this device. If an error is returned, the poll loop is terminated as continuing
+	// would implicitly acknowledge these messages.
+	AddToDeviceMessages(deviceID string, msgs []gomatrixserverlib.SendToDeviceEvent) error
 }
 
 // Poller can automatically poll the sync v2 endpoint and accumulate the responses in storage
@@ -44,7 +48,8 @@ func NewPoller(authHeader, deviceID string, client Client, receiver V2DataReceiv
 }
 
 // Poll will block forever, repeatedly calling v2 sync. Do this in a goroutine.
-// Returns if the access token gets invalidated. Invokes the callback on first success.
+// Returns if the access token gets invalidated or if there was a fatal error processing v2 resposnes.
+// Invokes the callback on first success.
 func (p *Poller) Poll(since string, callback func()) {
 	p.logger.Info().Str("since", since).Msg("Poller: v2 poll loop started")
 	failCount := 0
@@ -70,7 +75,12 @@ func (p *Poller) Poll(since string, callback func()) {
 			}
 		}
 		failCount = 0
-		p.accumulate(resp)
+		p.parseJoinResponse(resp)
+		if err = p.parseToDeviceMessages(resp); err != nil {
+			p.logger.Err(err).Str("since", since).Msg("Poller: V2DataReceiver failed to persist to-device messages. Terminating loop.")
+			p.Terminated = true
+			return
+		}
 		since = resp.NextBatch
 		// persist the since token (TODO: this could get slow if we hammer the DB too much)
 		err = p.receiver.UpdateDeviceSince(p.deviceID, since)
@@ -86,7 +96,14 @@ func (p *Poller) Poll(since string, callback func()) {
 	}
 }
 
-func (p *Poller) accumulate(res *SyncResponse) {
+func (p *Poller) parseToDeviceMessages(res *SyncResponse) error {
+	if len(res.ToDevice.Events) == 0 {
+		return nil
+	}
+	return p.receiver.AddToDeviceMessages(p.deviceID, res.ToDevice.Events)
+}
+
+func (p *Poller) parseJoinResponse(res *SyncResponse) {
 	if len(res.Rooms.Join) == 0 {
 		p.logger.Info().Msg("Poller: no rooms in join response")
 		return

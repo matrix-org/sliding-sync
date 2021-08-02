@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 
 	"github.com/jmoiron/sqlx"
+	"github.com/matrix-org/gomatrixserverlib"
 )
 
 type Storage struct {
@@ -65,4 +66,8 @@ func (s *Storage) Typing(roomID string, fromStreamIDExcl int64) ([]string, int64
 // stream ID of the newly inserted typing users.
 func (s *Storage) SetTyping(roomID string, userIDs []string) (int64, error) {
 	return s.typingTable.SetTyping(roomID, userIDs)
+}
+
+func (s *Storage) AddToDeviceMessages(deviceID string, msgs []gomatrixserverlib.SendToDeviceEvent) error {
+	return nil
 }

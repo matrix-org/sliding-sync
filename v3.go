@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/gorilla/mux"
+	"github.com/matrix-org/gomatrixserverlib"
 	"github.com/matrix-org/sync-v3/state"
 	"github.com/matrix-org/sync-v3/sync2"
 	"github.com/matrix-org/sync-v3/sync3"
@@ -365,6 +366,10 @@ func (h *SyncV3Handler) SetTyping(roomID string, userIDs []string) (int64, error
 	updateToken.TypingID = typingID
 	h.Notifier.OnNewTyping(roomID, updateToken)
 	return typingID, nil
+}
+
+func (h *SyncV3Handler) AddToDeviceMessages(deviceID string, msgs []gomatrixserverlib.SendToDeviceEvent) error {
+	return h.Storage.AddToDeviceMessages(deviceID, msgs)
 }
 
 func (h *SyncV3Handler) parseRequest(req *http.Request, tok *sync3.Token, session *sync3.Session) (*sync3.Request, int64, *handlerError) {

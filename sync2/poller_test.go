@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/matrix-org/gomatrixserverlib"
 	"github.com/rs/zerolog"
 )
 
@@ -237,6 +238,9 @@ func (a *mockDataReceiver) SetTyping(roomID string, userIDs []string) (int64, er
 }
 func (s *mockDataReceiver) UpdateDeviceSince(deviceID, since string) error {
 	s.deviceIDToSince[deviceID] = since
+	return nil
+}
+func (s *mockDataReceiver) AddToDeviceMessages(deviceID string, msgs []gomatrixserverlib.SendToDeviceEvent) error {
 	return nil
 }
 
