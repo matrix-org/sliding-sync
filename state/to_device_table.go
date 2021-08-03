@@ -10,7 +10,9 @@ import (
 )
 
 // ToDeviceTable stores to_device messages for devices.
-type ToDeviceTable struct{}
+type ToDeviceTable struct {
+	db *sqlx.DB
+}
 
 type ToDeviceRow struct {
 	Position int64  `db:"position"`
@@ -38,47 +40,56 @@ func NewToDeviceTable(db *sqlx.DB) *ToDeviceTable {
 	);
 	CREATE INDEX IF NOT EXISTS syncv3_to_device_messages_device_idx ON syncv3_to_device_messages(device_id);
 	`)
-	return &ToDeviceTable{}
+	return &ToDeviceTable{db}
 }
 
-func (t *ToDeviceTable) Messages(txn *sqlx.Tx, deviceID string, from int64) (msgs []gomatrixserverlib.SendToDeviceEvent, to int64, err error) {
+func (t *ToDeviceTable) Messages(deviceID string, from, to int64) (msgs []json.RawMessage, err error) {
 	var rows []ToDeviceRow
-	err = txn.Select(&rows, `SELECT position, message FROM syncv3_to_device_messages WHERE device_id = $1 AND position > $2 ORDER BY position ASC`, deviceID, from)
+	err = t.db.Select(&rows,
+		`SELECT message FROM syncv3_to_device_messages WHERE device_id = $1 AND position > $2 AND position <= $3 ORDER BY position ASC`,
+		deviceID, from, to,
+	)
 	if len(rows) == 0 {
 		to = from
 		return
 	}
-	to = rows[len(rows)-1].Position
-	msgs = make([]gomatrixserverlib.SendToDeviceEvent, len(rows))
+	msgs = make([]json.RawMessage, len(rows))
 	for i := range rows {
-		var stdev gomatrixserverlib.SendToDeviceEvent
-		if err = json.Unmarshal([]byte(rows[i].Message), &stdev); err != nil {
-			return
-		}
-		msgs[i] = stdev
+		msgs[i] = json.RawMessage(rows[i].Message)
 	}
 	return
 }
 
-func (t *ToDeviceTable) InsertMessages(txn *sqlx.Tx, deviceID string, msgs []gomatrixserverlib.SendToDeviceEvent) (err error) {
-	rows := make([]ToDeviceRow, len(msgs))
-	for i := range msgs {
-		msgJSON, err := json.Marshal(msgs[i])
-		if err != nil {
-			return fmt.Errorf("InsertMessages: failed to marshal to_device event: %s", err)
+func (t *ToDeviceTable) InsertMessages(deviceID string, msgs []gomatrixserverlib.SendToDeviceEvent) (pos int64, err error) {
+	var lastPos int64
+	err = sqlutil.WithTransaction(t.db, func(txn *sqlx.Tx) error {
+		rows := make([]ToDeviceRow, len(msgs))
+		for i := range msgs {
+			msgJSON, err := json.Marshal(msgs[i])
+			if err != nil {
+				return fmt.Errorf("InsertMessages: failed to marshal to_device event: %s", err)
+			}
+			rows[i] = ToDeviceRow{
+				DeviceID: deviceID,
+				Message:  string(msgJSON),
+			}
 		}
-		rows[i] = ToDeviceRow{
-			DeviceID: deviceID,
-			Message:  string(msgJSON),
+
+		chunks := sqlutil.Chunkify(2, 65535, ToDeviceRowChunker(rows))
+		for _, chunk := range chunks {
+			result, err := t.db.NamedQuery(`INSERT INTO syncv3_to_device_messages (device_id, message)
+        VALUES (:device_id, :message) RETURNING position`, chunk)
+			if err != nil {
+				return err
+			}
+			for result.Next() {
+				if err = result.Scan(&lastPos); err != nil {
+					return err
+				}
+			}
+			result.Close()
 		}
-	}
-	chunks := sqlutil.Chunkify(2, 65535, ToDeviceRowChunker(rows))
-	for _, chunk := range chunks {
-		_, err := txn.NamedExec(`INSERT INTO syncv3_to_device_messages (device_id, message)
-        VALUES (:device_id, :message)`, chunk)
-		if err != nil {
-			return err
-		}
-	}
-	return nil
+		return nil
+	})
+	return lastPos, err
 }

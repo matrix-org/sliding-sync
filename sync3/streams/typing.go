@@ -34,7 +34,7 @@ func NewTyping(s *state.Storage) *Typing {
 }
 
 func (s *Typing) Process(userID string, from int64, f *FilterTyping) (resp *TypingResponse, next int64, err error) {
-	userIDs, to, err := s.storage.Typing(f.RoomID, from)
+	userIDs, to, err := s.storage.TypingTable.Typing(f.RoomID, from)
 	if err != nil {
 		return nil, 0, fmt.Errorf("Typing: %s", err)
 	}

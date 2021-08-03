@@ -19,6 +19,7 @@ import (
 	"github.com/matrix-org/sync-v3/sync2"
 	"github.com/matrix-org/sync-v3/sync3"
 	"github.com/matrix-org/sync-v3/sync3/notifier"
+	"github.com/matrix-org/sync-v3/sync3/store"
 	"github.com/matrix-org/sync-v3/sync3/streams"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/hlog"
@@ -91,7 +92,7 @@ func (e *handlerError) Error() string {
 
 type SyncV3Handler struct {
 	V2       sync2.Client
-	Sessions *sync3.Sessions
+	Sessions *store.Sessions
 	Storage  *state.Storage
 	Notifier *notifier.Notifier
 
@@ -104,7 +105,7 @@ type SyncV3Handler struct {
 func NewSyncV3Handler(v2Client sync2.Client, postgresDBURI string) *SyncV3Handler {
 	sh := &SyncV3Handler{
 		V2:       v2Client,
-		Sessions: sync3.NewSessions(postgresDBURI),
+		Sessions: store.NewSessions(postgresDBURI),
 		Storage:  state.NewStorage(postgresDBURI),
 		Pollers:  make(map[string]*sync2.Poller),
 		pollerMu: &sync.Mutex{},
@@ -120,7 +121,7 @@ func NewSyncV3Handler(v2Client sync2.Client, postgresDBURI string) *SyncV3Handle
 	if err != nil {
 		panic(err)
 	}
-	latestToken.TypingID = typingID
+	latestToken.TypingPosition = typingID
 	sh.Notifier = notifier.NewNotifier(latestToken)
 	// TODO: load up the membership states so the notifier knows who to wake up
 	/*
@@ -184,7 +185,7 @@ func (h *SyncV3Handler) serve(w http.ResponseWriter, req *http.Request) *handler
 		if newUpcoming == nil {
 			// no data
 			w.WriteHeader(200)
-			var result sync3.Response
+			var result streams.Response
 			result.Next = upcoming.String()
 			if err := json.NewEncoder(w).Encode(&result); err != nil {
 				log.Warn().Err(err).Msg("failed to marshal response")
@@ -195,19 +196,21 @@ func (h *SyncV3Handler) serve(w http.ResponseWriter, req *http.Request) *handler
 	}
 
 	// start making the response
-	resp := sync3.Response{}
+	resp := streams.Response{}
 
 	// invoke streams to get responses
 	if syncReq.Typing != nil {
-		typingResp, typingTo, err := h.typingStream.Process(session.UserID, fromToken.TypingID, syncReq.Typing)
+		typingResp, typingTo, err := h.typingStream.Process(session.UserID, fromToken.TypingPosition, syncReq.Typing)
 		if err != nil {
 			return &handlerError{
 				StatusCode: 500,
 				err:        fmt.Errorf("typing stream: %s", err),
 			}
 		}
-		upcoming.TypingID = typingTo
+		upcoming.TypingPosition = typingTo
 		resp.Typing = typingResp
+	}
+	if syncReq.ToDevice != nil {
 	}
 
 	resp.Next = upcoming.String()
@@ -291,7 +294,7 @@ func (h *SyncV3Handler) ensurePolling(authHeader string, session *sync3.Session,
 		return
 	}
 	// replace the poller
-	poller = sync2.NewPoller(authHeader, session.DeviceID, h.V2, h, logger)
+	poller = sync2.NewPoller(session.UserID, authHeader, session.DeviceID, h.V2, h, logger)
 	var wg sync.WaitGroup
 	wg.Add(1)
 	go poller.Poll(session.V2Since, func() {
@@ -358,22 +361,29 @@ func (h *SyncV3Handler) Initialise(roomID string, state []json.RawMessage) error
 
 // Called from the v2 poller, implements V2DataReceiver
 func (h *SyncV3Handler) SetTyping(roomID string, userIDs []string) (int64, error) {
-	typingID, err := h.Storage.SetTyping(roomID, userIDs)
+	typingID, err := h.Storage.TypingTable.SetTyping(roomID, userIDs)
 	if err != nil {
 		return 0, err
 	}
 	var updateToken sync3.Token
-	updateToken.TypingID = typingID
+	updateToken.TypingPosition = typingID
 	h.Notifier.OnNewTyping(roomID, updateToken)
 	return typingID, nil
 }
 
-func (h *SyncV3Handler) AddToDeviceMessages(deviceID string, msgs []gomatrixserverlib.SendToDeviceEvent) error {
-	return h.Storage.AddToDeviceMessages(deviceID, msgs)
+func (h *SyncV3Handler) AddToDeviceMessages(userID, deviceID string, msgs []gomatrixserverlib.SendToDeviceEvent) error {
+	pos, err := h.Storage.ToDeviceTable.InsertMessages(deviceID, msgs)
+	if err != nil {
+		return err
+	}
+	var updateToken sync3.Token
+	updateToken.ToDevicePosition = pos
+	h.Notifier.OnNewSendToDevice(userID, []string{deviceID}, updateToken)
+	return nil
 }
 
-func (h *SyncV3Handler) parseRequest(req *http.Request, tok *sync3.Token, session *sync3.Session) (*sync3.Request, int64, *handlerError) {
-	existing := &sync3.Request{} // first request
+func (h *SyncV3Handler) parseRequest(req *http.Request, tok *sync3.Token, session *sync3.Session) (*streams.Request, int64, *handlerError) {
+	existing := &streams.Request{} // first request
 	var err error
 	if tok.FilterID != 0 {
 		// load existing filter
@@ -387,7 +397,7 @@ func (h *SyncV3Handler) parseRequest(req *http.Request, tok *sync3.Token, sessio
 	}
 	// load new delta from request
 	defer req.Body.Close()
-	var delta sync3.Request
+	var delta streams.Request
 	if err := json.NewDecoder(req.Body).Decode(&delta); err != nil {
 		return nil, 0, &handlerError{
 			StatusCode: 400,

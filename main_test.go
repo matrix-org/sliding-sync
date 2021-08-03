@@ -11,7 +11,7 @@ import (
 	"testing"
 
 	"github.com/matrix-org/sync-v3/sync2"
-	"github.com/matrix-org/sync-v3/sync3"
+	"github.com/matrix-org/sync-v3/sync3/streams"
 	"github.com/matrix-org/sync-v3/testutils"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/hlog"
@@ -90,9 +90,9 @@ func marshalJSON(t *testing.T, in map[string]interface{}) json.RawMessage {
 	return j
 }
 
-func parseResponse(t *testing.T, body *bytes.Buffer) *sync3.Response {
+func parseResponse(t *testing.T, body *bytes.Buffer) *streams.Response {
 	t.Helper()
-	var v3Resp sync3.Response
+	var v3Resp streams.Response
 	if err := json.Unmarshal(body.Bytes(), &v3Resp); err != nil {
 		t.Fatalf("failed to unmarshal response: %s", err)
 	}
@@ -113,7 +113,7 @@ func doSync3Request(t *testing.T, server http.Handler, authHeader, since string,
 	return w
 }
 
-func mustDoSync3Request(t *testing.T, server http.Handler, authHeader, since string, reqBody map[string]interface{}) *sync3.Response {
+func mustDoSync3Request(t *testing.T, server http.Handler, authHeader, since string, reqBody map[string]interface{}) *streams.Response {
 	t.Helper()
 	w := doSync3Request(t, server, authHeader, since, reqBody)
 	if w.Code != 200 {

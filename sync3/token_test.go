@@ -24,19 +24,19 @@ func TestNewSyncToken(t *testing.T) {
 			// with filter
 			in: "V3_S1_12_19_F6",
 			outToken: &Token{
-				SessionID: 1,
-				NID:       12,
-				TypingID:  19,
-				FilterID:  6,
+				SessionID:      1,
+				NID:            12,
+				TypingPosition: 19,
+				FilterID:       6,
 			},
 		},
 		{
 			// without filter
 			in: "V3_S1_33_100_F",
 			outToken: &Token{
-				SessionID: 1,
-				NID:       33,
-				TypingID:  100,
+				SessionID:      1,
+				NID:            33,
+				TypingPosition: 100,
 			},
 		},
 	}

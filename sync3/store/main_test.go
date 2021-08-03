@@ -1,4 +1,4 @@
-package sync3
+package store
 
 import (
 	"os"

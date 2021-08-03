@@ -45,7 +45,7 @@ func TestPollerPollFromNothing(t *testing.T) {
 	})
 	var wg sync.WaitGroup
 	wg.Add(1)
-	poller := NewPoller("Authorization: hello world", deviceID, client, accumulator, zerolog.New(os.Stderr))
+	poller := NewPoller("@alice:localhost", "Authorization: hello world", deviceID, client, accumulator, zerolog.New(os.Stderr))
 	go func() {
 		defer wg.Done()
 		poller.Poll("", func() {
@@ -122,7 +122,7 @@ func TestPollerPollFromExisting(t *testing.T) {
 	})
 	var wg sync.WaitGroup
 	wg.Add(1)
-	poller := NewPoller("Authorization: hello world", deviceID, client, accumulator, zerolog.New(os.Stderr))
+	poller := NewPoller("@alice:localhost", "Authorization: hello world", deviceID, client, accumulator, zerolog.New(os.Stderr))
 	go func() {
 		defer wg.Done()
 		poller.Poll(since, func() {
@@ -192,7 +192,7 @@ func TestPollerBackoff(t *testing.T) {
 	}
 	var wg sync.WaitGroup
 	wg.Add(1)
-	poller := NewPoller("Authorization: hello world", deviceID, client, accumulator, zerolog.New(os.Stderr))
+	poller := NewPoller("@alice:localhost", "Authorization: hello world", deviceID, client, accumulator, zerolog.New(os.Stderr))
 	go func() {
 		defer wg.Done()
 		poller.Poll("some_since_value", func() {
@@ -240,7 +240,7 @@ func (s *mockDataReceiver) UpdateDeviceSince(deviceID, since string) error {
 	s.deviceIDToSince[deviceID] = since
 	return nil
 }
-func (s *mockDataReceiver) AddToDeviceMessages(deviceID string, msgs []gomatrixserverlib.SendToDeviceEvent) error {
+func (s *mockDataReceiver) AddToDeviceMessages(userID, deviceID string, msgs []gomatrixserverlib.SendToDeviceEvent) error {
 	return nil
 }
 

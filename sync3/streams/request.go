@@ -1,14 +1,13 @@
-package sync3
-
-import "github.com/matrix-org/sync-v3/sync3/streams"
+package streams
 
 // Request represents a sync v3 request
 //
 // A request is made by the combination of the client HTTP request parameters and the stored filters
 // on the server.
 type Request struct {
-	RoomList *streams.FilterRoomList `json:"room_list,omitempty"`
-	Typing   *streams.FilterTyping   `json:"typing,omitempty"`
+	RoomList *FilterRoomList `json:"room_list,omitempty"`
+	Typing   *FilterTyping   `json:"typing,omitempty"`
+	ToDevice *FilterToDevice `json:"to_device,omitempty"`
 }
 
 // ApplyDeltas updates Request with the values in req2. Returns true if there were deltas.

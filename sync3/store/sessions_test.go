@@ -1,4 +1,4 @@
-package sync3
+package store
 
 import (
 	"testing"
@@ -47,7 +47,7 @@ func TestSessions(t *testing.T) {
 	assertEqual(t, s2.UserID, "@alice:localhost", "Session.UserID mismatch")
 
 	// check filters work
-	wantReq := &Request{
+	wantReq := &streams.Request{
 		Typing: &streams.FilterTyping{
 			RoomID: "!foo:bar",
 		},

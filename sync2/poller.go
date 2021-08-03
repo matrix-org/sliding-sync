@@ -21,11 +21,12 @@ type V2DataReceiver interface {
 	SetTyping(roomID string, userIDs []string) (int64, error)
 	// Add messages for this device. If an error is returned, the poll loop is terminated as continuing
 	// would implicitly acknowledge these messages.
-	AddToDeviceMessages(deviceID string, msgs []gomatrixserverlib.SendToDeviceEvent) error
+	AddToDeviceMessages(userID, deviceID string, msgs []gomatrixserverlib.SendToDeviceEvent) error
 }
 
 // Poller can automatically poll the sync v2 endpoint and accumulate the responses in storage
 type Poller struct {
+	userID              string
 	authorizationHeader string
 	deviceID            string
 	client              Client
@@ -36,9 +37,10 @@ type Poller struct {
 	Terminated bool
 }
 
-func NewPoller(authHeader, deviceID string, client Client, receiver V2DataReceiver, logger zerolog.Logger) *Poller {
+func NewPoller(userID, authHeader, deviceID string, client Client, receiver V2DataReceiver, logger zerolog.Logger) *Poller {
 	return &Poller{
 		authorizationHeader: authHeader,
+		userID:              userID,
 		deviceID:            deviceID,
 		client:              client,
 		receiver:            receiver,
@@ -60,7 +62,6 @@ func (p *Poller) Poll(since string, callback func()) {
 			p.logger.Warn().Str("duration", waitTime.String()).Msg("Poller: waiting before next poll")
 			timeSleep(waitTime)
 		}
-		p.logger.Info().Str("since", since).Msg("Poller: requesting data")
 		resp, statusCode, err := p.client.DoSyncV2(p.authorizationHeader, since)
 		if err != nil {
 			// check if temporary
@@ -100,7 +101,7 @@ func (p *Poller) parseToDeviceMessages(res *SyncResponse) error {
 	if len(res.ToDevice.Events) == 0 {
 		return nil
 	}
-	return p.receiver.AddToDeviceMessages(p.deviceID, res.ToDevice.Events)
+	return p.receiver.AddToDeviceMessages(p.userID, p.deviceID, res.ToDevice.Events)
 }
 
 func (p *Poller) parseJoinResponse(res *SyncResponse) {

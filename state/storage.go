@@ -4,13 +4,12 @@ import (
 	"encoding/json"
 
 	"github.com/jmoiron/sqlx"
-	"github.com/matrix-org/gomatrixserverlib"
 )
 
 type Storage struct {
 	accumulator   *Accumulator
-	typingTable   *TypingTable
-	toDeviceTable *ToDeviceTable
+	TypingTable   *TypingTable
+	ToDeviceTable *ToDeviceTable
 }
 
 func NewStorage(postgresURI string) *Storage {
@@ -29,8 +28,8 @@ func NewStorage(postgresURI string) *Storage {
 	}
 	return &Storage{
 		accumulator:   acc,
-		typingTable:   NewTypingTable(db),
-		toDeviceTable: NewToDeviceTable(db),
+		TypingTable:   NewTypingTable(db),
+		ToDeviceTable: NewToDeviceTable(db),
 	}
 }
 
@@ -39,7 +38,7 @@ func (s *Storage) LatestEventNID() (int64, error) {
 }
 
 func (s *Storage) LatestTypingID() (int64, error) {
-	return s.typingTable.SelectHighestID()
+	return s.TypingTable.SelectHighestID()
 }
 
 func (s *Storage) Accumulate(roomID string, timeline []json.RawMessage) (int, error) {
@@ -57,19 +56,4 @@ func (s *Storage) AllJoinedMembers() (map[string][]string, error) {
 		return nil, err
 	}
 	return nil, nil
-}
-
-// Typing returns who is currently typing in this room along with the latest stream ID.
-func (s *Storage) Typing(roomID string, fromStreamIDExcl int64) ([]string, int64, error) {
-	return s.typingTable.Typing(roomID, fromStreamIDExcl)
-}
-
-// SetTyping sets who is typing in the room. An empty list removes all typing users. Returns the
-// stream ID of the newly inserted typing users.
-func (s *Storage) SetTyping(roomID string, userIDs []string) (int64, error) {
-	return s.typingTable.SetTyping(roomID, userIDs)
-}
-
-func (s *Storage) AddToDeviceMessages(deviceID string, msgs []gomatrixserverlib.SendToDeviceEvent) error {
-	return nil
 }

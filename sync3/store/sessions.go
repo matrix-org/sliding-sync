@@ -1,4 +1,4 @@
-package sync3
+package store
 
 import (
 	"database/sql"
@@ -8,6 +8,8 @@ import (
 	"github.com/jmoiron/sqlx"
 	_ "github.com/lib/pq"
 	"github.com/matrix-org/sync-v3/sqlutil"
+	"github.com/matrix-org/sync-v3/sync3"
+	"github.com/matrix-org/sync-v3/sync3/streams"
 	"github.com/rs/zerolog"
 )
 
@@ -15,20 +17,6 @@ var log = zerolog.New(os.Stdout).With().Timestamp().Logger().Output(zerolog.Cons
 	Out:        os.Stderr,
 	TimeFormat: "15:04:05",
 })
-
-// A Session represents a single device's sync stream. One device can have many sessions open at
-// once. Sessions are created when devices sync without a since token. Sessions are destroyed
-// after a configurable period of inactivity.
-type Session struct {
-	ID                   int64  `db:"session_id"`
-	UserID               string `db:"user_id"`
-	DeviceID             string `db:"device_id"`
-	LastToDeviceACK      string `db:"last_to_device_ack"`
-	LastConfirmedToken   string `db:"last_confirmed_token"`
-	LastUnconfirmedToken string `db:"last_unconfirmed_token"`
-
-	V2Since string `db:"since"`
-}
 
 type Sessions struct {
 	db *sqlx.DB
@@ -67,8 +55,8 @@ func NewSessions(postgresURI string) *Sessions {
 	}
 }
 
-func (s *Sessions) NewSession(deviceID string) (*Session, error) {
-	var session *Session
+func (s *Sessions) NewSession(deviceID string) (*sync3.Session, error) {
+	var session *sync3.Session
 	err := sqlutil.WithTransaction(s.db, func(txn *sqlx.Tx) error {
 		// make a new session
 		var id int64
@@ -94,7 +82,7 @@ func (s *Sessions) NewSession(deviceID string) (*Session, error) {
 		// if we inserted a row that means it's a brand new device ergo there is no since token
 		if ra, err := result.RowsAffected(); err == nil && ra == 1 {
 			// we inserted a new row, no need to query the since value
-			session = &Session{
+			session = &sync3.Session{
 				ID:       id,
 				DeviceID: deviceID,
 			}
@@ -108,7 +96,7 @@ func (s *Sessions) NewSession(deviceID string) (*Session, error) {
 		if err != nil {
 			return err
 		}
-		session = &Session{
+		session = &sync3.Session{
 			ID:       id,
 			DeviceID: deviceID,
 			V2Since:  since,
@@ -119,8 +107,8 @@ func (s *Sessions) NewSession(deviceID string) (*Session, error) {
 	return session, err
 }
 
-func (s *Sessions) Session(sessionID int64, deviceID string) (*Session, error) {
-	var result Session
+func (s *Sessions) Session(sessionID int64, deviceID string) (*sync3.Session, error) {
+	var result sync3.Session
 	// Important not just to use sessionID as that can be set by anyone as a query param
 	// Only the device ID is secure (it's a hash of the bearer token)
 	err := s.db.Get(&result,
@@ -162,7 +150,7 @@ func (s *Sessions) UpdateUserIDForDevice(deviceID, userID string) error {
 
 // Insert a new filter for this session. The returned filter ID should be inserted into the since token
 // so the request filter can be extracted again.
-func (s *Sessions) InsertFilter(sessionID int64, req *Request) (filterID int64, err error) {
+func (s *Sessions) InsertFilter(sessionID int64, req *streams.Request) (filterID int64, err error) {
 	j, err := json.Marshal(req)
 	if err != nil {
 		return 0, err
@@ -173,14 +161,14 @@ func (s *Sessions) InsertFilter(sessionID int64, req *Request) (filterID int64, 
 
 // Filter returns the filter for the session ID and filter ID given. If a filter ID is given which is unknown, an
 // error is returned as filters should always be known to the server.
-func (s *Sessions) Filter(sessionID int64, filterID int64) (*Request, error) {
+func (s *Sessions) Filter(sessionID int64, filterID int64) (*streams.Request, error) {
 	// we need the session ID to make sure users can't use other user's filters
 	var j string
 	err := s.db.QueryRow(`SELECT req_json FROM syncv3_filters WHERE session_id=$1 AND filter_id=$2`, sessionID, filterID).Scan(&j)
 	if err != nil {
 		return nil, err // ErrNoRows is expected and is an error
 	}
-	var req Request
+	var req streams.Request
 	if err := json.Unmarshal([]byte(j), &req); err != nil {
 		return nil, err
 	}
