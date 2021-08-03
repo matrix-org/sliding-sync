@@ -408,7 +408,14 @@ func (h *SyncV3Handler) parseRequest(req *http.Request, tok *sync3.Token, sessio
 		}
 	}
 	var filterID int64
-	if existing.ApplyDeltas(&delta) {
+	deltasExist, err := existing.ApplyDeltas(&delta)
+	if err != nil {
+		return nil, 0, &handlerError{
+			StatusCode: 400,
+			err:        fmt.Errorf("failed to parse request body delta as JSON: %s", err),
+		}
+	}
+	if deltasExist {
 		// persist new filters if there were deltas
 		filterID, err = h.Sessions.InsertFilter(session.ID, existing)
 		if err != nil {

@@ -1,5 +1,10 @@
 package streams
 
+import (
+	"bytes"
+	"encoding/json"
+)
+
 // Request represents a sync v3 request
 //
 // A request is made by the combination of the client HTTP request parameters and the stored filters
@@ -11,31 +16,24 @@ type Request struct {
 }
 
 // ApplyDeltas updates Request with the values in req2. Returns true if there were deltas.
-func (r *Request) ApplyDeltas(req2 *Request) bool {
-	deltasExist := false
-	if req2.RoomList != nil {
-		deltasExist = true
-		if r.RoomList == nil {
-			r.RoomList = req2.RoomList
-		} else {
-			r.RoomList = r.RoomList.Combine(req2.RoomList)
-		}
+func (r *Request) ApplyDeltas(req2 *Request) (bool, error) {
+	// remember the original to tell if there is a diff
+	original, err := json.Marshal(r)
+	if err != nil {
+		return false, err
 	}
-	if req2.Typing != nil {
-		deltasExist = true
-		if r.Typing == nil {
-			r.Typing = req2.Typing
-		} else {
-			r.Typing = r.Typing.Combine(req2.Typing)
-		}
+	// marshal the 2nd request to unmarshal it into the original request
+	delta, err := json.Marshal(req2)
+	if err != nil {
+		return false, err
 	}
-	if req2.ToDevice != nil {
-		deltasExist = true
-		if r.ToDevice == nil {
-			r.ToDevice = req2.ToDevice
-		} else {
-			r.ToDevice = r.ToDevice.Combine(req2.ToDevice)
-		}
+	if err := json.Unmarshal(delta, r); err != nil {
+		return false, err
 	}
-	return deltasExist
+	// re-marshal r to check if there was a delta
+	combined, err := json.Marshal(r)
+	if err != nil {
+		return false, err
+	}
+	return !bytes.Equal(original, combined), nil
 }
