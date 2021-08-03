@@ -8,8 +8,9 @@ import (
 )
 
 type Storage struct {
-	accumulator *Accumulator
-	typingTable *TypingTable
+	accumulator   *Accumulator
+	typingTable   *TypingTable
+	toDeviceTable *ToDeviceTable
 }
 
 func NewStorage(postgresURI string) *Storage {
@@ -27,8 +28,9 @@ func NewStorage(postgresURI string) *Storage {
 		entityName:            "server",
 	}
 	return &Storage{
-		accumulator: acc,
-		typingTable: NewTypingTable(db),
+		accumulator:   acc,
+		typingTable:   NewTypingTable(db),
+		toDeviceTable: NewToDeviceTable(db),
 	}
 }
 
