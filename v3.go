@@ -96,7 +96,7 @@ type SyncV3Handler struct {
 	Storage  *state.Storage
 	Notifier *notifier.Notifier
 
-	typingStream *streams.Typing
+	streams []streams.Streamer
 
 	pollerMu *sync.Mutex
 	Pollers  map[string]*sync2.Poller // device_id -> poller
@@ -110,7 +110,9 @@ func NewSyncV3Handler(v2Client sync2.Client, postgresDBURI string) *SyncV3Handle
 		Pollers:  make(map[string]*sync2.Poller),
 		pollerMu: &sync.Mutex{},
 	}
-	sh.typingStream = streams.NewTyping(sh.Storage)
+	sh.streams = append(sh.streams, streams.NewTyping(sh.Storage))
+	sh.streams = append(sh.streams, streams.NewToDevice(sh.Storage))
+
 	latestToken := sync3.NewBlankSyncToken(0, 0)
 	nid, err := sh.Storage.LatestEventNID()
 	if err != nil {
@@ -199,18 +201,19 @@ func (h *SyncV3Handler) serve(w http.ResponseWriter, req *http.Request) *handler
 	resp := streams.Response{}
 
 	// invoke streams to get responses
-	if syncReq.Typing != nil {
-		typingResp, typingTo, err := h.typingStream.Process(session.UserID, fromToken.TypingPosition(), syncReq.Typing)
+	for _, stream := range h.streams {
+		fromExcl := stream.Position(fromToken)
+		toIncl := stream.Position(&upcoming)
+		err = stream.DataInRange(session, fromExcl, toIncl, syncReq, &resp)
+		if err == streams.ErrNotRequested {
+			continue
+		}
 		if err != nil {
 			return &handlerError{
 				StatusCode: 500,
-				err:        fmt.Errorf("typing stream: %s", err),
+				err:        fmt.Errorf("stream error: %s", err),
 			}
 		}
-		upcoming.SetTypingPosition(typingTo)
-		resp.Typing = typingResp
-	}
-	if syncReq.ToDevice != nil {
 	}
 
 	resp.Next = upcoming.String()
@@ -218,8 +221,8 @@ func (h *SyncV3Handler) serve(w http.ResponseWriter, req *http.Request) *handler
 	// finally update our records: confirm that the client received the token they sent us, and mark this
 	// response as unconfirmed
 	confirmed := fromToken.String()
-	log.Info().Str("since", confirmed).Str("new_since", upcoming.String()).Bool(
-		"typing_stream", syncReq.Typing != nil,
+	log.Info().Str("since", confirmed).Str("new_since", upcoming.String()).Bools(
+		"request[typing,to_device]", []bool{syncReq.Typing != nil, syncReq.ToDevice != nil},
 	).Msg("responding")
 	if err := h.Sessions.UpdateLastTokens(session.ID, confirmed, upcoming.String()); err != nil {
 		return &handlerError{
@@ -377,6 +380,7 @@ func (h *SyncV3Handler) AddToDeviceMessages(userID, deviceID string, msgs []goma
 	}
 	updateToken := sync3.NewBlankSyncToken(0, 0)
 	updateToken.SetToDevicePosition(pos)
+	fmt.Println("AddToDeviceMessages ", userID, deviceID, len(msgs))
 	h.Notifier.OnNewSendToDevice(userID, []string{deviceID}, *updateToken)
 	return nil
 }

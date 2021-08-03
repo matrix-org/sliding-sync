@@ -1,10 +1,12 @@
 package syncv3
 
 import (
+	"bytes"
 	"encoding/json"
 	"testing"
 	"time"
 
+	"github.com/matrix-org/gomatrixserverlib"
 	"github.com/matrix-org/sync-v3/sync2"
 )
 
@@ -136,5 +138,52 @@ func TestHandler(t *testing.T) {
 	}
 	if v3resp.Typing.UserIDs[0] != charlie {
 		t.Fatalf("typing got %s want %s", v3resp.Typing.UserIDs[0], charlie)
+	}
+}
+
+// Test to_device stream:
+// - Injecting a to_device event gets received.
+// - TODO Repeating the request without having ACKed the position returns the event again.
+// - TODO After ACKing the position, going back to the old position returns no event.
+// - TODO If 2 sessions exist, both session must ACK the position before the event is deleted.
+func TestHandlerToDevice(t *testing.T) {
+	alice := "@alice:localhost"
+	aliceBearer := "Bearer alice_access_token"
+	server, v2Client := newSync3Server(t)
+	aliceV2Stream := v2Client.v2StreamForUser(alice, aliceBearer)
+
+	// prepare a response from v2
+	toDeviceEvent := gomatrixserverlib.SendToDeviceEvent{
+		Sender:  alice,
+		Type:    "to_device.test",
+		Content: []byte(`{"foo":"bar"}`),
+	}
+	v2Resp := &sync2.SyncResponse{
+		NextBatch: "don't care",
+		ToDevice: struct {
+			Events []gomatrixserverlib.SendToDeviceEvent `json:"events"`
+		}{
+			Events: []gomatrixserverlib.SendToDeviceEvent{
+				toDeviceEvent,
+			},
+		},
+	}
+
+	aliceV2Stream <- v2Resp
+
+	v3resp := mustDoSync3Request(t, server, aliceBearer, "", map[string]interface{}{
+		"to_device": map[string]interface{}{
+			"limit": 5,
+		},
+	})
+	if v3resp.ToDevice == nil {
+		t.Fatalf("expected to_device response, got none: %+v", v3resp)
+	}
+	if len(v3resp.ToDevice.Events) != 1 {
+		t.Fatalf("expected 1 to_device message, got %d", len(v3resp.ToDevice.Events))
+	}
+	want, _ := json.Marshal(toDeviceEvent)
+	if !bytes.Equal(v3resp.ToDevice.Events[0], want) {
+		t.Fatalf("wrong event returned, got %s want %s", string(v3resp.ToDevice.Events[0]), string(want))
 	}
 }

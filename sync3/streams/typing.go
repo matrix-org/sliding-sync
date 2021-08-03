@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	"github.com/matrix-org/sync-v3/state"
+	"github.com/matrix-org/sync-v3/sync3"
 )
 
 type FilterTyping struct {
@@ -33,13 +34,20 @@ func NewTyping(s *state.Storage) *Typing {
 	return &Typing{s}
 }
 
-func (s *Typing) Process(userID string, from int64, f *FilterTyping) (resp *TypingResponse, next int64, err error) {
-	userIDs, to, err := s.storage.TypingTable.Typing(f.RoomID, from)
-	if err != nil {
-		return nil, 0, fmt.Errorf("Typing: %s", err)
+func (s *Typing) Position(tok *sync3.Token) int64 {
+	return tok.TypingPosition()
+}
+
+func (s *Typing) DataInRange(session *sync3.Session, fromExcl, toIncl int64, request *Request, resp *Response) error {
+	if request.Typing == nil {
+		return ErrNotRequested
 	}
-	resp = &TypingResponse{
+	userIDs, _, err := s.storage.TypingTable.Typing(request.Typing.RoomID, fromExcl, toIncl)
+	if err != nil {
+		return fmt.Errorf("Typing: %s", err)
+	}
+	resp.Typing = &TypingResponse{
 		UserIDs: userIDs,
 	}
-	return resp, to, nil
+	return nil
 }

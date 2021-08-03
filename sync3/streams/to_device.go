@@ -35,12 +35,21 @@ func NewToDevice(s *state.Storage) *ToDevice {
 	return &ToDevice{s}
 }
 
-func (s *ToDevice) Process(session *sync3.Session, from, to int64, f *FilterToDevice, resp *ToDeviceResponse) error {
-	msgs, err := s.storage.ToDeviceTable.Messages(session.DeviceID, from, to)
+func (s *ToDevice) Position(tok *sync3.Token) int64 {
+	return tok.ToDevicePosition()
+}
+
+func (s *ToDevice) DataInRange(session *sync3.Session, fromExcl, toIncl int64, request *Request, resp *Response) error {
+	if request.ToDevice == nil {
+		return ErrNotRequested
+	}
+	msgs, err := s.storage.ToDeviceTable.Messages(session.DeviceID, fromExcl, toIncl)
 	if err != nil {
 		return err
 	}
-	resp.Limit = f.Limit
-	resp.Events = msgs
+	resp.ToDevice = &ToDeviceResponse{
+		Limit:  request.ToDevice.Limit,
+		Events: msgs,
+	}
 	return nil
 }

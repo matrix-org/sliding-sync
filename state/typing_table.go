@@ -50,10 +50,11 @@ func (t *TypingTable) SetTyping(roomID string, userIDs []string) (position int64
 	return position, err
 }
 
-func (t *TypingTable) Typing(roomID string, fromStreamIDExcl int64) (userIDs []string, latest int64, err error) {
+func (t *TypingTable) Typing(roomID string, fromStreamIDExcl, toStreamIDIncl int64) (userIDs []string, latest int64, err error) {
 	var userIDsArray pq.StringArray
 	err = t.db.QueryRow(
-		`SELECT stream_id, user_ids FROM syncv3_typing WHERE room_id=$1 AND stream_id > $2 `, roomID, fromStreamIDExcl,
+		`SELECT stream_id, user_ids FROM syncv3_typing WHERE room_id=$1 AND stream_id > $2 AND stream_id <= $3`,
+		roomID, fromStreamIDExcl, toStreamIDIncl,
 	).Scan(&latest, &userIDsArray)
 	if err == sql.ErrNoRows {
 		err = nil

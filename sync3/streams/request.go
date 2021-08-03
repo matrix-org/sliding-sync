@@ -29,5 +29,13 @@ func (r *Request) ApplyDeltas(req2 *Request) bool {
 			r.Typing = r.Typing.Combine(req2.Typing)
 		}
 	}
+	if req2.ToDevice != nil {
+		deltasExist = true
+		if r.ToDevice == nil {
+			r.ToDevice = req2.ToDevice
+		} else {
+			r.ToDevice = r.ToDevice.Combine(req2.ToDevice)
+		}
+	}
 	return deltasExist
 }
