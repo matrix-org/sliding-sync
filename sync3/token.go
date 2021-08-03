@@ -6,22 +6,51 @@ import (
 	"strings"
 )
 
-// V3_S1_57423_123_F9
-// "V3_S" $SESSION "_" $NID "_" $TYPING "_F" $FILTER
+// To add a new position, specify the const here then increment `totalStreamPositions` and implement
+// getters/setters for the new stream position.
+
+const (
+	IndexEventPosition = iota
+	IndexTypingPosition
+	IndexToDevicePosition
+)
+const totalStreamPositions = 3
+
+// V3_S1_F9_57423_123_5183
+// "V3_S" $SESSION "_F" $FILTER "_" $A "_" $B "_" $C
 type Token struct {
-	SessionID        int64
-	NID              int64
-	TypingPosition   int64
-	ToDevicePosition int64
-	FilterID         int64
+	// User associated values (this is different to sync v2 which doesn't have this concept)
+	SessionID int64
+	FilterID  int64
+
+	// Server-side stream positions (same as sync v2)
+	positions []int64
+}
+
+func (t *Token) EventPosition() int64 {
+	return t.positions[IndexEventPosition]
+}
+func (t *Token) TypingPosition() int64 {
+	return t.positions[IndexTypingPosition]
+}
+func (t *Token) ToDevicePosition() int64 {
+	return t.positions[IndexToDevicePosition]
+}
+func (t *Token) SetEventPosition(pos int64) {
+	t.positions[IndexEventPosition] = pos
+}
+func (t *Token) SetTypingPosition(pos int64) {
+	t.positions[IndexTypingPosition] = pos
+}
+func (t *Token) SetToDevicePosition(pos int64) {
+	t.positions[IndexToDevicePosition] = pos
 }
 
 func (t *Token) IsAfter(x Token) bool {
-	if t.NID > x.NID {
-		return true
-	}
-	if t.TypingPosition > x.TypingPosition {
-		return true
+	for i := range t.positions {
+		if t.positions[i] > x.positions[i] {
+			return true
+		}
 	}
 	return false
 }
@@ -35,57 +64,70 @@ func (t *Token) AssociateWithUser(userToken Token) {
 // ApplyUpdates increments the counters associated with server-side data from `other`, if and only
 // if the counters in `other` are newer/higher.
 func (t *Token) ApplyUpdates(other Token) {
-	if other.NID > t.NID {
-		t.NID = other.NID
-	}
-	if other.TypingPosition > t.TypingPosition {
-		t.TypingPosition = other.TypingPosition
+	for i := range t.positions {
+		if other.positions[i] > t.positions[i] {
+			t.positions[i] = other.positions[i]
+		}
 	}
 }
 
 func (t *Token) String() string {
-	var filterID string
-	if t.FilterID != 0 {
-		filterID = fmt.Sprintf("%d", t.FilterID)
+	posStr := make([]string, len(t.positions))
+	for i := range t.positions {
+		posStr[i] = strconv.FormatInt(t.positions[i], 10)
 	}
-	return fmt.Sprintf("V3_S%d_%d_%d_F%s", t.SessionID, t.NID, t.TypingPosition, filterID)
+	positions := strings.Join(posStr, "_")
+	if t.FilterID == 0 {
+		return fmt.Sprintf("V3_S%d_%s", t.SessionID, positions)
+	}
+	return fmt.Sprintf("V3_S%d_F%d_%s", t.SessionID, t.FilterID, positions)
+}
+
+func NewBlankSyncToken(sessionID, filterID int64) *Token {
+	return &Token{
+		SessionID: sessionID,
+		FilterID:  filterID,
+		positions: make([]int64, totalStreamPositions),
+	}
 }
 
 func NewSyncToken(since string) (*Token, error) {
-	segments := strings.SplitN(since, "_", 5)
-	if len(segments) != 5 {
-		return nil, fmt.Errorf("not a sync v3 token")
-	}
+	segments := strings.Split(since, "_")
 	if segments[0] != "V3" {
 		return nil, fmt.Errorf("not a sync v3 token: %s", since)
 	}
-	filterstr := strings.TrimPrefix(segments[4], "F")
-	var fid int64
+	segments = segments[1:]
+	var sessionID int64
+	var filterID int64
+	var positions []int64
 	var err error
-	if len(filterstr) > 0 {
-		fid, err = strconv.ParseInt(filterstr, 10, 64)
-		if err != nil {
-			return nil, fmt.Errorf("invalid filter id: %s", filterstr)
+	for _, segment := range segments {
+		if strings.HasPrefix(segment, "F") {
+			filterStr := strings.TrimPrefix(segment, "F")
+			filterID, err = strconv.ParseInt(filterStr, 10, 64)
+			if err != nil {
+				return nil, fmt.Errorf("invalid filter ID: %s", segment)
+			}
+		} else if strings.HasPrefix(segment, "S") {
+			sessionStr := strings.TrimPrefix(segment, "S")
+			sessionID, err = strconv.ParseInt(sessionStr, 10, 64)
+			if err != nil {
+				return nil, fmt.Errorf("invalid session: %s", segment)
+			}
+		} else {
+			pos, err := strconv.ParseInt(segment, 10, 64)
+			if err != nil {
+				return nil, fmt.Errorf("invalid segment '%s': %s", segment, err)
+			}
+			positions = append(positions, pos)
 		}
 	}
-
-	sidstr := strings.TrimPrefix(segments[1], "S")
-	sid, err := strconv.ParseInt(sidstr, 10, 64)
-	if err != nil {
-		return nil, fmt.Errorf("invalid session: %s", sidstr)
-	}
-	nid, err := strconv.ParseInt(segments[2], 10, 64)
-	if err != nil {
-		return nil, fmt.Errorf("invalid nid: %s", segments[2])
-	}
-	typingid, err := strconv.ParseInt(segments[3], 10, 64)
-	if err != nil {
-		return nil, fmt.Errorf("invalid typing: %s", segments[3])
+	if len(positions) != totalStreamPositions {
+		return nil, fmt.Errorf("expected %d stream positions, got %d", totalStreamPositions, len(positions))
 	}
 	return &Token{
-		SessionID:      sid,
-		NID:            nid,
-		FilterID:       fid,
-		TypingPosition: typingid,
+		SessionID: sessionID,
+		FilterID:  filterID,
+		positions: positions,
 	}, nil
 }

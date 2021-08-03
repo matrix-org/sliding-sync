@@ -38,7 +38,7 @@ func (t *TypingTable) SelectHighestID() (id int64, err error) {
 	return
 }
 
-func (t *TypingTable) SetTyping(roomID string, userIDs []string) (streamID int64, err error) {
+func (t *TypingTable) SetTyping(roomID string, userIDs []string) (position int64, err error) {
 	if userIDs == nil {
 		userIDs = []string{}
 	}
@@ -46,8 +46,8 @@ func (t *TypingTable) SetTyping(roomID string, userIDs []string) (streamID int64
 		INSERT INTO syncv3_typing(room_id, user_ids) VALUES($1, $2)
 		ON CONFLICT (room_id) DO UPDATE SET user_ids = $2, stream_id = nextval('syncv3_typing_seq') RETURNING stream_id`,
 		roomID, pq.Array(userIDs),
-	).Scan(&streamID)
-	return streamID, err
+	).Scan(&position)
+	return position, err
 }
 
 func (t *TypingTable) Typing(roomID string, fromStreamIDExcl int64) (userIDs []string, latest int64, err error) {

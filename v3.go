@@ -111,18 +111,18 @@ func NewSyncV3Handler(v2Client sync2.Client, postgresDBURI string) *SyncV3Handle
 		pollerMu: &sync.Mutex{},
 	}
 	sh.typingStream = streams.NewTyping(sh.Storage)
-	latestToken := sync3.Token{}
+	latestToken := sync3.NewBlankSyncToken(0, 0)
 	nid, err := sh.Storage.LatestEventNID()
 	if err != nil {
 		panic(err)
 	}
-	latestToken.NID = nid
-	typingID, err := sh.Storage.LatestTypingID()
+	latestToken.SetEventPosition(nid)
+	typingPos, err := sh.Storage.LatestTypingID()
 	if err != nil {
 		panic(err)
 	}
-	latestToken.TypingPosition = typingID
-	sh.Notifier = notifier.NewNotifier(latestToken)
+	latestToken.SetTypingPosition(typingPos)
+	sh.Notifier = notifier.NewNotifier(*latestToken)
 	// TODO: load up the membership states so the notifier knows who to wake up
 	/*
 		roomIDToUserIDs, err := sh.Storage.AllJoinedMembers()
@@ -200,14 +200,14 @@ func (h *SyncV3Handler) serve(w http.ResponseWriter, req *http.Request) *handler
 
 	// invoke streams to get responses
 	if syncReq.Typing != nil {
-		typingResp, typingTo, err := h.typingStream.Process(session.UserID, fromToken.TypingPosition, syncReq.Typing)
+		typingResp, typingTo, err := h.typingStream.Process(session.UserID, fromToken.TypingPosition(), syncReq.Typing)
 		if err != nil {
 			return &handlerError{
 				StatusCode: 500,
 				err:        fmt.Errorf("typing stream: %s", err),
 			}
 		}
-		upcoming.TypingPosition = typingTo
+		upcoming.SetTypingPosition(typingTo)
 		resp.Typing = typingResp
 	}
 	if syncReq.ToDevice != nil {
@@ -275,9 +275,7 @@ func (h *SyncV3Handler) getOrCreateSession(req *http.Request) (*sync3.Session, *
 		h.Sessions.UpdateUserIDForDevice(deviceID, userID)
 	}
 	if tokv3 == nil {
-		tokv3 = &sync3.Token{
-			SessionID: session.ID,
-		}
+		tokv3 = sync3.NewBlankSyncToken(session.ID, 0)
 	}
 	return session, tokv3, nil
 }
@@ -319,18 +317,19 @@ func (h *SyncV3Handler) Accumulate(roomID string, timeline []json.RawMessage) er
 	if numNew == 0 {
 		return nil
 	}
-	var updateToken sync3.Token
+	updateToken := sync3.NewBlankSyncToken(0, 0)
 	// TODO: read from memory, persist in Storage?
-	updateToken.NID, err = h.Storage.LatestEventNID()
+	nid, err := h.Storage.LatestEventNID()
 	if err != nil {
 		return err
 	}
+	updateToken.SetEventPosition(nid)
 	newEvents := timeline[len(timeline)-numNew:]
 	for _, eventJSON := range newEvents {
 		event := gjson.ParseBytes(eventJSON)
 		h.Notifier.OnNewEvent(
 			roomID, event.Get("sender").Str, event.Get("type").Str,
-			event.Get("state_key").Str, event.Get("content.membership").Str, nil, updateToken,
+			event.Get("state_key").Str, event.Get("content.membership").Str, nil, *updateToken,
 		)
 	}
 	return nil
@@ -361,14 +360,14 @@ func (h *SyncV3Handler) Initialise(roomID string, state []json.RawMessage) error
 
 // Called from the v2 poller, implements V2DataReceiver
 func (h *SyncV3Handler) SetTyping(roomID string, userIDs []string) (int64, error) {
-	typingID, err := h.Storage.TypingTable.SetTyping(roomID, userIDs)
+	pos, err := h.Storage.TypingTable.SetTyping(roomID, userIDs)
 	if err != nil {
 		return 0, err
 	}
-	var updateToken sync3.Token
-	updateToken.TypingPosition = typingID
-	h.Notifier.OnNewTyping(roomID, updateToken)
-	return typingID, nil
+	updateToken := sync3.NewBlankSyncToken(0, 0)
+	updateToken.SetTypingPosition(pos)
+	h.Notifier.OnNewTyping(roomID, *updateToken)
+	return pos, nil
 }
 
 func (h *SyncV3Handler) AddToDeviceMessages(userID, deviceID string, msgs []gomatrixserverlib.SendToDeviceEvent) error {
@@ -376,9 +375,9 @@ func (h *SyncV3Handler) AddToDeviceMessages(userID, deviceID string, msgs []goma
 	if err != nil {
 		return err
 	}
-	var updateToken sync3.Token
-	updateToken.ToDevicePosition = pos
-	h.Notifier.OnNewSendToDevice(userID, []string{deviceID}, updateToken)
+	updateToken := sync3.NewBlankSyncToken(0, 0)
+	updateToken.SetToDevicePosition(pos)
+	h.Notifier.OnNewSendToDevice(userID, []string{deviceID}, *updateToken)
 	return nil
 }
 
