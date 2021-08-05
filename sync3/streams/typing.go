@@ -42,6 +42,8 @@ func (s *Typing) SetPosition(tok *sync3.Token, pos int64) {
 	tok.SetTypingPosition(pos)
 }
 
+func (s *Typing) SessionConfirmed(session *sync3.Session, confirmedPos int64, allSessions bool) {}
+
 func (s *Typing) DataInRange(session *sync3.Session, fromExcl, toIncl int64, request *Request, resp *Response) (int64, error) {
 	if request.Typing == nil {
 		return 0, ErrNotRequested

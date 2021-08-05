@@ -33,7 +33,6 @@ func NewSessions(postgresURI string) *Sessions {
 	CREATE TABLE IF NOT EXISTS syncv3_sessions (
 		session_id BIGINT PRIMARY KEY DEFAULT nextval('syncv3_session_id_seq'),
 		device_id TEXT NOT NULL,
-		last_to_device_ack TEXT NOT NULL,
 		last_confirmed_token TEXT NOT NULL,
 		last_unconfirmed_token TEXT NOT NULL,
 		CONSTRAINT syncv3_sessions_unique UNIQUE (device_id, session_id)
@@ -61,8 +60,8 @@ func (s *Sessions) NewSession(deviceID string) (*sync3.Session, error) {
 		// make a new session
 		var id int64
 		err := txn.QueryRow(`
-			INSERT INTO syncv3_sessions(device_id, last_to_device_ack, last_confirmed_token, last_unconfirmed_token)
-			VALUES($1, '', '', '') RETURNING session_id`,
+			INSERT INTO syncv3_sessions(device_id, last_confirmed_token, last_unconfirmed_token)
+			VALUES($1, '', '') RETURNING session_id`,
 			deviceID,
 		).Scan(&id)
 		if err != nil {
@@ -112,7 +111,7 @@ func (s *Sessions) Session(sessionID int64, deviceID string) (*sync3.Session, er
 	// Important not just to use sessionID as that can be set by anyone as a query param
 	// Only the device ID is secure (it's a hash of the bearer token)
 	err := s.db.Get(&result,
-		`SELECT last_to_device_ack, last_confirmed_token, last_unconfirmed_token, since, user_id FROM syncv3_sessions
+		`SELECT last_confirmed_token, last_unconfirmed_token, since, user_id FROM syncv3_sessions
 		LEFT JOIN syncv3_sessions_v2devices
 		ON syncv3_sessions.device_id = syncv3_sessions_v2devices.device_id
 		WHERE session_id=$1 AND syncv3_sessions.device_id=$2`,
@@ -127,6 +126,11 @@ func (s *Sessions) Session(sessionID int64, deviceID string) (*sync3.Session, er
 	result.ID = sessionID
 	result.DeviceID = deviceID
 	return &result, nil
+}
+
+func (s *Sessions) ConfirmedSessionTokens(deviceID string) (tokens []string, err error) {
+	err = s.db.Select(&tokens, `SELECT last_confirmed_token FROM syncv3_sessions WHERE device_id=$1`, deviceID)
+	return
 }
 
 // UpdateLastTokens updates the latest tokens for this session

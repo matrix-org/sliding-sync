@@ -23,6 +23,7 @@ import (
 	"github.com/matrix-org/sync-v3/sync3/streams"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/hlog"
+	"github.com/rs/zerolog/log"
 	"github.com/tidwall/gjson"
 )
 
@@ -169,6 +170,19 @@ func (h *SyncV3Handler) serve(w http.ResponseWriter, req *http.Request) *handler
 		}
 	}
 
+	// Track confirmed/unconfirmed tokens. We do this in a defer because we can bail either with
+	// or without data, so deferring it keeps it in one place.
+	// This will invoke streams with the confirmed position based on ?since= for this session
+	// for the purposes of cleaning up old messages which all sessions have confirmed.
+	defer func() {
+		// finally update our records: confirm that the client received the token they sent us, and mark this
+		// response as unconfirmed
+		if err := h.Sessions.UpdateLastTokens(session.ID, fromToken.String(), upcoming.String()); err != nil {
+			log.Err(err).Msg("Failed to update last sent tokens")
+		}
+		h.confirmPositionCleanup(session, fromToken)
+	}()
+
 	// read filters and mux in to form complete request. We MUST do this before waiting on sync streams
 	// so that we update filters even in the event that we time out
 	syncReq, filterID, herr := h.parseRequest(req, fromToken, session)
@@ -222,25 +236,52 @@ func (h *SyncV3Handler) serve(w http.ResponseWriter, req *http.Request) *handler
 	}
 
 	resp.Next = upcoming.String()
-
-	// finally update our records: confirm that the client received the token they sent us, and mark this
-	// response as unconfirmed
-	confirmed := fromToken.String()
-	log.Info().Str("since", confirmed).Str("new_since", upcoming.String()).Bools(
+	log.Info().Str("since", fromToken.String()).Str("new_since", upcoming.String()).Bools(
 		"request[typing,to_device]", []bool{syncReq.Typing != nil, syncReq.ToDevice != nil},
 	).Msg("responding")
-	if err := h.Sessions.UpdateLastTokens(session.ID, confirmed, upcoming.String()); err != nil {
-		return &handlerError{
-			err:        err,
-			StatusCode: 500,
-		}
-	}
 
 	w.WriteHeader(200)
 	if err := json.NewEncoder(w).Encode(&resp); err != nil {
 		log.Warn().Err(err).Msg("failed to marshal response")
 	}
+
 	return nil
+}
+
+// Loads all the tokens that have been confirmed by all sessions on this device ID. This means we know
+// that the clients have processed up to and including the confirmed token. Therefore, it is safe to
+// cleanup older data if there are no more sessions on earlier positions.
+func (h *SyncV3Handler) confirmPositionCleanup(session *sync3.Session, from *sync3.Token) {
+	// Load the tokens which have been sent by every session on this device.
+	// We'll use this to work out the minimum position confirmed and then invoke the cleanup
+	confirmedTokenStrings, err := h.Sessions.ConfirmedSessionTokens(session.DeviceID)
+	if err != nil {
+		log.Err(err).Msg("failed to get ConfirmedSessionTokens") // non-fatal
+		return
+	}
+	confirmedTokens := []*sync3.Token{from}
+	for _, tokStr := range confirmedTokenStrings {
+		tok, err := sync3.NewSyncToken(tokStr)
+		if err != nil {
+			log.Err(err).Msg("failed to load confirmed token from ConfirmedSessionTokens")
+		} else {
+			confirmedTokens = append(confirmedTokens, tok)
+		}
+	}
+	for _, stream := range h.streams {
+		confirmedPos := stream.Position(from)
+		// check if all session are up-to or past this point
+		allSessions := true
+		for _, tok := range confirmedTokens {
+			pos := stream.Position(tok)
+			if pos < confirmedPos {
+				allSessions = false
+				break
+			}
+		}
+
+		stream.SessionConfirmed(session, confirmedPos, allSessions)
+	}
 }
 
 // getOrCreateSession retrieves an existing session if ?since= is set, else makes a new session.
@@ -385,7 +426,6 @@ func (h *SyncV3Handler) AddToDeviceMessages(userID, deviceID string, msgs []goma
 	}
 	updateToken := sync3.NewBlankSyncToken(0, 0)
 	updateToken.SetToDevicePosition(pos)
-	fmt.Println("AddToDeviceMessages ", userID, deviceID, len(msgs))
 	h.Notifier.OnNewSendToDevice(userID, []string{deviceID}, *updateToken)
 	return nil
 }

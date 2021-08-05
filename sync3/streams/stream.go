@@ -12,11 +12,12 @@ type Streamer interface {
 	Position(tok *sync3.Token) int64
 	// Set the position of this stream in the token to the `pos` value given
 	SetPosition(tok *sync3.Token, pos int64)
-	// Set the stream position for this stream in the sync v3 token
-	// SetPosition(tok *sync3.Token, pos int64)
 	// Extract data between the two stream positions and assign to Response.
 	// Return the new to position if it has been modified, else zero.
 	DataInRange(session *sync3.Session, fromExcl, toIncl int64, req *Request, resp *Response) (int64, error)
+	// Called when a session hits /sync with a stream position. `allSessions` is true if all sessions
+	// are at least as far as this position (inclusive), allowing cleanup of earlier messages.
+	SessionConfirmed(session *sync3.Session, confirmedPos int64, allSessions bool)
 }
 
 // ErrNotRequested should be returned in DataInRange if the request does not ask for this stream.

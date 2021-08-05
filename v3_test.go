@@ -9,6 +9,7 @@ import (
 
 	"github.com/matrix-org/gomatrixserverlib"
 	"github.com/matrix-org/sync-v3/sync2"
+	"github.com/matrix-org/sync-v3/sync3/streams"
 )
 
 // This tests all the moving parts for the sync v3 server. It does the following:
@@ -145,38 +146,162 @@ func TestHandler(t *testing.T) {
 // Test to_device stream:
 // - Injecting a to_device event gets received.
 // - `limit` is honoured. Including server-side negotiation.
-// - TODO Repeating the request without having ACKed the position returns the event again.
-// - TODO After ACKing the position, going back to the old position returns no event.
+// - Repeating the request without having ACKed the position returns the event again.
+// - After ACKing the position, going back to the old position returns no event.
 // - TODO If 2 sessions exist, both session must ACK the position before the event is deleted.
 func TestHandlerToDevice(t *testing.T) {
 	server, v2Client := newSync3Server(t)
+	t.Run("Injecting a to_device event into the v2 stream gets received", func(t *testing.T) {
+		alice := "@alice:localhost"
+		aliceBearer := "Bearer alice_access_token"
+		aliceV2Stream := v2Client.v2StreamForUser(alice, aliceBearer)
 
-	t.Run("parallel", func(t *testing.T) {
-		t.Run("Injecting a to_device event into the v2 stream gets received", func(t *testing.T) {
-			t.Parallel()
-			alice := "@alice:localhost"
-			aliceBearer := "Bearer alice_access_token"
-			aliceV2Stream := v2Client.v2StreamForUser(alice, aliceBearer)
+		// prepare a response from v2
+		toDeviceEvent := gomatrixserverlib.SendToDeviceEvent{
+			Sender:  alice,
+			Type:    "to_device.test",
+			Content: []byte(`{"foo":"bar"}`),
+		}
+		v2Resp := &sync2.SyncResponse{
+			NextBatch: "don't care",
+			ToDevice: struct {
+				Events []gomatrixserverlib.SendToDeviceEvent `json:"events"`
+			}{
+				Events: []gomatrixserverlib.SendToDeviceEvent{
+					toDeviceEvent,
+				},
+			},
+		}
+		aliceV2Stream <- v2Resp
 
-			// prepare a response from v2
-			toDeviceEvent := gomatrixserverlib.SendToDeviceEvent{
-				Sender:  alice,
-				Type:    "to_device.test",
-				Content: []byte(`{"foo":"bar"}`),
+		v3resp := mustDoSync3Request(t, server, aliceBearer, "", map[string]interface{}{
+			"to_device": map[string]interface{}{},
+		})
+		if v3resp.ToDevice == nil {
+			t.Fatalf("expected to_device response, got none: %+v", v3resp)
+		}
+		if len(v3resp.ToDevice.Events) != 1 {
+			t.Fatalf("expected 1 to_device message, got %d", len(v3resp.ToDevice.Events))
+		}
+		want, _ := json.Marshal(toDeviceEvent)
+		if !bytes.Equal(v3resp.ToDevice.Events[0], want) {
+			t.Fatalf("wrong event returned, got %s want %s", string(v3resp.ToDevice.Events[0]), string(want))
+		}
+	})
+	t.Run("'limit' is honoured and fetches earliest events first'", func(t *testing.T) {
+		numMsgs := 300
+		userLimit := 20
+
+		bob := "@bob:localhost"
+		bobBearer := "Bearer bob_access_token"
+		bobV2Stream := v2Client.v2StreamForUser(bob, bobBearer)
+
+		// prepare a response from v2
+		v2Resp := &sync2.SyncResponse{
+			NextBatch: "don't care",
+			ToDevice: struct {
+				Events []gomatrixserverlib.SendToDeviceEvent `json:"events"`
+			}{
+				Events: []gomatrixserverlib.SendToDeviceEvent{},
+			},
+		}
+
+		for i := 0; i < numMsgs; i++ {
+			v2Resp.ToDevice.Events = append(v2Resp.ToDevice.Events, gomatrixserverlib.SendToDeviceEvent{
+				Sender:  bob,
+				Type:    "to_device.test_limit",
+				Content: []byte(fmt.Sprintf(`{"foo":"bar %d"}`, i)),
+			})
+		}
+
+		bobV2Stream <- v2Resp
+
+		v3resp := mustDoSync3Request(t, server, bobBearer, "", map[string]interface{}{
+			"to_device": map[string]interface{}{
+				"limit": userLimit,
+			},
+		})
+		if v3resp.ToDevice == nil {
+			t.Fatalf("expected to_device response, got none: %+v", v3resp)
+		}
+		if len(v3resp.ToDevice.Events) > userLimit {
+			t.Fatalf("expected %d to_device message, got %d", userLimit, len(v3resp.ToDevice.Events))
+		}
+		// should return earliest events first
+		for i := 0; i < userLimit; i++ {
+			want, _ := json.Marshal(v2Resp.ToDevice.Events[i])
+			if !bytes.Equal(v3resp.ToDevice.Events[i], want) {
+				t.Fatalf("wrong event returned, got %s want %s", string(v3resp.ToDevice.Events[i]), string(want))
 			}
-			v2Resp := &sync2.SyncResponse{
-				NextBatch: "don't care",
-				ToDevice: struct {
-					Events []gomatrixserverlib.SendToDeviceEvent `json:"events"`
-				}{
-					Events: []gomatrixserverlib.SendToDeviceEvent{
-						toDeviceEvent,
+		}
+		// next request gets the next batch of limited events
+		v3resp = mustDoSync3Request(t, server, bobBearer, v3resp.Next, map[string]interface{}{
+			"to_device": map[string]interface{}{
+				"limit": userLimit,
+			},
+		})
+		if v3resp.ToDevice == nil {
+			t.Fatalf("expected to_device response, got none: %+v", v3resp)
+		}
+		if len(v3resp.ToDevice.Events) > userLimit {
+			t.Fatalf("expected %d to_device message, got %d", userLimit, len(v3resp.ToDevice.Events))
+		}
+		// should return earliest events first
+		for i := 0; i < userLimit; i++ {
+			j := userLimit + i
+			want, _ := json.Marshal(v2Resp.ToDevice.Events[j])
+			if !bytes.Equal(v3resp.ToDevice.Events[i], want) {
+				t.Fatalf("wrong event returned, got %s want %s", string(v3resp.ToDevice.Events[i]), string(want))
+			}
+		}
+	})
+	t.Run("Repeating the request without having ACKed the position returns the event again", func(t *testing.T) {
+		charlie := "@charlie:localhost"
+		charlieBearer := "Bearer charlie_access_token"
+		charlieV2Stream := v2Client.v2StreamForUser(charlie, charlieBearer)
+
+		// prepare a response from v2
+		v2Resp := &sync2.SyncResponse{
+			NextBatch: "don't care",
+			ToDevice: struct {
+				Events []gomatrixserverlib.SendToDeviceEvent `json:"events"`
+			}{
+				Events: []gomatrixserverlib.SendToDeviceEvent{
+					{
+						Sender:  charlie,
+						Type:    "to_device.dummy-event-to-get-a-since-token",
+						Content: []byte(`{"foo":"bar"}`),
 					},
 				},
-			}
-			aliceV2Stream <- v2Resp
+			},
+		}
+		charlieV2Stream <- v2Resp
+		v3respAnchor := mustDoSync3Request(t, server, charlieBearer, "", map[string]interface{}{
+			"to_device": map[string]interface{}{},
+		})
+		// now we have a ?since= token we can use, inject the actual event
+		toDeviceEvent := gomatrixserverlib.SendToDeviceEvent{
+			Sender:  charlie,
+			Type:    "to_device.test.this.should.work",
+			Content: []byte(`{"foo":"bar2"}`),
+		}
+		v2Resp = &sync2.SyncResponse{
+			NextBatch: "still don't care",
+			ToDevice: struct {
+				Events []gomatrixserverlib.SendToDeviceEvent `json:"events"`
+			}{
+				Events: []gomatrixserverlib.SendToDeviceEvent{
+					toDeviceEvent,
+				},
+			},
+		}
+		charlieV2Stream <- v2Resp
 
-			v3resp := mustDoSync3Request(t, server, aliceBearer, "", map[string]interface{}{
+		// do the same request 3 times with the first since token. Because we never increment the
+		// since token it should keep returning the same event
+		var v3resp *streams.Response
+		for i := 0; i < 3; i++ {
+			v3resp = mustDoSync3Request(t, server, charlieBearer, v3respAnchor.Next, map[string]interface{}{
 				"to_device": map[string]interface{}{},
 			})
 			if v3resp.ToDevice == nil {
@@ -189,73 +314,23 @@ func TestHandlerToDevice(t *testing.T) {
 			if !bytes.Equal(v3resp.ToDevice.Events[0], want) {
 				t.Fatalf("wrong event returned, got %s want %s", string(v3resp.ToDevice.Events[0]), string(want))
 			}
-		})
-		t.Run("'limit' is honoured and fetches earliest events first'", func(t *testing.T) {
-			t.Parallel()
-			numMsgs := 300
-			userLimit := 20
-
-			bob := "@bob:localhost"
-			bobBearer := "Bearer bob_access_token"
-			bobV2Stream := v2Client.v2StreamForUser(bob, bobBearer)
-
-			// prepare a response from v2
-			v2Resp := &sync2.SyncResponse{
-				NextBatch: "don't care",
-				ToDevice: struct {
-					Events []gomatrixserverlib.SendToDeviceEvent `json:"events"`
-				}{
-					Events: []gomatrixserverlib.SendToDeviceEvent{},
-				},
-			}
-
-			for i := 0; i < numMsgs; i++ {
-				v2Resp.ToDevice.Events = append(v2Resp.ToDevice.Events, gomatrixserverlib.SendToDeviceEvent{
-					Sender:  bob,
-					Type:    "to_device.test_limit",
-					Content: []byte(fmt.Sprintf(`{"foo":"bar %d"}`, i)),
-				})
-			}
-
-			bobV2Stream <- v2Resp
-
-			v3resp := mustDoSync3Request(t, server, bobBearer, "", map[string]interface{}{
-				"to_device": map[string]interface{}{
-					"limit": userLimit,
-				},
+		}
+		t.Run("After ACKing the position, going back to the old position returns no event", func(t *testing.T) {
+			t.Logf("acking pos %v", v3resp.Next)
+			// ACK the position
+			_ = mustDoSync3Request(t, server, charlieBearer, v3resp.Next, map[string]interface{}{
+				"to_device": map[string]interface{}{},
+			})
+			t.Logf("going back to pos %v", v3respAnchor.Next)
+			// now requests for the previous position return nothing as the to_device event was deleted
+			v3resp = mustDoSync3Request(t, server, charlieBearer, v3respAnchor.Next, map[string]interface{}{
+				"to_device": map[string]interface{}{},
 			})
 			if v3resp.ToDevice == nil {
 				t.Fatalf("expected to_device response, got none: %+v", v3resp)
 			}
-			if len(v3resp.ToDevice.Events) > userLimit {
-				t.Fatalf("expected %d to_device message, got %d", userLimit, len(v3resp.ToDevice.Events))
-			}
-			// should return earliest events first
-			for i := 0; i < userLimit; i++ {
-				want, _ := json.Marshal(v2Resp.ToDevice.Events[i])
-				if !bytes.Equal(v3resp.ToDevice.Events[i], want) {
-					t.Fatalf("wrong event returned, got %s want %s", string(v3resp.ToDevice.Events[i]), string(want))
-				}
-			}
-			// next request gets the next batch of limited events
-			v3resp = mustDoSync3Request(t, server, bobBearer, v3resp.Next, map[string]interface{}{
-				"to_device": map[string]interface{}{
-					"limit": userLimit,
-				},
-			})
-			if v3resp.ToDevice == nil {
-				t.Fatalf("expected to_device response, got none: %+v", v3resp)
-			}
-			if len(v3resp.ToDevice.Events) > userLimit {
-				t.Fatalf("expected %d to_device message, got %d", userLimit, len(v3resp.ToDevice.Events))
-			}
-			// should return earliest events first
-			for i := 0; i < userLimit; i++ {
-				j := userLimit + i
-				want, _ := json.Marshal(v2Resp.ToDevice.Events[j])
-				if !bytes.Equal(v3resp.ToDevice.Events[i], want) {
-					t.Fatalf("wrong event returned, got %s want %s", string(v3resp.ToDevice.Events[i]), string(want))
-				}
+			if len(v3resp.ToDevice.Events) != 0 {
+				t.Fatalf("expected 0 to_device message, got %d", len(v3resp.ToDevice.Events))
 			}
 		})
 	})

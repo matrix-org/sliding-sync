@@ -43,6 +43,11 @@ func NewToDeviceTable(db *sqlx.DB) *ToDeviceTable {
 	return &ToDeviceTable{db}
 }
 
+func (t *ToDeviceTable) DeleteMessagesUpToAndIncluding(deviceID string, toIncl int64) error {
+	_, err := t.db.Exec(`DELETE FROM syncv3_to_device_messages WHERE device_id = $1 AND position <= $2`, deviceID, toIncl)
+	return err
+}
+
 func (t *ToDeviceTable) Messages(deviceID string, from, to, limit int64) (msgs []json.RawMessage, upTo int64, err error) {
 	upTo = to
 	var rows []ToDeviceRow

@@ -48,6 +48,13 @@ func (s *ToDevice) SetPosition(tok *sync3.Token, pos int64) {
 	tok.SetToDevicePosition(pos)
 }
 
+func (s *ToDevice) SessionConfirmed(session *sync3.Session, confirmedPos int64, allSessions bool) {
+	if !allSessions {
+		return
+	}
+	_ = s.storage.ToDeviceTable.DeleteMessagesUpToAndIncluding(session.DeviceID, confirmedPos)
+}
+
 func (s *ToDevice) DataInRange(session *sync3.Session, fromExcl, toIncl int64, request *Request, resp *Response) (int64, error) {
 	if request.ToDevice == nil {
 		return 0, ErrNotRequested

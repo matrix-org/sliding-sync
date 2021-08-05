@@ -105,4 +105,26 @@ func TestToDeviceTable(t *testing.T) {
 	if int64(len(gotMsgs)) != wantLimit {
 		t.Fatalf("Messages: got %d messages, want %d", len(gotMsgs), wantLimit)
 	}
+
+	// delete the first message, requerying only gives 1 message
+	if err := table.DeleteMessagesUpToAndIncluding(deviceID, lastPos-1); err != nil {
+		t.Fatalf("DeleteMessagesUpTo: %s", err)
+	}
+	gotMsgs, upTo, err = table.Messages(deviceID, 0, lastPos, limit)
+	if err != nil {
+		t.Fatalf("Messages: %s", err)
+	}
+	if upTo != lastPos {
+		t.Errorf("Message: got up to %d want %d", upTo, lastPos)
+	}
+	if len(gotMsgs) != 1 {
+		t.Fatalf("Messages: got %d messages, want %d", len(gotMsgs), 1)
+	}
+	want, err := json.Marshal(msgs[1])
+	if err != nil {
+		t.Fatalf("failed to marshal msg: %s", err)
+	}
+	if !bytes.Equal(gotMsgs[0], want) {
+		t.Fatalf("Messages: deleted message but unexpected message left: got %s want %s", string(gotMsgs[0]), string(want))
+	}
 }

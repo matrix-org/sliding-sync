@@ -1,6 +1,7 @@
 package store
 
 import (
+	"reflect"
 	"testing"
 
 	"github.com/matrix-org/sync-v3/sync3/streams"
@@ -65,6 +66,19 @@ func TestSessions(t *testing.T) {
 	}
 	if f.Typing.RoomID != wantReq.Typing.RoomID {
 		t.Fatalf("Returned filter is corrupt, bad room ID: got %v want %v", f.Typing.RoomID, wantReq.Typing.RoomID)
+	}
+
+	// check tokens work
+	if err = sessions.UpdateLastTokens(s2.ID, "conf2", "unconf2"); err != nil {
+		t.Fatalf("UpdateLastTokens returned error: %s", err)
+	}
+	tokens, err := sessions.ConfirmedSessionTokens(s2.DeviceID)
+	if err != nil {
+		t.Fatalf("ConfirmedSessionTokens: %s", err)
+	}
+	wantTokens := []string{"conf", "conf2"}
+	if !reflect.DeepEqual(tokens, wantTokens) {
+		t.Fatalf("ConfirmedSessionTokens: got %v want %v", tokens, wantTokens)
 	}
 }
 
