@@ -106,13 +106,22 @@ func (t *EventTable) Insert(txn *sqlx.Tx, events []Event) (int, error) {
 	return int(rowsAffected), nil
 }
 
+// SelectByNIDs allows txn to be nil
 func (t *EventTable) SelectByNIDs(txn *sqlx.Tx, nids []int64) (events []Event, err error) {
 	query, args, err := sqlx.In("SELECT event_nid, event_id, event FROM syncv3_events WHERE event_nid IN (?) ORDER BY event_nid ASC;", nids)
-	query = txn.Rebind(query)
-	if err != nil {
-		return nil, err
+	if txn != nil {
+		query = txn.Rebind(query)
+		if err != nil {
+			return nil, err
+		}
+		err = txn.Select(&events, query, args...)
+	} else {
+		query = t.db.Rebind(query)
+		if err != nil {
+			return nil, err
+		}
+		err = t.db.Select(&events, query, args...)
 	}
-	err = txn.Select(&events, query, args...)
 	return
 }
 

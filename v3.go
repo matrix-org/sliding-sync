@@ -33,6 +33,10 @@ type server struct {
 }
 
 func (s *server) ServeHTTP(w http.ResponseWriter, req *http.Request) {
+	if req.Method != "POST" {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
 	h := s.final
 	for i := range s.chain {
 		h = s.chain[len(s.chain)-1-i](h)
@@ -127,13 +131,11 @@ func NewSyncV3Handler(v2Client sync2.Client, postgresDBURI string) *SyncV3Handle
 	}
 	latestToken.SetTypingPosition(typingPos)
 	sh.Notifier = notifier.NewNotifier(*latestToken)
-	// TODO: load up the membership states so the notifier knows who to wake up
-	/*
-		roomIDToUserIDs, err := sh.Storage.AllJoinedMembers()
-		if err != nil {
-			panic(err)
-		}
-		sh.Notifier.Load(roomIDToUserIDs) */
+	roomIDToUserIDs, err := sh.Storage.AllJoinedMembers()
+	if err != nil {
+		panic(err)
+	}
+	sh.Notifier.Load(roomIDToUserIDs)
 	return sh
 }
 

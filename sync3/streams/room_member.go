@@ -16,7 +16,7 @@ type RoomMemberSortOrder string
 
 var (
 	SortRoomMemberByPL   RoomMemberSortOrder = "by_pl"
-	SortRoomMemberByName RoomMemberSortOrder = "by_pl"
+	SortRoomMemberByName RoomMemberSortOrder = "by_name"
 )
 
 type FilterRoomMember struct {

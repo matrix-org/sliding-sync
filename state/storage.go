@@ -2,8 +2,11 @@ package state
 
 import (
 	"encoding/json"
+	"fmt"
 
 	"github.com/jmoiron/sqlx"
+	"github.com/matrix-org/gomatrixserverlib"
+	"github.com/tidwall/gjson"
 )
 
 type Storage struct {
@@ -50,10 +53,26 @@ func (s *Storage) Initialise(roomID string, state []json.RawMessage) (bool, erro
 }
 
 func (s *Storage) AllJoinedMembers() (map[string][]string, error) {
-	// TODO
-	_, err := s.accumulator.snapshotTable.CurrentSnapshots()
+	roomIDToEventNIDs, err := s.accumulator.snapshotTable.CurrentSnapshots()
 	if err != nil {
 		return nil, err
 	}
-	return nil, nil
+	result := make(map[string][]string)
+	for roomID, eventNIDs := range roomIDToEventNIDs {
+		events, err := s.accumulator.eventsTable.SelectByNIDs(nil, eventNIDs)
+		if err != nil {
+			return nil, fmt.Errorf("failed to select events in room %s: %s", roomID, err)
+		}
+		for _, ev := range events {
+			evj := gjson.ParseBytes(ev.JSON)
+			if evj.Get("type").Str != gomatrixserverlib.MRoomMember {
+				continue
+			}
+			if evj.Get("content.membership").Str != gomatrixserverlib.Join {
+				continue
+			}
+			result[roomID] = append(result[roomID], evj.Get("state_key").Str)
+		}
+	}
+	return result, nil
 }
