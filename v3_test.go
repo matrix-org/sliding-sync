@@ -148,7 +148,7 @@ func TestHandler(t *testing.T) {
 // - `limit` is honoured. Including server-side negotiation.
 // - Repeating the request without having ACKed the position returns the event again.
 // - After ACKing the position, going back to the old position returns no event.
-// - TODO If 2 sessions exist, both session must ACK the position before the event is deleted.
+// - If 2 sessions exist, both session must ACK the position before the event is deleted.
 func TestHandlerToDevice(t *testing.T) {
 	server, v2Client := newSync3Server(t)
 	t.Run("Injecting a to_device event into the v2 stream gets received", func(t *testing.T) {
@@ -333,5 +333,83 @@ func TestHandlerToDevice(t *testing.T) {
 				t.Fatalf("expected 0 to_device message, got %d", len(v3resp.ToDevice.Events))
 			}
 		})
+	})
+	t.Run("If 2 sessions exist, both session must ACK the position before the event is deleted", func(t *testing.T) {
+		doris := "@doris:localhost"
+		dorisBearer := "Bearer doris_access_token"
+		dorisV2Stream := v2Client.v2StreamForUser(doris, dorisBearer)
+		// prepare a response from v2
+		v2Resp := &sync2.SyncResponse{
+			NextBatch: "don't care",
+			ToDevice: struct {
+				Events []gomatrixserverlib.SendToDeviceEvent `json:"events"`
+			}{
+				Events: []gomatrixserverlib.SendToDeviceEvent{
+					{
+						Sender:  doris,
+						Type:    "to_device.dummy-event-to-get-a-since-token",
+						Content: []byte(`{"foo":"bar"}`),
+					},
+				},
+			},
+		}
+		dorisV2Stream <- v2Resp
+		// do 2 calls to /sync without a since token == make 2 sessions
+		s1v3respAnchor := mustDoSync3Request(t, server, dorisBearer, "", map[string]interface{}{
+			"to_device": map[string]interface{}{},
+		})
+		s2v3respAnchor := mustDoSync3Request(t, server, dorisBearer, "", map[string]interface{}{
+			"to_device": map[string]interface{}{},
+		})
+		// now we have a ?since= token we can use, inject the actual event
+		toDeviceEvent := gomatrixserverlib.SendToDeviceEvent{
+			Sender:  doris,
+			Type:    "to_device.test.this.should.work",
+			Content: []byte(`{"foo":"bar2"}`),
+		}
+		v2Resp = &sync2.SyncResponse{
+			NextBatch: "still don't care",
+			ToDevice: struct {
+				Events []gomatrixserverlib.SendToDeviceEvent `json:"events"`
+			}{
+				Events: []gomatrixserverlib.SendToDeviceEvent{
+					toDeviceEvent,
+				},
+			},
+		}
+		dorisV2Stream <- v2Resp
+		// calling /sync with session 1 and session 2 now returns the event
+		sinceValues := []string{s1v3respAnchor.Next, s2v3respAnchor.Next}
+		for i, since := range sinceValues {
+			v3resp := mustDoSync3Request(t, server, dorisBearer, since, map[string]interface{}{
+				"to_device": map[string]interface{}{},
+			})
+			if v3resp.ToDevice == nil {
+				t.Fatalf("expected to_device response, got none: %+v", v3resp)
+			}
+			if len(v3resp.ToDevice.Events) != 1 {
+				t.Fatalf("expected 1 to_device message, got %d", len(v3resp.ToDevice.Events))
+			}
+			// update to the latest token
+			sinceValues[i] = v3resp.Next
+		}
+
+		// up to this point neither session have ACKed the event even though they got it, because they
+		// haven't made a request with the latest token, so do it with session 1.
+		_ = mustDoSync3Request(t, server, dorisBearer, sinceValues[0], map[string]interface{}{
+			"to_device": map[string]interface{}{},
+		})
+
+		// now, doing the old request on session 2 should still return the event as session 2 never
+		// ACKed the event
+		v3resp := mustDoSync3Request(t, server, dorisBearer, s2v3respAnchor.Next, map[string]interface{}{
+			"to_device": map[string]interface{}{},
+		})
+		if v3resp.ToDevice == nil {
+			t.Fatalf("expected to_device response, got none: %+v", v3resp)
+		}
+		if len(v3resp.ToDevice.Events) != 1 {
+			t.Fatalf("expected 1 to_device message, got %d", len(v3resp.ToDevice.Events))
+		}
 	})
 }
