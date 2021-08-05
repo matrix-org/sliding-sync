@@ -16,16 +16,6 @@ type FilterToDevice struct {
 	Limit int64 `json:"limit"`
 }
 
-func (f *FilterToDevice) Combine(other *FilterToDevice) *FilterToDevice {
-	combined := &FilterToDevice{
-		Limit: f.Limit,
-	}
-	if other.Limit != 0 {
-		combined.Limit = other.Limit
-	}
-	return combined
-}
-
 type ToDeviceResponse struct {
 	Limit  int64             `json:"limit"`
 	Events []json.RawMessage `json:"events"`

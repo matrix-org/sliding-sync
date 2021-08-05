@@ -10,9 +10,10 @@ import (
 // A request is made by the combination of the client HTTP request parameters and the stored filters
 // on the server.
 type Request struct {
-	RoomList *FilterRoomList `json:"room_list,omitempty"`
-	Typing   *FilterTyping   `json:"typing,omitempty"`
-	ToDevice *FilterToDevice `json:"to_device,omitempty"`
+	RoomList   *FilterRoomList   `json:"room_list,omitempty"`
+	Typing     *FilterTyping     `json:"typing,omitempty"`
+	ToDevice   *FilterToDevice   `json:"to_device,omitempty"`
+	RoomMember *FilterRoomMember `json:"room_member,omitempty"`
 }
 
 // ApplyDeltas updates Request with the values in req2. Returns true if there were deltas.
@@ -36,4 +37,11 @@ func (r *Request) ApplyDeltas(req2 *Request) (bool, error) {
 		return false, err
 	}
 	return !bytes.Equal(original, combined), nil
+}
+
+// P is the pagination struct for streams
+type P struct {
+	Limit int64  `json:"limit,omitempty"`
+	Sort  string `json:"sort,omitempty"`
+	Next  string `json:"next,omitempty"`
 }

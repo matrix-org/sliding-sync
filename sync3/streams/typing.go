@@ -11,16 +11,6 @@ type FilterTyping struct {
 	RoomID string `json:"room_id"`
 }
 
-func (f *FilterTyping) Combine(other *FilterTyping) *FilterTyping {
-	combined := &FilterTyping{
-		RoomID: f.RoomID,
-	}
-	if other.RoomID != "" {
-		combined.RoomID = other.RoomID
-	}
-	return combined
-}
-
 type TypingResponse struct {
 	UserIDs []string `json:"user_ids"`
 }

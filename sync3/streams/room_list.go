@@ -30,35 +30,6 @@ type FilterRoomList struct {
 	IncludeRoomAvatarMXC *bool
 }
 
-// Combine two filters together. A new filter is returned.
-func (f *FilterRoomList) Combine(new *FilterRoomList) *FilterRoomList {
-	combined := &FilterRoomList{}
-	// nil slice != 0 length slice
-	if new.SummaryEventTypes != nil {
-		combined.SummaryEventTypes = new.SummaryEventTypes
-	} else {
-		combined.SummaryEventTypes = f.SummaryEventTypes
-	}
-	if new.EntriesPerBatch != 0 {
-		combined.EntriesPerBatch = new.EntriesPerBatch
-	} else {
-		combined.EntriesPerBatch = f.EntriesPerBatch
-	}
-	if new.RoomNameSize != 0 {
-		combined.RoomNameSize = new.RoomNameSize
-	} else {
-		combined.RoomNameSize = f.RoomNameSize
-	}
-	// pointer to bool to indicate absence
-	if new.IncludeRoomAvatarMXC != nil {
-		combined.IncludeRoomAvatarMXC = new.IncludeRoomAvatarMXC
-	} else {
-		combined.IncludeRoomAvatarMXC = f.IncludeRoomAvatarMXC
-	}
-
-	return combined
-}
-
 type ControlMessageRoomList struct {
 	EntriesPerBatch *int   `json:"entries_per_batch,omitempty"`
 	Upcoming        string `json:"upcoming"`
