@@ -43,20 +43,22 @@ func NewToDeviceTable(db *sqlx.DB) *ToDeviceTable {
 	return &ToDeviceTable{db}
 }
 
-func (t *ToDeviceTable) Messages(deviceID string, from, to int64) (msgs []json.RawMessage, err error) {
+func (t *ToDeviceTable) Messages(deviceID string, from, to, limit int64) (msgs []json.RawMessage, upTo int64, err error) {
+	upTo = to
 	var rows []ToDeviceRow
 	err = t.db.Select(&rows,
-		`SELECT message FROM syncv3_to_device_messages WHERE device_id = $1 AND position > $2 AND position <= $3 ORDER BY position ASC`,
-		deviceID, from, to,
+		`SELECT position, message FROM syncv3_to_device_messages WHERE device_id = $1 AND position > $2 AND position <= $3 ORDER BY position ASC LIMIT $4`,
+		deviceID, from, to, limit,
 	)
 	if len(rows) == 0 {
-		to = from
 		return
 	}
 	msgs = make([]json.RawMessage, len(rows))
 	for i := range rows {
 		msgs[i] = json.RawMessage(rows[i].Message)
 	}
+	// if a limit was applied, we may not get up to 'to'
+	upTo = rows[len(rows)-1].Position
 	return
 }
 

@@ -26,7 +26,7 @@ func TestNewSyncToken(t *testing.T) {
 			outToken: &Token{
 				SessionID: 1,
 				FilterID:  6,
-				positions: []int64{12, 19, 11},
+				positions: [totalStreamPositions]int64{12, 19, 11},
 			},
 		},
 		{
@@ -35,7 +35,7 @@ func TestNewSyncToken(t *testing.T) {
 			outToken: &Token{
 				SessionID: 1,
 				FilterID:  0,
-				positions: []int64{33, 100, 1313},
+				positions: [totalStreamPositions]int64{33, 100, 1313},
 			},
 		},
 	}

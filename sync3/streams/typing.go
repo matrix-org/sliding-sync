@@ -38,16 +38,20 @@ func (s *Typing) Position(tok *sync3.Token) int64 {
 	return tok.TypingPosition()
 }
 
-func (s *Typing) DataInRange(session *sync3.Session, fromExcl, toIncl int64, request *Request, resp *Response) error {
+func (s *Typing) SetPosition(tok *sync3.Token, pos int64) {
+	tok.SetTypingPosition(pos)
+}
+
+func (s *Typing) DataInRange(session *sync3.Session, fromExcl, toIncl int64, request *Request, resp *Response) (int64, error) {
 	if request.Typing == nil {
-		return ErrNotRequested
+		return 0, ErrNotRequested
 	}
 	userIDs, _, err := s.storage.TypingTable.Typing(request.Typing.RoomID, fromExcl, toIncl)
 	if err != nil {
-		return fmt.Errorf("Typing: %s", err)
+		return 0, fmt.Errorf("Typing: %s", err)
 	}
 	resp.Typing = &TypingResponse{
 		UserIDs: userIDs,
 	}
-	return nil
+	return 0, nil
 }

@@ -48,8 +48,15 @@ type mockV2Client struct {
 	mu               *sync.Mutex
 }
 
-func (c *mockV2Client) DoSyncV2(authHeader, since string) (*sync2.SyncResponse, int, error) {
+func (c *mockV2Client) getUserIDFromAuthHeader(authHeader string) (string, bool) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
 	userID, ok := c.authHeaderToUser[authHeader]
+	return userID, ok
+}
+
+func (c *mockV2Client) DoSyncV2(authHeader, since string) (*sync2.SyncResponse, int, error) {
+	userID, ok := c.getUserIDFromAuthHeader(authHeader)
 	if !ok {
 		return nil, 401, nil
 	}
@@ -62,7 +69,7 @@ func (c *mockV2Client) DoSyncV2(authHeader, since string) (*sync2.SyncResponse, 
 	return <-ch, 200, nil
 }
 func (c *mockV2Client) WhoAmI(authHeader string) (string, error) {
-	userID, ok := c.authHeaderToUser[authHeader]
+	userID, ok := c.getUserIDFromAuthHeader(authHeader)
 	if !ok {
 		return "", fmt.Errorf("test: unknown authorization header")
 	}
@@ -70,8 +77,8 @@ func (c *mockV2Client) WhoAmI(authHeader string) (string, error) {
 }
 
 func (c *mockV2Client) v2StreamForUser(userID, authHeader string) chan *sync2.SyncResponse {
-	c.authHeaderToUser[authHeader] = userID
 	c.mu.Lock()
+	c.authHeaderToUser[authHeader] = userID
 	ch, ok := c.userToChan[userID]
 	if !ok {
 		ch = make(chan *sync2.SyncResponse, 10)
@@ -110,6 +117,7 @@ func doSync3Request(t *testing.T, server http.Handler, authHeader, since string,
 	req := httptest.NewRequest("POST", path, bytes.NewBuffer(marshalJSON(t, reqBody)))
 	req.Header.Set("Authorization", authHeader)
 	server.ServeHTTP(w, req)
+	t.Logf("POST /sync?since=%s (auth=%s) => HTTP %d", since, authHeader, w.Code)
 	return w
 }
 

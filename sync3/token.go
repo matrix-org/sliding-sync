@@ -24,7 +24,7 @@ type Token struct {
 	FilterID  int64
 
 	// Server-side stream positions (same as sync v2)
-	positions []int64
+	positions [totalStreamPositions]int64
 }
 
 func (t *Token) EventPosition() int64 {
@@ -87,7 +87,7 @@ func NewBlankSyncToken(sessionID, filterID int64) *Token {
 	return &Token{
 		SessionID: sessionID,
 		FilterID:  filterID,
-		positions: make([]int64, totalStreamPositions),
+		positions: [totalStreamPositions]int64{},
 	}
 }
 
@@ -125,9 +125,10 @@ func NewSyncToken(since string) (*Token, error) {
 	if len(positions) != totalStreamPositions {
 		return nil, fmt.Errorf("expected %d stream positions, got %d", totalStreamPositions, len(positions))
 	}
-	return &Token{
+	token := &Token{
 		SessionID: sessionID,
 		FilterID:  filterID,
-		positions: positions,
-	}, nil
+	}
+	copy(token.positions[:], positions)
+	return token, nil
 }

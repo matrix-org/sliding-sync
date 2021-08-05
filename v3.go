@@ -204,7 +204,7 @@ func (h *SyncV3Handler) serve(w http.ResponseWriter, req *http.Request) *handler
 	for _, stream := range h.streams {
 		fromExcl := stream.Position(fromToken)
 		toIncl := stream.Position(&upcoming)
-		err = stream.DataInRange(session, fromExcl, toIncl, syncReq, &resp)
+		upTo, err := stream.DataInRange(session, fromExcl, toIncl, syncReq, &resp)
 		if err == streams.ErrNotRequested {
 			continue
 		}
@@ -213,6 +213,11 @@ func (h *SyncV3Handler) serve(w http.ResponseWriter, req *http.Request) *handler
 				StatusCode: 500,
 				err:        fmt.Errorf("stream error: %s", err),
 			}
+		}
+		if upTo != 0 {
+			// update the to position for this stream. Calling DataInRange is allowed to modify the to
+			// value in cases where a LIMIT gets applied
+			stream.SetPosition(&upcoming, upTo)
 		}
 	}
 
