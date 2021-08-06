@@ -55,7 +55,7 @@ func (s *Storage) Initialise(roomID string, state []json.RawMessage) (bool, erro
 
 func (s *Storage) RoomStateAfterEventPosition(roomID string, pos int64) (events []Event, err error) {
 	err = sqlutil.WithTransaction(s.accumulator.db, func(txn *sqlx.Tx) error {
-		snapID, err := s.accumulator.eventsTable.AfterEpochSnapshotIDForEventNID(txn, pos)
+		snapID, err := s.accumulator.eventsTable.AfterEpochSnapshotIDForEventNID(txn, roomID, pos)
 		if err != nil {
 			return err
 		}

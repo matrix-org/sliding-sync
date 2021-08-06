@@ -195,9 +195,11 @@ func (t *EventTable) UpdateAfterEpochSnapshotID(txn *sqlx.Tx, snapID int64, nids
 	return err
 }
 
-func (t *EventTable) AfterEpochSnapshotIDForEventNID(txn *sqlx.Tx, eventNID int64) (snapID int64, err error) {
+func (t *EventTable) AfterEpochSnapshotIDForEventNID(txn *sqlx.Tx, roomID string, eventNID int64) (snapID int64, err error) {
+	// the position (event nid) may be for a random different room, so we need to find the highest nid <= this position for this room
 	err = txn.QueryRow(
-		`SELECT after_epoch_snapshot_id FROM syncv3_events WHERE  event_nid = $1`, eventNID,
+		`SELECT after_epoch_snapshot_id FROM syncv3_events WHERE event_nid =
+		(SELECT MAX(event_nid) FROM syncv3_events WHERE room_id = $1 AND event_nid <= $2)`, roomID, eventNID,
 	).Scan(&snapID)
 	return
 }

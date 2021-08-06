@@ -1,6 +1,7 @@
 package streams
 
 import (
+	"database/sql"
 	"encoding/json"
 	"fmt"
 	"sort"
@@ -146,6 +147,10 @@ func (s *RoomMember) paginatedDataAtPoint(session *sync3.Session, pos int64, sor
 	// Load room state at pos
 	events, err := s.storage.RoomStateAfterEventPosition(request.RoomMember.RoomID, pos)
 	if err != nil {
+		if err == sql.ErrNoRows {
+			// this room ID doesn't exist at this position
+			return nil
+		}
 		return fmt.Errorf("RoomStateAfterEventPosition %d - %s", pos, err)
 	}
 	// find the PL event

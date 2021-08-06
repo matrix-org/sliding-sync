@@ -16,19 +16,20 @@ func TestEventTable(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to start txn: %s", err)
 	}
+	roomID := "!0:localhost"
 	table := NewEventTable(db)
 	events := []Event{
 		{
 			ID:   "100",
-			JSON: []byte(`{"event_id":"100", "foo":"bar", "type": "T1", "state_key":"S1", "room_id":"!0:localhost"}`),
+			JSON: []byte(`{"event_id":"100", "foo":"bar", "type": "T1", "state_key":"S1", "room_id":"` + roomID + `"}`),
 		},
 		{
 			ID:   "101",
-			JSON: []byte(`{"event_id":"101",  "foo":"bar", "type": "T2", "state_key":"S2", "room_id":"!0:localhost"}`),
+			JSON: []byte(`{"event_id":"101",  "foo":"bar", "type": "T2", "state_key":"S2", "room_id":"` + roomID + `"}`),
 		},
 		{
 			// ID is optional, it will pull event_id out if it's missing
-			JSON: []byte(`{"event_id":"102", "foo":"bar", "type": "T3", "state_key":"", "room_id":"!0:localhost"}`),
+			JSON: []byte(`{"event_id":"102", "foo":"bar", "type": "T3", "state_key":"", "room_id":"` + roomID + `"}`),
 		},
 	}
 	numNew, err := table.Insert(txn, events)
@@ -87,7 +88,7 @@ func TestEventTable(t *testing.T) {
 		t.Fatalf("UpdateAfterEpochSnapshotID: %s", err)
 	}
 	// query the snapshot
-	snapID, err := table.AfterEpochSnapshotIDForEventNID(txn, gotnids[1])
+	snapID, err := table.AfterEpochSnapshotIDForEventNID(txn, roomID, gotnids[1])
 	if err != nil {
 		t.Fatalf("AfterEpochSnapshotIDForEventNID: %s", err)
 	}

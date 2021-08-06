@@ -9,6 +9,7 @@ import (
 	"os"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/matrix-org/sync-v3/sync2"
 	"github.com/matrix-org/sync-v3/sync3/streams"
@@ -36,6 +37,7 @@ func newSync3Server(t *testing.T) (http.Handler, *mockV2Client) {
 	cli := &mockV2Client{
 		authHeaderToUser: make(map[string]string),
 		userToChan:       make(map[string]chan *sync2.SyncResponse),
+		sinces:           make(map[string]chan bool),
 		mu:               &sync.Mutex{},
 	}
 	h := NewSyncV3Handler(cli, postgresConnectionString)
@@ -45,6 +47,7 @@ func newSync3Server(t *testing.T) (http.Handler, *mockV2Client) {
 type mockV2Client struct {
 	authHeaderToUser map[string]string
 	userToChan       map[string]chan *sync2.SyncResponse
+	sinces           map[string]chan bool
 	mu               *sync.Mutex
 }
 
@@ -62,6 +65,11 @@ func (c *mockV2Client) DoSyncV2(authHeader, since string) (*sync2.SyncResponse, 
 	}
 	c.mu.Lock()
 	ch := c.userToChan[userID]
+	waitCh, ok := c.sinces[authHeader+since]
+	if ok {
+		close(waitCh)
+		delete(c.sinces, authHeader+since)
+	}
 	c.mu.Unlock()
 	if ch == nil {
 		return nil, 500, nil
@@ -76,7 +84,9 @@ func (c *mockV2Client) WhoAmI(authHeader string) (string, error) {
 	return userID, nil
 }
 
-func (c *mockV2Client) v2StreamForUser(userID, authHeader string) chan *sync2.SyncResponse {
+// v2StreamForUser returns a function which you can call to inject v2 responses. This function returns
+// another function which should be called to wait for the response to be processed.
+func (c *mockV2Client) v2StreamForUser(userID, authHeader string) func(*sync2.SyncResponse) func() {
 	c.mu.Lock()
 	c.authHeaderToUser[authHeader] = userID
 	ch, ok := c.userToChan[userID]
@@ -85,7 +95,21 @@ func (c *mockV2Client) v2StreamForUser(userID, authHeader string) chan *sync2.Sy
 		c.userToChan[userID] = ch
 	}
 	c.mu.Unlock()
-	return ch
+	return func(res *sync2.SyncResponse) func() {
+		waitCh := make(chan bool)
+		c.mu.Lock()
+		c.sinces[authHeader+res.NextBatch] = waitCh
+		c.mu.Unlock()
+		ch <- res
+		return func() {
+			// now wait until we're blocking again (this implies the server has processed the response)
+			select {
+			case <-waitCh:
+			case <-time.After(1 * time.Second):
+				fmt.Println("timed out waiting for server to call v2 sync again")
+			}
+		}
+	}
 }
 
 func marshalJSON(t *testing.T, in map[string]interface{}) json.RawMessage {

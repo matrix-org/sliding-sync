@@ -10,6 +10,7 @@ import (
 	"github.com/matrix-org/gomatrixserverlib"
 	"github.com/matrix-org/sync-v3/sync2"
 	"github.com/matrix-org/sync-v3/sync3/streams"
+	"github.com/tidwall/gjson"
 )
 
 // This tests all the moving parts for the sync v3 server. It does the following:
@@ -59,7 +60,7 @@ func TestHandler(t *testing.T) {
 			},
 		},
 	}
-	aliceV2Stream <- v2Resp
+	waitUntilV2Processed := aliceV2Stream(v2Resp)
 
 	// fresh user should make a new session and start polling, getting these events above.
 	// however, we didn't ask for them so they shouldn't be returned and should timeout with no data
@@ -71,6 +72,8 @@ func TestHandler(t *testing.T) {
 	if v3resp.Typing != nil {
 		t.Fatalf("expected no data due to timeout, got data: %+v", v3resp.Typing)
 	}
+
+	waitUntilV2Processed()
 
 	// now set bob to typing
 	v2Resp = &sync2.SyncResponse{
@@ -90,10 +93,12 @@ func TestHandler(t *testing.T) {
 			},
 		},
 	}
-	aliceV2Stream <- v2Resp
+	waitUntilV2Processed = aliceV2Stream(v2Resp)
 
 	// 2nd request with no special args should remember we want the typing notif
 	v3resp = mustDoSync3Request(t, server, aliceBearer, v3resp.Next, map[string]interface{}{})
+
+	waitUntilV2Processed()
 
 	// Check that the response returns bob typing
 	if v3resp.Typing == nil {
@@ -127,7 +132,7 @@ func TestHandler(t *testing.T) {
 				},
 			},
 		}
-		aliceV2Stream <- v2Resp
+		aliceV2Stream(v2Resp)
 	}()
 	v3resp = mustDoSync3Request(t, server, aliceBearer, v3resp.Next, map[string]interface{}{})
 
@@ -172,7 +177,7 @@ func TestHandlerToDevice(t *testing.T) {
 				},
 			},
 		}
-		aliceV2Stream <- v2Resp
+		aliceV2Stream(v2Resp)
 
 		v3resp := mustDoSync3Request(t, server, aliceBearer, "", map[string]interface{}{
 			"to_device": map[string]interface{}{},
@@ -214,7 +219,7 @@ func TestHandlerToDevice(t *testing.T) {
 			})
 		}
 
-		bobV2Stream <- v2Resp
+		bobV2Stream(v2Resp)
 
 		v3resp := mustDoSync3Request(t, server, bobBearer, "", map[string]interface{}{
 			"to_device": map[string]interface{}{
@@ -275,7 +280,7 @@ func TestHandlerToDevice(t *testing.T) {
 				},
 			},
 		}
-		charlieV2Stream <- v2Resp
+		charlieV2Stream(v2Resp)
 		v3respAnchor := mustDoSync3Request(t, server, charlieBearer, "", map[string]interface{}{
 			"to_device": map[string]interface{}{},
 		})
@@ -295,7 +300,7 @@ func TestHandlerToDevice(t *testing.T) {
 				},
 			},
 		}
-		charlieV2Stream <- v2Resp
+		charlieV2Stream(v2Resp)
 
 		// do the same request 3 times with the first since token. Because we never increment the
 		// since token it should keep returning the same event
@@ -353,7 +358,7 @@ func TestHandlerToDevice(t *testing.T) {
 				},
 			},
 		}
-		dorisV2Stream <- v2Resp
+		dorisV2Stream(v2Resp)
 		// do 2 calls to /sync without a since token == make 2 sessions
 		s1v3respAnchor := mustDoSync3Request(t, server, dorisBearer, "", map[string]interface{}{
 			"to_device": map[string]interface{}{},
@@ -377,7 +382,7 @@ func TestHandlerToDevice(t *testing.T) {
 				},
 			},
 		}
-		dorisV2Stream <- v2Resp
+		dorisV2Stream(v2Resp)
 		// calling /sync with session 1 and session 2 now returns the event
 		sinceValues := []string{s1v3respAnchor.Next, s2v3respAnchor.Next}
 		for i, since := range sinceValues {
@@ -414,67 +419,203 @@ func TestHandlerToDevice(t *testing.T) {
 	})
 }
 
+type memlog struct { // @alice:localhost => "join"
+	Sender     string
+	Target     string
+	Membership string
+}
+
+// Test room member stream:
+// - Can get all room members in a DM room and an empty since token
+// - Gets the first page of room members in a big group room and an empty since token
+// - Gets the 2nd page (and so on) of room members in a big group room until all members are received
+// - If the state changes from underneath the client whilst paginating, everything still works
+// - Getting chronological deltas with a since token works
+// - sorting by PL/name works
+// - TODO Getting page deltas with a since token and custom sort order works
 func TestHandlerRoomMember(t *testing.T) {
 	server, v2Client := newSync3Server(t)
 	alice := "@alice:localhost"
 	bob := "@bob:localhost"
+	charlie := "@charlie:localhost"
+	doris := "@doris:localhost"
+	eve := "@eve:localhost"
 	aliceBearer := "Bearer alice_access_token"
 	aliceV2Stream := v2Client.v2StreamForUser(alice, aliceBearer)
 
-	dmRoomID := "!dm:room"
-	dmState := []json.RawMessage{
-		mkStateEvent(t, "m.room.create", "", alice, map[string]interface{}{
-			"creator": alice,
-		}),
-		mkStateEvent(t, "m.room.member", alice, alice, map[string]interface{}{
-			"membership": "join",
-		}),
-		mkStateEvent(t, "m.room.power_levels", "", alice, map[string]interface{}{
-			"user_default": 100,
-		}),
-	}
-	dmTimeline := []json.RawMessage{
-		mkStateEvent(t, "m.room.member", bob, bob, map[string]interface{}{
-			"membership": "join",
-		}),
-	}
-	// groupRoomID := "!group:room"
-
-	// prepare a response from v2 containing 2 room members in a DM room
-	var v2Resp sync2.SyncResponse
-	var jr sync2.SyncV2JoinResponse
-	jr.State.Events = dmState
-	jr.Timeline.Events = dmTimeline
-	v2Resp.Rooms.Join = make(map[string]sync2.SyncV2JoinResponse)
-	v2Resp.Rooms.Join[dmRoomID] = jr
-	aliceV2Stream <- &v2Resp
-
-	// no since token, new session and all room members returned
-	v3resp := mustDoSync3Request(t, server, aliceBearer, "", map[string]interface{}{
-		"room_member": map[string]interface{}{
-			"room_id": dmRoomID,
-			"limit":   100,
+	testCases := []struct {
+		Name              string // test name
+		Creator           string // @alice:localhost, implicitly joined from start
+		PL                *gomatrixserverlib.PowerLevelContent
+		StateMemberLog    []memlog
+		TimelineMemberLog []memlog
+		Names             map[string]string // @alice:localhost => "Alice"
+		Requests          []struct {
+			Limit        int
+			Sort         string
+			WantUserIDs  []string
+			UsePrevSince bool
+		}
+	}{
+		{
+			Name:    "Can get all room members in a DM room and an empty since token",
+			Creator: alice,
+			TimelineMemberLog: []memlog{
+				{
+					Sender:     bob,
+					Target:     bob,
+					Membership: "join",
+				},
+			},
+			Requests: []struct {
+				Limit        int
+				Sort         string
+				WantUserIDs  []string
+				UsePrevSince bool
+			}{
+				{
+					// default limit should be >2 and sort order should be by PL then name
+					WantUserIDs: []string{alice, bob},
+				},
+			},
 		},
-	})
-	if len(v3resp.RoomMember.Events) != 2 {
-		t.Errorf("got %d members, want %d", len(v3resp.RoomMember.Events), 2)
-		for _, ev := range v3resp.RoomMember.Events {
-			t.Errorf("%s", string(ev))
+		{
+			Name:    "Gets the first page of room members in a big group room and an empty since token",
+			Creator: alice,
+			StateMemberLog: []memlog{
+				{
+					Sender:     eve,
+					Target:     eve,
+					Membership: "join",
+				},
+				{
+					Sender:     charlie,
+					Target:     charlie,
+					Membership: "join",
+				},
+			},
+			TimelineMemberLog: []memlog{
+				{
+					Sender:     doris,
+					Target:     doris,
+					Membership: "join",
+				},
+				{
+					Sender:     bob,
+					Target:     bob,
+					Membership: "join",
+				},
+			},
+			Requests: []struct {
+				Limit        int
+				Sort         string
+				WantUserIDs  []string
+				UsePrevSince bool
+			}{
+				{
+					Limit:       4,
+					Sort:        "by_name",
+					WantUserIDs: []string{alice, bob, charlie, doris},
+				},
+			},
+		},
+	}
+	roomIndex := 0
+	for _, tc := range testCases {
+		t.Logf("TEST: %v", tc.Name)
+		// make the v2 sync responses based on test case info
+		roomIndex++
+		roomID := fmt.Sprintf("!%d:localhost", roomIndex)
+		creatorMemberContent := map[string]interface{}{
+			"membership": "join",
+		}
+		if tc.Names[tc.Creator] != "" {
+			creatorMemberContent["displayname"] = tc.Names[tc.Creator]
+		}
+		if tc.PL == nil {
+			var pl gomatrixserverlib.PowerLevelContent
+			pl.Defaults()
+			pl.Users = map[string]int64{tc.Creator: 100}
+		}
+		state := []json.RawMessage{
+			mkStateEvent(t, "m.room.create", "", tc.Creator, map[string]interface{}{
+				"creator": tc.Creator,
+			}),
+			mkStateEvent(t, "m.room.member", tc.Creator, tc.Creator, creatorMemberContent),
+			mkStateEvent(t, "m.room.power_levels", "", alice, tc.PL),
+		}
+		for _, ml := range tc.StateMemberLog {
+			content := map[string]interface{}{
+				"membership": ml.Membership,
+			}
+			if ml.Membership == "join" && tc.Names[ml.Target] != "" {
+				content["displayname"] = tc.Names[ml.Target]
+			}
+			state = append(state, mkStateEvent(t, "m.room.member", ml.Target, ml.Sender, content))
+		}
+		var timeline []json.RawMessage
+		for _, ml := range tc.TimelineMemberLog {
+			content := map[string]interface{}{
+				"membership": ml.Membership,
+			}
+			if ml.Membership == "join" && tc.Names[ml.Target] != "" {
+				content["displayname"] = tc.Names[ml.Target]
+			}
+			timeline = append(timeline, mkStateEvent(t, "m.room.member", ml.Target, ml.Sender, content))
+		}
+		var v2Resp sync2.SyncResponse
+		var jr sync2.SyncV2JoinResponse
+		jr.State.Events = state
+		jr.Timeline.Events = timeline
+		v2Resp.Rooms.Join = make(map[string]sync2.SyncV2JoinResponse)
+		v2Resp.Rooms.Join[roomID] = jr
+		aliceV2Stream(&v2Resp)()
+
+		// run the requests
+		since := ""
+		for _, req := range tc.Requests {
+			filter := map[string]interface{}{
+				"room_id": roomID,
+			}
+			if req.Limit > 0 {
+				filter["limit"] = req.Limit
+			}
+			v3resp := mustDoSync3Request(t, server, aliceBearer, since, map[string]interface{}{
+				"room_member": filter,
+			})
+			if v3resp.RoomMember == nil {
+				t.Fatalf("response did not include room_member: test case %v", tc.Name)
+			}
+			for _, ev := range v3resp.RoomMember.Events {
+				t.Logf("%s", string(ev))
+			}
+			t.Logf("want: %v", req.WantUserIDs)
+			if req.WantUserIDs != nil {
+				if len(v3resp.RoomMember.Events) != len(req.WantUserIDs) {
+					t.Fatalf("got %d room members, want %d - test case: %v", len(v3resp.RoomMember.Events), len(req.WantUserIDs), tc.Name)
+				}
+				for i := range req.WantUserIDs {
+					gotUserID := gjson.GetBytes(v3resp.RoomMember.Events[i], "state_key").Str
+					if gotUserID != req.WantUserIDs[i] {
+						t.Errorf("position %d got %v want %v - test case: %v", i, gotUserID, req.WantUserIDs[i], tc.Name)
+					}
+				}
+			}
 		}
 	}
 }
 
 var eventIDCounter = 0
 
-func mkStateEvent(t *testing.T, evType, stateKey, sender string, content map[string]interface{}) json.RawMessage {
+func mkStateEvent(t *testing.T, evType, stateKey, sender string, content interface{}) json.RawMessage {
 	t.Helper()
 	eventIDCounter++
 	e := struct {
-		Type     string                 `json:"type"`
-		StateKey string                 `json:"state_key"`
-		Sender   string                 `json:"sender"`
-		Content  map[string]interface{} `json:"content"`
-		EventID  string                 `json:"event_id"`
+		Type     string      `json:"type"`
+		StateKey string      `json:"state_key"`
+		Sender   string      `json:"sender"`
+		Content  interface{} `json:"content"`
+		EventID  string      `json:"event_id"`
 	}{
 		Type:     evType,
 		StateKey: stateKey,
