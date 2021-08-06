@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"sort"
 	"strconv"
+	"strings"
 
 	"github.com/matrix-org/gomatrixserverlib"
 	"github.com/matrix-org/sync-v3/state"
@@ -166,8 +167,12 @@ func (s *RoomMember) paginatedDataAtPoint(session *sync3.Session, pos int64, sor
 		evType := evJSON.Get("type").Str
 		stateKey := evJSON.Get("state_key").Str
 		if evType == gomatrixserverlib.MRoomMember {
+			name := evJSON.Get("content.display_name").Str
+			if name == "" {
+				name = strings.TrimPrefix(stateKey, "@") // ensure we always have a name to sort on, but strip the '@' to sort Alice with @alice:localhost
+			}
 			mem := memberEvent{
-				Name:       evJSON.Get("content.display_name").Str,
+				Name:       name,
 				Membership: membershipEnumForString(evJSON.Get("content.membership").Str),
 				PL:         plContent.UserLevel(stateKey),
 				JSON:       ev.JSON,
@@ -197,7 +202,7 @@ func (s *RoomMember) paginatedDataAtPoint(session *sync3.Session, pos int64, sor
 
 	// return the right subslice based on P, honouring the limit
 	var page int
-	if request.RoomMember.P.Next != "" {
+	if request.RoomMember.P != nil && request.RoomMember.P.Next != "" {
 		page, err = strconv.Atoi(request.RoomMember.P.Next)
 		if err != nil {
 			return fmt.Errorf("invalid P.next: %s", err)
@@ -224,6 +229,7 @@ func (s *RoomMember) paginatedDataAtPoint(session *sync3.Session, pos int64, sor
 		return fmt.Errorf("out of bounds page %d", page)
 	}
 	result := members[startIndex:endIndex]
+	resp.RoomMember = &RoomMemberResponse{}
 	resp.RoomMember.Events = make([]json.RawMessage, len(result))
 	for i := range result {
 		resp.RoomMember.Events[i] = result[i].JSON

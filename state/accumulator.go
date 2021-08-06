@@ -315,7 +315,7 @@ func (a *Accumulator) Accumulate(roomID string, timeline []json.RawMessage) (num
 			return fmt.Errorf("failed to move snapshot ref: %w", err)
 		}
 		// update the snapshot ID to the new snapshot for all newly inserted events
-		if err = a.eventsTable.UpdateAfterEpochSnapshotID(txn, int64(snapID), newEventNIDs); err != nil {
+		if err = a.eventsTable.UpdateAfterEpochSnapshotID(txn, newSnapshot.SnapshotID, newEventNIDs); err != nil {
 			return fmt.Errorf("failed to update epoch snapshot IDs on events: %s", err)
 		}
 

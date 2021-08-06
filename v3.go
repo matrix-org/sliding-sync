@@ -240,7 +240,8 @@ func (h *SyncV3Handler) serve(w http.ResponseWriter, req *http.Request) *handler
 
 	resp.Next = upcoming.String()
 	log.Info().Str("since", fromToken.String()).Str("new_since", upcoming.String()).Bools(
-		"request[typing,to_device]", []bool{syncReq.Typing != nil, syncReq.ToDevice != nil},
+		"request[typing,to_device,room_member]",
+		[]bool{syncReq.Typing != nil, syncReq.ToDevice != nil, syncReq.RoomMember != nil},
 	).Msg("responding")
 
 	w.WriteHeader(200)

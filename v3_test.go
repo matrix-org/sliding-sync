@@ -145,7 +145,7 @@ func TestHandler(t *testing.T) {
 
 // Test to_device stream:
 // - Injecting a to_device event gets received.
-// - `limit` is honoured. Including server-side negotiation.
+// - `limit` is honoured.
 // - Repeating the request without having ACKed the position returns the event again.
 // - After ACKing the position, going back to the old position returns no event.
 // - If 2 sessions exist, both session must ACK the position before the event is deleted.
@@ -412,4 +412,79 @@ func TestHandlerToDevice(t *testing.T) {
 			t.Fatalf("expected 1 to_device message, got %d", len(v3resp.ToDevice.Events))
 		}
 	})
+}
+
+func TestHandlerRoomMember(t *testing.T) {
+	server, v2Client := newSync3Server(t)
+	alice := "@alice:localhost"
+	bob := "@bob:localhost"
+	aliceBearer := "Bearer alice_access_token"
+	aliceV2Stream := v2Client.v2StreamForUser(alice, aliceBearer)
+
+	dmRoomID := "!dm:room"
+	dmState := []json.RawMessage{
+		mkStateEvent(t, "m.room.create", "", alice, map[string]interface{}{
+			"creator": alice,
+		}),
+		mkStateEvent(t, "m.room.member", alice, alice, map[string]interface{}{
+			"membership": "join",
+		}),
+		mkStateEvent(t, "m.room.power_levels", "", alice, map[string]interface{}{
+			"user_default": 100,
+		}),
+	}
+	dmTimeline := []json.RawMessage{
+		mkStateEvent(t, "m.room.member", bob, bob, map[string]interface{}{
+			"membership": "join",
+		}),
+	}
+	// groupRoomID := "!group:room"
+
+	// prepare a response from v2 containing 2 room members in a DM room
+	var v2Resp sync2.SyncResponse
+	var jr sync2.SyncV2JoinResponse
+	jr.State.Events = dmState
+	jr.Timeline.Events = dmTimeline
+	v2Resp.Rooms.Join = make(map[string]sync2.SyncV2JoinResponse)
+	v2Resp.Rooms.Join[dmRoomID] = jr
+	aliceV2Stream <- &v2Resp
+
+	// no since token, new session and all room members returned
+	v3resp := mustDoSync3Request(t, server, aliceBearer, "", map[string]interface{}{
+		"room_member": map[string]interface{}{
+			"room_id": dmRoomID,
+			"limit":   100,
+		},
+	})
+	if len(v3resp.RoomMember.Events) != 2 {
+		t.Errorf("got %d members, want %d", len(v3resp.RoomMember.Events), 2)
+		for _, ev := range v3resp.RoomMember.Events {
+			t.Errorf("%s", string(ev))
+		}
+	}
+}
+
+var eventIDCounter = 0
+
+func mkStateEvent(t *testing.T, evType, stateKey, sender string, content map[string]interface{}) json.RawMessage {
+	t.Helper()
+	eventIDCounter++
+	e := struct {
+		Type     string                 `json:"type"`
+		StateKey string                 `json:"state_key"`
+		Sender   string                 `json:"sender"`
+		Content  map[string]interface{} `json:"content"`
+		EventID  string                 `json:"event_id"`
+	}{
+		Type:     evType,
+		StateKey: stateKey,
+		Sender:   sender,
+		Content:  content,
+		EventID:  fmt.Sprintf("$event_%d", eventIDCounter),
+	}
+	j, err := json.Marshal(&e)
+	if err != nil {
+		t.Fatalf("failed to make event JSON: %s", err)
+	}
+	return j
 }

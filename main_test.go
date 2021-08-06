@@ -117,7 +117,6 @@ func doSync3Request(t *testing.T, server http.Handler, authHeader, since string,
 	req := httptest.NewRequest("POST", path, bytes.NewBuffer(marshalJSON(t, reqBody)))
 	req.Header.Set("Authorization", authHeader)
 	server.ServeHTTP(w, req)
-	t.Logf("POST /sync?since=%s (auth=%s) => HTTP %d", since, authHeader, w.Code)
 	return w
 }
 
@@ -127,5 +126,7 @@ func mustDoSync3Request(t *testing.T, server http.Handler, authHeader, since str
 	if w.Code != 200 {
 		t.Fatalf("mustDoSync3Request: got status %d want 200 : %s", w.Code, string(w.Body.Bytes()))
 	}
-	return parseResponse(t, w.Body)
+	resp := parseResponse(t, w.Body)
+	t.Logf("Outgoing sync %s : since=%s -> %s", authHeader, since, resp.Next)
+	return resp
 }
