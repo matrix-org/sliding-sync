@@ -60,7 +60,7 @@ func (t *MembershipLogTable) MembershipsBetween(txn *sqlx.Tx, fromNIDExcl, toNID
 	return
 }
 
-func (t *MembershipLogTable) MembershipsBetweenForRoom(txn *sqlx.Tx, fromNIDExcl, toNIDIncl, limit int64, targetRoom string) (eventNIDs []int64, err error) {
+func (t *MembershipLogTable) MembershipsBetweenForRoom(txn *sqlx.Tx, fromNIDExcl, toNIDIncl int64, limit int, targetRoom string) (eventNIDs []int64, err error) {
 	err = txn.Select(
 		&eventNIDs, `SELECT event_nid FROM syncv3_membership_logs WHERE event_nid > $1 AND event_nid <= $2 AND room_id = $3 ORDER BY event_nid ASC LIMIT $4`,
 		fromNIDExcl, toNIDIncl, targetRoom, limit,

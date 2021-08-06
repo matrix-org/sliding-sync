@@ -49,7 +49,7 @@ func TestSnapshotTable(t *testing.T) {
 	}
 
 	// Delete the snapshot
-	err = table.Delete(txn, []int{want.SnapshotID})
+	err = table.Delete(txn, []int64{want.SnapshotID})
 	if err != nil {
 		t.Fatalf("failed to delete snapshot: %s", err)
 	}

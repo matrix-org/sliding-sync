@@ -124,7 +124,7 @@ func TestMembershipLogTable(t *testing.T) {
 	roomTestCases := []struct {
 		startExcl int64
 		endIncl   int64
-		limit     int64
+		limit     int
 		roomID    string
 		wantNIDs  []int64
 	}{

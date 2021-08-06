@@ -6,7 +6,7 @@ import (
 )
 
 type SnapshotRow struct {
-	SnapshotID int           `db:"snapshot_id"`
+	SnapshotID int64         `db:"snapshot_id"`
 	RoomID     string        `db:"room_id"`
 	Events     pq.Int64Array `db:"events"`
 }
@@ -52,22 +52,22 @@ func (t *SnapshotTable) CurrentSnapshots() (map[string][]int64, error) {
 }
 
 // Select a row based on its snapshot ID.
-func (s *SnapshotTable) Select(txn *sqlx.Tx, snapshotID int) (row SnapshotRow, err error) {
+func (s *SnapshotTable) Select(txn *sqlx.Tx, snapshotID int64) (row SnapshotRow, err error) {
 	err = txn.Get(&row, `SELECT * FROM syncv3_snapshots WHERE snapshot_id = $1`, snapshotID)
 	return
 }
 
 // Insert the row. Modifies SnapshotID to be the inserted primary key.
 func (s *SnapshotTable) Insert(txn *sqlx.Tx, row *SnapshotRow) error {
-	var id int
+	var id int64
 	err := txn.QueryRow(`INSERT INTO syncv3_snapshots(room_id, events) VALUES($1, $2) RETURNING snapshot_id`, row.RoomID, row.Events).Scan(&id)
 	row.SnapshotID = id
 	return err
 }
 
 // Delete the snapshot IDs given
-func (s *SnapshotTable) Delete(txn *sqlx.Tx, snapshotIDs []int) error {
-	query, args, err := sqlx.In(`DELETE FROM syncv3_snapshots WHERE snapshot_id IN (?)`, snapshotIDs)
+func (s *SnapshotTable) Delete(txn *sqlx.Tx, snapshotIDs []int64) error {
+	query, args, err := sqlx.In(`DELETE FROM syncv3_snapshots WHERE snapshot_id = ANY(?)`, pq.Int64Array(snapshotIDs))
 	if err != nil {
 		return err
 	}

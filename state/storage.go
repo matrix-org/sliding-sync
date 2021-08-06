@@ -53,9 +53,23 @@ func (s *Storage) Initialise(roomID string, state []json.RawMessage) (bool, erro
 	return s.accumulator.Initialise(roomID, state)
 }
 
-func (s *Storage) RoomStateAtSnapshot(roomID string) {}
+func (s *Storage) RoomStateAfterEventPosition(roomID string, pos int64) (events []Event, err error) {
+	err = sqlutil.WithTransaction(s.accumulator.db, func(txn *sqlx.Tx) error {
+		snapID, err := s.accumulator.eventsTable.AfterEpochSnapshotIDForEventNID(txn, pos)
+		if err != nil {
+			return err
+		}
+		snapshotRow, err := s.accumulator.snapshotTable.Select(txn, snapID)
+		if err != nil {
+			return err
+		}
+		events, err = s.accumulator.eventsTable.SelectByNIDs(txn, snapshotRow.Events)
+		return err
+	})
+	return
+}
 
-func (s *Storage) RoomMembershipDelta(roomID string, from, to, limit int64) (eventJSON []json.RawMessage, upTo int64, err error) {
+func (s *Storage) RoomMembershipDelta(roomID string, from, to int64, limit int) (eventJSON []json.RawMessage, upTo int64, err error) {
 	err = sqlutil.WithTransaction(s.accumulator.db, func(txn *sqlx.Tx) error {
 		nids, err := s.accumulator.membershipLogTable.MembershipsBetweenForRoom(txn, from, to, limit, roomID)
 		if err != nil {

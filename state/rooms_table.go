@@ -20,14 +20,14 @@ func NewRoomsTable(db *sqlx.DB) *RoomsTable {
 	return &RoomsTable{}
 }
 
-func (t *RoomsTable) UpdateCurrentSnapshotID(txn *sqlx.Tx, roomID string, snapshotID int) (err error) {
+func (t *RoomsTable) UpdateCurrentSnapshotID(txn *sqlx.Tx, roomID string, snapshotID int64) (err error) {
 	_, err = txn.Exec(`
 	INSERT INTO syncv3_rooms(room_id, current_snapshot_id) VALUES($1, $2)
 	ON CONFLICT (room_id) DO UPDATE SET current_snapshot_id = $2`, roomID, snapshotID)
 	return err
 }
 
-func (t *RoomsTable) CurrentSnapshotID(txn *sqlx.Tx, roomID string) (snapshotID int, err error) {
+func (t *RoomsTable) CurrentSnapshotID(txn *sqlx.Tx, roomID string) (snapshotID int64, err error) {
 	err = txn.QueryRow(`SELECT current_snapshot_id FROM syncv3_rooms WHERE room_id=$1`, roomID).Scan(&snapshotID)
 	if err == sql.ErrNoRows {
 		err = nil

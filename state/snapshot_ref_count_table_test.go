@@ -17,7 +17,7 @@ func TestSnapshotRefCountTable(t *testing.T) {
 		t.Fatalf("failed to start txn: %s", err)
 	}
 	defer tx.Rollback()
-	snapshotID := 1010101
+	var snapshotID int64 = 1010101
 	roomID := "!TestSnapshotRefCountTable:localhost"
 	// add 3 refs to the same snapshot then migrate one and check
 	moveSnapshotRef(t, tx, table, "server", roomID, snapshotID)
@@ -31,7 +31,7 @@ func TestSnapshotRefCountTable(t *testing.T) {
 	checkNumRefs(t, tx, table, snapshotID+999, 0) // bad snapshot ID = 0
 }
 
-func moveSnapshotRef(t *testing.T, tx *sqlx.Tx, table *SnapshotRefCountsTable, entity, roomID string, snapID int) {
+func moveSnapshotRef(t *testing.T, tx *sqlx.Tx, table *SnapshotRefCountsTable, entity, roomID string, snapID int64) {
 	t.Helper()
 	err := table.MoveSnapshotRefForEntity(tx, entity, roomID, snapID)
 	if err != nil {
@@ -39,7 +39,7 @@ func moveSnapshotRef(t *testing.T, tx *sqlx.Tx, table *SnapshotRefCountsTable, e
 	}
 }
 
-func checkNumRefs(t *testing.T, tx *sqlx.Tx, table *SnapshotRefCountsTable, snapID, wantCount int) {
+func checkNumRefs(t *testing.T, tx *sqlx.Tx, table *SnapshotRefCountsTable, snapID int64, wantCount int) {
 	t.Helper()
 	gotCount, err := table.NumRefs(tx, snapID)
 	if err != nil {

@@ -2,9 +2,14 @@ package streams
 
 import (
 	"encoding/json"
+	"fmt"
+	"sort"
+	"strconv"
 
+	"github.com/matrix-org/gomatrixserverlib"
 	"github.com/matrix-org/sync-v3/state"
 	"github.com/matrix-org/sync-v3/sync3"
+	"github.com/tidwall/gjson"
 )
 
 const (
@@ -13,6 +18,7 @@ const (
 )
 
 type RoomMemberSortOrder string
+type membershipEnum int
 
 var (
 	sortRoomMemberByPL   RoomMemberSortOrder   = "by_pl"
@@ -21,18 +27,48 @@ var (
 		sortRoomMemberByPL,
 		sortRoomMemberByName,
 	}
+	defaultRoomMemberSortOrder = sortRoomMemberByPL
 )
 
+const (
+	invite membershipEnum = iota + 1
+	join
+	leave
+	ban
+	knock
+)
+
+func membershipEnumForString(s string) membershipEnum {
+	switch s {
+	case "invite":
+		return invite
+	case "join":
+		return join
+	case "ban":
+		return ban
+	case "knock":
+		return knock
+	}
+	return 0
+}
+
 type FilterRoomMember struct {
-	Limit  int64               `json:"limit"`
+	Limit  int                 `json:"limit"`
 	RoomID string              `json:"room_id"`
 	SortBy RoomMemberSortOrder `json:"sort_by"`
 	P      *P                  `json:"p,omitempty"`
 }
 
 type RoomMemberResponse struct {
-	Limit  int64             `json:"limit"`
+	Limit  int               `json:"limit"`
 	Events []json.RawMessage `json:"events"`
+}
+
+type memberEvent struct {
+	PL         int64           // for sorting by PL
+	Name       string          // for sorting by Name
+	Membership membershipEnum  // for sorting by Membership
+	JSON       json.RawMessage // The data
 }
 
 // RoomMember represents a stream of room members.
@@ -67,15 +103,27 @@ func (s *RoomMember) DataInRange(session *sync3.Session, fromExcl, toIncl int64,
 	if request.RoomMember == nil {
 		return 0, ErrNotRequested
 	}
-	if request.RoomMember.P == nil {
+	// ensure limit is always set
+	if request.RoomMember.Limit > maxRoomMemberLimit {
+		request.RoomMember.Limit = maxRoomMemberLimit
+	}
+	if request.RoomMember.Limit <= 0 {
+		request.RoomMember.Limit = defaultRoomMemberLimit
+	}
+	if request.RoomMember.P == nil && fromExcl != 0 {
 		return s.streamingDataInRange(session, fromExcl, toIncl, request, resp)
+	}
+
+	// make sure we have a sort ordr
+	if request.RoomMember.SortBy == "" {
+		request.RoomMember.SortBy = defaultRoomMemberSortOrder
 	}
 
 	// validate P
 	var sortOrder RoomMemberSortOrder
 	for _, knownSortOrder := range roomMemberSortOrders {
-		if request.RoomMember.P.Sort == string(knownSortOrder) {
-			sortOrder = RoomMemberSortOrder(request.RoomMember.P.Sort)
+		if string(request.RoomMember.SortBy) == string(knownSortOrder) {
+			sortOrder = RoomMemberSortOrder(request.RoomMember.SortBy)
 		}
 	}
 
@@ -84,26 +132,108 @@ func (s *RoomMember) DataInRange(session *sync3.Session, fromExcl, toIncl int64,
 	if paginationPos == 0 {
 		paginationPos = toIncl
 	}
-	s.paginatedDataAtPoint(session, paginationPos, sortOrder, request, resp)
+	err := s.paginatedDataAtPoint(session, paginationPos, sortOrder, request, resp)
+	if err != nil {
+		return 0, err
+	}
 
 	// pagination never advances the token
 	return fromExcl, nil
 }
 
-func (s *RoomMember) paginatedDataAtPoint(session *sync3.Session, pos int64, sortOrder RoomMemberSortOrder, request *Request, resp *Response) {
+func (s *RoomMember) paginatedDataAtPoint(session *sync3.Session, pos int64, sortOrder RoomMemberSortOrder, request *Request, resp *Response) error {
 	// Load room state at pos
-	//s.storage.
-	// Load the room members in sorted order at point pos
+	events, err := s.storage.RoomStateAfterEventPosition(request.RoomMember.RoomID, pos)
+	if err != nil {
+		return fmt.Errorf("RoomStateAfterEventPosition %d - %s", pos, err)
+	}
+	// find the PL event
+	var plContent gomatrixserverlib.PowerLevelContent
+	plContent.Defaults()
+	for _, ev := range events {
+		evJSON := gjson.ParseBytes(ev.JSON)
+		if evJSON.Get("type").Str == gomatrixserverlib.MRoomPowerLevels && evJSON.Get("state_key").Str == "" {
+			if err = json.Unmarshal([]byte(evJSON.Get("content").Raw), &plContent); err != nil {
+				return fmt.Errorf("RoomStateAfterEventPosition %d - failed to extract PL content: %s", pos, err)
+			}
+			break
+		}
+	}
+	// collect room members and assign power levels to them
+	members := make([]memberEvent, 0, len(events)) // we won't ever have more than `events` members, so it's a useful capacity to set
+	for _, ev := range events {
+		evJSON := gjson.ParseBytes(ev.JSON)
+		evType := evJSON.Get("type").Str
+		stateKey := evJSON.Get("state_key").Str
+		if evType == gomatrixserverlib.MRoomMember {
+			mem := memberEvent{
+				Name:       evJSON.Get("content.display_name").Str,
+				Membership: membershipEnumForString(evJSON.Get("content.membership").Str),
+				PL:         plContent.UserLevel(stateKey),
+				JSON:       ev.JSON,
+			}
+			members = append(members, mem)
+		}
+	}
+	// now sort them based on the sort order in the request - we must sort stabley to ensure we sort the
+	// same way each time we're called.
+	sortByName := func(i, j int) bool {
+		return members[i].Name < members[j].Name
+	}
+	sortByPLName := func(i, j int) bool {
+		if members[i].PL > members[j].PL {
+			return true // higher PLs sort earlier
+		} else if members[i].PL < members[j].PL {
+			return false // lower PLs sort later
+		}
+		// matching PLs tiebreak on the name
+		return members[i].Name < members[j].Name
+	}
+	sortFunc := sortByName
+	if sortOrder == sortRoomMemberByPL {
+		sortFunc = sortByPLName
+	}
+	sort.SliceStable(members, sortFunc)
+
 	// return the right subslice based on P, honouring the limit
+	var page int
+	if request.RoomMember.P.Next != "" {
+		page, err = strconv.Atoi(request.RoomMember.P.Next)
+		if err != nil {
+			return fmt.Errorf("invalid P.next: %s", err)
+		}
+		if page < 0 {
+			return fmt.Errorf("invalid P.next: -ve number")
+		}
+	}
+
+	// for a slice of 100, limit of 10:
+	//   page 0 => 0-9 inclusive
+	//   page 1 => 10-19 inclusive
+	//   page 2 => 20-29 inclusive
+	//   etc
+	// in other words, return slice[$limit*page : $limit*page+$limit] with appropriate bounds checking
+	// as [:] notation is inclusive:exclusive
+	limit := request.RoomMember.Limit
+	startIndex := limit * page
+	endIndex := startIndex + limit
+	if endIndex > len(members) {
+		endIndex = len(members)
+	}
+	if startIndex > len(members) {
+		return fmt.Errorf("out of bounds page %d", page)
+	}
+	result := members[startIndex:endIndex]
+	resp.RoomMember.Events = make([]json.RawMessage, len(result))
+	for i := range result {
+		resp.RoomMember.Events[i] = result[i].JSON
+	}
+	return nil
 }
 
 func (s *RoomMember) streamingDataInRange(session *sync3.Session, fromExcl, toIncl int64, request *Request, resp *Response) (int64, error) {
 	// Load the room member delta (honouring the limit) for the room
-	var limit int64 = defaultRoomMemberLimit
-	if request.RoomMember.Limit < limit && request.RoomMember.Limit > 0 {
-		limit = request.RoomMember.Limit
-	}
-	events, upTo, err := s.storage.RoomMembershipDelta(request.RoomMember.RoomID, fromExcl, toIncl, limit)
+	events, upTo, err := s.storage.RoomMembershipDelta(request.RoomMember.RoomID, fromExcl, toIncl, request.RoomMember.Limit)
 	if err != nil {
 		return 0, err
 	}

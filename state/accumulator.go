@@ -45,7 +45,7 @@ func NewAccumulator(db *sqlx.DB) *Accumulator {
 	}
 }
 
-func (a *Accumulator) strippedEventsForSnapshot(txn *sqlx.Tx, snapID int) (StrippedEvents, error) {
+func (a *Accumulator) strippedEventsForSnapshot(txn *sqlx.Tx, snapID int64) (StrippedEvents, error) {
 	snapshot, err := a.snapshotTable.Select(txn, snapID)
 	if err != nil {
 		return nil, err
@@ -113,7 +113,7 @@ func (a *Accumulator) Initialise(roomID string, state []json.RawMessage) (bool, 
 		}
 		if snapshotID > 0 {
 			// we only initialise rooms once
-			log.Info().Str("room_id", roomID).Int("snapshot_id", snapshotID).Msg("Accumulator.Initialise called but current snapshot already exists, bailing early")
+			log.Info().Str("room_id", roomID).Int64("snapshot_id", snapshotID).Msg("Accumulator.Initialise called but current snapshot already exists, bailing early")
 			return nil
 		}
 
@@ -164,6 +164,12 @@ func (a *Accumulator) Initialise(roomID string, state []json.RawMessage) (bool, 
 			return err
 		}
 		addedEvents = true
+
+		// add a backref so we can go from event to snapshot
+		if err = a.eventsTable.UpdateAfterEpochSnapshotID(txn, int64(snapshot.SnapshotID), nids); err != nil {
+			return err
+		}
+
 		// Set the snapshot ID as the current state
 		return a.roomsTable.UpdateCurrentSnapshotID(txn, roomID, snapshot.SnapshotID)
 	})
@@ -207,12 +213,14 @@ func (a *Accumulator) Accumulate(roomID string, timeline []json.RawMessage) (num
 
 		// The last numNew events are new, extract any that are state events
 		newEvents := timeline[len(timeline)-numNew:]
+		var newEventIDs []string
 		var newStateEvents []json.RawMessage
 		var newStateEventIDs []string
 		var membershipEventIDs []string
 		for _, ev := range newEvents {
 			newEvent := gjson.ParseBytes(ev)
 			newEventID := newEvent.Get("event_id").Str
+			newEventIDs = append(newEventIDs, newEventID)
 			if newEvent.Get("state_key").Exists() {
 				newStateEvents = append(newStateEvents, ev)
 				newStateEventIDs = append(newStateEventIDs, newEventID)
@@ -236,9 +244,20 @@ func (a *Accumulator) Accumulate(roomID string, timeline []json.RawMessage) (num
 			}
 		}
 
-		// No state events, nothing else to do
+		newEventNIDs, err := a.eventsTable.SelectNIDsByIDs(txn, newEventIDs)
+		if err != nil {
+			return err
+		}
+
+		// No state events: we don't need to make a new snapshot but we do need to associate these
+		// message events with snapshot IDs so clients can do state pagination at this time, so pull
+		// in the latest snapshot for this room and set it as the snapshot ID.
 		if len(newStateEvents) == 0 {
-			return nil
+			snapID, err := a.roomsTable.CurrentSnapshotID(txn, roomID)
+			if err != nil {
+				return err
+			}
+			return a.eventsTable.UpdateAfterEpochSnapshotID(txn, int64(snapID), newEventNIDs)
 		}
 
 		// State events exist in this timeline, so make a new snapshot
@@ -294,6 +313,10 @@ func (a *Accumulator) Accumulate(roomID string, timeline []json.RawMessage) (num
 		}
 		if err = a.snapshotRefCountTable.MoveSnapshotRefForEntity(txn, a.entityName, roomID, newSnapshot.SnapshotID); err != nil {
 			return fmt.Errorf("failed to move snapshot ref: %w", err)
+		}
+		// update the snapshot ID to the new snapshot for all newly inserted events
+		if err = a.eventsTable.UpdateAfterEpochSnapshotID(txn, int64(snapID), newEventNIDs); err != nil {
+			return fmt.Errorf("failed to update epoch snapshot IDs on events: %s", err)
 		}
 
 		// Add membership logs if this update includes membership changes

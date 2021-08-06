@@ -44,6 +44,5 @@ const FirstPage = "1"
 
 // P is the pagination struct for streams
 type P struct {
-	Sort string `json:"sort,omitempty"`
 	Next string `json:"next,omitempty"`
 }

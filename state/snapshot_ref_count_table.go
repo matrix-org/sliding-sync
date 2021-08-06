@@ -27,7 +27,7 @@ func NewSnapshotRefCountsTable(db *sqlx.DB) *SnapshotRefCountsTable {
 
 // MoveSnapshotRefForEntity migrates the snapshot for the current entity's room ID. If there is no existing
 // snapshot for this room, entity tuple then one is created
-func (s *SnapshotRefCountsTable) MoveSnapshotRefForEntity(txn *sqlx.Tx, entity, roomID string, snapshotID int) error {
+func (s *SnapshotRefCountsTable) MoveSnapshotRefForEntity(txn *sqlx.Tx, entity, roomID string, snapshotID int64) error {
 	_, err := txn.Exec(
 		`INSERT INTO syncv3_snapshot_ref_counts(entity, room_id, snapshot_id) VALUES($1, $2, $3)
 		ON CONFLICT (entity, room_id) DO UPDATE SET snapshot_id = $3`,
@@ -37,7 +37,7 @@ func (s *SnapshotRefCountsTable) MoveSnapshotRefForEntity(txn *sqlx.Tx, entity, 
 }
 
 // NumRefs counts the number of references for this snapshot ID.
-func (s *SnapshotRefCountsTable) NumRefs(txn *sqlx.Tx, snapshotID int) (count int, err error) {
+func (s *SnapshotRefCountsTable) NumRefs(txn *sqlx.Tx, snapshotID int64) (count int, err error) {
 	err = txn.QueryRow(
 		`SELECT count(*) FROM syncv3_snapshot_ref_counts WHERE snapshot_id=$1`, snapshotID,
 	).Scan(&count)
