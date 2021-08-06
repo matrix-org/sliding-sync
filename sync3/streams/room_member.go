@@ -45,11 +45,11 @@ func NewRoomMember(s *state.Storage) *RoomMember {
 }
 
 func (s *RoomMember) Position(tok *sync3.Token) int64 {
-	return tok.RoomMemberPosition()
+	return tok.EventPosition()
 }
 
 func (s *RoomMember) SetPosition(tok *sync3.Token, pos int64) {
-	tok.SetRoomMemberPosition(pos)
+	tok.SetEventPosition(pos)
 }
 
 func (s *RoomMember) SessionConfirmed(session *sync3.Session, confirmedPos int64, allSessions bool) {
@@ -62,7 +62,7 @@ func (s *RoomMember) SessionConfirmed(session *sync3.Session, confirmedPos int64
 // More specifically, streaming mode is active if and only if `fromExcl` is non-zero (not first sync) and `p` is empty. This will
 // then return a delta between `fromExcl` and `toIncl`. Otherwise, it operates in paginated mode. This means the first request from a
 // new client is always a paginated request, leaving it up to the client to either pull all members then stream or keep tracking the first
-// page of result via the use of
+// page of result via the use of FirstPage sentinel value.
 func (s *RoomMember) DataInRange(session *sync3.Session, fromExcl, toIncl int64, request *Request, resp *Response) (int64, error) {
 	if request.RoomMember == nil {
 		return 0, ErrNotRequested
@@ -91,13 +91,24 @@ func (s *RoomMember) DataInRange(session *sync3.Session, fromExcl, toIncl int64,
 }
 
 func (s *RoomMember) paginatedDataAtPoint(session *sync3.Session, pos int64, sortOrder RoomMemberSortOrder, request *Request, resp *Response) {
+	// Load room state at pos
+	//s.storage.
 	// Load the room members in sorted order at point pos
 	// return the right subslice based on P, honouring the limit
 }
 
 func (s *RoomMember) streamingDataInRange(session *sync3.Session, fromExcl, toIncl int64, request *Request, resp *Response) (int64, error) {
 	// Load the room member delta (honouring the limit) for the room
-	return fromExcl, nil
+	var limit int64 = defaultRoomMemberLimit
+	if request.RoomMember.Limit < limit && request.RoomMember.Limit > 0 {
+		limit = request.RoomMember.Limit
+	}
+	events, upTo, err := s.storage.RoomMembershipDelta(request.RoomMember.RoomID, fromExcl, toIncl, limit)
+	if err != nil {
+		return 0, err
+	}
+	resp.RoomMember.Events = events
+	return upTo, nil
 }
 
 /*

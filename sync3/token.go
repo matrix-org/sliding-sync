@@ -11,11 +11,10 @@ import (
 
 const (
 	IndexEventPosition = iota
-	IndexRoomMemberPosition
 	IndexTypingPosition
 	IndexToDevicePosition
 )
-const totalStreamPositions = 4
+const totalStreamPositions = 3
 
 // V3_S1_F9_57423_123_5183
 // "V3_S" $SESSION "_F" $FILTER "_" $A "_" $B "_" $C
@@ -37,9 +36,6 @@ func (t *Token) TypingPosition() int64 {
 func (t *Token) ToDevicePosition() int64 {
 	return t.positions[IndexToDevicePosition]
 }
-func (t *Token) RoomMemberPosition() int64 {
-	return t.positions[IndexRoomMemberPosition]
-}
 func (t *Token) SetEventPosition(pos int64) {
 	t.positions[IndexEventPosition] = pos
 }
@@ -48,9 +44,6 @@ func (t *Token) SetTypingPosition(pos int64) {
 }
 func (t *Token) SetToDevicePosition(pos int64) {
 	t.positions[IndexToDevicePosition] = pos
-}
-func (t *Token) SetRoomMemberPosition(pos int64) {
-	t.positions[IndexRoomMemberPosition] = pos
 }
 
 func (t *Token) IsAfter(x Token) bool {

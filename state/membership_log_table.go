@@ -24,6 +24,7 @@ const MembershipLogOffsetStart = -1
 // When a snapshot is deleted due to no outstanding references to it, the corresponding membership
 // logs are purged.
 type MembershipLogTable struct {
+	db *sqlx.DB
 }
 
 func NewMembershipLogTable(db *sqlx.DB) *MembershipLogTable {
@@ -36,7 +37,7 @@ func NewMembershipLogTable(db *sqlx.DB) *MembershipLogTable {
 		UNIQUE(event_nid, target_user, room_id)
 	);
 	`)
-	return &MembershipLogTable{}
+	return &MembershipLogTable{db}
 }
 
 // AppendMembership adds a new membership entry to the log. Call this when new m.room.member events arrive.
@@ -52,22 +53,19 @@ func (t *MembershipLogTable) AppendMembership(txn *sqlx.Tx, eventNID int64, room
 // MembershipsBetween returns all membership changes for the given user between the two event NIDs.
 // Call this when processing /sync
 func (t *MembershipLogTable) MembershipsBetween(txn *sqlx.Tx, fromNIDExcl, toNIDIncl int64, targetUser string) (eventNIDs []int64, err error) {
-	rows, err := txn.Query(
-		`SELECT event_nid FROM syncv3_membership_logs WHERE event_nid > $1 AND event_nid <= $2 AND target_user = $3`,
+	err = txn.Select(
+		&eventNIDs, `SELECT event_nid FROM syncv3_membership_logs WHERE event_nid > $1 AND event_nid <= $2 AND target_user = $3`,
 		fromNIDExcl, toNIDIncl, targetUser,
 	)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	for rows.Next() {
-		var eventNID int64
-		if err := rows.Scan(&eventNID); err != nil {
-			return nil, err
-		}
-		eventNIDs = append(eventNIDs, eventNID)
-	}
-	return eventNIDs, nil
+	return
+}
+
+func (t *MembershipLogTable) MembershipsBetweenForRoom(txn *sqlx.Tx, fromNIDExcl, toNIDIncl, limit int64, targetRoom string) (eventNIDs []int64, err error) {
+	err = txn.Select(
+		&eventNIDs, `SELECT event_nid FROM syncv3_membership_logs WHERE event_nid > $1 AND event_nid <= $2 AND room_id = $3 ORDER BY event_nid ASC LIMIT $4`,
+		fromNIDExcl, toNIDIncl, targetRoom, limit,
+	)
+	return
 }
 
 // DeleteLogs between the given event NIDs for the given room ID.

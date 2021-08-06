@@ -6,6 +6,7 @@ import (
 
 	"github.com/jmoiron/sqlx"
 	"github.com/matrix-org/gomatrixserverlib"
+	"github.com/matrix-org/sync-v3/sqlutil"
 	"github.com/tidwall/gjson"
 )
 
@@ -50,6 +51,31 @@ func (s *Storage) Accumulate(roomID string, timeline []json.RawMessage) (int, er
 
 func (s *Storage) Initialise(roomID string, state []json.RawMessage) (bool, error) {
 	return s.accumulator.Initialise(roomID, state)
+}
+
+func (s *Storage) RoomStateAtSnapshot(roomID string) {}
+
+func (s *Storage) RoomMembershipDelta(roomID string, from, to, limit int64) (eventJSON []json.RawMessage, upTo int64, err error) {
+	err = sqlutil.WithTransaction(s.accumulator.db, func(txn *sqlx.Tx) error {
+		nids, err := s.accumulator.membershipLogTable.MembershipsBetweenForRoom(txn, from, to, limit, roomID)
+		if err != nil {
+			return err
+		}
+		if len(nids) == 0 {
+			return nil
+		}
+		upTo = nids[len(nids)-1]
+		events, err := s.accumulator.eventsTable.SelectByNIDs(txn, nids)
+		if err != nil {
+			return err
+		}
+		eventJSON = make([]json.RawMessage, len(events))
+		for i := range events {
+			eventJSON[i] = events[i].JSON
+		}
+		return nil
+	})
+	return
 }
 
 func (s *Storage) AllJoinedMembers() (map[string][]string, error) {

@@ -22,20 +22,20 @@ func TestNewSyncToken(t *testing.T) {
 		},
 		{
 			// with filter
-			in: "V3_S1_F6_12_19_11_1",
+			in: "V3_S1_F6_12_19_11",
 			outToken: &Token{
 				SessionID: 1,
 				FilterID:  6,
-				positions: [totalStreamPositions]int64{12, 19, 11, 1},
+				positions: [totalStreamPositions]int64{12, 19, 11},
 			},
 		},
 		{
 			// without filter
-			in: "V3_S1_33_100_1313_1",
+			in: "V3_S1_33_100_1313",
 			outToken: &Token{
 				SessionID: 1,
 				FilterID:  0,
-				positions: [totalStreamPositions]int64{33, 100, 1313, 1},
+				positions: [totalStreamPositions]int64{33, 100, 1313},
 			},
 		},
 	}

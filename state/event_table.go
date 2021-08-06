@@ -16,10 +16,11 @@ const (
 )
 
 type Event struct {
-	NID    int    `db:"event_nid"`
-	ID     string `db:"event_id"`
-	RoomID string `db:"room_id"`
-	JSON   []byte `db:"event"`
+	NID        int    `db:"event_nid"`
+	SnapshotID int    `db:"snapshot_id"`
+	ID         string `db:"event_id"`
+	RoomID     string `db:"room_id"`
+	JSON       []byte `db:"event"`
 }
 
 type StrippedEvent struct {
@@ -49,6 +50,7 @@ func NewEventTable(db *sqlx.DB) *EventTable {
 	CREATE TABLE IF NOT EXISTS syncv3_events (
 		event_nid BIGINT PRIMARY KEY NOT NULL DEFAULT nextval('syncv3_event_nids_seq'),
 		event_id TEXT NOT NULL UNIQUE,
+		snapshot_id BIGINT NOT NULL,
 		room_id TEXT NOT NULL,
 		event JSONB NOT NULL
 	);
@@ -89,11 +91,11 @@ func (t *EventTable) Insert(txn *sqlx.Tx, events []Event) (int, error) {
 		}
 		events[i] = ev
 	}
-	chunks := sqlutil.Chunkify(3, 65535, EventChunker(events))
+	chunks := sqlutil.Chunkify(4, 65535, EventChunker(events))
 	var rowsAffected int64
 	for _, chunk := range chunks {
-		result, err := txn.NamedExec(`INSERT INTO syncv3_events (event_id, room_id, event)
-        VALUES (:event_id, :room_id, :event) ON CONFLICT (event_id) DO NOTHING`, chunk)
+		result, err := txn.NamedExec(`INSERT INTO syncv3_events (event_id, room_id, event, snapshot_id)
+        VALUES (:event_id, :room_id, :event, :snapshot_id) ON CONFLICT (event_id) DO NOTHING`, chunk)
 		if err != nil {
 			return 0, err
 		}

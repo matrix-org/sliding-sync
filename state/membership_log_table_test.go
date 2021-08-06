@@ -120,6 +120,54 @@ func TestMembershipLogTable(t *testing.T) {
 			t.Errorf("MembershipsBetween %+v: returned wrong event nids, got %v want %v", tc, gotNIDs, tc.wantNIDs)
 		}
 	}
+	// test querying by room ID
+	roomTestCases := []struct {
+		startExcl int64
+		endIncl   int64
+		limit     int64
+		roomID    string
+		wantNIDs  []int64
+	}{
+		// entire table
+		{
+			startExcl: MembershipLogOffsetStart,
+			endIncl:   9999,
+			roomID:    roomID,
+			limit:     999,
+			wantNIDs:  []int64{101, 110, 115, 119},
+		},
+		// hitting the limit
+		{
+			startExcl: 101,
+			endIncl:   9999,
+			roomID:    roomID,
+			limit:     2,
+			wantNIDs:  []int64{110, 115},
+		},
+
+		// limit matches all responses
+		{
+			startExcl: 110,
+			endIncl:   9999,
+			roomID:    roomID,
+			limit:     2,
+			wantNIDs:  []int64{115, 119},
+		},
+	}
+	for _, tc := range roomTestCases {
+		gotNIDs, err := table.MembershipsBetweenForRoom(tx, tc.startExcl, tc.endIncl, tc.limit, tc.roomID)
+		if err != nil {
+			t.Errorf("MembershipsBetweenForRoom %+v returned error: %s", tc, err)
+			continue
+		}
+		if len(gotNIDs) != len(tc.wantNIDs) {
+			t.Errorf("MembershipsBetweenForRoom %+v: returned wrong number of events nids, got %v want %v", tc, gotNIDs, tc.wantNIDs)
+			continue
+		}
+		if !reflect.DeepEqual(gotNIDs, tc.wantNIDs) {
+			t.Errorf("MembershipsBetweenForRoom %+v: returned wrong event nids, got %v want %v", tc, gotNIDs, tc.wantNIDs)
+		}
+	}
 
 	// Test deleting membership logs
 	numDeleted, err := table.DeleteLogs(tx, 101, 119, roomID)

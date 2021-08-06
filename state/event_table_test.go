@@ -19,16 +19,19 @@ func TestEventTable(t *testing.T) {
 	table := NewEventTable(db)
 	events := []Event{
 		{
-			ID:   "100",
-			JSON: []byte(`{"event_id":"100", "foo":"bar", "type": "T1", "state_key":"S1", "room_id":"!0:localhost"}`),
+			ID:         "100",
+			JSON:       []byte(`{"event_id":"100", "foo":"bar", "type": "T1", "state_key":"S1", "room_id":"!0:localhost"}`),
+			SnapshotID: 1,
 		},
 		{
-			ID:   "101",
-			JSON: []byte(`{"event_id":"101",  "foo":"bar", "type": "T2", "state_key":"S2", "room_id":"!0:localhost"}`),
+			ID:         "101",
+			JSON:       []byte(`{"event_id":"101",  "foo":"bar", "type": "T2", "state_key":"S2", "room_id":"!0:localhost"}`),
+			SnapshotID: 1,
 		},
 		{
 			// ID is optional, it will pull event_id out if it's missing
-			JSON: []byte(`{"event_id":"102", "foo":"bar", "type": "T3", "state_key":"", "room_id":"!0:localhost"}`),
+			JSON:       []byte(`{"event_id":"102", "foo":"bar", "type": "T3", "state_key":"", "room_id":"!0:localhost"}`),
+			SnapshotID: 2,
 		},
 	}
 	numNew, err := table.Insert(txn, events)
