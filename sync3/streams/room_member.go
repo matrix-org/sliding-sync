@@ -64,6 +64,7 @@ type FilterRoomMember struct {
 type RoomMemberResponse struct {
 	Limit  int               `json:"limit"`
 	Events []json.RawMessage `json:"events"`
+	P      *P                `json:"p,omitempty"`
 }
 
 type memberEvent struct {
@@ -238,6 +239,12 @@ func (s *RoomMember) paginatedDataAtPoint(session *sync3.Session, pos int64, sor
 	resp.RoomMember.Events = make([]json.RawMessage, len(result))
 	for i := range result {
 		resp.RoomMember.Events[i] = result[i].JSON
+	}
+	if endIndex != len(members) {
+		// we aren't at the end
+		resp.RoomMember.P = &P{
+			Next: fmt.Sprintf("%d", page+1),
+		}
 	}
 	return nil
 }

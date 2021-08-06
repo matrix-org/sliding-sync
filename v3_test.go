@@ -455,6 +455,7 @@ func TestHandlerRoomMember(t *testing.T) {
 			Sort         string
 			WantUserIDs  []string
 			UsePrevSince bool
+			UsePrevP     bool
 		}
 	}{
 		{
@@ -472,6 +473,7 @@ func TestHandlerRoomMember(t *testing.T) {
 				Sort         string
 				WantUserIDs  []string
 				UsePrevSince bool
+				UsePrevP     bool
 			}{
 				{
 					// default limit should be >2 and sort order should be by PL then name
@@ -480,7 +482,7 @@ func TestHandlerRoomMember(t *testing.T) {
 			},
 		},
 		{
-			Name:    "Gets the first page of room members in a big group room and an empty since token",
+			Name:    "Can paginate in a big group room and an empty since token",
 			Creator: alice,
 			StateMemberLog: []memlog{
 				{
@@ -511,11 +513,18 @@ func TestHandlerRoomMember(t *testing.T) {
 				Sort         string
 				WantUserIDs  []string
 				UsePrevSince bool
+				UsePrevP     bool
 			}{
 				{
 					Limit:       4,
 					Sort:        "by_name",
 					WantUserIDs: []string{alice, bob, charlie, doris},
+				},
+				{
+					Limit:       4,
+					Sort:        "by_name",
+					UsePrevP:    true,
+					WantUserIDs: []string{eve},
 				},
 			},
 		},
@@ -572,7 +581,8 @@ func TestHandlerRoomMember(t *testing.T) {
 		aliceV2Stream(&v2Resp)()
 
 		// run the requests
-		since := ""
+		prevSince := ""
+		prevP := ""
 		for _, req := range tc.Requests {
 			filter := map[string]interface{}{
 				"room_id": roomID,
@@ -580,9 +590,22 @@ func TestHandlerRoomMember(t *testing.T) {
 			if req.Limit > 0 {
 				filter["limit"] = req.Limit
 			}
+			since := ""
+			if req.UsePrevSince {
+				since = prevSince
+			}
+			if req.UsePrevP {
+				filter["p"] = map[string]interface{}{
+					"next": prevP,
+				}
+			}
 			v3resp := mustDoSync3Request(t, server, aliceBearer, since, map[string]interface{}{
 				"room_member": filter,
 			})
+			prevSince = v3resp.Next
+			if v3resp.RoomMember.P != nil {
+				prevP = v3resp.RoomMember.P.Next
+			}
 			if v3resp.RoomMember == nil {
 				t.Fatalf("response did not include room_member: test case %v", tc.Name)
 			}
