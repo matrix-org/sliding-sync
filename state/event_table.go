@@ -6,6 +6,7 @@ import (
 	"math"
 
 	"github.com/jmoiron/sqlx"
+	"github.com/lib/pq"
 	"github.com/matrix-org/sync-v3/sqlutil"
 	"github.com/tidwall/gjson"
 )
@@ -16,11 +17,22 @@ const (
 )
 
 type Event struct {
-	NID        int    `db:"event_nid"`
-	SnapshotID int    `db:"snapshot_id"`
-	ID         string `db:"event_id"`
-	RoomID     string `db:"room_id"`
-	JSON       []byte `db:"event"`
+	NID int `db:"event_nid"`
+	// This is a snapshot ID which corresponds to some room state AFTER this event has been applied.
+	// The room state MAY be snapshotted immediately after this event or after N additional state
+	// events, depending on when they came down v2 /sync (hence the term 'epoch'). For example,
+	// an initial sync on a room will contain many state events. All events in the initial sync
+	// response will therefore have the same snapshot ID, which refers to the state AFTER applying
+	// all the state events.
+	//
+	// This works because new events are ONLY added in a transaction via v2 calls in the accumulator.
+	// This means we can batch up inserts, and guarantee no client will ever be told an event NID position
+	// that exists in the middle of an epoch, which would result in incorrect state being associated
+	// when pagination is done.
+	AfterEpochSnapshotID int    `db:"after_epoch_snapshot_id"`
+	ID                   string `db:"event_id"`
+	RoomID               string `db:"room_id"`
+	JSON                 []byte `db:"event"`
 }
 
 type StrippedEvent struct {
@@ -50,7 +62,7 @@ func NewEventTable(db *sqlx.DB) *EventTable {
 	CREATE TABLE IF NOT EXISTS syncv3_events (
 		event_nid BIGINT PRIMARY KEY NOT NULL DEFAULT nextval('syncv3_event_nids_seq'),
 		event_id TEXT NOT NULL UNIQUE,
-		snapshot_id BIGINT NOT NULL,
+		after_epoch_snapshot_id BIGINT NOT NULL DEFAULT 0,
 		room_id TEXT NOT NULL,
 		event JSONB NOT NULL
 	);
@@ -94,8 +106,8 @@ func (t *EventTable) Insert(txn *sqlx.Tx, events []Event) (int, error) {
 	chunks := sqlutil.Chunkify(4, 65535, EventChunker(events))
 	var rowsAffected int64
 	for _, chunk := range chunks {
-		result, err := txn.NamedExec(`INSERT INTO syncv3_events (event_id, room_id, event, snapshot_id)
-        VALUES (:event_id, :room_id, :event, :snapshot_id) ON CONFLICT (event_id) DO NOTHING`, chunk)
+		result, err := txn.NamedExec(`INSERT INTO syncv3_events (event_id, room_id, event)
+        VALUES (:event_id, :room_id, :event) ON CONFLICT (event_id) DO NOTHING`, chunk)
 		if err != nil {
 			return 0, err
 		}
@@ -173,6 +185,21 @@ func (t *EventTable) SelectStrippedEventsByIDs(txn *sqlx.Tx, ids []string) (Stri
 		return nil, fmt.Errorf("%d events are missing in the database from this list: %v", diff, ids)
 	}
 	return events, err
+}
+
+// UpdateAfterEpochSnapshotID sets the after_epoch_snapshot_id field to `snapID` for the given NIDs.
+func (t *EventTable) UpdateAfterEpochSnapshotID(txn *sqlx.Tx, snapID int64, nids []int64) error {
+	_, err := txn.Exec(
+		`UPDATE syncv3_events SET after_epoch_snapshot_id=$1 WHERE event_nid = ANY($2)`, snapID, pq.Int64Array(nids),
+	)
+	return err
+}
+
+func (t *EventTable) AfterEpochSnapshotIDForEventNID(txn *sqlx.Tx, eventNID int64) (snapID int64, err error) {
+	err = txn.QueryRow(
+		`SELECT after_epoch_snapshot_id FROM syncv3_events WHERE  event_nid = $1`, eventNID,
+	).Scan(&snapID)
+	return
 }
 
 func (t *EventTable) SelectEventsBetween(txn *sqlx.Tx, roomID string, lowerExclusive, upperInclusive int64, limit int) ([]Event, error) {

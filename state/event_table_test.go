@@ -19,19 +19,16 @@ func TestEventTable(t *testing.T) {
 	table := NewEventTable(db)
 	events := []Event{
 		{
-			ID:         "100",
-			JSON:       []byte(`{"event_id":"100", "foo":"bar", "type": "T1", "state_key":"S1", "room_id":"!0:localhost"}`),
-			SnapshotID: 1,
+			ID:   "100",
+			JSON: []byte(`{"event_id":"100", "foo":"bar", "type": "T1", "state_key":"S1", "room_id":"!0:localhost"}`),
 		},
 		{
-			ID:         "101",
-			JSON:       []byte(`{"event_id":"101",  "foo":"bar", "type": "T2", "state_key":"S2", "room_id":"!0:localhost"}`),
-			SnapshotID: 1,
+			ID:   "101",
+			JSON: []byte(`{"event_id":"101",  "foo":"bar", "type": "T2", "state_key":"S2", "room_id":"!0:localhost"}`),
 		},
 		{
 			// ID is optional, it will pull event_id out if it's missing
-			JSON:       []byte(`{"event_id":"102", "foo":"bar", "type": "T3", "state_key":"", "room_id":"!0:localhost"}`),
-			SnapshotID: 2,
+			JSON: []byte(`{"event_id":"102", "foo":"bar", "type": "T3", "state_key":"", "room_id":"!0:localhost"}`),
 		},
 	}
 	numNew, err := table.Insert(txn, events)
@@ -82,6 +79,20 @@ func TestEventTable(t *testing.T) {
 	}
 	if len(gotnids) != 3 {
 		t.Fatalf("SelectNIDsByIDs returned %d events, want 3", len(gotnids))
+	}
+
+	// set a snapshot ID on them
+	var firstSnapshotID int64 = 55
+	if err = table.UpdateAfterEpochSnapshotID(txn, firstSnapshotID, gotnids); err != nil {
+		t.Fatalf("UpdateAfterEpochSnapshotID: %s", err)
+	}
+	// query the snapshot
+	snapID, err := table.AfterEpochSnapshotIDForEventNID(txn, gotnids[1])
+	if err != nil {
+		t.Fatalf("AfterEpochSnapshotIDForEventNID: %s", err)
+	}
+	if snapID != firstSnapshotID {
+		t.Fatalf("AfterEpochSnapshotIDForEventNID: got snap ID %d want %d", snapID, firstSnapshotID)
 	}
 
 	// find max and query it
