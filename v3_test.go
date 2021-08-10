@@ -425,6 +425,15 @@ type memlog struct { // @alice:localhost => "join"
 	Membership string
 }
 
+type memrequest struct {
+	Limit                      int
+	Sort                       string
+	WantUserIDs                []string
+	UsePrevSince               bool
+	UsePrevP                   bool
+	InjectMembersBeforeRequest []memlog
+}
+
 // Test room member stream:
 // - Can get all room members in a DM room and an empty since token
 // - Gets the first page of room members in a big group room and an empty since token
@@ -440,6 +449,7 @@ func TestHandlerRoomMember(t *testing.T) {
 	charlie := "@charlie:localhost"
 	doris := "@doris:localhost"
 	eve := "@eve:localhost"
+	frank := "@frank:localhost"
 	aliceBearer := "Bearer alice_access_token"
 	aliceV2Stream := v2Client.v2StreamForUser(alice, aliceBearer)
 
@@ -450,13 +460,7 @@ func TestHandlerRoomMember(t *testing.T) {
 		StateMemberLog    []memlog
 		TimelineMemberLog []memlog
 		Names             map[string]string // @alice:localhost => "Alice"
-		Requests          []struct {
-			Limit        int
-			Sort         string
-			WantUserIDs  []string
-			UsePrevSince bool
-			UsePrevP     bool
-		}
+		Requests          []memrequest
 	}{
 		{
 			Name:    "Can get all room members in a DM room and an empty since token",
@@ -468,13 +472,7 @@ func TestHandlerRoomMember(t *testing.T) {
 					Membership: "join",
 				},
 			},
-			Requests: []struct {
-				Limit        int
-				Sort         string
-				WantUserIDs  []string
-				UsePrevSince bool
-				UsePrevP     bool
-			}{
+			Requests: []memrequest{
 				{
 					// default limit should be >2 and sort order should be by PL then name
 					WantUserIDs: []string{alice, bob},
@@ -508,13 +506,7 @@ func TestHandlerRoomMember(t *testing.T) {
 					Membership: "join",
 				},
 			},
-			Requests: []struct {
-				Limit        int
-				Sort         string
-				WantUserIDs  []string
-				UsePrevSince bool
-				UsePrevP     bool
-			}{
+			Requests: []memrequest{
 				{
 					Limit:       4,
 					Sort:        "by_name",
@@ -528,103 +520,250 @@ func TestHandlerRoomMember(t *testing.T) {
 				},
 			},
 		},
+		{
+			Name:    "Getting chronological deltas with a since token works",
+			Creator: bob,
+			TimelineMemberLog: []memlog{
+				{
+					Sender:     alice,
+					Target:     alice,
+					Membership: "join",
+				},
+			},
+			Requests: []memrequest{
+				{
+					// default limit should be >2 and sort order should be by PL then name,
+					// so even though we injected bob then alice it should return alice then bob
+					WantUserIDs: []string{alice, bob},
+				},
+				{
+					UsePrevSince: true,
+					InjectMembersBeforeRequest: []memlog{
+						{
+							Sender:     charlie,
+							Target:     charlie,
+							Membership: "join",
+						},
+					},
+					WantUserIDs: []string{charlie},
+				},
+				{
+					UsePrevSince: true,
+					InjectMembersBeforeRequest: []memlog{
+						{
+							Sender:     eve,
+							Target:     eve,
+							Membership: "join",
+						},
+						{
+							Sender:     doris,
+							Target:     doris,
+							Membership: "join",
+						},
+					},
+					// should be in time order not ordered by name
+					WantUserIDs: []string{eve, doris},
+				},
+			},
+		},
+		{
+			Name:    "sorting by PL/name works",
+			Creator: alice,
+			Names: map[string]string{
+				alice:   "ZAlice",
+				charlie: "YCharlie",
+			},
+			TimelineMemberLog: []memlog{
+				{
+					Sender:     bob,
+					Target:     bob,
+					Membership: "join",
+				},
+				{
+					Sender:     charlie,
+					Target:     charlie,
+					Membership: "join",
+				},
+			},
+			Requests: []memrequest{
+				{
+					// @bob:localhost, YCharlie, ZAlice
+					Sort:        "by_name",
+					WantUserIDs: []string{bob, charlie, alice},
+				},
+			},
+		},
+		{
+			Name:    "If the state changes from underneath the client whilst paginating, everything still works",
+			Creator: alice,
+			StateMemberLog: []memlog{
+				{
+					Sender:     eve,
+					Target:     eve,
+					Membership: "join",
+				},
+				{
+					Sender:     charlie,
+					Target:     charlie,
+					Membership: "join",
+				},
+			},
+			TimelineMemberLog: []memlog{
+				{
+					Sender:     doris,
+					Target:     doris,
+					Membership: "join",
+				},
+				{
+					Sender:     bob,
+					Target:     bob,
+					Membership: "join",
+				},
+			},
+			Requests: []memrequest{
+				{
+					Limit:       4,
+					Sort:        "by_name",
+					WantUserIDs: []string{alice, bob, charlie, doris},
+				},
+				{
+					// injecting this member should not cause it to be returned in pagination mode.
+					InjectMembersBeforeRequest: []memlog{
+						{
+							Sender:     frank,
+							Target:     frank,
+							Membership: "join",
+						},
+					},
+					Limit:        4,
+					Sort:         "by_name",
+					UsePrevP:     true,
+					UsePrevSince: true, // we need to stay on the same state as the previous request
+					WantUserIDs:  []string{eve},
+				},
+			},
+		},
 	}
 	roomIndex := 0
 	for _, tc := range testCases {
-		t.Logf("TEST: %v", tc.Name)
-		// make the v2 sync responses based on test case info
-		roomIndex++
-		roomID := fmt.Sprintf("!%d:localhost", roomIndex)
-		creatorMemberContent := map[string]interface{}{
-			"membership": "join",
-		}
-		if tc.Names[tc.Creator] != "" {
-			creatorMemberContent["displayname"] = tc.Names[tc.Creator]
-		}
-		if tc.PL == nil {
-			var pl gomatrixserverlib.PowerLevelContent
-			pl.Defaults()
-			pl.Users = map[string]int64{tc.Creator: 100}
-		}
-		state := []json.RawMessage{
-			mkStateEvent(t, "m.room.create", "", tc.Creator, map[string]interface{}{
-				"creator": tc.Creator,
-			}),
-			mkStateEvent(t, "m.room.member", tc.Creator, tc.Creator, creatorMemberContent),
-			mkStateEvent(t, "m.room.power_levels", "", alice, tc.PL),
-		}
-		for _, ml := range tc.StateMemberLog {
-			content := map[string]interface{}{
-				"membership": ml.Membership,
+		t.Run(tc.Name, func(t *testing.T) {
+			// make the v2 sync responses based on test case info
+			roomIndex++
+			roomID := fmt.Sprintf("!%d:localhost", roomIndex)
+			creatorMemberContent := map[string]interface{}{
+				"membership": "join",
 			}
-			if ml.Membership == "join" && tc.Names[ml.Target] != "" {
-				content["displayname"] = tc.Names[ml.Target]
+			if tc.Names[tc.Creator] != "" {
+				creatorMemberContent["displayname"] = tc.Names[tc.Creator]
 			}
-			state = append(state, mkStateEvent(t, "m.room.member", ml.Target, ml.Sender, content))
-		}
-		var timeline []json.RawMessage
-		for _, ml := range tc.TimelineMemberLog {
-			content := map[string]interface{}{
-				"membership": ml.Membership,
+			if tc.PL == nil {
+				var pl gomatrixserverlib.PowerLevelContent
+				pl.Defaults()
+				pl.Users = map[string]int64{tc.Creator: 100}
 			}
-			if ml.Membership == "join" && tc.Names[ml.Target] != "" {
-				content["displayname"] = tc.Names[ml.Target]
+			state := []json.RawMessage{
+				mkStateEvent(t, "m.room.create", "", tc.Creator, map[string]interface{}{
+					"creator": tc.Creator,
+				}),
+				mkStateEvent(t, "m.room.member", tc.Creator, tc.Creator, creatorMemberContent),
+				mkStateEvent(t, "m.room.power_levels", "", alice, tc.PL),
 			}
-			timeline = append(timeline, mkStateEvent(t, "m.room.member", ml.Target, ml.Sender, content))
-		}
-		var v2Resp sync2.SyncResponse
-		var jr sync2.SyncV2JoinResponse
-		jr.State.Events = state
-		jr.Timeline.Events = timeline
-		v2Resp.Rooms.Join = make(map[string]sync2.SyncV2JoinResponse)
-		v2Resp.Rooms.Join[roomID] = jr
-		aliceV2Stream(&v2Resp)()
+			for _, ml := range tc.StateMemberLog {
+				content := map[string]interface{}{
+					"membership": ml.Membership,
+				}
+				if ml.Membership == "join" && tc.Names[ml.Target] != "" {
+					content["displayname"] = tc.Names[ml.Target]
+				}
+				state = append(state, mkStateEvent(t, "m.room.member", ml.Target, ml.Sender, content))
+			}
+			var timeline []json.RawMessage
+			for _, ml := range tc.TimelineMemberLog {
+				content := map[string]interface{}{
+					"membership": ml.Membership,
+				}
+				if ml.Membership == "join" && tc.Names[ml.Target] != "" {
+					content["displayname"] = tc.Names[ml.Target]
+				}
+				timeline = append(timeline, mkStateEvent(t, "m.room.member", ml.Target, ml.Sender, content))
+			}
+			var v2Resp sync2.SyncResponse
+			var jr sync2.SyncV2JoinResponse
+			jr.State.Events = state
+			jr.Timeline.Events = timeline
+			v2Resp.Rooms.Join = make(map[string]sync2.SyncV2JoinResponse)
+			v2Resp.Rooms.Join[roomID] = jr
+			aliceV2Stream(&v2Resp)()
 
-		// run the requests
-		prevSince := ""
-		prevP := ""
-		for _, req := range tc.Requests {
-			filter := map[string]interface{}{
-				"room_id": roomID,
-			}
-			if req.Limit > 0 {
-				filter["limit"] = req.Limit
-			}
-			since := ""
-			if req.UsePrevSince {
-				since = prevSince
-			}
-			if req.UsePrevP {
-				filter["p"] = map[string]interface{}{
-					"next": prevP,
+			// run the requests
+			prevSince := ""
+			prevP := ""
+			for _, req := range tc.Requests {
+				if req.InjectMembersBeforeRequest != nil {
+					var timeline []json.RawMessage
+					for _, ml := range req.InjectMembersBeforeRequest {
+						content := map[string]interface{}{
+							"membership": ml.Membership,
+						}
+						if ml.Membership == "join" && tc.Names[ml.Target] != "" {
+							content["displayname"] = tc.Names[ml.Target]
+						}
+						timeline = append(timeline, mkStateEvent(t, "m.room.member", ml.Target, ml.Sender, content))
+					}
+					var v2Resp sync2.SyncResponse
+					var jr sync2.SyncV2JoinResponse
+					jr.Timeline.Events = timeline
+					v2Resp.Rooms.Join = make(map[string]sync2.SyncV2JoinResponse)
+					v2Resp.Rooms.Join[roomID] = jr
+					aliceV2Stream(&v2Resp)()
 				}
-			}
-			v3resp := mustDoSync3Request(t, server, aliceBearer, since, map[string]interface{}{
-				"room_member": filter,
-			})
-			prevSince = v3resp.Next
-			if v3resp.RoomMember.P != nil {
-				prevP = v3resp.RoomMember.P.Next
-			}
-			if v3resp.RoomMember == nil {
-				t.Fatalf("response did not include room_member: test case %v", tc.Name)
-			}
-			for _, ev := range v3resp.RoomMember.Events {
-				t.Logf("%s", string(ev))
-			}
-			t.Logf("want: %v", req.WantUserIDs)
-			if req.WantUserIDs != nil {
-				if len(v3resp.RoomMember.Events) != len(req.WantUserIDs) {
-					t.Fatalf("got %d room members, want %d - test case: %v", len(v3resp.RoomMember.Events), len(req.WantUserIDs), tc.Name)
+
+				filter := map[string]interface{}{
+					"room_id": roomID,
 				}
-				for i := range req.WantUserIDs {
-					gotUserID := gjson.GetBytes(v3resp.RoomMember.Events[i], "state_key").Str
-					if gotUserID != req.WantUserIDs[i] {
-						t.Errorf("position %d got %v want %v - test case: %v", i, gotUserID, req.WantUserIDs[i], tc.Name)
+				if req.Limit > 0 {
+					filter["limit"] = req.Limit
+				}
+				if req.Sort != "" {
+					filter["sort"] = req.Sort
+				}
+				since := ""
+				if req.UsePrevSince {
+					since = prevSince
+				}
+				if req.UsePrevP {
+					filter["p"] = map[string]interface{}{
+						"next": prevP,
+					}
+				}
+				t.Logf("Room member since=%v request: %+v", since, filter)
+				v3resp := mustDoSync3Request(t, server, aliceBearer, since, map[string]interface{}{
+					"room_member": filter,
+				})
+				prevSince = v3resp.Next
+				if v3resp.RoomMember == nil {
+					t.Fatalf("response did not include room_member: test case %v", tc.Name)
+				}
+				if v3resp.RoomMember.P != nil {
+					prevP = v3resp.RoomMember.P.Next
+				}
+				for _, ev := range v3resp.RoomMember.Events {
+					t.Logf("%s", string(ev))
+				}
+				t.Logf("want: %v", req.WantUserIDs)
+				if req.WantUserIDs != nil {
+					if len(v3resp.RoomMember.Events) != len(req.WantUserIDs) {
+						t.Fatalf("got %d room members, want %d - test case: %v", len(v3resp.RoomMember.Events), len(req.WantUserIDs), tc.Name)
+					}
+					for i := range req.WantUserIDs {
+						gotUserID := gjson.GetBytes(v3resp.RoomMember.Events[i], "state_key").Str
+						if gotUserID != req.WantUserIDs[i] {
+							t.Errorf("position %d got %v want %v - test case: %v", i, gotUserID, req.WantUserIDs[i], tc.Name)
+						}
 					}
 				}
 			}
-		}
+		})
 	}
 }
 

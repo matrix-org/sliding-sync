@@ -57,7 +57,7 @@ func membershipEnumForString(s string) membershipEnum {
 type FilterRoomMember struct {
 	Limit  int                 `json:"limit"`
 	RoomID string              `json:"room_id"`
-	SortBy RoomMemberSortOrder `json:"sort_by"`
+	SortBy RoomMemberSortOrder `json:"sort"`
 	P      *P                  `json:"p,omitempty"`
 }
 
@@ -173,12 +173,12 @@ func (s *RoomMember) paginatedDataAtPoint(session *sync3.Session, pos int64, sor
 		evType := evJSON.Get("type").Str
 		stateKey := evJSON.Get("state_key").Str
 		if evType == gomatrixserverlib.MRoomMember {
-			name := evJSON.Get("content.display_name").Str
+			name := evJSON.Get("content.displayname").Str
 			if name == "" {
 				name = strings.TrimPrefix(stateKey, "@") // ensure we always have a name to sort on, but strip the '@' to sort Alice with @alice:localhost
 			}
 			mem := memberEvent{
-				Name:       name,
+				Name:       strings.ToLower(name),
 				Membership: membershipEnumForString(evJSON.Get("content.membership").Str),
 				PL:         plContent.UserLevel(stateKey),
 				JSON:       ev.JSON,
@@ -255,6 +255,7 @@ func (s *RoomMember) streamingDataInRange(session *sync3.Session, fromExcl, toIn
 	if err != nil {
 		return 0, err
 	}
+	resp.RoomMember = &RoomMemberResponse{}
 	resp.RoomMember.Events = events
 	return upTo, nil
 }
