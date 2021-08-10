@@ -79,22 +79,36 @@ Responses are split stream-by-stream:
 }
 ```
 
-Some streams are paginatable. Paginatable streams accept a `p` JSON object which contains pagination
+Streams can accept more complicated filters / request parameters like `limit` and `sort`. These parameters
+can be modified by the server in the response to enforce server limits. For example:
+```json
+{
+    "room_members": {
+        "limit": 99999
+    }
+}
+```
+can have the response:
+```json
+{
+    "room_members": {
+        "limit": 100
+    }
+}
+```
+This is called _negotiation_ and most streams will have some form of negotiated request parameters.
+
+Some streams are paginatable. Paginatable streams accept and return a `p` JSON object which contains pagination
 parameters. The `p` object looks like:
 ```json
 {
     "room_members": {
         "p": {
-            "limit": 10,
-            "sort": "enum_value:_the_sort_order_varies_by_stream"
+            "next": "1" // opaque token
         }
     }
 }
 ```
-Servers can also return a `p` JSON object in the stream response which contains the pagination
-parameters it is going to use. This allows servers to restrict the response to conserve resources
-(e.g. reducing the `limit` value, modifying the `sort` order if it's unknown). This is called
-*negotiation* and is frequently used by streams.
 
 When paginated streams are returned, the next page of results are contained within `p`:
 ```json

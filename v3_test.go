@@ -440,10 +440,9 @@ type memrequest struct {
 // - Can get all room members in a DM room and an empty since token
 // - Gets the first page of room members in a big group room and an empty since token
 // - Gets the 2nd page (and so on) of room members in a big group room until all members are received
-// - If the state changes from underneath the client whilst paginating, everything still works
-// - Getting chronological deltas with a since token works
+// - If the state changes from underneath the client whilst paginating, the pagination state remains the same
+// - Getting chronological deltas with a since token works (like typical sync v2)
 // - sorting by PL/name works
-// - TODO Getting page deltas with a since token and custom sort order works
 func TestHandlerRoomMember(t *testing.T) {
 	server, v2Client := newSync3Server(t)
 	alice := "@alice:localhost"
@@ -511,13 +510,21 @@ func TestHandlerRoomMember(t *testing.T) {
 			},
 			Requests: []memrequest{
 				{
-					Limit:             4,
+					Limit:             2,
 					Sort:              "by_name",
-					WantUserIDs:       []string{alice, bob, charlie, doris},
+					WantUserIDs:       []string{alice, bob},
 					SinceRequestIndex: EmptySince,
 				},
 				{
-					Limit:       4,
+					Limit:       2,
+					Sort:        "by_name",
+					UsePrevP:    true,
+					WantUserIDs: []string{charlie, doris},
+					// pin the next page based on the state at since
+					SinceRequestIndex: 0,
+				},
+				{
+					Limit:       2,
 					Sort:        "by_name",
 					UsePrevP:    true,
 					WantUserIDs: []string{eve},
@@ -538,9 +545,9 @@ func TestHandlerRoomMember(t *testing.T) {
 			},
 			Requests: []memrequest{
 				{
-					// default limit should be >2 and sort order should be by PL then name,
-					// so even though we injected bob then alice it should return alice then bob
-					WantUserIDs:       []string{alice, bob},
+					// default limit should be >2 and sort order should be by PL then name so bob first
+					// as he made the room
+					WantUserIDs:       []string{bob, alice},
 					SinceRequestIndex: EmptySince,
 				},
 				{
@@ -598,6 +605,12 @@ func TestHandlerRoomMember(t *testing.T) {
 					Sort:              "by_name",
 					SinceRequestIndex: EmptySince,
 					WantUserIDs:       []string{bob, charlie, alice},
+				},
+				{
+					// Alice made the room so has the most power, then @bob:localhost, YCharlie
+					Sort:              "by_pl",
+					SinceRequestIndex: EmptySince,
+					WantUserIDs:       []string{alice, bob, charlie},
 				},
 			},
 		},
@@ -669,13 +682,14 @@ func TestHandlerRoomMember(t *testing.T) {
 				var pl gomatrixserverlib.PowerLevelContent
 				pl.Defaults()
 				pl.Users = map[string]int64{tc.Creator: 100}
+				tc.PL = &pl
 			}
 			state := []json.RawMessage{
 				mkStateEvent(t, "m.room.create", "", tc.Creator, map[string]interface{}{
 					"creator": tc.Creator,
 				}),
 				mkStateEvent(t, "m.room.member", tc.Creator, tc.Creator, creatorMemberContent),
-				mkStateEvent(t, "m.room.power_levels", "", alice, tc.PL),
+				mkStateEvent(t, "m.room.power_levels", "", tc.Creator, tc.PL),
 			}
 			for _, ml := range tc.StateMemberLog {
 				content := map[string]interface{}{

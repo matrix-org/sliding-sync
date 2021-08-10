@@ -13,11 +13,14 @@ const (
 )
 
 type FilterToDevice struct {
+	// The max number of to_device messages to return per request.
 	Limit int64 `json:"limit"`
 }
 
 type ToDeviceResponse struct {
-	Limit  int64             `json:"limit"`
+	// Negotiated: The actual limit the server used.
+	Limit int64 `json:"limit"`
+	// The to_device events.
 	Events []json.RawMessage `json:"events"`
 }
 

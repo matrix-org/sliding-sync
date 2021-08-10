@@ -8,10 +8,12 @@ import (
 )
 
 type FilterTyping struct {
+	// The room ID to get typing notifications in.
 	RoomID string `json:"room_id"`
 }
 
 type TypingResponse struct {
+	// A list of user IDs of who is currently typing.
 	UserIDs []string `json:"user_ids"`
 }
 

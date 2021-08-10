@@ -19,6 +19,26 @@ const (
 	maxRoomMemberLimit     = 1000
 )
 
+type FilterRoomMember struct {
+	// Negotiated: the max number of member events to return.
+	Limit int `json:"limit"`
+	// The room to return the member list for.
+	RoomID string `json:"room_id"`
+	// The sort order to use when returning results.
+	SortBy RoomMemberSortOrder `json:"sort"`
+	// The pagination parameters to request the next page of results.
+	P *P `json:"p,omitempty"`
+}
+
+type RoomMemberResponse struct {
+	// Negotiated: The actual limit the server used.
+	Limit int `json:"limit"`
+	// The m.room.member events
+	Events []json.RawMessage `json:"events"`
+	// The pagination parameters to request the next page, can be empty if all members fit on one page.
+	P *P `json:"p,omitempty"`
+}
+
 type RoomMemberSortOrder string
 type membershipEnum int
 
@@ -52,19 +72,6 @@ func membershipEnumForString(s string) membershipEnum {
 		return knock
 	}
 	return 0
-}
-
-type FilterRoomMember struct {
-	Limit  int                 `json:"limit"`
-	RoomID string              `json:"room_id"`
-	SortBy RoomMemberSortOrder `json:"sort"`
-	P      *P                  `json:"p,omitempty"`
-}
-
-type RoomMemberResponse struct {
-	Limit  int               `json:"limit"`
-	Events []json.RawMessage `json:"events"`
-	P      *P                `json:"p,omitempty"`
 }
 
 type memberEvent struct {
