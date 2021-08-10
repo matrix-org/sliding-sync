@@ -144,26 +144,4 @@ of your chosen sort order (e.g alphabetically).
 
 ## Streams
 
-### Typing Stream
-
-Request Parameters:
- - `room_id` (string): The room ID to track typing notifications in.
-
-Response fields:
- - `events` ([]EDU): A list of typing EDUs.
-
-### To Device Stream
-
-TODO
-
-### Room Member Stream
-
-TODO
-
-### Room Stream
-
-TODO
-
-### Room List Stream
-
-TODO
+The API is changing quickly, so only the GoDoc will be referenced for now. The HTTP request body for sync v3 looks like https://pkg.go.dev/github.com/matrix-org/sync-v3/sync3/streams#Request - click through each struct to see how each stream is made up. The HTTP response body for sync v3 looks like https://pkg.go.dev/github.com/matrix-org/sync-v3/sync3/streams#Response 
