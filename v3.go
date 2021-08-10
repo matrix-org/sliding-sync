@@ -197,7 +197,7 @@ func (h *SyncV3Handler) serve(w http.ResponseWriter, req *http.Request) *handler
 		upcoming.FilterID = filterID
 	}
 
-	if !shouldReturnImmediately(fromToken, &upcoming, timeoutMs) {
+	if !shouldReturnImmediately(syncReq, h.streams, fromToken, &upcoming, timeoutMs) {
 		// from == upcoming so we need to block for up to timeoutMs for a new event to come in
 		log.Info().Int64("timeout_ms", timeoutMs).Msg("blocking")
 		newUpcoming := h.waitForEvents(req.Context(), session, *fromToken, time.Duration(timeoutMs)*time.Millisecond)
@@ -521,9 +521,19 @@ func deviceIDFromRequest(req *http.Request) (string, error) {
 	return hex.EncodeToString(hash.Sum(nil)), nil
 }
 
-func shouldReturnImmediately(fromToken, upcoming *sync3.Token, timeoutMs int64) bool {
+func shouldReturnImmediately(req *streams.Request, streams []streams.Streamer, fromToken, upcoming *sync3.Token, timeoutMs int64) bool {
 	if timeoutMs == 0 {
 		return true
 	}
-	return upcoming.IsAfter(*fromToken)
+	newerTokenExists := upcoming.IsAfter(*fromToken)
+	if newerTokenExists {
+		return true
+	}
+	// check if there is a pagination request here
+	for _, s := range streams {
+		if s.IsPaginationRequest(req) {
+			return true
+		}
+	}
+	return false
 }

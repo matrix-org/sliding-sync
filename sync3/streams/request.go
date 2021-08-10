@@ -40,7 +40,7 @@ func (r *Request) ApplyDeltas(req2 *Request) (bool, error) {
 }
 
 // Sentinel value indicating the first page of results.
-const FirstPage = "1"
+const FirstPage = "0"
 
 // P is the pagination struct for streams
 type P struct {

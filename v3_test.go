@@ -425,11 +425,13 @@ type memlog struct { // @alice:localhost => "join"
 	Membership string
 }
 
+const EmptySince = -1
+
 type memrequest struct {
 	Limit                      int
 	Sort                       string
 	WantUserIDs                []string
-	UsePrevSince               bool
+	SinceRequestIndex          int // the request index to use the next batch from as a since value
 	UsePrevP                   bool
 	InjectMembersBeforeRequest []memlog
 }
@@ -463,7 +465,7 @@ func TestHandlerRoomMember(t *testing.T) {
 		Requests          []memrequest
 	}{
 		{
-			Name:    "Can get all room members in a DM room and an empty since token",
+			Name:    "Can get all room members in a DM room and an empty since token and a known since token",
 			Creator: alice,
 			TimelineMemberLog: []memlog{
 				{
@@ -475,7 +477,8 @@ func TestHandlerRoomMember(t *testing.T) {
 			Requests: []memrequest{
 				{
 					// default limit should be >2 and sort order should be by PL then name
-					WantUserIDs: []string{alice, bob},
+					WantUserIDs:       []string{alice, bob},
+					SinceRequestIndex: EmptySince,
 				},
 			},
 		},
@@ -508,15 +511,18 @@ func TestHandlerRoomMember(t *testing.T) {
 			},
 			Requests: []memrequest{
 				{
-					Limit:       4,
-					Sort:        "by_name",
-					WantUserIDs: []string{alice, bob, charlie, doris},
+					Limit:             4,
+					Sort:              "by_name",
+					WantUserIDs:       []string{alice, bob, charlie, doris},
+					SinceRequestIndex: EmptySince,
 				},
 				{
 					Limit:       4,
 					Sort:        "by_name",
 					UsePrevP:    true,
 					WantUserIDs: []string{eve},
+					// pin the next page based on the state at since
+					SinceRequestIndex: 0,
 				},
 			},
 		},
@@ -534,10 +540,11 @@ func TestHandlerRoomMember(t *testing.T) {
 				{
 					// default limit should be >2 and sort order should be by PL then name,
 					// so even though we injected bob then alice it should return alice then bob
-					WantUserIDs: []string{alice, bob},
+					WantUserIDs:       []string{alice, bob},
+					SinceRequestIndex: EmptySince,
 				},
 				{
-					UsePrevSince: true,
+					SinceRequestIndex: 0,
 					InjectMembersBeforeRequest: []memlog{
 						{
 							Sender:     charlie,
@@ -548,7 +555,7 @@ func TestHandlerRoomMember(t *testing.T) {
 					WantUserIDs: []string{charlie},
 				},
 				{
-					UsePrevSince: true,
+					SinceRequestIndex: 1,
 					InjectMembersBeforeRequest: []memlog{
 						{
 							Sender:     eve,
@@ -588,8 +595,9 @@ func TestHandlerRoomMember(t *testing.T) {
 			Requests: []memrequest{
 				{
 					// @bob:localhost, YCharlie, ZAlice
-					Sort:        "by_name",
-					WantUserIDs: []string{bob, charlie, alice},
+					Sort:              "by_name",
+					SinceRequestIndex: EmptySince,
+					WantUserIDs:       []string{bob, charlie, alice},
 				},
 			},
 		},
@@ -622,9 +630,10 @@ func TestHandlerRoomMember(t *testing.T) {
 			},
 			Requests: []memrequest{
 				{
-					Limit:       4,
-					Sort:        "by_name",
-					WantUserIDs: []string{alice, bob, charlie, doris},
+					SinceRequestIndex: EmptySince,
+					Limit:             4,
+					Sort:              "by_name",
+					WantUserIDs:       []string{alice, bob, charlie, doris},
 				},
 				{
 					// injecting this member should not cause it to be returned in pagination mode.
@@ -635,11 +644,11 @@ func TestHandlerRoomMember(t *testing.T) {
 							Membership: "join",
 						},
 					},
-					Limit:        4,
-					Sort:         "by_name",
-					UsePrevP:     true,
-					UsePrevSince: true, // we need to stay on the same state as the previous request
-					WantUserIDs:  []string{eve},
+					Limit:             4,
+					Sort:              "by_name",
+					UsePrevP:          true,
+					SinceRequestIndex: 0, // we need to stay on the same state as the previous request
+					WantUserIDs:       []string{eve},
 				},
 			},
 		},
@@ -696,7 +705,7 @@ func TestHandlerRoomMember(t *testing.T) {
 			aliceV2Stream(&v2Resp)()
 
 			// run the requests
-			prevSince := ""
+			var nextBatches []string
 			prevP := ""
 			for _, req := range tc.Requests {
 				if req.InjectMembersBeforeRequest != nil {
@@ -728,8 +737,8 @@ func TestHandlerRoomMember(t *testing.T) {
 					filter["sort"] = req.Sort
 				}
 				since := ""
-				if req.UsePrevSince {
-					since = prevSince
+				if req.SinceRequestIndex != EmptySince {
+					since = nextBatches[req.SinceRequestIndex]
 				}
 				if req.UsePrevP {
 					filter["p"] = map[string]interface{}{
@@ -740,7 +749,7 @@ func TestHandlerRoomMember(t *testing.T) {
 				v3resp := mustDoSync3Request(t, server, aliceBearer, since, map[string]interface{}{
 					"room_member": filter,
 				})
-				prevSince = v3resp.Next
+				nextBatches = append(nextBatches, v3resp.Next)
 				if v3resp.RoomMember == nil {
 					t.Fatalf("response did not include room_member: test case %v", tc.Name)
 				}

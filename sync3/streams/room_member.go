@@ -91,6 +91,10 @@ func (s *RoomMember) SetPosition(tok *sync3.Token, pos int64) {
 	tok.SetEventPosition(pos)
 }
 
+func (s *RoomMember) IsPaginationRequest(req *Request) bool {
+	return req.RoomMember != nil && req.RoomMember.P != nil && req.RoomMember.P.Next != ""
+}
+
 func (s *RoomMember) SessionConfirmed(session *sync3.Session, confirmedPos int64, allSessions bool) {
 }
 

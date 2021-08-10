@@ -38,6 +38,10 @@ func (s *ToDevice) SetPosition(tok *sync3.Token, pos int64) {
 	tok.SetToDevicePosition(pos)
 }
 
+func (s *ToDevice) IsPaginationRequest(req *Request) bool {
+	return false // no pagination support
+}
+
 func (s *ToDevice) SessionConfirmed(session *sync3.Session, confirmedPos int64, allSessions bool) {
 	if !allSessions {
 		return

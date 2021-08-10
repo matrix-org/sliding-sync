@@ -18,6 +18,9 @@ type Streamer interface {
 	// Called when a session hits /sync with a stream position. `allSessions` is true if all sessions
 	// are at least as far as this position (inclusive), allowing cleanup of earlier messages.
 	SessionConfirmed(session *sync3.Session, confirmedPos int64, allSessions bool)
+	// Return true if this request contains pagination parameters for your stream. Use to detect
+	// whether to block or not (pagination never blocks)
+	IsPaginationRequest(req *Request) bool
 }
 
 // ErrNotRequested should be returned in DataInRange if the request does not ask for this stream.
