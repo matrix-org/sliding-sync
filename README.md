@@ -110,7 +110,7 @@ parameters. The `p` object looks like:
 }
 ```
 
-When paginated streams are returned, the next page of results are contained within `p`:
+When paginated streams are returned, the next page token is contained within `p`:
 ```json
 {
     "room_members": {
@@ -124,12 +124,12 @@ When paginated streams are returned, the next page of results are contained with
 ```
 To visualise this, the value of `?since=` is a snapshot of the room, and `p.next` paginates through
 this snapshot. This means that when paginating you MUST NOT advance your `?since=` value. Clients can
-request the next page by specifying `since` inside `p`:
+request the next page by specifying `next` inside `p`:
 ```json
 {
     "room_members": {
         "p": {
-            "since": "$token_from_p_next"
+            "next": "$token_from_p_next"
         }
     }
 }
