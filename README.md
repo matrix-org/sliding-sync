@@ -134,13 +134,10 @@ request the next page by specifying `since` inside `p`:
     }
 }
 ```
-Clients are not required to paginate through all entries in a paginated stream. If you are only interested
-in the first 5 room members for example, then you can set `limit: 5` and ignore `p.next`. In order to differentiate
-clients which are keeping up-to-date with room members and those who are just interested in the first page
-of results, clients MUST specify `p.since = "1"` to indicate the first page of results. This makes `"1"` a
-sentinel constant value in pagination to indicate "the first page of results". If you don't do this, the server
-will just send back deltas from the last `since` value, which won't necessarily contain the first 5 members
-of your chosen sort order (e.g alphabetically).
+
+Clients are not required to paginate through all entries in a paginated stream before continuing receiving
+updates. This means that clients will have partial views of streams such as room members. This will need to
+refreshed when the full member list is required e.g via a separate session.
 
 ## Streams
 
