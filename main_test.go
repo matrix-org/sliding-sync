@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"runtime"
 	"sync"
 	"testing"
 	"time"
@@ -21,6 +22,7 @@ import (
 var postgresConnectionString = "user=xxxxx dbname=syncv3_test sslmode=disable"
 
 func TestMain(m *testing.M) {
+	runtime.SetCPUProfileRate(10000)
 	postgresConnectionString = testutils.PrepareDBConnectionString("syncv3_test_main")
 	exitCode := m.Run()
 	os.Exit(exitCode)

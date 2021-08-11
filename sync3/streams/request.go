@@ -39,9 +39,6 @@ func (r *Request) ApplyDeltas(req2 *Request) (bool, error) {
 	return !bytes.Equal(original, combined), nil
 }
 
-// Sentinel value indicating the first page of results.
-const FirstPage = "0"
-
 // P is the pagination struct for streams
 type P struct {
 	Next string `json:"next,omitempty"`

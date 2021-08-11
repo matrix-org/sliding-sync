@@ -15,8 +15,8 @@ import (
 )
 
 const (
-	defaultRoomMemberLimit = 50
-	maxRoomMemberLimit     = 1000
+	DefaultRoomMemberLimit = 50
+	MaxRoomMemberLimit     = 1000
 )
 
 type FilterRoomMember struct {
@@ -118,11 +118,11 @@ func (s *RoomMember) DataInRange(session *sync3.Session, fromExcl, toIncl int64,
 		return 0, ErrNotRequested
 	}
 	// ensure limit is always set
-	if request.RoomMember.Limit > maxRoomMemberLimit {
-		request.RoomMember.Limit = maxRoomMemberLimit
+	if request.RoomMember.Limit > MaxRoomMemberLimit {
+		request.RoomMember.Limit = MaxRoomMemberLimit
 	}
 	if request.RoomMember.Limit <= 0 {
-		request.RoomMember.Limit = defaultRoomMemberLimit
+		request.RoomMember.Limit = DefaultRoomMemberLimit
 	}
 	if request.RoomMember.P == nil && fromExcl != 0 {
 		return s.streamingDataInRange(session, fromExcl, toIncl, request, resp)
