@@ -7,6 +7,19 @@ import (
 	"github.com/matrix-org/sync-v3/sync3"
 )
 
+const (
+	MaxRoomList     = 1000
+	DefaultRoomList = 100
+)
+
+var (
+	DefaultRoomListSorts = []RoomListSortOrder{SortRoomListByTag, SortRoomListByRecency}
+	KnownRoomListSorts   = map[RoomListSortOrder]bool{
+		SortRoomListByTag:     true,
+		SortRoomListByRecency: true,
+	}
+)
+
 type RoomListSortOrder string
 
 const (
@@ -32,22 +45,35 @@ type FilterRoomList struct {
 	// values are sorted by the next sort option and so on. E.g [by_tag, by_recent] sorts the rooms by
 	// tags first (abiding by the 'order' in the spec) then sorts matching tags by most recent first
 	Sorts []RoomListSortOrder `json:"sorts"`
-	// If true, return the m.room.name event if one exists
-	// Low bandwidth clients may prefer just the `name` key on this event, and the ability to force
-	// a truncation of the key if the name is too long, but this cannot be done in E2E rooms hence
-	// this option is not presented in this stream.
-	IncludeRoomName bool `json:"include_name"`
-	// If true, return the m.room.avatar event if one exists
-	IncludeRoomAvatar bool `json:"include_avatar"`
+	// The event type, state key tuple of a piece of room state to return.
+	IncludeStateEvents [][2]string `json:"include_state_events"`
 	// The pagination parameters to request the next page of results.
 	P *P `json:"p,omitempty"`
 }
 
+func (r *FilterRoomList) Validate() {
+	if r.Limit > MaxRoomList {
+		r.Limit = MaxRoomList
+	}
+	if r.Limit <= 0 {
+		r.Limit = DefaultRoomList
+	}
+	if r.Sorts == nil {
+		r.Sorts = DefaultRoomListSorts
+	}
+	// validate the sorts
+	for i := range r.Sorts {
+		if !KnownRoomListSorts[r.Sorts[i]] {
+			// remove it
+			r.Sorts = append(r.Sorts[:i], r.Sorts[i+1:]...)
+		}
+	}
+}
+
 type RoomListResponse struct {
 	// Negotiated values
-	Limit        int                 `json:"limit"`
-	RoomNameSize int                 `json:"room_name_size"`
-	Sorts        []RoomListSortOrder `json:"sorts"`
+	Limit int                 `json:"limit"`
+	Sorts []RoomListSortOrder `json:"sorts"`
 	// The rooms
 	Rooms []RoomListEntry `json:"rooms"`
 	// The pagination parameters to request the next page, can be empty if all rooms fit on one page.
@@ -55,13 +81,13 @@ type RoomListResponse struct {
 }
 
 type RoomListEntry struct {
-	RoomID      string          `json:"room_id"`
-	NameEvent   json.RawMessage `json:"m.room.name,omitempty"`
-	AvatarEvent json.RawMessage `json:"m.room.avatar,omitempty"`
-	MemberCount int             `json:"member_count"`
-	LastEvent   json.RawMessage `json:"last_event"`
-	RoomType    string          `json:"room_type"` // e.g spaces
-	IsDM        bool            `json:"dm"`        // from the m.direct event in account data
+	RoomID      string                     `json:"room_id"`
+	StateEvents map[string]json.RawMessage `json:"state_events"`
+	MemberCount int                        `json:"member_count"`
+	LastEvent   json.RawMessage            `json:"last_event"`
+	RoomType    string                     `json:"room_type"` // e.g spaces
+	IsDM        bool                       `json:"dm"`        // from the m.direct event in account data
+	NumUnread   int                        `json:"unread"`
 }
 
 // RoomList represents a stream of room summaries.
@@ -93,5 +119,33 @@ func (s *RoomList) DataInRange(session *sync3.Session, fromExcl, toIncl int64, r
 	if request.RoomList == nil {
 		return 0, ErrNotRequested
 	}
-	return 0, nil
+	request.RoomList.Validate()
+	if request.RoomList.P == nil && fromExcl != 0 {
+		return s.streamingDataInRange(session, fromExcl, toIncl, request, resp)
+	}
+
+	// flesh out the response - if we have been given a position then use it, else default to the latest position (for first syncs)
+	paginationPos := fromExcl
+	if paginationPos == 0 {
+		paginationPos = toIncl
+	}
+	err := s.paginatedDataAtPoint(session, paginationPos, request, resp)
+	if err != nil {
+		return 0, err
+	}
+
+	// pagination never advances the token
+	return fromExcl, nil
+}
+
+func (s *RoomList) paginatedDataAtPoint(session *sync3.Session, pos int64, request *Request, resp *Response) error {
+	// find all invited / joined rooms for this user
+	// populate summaries
+	// offset based on P
+	return nil
+}
+
+func (s *RoomList) streamingDataInRange(session *sync3.Session, fromExcl, toIncl int64, request *Request, resp *Response) (int64, error) {
+	// TODO
+	return toIncl, nil
 }

@@ -443,6 +443,7 @@ type memrequest struct {
 // - If the state changes from underneath the client whilst paginating, the pagination state remains the same
 // - Getting chronological deltas with a since token works (like typical sync v2)
 // - sorting by PL/name works
+// - limit on streaming works
 func TestHandlerRoomMember(t *testing.T) {
 	server, v2Client := newSync3Server(t)
 	alice := "@alice:localhost"
@@ -665,6 +666,51 @@ func TestHandlerRoomMember(t *testing.T) {
 				},
 			},
 		},
+		{
+			Name:    "'limit' on streaming requests works",
+			Creator: alice,
+			TimelineMemberLog: []memlog{
+				{
+					Sender:     eve,
+					Target:     eve,
+					Membership: "join",
+				},
+			},
+			Requests: []memrequest{
+				{
+					Limit:             2,
+					WantUserIDs:       []string{alice, eve},
+					SinceRequestIndex: EmptySince,
+				},
+				{
+					InjectMembersBeforeRequest: []memlog{
+						{
+							Sender:     charlie,
+							Target:     charlie,
+							Membership: "join",
+						},
+						{
+							Sender:     doris,
+							Target:     doris,
+							Membership: "join",
+						},
+						{
+							Sender:     bob,
+							Target:     bob,
+							Membership: "join",
+						},
+					},
+					Limit:             2,
+					WantUserIDs:       []string{charlie, doris},
+					SinceRequestIndex: 0,
+				},
+				{
+					Limit:             2,
+					WantUserIDs:       []string{bob},
+					SinceRequestIndex: 1,
+				},
+			},
+		},
 	}
 	roomIndex := 0
 	for _, tc := range testCases {
@@ -710,12 +756,16 @@ func TestHandlerRoomMember(t *testing.T) {
 				}
 				timeline = append(timeline, mkStateEvent(t, "m.room.member", ml.Target, ml.Sender, content))
 			}
+			if len(timeline) == 0 {
+				t.Fatalf("test must have timeline entries in order to update upcoming token")
+			}
 			var v2Resp sync2.SyncResponse
 			var jr sync2.SyncV2JoinResponse
 			jr.State.Events = state
 			jr.Timeline.Events = timeline
 			v2Resp.Rooms.Join = make(map[string]sync2.SyncV2JoinResponse)
 			v2Resp.Rooms.Join[roomID] = jr
+			t.Logf("v2 for %v injecting %v state and %v timeline", roomID, len(state), len(timeline))
 			aliceV2Stream(&v2Resp)()
 
 			// run the requests

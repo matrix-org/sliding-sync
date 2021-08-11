@@ -8,8 +8,8 @@ import (
 )
 
 const (
-	defaultToDeviceMessageLimit = 100
-	maxToDeviceMessageLimit     = 1000
+	DefaultToDeviceMessageLimit = 100
+	MaxToDeviceMessageLimit     = 1000
 )
 
 type FilterToDevice struct {
@@ -59,11 +59,11 @@ func (s *ToDevice) DataInRange(session *sync3.Session, fromExcl, toIncl int64, r
 	// limit negotiation
 	negotiatedLimit := request.ToDevice.Limit
 	if request.ToDevice.Limit == 0 {
-		request.ToDevice.Limit = defaultToDeviceMessageLimit
-		negotiatedLimit = defaultToDeviceMessageLimit
-	} else if request.ToDevice.Limit > maxToDeviceMessageLimit {
-		request.ToDevice.Limit = maxToDeviceMessageLimit
-		negotiatedLimit = maxToDeviceMessageLimit
+		request.ToDevice.Limit = DefaultToDeviceMessageLimit
+		negotiatedLimit = DefaultToDeviceMessageLimit
+	} else if request.ToDevice.Limit > MaxToDeviceMessageLimit {
+		request.ToDevice.Limit = MaxToDeviceMessageLimit
+		negotiatedLimit = MaxToDeviceMessageLimit
 	}
 	msgs, upTo, err := s.storage.ToDeviceTable.Messages(session.DeviceID, fromExcl, toIncl, request.ToDevice.Limit)
 	if err != nil {
