@@ -172,16 +172,20 @@ Server-side, the pagination operations performed for `room_list` are:
 Server-side, the streaming operations performed for `room_list` are:
 - Load the latest stream position `SP` and the `since` value.
 - If the delta between the two positions is too large (heuristic), reset the session.
-- Else, load the joined/invited room IDs at `SP` and `since` and diff them. Remember newly joined/invited rooms `Radd` and deleted rooms `Rdel`.
-  If there are many joins/leaves for the same room ID, the latest one wins (at `SP`).
 - Multiplex together the `room_list` filter params.
+- Inspect the sort order as that will tell you what to notify on, based on the following rules:
+   * `by_tag`: If the tag account data has changed for a room between `SP` and `since`, load the room ID.
+   * `by_name`: If the `m.room.name` or `m.room.canonical_alias` or hereos have changed between `SP` and `since`, load the room ID.
+   * `by_member_count`: If the joined member count changed between `SP` and `since`, load the room ID.
+   * `by_recency`: If there are any events in this room between `SP` and `since`, load the room ID.
+- Remember the room IDs loaded as `Radd` and the reasons why they were added (name, tag, etc).
+- Load all tracked room IDs `T[room_id]` for this Session.
+- Remember all room IDs which exist in `Radd` but not `T[room_id]` as `Rnew`.
 - If the filter has `streaming_add` set:
-   * Load all tracked room IDs `T[room_id]` for this Session.
-   * Remove rooms from `T[room_id]` if they exist in `del_rooms` or `Rdel`.
+   * Remove rooms from `T[room_id]` if they exist in `del_rooms`.
    * Add rooms to `T[room_id]` present in `add_rooms` or `Radd`, de-duplicating existing entries.
-   * Remember the subset of room IDs which were newly added to the list: `Rnew`.
    * Save `T[room_id]`.
-- Else `Rnew = Radd`.
 - If `fields: []` then return no response.
-- Else return `len(Rnew)` objects with appropriate `fields`. 
+- Else return `len(Radd)` objects. Return only the modified field if the room ID is not present in `Rnew` e.g
+  tag, name, timestamp. Return all `fields` if the room ID is present in `Rnew`.
 
