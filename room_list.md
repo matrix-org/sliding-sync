@@ -119,7 +119,7 @@ Server-side, the streaming operations performed for `room_list` are:
 - Load all tracked room IDs `T[room_id]` for this Session.
 - Remember all room IDs which exist in `Radd` but not `T[room_id]` as `Rnew`.
 - If the filter has `streaming_add` set:
-   * Remove rooms from `T[room_id]` if they exist in `del_rooms`.
+   * Remove rooms from `T[room_id]` if they exist in `del_rooms` or the user left the room between `SP` and `since`.
    * Add rooms to `T[room_id]` present in `add_rooms` or `Radd`, de-duplicating existing entries.
    * Save `T[room_id]`.
 - If `fields: []` then return no response.
@@ -218,6 +218,8 @@ POST /sync?since=
     }
 }
 ```
+The room list API provides the number of favourites, etc (you get back a sorted list of room IDs with `tag` fields).
+The room summary API provides the info for the room name/avatar and the most recent message along with the lazy-loaded member.
 
 Low-bandwidth clients which show only the room name and the tag (e.g favourites) are also supported, and may just simply use the room list stream:
 ```
