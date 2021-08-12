@@ -251,3 +251,14 @@ Returns a paginated list:
 }
 ```
 
+### Room Data API
+
+The purpose of this API is to provide the entire room state/timeline for a single room (often the room the user is viewing). This stream
+is NOT paginatable.
+
+TODO:
+ - Allow `room_list` as an input? Clients can then quickly fetch a bunch of room state at startup?
+ - How to mux from room_summary to room_data without sending duplicate data? Modify `last_event` to allow multiple events so it is ACTUALLY
+   tracking the timeline for a room? Then we know a subset of state at the start of the timeline via `state_events` and the timeline
+   from then on, so can just return the rest of the state at the start of the timeline, along with a `prev_batch` for backpagination?
+ - Allow rest of state to be a paginated room member list (needs pinning on `since`, have it as a `room_member_stream_token`?).
