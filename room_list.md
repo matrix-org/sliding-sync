@@ -92,9 +92,48 @@ only return the respective fields that have changed e.g `timestamp` on new event
 
 The tracked room IDs can now be fed into a few different APIs.
 
+Server-side, the pagination operations performed for `room_list` are:
+- Load latest stream position or use `?since=` if provided, call it `SP`.
+- There is a `room_list` stream, so load all joined/invited rooms for this user at `SP`.
+- Multiplex together the `room_list` filter params.
+- Sort according to `sort` and subslice the room IDs based on `limit` (and `p` if it exists) to produce a list of room IDs `R`.
+- If the filter has `add_page` set:
+   * Load all tracked room IDs `T[room_id]` for this Session.
+   * Remove rooms from `T[room_id]` if they exist in `del_rooms`.
+   * append `R` and any in `add_rooms` to `T[room_id]`, de-duplicating existing entries.
+   * Save `T[room_id]`.
+- If `fields: []` then return no response.
+- Else Return `len(R)` objects with the appropriate `fields`.
+
+Server-side, the streaming operations performed for `room_list` are:
+- Load the latest stream position `SP` and the `since` value.
+- If the delta between the two positions is too large (heuristic), reset the session.
+- Multiplex together the `room_list` filter params.
+- Inspect the sort order as that will tell you what to notify on, based on the following rules:
+   * `by_tag`: If the tag account data has changed for a room between `SP` and `since`, load the room ID.
+   * `by_name`: If the `m.room.name` or `m.room.canonical_alias` or hereos have changed between `SP` and `since`, load the room ID.
+   * `by_member_count`: If the joined member count changed between `SP` and `since`, load the room ID.
+   * `by_recency`: If there are any events in this room between `SP` and `since`, load the room ID.
+- In addition, any newly joined rooms between `SP` and `since`, load the room ID.
+- Remember the room IDs loaded as `Radd` and the reasons why they were added (name, tag, etc).
+- Load all tracked room IDs `T[room_id]` for this Session.
+- Remember all room IDs which exist in `Radd` but not `T[room_id]` as `Rnew`.
+- If the filter has `streaming_add` set:
+   * Remove rooms from `T[room_id]` if they exist in `del_rooms`.
+   * Add rooms to `T[room_id]` present in `add_rooms` or `Radd`, de-duplicating existing entries.
+   * Save `T[room_id]`.
+- If `fields: []` then return no response.
+- Else return `len(Radd)` objects. Return only the modified field if the room ID is not present in `Rnew` e.g
+  tag, name, timestamp. Return all `fields` if the room ID is present in `Rnew`.
+
 ### Room Summary API
 
-This stream is NOT paginatable. This API is evaluated after the room list API if both streams are requested in a single `/sync` request.
+The purpose of this API is to provide **exactly** the information about a room ID to populate room summary views such as:
+ - the left-hand-side (LHS) menu on Element-Web
+ - the main room list on Element-Android
+
+...without having to track the entire room state. This stream is NOT paginatable. This API is evaluated after the room list API
+if both streams are requested in a single `/sync` request.
 
 ```
 POST /sync?since=
@@ -151,9 +190,9 @@ When streaming, the room can be invalidated and a delta sent to the client under
  - `heroes` is true and the list of heroes has changed or the number of invited/joined members has changed.
  - `last_event` is true and a new event was sent into the room.
 
-This means all new events for a room will be sent to the client if `last_event: true`, otherwise only changes
-in the state events / member counts / heroes will be communicated via this stream.
-
+When a delta is sent, only the changed information is sent to the client e.g `last_event` field only. This
+means all new events for a room will be sent to the client if `last_event: true` (assuming a high enough poll rate),
+otherwise only changes in the state events / member counts / heroes will be communicated via this stream. 
 
 With these two APIs, you can emulate Element-Web's LHS room list with the following request:
 ```
@@ -180,7 +219,7 @@ POST /sync?since=
 }
 ```
 
-Low-bandwidth clients which don't show the most recent message are also supported, and may just simply use the room list stream:
+Low-bandwidth clients which show only the room name and the tag (e.g favourites) are also supported, and may just simply use the room list stream:
 ```
 POST /sync?since=
 {
@@ -209,38 +248,4 @@ Returns a paginated list:
     }
 }
 ```
-
-Server-side, the pagination operations performed for `room_list` are:
-- Load latest stream position or use `?since=` if provided, call it `SP`.
-- There is a `room_list` stream, so load all joined/invited rooms for this user at `SP`.
-- Multiplex together the `room_list` filter params.
-- Sort according to `sort` and subslice the room IDs based on `limit` (and `p` if it exists) to produce a list of room IDs `R`.
-- If the filter has `add_page` set:
-   * Load all tracked room IDs `T[room_id]` for this Session.
-   * Remove rooms from `T[room_id]` if they exist in `del_rooms`.
-   * append `R` and any in `add_rooms` to `T[room_id]`, de-duplicating existing entries.
-   * Save `T[room_id]`.
-- If `fields: []` then return no response.
-- Else Return `len(R)` objects with the appropriate `fields`.
-
-Server-side, the streaming operations performed for `room_list` are:
-- Load the latest stream position `SP` and the `since` value.
-- If the delta between the two positions is too large (heuristic), reset the session.
-- Multiplex together the `room_list` filter params.
-- Inspect the sort order as that will tell you what to notify on, based on the following rules:
-   * `by_tag`: If the tag account data has changed for a room between `SP` and `since`, load the room ID.
-   * `by_name`: If the `m.room.name` or `m.room.canonical_alias` or hereos have changed between `SP` and `since`, load the room ID.
-   * `by_member_count`: If the joined member count changed between `SP` and `since`, load the room ID.
-   * `by_recency`: If there are any events in this room between `SP` and `since`, load the room ID.
-- In addition, any newly joined rooms between `SP` and `since`, load the room ID.
-- Remember the room IDs loaded as `Radd` and the reasons why they were added (name, tag, etc).
-- Load all tracked room IDs `T[room_id]` for this Session.
-- Remember all room IDs which exist in `Radd` but not `T[room_id]` as `Rnew`.
-- If the filter has `streaming_add` set:
-   * Remove rooms from `T[room_id]` if they exist in `del_rooms`.
-   * Add rooms to `T[room_id]` present in `add_rooms` or `Radd`, de-duplicating existing entries.
-   * Save `T[room_id]`.
-- If `fields: []` then return no response.
-- Else return `len(Radd)` objects. Return only the modified field if the room ID is not present in `Rnew` e.g
-  tag, name, timestamp. Return all `fields` if the room ID is present in `Rnew`.
 
