@@ -156,6 +156,7 @@ func (s *RoomMember) DataInRange(session *sync3.Session, fromExcl, toIncl int64,
 }
 
 func (s *RoomMember) paginatedDataAtPoint(session *sync3.Session, pos int64, sortOrder RoomMemberSortOrder, request *Request, resp *Response) error {
+	// TODO: check that the user is in the room at `pos`
 	// Load room state at pos
 	events, err := s.storage.RoomStateAfterEventPosition(request.RoomMember.RoomID, pos)
 	if err != nil {
@@ -261,6 +262,7 @@ func (s *RoomMember) paginatedDataAtPoint(session *sync3.Session, pos int64, sor
 }
 
 func (s *RoomMember) streamingDataInRange(session *sync3.Session, fromExcl, toIncl int64, request *Request, resp *Response) (int64, error) {
+	// TODO: check that the user is in the room at fromExcl and toIncl, else stop at the last state
 	// Load the room member delta (honouring the limit) for the room
 	events, upTo, err := s.storage.RoomMembershipDelta(request.RoomMember.RoomID, fromExcl, toIncl, request.RoomMember.Limit)
 	if err != nil {
@@ -270,36 +272,3 @@ func (s *RoomMember) streamingDataInRange(session *sync3.Session, fromExcl, toIn
 	resp.RoomMember.Events = events
 	return upTo, nil
 }
-
-/*
-Dev notes:
-
-Initially clients will call this stream with a room ID and know nothing about the room. They need to
-specify how they want paginated results to be sorted (by PL, by name, etc). They will also need to set a sensible limit depending on their
-needs (LB clients may have a limit as low as 5, ele-web may be 50). For small rooms, this may return the entire room member list and no P section.
-All is well. For big rooms, a P block is returned and results are sorted by the `sort` value given.
-Omission of a sort is valid, and implies "chronological" or "arrival" time, starting at the oldest.
-
-The client then has to decide between incrementally filling in the room member list or leaving
-it alone. Ele-Web may do the former but LB clients will do the latter. To fill in, the next sync request
-must include the P block with the `P.next` value in it and they MUST NOT advance the since token. They
-repeat this operation until all events are received. For LB clients, they do nothing special here as they
-already have all the data they are comfortable receiving.
-
-Clients then want to get deltas on the data they already have (full or partial). For full clients, they
-just advance their since token and by default they will receive new member events in arrival order: that
-is to say the omission of a `sort` implies `sort: arrival`. For LB clients, they advance their token with
-a sort order to control whether or not new member events should be returned to them. For example, `sort: by_pl`
-with a limit of 5 on the first page of results in a room with 10 admins and 100 regular users would
-NOT NOTIFY the client if a regular user joined or left in this API because it doesn't change the first page
-of results (think the right-hand-side member list on element-web).
-
-Behind the scenes, the server is tracking a few things. Each event in any room increments the event position,
-and this is used to anchor paginated responses (this is what from/to positions are in this file). At any given
-event position, the member list is /generally/ treated as immutable. New event positions MAY alter prior state (think merging two forks in the DAG).
-If this happens, any existing paginated requests are invalidated and clients will need to start paginating again. <-- TODO
-
-TODO: how much state do we need to remember to do deltas correctly? Specifically for first-page-only thin clients
-where in practice we only have arrival deltas and need to then apply them over-the-top of an existing snapshot? Or
-grab 2 complete room snapshots and then re-calculate the sort order?
-*/

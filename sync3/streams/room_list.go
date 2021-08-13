@@ -1,8 +1,6 @@
 package streams
 
 import (
-	"encoding/json"
-
 	"github.com/matrix-org/sync-v3/state"
 	"github.com/matrix-org/sync-v3/sync3"
 )
@@ -24,29 +22,25 @@ type RoomListSortOrder string
 
 const (
 	// Sort rooms based on the most recent event in the room. Newer first.
-	SortRoomListByRecency RoomListSortOrder = "by_recent"
+	SortRoomListByRecency RoomListSortOrder = "by_recency"
 	// Sort rooms based on their tag in this user's account data.
 	// Follows the `order` value if one exists. Lower first.
 	// See https://matrix.org/docs/spec/client_server/latest#room-tagging
 	SortRoomListByTag RoomListSortOrder = "by_tag"
+
+	SortRoomListByName RoomListSortOrder = "by_name"
 )
 
 // FilterRoomList represents a filter on the RoomList stream
 type FilterRoomList struct {
-	// Which event types should be returned as the latest event in the room.
-	// Clients should include only events they know how to render here.
-	// Empty set = everything
-	LastEventTypes []string `json:"last_event_types"`
-	// The number of rooms to return per request.
-	// Clients should return at least 1 screen's worth of data (based on viewport size)
-	// Server can override this value.
-	Limit int `json:"limit"`
-	// how to sort the rooms in the response. The first sort option is applied first, then any identical
-	// values are sorted by the next sort option and so on. E.g [by_tag, by_recent] sorts the rooms by
-	// tags first (abiding by the 'order' in the spec) then sorts matching tags by most recent first
-	Sorts []RoomListSortOrder `json:"sorts"`
-	// The event type, state key tuple of a piece of room state to return.
-	IncludeStateEvents [][2]string `json:"include_state_events"`
+	Sort   []RoomListSortOrder `json:"sort"`
+	Limit  int                 `json:"limit"`
+	Fields []string            `json:"fields"`
+	// tracking vars
+	AddPage      bool     `json:"add_page"`
+	StreamingAdd bool     `json:"streaming_add"`
+	AddRooms     []string `json:"add_rooms"`
+	DelRooms     []string `json:"del_rooms"`
 	// The pagination parameters to request the next page of results.
 	P *P `json:"p,omitempty"`
 }
@@ -58,14 +52,14 @@ func (r *FilterRoomList) Validate() {
 	if r.Limit <= 0 {
 		r.Limit = DefaultRoomList
 	}
-	if r.Sorts == nil {
-		r.Sorts = DefaultRoomListSorts
+	if r.Sort == nil {
+		r.Sort = DefaultRoomListSorts
 	}
 	// validate the sorts
-	for i := range r.Sorts {
-		if !KnownRoomListSorts[r.Sorts[i]] {
+	for i := range r.Sort {
+		if !KnownRoomListSorts[r.Sort[i]] {
 			// remove it
-			r.Sorts = append(r.Sorts[:i], r.Sorts[i+1:]...)
+			r.Sort = append(r.Sort[:i], r.Sort[i+1:]...)
 		}
 	}
 }
@@ -81,13 +75,11 @@ type RoomListResponse struct {
 }
 
 type RoomListEntry struct {
-	RoomID      string                     `json:"room_id"`
-	StateEvents map[string]json.RawMessage `json:"state_events"`
-	MemberCount int                        `json:"member_count"`
-	LastEvent   json.RawMessage            `json:"last_event"`
-	RoomType    string                     `json:"room_type"` // e.g spaces
-	IsDM        bool                       `json:"dm"`        // from the m.direct event in account data
-	NumUnread   int                        `json:"unread"`
+	RoomID    string      `json:"room_id"`
+	Name      string      `json:"name"`
+	Timestamp int64       `json:"timestamp"`
+	Tag       interface{} `json:"tag"`
+	// MemberCount TODO
 }
 
 // RoomList represents a stream of room summaries.
@@ -139,6 +131,7 @@ func (s *RoomList) DataInRange(session *sync3.Session, fromExcl, toIncl int64, r
 }
 
 func (s *RoomList) paginatedDataAtPoint(session *sync3.Session, pos int64, request *Request, resp *Response) error {
+	s.storage.JoinedRooms(session.UserID, pos)
 	// find all invited / joined rooms for this user
 	// populate summaries
 	// offset based on P

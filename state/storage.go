@@ -116,3 +116,7 @@ func (s *Storage) AllJoinedMembers() (map[string][]string, error) {
 	}
 	return result, nil
 }
+
+func (s *Storage) JoinedRooms(userID string, pos int64) {
+
+}
