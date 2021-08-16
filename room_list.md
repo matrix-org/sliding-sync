@@ -360,4 +360,5 @@ Server-side, the streaming operations performed for `room_list` are:
     * `room_data.remove_from_summary: true` : This removes it lazily, but its unclear what "removal" is: which list? Same drawbacks as above.
 - `room_list`: How do you convey invited or left rooms? Particularly for left rooms, server implementations need to be careful
   to update the room list AFTER all the other streams (so you get the leave event) which is the opposite for joins/normal operations.
-- 
+- `room_list`: How do we handle spaces? We can enumerate rooms where there are space state events, but the sort order is unclear, including
+  whether to consider subspaces. Sorting could inherit the sort args of the original request, but do we do this depth-first (enumerate all the rooms in a space) or breadth-first (enumerate all top-level spaces). Lots of overlap with the spaces summary API.
