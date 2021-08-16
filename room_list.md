@@ -280,6 +280,39 @@ Returns the response:
 - `members.events`: The `m.room.member` state events at the start of the timeline, same as `state.events`. May be partial, depending on the `room_member_limit`.
   Sorted according to the `room_member_sort` value.
 
+### Room Member API
+
+The purpose of this API is to provide a paginated list of room members for a given room.
+
+```
+POST /sync?since=
+{
+    room_member: {
+        room_id: "room_list",
+        limit: 5,
+        sort: "by_pl"
+    }
+}
+```
+- `room_id`: The room to fetch members in.
+- `limit`: The max number of members to fetch per page.
+- `sort`: How to sort the list of room members. One of:
+    * `by_name`: Lexicographical order from A->Z (case-insensitive, unicode case-folding)
+    * `by_pl`: Sort highest power level first, then `by_name`.
+
+Returns the response:
+```
+{
+    room_member: {
+        limit: 5,
+        events: [ m.room.member events ]
+        next_page: "p1"
+    }
+}
+```
+- `limit`: The negotiated limit, may be lower than the `limit` requested.
+
+
 
 ### Server implementation guide
 
