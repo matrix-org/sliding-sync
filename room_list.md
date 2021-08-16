@@ -71,8 +71,8 @@ Returns the response:
     next_batch: "s1"
 }
 ```
-Clients don't need to paginate through the entire list of rooms so they can ignore `p.next` if they wish.
-If they want to paginate, they provide the value of `p.next` in the next request along with the `next_batch` value,
+Clients don't need to paginate through the entire list of rooms so they can ignore `next_page` if they wish.
+If they want to paginate, they provide the value of `next_page` in the next request along with the `next_batch` value,
 to pin the results to a particular snapshot in time.
 
 If a request comes in without a pagination token but with a `?since=` value, this swaps this API into **streaming mode**.
@@ -118,7 +118,7 @@ POST /sync?since=
 - `track_timeline`: If true, returns a live stream of events for this room.
 - `state_events`: Array of 2-element arrays. The subarray `[0]` is the event type, `[1]` is the state key.
    The state events to return in the response. This format compresses better in low bandwidth mode.
-- `lazy_room_member`: If true then the `m.room.member` event for `last_event` will be sent to the client based on an LRU cache.
+- `lazy_room_member`: If true then the `m.room.member` events for timeline events will be sent to the client based on an LRU cache.
    This guarantees you'll be told the room member who spoke last, and subsequent times you will not be told (mostly).
 - `heroes`: If set, returns the `summary` object from sync v2:
    ```
@@ -242,20 +242,22 @@ POST /sync?since=
 Returns the response:
 ```
 {
-    rooms: {
-        $room_id: {
-            state: {
-                state_before: "$aaaa",
-                events: [ ... ]
-            },
-            members: {
-                events: [ ... ],
-                next_batch: "s1",
-                next_page: "p1"
-            },
-            timeline: {
-                prev_batch: "p1",
-                events: [ ... ]
+    room_data: {
+        rooms: {
+            $room_id: {
+                state: {
+                    state_before: "$aaaa",
+                    events: [ ... ]
+                },
+                members: {
+                    events: [ ... ],
+                    next_batch: "s1",
+                    next_page: "p1"
+                },
+                timeline: {
+                    prev_batch: "p1",
+                    events: [ ... ]
+                }
             }
         }
     }
@@ -280,7 +282,7 @@ Returns the response:
 - `members.events`: The `m.room.member` state events at the start of the timeline, same as `state.events`. May be partial, depending on the `room_member_limit`.
   Sorted according to the `room_member_sort` value.
 
-### Room Member API
+### Room Member API
 
 The purpose of this API is to provide a paginated list of room members for a given room.
 
@@ -311,8 +313,6 @@ Returns the response:
 }
 ```
 - `limit`: The negotiated limit, may be lower than the `limit` requested.
-
-
 
 ### Server implementation guide
 
@@ -349,3 +349,21 @@ Server-side, the streaming operations performed for `room_list` are:
 - If `fields: []` then return no response.
 - Else return `len(Radd)` objects. Return only the modified field if the room ID is not present in `Rnew` e.g
   tag, name, timestamp. Return all `fields` if the room ID is present in `Rnew`.
+
+
+### Notes, Rationale and Queries
+
+- `room_data`: Only the member events are paginated, not the entire room state. This is probably okay as the vast
+  majority of current state in rooms are actually just member events. Member events can be sorted coherently, but
+  arbitrary state events cannot (what do you sort by?).
+- `room_summary`: It's unclear how to unregister a room once you're tracking the summaries for it. In reality, if you start reading the `room_data`
+  for a room then you probably want to unregister the associated `room_summary`. This can be done in a few ways, all with
+  annoying trade-offs:
+    * `room_list.del_rooms: ["!foo:bar"]` : This will remove the room from the room list and hence drop it from the summary.
+      However, this would also drop it from the `room_data` API.
+    * `room_summary.del_rooms: ["!foo:bar"]` : This removes the room from the room summary API but not any others. This however
+      creates 2 sets of room lists which is awkward and clunky.
+    * `room_data.remove_from_summary: true` : This removes it lazily, but its unclear what "removal" is: which list? Same drawbacks as above.
+- `room_list`: How do you convey invited or left rooms? Particularly for left rooms, server implementations need to be careful
+  to update the room list AFTER all the other streams (so you get the leave event) which is the opposite for joins/normal operations.
+- 
