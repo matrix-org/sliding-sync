@@ -75,7 +75,7 @@ Responses are split stream-by-stream:
     "room_members": {
         "events": [ Room Member Events]
     },
-    "next": "sync_v3_token"
+    "next_batch": "sync_v3_token"
 }
 ```
 
@@ -98,39 +98,24 @@ can have the response:
 ```
 This is called _negotiation_ and most streams will have some form of negotiated request parameters.
 
-Some streams are paginatable. Paginatable streams accept and return a `p` JSON object which contains pagination
-parameters. The `p` object looks like:
+Some streams are paginatable. Paginatable streams accept and return a `next_page` string which contains the pagination
+token:
 ```json
 {
     "room_members": {
-        "p": {
-            "next": "1" // opaque token
-        }
-    }
-}
-```
-
-When paginated streams are returned, the next page token is contained within `p`:
-```json
-{
-    "room_members": {
-        "p": {
-            "next": "$token_to_use_for_next_page"
-        },
-        "events": [ Room Member Events ]
+        "events": [ Room Member Events ],
+        "next_page": "next_page_token"
     },
-    "next": "$token_to_use_to_get_new_events"
+    "next_batch": "$token_to_use_to_get_new_events"
 }
 ```
-To visualise this, the value of `?since=` is a snapshot of the room, and `p.next` paginates through
+To visualise this, the value of `?since=` is a snapshot of the room, and `next_page` paginates through
 this snapshot. This means that when paginating you MUST NOT advance your `?since=` value. Clients can
-request the next page by specifying `next` inside `p`:
+request the next page by specifying `next_page` in their request:
 ```json
 {
     "room_members": {
-        "p": {
-            "next": "$token_from_p_next"
-        }
+        "next_page": "next_page_token"
     }
 }
 ```

@@ -66,9 +66,7 @@ Returns the response:
             },
             { ... }
         ],
-        p: {
-            next: "next_page_token"
-        }
+        "next_page": "next_page_token"
     },
     next_batch: "s1"
 }
@@ -212,9 +210,7 @@ Returns a paginated list:
             },
             { ... }
         ],
-        p: {
-            next: "p1"
-        }
+        "next_page": "p1"
     }
 }
 ```
