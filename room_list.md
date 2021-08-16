@@ -12,9 +12,9 @@ with data initially. This is **pagination mode**.
 POST /sync?since=
 {
     room_list: {
-        sort: ["by_tag", "by_name", "by_member_count", "by_recency"]
+        sort: ["by_tag", "by_name", "by_recency"]
         limit: 5,
-        fields: ["tag","name","member_count","timestamp"],
+        fields: ["tag","name","timestamp"],
 
         add_page: true,
         streaming_add: true,
@@ -24,24 +24,21 @@ POST /sync?since=
 }
 ```
 - `sort`: The sort operations to perform on the rooms. The first element is applied first, then tiebreaks
-  are done with the 2nd element, then 3rd, and so on. For example: `["by_tag", "by_name", "by_member_count", "by_recency"]`:
+  are done with the 2nd element, then 3rd, and so on. For example: `["by_tag", "by_name", "by_recency"]`:
   ```
-  [FAV] BBB Some Room Name (100 members) - last msg: 1s ago
-  [FAV] BBB Some Room Name (100 members) - last msg: 5m ago
-  [FAV] BBB Some Room Name (98 members)
+  [FAV] BBB Some Room Name - last msg: 1s ago
+  [FAV] BBB Some Room Name - last msg: 5m ago
   [FAV] AAA Some Room Name
   Some Room Name
   ```
     * `by_tag`: Inspect the [room tags](https://spec.matrix.org/unstable/client-server-api/#room-tagging) on this account and sort based on `order`, lower comes first.
     * `by_name`: [Calculate the room name](https://spec.matrix.org/unstable/client-server-api/#calculating-the-display-name-for-a-room) and sort lexiographically A-Z, A comes first.
-    * `by_member_count`: Sort based on joined member count, higher comes first.
     * `by_recency`: Sort based on the last event's `origin_server_ts`, higher comes first.
 - `limit`: The number of rooms to return per page.
 - `fields`: The fields to return in the response:
   ```
   name: The room name (from m.room.name or server-side calculated from members)
   timestamp: origin_server_ts of last event in timeline
-  member_count: number of joined users
   tag: the tag object for the room in account data  e.g { m.favourite: { order: 0.1111 }}
   ```
 The final 4 parameters control what the server is tracking. The room list stream remembers a set of room IDs across
@@ -60,7 +57,6 @@ Returns the response:
             {
                 room_id: "!foo:bar",
                 name: "My room name",
-                member_count: 53,
                 timestamp: 16823744325,
                 tag: { m.favourite: { order: 0.1111 }}
             },
@@ -81,7 +77,6 @@ When operating in **streaming mode**, rooms will be sent to the client based on 
  - `by_recency`: any event in ANY room the client is joined to (even ones not returned to the client before) will cause the room to be sent to the client.
  - `by_tag`: any time ANY room tag is changed in this user's account data, send the room to the client.
  - `by_name`: any time ANY room data involved in [calculating the room name](https://spec.matrix.org/unstable/client-server-api/#calculating-the-display-name-for-a-room) changes, send the room to the client.
- - `by_member_count`: any time ANYONE joins or leaves a room the client is joined to, send the room to the client.
  
 The fields present in the response depends on the `fields` in the request and whether the room ID in question has been
 added to the tracked list. Any room that wasn't previously tracked but now is will return all the `fields` in
@@ -336,7 +331,6 @@ Server-side, the streaming operations performed for `room_list` are:
 - Inspect the sort order as that will tell you what to notify on, based on the following rules:
    * `by_tag`: If the tag account data has changed for a room between `SP` and `since`, load the room ID.
    * `by_name`: If the `m.room.name` or `m.room.canonical_alias` or hereos have changed between `SP` and `since`, load the room ID.
-   * `by_member_count`: If the joined member count changed between `SP` and `since`, load the room ID.
    * `by_recency`: If there are any events in this room between `SP` and `since`, load the room ID.
 - In addition, any newly joined rooms between `SP` and `since`, load the room ID.
 - Remember the room IDs loaded as `Radd` and the reasons why they were added (name, tag, etc).
