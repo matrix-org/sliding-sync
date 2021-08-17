@@ -1,9 +1,13 @@
-### Room List API
+### Room List Stream
+
+This is the first stream a client will access on a freshly logged-in client.
 
 The purpose of this API is to:
  - provide the client with a list of room IDs sorted based on some useful sort criteria. Critically,
    the data used to sort these rooms  _is told to the client_ so they can continue to sort rooms as live streaming data comes in.
- - Track a list of room IDs the client is interested in, for feeding into other APIs automagically.
+ - Track a list of room IDs the client is interested in, for feeding into other APIs automagically. This saves bandwidth as the full
+   list of room IDs don't need to be constantly sent back and forth.
+ - provide **exactly** the information about a room ID to populate room summary without having to track the entire room state.
 
 This stream is paginatable. The first "initial" sync always returns a paginated response to seed the client
 with data initially. This is **pagination mode**.
@@ -12,201 +16,171 @@ with data initially. This is **pagination mode**.
 POST /sync?since=
 {
     room_list: {
-        sort: ["by_tag", "by_name", "by_recency"]
-        limit: 5,
-        fields: ["tag","name","timestamp"],
-
-        add_page: true,
-        streaming_add: true,
-        add_rooms: [!foo:bar],
-        del_rooms: [!foo:bar]
+        sort: ["by_name", "by_recency"]
+        room_limit: 5,
+        state_events: [
+          ["m.room.topic", ""],
+          ["m.room.avatar", ""]
+        ],
+        space_limit: 5,
+        spaces: ["!foo:bar", "!baz:quuz"],
+        lazy_load_members: true,
+       
+        track_spaces: ["!foo:bar"],
+        untrack_spaces: ["!foo:bar"],
+        track_notifications: true
     }
 }
 ```
-- `sort`: The sort operations to perform on the rooms. The first element is applied first, then tiebreaks
-  are done with the 2nd element, then 3rd, and so on. For example: `["by_tag", "by_name", "by_recency"]`:
+- `sort`: (default: `by_recency`) The sort operations to perform on the rooms. The first element is applied first, then tiebreaks
+  are done with the 2nd element, then 3rd, and so on. For example: `["by_name", "by_recency"]`:
   ```
-  [FAV] BBB Some Room Name - last msg: 1s ago
-  [FAV] BBB Some Room Name - last msg: 5m ago
-  [FAV] AAA Some Room Name
+  Another Room Name
+  Random Room Name (last msg: 5m ago)
+  Random Room Name (last msg: 15h ago)
   Some Room Name
   ```
-    * `by_tag`: Inspect the [room tags](https://spec.matrix.org/unstable/client-server-api/#room-tagging) on this account and sort based on `order`, lower comes first.
-    * `by_name`: [Calculate the room name](https://spec.matrix.org/unstable/client-server-api/#calculating-the-display-name-for-a-room) and sort lexiographically A-Z, A comes first.
+    * `by_name`: [Calculate the room name](https://spec.matrix.org/unstable/client-server-api/#calculating-the-display-name-for-a-room) and sort lexiographically A-Z, A comes first. This means servers need to handle heroes and internationalisation.
     * `by_recency`: Sort based on the last event's `origin_server_ts`, higher comes first.
-- `limit`: The number of rooms to return per page.
-- `fields`: The fields to return in the response:
-  ```
-  name: The room name (from m.room.name or server-side calculated from members)
-  timestamp: origin_server_ts of last event in timeline
-  tag: the tag object for the room in account data  e.g { m.favourite: { order: 0.1111 }}
-  ```
-The final 4 parameters control what the server is tracking. The room list stream remembers a set of room IDs across
-requests for use with other APIs. If `add_page: true` then the room IDs returned in the response will be added to
-this list. If `streaming_add: true` then any new room that appears as a result of streaming will be added to the set of room IDs.
-If `add_rooms` has room IDs in it then they will be added to the list explicitly, and `del_rooms` will delete the rooms from the list.
-It is allowed to have an explicit `fields: []` which will not return any data via this stream and instead just update the tracked
-room IDs. This is useful if you are getting the room name / latest events via another stream.
-
+- `room_limit`: (default: 20) The number of rooms to return per space. The maximum number of rooms returned per response is `room_limit * space_limit`.
+- `state_events`: (default: `[]`) Array of 2-element arrays. The subarray `[0]` is the event type, `[1]` is the state key.
+   The state events to return in the response. This format compresses better in low bandwidth mode.
+- `space_limit`: (default: 5) The number of spaces to return per page. Rooms without a space get bucketed into an "orphan" space. Subspaces are not enumerated.
+- `spaces`:  (default: `[]`) Limit the room list enumeration to the following spaces. The client must be joined to these spaces.
+- `lazy_load_members`: (default: `true`) If true, returns the `m.room.member` events for senders in the timeline.
+- `track_spaces`: (default: `[]`) "Explicitly" add these space rooms to the tracked list. The set of tracked spaces is remembered across requests.
+- `untrack_spaces`: (default: `[]`) Remove these space rooms from the tracked list. The set of tracked spaces is remembered across requests.
+- `track_notifications`: (default: `true`)  If true, events which would [cause a notification to appear](https://spec.matrix.org/unstable/client-server-api/#receiving-notifications) will cause the room to appear in this list. For E2E rooms, all events will be notified as it's impossible to know if the encrypted event should cause a notification.
 
 Returns the response:
 ```
 {
     room_list: {
-        rooms: [
-            {
-                room_id: "!foo:bar",
-                name: "My room name",
-                timestamp: 16823744325,
-                tag: { m.favourite: { order: 0.1111 }}
-            },
-            { ... }
+        spaces: [
+          {
+            room_id: "!foo:bar",
+            name: "My space name",
+            state_events: [
+             { event JSON }
+            ],
+            rooms: [
+                {
+                    room_id: "!aaaa:bar",
+                    name: "My room name",
+                    state_events: [
+                      { event JSON }, { lazy m.room.member }
+                    ],
+                    prev_batch: "backpagination_token",
+                    timeline: [
+                      { last event JSON }
+                    ]
+                },
+                { ... }
+            ],
+            "next_page": "get_more_rooms_token"
+          },
+          {
+            rooms: [
+                {
+                    room_id: "!aaaa:bar",
+                    name: "Room not in any space",
+                    state_events: [
+                      { event JSON }
+                    ],
+                    prev_batch: "backpagination_token",
+                    timeline: [
+                      { last event JSON }
+                    ]
+                },
+                { ... }
+            ],
+            "next_page": "get_more_rooms_token"
+          }
         ],
-        "next_page": "next_page_token"
+        notifications: [
+          {
+            room_id: "!bbbb:bar",
+            name: "Room that might be in a space but is here because you got pinged",
+            state_events: [
+              { event JSON }
+            ],
+            prev_batch: "backpagination_token",
+            timeline: [
+              { notification event JSON }
+            ]
+          }
+        ]
+        "next_page": "get_more_spaces_token"
     },
     next_batch: "s1"
 }
 ```
-Clients don't need to paginate through the entire list of rooms so they can ignore `next_page` if they wish.
+- `spaces`: The ordered list of spaces.
+- `spaces[].room_id`: The room ID of this space. If the room ID is missing, this is the "orphaned" space.
+- `spaces[].name`: The calculated name of this space. If the name is missing, this is the "orphaned" space.
+- `spaces[].state_events`: A list of state events requested via `state_events`.
+- `spaces[].rooms`: A sorted list of rooms that belong to this space.
+- `spaces[].next_page`: A pagination token to retrieve more rooms in this space.
+- `spaces[].rooms[].room_id`: The room ID of this room.
+- `spaces[].rooms[].name`: The calculated name of this room.
+- `spaces[].rooms[].state_events`: A list of state events requested via `state_events`.
+- `spaces[].rooms[].prev_batch`: The backpagination token for `/messages`.
+- `spaces[].rooms[].timeline`: An ordered list of events in the timeline. The last event is the most recent.
+- `notifications`: An ordered list of `spaces[].rooms` based on notification criteria. Returned only if `track_notifications: true`.
+- `next_page`: A pagination token to retrieve more spaces.
+
+Clients don't need to paginate through the entire list of spaces/rooms so they can ignore `next_page` if they wish.
 If they want to paginate, they provide the value of `next_page` in the next request along with the `next_batch` value,
-to pin the results to a particular snapshot in time.
-
-If a request comes in without a pagination token but with a `?since=` value, this swaps this API into **streaming mode**.
-
-When operating in **streaming mode**, rooms will be sent to the client based on their `sort` preferences:
- - `by_recency`: any event in ANY room the client is joined to (even ones not returned to the client before) will cause the room to be sent to the client.
- - `by_tag`: any time ANY room tag is changed in this user's account data, send the room to the client.
- - `by_name`: any time ANY room data involved in [calculating the room name](https://spec.matrix.org/unstable/client-server-api/#calculating-the-display-name-for-a-room) changes, send the room to the client.
- 
-The fields present in the response depends on the `fields` in the request and whether the room ID in question has been
-added to the tracked list. Any room that wasn't previously tracked but now is will return all the `fields` in
-the request. That means `streaming_add: true` is required for all fields to be present. Already tracked rooms will
-only return the respective fields that have changed e.g `timestamp` on new events, to avoid sending redundant data.
-
-The tracked room IDs can now be fed into a few different APIs.
-
-### Room Summary API
-
-The purpose of this API is to provide **exactly** the information about a room ID to populate room summary views such as:
- - the left-hand-side (LHS) menu on Element-Web
- - the main room list on Element-Android
-
-...without having to track the entire room state. This stream is NOT paginatable. This API is evaluated after the room list API
-if both streams are requested in a single `/sync` request.
-
+to pin the results to a particular snapshot in time:
 ```
-POST /sync?since=
+POST /sync?since=s1
 {
-    room_summary: {
-        room_id: "room_list",
-        track_timeline: true,
-        lazy_room_member: true,
-        heroes: true,
-        state_events: [
-            ["m.room.name", ""],
-            ["m.room.topic", ""],
+    room_list: {
+        next_page: "get_more_spaces_token|get_more_rooms_token"
+    }
+}
+```
+The server will track which rooms have been sent to the client. If a room has already been sent before, only the `room_id` field will be present
+in order to save on bandwidth. For example, if you receive 2 notifications in the same room, the 2nd notification will look like:
+```
+{
+    room_list: {
+        notifications: [
+          {
+            room_id: "!bbbb:bar",
+            timeline: [
+              { 2nd notification event JSON }
+            ]
+          }
         ]
     }
 }
 ```
-- `room_id`: The room ID to get a summary for, or the magic constant `"room_list"` to pull from tracked room IDs.
-- `track_timeline`: If true, returns a live stream of events for this room.
-- `state_events`: Array of 2-element arrays. The subarray `[0]` is the event type, `[1]` is the state key.
-   The state events to return in the response. This format compresses better in low bandwidth mode.
-- `lazy_room_member`: If true then the `m.room.member` events for timeline events will be sent to the client based on an LRU cache.
-   This guarantees you'll be told the room member who spoke last, and subsequent times you will not be told (mostly).
-- `heroes`: If set, returns the `summary` object from sync v2:
-   ```
-    "summary": {
-        "m.heroes": [
-            "@alice:example.com",
-            "@bob:example.com"
-        ],
-        "m.invited_member_count": 0,
-        "m.joined_member_count": 2
-    }
-    ```
 
-Returns the response:
-```
-{
-    room_summary: {
-        $room_id: {
-            timeline: {
-                events: [ event JSON ]
-            },
-            lazy_room_member: { m.room.member event JSON }
-            summary: { "m.heroes": [ ... ]}
-            state_events: [
-                { event JSON },
-                { event JSON },
-            ]
-        }
-    },
-    next_batch: "s3"
-}
-```
-When streaming, the room can be invalidated and a delta sent to the client under the following circumstances:
- - `state_events` is non-empty and a state event matched in `state_events` has changed.
- - `heroes` is true and the list of heroes has changed or the number of invited/joined members has changed.
- - `track_timeline` is true and a new event (or more, depending on the poll rate and activity in the room) was sent into the room.
+If a request comes in without a `next_page` pagination token but with a `?since=` value, this swaps this API into **streaming mode**.
 
-When a delta is sent, only the changed information is sent to the client e.g `timeline.events` field only. This
-means all new events for a room will be sent to the client if `track_timeline: true`,
-otherwise only changes in the state events / member counts / heroes will be communicated via this stream. 
+When operating in **streaming mode**, rooms will be sent to the client based on their membership of a space:
+ - For an event E that arrives in a room R, get the set of spaces S that R belongs to. The empty set is valid and is the "orphaned" space.
+ - If ANY matched space is "explicitly" tracked (via `track_spaces`) then send E to the client.
+ - If ANY matched space is "implicitly" tracked (returned to the client in `spaces`) then send E to the client.
+ - Else, do not send E to the client. This means the space must be either not returned to the client OR explicitly untracked via `untrack_spaces`
+   in order for this to happen.
 
-With these two APIs, you can emulate Element-Web's LHS room list with the following request:
+
+With this API, you can _mostly_ (favourites need to be part of a space) emulate Element-Web's LHS room list with the following request:
 ```
 POST /sync?since=
 {
     room_list: {
-        sort: ["by_tag", "by_recency"]
-        limit: 20,  // based on viewport
-        fields: ["tag"],
-        add_page: true,
-        streaming_add: true,
-    },
-    room_summary: {
-        room_id: "room_list",
-        track_timeline: true,
-        lazy_room_member: true,
-        heroes: true,
+        sort: ["by_recency", "by_name"]
+        room_limit: 5,
         state_events: [
-            ["m.room.name", ""],
-            ["m.room.canonical_alias", ""],
-            ["m.room.avatar", ""],
+          ["m.room.avatar", ""]
         ],
-    }
-}
-```
-The room list API provides the number of favourites, etc (you get back a sorted list of room IDs with `tag` fields).
-The room summary API provides the info for the room name/avatar and the most recent message along with the lazy-loaded member.
-
-Low-bandwidth clients which show only the room name and the tag (e.g favourites) are also supported, and may just simply use the room list stream:
-```
-POST /sync?since=
-{
-    room_list: {
-        sort: ["by_name"],
-        limit: 20,
-        fields: ["name","tag"],
-        add_page: true,
-        streaming_add: true
-    }
-}
-Returns a paginated list:
-{
-    room_list: {
-        rooms: [
-            {
-                room_id: "!foo:bar",
-                name: "My room name",
-                tag: { m.favourite: { order: 0.1111 }}
-            },
-            { ... }
-        ],
-        "next_page": "p1"
-    }
+        space_limit: 5,
+        lazy_load_members: true,
+        track_notifications: true
+    },
 }
 ```
 
@@ -222,17 +196,22 @@ POST /sync?since=
         room_id: "room_list",
         earliest_timeline_event_ids: ["$aaaa","$bbbb"],
         room_member_limit: 5,
-        room_member_sort: "by_pl"
+        room_member_sort: "by_pl",
+        format: "client|federation",
+        types: [ "m.room.message" ],
+        not_types: [ "m.room.topic" ]
     }
 }
 ```
 - `room_id`: The room ID to get a data for, or the magic constant `"room_list"` to pull from tracked room IDs.
 - `earliest_timeline_event_ids`: Optional. If set, the room data API will not return any events between the event ID given
   and the `since` value provided in this request (inclusive of both), as the server will assume it has been fetching the timeline by other means
-  such as the room summary API.
+  such as the room list API.
 - `room_member_limit`: The maximum number of room members to fetch for each room. If the limit is exceeded, a pagination token for
   the room member stream will be provided. If 0 or missing, does not paginate room members.
 - `room_member_sort`: Enum representing the sort order. See the room member stream for full values.
+- `format`: (default: `client`) The event format to send back. See [Filtering](https://spec.matrix.org/unstable/client-server-api/#filtering)
+- `types` and `not_types`: [Event filters](https://spec.matrix.org/unstable/client-server-api/#filtering) to use.
 
 Returns the response:
 ```
@@ -263,7 +242,7 @@ Returns the response:
   events. Only after that point should the events in `timeline.events` be applied. In this case, the `timeline.prev_batch` refers to the batch of
   events prior to the event in `state_before`, NOT `timeline.events[0].event_id`. To be clear:
   ```
-       from room summary     timeline.events
+       from room list        timeline.events
      [$aaa,$bbb,$ccc, $ddd] [$eee, $fff, $ggg]
      ^
      |
@@ -351,31 +330,9 @@ Server-side, the streaming operations performed for `room_list` are:
 
 - How do you convey invited or left rooms? Particularly for left rooms, server implementations need to be careful
   to update the room list AFTER all the other streams (so you get the leave event) which is the opposite for joins/normal operations.
-- How do we handle spaces? We can enumerate rooms where there are space state events, but the sort order is unclear, including
-  whether to consider subspaces. Sorting could inherit the sort args of the original request, but do we do this depth-first (enumerate all the rooms in a space) or breadth-first (enumerate all top-level spaces). Lots of overlap with the spaces summary API.
-- It's implied that the room list stream is capable of implementing the "calculating the room name" algorithm in order to populate the `name` field.
-  Is this assumption safe in E2EE rooms?
-
-#### Room summary
-
-- It's unclear how to unregister a room once you're tracking the summaries for it. In reality, if you start reading the `room_data`
-  for a room then you probably want to unregister the associated `room_summary`. This can be done in a few ways, all with
-  annoying trade-offs:
-    * `room_list.del_rooms: ["!foo:bar"]` : This will remove the room from the room list and hence drop it from the summary.
-      However, this would also drop it from the `room_data` API.
-    * `room_summary.del_rooms: ["!foo:bar"]` : This removes the room from the room summary API but not any others. This however
-      creates 2 sets of room lists which is awkward and clunky.
-    * `room_data.remove_from_summary: true` : This removes it lazily, but its unclear what "removal" is: which list? Same drawbacks as above.
-  You kind of want to "upgrade" a single room on the room list, without removing it, then "demote" it again when you aren't interested in tracking it anymore.
-  This implies the room data API should _not_ support a room list option, so to "upgrade" it you just start a room data stream, and to "demote" it you just
-  don't continue syncing. That's intuitive at least. Alternatively, should we combine the room summary and room data streams? If we paginate room state,
-  then we just have a handful of events per room (paginated state, paginated members, timeline limited) along with heros/lazy members. This is probably too much for low bandwidth, but
-  that should be pulling from the room list instead, and the room data is only used on click-through.
 
 #### Room data
 
 - Only the member events are paginated, not the entire room state. This is probably okay as the vast
   majority of current state in rooms are actually just member events. Member events can be sorted coherently, but
   arbitrary state events cannot (what do you sort by? Timestamp?).
-- Should there be ways to filter out unwanted state events? Need a compact representation rather than just specifying all event types e.g
-  "all `m.` event types".
