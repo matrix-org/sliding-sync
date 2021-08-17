@@ -347,10 +347,18 @@ Server-side, the streaming operations performed for `room_list` are:
 
 ### Notes, Rationale and Queries
 
-- `room_data`: Only the member events are paginated, not the entire room state. This is probably okay as the vast
-  majority of current state in rooms are actually just member events. Member events can be sorted coherently, but
-  arbitrary state events cannot (what do you sort by?).
-- `room_summary`: It's unclear how to unregister a room once you're tracking the summaries for it. In reality, if you start reading the `room_data`
+#### Room lists
+
+- How do you convey invited or left rooms? Particularly for left rooms, server implementations need to be careful
+  to update the room list AFTER all the other streams (so you get the leave event) which is the opposite for joins/normal operations.
+- How do we handle spaces? We can enumerate rooms where there are space state events, but the sort order is unclear, including
+  whether to consider subspaces. Sorting could inherit the sort args of the original request, but do we do this depth-first (enumerate all the rooms in a space) or breadth-first (enumerate all top-level spaces). Lots of overlap with the spaces summary API.
+- It's implied that the room list stream is capable of implementing the "calculating the room name" algorithm in order to populate the `name` field.
+  Is this assumption safe in E2EE rooms?
+
+#### Room summary
+
+- It's unclear how to unregister a room once you're tracking the summaries for it. In reality, if you start reading the `room_data`
   for a room then you probably want to unregister the associated `room_summary`. This can be done in a few ways, all with
   annoying trade-offs:
     * `room_list.del_rooms: ["!foo:bar"]` : This will remove the room from the room list and hence drop it from the summary.
@@ -358,7 +366,16 @@ Server-side, the streaming operations performed for `room_list` are:
     * `room_summary.del_rooms: ["!foo:bar"]` : This removes the room from the room summary API but not any others. This however
       creates 2 sets of room lists which is awkward and clunky.
     * `room_data.remove_from_summary: true` : This removes it lazily, but its unclear what "removal" is: which list? Same drawbacks as above.
-- `room_list`: How do you convey invited or left rooms? Particularly for left rooms, server implementations need to be careful
-  to update the room list AFTER all the other streams (so you get the leave event) which is the opposite for joins/normal operations.
-- `room_list`: How do we handle spaces? We can enumerate rooms where there are space state events, but the sort order is unclear, including
-  whether to consider subspaces. Sorting could inherit the sort args of the original request, but do we do this depth-first (enumerate all the rooms in a space) or breadth-first (enumerate all top-level spaces). Lots of overlap with the spaces summary API.
+  You kind of want to "upgrade" a single room on the room list, without removing it, then "demote" it again when you aren't interested in tracking it anymore.
+  This implies the room data API should _not_ support a room list option, so to "upgrade" it you just start a room data stream, and to "demote" it you just
+  don't continue syncing. That's intuitive at least. Alternatively, should we combine the room summary and room data streams? If we paginate room state,
+  then we just have a handful of events per room (paginated state, paginated members, timeline limited) along with heros/lazy members. This is probably too much for low bandwidth, but
+  that should be pulling from the room list instead, and the room data is only used on click-through.
+
+#### Room data
+
+- Only the member events are paginated, not the entire room state. This is probably okay as the vast
+  majority of current state in rooms are actually just member events. Member events can be sorted coherently, but
+  arbitrary state events cannot (what do you sort by? Timestamp?).
+- Should there be ways to filter out unwanted state events? Need a compact representation rather than just specifying all event types e.g
+  "all `m.` event types".
