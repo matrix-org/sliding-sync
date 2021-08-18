@@ -23,12 +23,12 @@ func TestRoomsTable(t *testing.T) {
 		t.Fatalf("Failed to start txn: %s", err)
 	}
 	roomID := "!1:localhost"
-	if err = table.UpdateCurrentSnapshotID(txn, roomID, 100); err != nil {
+	if err = table.UpdateCurrentAfterSnapshotID(txn, roomID, 100); err != nil {
 		t.Fatalf("Failed to update current snapshot ID: %s", err)
 	}
 
 	// Select 100
-	id, err := table.CurrentSnapshotID(txn, roomID)
+	id, err := table.CurrentAfterSnapshotID(txn, roomID)
 	if err != nil {
 		t.Fatalf("Failed to select current snapshot ID: %s", err)
 	}
@@ -37,12 +37,12 @@ func TestRoomsTable(t *testing.T) {
 	}
 
 	// Update to 101
-	if table.UpdateCurrentSnapshotID(txn, roomID, 101); err != nil {
+	if table.UpdateCurrentAfterSnapshotID(txn, roomID, 101); err != nil {
 		t.Fatalf("Failed to update current snapshot ID: %s", err)
 	}
 
 	// Select 101
-	id, err = table.CurrentSnapshotID(txn, roomID)
+	id, err = table.CurrentAfterSnapshotID(txn, roomID)
 	if err != nil {
 		t.Fatalf("Failed to select current snapshot ID: %s", err)
 	}

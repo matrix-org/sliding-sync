@@ -1,6 +1,8 @@
 package state
 
 import (
+	"fmt"
+
 	"github.com/jmoiron/sqlx"
 	"github.com/lib/pq"
 )
@@ -53,6 +55,10 @@ func (t *SnapshotTable) CurrentSnapshots() (map[string][]int64, error) {
 
 // Select a row based on its snapshot ID.
 func (s *SnapshotTable) Select(txn *sqlx.Tx, snapshotID int64) (row SnapshotRow, err error) {
+	if snapshotID == 0 {
+		err = fmt.Errorf("SnapshotTable.Select: snapshot ID requested is 0")
+		return
+	}
 	err = txn.Get(&row, `SELECT * FROM syncv3_snapshots WHERE snapshot_id = $1`, snapshotID)
 	return
 }

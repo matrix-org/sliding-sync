@@ -714,6 +714,9 @@ func TestHandlerRoomMember(t *testing.T) {
 	}
 	roomIndex := 0
 	for _, tc := range testCases {
+		if t.Failed() {
+			break
+		}
 		t.Run(tc.Name, func(t *testing.T) {
 			// make the v2 sync responses based on test case info
 			roomIndex++

@@ -53,8 +53,9 @@ func (a *Accumulator) strippedEventsForSnapshot(txn *sqlx.Tx, snapID int64) (Str
 }
 
 // calculateNewSnapshot works out the new snapshot by combining an old snapshot and a new state event. Events get replaced
-// if the tuple of event type/state_key match. A new slice is returning (the inputs are not modified)
-func (a *Accumulator) calculateNewSnapshot(old StrippedEvents, new StrippedEvent) StrippedEvents {
+// if the tuple of event type/state_key match. A new slice is returned (the inputs are not modified) along with the NID
+// that got replaced.
+func (a *Accumulator) calculateNewSnapshot(old StrippedEvents, new StrippedEvent) (StrippedEvents, int64) {
 	// TODO: implement dendrite's binary tree diff algorithm?
 	tupleKey := func(e StrippedEvent) string {
 		// 0x1f = unit separator
@@ -62,6 +63,7 @@ func (a *Accumulator) calculateNewSnapshot(old StrippedEvents, new StrippedEvent
 	}
 	newTuple := tupleKey(new)
 	added := false
+	var replacedNID int64
 	var result StrippedEvents
 	for _, e := range old {
 		existingTuple := tupleKey(e)
@@ -69,6 +71,7 @@ func (a *Accumulator) calculateNewSnapshot(old StrippedEvents, new StrippedEvent
 			// use the new event
 			result = append(result, new)
 			added = true
+			replacedNID = e.NID
 			continue
 		}
 		// use the old event
@@ -77,7 +80,7 @@ func (a *Accumulator) calculateNewSnapshot(old StrippedEvents, new StrippedEvent
 	if !added {
 		result = append(result, new)
 	}
-	return result
+	return result, replacedNID
 }
 
 // Initialise starts a new sync accumulator for the given room using the given state as a baseline.
@@ -96,7 +99,7 @@ func (a *Accumulator) Initialise(roomID string, state []json.RawMessage) (bool, 
 	err := sqlutil.WithTransaction(a.db, func(txn *sqlx.Tx) error {
 		// Attempt to short-circuit. This has to be done inside a transaction to make sure
 		// we don't race with multiple calls to Initialise with the same room ID.
-		snapshotID, err := a.roomsTable.CurrentSnapshotID(txn, roomID)
+		snapshotID, err := a.roomsTable.CurrentAfterSnapshotID(txn, roomID)
 		if err != nil {
 			return fmt.Errorf("error fetching snapshot id for room %s: %s", roomID, err)
 		}
@@ -153,7 +156,7 @@ func (a *Accumulator) Initialise(roomID string, state []json.RawMessage) (bool, 
 		// will have an associated state snapshot ID on the event.
 
 		// Set the snapshot ID as the current state
-		return a.roomsTable.UpdateCurrentSnapshotID(txn, roomID, snapshot.SnapshotID)
+		return a.roomsTable.UpdateCurrentAfterSnapshotID(txn, roomID, snapshot.SnapshotID)
 	})
 	return addedEvents, err
 }
@@ -246,32 +249,26 @@ func (a *Accumulator) Accumulate(roomID string, timeline []json.RawMessage) (num
 		}
 
 		// Given a timeline of [E1, E2, S3, E4, S5, S6, E7] (E=message event, S=state event)
-		// Then E1, E2 are not state so just inherit the same state snapshot ID as is current in the room
-		// S3,E4 belong to a new snapshot
-		// S5 belongs to another snapshot on its own
-		// S6,E7 belong to another snapshot
-		// We can track this by loading the current snapshot ID and rolling forward the timeline until
-		// we hit another state event, then make a new snapshot and continue.
-		snapID, err := a.roomsTable.CurrentSnapshotID(txn, roomID)
+		// And a prior state snapshot of SNAP0 then the BEFORE snapshot IDs are grouped as:
+		// E1,E2,S3 => SNAP0
+		// E4, S5 => (SNAP0 + S3)
+		// S6 => (SNAP0 + S3 + S5)
+		// E7 => (SNAP0 + S3 + S5 + S6)
+		// We can track this by loading the current snapshot ID (after snapshot) then rolling forward
+		// the timeline until we hit a state event, at which point we make a new snapshot but critically
+		// do NOT assign the new state event in the snapshot so as to represent the state before the event.
+		snapID, err := a.roomsTable.CurrentAfterSnapshotID(txn, roomID)
 		if err != nil {
 			return err
 		}
-		if snapID == 0 {
-			// a missing snapshot is only okay if this is the start of the room, so we should have a create
-			// event in this list at the beginning: verify it. If we do have a create event then we'll immediately
-			// make a new snapshot so this is fine.
-			if gjson.GetBytes(newEvents[0], "type").Str != "m.room.create" {
-				log.Error().Str("room_id", roomID).Msg(
-					"Accumulator.Accumulate: room has no current snapshot, and the timeline provided has no create event. " +
-						"Either Initialise should be called OR Accumulate with a create event to set up the snapshot. This is a bug.",
-				)
-				return fmt.Errorf("room not initialised yet!")
-			}
-		}
-		snapIDToNIDs := make(map[int64][]int64) // batch events by snapshot ID for speed
 		for _, ev := range newEventsDec {
+			var replacesNID int64
+			// the snapshot ID we assign to this event is unaffected by whether /this/ event is state or not,
+			// as this is the before snapshot ID.
+			beforeSnapID := snapID
+
 			if ev.IsState {
-				// make a new snapshot
+				// make a new snapshot and update the snapshot ID
 				var oldStripped StrippedEvents
 				if snapID != 0 {
 					oldStripped, err = a.strippedEventsForSnapshot(txn, snapID)
@@ -279,7 +276,7 @@ func (a *Accumulator) Accumulate(roomID string, timeline []json.RawMessage) (num
 						return err
 					}
 				}
-				newStripped := a.calculateNewSnapshot(oldStripped, StrippedEvent{
+				newStripped, replacedNID := a.calculateNewSnapshot(oldStripped, StrippedEvent{
 					NID:      ev.NID,
 					Type:     ev.JSON.Get("type").Str,
 					StateKey: ev.JSON.Get("state_key").Str,
@@ -287,6 +284,7 @@ func (a *Accumulator) Accumulate(roomID string, timeline []json.RawMessage) (num
 				if err != nil {
 					return err
 				}
+				replacesNID = replacedNID
 				newSnapshot := &SnapshotRow{
 					RoomID: roomID,
 					Events: newStripped.NIDs(),
@@ -296,19 +294,13 @@ func (a *Accumulator) Accumulate(roomID string, timeline []json.RawMessage) (num
 				}
 				snapID = newSnapshot.SnapshotID
 			}
-			// event isn't state, use the same snapshot previously
-			snapIDToNIDs[snapID] = append(snapIDToNIDs[snapID], ev.NID)
-		}
-
-		// Associate state snapshot IDs with all newly inserted events
-		for sid, nids := range snapIDToNIDs {
-			if err := a.eventsTable.UpdateSnapshotID(txn, sid, nids); err != nil {
+			if err := a.eventsTable.UpdateBeforeSnapshotID(txn, ev.NID, beforeSnapID, replacesNID); err != nil {
 				return err
 			}
 		}
 
 		// the last fetched snapshot ID is the current one
-		if err = a.roomsTable.UpdateCurrentSnapshotID(txn, roomID, snapID); err != nil {
+		if err = a.roomsTable.UpdateCurrentAfterSnapshotID(txn, roomID, snapID); err != nil {
 			return fmt.Errorf("failed to UpdateCurrentSnapshotID to %d: %w", snapID, err)
 		}
 

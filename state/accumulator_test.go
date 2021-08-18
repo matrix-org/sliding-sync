@@ -37,7 +37,7 @@ func TestAccumulatorInitialise(t *testing.T) {
 	defer txn.Rollback()
 
 	// There should be one snapshot on the current state
-	snapID, err := accumulator.roomsTable.CurrentSnapshotID(txn, roomID)
+	snapID, err := accumulator.roomsTable.CurrentAfterSnapshotID(txn, roomID)
 	if err != nil {
 		t.Fatalf("failed to select current snapshot: %s", err)
 	}
@@ -126,7 +126,7 @@ func TestAccumulatorAccumulate(t *testing.T) {
 	defer txn.Rollback()
 
 	// There should be one snapshot in current state
-	snapID, err := accumulator.roomsTable.CurrentSnapshotID(txn, roomID)
+	snapID, err := accumulator.roomsTable.CurrentAfterSnapshotID(txn, roomID)
 	if err != nil {
 		t.Fatalf("failed to select current snapshot: %s", err)
 	}

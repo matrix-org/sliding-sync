@@ -54,7 +54,53 @@ func (s *Storage) Initialise(roomID string, state []json.RawMessage) (bool, erro
 
 func (s *Storage) RoomStateAfterEventPosition(roomID string, pos int64) (events []Event, err error) {
 	err = sqlutil.WithTransaction(s.accumulator.db, func(txn *sqlx.Tx) error {
-		snapID, err := s.accumulator.eventsTable.AfterEpochSnapshotIDForEventNID(txn, roomID, pos)
+		lastEventNID, replacesNID, snapID, err := s.accumulator.eventsTable.BeforeStateSnapshotIDForEventNID(txn, roomID, pos)
+		if err != nil {
+			return err
+		}
+		currEventIsState := false
+		if lastEventNID > 0 {
+			// now load the event which has this before_snapshot and see if we need to roll it forward
+			lastEvents, err := s.accumulator.eventsTable.SelectByNIDs(txn, []int64{lastEventNID})
+			if err != nil {
+				return fmt.Errorf("SelectByNIDs last event nid %d : %s", lastEventNID, err)
+			}
+			lastEvent := gjson.ParseBytes(lastEvents[0].JSON)
+			currEventIsState = lastEvent.Get("state_key").Exists()
+		}
+		snapshotRow, err := s.accumulator.snapshotTable.Select(txn, snapID)
+		if err != nil {
+			return err
+		}
+		// we need to roll forward if this event is state
+		if currEventIsState {
+			if replacesNID != 0 {
+				// we determined at insert time of this event that this event replaces a nid in the snapshot.
+				// find it and replace it
+				for i := range snapshotRow.Events {
+					if snapshotRow.Events[i] == replacesNID {
+						snapshotRow.Events[i] = lastEventNID
+						break
+					}
+				}
+			} else {
+				// the event is still state, but it doesn't replace anything, so just add it onto the snapshot
+				snapshotRow.Events = append(snapshotRow.Events, lastEventNID)
+			}
+		}
+		events, err = s.accumulator.eventsTable.SelectByNIDs(txn, snapshotRow.Events)
+		if err != nil {
+			return err
+		}
+
+		return err
+	})
+	return
+}
+
+func (s *Storage) RoomStateBeforeEventPosition(roomID string, pos int64) (events []Event, err error) {
+	err = sqlutil.WithTransaction(s.accumulator.db, func(txn *sqlx.Tx) error {
+		_, _, snapID, err := s.accumulator.eventsTable.BeforeStateSnapshotIDForEventNID(txn, roomID, pos)
 		if err != nil {
 			return err
 		}

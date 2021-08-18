@@ -162,6 +162,8 @@ func (s *RoomMember) paginatedDataAtPoint(session *sync3.Session, pos int64, sor
 	if err != nil {
 		if err == sql.ErrNoRows {
 			// this room ID doesn't exist at this position
+			// FIXME: use zerolog
+			fmt.Printf("room %v does not exist at position %v \n", request.RoomMember.RoomID, pos)
 			return nil
 		}
 		return fmt.Errorf("RoomStateAfterEventPosition %d - %s", pos, err)

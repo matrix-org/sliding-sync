@@ -6,7 +6,6 @@ import (
 	"math"
 
 	"github.com/jmoiron/sqlx"
-	"github.com/lib/pq"
 	"github.com/matrix-org/sync-v3/sqlutil"
 	"github.com/tidwall/gjson"
 )
@@ -17,12 +16,12 @@ const (
 )
 
 type Event struct {
-	NID int `db:"event_nid"`
-	// This is a snapshot ID which corresponds to some room state AFTER this event has been applied.
-	AfterStateSnapshotID int    `db:"after_state_snapshot_id"`
-	ID                   string `db:"event_id"`
-	RoomID               string `db:"room_id"`
-	JSON                 []byte `db:"event"`
+	NID int64 `db:"event_nid"`
+	// This is a snapshot ID which corresponds to some room state BEFORE this event has been applied.
+	BeforeStateSnapshotID int    `db:"before_state_snapshot_id"`
+	ID                    string `db:"event_id"`
+	RoomID                string `db:"room_id"`
+	JSON                  []byte `db:"event"`
 }
 
 type StrippedEvent struct {
@@ -30,6 +29,7 @@ type StrippedEvent struct {
 	Type     string `db:"type"`
 	StateKey string `db:"state_key"`
 }
+
 type StrippedEvents []StrippedEvent
 
 func (se StrippedEvents) NIDs() (result []int64) {
@@ -52,7 +52,9 @@ func NewEventTable(db *sqlx.DB) *EventTable {
 	CREATE TABLE IF NOT EXISTS syncv3_events (
 		event_nid BIGINT PRIMARY KEY NOT NULL DEFAULT nextval('syncv3_event_nids_seq'),
 		event_id TEXT NOT NULL UNIQUE,
-		after_state_snapshot_id BIGINT NOT NULL DEFAULT 0,
+		before_state_snapshot_id BIGINT NOT NULL DEFAULT 0,
+		-- which nid gets replaced in the snapshot with event_nid
+		event_replaces_nid BIGINT NOT NULL DEFAULT 0,
 		room_id TEXT NOT NULL,
 		event JSONB NOT NULL
 	);
@@ -177,20 +179,20 @@ func (t *EventTable) SelectStrippedEventsByIDs(txn *sqlx.Tx, ids []string) (Stri
 	return events, err
 }
 
-// UpdateSnapshotID sets the after_state_snapshot_id field to `snapID` for the given NIDs.
-func (t *EventTable) UpdateSnapshotID(txn *sqlx.Tx, snapID int64, nids []int64) error {
+// UpdateBeforeSnapshotID sets the before_state_snapshot_id field to `snapID` for the given NIDs.
+func (t *EventTable) UpdateBeforeSnapshotID(txn *sqlx.Tx, eventNID, snapID, replacesNID int64) error {
 	_, err := txn.Exec(
-		`UPDATE syncv3_events SET after_state_snapshot_id=$1 WHERE event_nid = ANY($2)`, snapID, pq.Int64Array(nids),
+		`UPDATE syncv3_events SET before_state_snapshot_id=$1, event_replaces_nid=$2 WHERE event_nid = $3`, snapID, replacesNID, eventNID,
 	)
 	return err
 }
 
-func (t *EventTable) AfterEpochSnapshotIDForEventNID(txn *sqlx.Tx, roomID string, eventNID int64) (snapID int64, err error) {
+func (t *EventTable) BeforeStateSnapshotIDForEventNID(txn *sqlx.Tx, roomID string, eventNID int64) (lastEventNID, replacesNID, snapID int64, err error) {
 	// the position (event nid) may be for a random different room, so we need to find the highest nid <= this position for this room
 	err = txn.QueryRow(
-		`SELECT after_state_snapshot_id FROM syncv3_events WHERE event_nid =
+		`SELECT event_nid, event_replaces_nid, before_state_snapshot_id FROM syncv3_events WHERE event_nid =
 		(SELECT MAX(event_nid) FROM syncv3_events WHERE room_id = $1 AND event_nid <= $2)`, roomID, eventNID,
-	).Scan(&snapID)
+	).Scan(&lastEventNID, &replacesNID, &snapID)
 	return
 }
 

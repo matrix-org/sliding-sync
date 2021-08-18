@@ -84,16 +84,33 @@ func TestEventTable(t *testing.T) {
 
 	// set a snapshot ID on them
 	var firstSnapshotID int64 = 55
-	if err = table.UpdateSnapshotID(txn, firstSnapshotID, gotnids); err != nil {
-		t.Fatalf("UpdateAfterEpochSnapshotID: %s", err)
+	for _, nid := range gotnids {
+		if err = table.UpdateBeforeSnapshotID(txn, nid, firstSnapshotID, 0); err != nil {
+			t.Fatalf("UpdateSnapshotID: %s", err)
+		}
 	}
 	// query the snapshot
-	snapID, err := table.AfterEpochSnapshotIDForEventNID(txn, roomID, gotnids[1])
+	lastEventNID, _, snapID, err := table.BeforeStateSnapshotIDForEventNID(txn, roomID, gotnids[1])
 	if err != nil {
-		t.Fatalf("AfterEpochSnapshotIDForEventNID: %s", err)
+		t.Fatalf("BeforeStateSnapshotIDForEventNID: %s", err)
 	}
 	if snapID != firstSnapshotID {
-		t.Fatalf("AfterEpochSnapshotIDForEventNID: got snap ID %d want %d", snapID, firstSnapshotID)
+		t.Fatalf("BeforeStateSnapshotIDForEventNID: got snap ID %d want %d", snapID, firstSnapshotID)
+	}
+	// the queried position
+	if lastEventNID != gotnids[1] {
+		t.Fatalf("BeforeStateSnapshotIDForEventNID: didn't return last inserted event, got %d want %d", lastEventNID, gotnids[1])
+	}
+	// try again with a much higher pos
+	lastEventNID, _, snapID, err = table.BeforeStateSnapshotIDForEventNID(txn, roomID, 999999)
+	if err != nil {
+		t.Fatalf("BeforeStateSnapshotIDForEventNID: %s", err)
+	}
+	if snapID != firstSnapshotID {
+		t.Fatalf("BeforeStateSnapshotIDForEventNID: got snap ID %d want %d", snapID, firstSnapshotID)
+	}
+	if lastEventNID != gotnids[2] {
+		t.Fatalf("BeforeStateSnapshotIDForEventNID: didn't return last inserted event, got %d want %d", lastEventNID, gotnids[2])
 	}
 
 	// find max and query it
@@ -292,7 +309,7 @@ func TestChunkify(t *testing.T) {
 	events := make([]Event, 100)
 	for i := 0; i < len(events); i++ {
 		events[i] = Event{
-			NID: i,
+			NID: int64(i),
 		}
 	}
 	eventChunker := EventChunker(events)
@@ -340,7 +357,7 @@ func TestChunkify(t *testing.T) {
 			if len(chunks) != len(testCase.chunkSizes) {
 				t.Fatalf("got %d chunks, want %d", len(chunks), len(testCase.chunkSizes))
 			}
-			eventNID := 0
+			eventNID := int64(0)
 			for i := 0; i < len(chunks); i++ {
 				if chunks[i].Len() != testCase.chunkSizes[i] {
 					t.Errorf("chunk %d got %d elements, want %d", i, chunks[i].Len(), testCase.chunkSizes[i])
