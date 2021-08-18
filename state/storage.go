@@ -22,13 +22,12 @@ func NewStorage(postgresURI string) *Storage {
 		log.Panic().Err(err).Str("uri", postgresURI).Msg("failed to open SQL DB")
 	}
 	acc := &Accumulator{
-		db:                    db,
-		roomsTable:            NewRoomsTable(db),
-		eventsTable:           NewEventTable(db),
-		snapshotTable:         NewSnapshotsTable(db),
-		snapshotRefCountTable: NewSnapshotRefCountsTable(db),
-		membershipLogTable:    NewMembershipLogTable(db),
-		entityName:            "server",
+		db:                 db,
+		roomsTable:         NewRoomsTable(db),
+		eventsTable:        NewEventTable(db),
+		snapshotTable:      NewSnapshotsTable(db),
+		membershipLogTable: NewMembershipLogTable(db),
+		entityName:         "server",
 	}
 	return &Storage{
 		accumulator:   acc,

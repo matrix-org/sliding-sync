@@ -24,24 +24,22 @@ var log = zerolog.New(os.Stdout).With().Timestamp().Logger().Output(zerolog.Cons
 // Accumulate function for timeline events. v2 sync must be called with a large enough timeline.limit
 // for this to work!
 type Accumulator struct {
-	db                    *sqlx.DB
-	roomsTable            *RoomsTable
-	eventsTable           *EventTable
-	snapshotTable         *SnapshotTable
-	snapshotRefCountTable *SnapshotRefCountsTable
-	membershipLogTable    *MembershipLogTable
-	entityName            string
+	db                 *sqlx.DB
+	roomsTable         *RoomsTable
+	eventsTable        *EventTable
+	snapshotTable      *SnapshotTable
+	membershipLogTable *MembershipLogTable
+	entityName         string
 }
 
 func NewAccumulator(db *sqlx.DB) *Accumulator {
 	return &Accumulator{
-		db:                    db,
-		roomsTable:            NewRoomsTable(db),
-		eventsTable:           NewEventTable(db),
-		snapshotTable:         NewSnapshotsTable(db),
-		snapshotRefCountTable: NewSnapshotRefCountsTable(db),
-		membershipLogTable:    NewMembershipLogTable(db),
-		entityName:            "server",
+		db:                 db,
+		roomsTable:         NewRoomsTable(db),
+		eventsTable:        NewEventTable(db),
+		snapshotTable:      NewSnapshotsTable(db),
+		membershipLogTable: NewMembershipLogTable(db),
+		entityName:         "server",
 	}
 }
 
@@ -156,12 +154,6 @@ func (a *Accumulator) Initialise(roomID string, state []json.RawMessage) (bool, 
 		err = a.snapshotTable.Insert(txn, snapshot)
 		if err != nil {
 			return fmt.Errorf("failed to insert snapshot: %w", err)
-		}
-
-		// Increment the ref counter
-		err = a.snapshotRefCountTable.MoveSnapshotRefForEntity(txn, a.entityName, roomID, snapshot.SnapshotID)
-		if err != nil {
-			return err
 		}
 		addedEvents = true
 
@@ -307,12 +299,8 @@ func (a *Accumulator) Accumulate(roomID string, timeline []json.RawMessage) (num
 			return fmt.Errorf("failed to insert new snapshot: %w", err)
 		}
 
-		// swap the current snapshot over to this new snapshot and handle ref counters
 		if err = a.roomsTable.UpdateCurrentSnapshotID(txn, roomID, newSnapshot.SnapshotID); err != nil {
 			return fmt.Errorf("failed to UpdateCurrentSnapshotID to %d: %w", newSnapshot.SnapshotID, err)
-		}
-		if err = a.snapshotRefCountTable.MoveSnapshotRefForEntity(txn, a.entityName, roomID, newSnapshot.SnapshotID); err != nil {
-			return fmt.Errorf("failed to move snapshot ref: %w", err)
 		}
 		// update the snapshot ID to the new snapshot for all newly inserted events
 		if err = a.eventsTable.UpdateAfterEpochSnapshotID(txn, newSnapshot.SnapshotID, newEventNIDs); err != nil {

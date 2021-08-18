@@ -68,15 +68,6 @@ func TestAccumulatorInitialise(t *testing.T) {
 		}
 	}
 
-	// the ref counter should be 1 for this snapshot
-	numRefs, err := accumulator.snapshotRefCountTable.NumRefs(txn, snapID)
-	if err != nil {
-		t.Fatalf("failed to check num refs: %s", err)
-	}
-	if numRefs != 1 {
-		t.Fatalf("got %d empty refs, want 1", numRefs)
-	}
-
 	// Subsequent calls do nothing and are not an error
 	added, err = accumulator.Initialise(roomID, roomEvents)
 	if err != nil {
