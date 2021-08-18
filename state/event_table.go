@@ -19,17 +19,7 @@ const (
 type Event struct {
 	NID int `db:"event_nid"`
 	// This is a snapshot ID which corresponds to some room state AFTER this event has been applied.
-	// The room state MAY be snapshotted immediately after this event or after N additional state
-	// events, depending on when they came down v2 /sync (hence the term 'epoch'). For example,
-	// an initial sync on a room will contain many state events. All events in the initial sync
-	// response will therefore have the same snapshot ID, which refers to the state AFTER applying
-	// all the state events.
-	//
-	// This works because new events are ONLY added in a transaction via v2 calls in the accumulator.
-	// This means we can batch up inserts, and guarantee no client will ever be told an event NID position
-	// that exists in the middle of an epoch, which would result in incorrect state being associated
-	// when pagination is done.
-	AfterEpochSnapshotID int    `db:"after_epoch_snapshot_id"`
+	AfterStateSnapshotID int    `db:"after_state_snapshot_id"`
 	ID                   string `db:"event_id"`
 	RoomID               string `db:"room_id"`
 	JSON                 []byte `db:"event"`
@@ -62,7 +52,7 @@ func NewEventTable(db *sqlx.DB) *EventTable {
 	CREATE TABLE IF NOT EXISTS syncv3_events (
 		event_nid BIGINT PRIMARY KEY NOT NULL DEFAULT nextval('syncv3_event_nids_seq'),
 		event_id TEXT NOT NULL UNIQUE,
-		after_epoch_snapshot_id BIGINT NOT NULL DEFAULT 0,
+		after_state_snapshot_id BIGINT NOT NULL DEFAULT 0,
 		room_id TEXT NOT NULL,
 		event JSONB NOT NULL
 	);
@@ -187,10 +177,10 @@ func (t *EventTable) SelectStrippedEventsByIDs(txn *sqlx.Tx, ids []string) (Stri
 	return events, err
 }
 
-// UpdateAfterEpochSnapshotID sets the after_epoch_snapshot_id field to `snapID` for the given NIDs.
-func (t *EventTable) UpdateAfterEpochSnapshotID(txn *sqlx.Tx, snapID int64, nids []int64) error {
+// UpdateSnapshotID sets the after_state_snapshot_id field to `snapID` for the given NIDs.
+func (t *EventTable) UpdateSnapshotID(txn *sqlx.Tx, snapID int64, nids []int64) error {
 	_, err := txn.Exec(
-		`UPDATE syncv3_events SET after_epoch_snapshot_id=$1 WHERE event_nid = ANY($2)`, snapID, pq.Int64Array(nids),
+		`UPDATE syncv3_events SET after_state_snapshot_id=$1 WHERE event_nid = ANY($2)`, snapID, pq.Int64Array(nids),
 	)
 	return err
 }
@@ -198,7 +188,7 @@ func (t *EventTable) UpdateAfterEpochSnapshotID(txn *sqlx.Tx, snapID int64, nids
 func (t *EventTable) AfterEpochSnapshotIDForEventNID(txn *sqlx.Tx, roomID string, eventNID int64) (snapID int64, err error) {
 	// the position (event nid) may be for a random different room, so we need to find the highest nid <= this position for this room
 	err = txn.QueryRow(
-		`SELECT after_epoch_snapshot_id FROM syncv3_events WHERE event_nid =
+		`SELECT after_state_snapshot_id FROM syncv3_events WHERE event_nid =
 		(SELECT MAX(event_nid) FROM syncv3_events WHERE room_id = $1 AND event_nid <= $2)`, roomID, eventNID,
 	).Scan(&snapID)
 	return

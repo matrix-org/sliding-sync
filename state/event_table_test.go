@@ -84,7 +84,7 @@ func TestEventTable(t *testing.T) {
 
 	// set a snapshot ID on them
 	var firstSnapshotID int64 = 55
-	if err = table.UpdateAfterEpochSnapshotID(txn, firstSnapshotID, gotnids); err != nil {
+	if err = table.UpdateSnapshotID(txn, firstSnapshotID, gotnids); err != nil {
 		t.Fatalf("UpdateAfterEpochSnapshotID: %s", err)
 	}
 	// query the snapshot

@@ -52,41 +52,32 @@ func (a *Accumulator) strippedEventsForSnapshot(txn *sqlx.Tx, snapID int64) (Str
 	return a.eventsTable.SelectStrippedEventsByNIDs(txn, snapshot.Events)
 }
 
-// calculateNewSnapshot works out the new snapshot by combining an old and new snapshot. Events get replaced
+// calculateNewSnapshot works out the new snapshot by combining an old snapshot and a new state event. Events get replaced
 // if the tuple of event type/state_key match. A new slice is returning (the inputs are not modified)
-func (a *Accumulator) calculateNewSnapshot(old StrippedEvents, new StrippedEvents) (StrippedEvents, error) {
-	// TODO: implement dendrite's binary tree diff algorithm
+func (a *Accumulator) calculateNewSnapshot(old StrippedEvents, new StrippedEvent) StrippedEvents {
+	// TODO: implement dendrite's binary tree diff algorithm?
 	tupleKey := func(e StrippedEvent) string {
 		// 0x1f = unit separator
 		return e.Type + "\x1f" + e.StateKey
 	}
-	tupleToNew := make(map[string]StrippedEvent)
-	for _, e := range new {
-		tupleToNew[tupleKey(e)] = e
-	}
+	newTuple := tupleKey(new)
+	added := false
 	var result StrippedEvents
 	for _, e := range old {
-		newEvent := tupleToNew[tupleKey(e)]
-		if newEvent.NID > 0 {
-			result = append(result, StrippedEvent{
-				NID:      newEvent.NID,
-				Type:     e.Type,
-				StateKey: e.StateKey,
-			})
-			delete(tupleToNew, tupleKey(e))
-		} else {
-			result = append(result, StrippedEvent{
-				NID:      e.NID,
-				Type:     e.Type,
-				StateKey: e.StateKey,
-			})
+		existingTuple := tupleKey(e)
+		if existingTuple == newTuple {
+			// use the new event
+			result = append(result, new)
+			added = true
+			continue
 		}
+		// use the old event
+		result = append(result, e)
 	}
-	// add genuinely new state events from new
-	for _, newEvent := range tupleToNew {
-		result = append(result, newEvent)
+	if !added {
+		result = append(result, new)
 	}
-	return result, nil
+	return result
 }
 
 // Initialise starts a new sync accumulator for the given room using the given state as a baseline.
@@ -157,10 +148,9 @@ func (a *Accumulator) Initialise(roomID string, state []json.RawMessage) (bool, 
 		}
 		addedEvents = true
 
-		// add a backref so we can go from event to snapshot
-		if err = a.eventsTable.UpdateAfterEpochSnapshotID(txn, int64(snapshot.SnapshotID), nids); err != nil {
-			return err
-		}
+		// these events do not have a state snapshot ID associated with them as we don't know what
+		// order the state events came down in, it's only a snapshot. This means only timeline events
+		// will have an associated state snapshot ID on the event.
 
 		// Set the snapshot ID as the current state
 		return a.roomsTable.UpdateCurrentSnapshotID(txn, roomID, snapshot.SnapshotID)
@@ -177,9 +167,6 @@ func (a *Accumulator) Initialise(roomID string, state []json.RawMessage) (bool, 
 //     This is because we must have already processed this part of the timeline in order for the event
 //     to exist in the database, and the sync stream is already linearised for us.
 //   - Else it creates a new room state snapshot if the timeline contains state events (as this now represents the current state)
-//   - It checks if there are outstanding references for the previous snapshot, and if not, removes the old snapshot from the database.
-//     References are made when clients have synced up to a given snapshot (hence may paginate at that point).
-//     The server itself also holds a ref to the current state, which is then moved to the new current state.
 //   - It adds entries to the membership log for membership events.
 func (a *Accumulator) Accumulate(roomID string, timeline []json.RawMessage) (numNew int, err error) {
 	if len(timeline) == 0 {
@@ -203,122 +190,133 @@ func (a *Accumulator) Accumulate(roomID string, timeline []json.RawMessage) (num
 			return nil
 		}
 
-		// The last numNew events are new, extract any that are state events
+		// The last numNew events are new
 		newEvents := timeline[len(timeline)-numNew:]
+
+		// Decorate the new events with useful information
+		var newEventsDec []struct {
+			JSON               gjson.Result
+			NID                int64
+			IsState            bool
+			IsMembershipChange bool
+		}
 		var newEventIDs []string
-		var newStateEvents []json.RawMessage
-		var newStateEventIDs []string
-		var membershipEventIDs []string
 		for _, ev := range newEvents {
-			newEvent := gjson.ParseBytes(ev)
-			newEventID := newEvent.Get("event_id").Str
-			newEventIDs = append(newEventIDs, newEventID)
-			if newEvent.Get("state_key").Exists() {
-				newStateEvents = append(newStateEvents, ev)
-				newStateEventIDs = append(newStateEventIDs, newEventID)
-				if newEvent.Get("type").Str == "m.room.member" {
+			var evDec struct {
+				JSON               gjson.Result
+				NID                int64
+				IsState            bool
+				IsMembershipChange bool
+			}
+			eventJSON := gjson.ParseBytes(ev)
+			newEventIDs = append(newEventIDs, eventJSON.Get("event_id").Str) // track the event IDs for mapping to NIDs
+			evDec.JSON = eventJSON
+			if eventJSON.Get("state_key").Exists() {
+				evDec.IsState = true
+				if eventJSON.Get("type").Str == "m.room.member" {
 					// membership event possibly, make sure the membership has changed else
 					// things like display name changes will count as membership events :(
 					prevMembership := "leave"
-					pm := newEvent.Get("unsigned.prev_content.membership")
+					pm := eventJSON.Get("unsigned.prev_content.membership")
 					if pm.Exists() && pm.Str != "" {
 						prevMembership = pm.Str
 					}
 					currMembership := "leave"
-					cm := newEvent.Get("content.membership")
+					cm := eventJSON.Get("content.membership")
 					if cm.Exists() && cm.Str != "" {
 						currMembership = cm.Str
 					}
 					if prevMembership != currMembership { // membership was changed
-						membershipEventIDs = append(membershipEventIDs, newEventID)
+						evDec.IsMembershipChange = true
 					}
 				}
 			}
+			newEventsDec = append(newEventsDec, evDec)
 		}
 
 		newEventNIDs, err := a.eventsTable.SelectNIDsByIDs(txn, newEventIDs)
 		if err != nil {
 			return err
 		}
-
-		// No state events: we don't need to make a new snapshot but we do need to associate these
-		// message events with snapshot IDs so clients can do state pagination at this time, so pull
-		// in the latest snapshot for this room and set it as the snapshot ID.
-		if len(newStateEvents) == 0 {
-			snapID, err := a.roomsTable.CurrentSnapshotID(txn, roomID)
-			if err != nil {
-				return err
-			}
-			return a.eventsTable.UpdateAfterEpochSnapshotID(txn, int64(snapID), newEventNIDs)
+		if len(newEventNIDs) != len(newEventIDs) {
+			return fmt.Errorf("failed to extract nids from inserted events, asked for %d got %d", len(newEventIDs), len(newEventNIDs))
+		}
+		for i, nid := range newEventNIDs {
+			newEventsDec[i].NID = nid
 		}
 
-		// State events exist in this timeline, so make a new snapshot
-		// by pulling out the current snapshot and adding these state events
-		var oldStripped []StrippedEvent
+		// Given a timeline of [E1, E2, S3, E4, S5, S6, E7] (E=message event, S=state event)
+		// Then E1, E2 are not state so just inherit the same state snapshot ID as is current in the room
+		// S3,E4 belong to a new snapshot
+		// S5 belongs to another snapshot on its own
+		// S6,E7 belong to another snapshot
+		// We can track this by loading the current snapshot ID and rolling forward the timeline until
+		// we hit another state event, then make a new snapshot and continue.
 		snapID, err := a.roomsTable.CurrentSnapshotID(txn, roomID)
 		if err != nil {
 			return err
 		}
 		if snapID == 0 {
 			// a missing snapshot is only okay if this is the start of the room, so we should have a create
-			// event in this list somewhere: verify it.
-			hasCreateEvent := false
-			for _, stateEvent := range newStateEvents {
-				if gjson.GetBytes(stateEvent, "type").Str == "m.room.create" {
-					hasCreateEvent = true
-					break
-				}
-			}
-			if !hasCreateEvent {
+			// event in this list at the beginning: verify it. If we do have a create event then we'll immediately
+			// make a new snapshot so this is fine.
+			if gjson.GetBytes(newEvents[0], "type").Str != "m.room.create" {
 				log.Error().Str("room_id", roomID).Msg(
 					"Accumulator.Accumulate: room has no current snapshot, and the timeline provided has no create event. " +
 						"Either Initialise should be called OR Accumulate with a create event to set up the snapshot. This is a bug.",
 				)
 				return fmt.Errorf("room not initialised yet!")
 			}
-		} else {
-			oldStripped, err = a.strippedEventsForSnapshot(txn, snapID)
-			if err != nil {
+		}
+		snapIDToNIDs := make(map[int64][]int64) // batch events by snapshot ID for speed
+		for _, ev := range newEventsDec {
+			if ev.IsState {
+				// make a new snapshot
+				var oldStripped StrippedEvents
+				if snapID != 0 {
+					oldStripped, err = a.strippedEventsForSnapshot(txn, snapID)
+					if err != nil {
+						return err
+					}
+				}
+				newStripped := a.calculateNewSnapshot(oldStripped, StrippedEvent{
+					NID:      ev.NID,
+					Type:     ev.JSON.Get("type").Str,
+					StateKey: ev.JSON.Get("state_key").Str,
+				})
+				if err != nil {
+					return err
+				}
+				newSnapshot := &SnapshotRow{
+					RoomID: roomID,
+					Events: newStripped.NIDs(),
+				}
+				if err = a.snapshotTable.Insert(txn, newSnapshot); err != nil {
+					return fmt.Errorf("failed to insert new snapshot: %w", err)
+				}
+				snapID = newSnapshot.SnapshotID
+			}
+			// event isn't state, use the same snapshot previously
+			snapIDToNIDs[snapID] = append(snapIDToNIDs[snapID], ev.NID)
+		}
+
+		// Associate state snapshot IDs with all newly inserted events
+		for sid, nids := range snapIDToNIDs {
+			if err := a.eventsTable.UpdateSnapshotID(txn, sid, nids); err != nil {
 				return err
 			}
 		}
-		// pull stripped events for the state we just inserted
-		newStripped, err := a.eventsTable.SelectStrippedEventsByIDs(txn, newStateEventIDs)
-		if err != nil {
-			return err
-		}
-		currentStripped, err := a.calculateNewSnapshot(oldStripped, newStripped)
-		if err != nil {
-			return fmt.Errorf("failed to calculate new snapshot: %w", err)
-		}
-		newSnapshot := &SnapshotRow{
-			RoomID: roomID,
-			Events: currentStripped.NIDs(),
-		}
-		if err = a.snapshotTable.Insert(txn, newSnapshot); err != nil {
-			return fmt.Errorf("failed to insert new snapshot: %w", err)
-		}
 
-		if err = a.roomsTable.UpdateCurrentSnapshotID(txn, roomID, newSnapshot.SnapshotID); err != nil {
-			return fmt.Errorf("failed to UpdateCurrentSnapshotID to %d: %w", newSnapshot.SnapshotID, err)
-		}
-		// update the snapshot ID to the new snapshot for all newly inserted events
-		if err = a.eventsTable.UpdateAfterEpochSnapshotID(txn, newSnapshot.SnapshotID, newEventNIDs); err != nil {
-			return fmt.Errorf("failed to update epoch snapshot IDs on events: %s", err)
+		// the last fetched snapshot ID is the current one
+		if err = a.roomsTable.UpdateCurrentSnapshotID(txn, roomID, snapID); err != nil {
+			return fmt.Errorf("failed to UpdateCurrentSnapshotID to %d: %w", snapID, err)
 		}
 
 		// Add membership logs if this update includes membership changes
-		if len(membershipEventIDs) > 0 {
-			storedMembershipEvents, err := a.eventsTable.SelectByIDs(txn, membershipEventIDs)
-			if err != nil {
-				return err
-			}
-			if len(storedMembershipEvents) != len(membershipEventIDs) {
-				return fmt.Errorf("SelectByIDs returned fewer membership events than requested, got %d want %d", len(storedMembershipEvents), len(membershipEventIDs))
-			}
-			for _, ev := range storedMembershipEvents {
-				target := gjson.GetBytes(ev.JSON, "state_key").Str
-				err = a.membershipLogTable.AppendMembership(txn, int64(ev.NID), roomID, target)
+		for _, evDec := range newEventsDec {
+			if evDec.IsMembershipChange {
+				target := evDec.JSON.Get("state_key").Str
+				err = a.membershipLogTable.AppendMembership(txn, evDec.NID, roomID, target)
 				if err != nil {
 					return fmt.Errorf("AppendMembership failed: %w", err)
 				}
