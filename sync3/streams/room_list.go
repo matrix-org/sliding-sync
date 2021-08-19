@@ -41,8 +41,8 @@ type FilterRoomList struct {
 	StreamingAdd bool     `json:"streaming_add"`
 	AddRooms     []string `json:"add_rooms"`
 	DelRooms     []string `json:"del_rooms"`
-	// The pagination parameters to request the next page of results.
-	P *P `json:"p,omitempty"`
+
+	NextPage string `json:"next_page,omitempty"`
 }
 
 func (r *FilterRoomList) Validate() {
@@ -71,7 +71,7 @@ type RoomListResponse struct {
 	// The rooms
 	Rooms []RoomListEntry `json:"rooms"`
 	// The pagination parameters to request the next page, can be empty if all rooms fit on one page.
-	P *P `json:"p,omitempty"`
+	NextPage string `json:"next_page,omitempty"`
 }
 
 type RoomListEntry struct {
@@ -101,7 +101,7 @@ func (s *RoomList) SetPosition(tok *sync3.Token, pos int64) {
 }
 
 func (s *RoomList) IsPaginationRequest(req *Request) bool {
-	return req.RoomList != nil && req.RoomList.P != nil && req.RoomList.P.Next != ""
+	return req.RoomList != nil && req.RoomList.NextPage != ""
 }
 
 func (s *RoomList) SessionConfirmed(session *sync3.Session, confirmedPos int64, allSessions bool) {
@@ -112,7 +112,7 @@ func (s *RoomList) DataInRange(session *sync3.Session, fromExcl, toIncl int64, r
 		return 0, ErrNotRequested
 	}
 	request.RoomList.Validate()
-	if request.RoomList.P == nil && fromExcl != 0 {
+	if request.RoomList.NextPage == "" && fromExcl != 0 {
 		return s.streamingDataInRange(session, fromExcl, toIncl, request, resp)
 	}
 

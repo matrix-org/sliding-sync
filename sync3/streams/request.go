@@ -38,8 +38,3 @@ func (r *Request) ApplyDeltas(req2 *Request) (bool, error) {
 	}
 	return !bytes.Equal(original, combined), nil
 }
-
-// P is the pagination struct for streams
-type P struct {
-	Next string `json:"next,omitempty"`
-}

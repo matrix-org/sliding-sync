@@ -26,8 +26,8 @@ type FilterRoomMember struct {
 	RoomID string `json:"room_id"`
 	// The sort order to use when returning results.
 	SortBy RoomMemberSortOrder `json:"sort"`
-	// The pagination parameters to request the next page of results.
-	P *P `json:"p,omitempty"`
+
+	NextPage string `json:"next_page,omitempty"`
 }
 
 type RoomMemberResponse struct {
@@ -36,7 +36,7 @@ type RoomMemberResponse struct {
 	// The m.room.member events
 	Events []json.RawMessage `json:"events"`
 	// The pagination parameters to request the next page, can be empty if all members fit on one page.
-	P *P `json:"p,omitempty"`
+	NextPage string `json:"next_page,omitempty"`
 }
 
 type RoomMemberSortOrder string
@@ -99,7 +99,7 @@ func (s *RoomMember) SetPosition(tok *sync3.Token, pos int64) {
 }
 
 func (s *RoomMember) IsPaginationRequest(req *Request) bool {
-	return req.RoomMember != nil && req.RoomMember.P != nil && req.RoomMember.P.Next != ""
+	return req.RoomMember != nil && req.RoomMember.NextPage != ""
 }
 
 func (s *RoomMember) SessionConfirmed(session *sync3.Session, confirmedPos int64, allSessions bool) {
@@ -124,7 +124,7 @@ func (s *RoomMember) DataInRange(session *sync3.Session, fromExcl, toIncl int64,
 	if request.RoomMember.Limit <= 0 {
 		request.RoomMember.Limit = DefaultRoomMemberLimit
 	}
-	if request.RoomMember.P == nil && fromExcl != 0 {
+	if request.RoomMember.NextPage == "" && fromExcl != 0 {
 		return s.streamingDataInRange(session, fromExcl, toIncl, request, resp)
 	}
 
@@ -222,13 +222,13 @@ func (s *RoomMember) paginatedDataAtPoint(session *sync3.Session, pos int64, sor
 
 	// return the right subslice based on P, honouring the limit
 	var page int
-	if request.RoomMember.P != nil && request.RoomMember.P.Next != "" {
-		page, err = strconv.Atoi(request.RoomMember.P.Next)
+	if request.RoomMember.NextPage != "" {
+		page, err = strconv.Atoi(request.RoomMember.NextPage)
 		if err != nil {
-			return fmt.Errorf("invalid P.next: %s", err)
+			return fmt.Errorf("invalid next_page: %s", err)
 		}
 		if page < 0 {
-			return fmt.Errorf("invalid P.next: -ve number")
+			return fmt.Errorf("invalid next_page: -ve number")
 		}
 	}
 
@@ -256,9 +256,7 @@ func (s *RoomMember) paginatedDataAtPoint(session *sync3.Session, pos int64, sor
 	}
 	if endIndex != len(members) {
 		// we aren't at the end
-		resp.RoomMember.P = &P{
-			Next: fmt.Sprintf("%d", page+1),
-		}
+		resp.RoomMember.NextPage = fmt.Sprintf("%d", page+1)
 	}
 	return nil
 }

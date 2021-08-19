@@ -808,9 +808,7 @@ func TestHandlerRoomMember(t *testing.T) {
 					since = nextBatches[req.SinceRequestIndex]
 				}
 				if req.UsePrevP {
-					filter["p"] = map[string]interface{}{
-						"next": prevP,
-					}
+					filter["next_page"] = prevP
 				}
 				t.Logf("Room member since=%v request: %+v", since, filter)
 				v3resp := mustDoSync3Request(t, server, aliceBearer, since, map[string]interface{}{
@@ -820,8 +818,8 @@ func TestHandlerRoomMember(t *testing.T) {
 				if v3resp.RoomMember == nil {
 					t.Fatalf("response did not include room_member: test case %v", tc.Name)
 				}
-				if v3resp.RoomMember.P != nil {
-					prevP = v3resp.RoomMember.P.Next
+				if v3resp.RoomMember.NextPage != "" {
+					prevP = v3resp.RoomMember.NextPage
 				}
 				for _, ev := range v3resp.RoomMember.Events {
 					t.Logf("%s", string(ev))
