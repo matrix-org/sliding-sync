@@ -12,11 +12,13 @@ var (
 	eventIDMu      sync.Mutex
 )
 
-func generateEventID() string {
+func generateEventID(t *testing.T) string {
 	eventIDMu.Lock()
 	defer eventIDMu.Unlock()
 	eventIDCounter++
-	return fmt.Sprintf("$event_%d", eventIDCounter)
+	// we need to mux in the test name bleurgh because when run using `go test ./...` each
+	// package's tests run in parallel but with a shared database when run on Github Actions
+	return fmt.Sprintf("$event_%d_%s", eventIDCounter, t.Name())
 }
 
 func NewStateEvent(t *testing.T, evType, stateKey, sender string, content interface{}) json.RawMessage {
@@ -32,7 +34,7 @@ func NewStateEvent(t *testing.T, evType, stateKey, sender string, content interf
 		StateKey: stateKey,
 		Sender:   sender,
 		Content:  content,
-		EventID:  generateEventID(),
+		EventID:  generateEventID(t),
 	}
 	j, err := json.Marshal(&e)
 	if err != nil {
@@ -52,7 +54,7 @@ func NewEvent(t *testing.T, evType, sender string, content interface{}) json.Raw
 		Type:    evType,
 		Sender:  sender,
 		Content: content,
-		EventID: generateEventID(),
+		EventID: generateEventID(t),
 	}
 	j, err := json.Marshal(&e)
 	if err != nil {
