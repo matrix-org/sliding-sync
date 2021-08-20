@@ -56,7 +56,7 @@ func TestEventTable(t *testing.T) {
 	}
 
 	// pulling non-existent ids returns no error but a zero slice
-	events, err = table.SelectByIDs(txn, []string{"101010101010"})
+	events, err = table.SelectByIDs(txn, false, []string{"101010101010"})
 	if err != nil {
 		t.Fatalf("SelectByIDs failed: %s", err)
 	}
@@ -65,7 +65,7 @@ func TestEventTable(t *testing.T) {
 	}
 
 	// pulling events by event_id is ok
-	events, err = table.SelectByIDs(txn, []string{"100", "101", "102"})
+	events, err = table.SelectByIDs(txn, true, []string{"100", "101", "102"})
 	if err != nil {
 		t.Fatalf("SelectByIDs failed: %s", err)
 	}
@@ -133,7 +133,7 @@ func TestEventTable(t *testing.T) {
 		nids = append(nids, int64(ev.NID))
 	}
 	// pulling events by event nid is ok
-	events, err = table.SelectByNIDs(txn, nids)
+	events, err = table.SelectByNIDs(txn, true, nids)
 	if err != nil {
 		t.Fatalf("SelectByNIDs failed: %s", err)
 	}
@@ -141,24 +141,29 @@ func TestEventTable(t *testing.T) {
 		t.Fatalf("SelectByNIDs returned %d events, want 3", len(events))
 	}
 
-	// pulling non-existent nids returns no error but a zero slice
-	events, err = table.SelectByNIDs(txn, []int64{9999999})
+	// pulling non-existent nids returns no error but a zero slice if verifyAll=false
+	events, err = table.SelectByNIDs(txn, false, []int64{9999999})
 	if err != nil {
 		t.Fatalf("SelectByNIDs failed: %s", err)
 	}
 	if len(events) != 0 {
 		t.Fatalf("SelectByNIDs returned %d events, wanted none", len(events))
 	}
+	// pulling non-existent nids returns error if verifyAll=true
+	events, err = table.SelectByNIDs(txn, true, []int64{9999999})
+	if err == nil {
+		t.Fatalf("SelectByNIDs did not fail, wanted to")
+	}
 
 	// pulling stripped events by NID is ok
-	strippedEvents, err := table.SelectStrippedEventsByNIDs(txn, nids)
+	strippedEvents, err := table.SelectStrippedEventsByNIDs(txn, true, nids)
 	if err != nil {
 		t.Fatalf("SelectStrippedEventsByNIDs failed: %s", err)
 	}
 	if len(strippedEvents) != 3 {
 		t.Fatalf("SelectStrippedEventsByNIDs returned %d events, want 3", len(strippedEvents))
 	}
-	verifyStripped := func(stripped []StrippedEvent) {
+	verifyStripped := func(stripped []Event) {
 		wantTypes := []string{"T1", "T2", "T3"}
 		wantKeys := []string{"S1", "S2", ""}
 		for i := range stripped {
@@ -175,7 +180,7 @@ func TestEventTable(t *testing.T) {
 	}
 	verifyStripped(strippedEvents)
 	// pulling stripped events by ID is ok
-	strippedEvents, err = table.SelectStrippedEventsByIDs(txn, []string{"100", "101", "102"})
+	strippedEvents, err = table.SelectStrippedEventsByIDs(txn, true, []string{"100", "101", "102"})
 	if err != nil {
 		t.Fatalf("SelectStrippedEventsByIDs failed: %s", err)
 	}
@@ -237,7 +242,7 @@ func TestEventTableSelectEventsBetween(t *testing.T) {
 			t.Fatalf("failed to start txn: %s", err)
 		}
 		defer txn2.Rollback()
-		events, err := table.SelectByIDs(txn2, []string{eventIDs[0]})
+		events, err := table.SelectByIDs(txn2, true, []string{eventIDs[0]})
 		if err != nil || len(events) == 0 {
 			t.Fatalf("failed to extract event for lower bound: %s", err)
 		}
@@ -257,7 +262,7 @@ func TestEventTableSelectEventsBetween(t *testing.T) {
 			t.Fatalf("failed to start txn: %s", err)
 		}
 		defer txn3.Rollback()
-		events, err := table.SelectByIDs(txn3, []string{eventIDs[0], eventIDs[2]})
+		events, err := table.SelectByIDs(txn3, true, []string{eventIDs[0], eventIDs[2]})
 		if err != nil || len(events) == 0 {
 			t.Fatalf("failed to extract event for lower/upper bound: %s", err)
 		}

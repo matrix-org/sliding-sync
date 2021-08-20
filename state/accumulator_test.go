@@ -55,7 +55,7 @@ func TestAccumulatorInitialise(t *testing.T) {
 	}
 
 	// these 3 events should map to the three events we initialised with
-	events, err := accumulator.eventsTable.SelectByNIDs(txn, row.Events)
+	events, err := accumulator.eventsTable.SelectByNIDs(txn, true, row.Events)
 	if err != nil {
 		t.Fatalf("failed to extract events in snapshot: %s", err)
 	}
@@ -144,7 +144,7 @@ func TestAccumulatorAccumulate(t *testing.T) {
 	}
 
 	// these 4 events should map to the create/member events from initialise, then the join_rules/history_visibility from accumulate
-	events, err := accumulator.eventsTable.SelectByNIDs(txn, row.Events)
+	events, err := accumulator.eventsTable.SelectByNIDs(txn, true, row.Events)
 	if err != nil {
 		t.Fatalf("failed to extract events in snapshot: %s", err)
 	}
@@ -255,7 +255,7 @@ func TestAccumulatorMembershipLogs(t *testing.T) {
 	// Begin assertions
 
 	// Pull nids for these events
-	insertedEvents, err := accumulator.eventsTable.SelectByIDs(txn, roomEventIDs)
+	insertedEvents, err := accumulator.eventsTable.SelectByIDs(txn, true, roomEventIDs)
 	if err != nil {
 		t.Fatalf("Failed to select accumulated events: %s", err)
 	}

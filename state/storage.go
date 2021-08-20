@@ -61,7 +61,7 @@ func (s *Storage) RoomStateAfterEventPosition(roomID string, pos int64) (events 
 		currEventIsState := false
 		if lastEventNID > 0 {
 			// now load the event which has this before_snapshot and see if we need to roll it forward
-			lastEvents, err := s.accumulator.eventsTable.SelectByNIDs(txn, []int64{lastEventNID})
+			lastEvents, err := s.accumulator.eventsTable.SelectByNIDs(txn, true, []int64{lastEventNID})
 			if err != nil {
 				return fmt.Errorf("SelectByNIDs last event nid %d : %s", lastEventNID, err)
 			}
@@ -88,7 +88,7 @@ func (s *Storage) RoomStateAfterEventPosition(roomID string, pos int64) (events 
 				snapshotRow.Events = append(snapshotRow.Events, lastEventNID)
 			}
 		}
-		events, err = s.accumulator.eventsTable.SelectByNIDs(txn, snapshotRow.Events)
+		events, err = s.accumulator.eventsTable.SelectByNIDs(txn, true, snapshotRow.Events)
 		if err != nil {
 			return err
 		}
@@ -108,7 +108,7 @@ func (s *Storage) RoomStateBeforeEventPosition(roomID string, pos int64) (events
 		if err != nil {
 			return err
 		}
-		events, err = s.accumulator.eventsTable.SelectByNIDs(txn, snapshotRow.Events)
+		events, err = s.accumulator.eventsTable.SelectByNIDs(txn, true, snapshotRow.Events)
 		return err
 	})
 	return
@@ -147,7 +147,7 @@ func (s *Storage) VisibleEventNIDsBetween(userID string, from, to int64) (map[st
 		if err != nil {
 			return fmt.Errorf("failed to load membership log delta: %s", err)
 		}
-		membershipEvents, err = s.accumulator.eventsTable.SelectByNIDs(txn, eventNIDs)
+		membershipEvents, err = s.accumulator.eventsTable.SelectByNIDs(txn, true, eventNIDs)
 		if err != nil {
 			return fmt.Errorf("failed to load membership events: %s", err)
 		}
@@ -251,7 +251,7 @@ func (s *Storage) RoomMembershipDelta(roomID string, from, to int64, limit int) 
 			return nil
 		}
 		upTo = nids[len(nids)-1]
-		events, err := s.accumulator.eventsTable.SelectByNIDs(txn, nids)
+		events, err := s.accumulator.eventsTable.SelectByNIDs(txn, true, nids)
 		if err != nil {
 			return err
 		}
@@ -271,7 +271,7 @@ func (s *Storage) AllJoinedMembers() (map[string][]string, error) {
 	}
 	result := make(map[string][]string)
 	for roomID, eventNIDs := range roomIDToEventNIDs {
-		events, err := s.accumulator.eventsTable.SelectByNIDs(nil, eventNIDs)
+		events, err := s.accumulator.eventsTable.SelectByNIDs(nil, true, eventNIDs)
 		if err != nil {
 			return nil, fmt.Errorf("failed to select events in room %s: %s", roomID, err)
 		}
@@ -290,5 +290,6 @@ func (s *Storage) AllJoinedMembers() (map[string][]string, error) {
 }
 
 func (s *Storage) JoinedRoomsAfterPosition(userID string, pos int64) ([]string, error) {
+	//s.accumulator.eventsTable
 	return nil, nil
 }

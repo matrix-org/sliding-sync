@@ -49,15 +49,15 @@ func (a *Accumulator) strippedEventsForSnapshot(txn *sqlx.Tx, snapID int64) (Str
 		return nil, err
 	}
 	// pull stripped events as this may be huge (think Matrix HQ)
-	return a.eventsTable.SelectStrippedEventsByNIDs(txn, snapshot.Events)
+	return a.eventsTable.SelectStrippedEventsByNIDs(txn, true, snapshot.Events)
 }
 
 // calculateNewSnapshot works out the new snapshot by combining an old snapshot and a new state event. Events get replaced
 // if the tuple of event type/state_key match. A new slice is returned (the inputs are not modified) along with the NID
 // that got replaced.
-func (a *Accumulator) calculateNewSnapshot(old StrippedEvents, new StrippedEvent) (StrippedEvents, int64) {
+func (a *Accumulator) calculateNewSnapshot(old StrippedEvents, new Event) (StrippedEvents, int64) {
 	// TODO: implement dendrite's binary tree diff algorithm?
-	tupleKey := func(e StrippedEvent) string {
+	tupleKey := func(e Event) string {
 		// 0x1f = unit separator
 		return e.Type + "\x1f" + e.StateKey
 	}
@@ -276,7 +276,7 @@ func (a *Accumulator) Accumulate(roomID string, timeline []json.RawMessage) (num
 						return err
 					}
 				}
-				newStripped, replacedNID := a.calculateNewSnapshot(oldStripped, StrippedEvent{
+				newStripped, replacedNID := a.calculateNewSnapshot(oldStripped, Event{
 					NID:      ev.NID,
 					Type:     ev.JSON.Get("type").Str,
 					StateKey: ev.JSON.Get("state_key").Str,

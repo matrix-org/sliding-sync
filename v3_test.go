@@ -10,6 +10,7 @@ import (
 	"github.com/matrix-org/gomatrixserverlib"
 	"github.com/matrix-org/sync-v3/sync2"
 	"github.com/matrix-org/sync-v3/sync3/streams"
+	"github.com/matrix-org/sync-v3/testutils"
 	"github.com/tidwall/gjson"
 )
 
@@ -734,11 +735,11 @@ func TestHandlerRoomMember(t *testing.T) {
 				tc.PL = &pl
 			}
 			state := []json.RawMessage{
-				mkStateEvent(t, "m.room.create", "", tc.Creator, map[string]interface{}{
+				testutils.NewStateEvent(t, "m.room.create", "", tc.Creator, map[string]interface{}{
 					"creator": tc.Creator,
 				}),
-				mkStateEvent(t, "m.room.member", tc.Creator, tc.Creator, creatorMemberContent),
-				mkStateEvent(t, "m.room.power_levels", "", tc.Creator, tc.PL),
+				testutils.NewStateEvent(t, "m.room.member", tc.Creator, tc.Creator, creatorMemberContent),
+				testutils.NewStateEvent(t, "m.room.power_levels", "", tc.Creator, tc.PL),
 			}
 			for _, ml := range tc.StateMemberLog {
 				content := map[string]interface{}{
@@ -747,7 +748,7 @@ func TestHandlerRoomMember(t *testing.T) {
 				if ml.Membership == "join" && tc.Names[ml.Target] != "" {
 					content["displayname"] = tc.Names[ml.Target]
 				}
-				state = append(state, mkStateEvent(t, "m.room.member", ml.Target, ml.Sender, content))
+				state = append(state, testutils.NewStateEvent(t, "m.room.member", ml.Target, ml.Sender, content))
 			}
 			var timeline []json.RawMessage
 			for _, ml := range tc.TimelineMemberLog {
@@ -757,7 +758,7 @@ func TestHandlerRoomMember(t *testing.T) {
 				if ml.Membership == "join" && tc.Names[ml.Target] != "" {
 					content["displayname"] = tc.Names[ml.Target]
 				}
-				timeline = append(timeline, mkStateEvent(t, "m.room.member", ml.Target, ml.Sender, content))
+				timeline = append(timeline, testutils.NewStateEvent(t, "m.room.member", ml.Target, ml.Sender, content))
 			}
 			if len(timeline) == 0 {
 				t.Fatalf("test must have timeline entries in order to update upcoming token")
@@ -784,7 +785,7 @@ func TestHandlerRoomMember(t *testing.T) {
 						if ml.Membership == "join" && tc.Names[ml.Target] != "" {
 							content["displayname"] = tc.Names[ml.Target]
 						}
-						timeline = append(timeline, mkStateEvent(t, "m.room.member", ml.Target, ml.Sender, content))
+						timeline = append(timeline, testutils.NewStateEvent(t, "m.room.member", ml.Target, ml.Sender, content))
 					}
 					var v2Resp sync2.SyncResponse
 					var jr sync2.SyncV2JoinResponse
@@ -839,29 +840,4 @@ func TestHandlerRoomMember(t *testing.T) {
 			}
 		})
 	}
-}
-
-var eventIDCounter = 0
-
-func mkStateEvent(t *testing.T, evType, stateKey, sender string, content interface{}) json.RawMessage {
-	t.Helper()
-	eventIDCounter++
-	e := struct {
-		Type     string      `json:"type"`
-		StateKey string      `json:"state_key"`
-		Sender   string      `json:"sender"`
-		Content  interface{} `json:"content"`
-		EventID  string      `json:"event_id"`
-	}{
-		Type:     evType,
-		StateKey: stateKey,
-		Sender:   sender,
-		Content:  content,
-		EventID:  fmt.Sprintf("$event_%d", eventIDCounter),
-	}
-	j, err := json.Marshal(&e)
-	if err != nil {
-		t.Fatalf("failed to make event JSON: %s", err)
-	}
-	return j
 }
