@@ -131,7 +131,7 @@ func (s *RoomList) DataInRange(session *sync3.Session, fromExcl, toIncl int64, r
 }
 
 func (s *RoomList) paginatedDataAtPoint(session *sync3.Session, pos int64, request *Request, resp *Response) error {
-	s.storage.JoinedRooms(session.UserID, pos)
+	_, _ = s.storage.JoinedRoomsAfterPosition(session.UserID, pos)
 	// find all invited / joined rooms for this user
 	// populate summaries
 	// offset based on P

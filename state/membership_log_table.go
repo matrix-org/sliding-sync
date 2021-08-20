@@ -6,6 +6,12 @@ import (
 
 const MembershipLogOffsetStart = -1
 
+type membershipEvent struct {
+	Event
+	StateKey   string
+	Membership string
+}
+
 // MembershipLogTable stores a log of membership changes for rooms, along with the corresponding
 // event nid of the membership event. This table contains membership deltas between historical
 // room snapshots and the latest snapshot for a room, so it does not grow unbounded. E.g:
@@ -54,7 +60,7 @@ func (t *MembershipLogTable) AppendMembership(txn *sqlx.Tx, eventNID int64, room
 // Call this when processing /sync
 func (t *MembershipLogTable) MembershipsBetween(txn *sqlx.Tx, fromNIDExcl, toNIDIncl int64, targetUser string) (eventNIDs []int64, err error) {
 	err = txn.Select(
-		&eventNIDs, `SELECT event_nid FROM syncv3_membership_logs WHERE event_nid > $1 AND event_nid <= $2 AND target_user = $3`,
+		&eventNIDs, `SELECT event_nid FROM syncv3_membership_logs WHERE event_nid > $1 AND event_nid <= $2 AND target_user = $3 ORDER BY event_nid ASC`,
 		fromNIDExcl, toNIDIncl, targetUser,
 	)
 	return

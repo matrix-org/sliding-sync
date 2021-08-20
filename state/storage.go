@@ -114,6 +114,133 @@ func (s *Storage) RoomStateBeforeEventPosition(roomID string, pos int64) (events
 	return
 }
 
+// Work out the NID ranges to pull events from for this user. Given a from and to event nid stream position,
+// this function returns a map of room ID to a slice of 2-element from|to positions. These positions are
+// all INCLUSIVE, and the client should be informed of these events at some point. For example:
+//
+//                     Stream Positions
+//           1     2   3    4   5   6   7   8   9   10
+//   Room A  Maj   E   E                E
+//   Room B                 E   Maj E
+//   Room C                                 E   Mal E   (a already joined to this room)
+//
+//   E=message event, M=membership event, followed by user letter, followed by 'i' or 'j' or 'l' for invite|join|leave
+//
+//   - For Room A: from=1, to=10, returns { RoomA: [ [1,7] ]}  (tests events in joined room)
+//   - For Room B: from=1, to=10, returns { RoomB: [ [5,6] ]}  (tests joining a room starts events)
+//   - For Room C: from=1, to=10, returns { RoomC: [ [8,9] ]}  (tests leaving a room stops events)
+//
+// Multiple slices can occur when a user leaves and re-joins the same room, and invites are same-element positions:
+//
+//                     Stream Positions
+//           1     2   3    4   5   6   7   8   9   10  11  12  13  14  15
+//   Room D  Maj                E   Mal E   Maj E   Mal E
+//   Room E        E   Mai  E                               E   Maj E   E
+//
+//  - For Room D: from=1, to=15 returns { RoomD: [ [1,6], [8,10] ] } (tests multi-join/leave)
+//  - For Room E: from=1, to=15 returns { RoomE: [ [3,3], [13,15] ] } (tests invites)
+func (s *Storage) VisibleEventNIDsBetween(userID string, from, to int64) (map[string][][2]int64, error) {
+	var membershipEvents []Event
+	err := sqlutil.WithTransaction(s.accumulator.db, func(txn *sqlx.Tx) error {
+		// load all membership logs between from and to which involve this user
+		eventNIDs, err := s.accumulator.membershipLogTable.MembershipsBetween(txn, from, to, userID)
+		if err != nil {
+			return fmt.Errorf("failed to load membership log delta: %s", err)
+		}
+		membershipEvents, err = s.accumulator.eventsTable.SelectByNIDs(txn, eventNIDs)
+		if err != nil {
+			return fmt.Errorf("failed to load membership events: %s", err)
+		}
+		if len(membershipEvents) != len(eventNIDs) {
+			return fmt.Errorf("%d events exist in membership logs but only fetched %d of them from events table - missing data!", len(eventNIDs), len(membershipEvents))
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	// load membership events in order and bucket based on room ID
+	roomIDToLogs := make(map[string][]membershipEvent)
+	for _, ev := range membershipEvents {
+		evJSON := gjson.ParseBytes(ev.JSON)
+		roomIDToLogs[ev.RoomID] = append(roomIDToLogs[ev.RoomID], membershipEvent{
+			Event:      ev,
+			StateKey:   evJSON.Get("state_key").Str,
+			Membership: evJSON.Get("content.membership").Str,
+		})
+	}
+
+	// load all joined rooms for this user at from (inclusive)
+	roomIDs, err := s.JoinedRoomsAfterPosition(userID, from)
+	if err != nil {
+		return nil, fmt.Errorf("failed to work out joined rooms for %s at pos %d: %s", userID, from, err)
+	}
+
+	// Performs the algorithm
+	calculateVisibleEventNIDs := func(isJoined bool, fromIncl, toIncl int64, logs []membershipEvent) [][2]int64 {
+		// short circuit when there are no membership deltas
+		if len(logs) == 0 {
+			return [][2]int64{
+				{
+					fromIncl, toIncl,
+				},
+			}
+		}
+		var result [][2]int64
+		var startIndex int64 = -1
+		if isJoined {
+			startIndex = fromIncl
+		}
+		for _, memEvent := range logs {
+			// check for a valid transition (join->leave|ban or leave|invite->join) - we won't always get valid transitions
+			// e.g logs will be there for things like leave->ban which we don't care about
+			isValidTransition := false
+			if isJoined && (memEvent.Membership == "leave" || memEvent.Membership == "ban") {
+				isValidTransition = true
+			} else if !isJoined && memEvent.Membership == "join" {
+				isValidTransition = true
+			} else if !isJoined && memEvent.Membership == "invite" {
+				// short-circuit: invites are sent on their own and don't affect ranges
+				result = append(result, [2]int64{memEvent.NID, memEvent.NID})
+				continue
+			}
+			if !isValidTransition {
+				continue
+			}
+			if isJoined {
+				// transitioning to leave, we get all events up to and including the leave event
+				result = append(result, [2]int64{startIndex, memEvent.NID})
+				isJoined = false
+			} else {
+				// transitioning to joined, we will get the join and some more events in a bit
+				startIndex = memEvent.NID
+				isJoined = true
+			}
+		}
+		// if we are still joined to the room at this point, grab all events up to toIncl
+		if isJoined {
+			result = append(result, [2]int64{startIndex, toIncl})
+		}
+		return result
+	}
+
+	// For each joined room, perform the algorithm and delete the logs afterwards
+	result := make(map[string][][2]int64)
+	for _, joinedRoomID := range roomIDs {
+		roomResult := calculateVisibleEventNIDs(true, from, to, roomIDToLogs[joinedRoomID])
+		result[joinedRoomID] = roomResult
+		delete(roomIDToLogs, joinedRoomID)
+	}
+
+	// Handle rooms which we are not joined to but have logs for
+	for roomID, logs := range roomIDToLogs {
+		roomResult := calculateVisibleEventNIDs(false, from, to, logs)
+		result[roomID] = roomResult
+	}
+
+	return result, nil
+}
+
 func (s *Storage) RoomMembershipDelta(roomID string, from, to int64, limit int) (eventJSON []json.RawMessage, upTo int64, err error) {
 	err = sqlutil.WithTransaction(s.accumulator.db, func(txn *sqlx.Tx) error {
 		nids, err := s.accumulator.membershipLogTable.MembershipsBetweenForRoom(txn, from, to, limit, roomID)
@@ -162,6 +289,6 @@ func (s *Storage) AllJoinedMembers() (map[string][]string, error) {
 	return result, nil
 }
 
-func (s *Storage) JoinedRooms(userID string, pos int64) {
-
+func (s *Storage) JoinedRoomsAfterPosition(userID string, pos int64) ([]string, error) {
+	return nil, nil
 }
