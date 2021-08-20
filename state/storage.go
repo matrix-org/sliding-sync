@@ -141,11 +141,21 @@ func (s *Storage) RoomStateBeforeEventPosition(roomID string, pos int64) (events
 //  - For Room E: from=1, to=15 returns { RoomE: [ [3,3], [13,15] ] } (tests invites)
 func (s *Storage) VisibleEventNIDsBetween(userID string, from, to int64) (map[string][][2]int64, error) {
 	var membershipEvents []Event
+	// TODO: Remove the membership log table entirely and just read from events, that way memberships
+	// present in `state` will turn up as a membership log and we don't need to adjust our JoinedRoomsAfterPosition
+	membershipLogsStart := to
 	err := sqlutil.WithTransaction(s.accumulator.db, func(txn *sqlx.Tx) error {
 		// load all membership logs between from and to which involve this user
 		eventNIDs, err := s.accumulator.membershipLogTable.MembershipsBetween(txn, from, to, userID)
 		if err != nil {
 			return fmt.Errorf("failed to load membership log delta: %s", err)
+		}
+		fmt.Printf("membership logs: %v\n", eventNIDs)
+		// track the earliest delta to ensure we load the joined rooms at the right spot
+		for _, nid := range eventNIDs {
+			if nid < membershipLogsStart {
+				membershipLogsStart = nid
+			}
 		}
 		membershipEvents, err = s.accumulator.eventsTable.SelectByNIDs(txn, true, eventNIDs)
 		if err != nil {
@@ -171,10 +181,11 @@ func (s *Storage) VisibleEventNIDsBetween(userID string, from, to int64) (map[st
 	}
 
 	// load all joined rooms for this user at from (inclusive)
-	roomIDs, err := s.JoinedRoomsAfterPosition(userID, from)
+	joinedRoomIDs, err := s.JoinedRoomsAfterPosition(userID, membershipLogsStart)
 	if err != nil {
 		return nil, fmt.Errorf("failed to work out joined rooms for %s at pos %d: %s", userID, from, err)
 	}
+	fmt.Printf("JoinedRoomsAfterPosition from=%d -> %v\n", from, joinedRoomIDs)
 
 	// Performs the algorithm
 	calculateVisibleEventNIDs := func(isJoined bool, fromIncl, toIncl int64, logs []membershipEvent) [][2]int64 {
@@ -226,7 +237,7 @@ func (s *Storage) VisibleEventNIDsBetween(userID string, from, to int64) (map[st
 
 	// For each joined room, perform the algorithm and delete the logs afterwards
 	result := make(map[string][][2]int64)
-	for _, joinedRoomID := range roomIDs {
+	for _, joinedRoomID := range joinedRoomIDs {
 		roomResult := calculateVisibleEventNIDs(true, from, to, roomIDToLogs[joinedRoomID])
 		result[joinedRoomID] = roomResult
 		delete(roomIDToLogs, joinedRoomID)
