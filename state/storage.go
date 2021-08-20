@@ -290,6 +290,31 @@ func (s *Storage) AllJoinedMembers() (map[string][]string, error) {
 }
 
 func (s *Storage) JoinedRoomsAfterPosition(userID string, pos int64) ([]string, error) {
-	//s.accumulator.eventsTable
-	return nil, nil
+	// fetch all the membership events up to and including pos
+	membershipEvents, err := s.accumulator.eventsTable.SelectEventsWithTypeStateKey("m.room.member", userID, 0, pos)
+	if err != nil {
+		return nil, fmt.Errorf("JoinedRoomsAfterPosition.SelectEventsWithTypeStateKey: %s", err)
+	}
+	joinedRoomsSet := make(map[string]bool)
+	for _, ev := range membershipEvents {
+		// some of these events will be profile changes but that's ok as we're just interested in the
+		// end result, not the deltas
+		membership := gjson.GetBytes(ev.JSON, "content.membership").Str
+		switch membership {
+		case "join":
+			joinedRoomsSet[ev.RoomID] = true
+		case "ban":
+			fallthrough
+		case "leave":
+			joinedRoomsSet[ev.RoomID] = false
+		}
+	}
+	joinedRooms := make([]string, 0, len(joinedRoomsSet))
+	for roomID, joined := range joinedRoomsSet {
+		if joined {
+			joinedRooms = append(joinedRooms, roomID)
+		}
+	}
+
+	return joinedRooms, nil
 }

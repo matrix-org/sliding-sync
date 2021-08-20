@@ -57,6 +57,7 @@ func NewEventTable(db *sqlx.DB) *EventTable {
 		state_key TEXT NOT NULL,
 		event JSONB NOT NULL
 	);
+	CREATE INDEX IF NOT EXISTS syncv3_events_type_sk_idx ON syncv3_events(event_type, state_key);
 	`)
 	return &EventTable{db}
 }
@@ -225,6 +226,19 @@ func (t *EventTable) SelectEventsBetween(txn *sqlx.Tx, roomID string, lowerExclu
 	var events []Event
 	err := txn.Select(&events, `SELECT event_nid, event FROM syncv3_events WHERE event_nid > $1 AND event_nid <= $2 AND room_id = $3 ORDER BY event_nid ASC LIMIT $4`,
 		lowerExclusive, upperInclusive, roomID, limit,
+	)
+	return events, err
+}
+
+// Select all events between the bounds matching the type, state_key given.
+// Used to work out which rooms the user was joined to at a given point in time.
+func (t *EventTable) SelectEventsWithTypeStateKey(eventType, stateKey string, lowerExclusive, upperInclusive int64) ([]Event, error) {
+	var events []Event
+	err := t.db.Select(&events,
+		`SELECT event_nid, room_id, event FROM syncv3_events
+		WHERE event_nid > $1 AND event_nid <= $2 AND event_type = $3 AND state_key = $4
+		ORDER BY event_nid ASC`,
+		lowerExclusive, upperInclusive, eventType, stateKey,
 	)
 	return events, err
 }
