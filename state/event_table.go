@@ -36,6 +36,12 @@ func (se StrippedEvents) NIDs() (result []int64) {
 	return
 }
 
+type membershipEvent struct {
+	Event
+	StateKey   string
+	Membership string
+}
+
 // EventTable stores events. A unique numeric ID is associated with each event.
 type EventTable struct {
 	db *sqlx.DB
@@ -57,7 +63,10 @@ func NewEventTable(db *sqlx.DB) *EventTable {
 		state_key TEXT NOT NULL,
 		event JSONB NOT NULL
 	);
+	-- index for querying all joined rooms for a given user
 	CREATE INDEX IF NOT EXISTS syncv3_events_type_sk_idx ON syncv3_events(event_type, state_key);
+	-- index for querying membership deltas in particular rooms
+	CREATE INDEX IF NOT EXISTS syncv3_events_type_room_nid_idx ON syncv3_events(event_type, room_id, event_nid);
 	`)
 	return &EventTable{db}
 }
@@ -241,6 +250,15 @@ func (t *EventTable) SelectEventsWithTypeStateKey(eventType, stateKey string, lo
 		lowerExclusive, upperInclusive, eventType, stateKey,
 	)
 	return events, err
+}
+
+// Select all events matching the given event type in a room. Used to implement the room member stream (paginated room lists)
+func (t *EventTable) SelectEventNIDsWithTypeInRoom(txn *sqlx.Tx, eventType string, limit int, targetRoom string, lowerExclusive, upperInclusive int64) (eventNIDs []int64, err error) {
+	err = txn.Select(
+		&eventNIDs, `SELECT event_nid FROM syncv3_events WHERE event_nid > $1 AND event_nid <= $2 AND event_type = $3 AND room_id = $4 ORDER BY event_nid ASC LIMIT $5`,
+		lowerExclusive, upperInclusive, eventType, targetRoom, limit,
+	)
+	return
 }
 
 type EventChunker []Event

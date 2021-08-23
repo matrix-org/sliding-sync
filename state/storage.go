@@ -22,12 +22,11 @@ func NewStorage(postgresURI string) *Storage {
 		log.Panic().Err(err).Str("uri", postgresURI).Msg("failed to open SQL DB")
 	}
 	acc := &Accumulator{
-		db:                 db,
-		roomsTable:         NewRoomsTable(db),
-		eventsTable:        NewEventTable(db),
-		snapshotTable:      NewSnapshotsTable(db),
-		membershipLogTable: NewMembershipLogTable(db),
-		entityName:         "server",
+		db:            db,
+		roomsTable:    NewRoomsTable(db),
+		eventsTable:   NewEventTable(db),
+		snapshotTable: NewSnapshotsTable(db),
+		entityName:    "server",
 	}
 	return &Storage{
 		accumulator:   acc,
@@ -140,34 +139,9 @@ func (s *Storage) RoomStateBeforeEventPosition(roomID string, pos int64) (events
 //  - For Room D: from=1, to=15 returns { RoomD: [ [1,6], [8,10] ] } (tests multi-join/leave)
 //  - For Room E: from=1, to=15 returns { RoomE: [ [3,3], [13,15] ] } (tests invites)
 func (s *Storage) VisibleEventNIDsBetween(userID string, from, to int64) (map[string][][2]int64, error) {
-	var membershipEvents []Event
-	// TODO: Remove the membership log table entirely and just read from events, that way memberships
-	// present in `state` will turn up as a membership log and we don't need to adjust our JoinedRoomsAfterPosition
-	membershipLogsStart := to
-	err := sqlutil.WithTransaction(s.accumulator.db, func(txn *sqlx.Tx) error {
-		// load all membership logs between from and to which involve this user
-		eventNIDs, err := s.accumulator.membershipLogTable.MembershipsBetween(txn, from, to, userID)
-		if err != nil {
-			return fmt.Errorf("failed to load membership log delta: %s", err)
-		}
-		fmt.Printf("membership logs: %v\n", eventNIDs)
-		// track the earliest delta to ensure we load the joined rooms at the right spot
-		for _, nid := range eventNIDs {
-			if nid < membershipLogsStart {
-				membershipLogsStart = nid
-			}
-		}
-		membershipEvents, err = s.accumulator.eventsTable.SelectByNIDs(txn, true, eventNIDs)
-		if err != nil {
-			return fmt.Errorf("failed to load membership events: %s", err)
-		}
-		if len(membershipEvents) != len(eventNIDs) {
-			return fmt.Errorf("%d events exist in membership logs but only fetched %d of them from events table - missing data!", len(eventNIDs), len(membershipEvents))
-		}
-		return nil
-	})
+	membershipEvents, err := s.accumulator.eventsTable.SelectEventsWithTypeStateKey("m.room.member", userID, from, to)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to load membership events: %s", err)
 	}
 	// load membership events in order and bucket based on room ID
 	roomIDToLogs := make(map[string][]membershipEvent)
@@ -181,7 +155,7 @@ func (s *Storage) VisibleEventNIDsBetween(userID string, from, to int64) (map[st
 	}
 
 	// load all joined rooms for this user at from (inclusive)
-	joinedRoomIDs, err := s.JoinedRoomsAfterPosition(userID, membershipLogsStart)
+	joinedRoomIDs, err := s.JoinedRoomsAfterPosition(userID, from)
 	if err != nil {
 		return nil, fmt.Errorf("failed to work out joined rooms for %s at pos %d: %s", userID, from, err)
 	}
@@ -254,7 +228,7 @@ func (s *Storage) VisibleEventNIDsBetween(userID string, from, to int64) (map[st
 
 func (s *Storage) RoomMembershipDelta(roomID string, from, to int64, limit int) (eventJSON []json.RawMessage, upTo int64, err error) {
 	err = sqlutil.WithTransaction(s.accumulator.db, func(txn *sqlx.Tx) error {
-		nids, err := s.accumulator.membershipLogTable.MembershipsBetweenForRoom(txn, from, to, limit, roomID)
+		nids, err := s.accumulator.eventsTable.SelectEventNIDsWithTypeInRoom(txn, "m.room.member", limit, roomID, from, to)
 		if err != nil {
 			return err
 		}

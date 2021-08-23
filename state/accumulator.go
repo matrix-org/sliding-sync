@@ -24,22 +24,20 @@ var log = zerolog.New(os.Stdout).With().Timestamp().Logger().Output(zerolog.Cons
 // Accumulate function for timeline events. v2 sync must be called with a large enough timeline.limit
 // for this to work!
 type Accumulator struct {
-	db                 *sqlx.DB
-	roomsTable         *RoomsTable
-	eventsTable        *EventTable
-	snapshotTable      *SnapshotTable
-	membershipLogTable *MembershipLogTable
-	entityName         string
+	db            *sqlx.DB
+	roomsTable    *RoomsTable
+	eventsTable   *EventTable
+	snapshotTable *SnapshotTable
+	entityName    string
 }
 
 func NewAccumulator(db *sqlx.DB) *Accumulator {
 	return &Accumulator{
-		db:                 db,
-		roomsTable:         NewRoomsTable(db),
-		eventsTable:        NewEventTable(db),
-		snapshotTable:      NewSnapshotsTable(db),
-		membershipLogTable: NewMembershipLogTable(db),
-		entityName:         "server",
+		db:            db,
+		roomsTable:    NewRoomsTable(db),
+		eventsTable:   NewEventTable(db),
+		snapshotTable: NewSnapshotsTable(db),
+		entityName:    "server",
 	}
 }
 
@@ -198,41 +196,22 @@ func (a *Accumulator) Accumulate(roomID string, timeline []json.RawMessage) (num
 
 		// Decorate the new events with useful information
 		var newEventsDec []struct {
-			JSON               gjson.Result
-			NID                int64
-			IsState            bool
-			IsMembershipChange bool
+			JSON    gjson.Result
+			NID     int64
+			IsState bool
 		}
 		var newEventIDs []string
 		for _, ev := range newEvents {
 			var evDec struct {
-				JSON               gjson.Result
-				NID                int64
-				IsState            bool
-				IsMembershipChange bool
+				JSON    gjson.Result
+				NID     int64
+				IsState bool
 			}
 			eventJSON := gjson.ParseBytes(ev)
 			newEventIDs = append(newEventIDs, eventJSON.Get("event_id").Str) // track the event IDs for mapping to NIDs
 			evDec.JSON = eventJSON
 			if eventJSON.Get("state_key").Exists() {
 				evDec.IsState = true
-				if eventJSON.Get("type").Str == "m.room.member" {
-					// membership event possibly, make sure the membership has changed else
-					// things like display name changes will count as membership events :(
-					prevMembership := "leave"
-					pm := eventJSON.Get("unsigned.prev_content.membership")
-					if pm.Exists() && pm.Str != "" {
-						prevMembership = pm.Str
-					}
-					currMembership := "leave"
-					cm := eventJSON.Get("content.membership")
-					if cm.Exists() && cm.Str != "" {
-						currMembership = cm.Str
-					}
-					if prevMembership != currMembership { // membership was changed
-						evDec.IsMembershipChange = true
-					}
-				}
 			}
 			newEventsDec = append(newEventsDec, evDec)
 		}
@@ -303,17 +282,6 @@ func (a *Accumulator) Accumulate(roomID string, timeline []json.RawMessage) (num
 		if err = a.roomsTable.UpdateCurrentAfterSnapshotID(txn, roomID, snapID); err != nil {
 			return fmt.Errorf("failed to UpdateCurrentSnapshotID to %d: %w", snapID, err)
 		}
-
-		// Add membership logs if this update includes membership changes
-		for _, evDec := range newEventsDec {
-			if evDec.IsMembershipChange {
-				target := evDec.JSON.Get("state_key").Str
-				err = a.membershipLogTable.AppendMembership(txn, evDec.NID, roomID, target)
-				if err != nil {
-					return fmt.Errorf("AppendMembership failed: %w", err)
-				}
-			}
-		}
 		return nil
 	})
 	return numNew, err
@@ -339,4 +307,20 @@ func (a *Accumulator) Delta(roomID string, lastEventNID int64, limit int) (event
 		eventsJSON[i] = events[i].JSON
 	}
 	return eventsJSON, int64(events[len(events)-1].NID), nil
+}
+
+func isMembershipChange(eventJSON gjson.Result) bool {
+	// membership event possibly, make sure the membership has changed else
+	// things like display name changes will count as membership events :(
+	prevMembership := "leave"
+	pm := eventJSON.Get("unsigned.prev_content.membership")
+	if pm.Exists() && pm.Str != "" {
+		prevMembership = pm.Str
+	}
+	currMembership := "leave"
+	cm := eventJSON.Get("content.membership")
+	if cm.Exists() && cm.Str != "" {
+		currMembership = cm.Str
+	}
+	return prevMembership != currMembership // membership was changed
 }

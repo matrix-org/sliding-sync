@@ -250,15 +250,16 @@ func TestAccumulatorMembershipLogs(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to start assert txn: %s", err)
 	}
-	defer txn.Rollback()
 
 	// Begin assertions
 
 	// Pull nids for these events
 	insertedEvents, err := accumulator.eventsTable.SelectByIDs(txn, true, roomEventIDs)
+	txn.Rollback()
 	if err != nil {
 		t.Fatalf("Failed to select accumulated events: %s", err)
 	}
+	startIndex := insertedEvents[0].NID - 1 // lowest index for the inserted events
 	testCases := []struct {
 		startExcl int64
 		endIncl   int64
@@ -266,33 +267,37 @@ func TestAccumulatorMembershipLogs(t *testing.T) {
 		wantNIDs  []int64
 	}{
 		{
-			startExcl: MembershipLogOffsetStart,
+			startExcl: startIndex,
 			endIncl:   int64(insertedEvents[len(insertedEvents)-1].NID),
 			target:    "@me:localhost",
-			// join then leave
-			wantNIDs: []int64{int64(insertedEvents[1].NID), int64(insertedEvents[7].NID)},
+			// join then profile change then  leave
+			wantNIDs: []int64{insertedEvents[1].NID, insertedEvents[5].NID, insertedEvents[7].NID},
 		},
 		{
-			startExcl: MembershipLogOffsetStart,
+			startExcl: startIndex,
 			endIncl:   int64(insertedEvents[len(insertedEvents)-1].NID),
 			target:    "@bob:localhost",
 			// invite
-			wantNIDs: []int64{int64(insertedEvents[6].NID)},
+			wantNIDs: []int64{insertedEvents[6].NID},
 		},
 		{
 			startExcl: int64(insertedEvents[2].NID),
 			endIncl:   int64(insertedEvents[6].NID),
 			target:    "@me:localhost",
-			// nothing for this user in this gap
-			wantNIDs: nil,
+			// profile change only
+			wantNIDs: []int64{insertedEvents[5].NID},
 		},
 	}
 	for _, tc := range testCases {
-		gotNIDs, err := accumulator.membershipLogTable.MembershipsBetween(
-			txn, tc.startExcl, tc.endIncl, tc.target,
+		gotEvents, err := accumulator.eventsTable.SelectEventsWithTypeStateKey(
+			"m.room.member", tc.target, tc.startExcl, tc.endIncl,
 		)
 		if err != nil {
 			t.Fatalf("failed to MembershipsBetween: %s", err)
+		}
+		gotNIDs := make([]int64, len(gotEvents))
+		for i := range gotEvents {
+			gotNIDs[i] = gotEvents[i].NID
 		}
 		if !reflect.DeepEqual(gotNIDs, tc.wantNIDs) {
 			t.Errorf("MembershipsBetween(%d,%d) got wrong nids, got %v want %v", tc.startExcl, tc.endIncl, gotNIDs, tc.wantNIDs)
