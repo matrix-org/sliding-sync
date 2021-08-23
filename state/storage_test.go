@@ -75,6 +75,8 @@ func TestVisibleEventNIDsBetween(t *testing.T) {
 	roomA := "!a:localhost"
 	roomB := "!b:localhost"
 	roomC := "!c:localhost"
+	roomD := "!d:localhost"
+	roomE := "!e:localhost"
 	alice := "@alice_TestVisibleEventNIDsBetween:localhost"
 	bob := "@bob_TestVisibleEventNIDsBetween:localhost"
 
@@ -92,6 +94,14 @@ func TestVisibleEventNIDsBetween(t *testing.T) {
 			testutils.NewStateEvent(t, "m.room.create", "", bob, map[string]interface{}{"creator": bob}),
 			testutils.NewStateEvent(t, "m.room.member", bob, bob, map[string]interface{}{"membership": "join"}),
 			testutils.NewStateEvent(t, "m.room.member", alice, alice, map[string]interface{}{"membership": "join"}),
+		},
+		roomD: {
+			testutils.NewStateEvent(t, "m.room.create", "", bob, map[string]interface{}{"creator": bob}),
+			testutils.NewStateEvent(t, "m.room.member", bob, bob, map[string]interface{}{"membership": "join"}),
+		},
+		roomE: {
+			testutils.NewStateEvent(t, "m.room.create", "", bob, map[string]interface{}{"creator": bob}),
+			testutils.NewStateEvent(t, "m.room.member", bob, bob, map[string]interface{}{"membership": "join"}),
 		},
 	}
 	for roomID, eventMap := range roomIDToEventMap {
@@ -157,8 +167,8 @@ func TestVisibleEventNIDsBetween(t *testing.T) {
 	if err != nil {
 		t.Fatalf("LatestEventNID: %s", err)
 	}
-	t.Logf("Start=%d Latest=%d", startPos, latestPos)
-	roomIDToVisibleRanges, err := store.VisibleEventNIDsBetween(alice, 0, latestPos)
+	t.Logf("ABC Start=%d Latest=%d", startPos, latestPos)
+	roomIDToVisibleRanges, err := store.VisibleEventNIDsBetween(alice, startPos, latestPos)
 	if err != nil {
 		t.Fatalf("VisibleEventNIDsBetween to %d: %s", latestPos, err)
 	}
@@ -186,6 +196,97 @@ func TestVisibleEventNIDsBetween(t *testing.T) {
 	verifyRange(t, roomIDToVisibleRanges, roomC, [][2]int64{
 		{0 + startPos, 9 + startPos},
 	})
+
+	// change the users else we will still have some rooms from A,B,C present if the user is still joined
+	// to those rooms.
+	alice = "@aliceDE:localhost"
+	bob = "@bobDE:localhost"
+
+	//                     Stream Positions
+	//           1     2   3    4   5   6   7   8   9   10  11  12  13  14  15
+	//   Room D  Maj                E   Mal E   Maj E   Mal E
+	//   Room E        E   Mai  E                               E   Maj E   E
+	timelineInjections = []struct {
+		RoomID string
+		Events []json.RawMessage
+	}{
+		{
+			RoomID: roomD,
+			Events: []json.RawMessage{
+				testutils.NewStateEvent(t, "m.room.member", alice, alice, map[string]interface{}{"membership": "join"}),
+			},
+		},
+		{
+			RoomID: roomE,
+			Events: []json.RawMessage{
+				testutils.NewEvent(t, "m.room.message", bob, map[string]interface{}{}),
+				testutils.NewStateEvent(t, "m.room.member", alice, bob, map[string]interface{}{"membership": "invite"}),
+				testutils.NewEvent(t, "m.room.message", bob, map[string]interface{}{}),
+			},
+		},
+		{
+			RoomID: roomD,
+			Events: []json.RawMessage{
+				testutils.NewEvent(t, "m.room.message", bob, map[string]interface{}{}),
+				testutils.NewStateEvent(t, "m.room.member", alice, alice, map[string]interface{}{"membership": "leave"}),
+				testutils.NewEvent(t, "m.room.message", bob, map[string]interface{}{}),
+				testutils.NewStateEvent(t, "m.room.member", alice, alice, map[string]interface{}{"membership": "join"}),
+				testutils.NewEvent(t, "m.room.message", bob, map[string]interface{}{}),
+				testutils.NewStateEvent(t, "m.room.member", alice, alice, map[string]interface{}{"membership": "leave"}),
+				testutils.NewEvent(t, "m.room.message", bob, map[string]interface{}{}),
+			},
+		},
+		{
+			RoomID: roomE,
+			Events: []json.RawMessage{
+				testutils.NewEvent(t, "m.room.message", bob, map[string]interface{}{}),
+				testutils.NewStateEvent(t, "m.room.member", alice, alice, map[string]interface{}{"membership": "join"}),
+				testutils.NewEvent(t, "m.room.message", bob, map[string]interface{}{}),
+				testutils.NewEvent(t, "m.room.message", bob, map[string]interface{}{}),
+			},
+		},
+	}
+	startPos, err = store.LatestEventNID()
+	if err != nil {
+		t.Fatalf("LatestEventNID: %s", err)
+	}
+	for _, tl := range timelineInjections {
+		numNew, err := store.Accumulate(tl.RoomID, tl.Events)
+		if err != nil {
+			t.Fatalf("Accumulate on %s failed: %s", tl.RoomID, err)
+		}
+		t.Logf("%s added %d new events", tl.RoomID, numNew)
+	}
+	latestPos, err = store.LatestEventNID()
+	if err != nil {
+		t.Fatalf("LatestEventNID: %s", err)
+	}
+	t.Logf("DE Start=%d Latest=%d", startPos, latestPos)
+	roomIDToVisibleRanges, err = store.VisibleEventNIDsBetween(alice, startPos, latestPos)
+	if err != nil {
+		t.Fatalf("VisibleEventNIDsBetween to %d: %s", latestPos, err)
+	}
+	for roomID, ranges := range roomIDToVisibleRanges {
+		for _, r := range ranges {
+			t.Logf("%v => [%d,%d]", roomID, r[0]-startPos, r[1]-startPos)
+		}
+	}
+	if len(roomIDToVisibleRanges) != 2 {
+		t.Errorf("VisibleEventNIDsBetween: wrong number of rooms, want 2 got %+v", roomIDToVisibleRanges)
+	}
+
+	// For Room D: from=1, to=15 returns { RoomD: [ [1,6], [8,10] ] } (tests multi-join/leave)
+	verifyRange(t, roomIDToVisibleRanges, roomD, [][2]int64{
+		{1 + startPos, 6 + startPos},
+		{8 + startPos, 10 + startPos},
+	})
+
+	// For Room E: from=1, to=15 returns { RoomE: [ [3,3], [13,15] ] } (tests invites)
+	verifyRange(t, roomIDToVisibleRanges, roomE, [][2]int64{
+		{3 + startPos, 3 + startPos},
+		{13 + startPos, 15 + startPos},
+	})
+
 }
 
 func verifyRange(t *testing.T, result map[string][][2]int64, roomID string, wantRanges [][2]int64) {
