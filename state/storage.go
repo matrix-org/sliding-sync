@@ -121,13 +121,13 @@ func (s *Storage) RoomStateBeforeEventPosition(roomID string, pos int64) (events
 //           1     2   3    4   5   6   7   8   9   10
 //   Room A  Maj   E   E                E
 //   Room B                 E   Maj E
-//   Room C                                 E   Mal E   (a already joined to this room)
+//   Room C                                 E   Mal E   (a already joined to this room at position 0)
 //
 //   E=message event, M=membership event, followed by user letter, followed by 'i' or 'j' or 'l' for invite|join|leave
 //
-//   - For Room A: from=1, to=10, returns { RoomA: [ [1,7] ]}  (tests events in joined room)
-//   - For Room B: from=1, to=10, returns { RoomB: [ [5,6] ]}  (tests joining a room starts events)
-//   - For Room C: from=1, to=10, returns { RoomC: [ [8,9] ]}  (tests leaving a room stops events)
+//   - For Room A: from=1, to=10, returns { RoomA: [ [1,10] ]}  (tests events in joined room)
+//   - For Room B: from=1, to=10, returns { RoomB: [ [5,10] ]}  (tests joining a room starts events)
+//   - For Room C: from=1, to=10, returns { RoomC: [ [0,9] ]}  (tests leaving a room stops events)
 //
 // Multiple slices can occur when a user leaves and re-joins the same room, and invites are same-element positions:
 //

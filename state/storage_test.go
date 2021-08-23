@@ -2,6 +2,7 @@ package state
 
 import (
 	"encoding/json"
+	"reflect"
 	"testing"
 
 	"github.com/matrix-org/sync-v3/testutils"
@@ -161,13 +162,44 @@ func TestVisibleEventNIDsBetween(t *testing.T) {
 	if err != nil {
 		t.Fatalf("VisibleEventNIDsBetween to %d: %s", latestPos, err)
 	}
-	//   - For Room A: from=1, to=10, returns { RoomA: [ [1,7] ]}  (tests events in joined room)
-	//   - For Room B: from=1, to=10, returns { RoomB: [ [5,6] ]}  (tests joining a room starts events)
-	//   - For Room C: from=1, to=10, returns { RoomC: [ [8,9] ]}  (tests leaving a room stops events)
-	if len(roomIDToVisibleRanges) != 3 {
-		t.Fatalf("VisibleEventNIDsBetween: wrong number of rooms, want 3 got %+v", roomIDToVisibleRanges)
+	for roomID, ranges := range roomIDToVisibleRanges {
+		for _, r := range ranges {
+			t.Logf("%v => [%d,%d]", roomID, r[0]-startPos, r[1]-startPos)
+		}
 	}
-	t.Logf("Result: %+v", roomIDToVisibleRanges)
-	// TODO: Assert positions
+	if len(roomIDToVisibleRanges) != 3 {
+		t.Errorf("VisibleEventNIDsBetween: wrong number of rooms, want 3 got %+v", roomIDToVisibleRanges)
+	}
 
+	// For Room A: from=1, to=10, returns { RoomA: [ [1,10] ]}  (tests events in joined room)
+	verifyRange(t, roomIDToVisibleRanges, roomA, [][2]int64{
+		{1 + startPos, 10 + startPos},
+	})
+
+	// For Room B: from=1, to=10, returns { RoomB: [ [5,10] ]}  (tests joining a room starts events)
+	verifyRange(t, roomIDToVisibleRanges, roomB, [][2]int64{
+		{5 + startPos, 10 + startPos},
+	})
+
+	// For Room C: from=1, to=10, returns { RoomC: [ [0,9] ]}  (tests leaving a room stops events)
+	// We start at 0 because it's the earliest event (we were joined since the beginning of the room state)
+	verifyRange(t, roomIDToVisibleRanges, roomC, [][2]int64{
+		{0 + startPos, 9 + startPos},
+	})
+}
+
+func verifyRange(t *testing.T, result map[string][][2]int64, roomID string, wantRanges [][2]int64) {
+	t.Helper()
+	gotRanges := result[roomID]
+	if gotRanges == nil {
+		t.Fatalf("no range was returned for room %s", roomID)
+	}
+	if len(gotRanges) != len(wantRanges) {
+		t.Fatalf("%s range count mismatch, got %d ranges, want %d :: GOT=%+v WANT=%+v", roomID, len(gotRanges), len(wantRanges), gotRanges, wantRanges)
+	}
+	for i := range gotRanges {
+		if !reflect.DeepEqual(gotRanges[i], wantRanges[i]) {
+			t.Errorf("%s range at index %d got %v want %v", roomID, i, gotRanges[i], wantRanges[i])
+		}
+	}
 }
