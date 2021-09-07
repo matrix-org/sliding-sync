@@ -79,7 +79,7 @@ Returns the response:
             state_events: [
              { event JSON }, { lazy m.room.member }
             ],
-            event: { ... },
+            events: [ { ... } ],
             highlight_count: 52,
             notification_count: 102,
           },
@@ -112,7 +112,9 @@ Returns the response:
   as a timeline, it allows the room data API to not send events after a given event ID, thus saves bandwidth.
 - `notifications[].highlight_count`: The unread notification count (see `unread_notifications` in /sync v2).
 - `notifications[].notification_count`: The unread notification count (see `unread_notifications` in /sync v2).
-- `notifications[].event`: The notifiable event.
+- `notifications[].events`: The notifiable events. Typically this will just contain a single entry but if there is a large gap it's possible
+  to receive two or more notifiable events in the same room. Critically, these events do not form part of a coherent timeline, hence why it's
+  called `events` and not `timeline`.
 
 Clients don't need to paginate through the entire list of rooms so they can ignore `next_page` if they wish.
 If they want to paginate, they provide the value of `next_page` in the next request along with the `next_batch` value,
@@ -270,40 +272,37 @@ Returns the response:
 
 ### Server implementation guide
 
-TODO: Update this section
-
 Server-side, the pagination operations performed for `room_list` are:
-- Load latest stream position or use `?since=` if provided, call it `SP`.
-- There is a `room_list` stream, so load all joined/invited rooms for this user at `SP`.
-- Multiplex together the `room_list` filter params.
-- Sort according to `sort` and subslice the room IDs based on `limit` (and `p` if it exists) to produce a list of room IDs `R`.
-- If the filter has `add_page` set:
-   * Load all tracked room IDs `T[room_id]` for this Session.
-   * Remove rooms from `T[room_id]` if they exist in `del_rooms`.
-   * append `R` and any in `add_rooms` to `T[room_id]`, de-duplicating existing entries.
-   * Save `T[room_id]`.
-- If `fields: []` then return no response.
-- Else Return `len(R)` objects with the appropriate `fields`.
+- Multiplex together the `room_list` filter params as per normal v3 semantics.
+- Load latest stream position or use `?since=` if provided, call it `SP`. Results are anchored at this position.
+- Load all joined rooms for this user at `SP`.
+- If `spaces` is non-empty, reduce the set of joined rooms to ones belonging to these spaces. Add all these rooms to the "active set".
+- Sort the joined rooms according to `sort`. If it is `by_name` then the server needs to calculate the room name and handle internationalisation.
+- Subslice the room IDs based on `limit` (and `next_page` if it exists) to produce a list of room IDs `R`.
+- For each room in `R`:
+   * Load the state events based on `state_events`, honouring wildcard state keys.
+   * Calculate the room name and set it on `name`. If `m.room.member` events were required to do this, include them in the state events if `lazy_load_members: true`.
+   * Load the most recent event in `R`. Include it in the `timeline`, and include the `m.room.member` event of the sender in the state events if `lazy_load_members: true`.
+   * Set the `prev_batch` value based on the timeline event.
+   * Sort the state events lexiographically by event type then state key then add them to the `state_events` response for this room.
+   * Add `R` to the "active set" if `spaces` is empty.
 
 Server-side, the streaming operations performed for `room_list` are:
 - Load the latest stream position `SP` and the `since` value.
 - If the delta between the two positions is too large (heuristic), reset the session.
-- Multiplex together the `room_list` filter params.
-- Inspect the sort order as that will tell you what to notify on, based on the following rules:
-   * `by_tag`: If the tag account data has changed for a room between `SP` and `since`, load the room ID.
-   * `by_name`: If the `m.room.name` or `m.room.canonical_alias` or hereos have changed between `SP` and `since`, load the room ID.
-   * `by_recency`: If there are any events in this room between `SP` and `since`, load the room ID.
-- In addition, any newly joined rooms between `SP` and `since`, load the room ID.
-- Remember the room IDs loaded as `Radd` and the reasons why they were added (name, tag, etc).
-- Load all tracked room IDs `T[room_id]` for this Session.
-- Remember all room IDs which exist in `Radd` but not `T[room_id]` as `Rnew`.
-- If the filter has `streaming_add` set:
-   * Remove rooms from `T[room_id]` if they exist in `del_rooms` or the user left the room between `SP` and `since`.
-   * Add rooms to `T[room_id]` present in `add_rooms` or `Radd`, de-duplicating existing entries.
-   * Save `T[room_id]`.
-- If `fields: []` then return no response.
-- Else return `len(Radd)` objects. Return only the modified field if the room ID is not present in `Rnew` e.g
-  tag, name, timestamp. Return all `fields` if the room ID is present in `Rnew`.
+- Multiplex together the `room_list` filter params as per normal v3 semantics.
+- Load the active set, updating it if needed (e.g if `spaces` is non-empty and a new room has been added to the space between the 2 stream positions).
+  Events _should_ start flowing from the point the room was added to the space, but ultimately it isn't a hard requirement so long as the client is
+  able to view these events.
+- Load the set of room IDs `Rsent` who have had a complete response already sent to the client.
+- For all events between `since` and `SP`:
+   * apply visibility checks to filter out events the user cannot see due to not being joined anymore.
+   * if the event is in a room in the "active set", add it to `rooms[].timeline`.
+   * else if the event is a notifiable event based on push rules or E2EE presence then add it to `notifications`. If the event
+     is part of an E2EE room then add it to `notifications[].timeline`, else add it to `notifications[].events`. If there are multiple
+     notifiable events in the same non-E2EE room, append it to `events`. 
+   * if the room ID in the event is not in `Rsent` then add it to `Rsent` and include all the necessary `state_events` according to the filter,
+     in addition to the `name` and `prev_batch` (see the pagination section).
 
 
 ### Notes, Rationale and Queries
