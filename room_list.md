@@ -137,8 +137,7 @@ The server will remember the "active set" of room IDs for this stream according 
 NB: Clients can specify `limit: 0` and `spaces: []` to indicate an empty set as the active set. This is useful when combined
 with `track_notifications: true` which means this API will _only_ return a `notifications` section.
 
-NBB: There is no special handling for invited rooms in this API. This requires an additional stream implementation. There is also no
-special handling for left rooms, however this does not require an additional stream implementation. Clients will receive their leave
+NBB: There is no special handling for left rooms. Clients will receive their leave
 event in the `timeline` and then no further events. It is up to the client to then remove this room from the sorted list.
 
 If a request comes in without a `next_page` pagination token but with a `?since=` value, this swaps this API into **streaming mode**.
@@ -164,6 +163,13 @@ POST /sync?since=
     },
 }
 ```
+
+Caveats:
+ - You cannot track a subset (pages) of a space. You either track 1 or more spaces or just a tiny pagination page. The latter is critical for low
+   bandwidth use cases. The former is useful for heavy clients. It's unclear that tracking pages within a space is useful and how it would be used.
+ - The room list stream cannot be used to track invitations. That needs a new stream which is fine as they aren't sorted in the same way as joined rooms.
+ - Tracking notifications can be heavy if the user is joined to a lot of E2EE rooms. It might be nice to have some way of filtering this list down,
+   particularly as we expect the number of E2EE rooms to increase over time.
 
 ### Room Data API
 
