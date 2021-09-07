@@ -130,9 +130,14 @@ The server will remember the "active set" of room IDs for this stream according 
  - If `spaces` is non-empty then remember the entire set of top-level children rooms for each space. De-duplicate as needed.
    Clients can track subspaces by including the subspace room ID in `spaces`.
  - If `spaces` is empty then remember the room IDs sent to the client in the response, increasing this list as the client paginates.
+ - When the client leaves a room in the active set, remove it.
 
 NB: Clients can specify `limit: 0` and `spaces: []` to indicate an empty set as the active set. This is useful when combined
 with `track_notifications: true` which means this API will _only_ return a `notifications` section.
+
+NBB: There is no special handling for invited rooms in this API. This requires an additional stream implementation. There is also no
+special handling for left rooms, however this does not require an additional stream implementation. Clients will receive their leave
+event in the `timeline` and then no further events. It is up to the client to then remove this room from the sorted list.
 
 If a request comes in without a `next_page` pagination token but with a `?since=` value, this swaps this API into **streaming mode**.
 
@@ -303,10 +308,6 @@ Server-side, the streaming operations performed for `room_list` are:
 
 ### Notes, Rationale and Queries
 
-#### Room lists
-
-- How do you convey invited or left rooms? Particularly for left rooms, server implementations need to be careful
-  to update the room list AFTER all the other streams (so you get the leave event) which is the opposite for joins/normal operations.
 
 #### Room data
 
