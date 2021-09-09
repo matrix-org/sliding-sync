@@ -11,10 +11,11 @@ const (
 )
 
 var (
-	DefaultRoomListSorts = []RoomListSortOrder{SortRoomListByTag, SortRoomListByRecency}
+	DefaultRoomListSorts = []RoomListSortOrder{SortRoomListByRecency}
 	KnownRoomListSorts   = map[RoomListSortOrder]bool{
-		SortRoomListByTag:     true,
+		SortRoomListBySpace:   true,
 		SortRoomListByRecency: true,
+		SortRoomListByName:    true,
 	}
 )
 
@@ -23,11 +24,11 @@ type RoomListSortOrder string
 const (
 	// Sort rooms based on the most recent event in the room. Newer first.
 	SortRoomListByRecency RoomListSortOrder = "by_recency"
-	// Sort rooms based on their tag in this user's account data.
-	// Follows the `order` value if one exists. Lower first.
-	// See https://matrix.org/docs/spec/client_server/latest#room-tagging
-	SortRoomListByTag RoomListSortOrder = "by_tag"
-
+	// Sort rooms by the space ordering
+	// https://github.com/matrix-org/matrix-doc/blob/old_master/proposals/1772-groups-as-rooms.md#relationship-between-rooms-and-spaces
+	SortRoomListBySpace RoomListSortOrder = "by_space_order"
+	// Sort rooms by the calculated room name server-side
+	// https://spec.matrix.org/unstable/client-server-api/#calculating-the-display-name-for-a-room
 	SortRoomListByName RoomListSortOrder = "by_name"
 )
 

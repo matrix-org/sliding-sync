@@ -43,6 +43,8 @@ POST /sync?since=
     * `by_name`: [Calculate the room name](https://spec.matrix.org/unstable/client-server-api/#calculating-the-display-name-for-a-room) and sort lexiographically A-Z, A comes first. This means servers need to handle heroes and internationalisation.
     * `by_recency`: Sort based on the last event's `origin_server_ts`, higher comes first.
     * `by_space_order`: Sort by the space ordering according to the `order` in `m.space.child` events. If this is set, `spaces` cannot be empty.
+    * `by_highlight_count`: Sort based on the number of highlight-able (typically red) unread notifications. Highest first.
+    * `by_notification_count`: Sort based on the number of unread notifications (typically grey). Highest first.
 - `limit`: (default: 20) The number of rooms to return per request.
 - `state_events`: (default: `[]`) Array of 2-element arrays. The subarray `[0]` is the event type, `[1]` is the state key.
    The state events to return in the response. This format compresses better in low bandwidth mode. If the state key is `*` then return all matching
@@ -103,6 +105,8 @@ Returns the response:
 - `next_page`: A pagination token to retrieve more rooms.
 - `rooms[].room_id`: The room ID of this room.
 - `rooms[].name`: The calculated name of this room.
+- `rooms[].highlight_count`: The unread notification count (see `unread_notifications` in /sync v2).
+- `rooms[].notification_count`: The unread notification count (see `unread_notifications` in /sync v2).
 - `rooms[].state_events`: A list of state events requested via `state_events`.
 - `rooms[].prev_batch`: The backpagination token for `/messages`.
 - `rooms[].timeline`: An ordered list of events in the timeline. The last event is the most recent.
@@ -110,8 +114,6 @@ Returns the response:
   Notifiable events do not return a `timeline` as this section only produces the odd notified event and not a coherent stream of events.
   E2EE rooms however DO return a `timeline` as every single event is "notifiable" effectively as the server doesn't know. By sending this
   as a timeline, it allows the room data API to not send events after a given event ID, thus saves bandwidth.
-- `notifications[].highlight_count`: The unread notification count (see `unread_notifications` in /sync v2).
-- `notifications[].notification_count`: The unread notification count (see `unread_notifications` in /sync v2).
 - `notifications[].events`: The notifiable events. Typically this will just contain a single entry but if there is a large gap it's possible
   to receive two or more notifiable events in the same room. Critically, these events do not form part of a coherent timeline, hence why it's
   called `events` and not `timeline`.
@@ -153,7 +155,7 @@ With this API, you can _mostly_ (favourites need to be part of a space) emulate 
 POST /sync?since=
 {
     room_list: {
-        sort: ["by_recency", "by_name"]
+        sort: ["by_highlight_count", "by_notification_count", "by_recency"]
         limit: 10,
         state_events: [
           ["m.room.avatar", ""]
@@ -165,8 +167,6 @@ POST /sync?since=
 ```
 
 Caveats:
- - You cannot track a subset (pages) of a space. You either track 1 or more spaces or just a tiny pagination page. The latter is critical for low
-   bandwidth use cases. The former is useful for heavy clients. It's unclear that tracking pages within a space is useful and how it would be used.
  - The room list stream cannot be used to track invitations. That needs a new stream which is fine as they aren't sorted in the same way as joined rooms.
  - Tracking notifications can be heavy if the user is joined to a lot of E2EE rooms. It might be nice to have some way of filtering this list down,
    particularly as we expect the number of E2EE rooms to increase over time.
@@ -184,6 +184,7 @@ POST /sync?since=
         earliest_timeline_event_ids: ["$aaaa","$bbbb"],
         room_member_limit: 5,
         room_member_sort: "by_pl",
+        timeline_limit: 20,
         format: "client|federation",
         types: [ "m.room.message" ],
         not_types: [ "m.room.topic" ]
@@ -198,6 +199,7 @@ POST /sync?since=
 - `room_member_limit`: The maximum number of room members to fetch for each room. If the limit is exceeded, a pagination token for
   the room member stream will be provided. If 0 or missing, does not paginate room members.
 - `room_member_sort`: Enum representing the sort order. See the room member stream for full values.
+- `timeline_limit`: The max number of timeline events to return. Mostly this is useful if you are calling the room data stream without having a room list stream running.
 - `format`: (default: `client`) The event format to send back. See [Filtering](https://spec.matrix.org/unstable/client-server-api/#filtering)
 - `types` and `not_types`: [Event filters](https://spec.matrix.org/unstable/client-server-api/#filtering) to use.
 
