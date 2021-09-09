@@ -216,7 +216,9 @@ func (h *SyncV3Handler) serve(w http.ResponseWriter, req *http.Request) *handler
 	}
 
 	// start making the response
-	resp := streams.Response{}
+	resp := streams.Response{
+		Events: make(map[string]json.RawMessage),
+	}
 
 	// invoke streams to get responses
 	for _, stream := range h.streams {

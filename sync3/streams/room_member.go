@@ -34,7 +34,7 @@ type RoomMemberResponse struct {
 	// Negotiated: The actual limit the server used.
 	Limit int `json:"limit"`
 	// The m.room.member events
-	Events []json.RawMessage `json:"events"`
+	Events []string `json:"events"`
 	// The pagination parameters to request the next page, can be empty if all members fit on one page.
 	NextPage string `json:"next_page,omitempty"`
 }
@@ -75,9 +75,10 @@ func membershipEnumForString(s string) membershipEnum {
 }
 
 type memberEvent struct {
-	PL         int64           // for sorting by PL
-	Name       string          // for sorting by Name
-	Membership membershipEnum  // for sorting by Membership
+	PL         int64          // for sorting by PL
+	Name       string         // for sorting by Name
+	Membership membershipEnum // for sorting by Membership
+	ID         string
 	JSON       json.RawMessage // The data
 }
 
@@ -195,6 +196,7 @@ func (s *RoomMember) paginatedDataAtPoint(session *sync3.Session, pos int64, sor
 				Name:       strings.ToLower(name),
 				Membership: membershipEnumForString(evJSON.Get("content.membership").Str),
 				PL:         plContent.UserLevel(stateKey),
+				ID:         ev.ID,
 				JSON:       ev.JSON,
 			}
 			members = append(members, mem)
@@ -250,9 +252,10 @@ func (s *RoomMember) paginatedDataAtPoint(session *sync3.Session, pos int64, sor
 	}
 	result := members[startIndex:endIndex]
 	resp.RoomMember = &RoomMemberResponse{}
-	resp.RoomMember.Events = make([]json.RawMessage, len(result))
+	resp.RoomMember.Events = make([]string, len(result))
 	for i := range result {
-		resp.RoomMember.Events[i] = result[i].JSON
+		resp.Events[result[i].ID] = result[i].JSON
+		resp.RoomMember.Events[i] = result[i].ID
 	}
 	if endIndex != len(members) {
 		// we aren't at the end
@@ -269,6 +272,11 @@ func (s *RoomMember) streamingDataInRange(session *sync3.Session, fromExcl, toIn
 		return 0, err
 	}
 	resp.RoomMember = &RoomMemberResponse{}
-	resp.RoomMember.Events = events
+	resp.RoomMember.Events = make([]string, len(events))
+	for i := range events {
+		eventID := gjson.GetBytes(events[i], "event_id").Str
+		resp.Events[eventID] = events[i]
+		resp.RoomMember.Events[i] = eventID
+	}
 	return upTo, nil
 }

@@ -831,7 +831,8 @@ func TestHandlerRoomMember(t *testing.T) {
 						t.Fatalf("got %d room members, want %d - test case: %v", len(v3resp.RoomMember.Events), len(req.WantUserIDs), tc.Name)
 					}
 					for i := range req.WantUserIDs {
-						gotUserID := gjson.GetBytes(v3resp.RoomMember.Events[i], "state_key").Str
+						eventID := v3resp.RoomMember.Events[i]
+						gotUserID := gjson.GetBytes(v3resp.Events[eventID], "state_key").Str
 						if gotUserID != req.WantUserIDs[i] {
 							t.Errorf("position %d got %v want %v - test case: %v", i, gotUserID, req.WantUserIDs[i], tc.Name)
 						}

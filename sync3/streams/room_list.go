@@ -30,6 +30,10 @@ const (
 	// Sort rooms by the calculated room name server-side
 	// https://spec.matrix.org/unstable/client-server-api/#calculating-the-display-name-for-a-room
 	SortRoomListByName RoomListSortOrder = "by_name"
+
+	// Sort according to unread notifications
+	SortRoomListByHighlightCount    RoomListSortOrder = "by_highlight_count"
+	SortRoomListByNotificationCount RoomListSortOrder = "by_notification_count"
 )
 
 // FilterRoomList represents a filter on the RoomList stream
@@ -76,10 +80,9 @@ type RoomListResponse struct {
 }
 
 type RoomListEntry struct {
-	RoomID    string      `json:"room_id"`
-	Name      string      `json:"name"`
-	Timestamp int64       `json:"timestamp"`
-	Tag       interface{} `json:"tag"`
+	RoomID    string `json:"room_id"`
+	Name      string `json:"name"`
+	Timestamp int64  `json:"timestamp"`
 	// MemberCount TODO
 }
 
