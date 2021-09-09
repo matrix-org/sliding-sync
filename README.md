@@ -79,6 +79,30 @@ Responses are split stream-by-stream:
 }
 ```
 
+Some streams return overlapping data, for example `room_data` returns member events, as does `room_members`.
+In order to save bandwidth, there is a top level `events` key which contains a map of event ID to event JSON.
+Entries which refer to this event only mention the event ID:
+```json
+{
+    "room_members": {
+        "events": [
+            "$7XY5JiEMpYmGqXe_IIApguDlbLowOrI1HGqn3VEvTIJ"
+        ]
+    },
+    "room_data": {
+        "events": [
+            "$7XY5JiEMpYmGqXe_IIApguDlbLowOrI1HGqn3VEvTIJ"
+        ]
+    },
+    "events": {
+        "$7XY5JiEMpYmGqXe_IIApguDlbLowOrI1HGqn3VEvTIJ": { "type": "m.room.member", ... }
+    }
+}
+```
+The server remembers which events have been sent to the client on a per-session basis. The server is allowed
+to send the same event twice, it doesn't have to guarantee exactly-once semantics. This allows LRU caches to be
+used server-side. All events, regardless of whether they appear more than once, are sent in this format.
+
 Streams can accept more complicated filters / request parameters like `limit` and `sort`. These parameters
 can be modified by the server in the response to enforce server limits. For example:
 ```json
