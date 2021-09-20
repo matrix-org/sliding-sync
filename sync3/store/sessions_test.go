@@ -17,7 +17,7 @@ func TestSessions(t *testing.T) {
 	if session.ID == 0 {
 		t.Fatalf("Session.ID was not set from NewSession")
 	}
-	assertEqual(t, session.DeviceID, deviceID, "Session.DeviceID mismatch")
+	assertEqual(t, session.V2.DeviceID, deviceID, "Session.DeviceID mismatch")
 	if err = sessions.UpdateDeviceSince(deviceID, "s1"); err != nil {
 		t.Fatalf("UpdateDeviceSince returned error: %s", err)
 	}
@@ -33,19 +33,20 @@ func TestSessions(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Session returned error: %s", err)
 	}
-	assertEqual(t, session.DeviceID, deviceID, "Session.DeviceID mismatch")
+	assertEqual(t, session.V2.DeviceID, deviceID, "Session.DeviceID mismatch")
 	assertEqual(t, session.LastConfirmedToken, "conf", "Session.LastConfirmedToken mismatch")
 	assertEqual(t, session.LastUnconfirmedToken, "unconf", "Session.LastUnconfirmedToken mismatch")
-	assertEqual(t, session.V2Since, "s1", "Session.V2Since mismatch")
-	assertEqual(t, session.UserID, "@alice:localhost", "Session.UserID mismatch")
+	assertEqual(t, session.V2.Since, "s1", "Session.V2Since mismatch")
+	assertEqual(t, session.V2.UserID, "@alice:localhost", "Session.UserID mismatch")
 
 	// now check new sessions remember the v2 since value and user ID for this device
 	s2, err := sessions.NewSession(deviceID)
 	if err != nil {
 		t.Fatalf("NewSession returned error: %s", err)
 	}
-	assertEqual(t, s2.V2Since, "s1", "Session.V2Since mismatch")
-	assertEqual(t, s2.UserID, "@alice:localhost", "Session.UserID mismatch")
+	assertEqual(t, s2.V2.Since, "s1", "Session.V2Since mismatch")
+	assertEqual(t, s2.V2.UserID, "@alice:localhost", "Session.UserID mismatch")
+	assertEqual(t, s2.V2.DeviceID, deviceID, "Session.DeviceID mismatch")
 
 	// check filters work
 	wantReq := &streams.Request{
@@ -72,7 +73,7 @@ func TestSessions(t *testing.T) {
 	if err = sessions.UpdateLastTokens(s2.ID, "conf2", "unconf2"); err != nil {
 		t.Fatalf("UpdateLastTokens returned error: %s", err)
 	}
-	tokens, err := sessions.ConfirmedSessionTokens(s2.DeviceID)
+	tokens, err := sessions.ConfirmedSessionTokens(s2.V2.DeviceID)
 	if err != nil {
 		t.Fatalf("ConfirmedSessionTokens: %s", err)
 	}

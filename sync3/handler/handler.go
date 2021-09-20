@@ -80,11 +80,11 @@ func (h *SyncV3Handler) serve(w http.ResponseWriter, req *http.Request) *interna
 		return herr
 	}
 	log := hlog.FromRequest(req).With().Int64("session", session.ID).Logger()
-	log.Info().Str("device", session.DeviceID).Str("user_id", session.UserID).Str("since", req.URL.Query().Get("since")).Str("from", fromToken.String()).Msg("recv /v3/sync")
+	log.Info().Str("device", session.V2.DeviceID).Str("user_id", session.V2.UserID).Str("since", req.URL.Query().Get("since")).Str("from", fromToken.String()).Msg("recv /v3/sync")
 
 	// make sure we have a poller for this device
 	h.PollerMap.EnsurePolling(
-		req.Header.Get("Authorization"), session.UserID, session.DeviceID, session.V2Since, log,
+		req.Header.Get("Authorization"), session.V2.UserID, session.V2.DeviceID, session.V2.Since, log,
 	)
 
 	// fetch the latest value which we'll base our response on
@@ -189,7 +189,7 @@ func (h *SyncV3Handler) serve(w http.ResponseWriter, req *http.Request) *interna
 func (h *SyncV3Handler) confirmPositionCleanup(session *sync3.Session, from *sync3.Token) {
 	// Load the tokens which have been sent by every session on this device.
 	// We'll use this to work out the minimum position confirmed and then invoke the cleanup
-	confirmedTokenStrings, err := h.Sessions.ConfirmedSessionTokens(session.DeviceID)
+	confirmedTokenStrings, err := h.Sessions.ConfirmedSessionTokens(session.V2.DeviceID)
 	if err != nil {
 		log.Err(err).Msg("failed to get ConfirmedSessionTokens") // non-fatal
 		return
@@ -260,7 +260,7 @@ func (h *SyncV3Handler) getOrCreateSession(req *http.Request) (*sync3.Session, *
 			Err:        fmt.Errorf("unknown session; since = %s session ID = %d device ID = %s", sincev3, tokv3.SessionID, deviceID),
 		}
 	}
-	if session.UserID == "" {
+	if session.V2.UserID == "" {
 		// we need to work out the user ID to do membership queries
 		userID, err := h.userIDFromRequest(req)
 		if err != nil {
@@ -270,7 +270,7 @@ func (h *SyncV3Handler) getOrCreateSession(req *http.Request) (*sync3.Session, *
 				Err:        err,
 			}
 		}
-		session.UserID = userID
+		session.V2.UserID = userID
 		h.Sessions.UpdateUserIDForDevice(deviceID, userID)
 	}
 	if tokv3 == nil {

@@ -210,7 +210,7 @@ func (n *Notifier) GetListener(ctx context.Context, session sync3.Session) UserD
 
 	// TODO: session ID not device ID
 	// TODO: Need to apply the filters so we don't wake up the device for data it won't see
-	return n.fetchUserDeviceStream(session.UserID, session.DeviceID, true).GetListener(ctx)
+	return n.fetchUserDeviceStream(session.V2.UserID, session.V2.DeviceID, true).GetListener(ctx)
 }
 
 // Load the membership states required to notify users correctly.

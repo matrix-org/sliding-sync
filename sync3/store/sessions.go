@@ -8,6 +8,7 @@ import (
 	"github.com/jmoiron/sqlx"
 	_ "github.com/lib/pq"
 	"github.com/matrix-org/sync-v3/sqlutil"
+	"github.com/matrix-org/sync-v3/sync2"
 	"github.com/matrix-org/sync-v3/sync3"
 	"github.com/matrix-org/sync-v3/sync3/streams"
 	"github.com/rs/zerolog"
@@ -19,7 +20,8 @@ var log = zerolog.New(os.Stdout).With().Timestamp().Logger().Output(zerolog.Cons
 })
 
 type Sessions struct {
-	db *sqlx.DB
+	db      *sqlx.DB
+	v2store *sync2.Storage
 }
 
 func NewSessions(postgresURI string) *Sessions {
@@ -37,11 +39,6 @@ func NewSessions(postgresURI string) *Sessions {
 		last_unconfirmed_token TEXT NOT NULL,
 		CONSTRAINT syncv3_sessions_unique UNIQUE (device_id, session_id)
 	);
-	CREATE TABLE IF NOT EXISTS syncv3_sessions_v2devices (
-		user_id TEXT NOT NULL,
-		device_id TEXT PRIMARY KEY,
-		since TEXT NOT NULL
-	);
 	CREATE SEQUENCE IF NOT EXISTS syncv3_filter_id_seq;
 	CREATE TABLE IF NOT EXISTS syncv3_filters (
 		filter_id BIGINT PRIMARY KEY DEFAULT nextval('syncv3_filter_id_seq'),
@@ -49,8 +46,10 @@ func NewSessions(postgresURI string) *Sessions {
 		req_json TEXT NOT NULL
 	);
 	`)
+
 	return &Sessions{
-		db: db,
+		db:      db,
+		v2store: sync2.NewStore(postgresURI),
 	}
 }
 
@@ -67,39 +66,15 @@ func (s *Sessions) NewSession(deviceID string) (*sync3.Session, error) {
 		if err != nil {
 			return err
 		}
-		// make sure there is a device entry for this device ID. If one already exists, don't clobber
-		// the since value else we'll forget our position!
-		result, err := txn.Exec(`
-			INSERT INTO syncv3_sessions_v2devices(device_id, since, user_id) VALUES($1,$2,$3)
-			ON CONFLICT (device_id) DO NOTHING`,
-			deviceID, "", "",
-		)
-		if err != nil {
-			return err
-		}
-
-		// if we inserted a row that means it's a brand new device ergo there is no since token
-		if ra, err := result.RowsAffected(); err == nil && ra == 1 {
-			// we inserted a new row, no need to query the since value
-			session = &sync3.Session{
-				ID:       id,
-				DeviceID: deviceID,
-			}
-			return nil
-		}
-
-		// Return the since value as we may start a new poller with this session.
-		var since string
-		var userID string
-		err = txn.QueryRow("SELECT since, user_id FROM syncv3_sessions_v2devices WHERE device_id = $1", deviceID).Scan(&since, &userID)
+		// insert v2 bits - this isn't done in a txn but that's fine, as we are just inserting a static ID
+		// at this point
+		dev, err := s.v2store.InsertDevice(deviceID)
 		if err != nil {
 			return err
 		}
 		session = &sync3.Session{
-			ID:       id,
-			DeviceID: deviceID,
-			V2Since:  since,
-			UserID:   userID,
+			ID: id,
+			V2: dev,
 		}
 		return nil
 	})
@@ -111,10 +86,8 @@ func (s *Sessions) Session(sessionID int64, deviceID string) (*sync3.Session, er
 	// Important not just to use sessionID as that can be set by anyone as a query param
 	// Only the device ID is secure (it's a hash of the bearer token)
 	err := s.db.Get(&result,
-		`SELECT last_confirmed_token, last_unconfirmed_token, since, user_id FROM syncv3_sessions
-		LEFT JOIN syncv3_sessions_v2devices
-		ON syncv3_sessions.device_id = syncv3_sessions_v2devices.device_id
-		WHERE session_id=$1 AND syncv3_sessions.device_id=$2`,
+		`SELECT last_confirmed_token, last_unconfirmed_token FROM syncv3_sessions
+		WHERE session_id=$1 AND device_id=$2`,
 		sessionID, deviceID,
 	)
 	if err == sql.ErrNoRows {
@@ -123,8 +96,12 @@ func (s *Sessions) Session(sessionID int64, deviceID string) (*sync3.Session, er
 	if err != nil {
 		return nil, err
 	}
+	dev, err := s.v2store.Device(deviceID)
+	if err != nil {
+		return nil, err
+	}
 	result.ID = sessionID
-	result.DeviceID = deviceID
+	result.V2 = dev
 	return &result, nil
 }
 
@@ -143,13 +120,11 @@ func (s *Sessions) UpdateLastTokens(sessionID int64, confirmed, unconfirmed stri
 }
 
 func (s *Sessions) UpdateDeviceSince(deviceID, since string) error {
-	_, err := s.db.Exec(`UPDATE syncv3_sessions_v2devices SET since = $1 WHERE device_id = $2`, since, deviceID)
-	return err
+	return s.v2store.UpdateDeviceSince(deviceID, since)
 }
 
 func (s *Sessions) UpdateUserIDForDevice(deviceID, userID string) error {
-	_, err := s.db.Exec(`UPDATE syncv3_sessions_v2devices SET user_id = $1 WHERE device_id = $2`, userID, deviceID)
-	return err
+	return s.v2store.UpdateUserIDForDevice(deviceID, userID)
 }
 
 // Insert a new filter for this session. The returned filter ID should be inserted into the since token

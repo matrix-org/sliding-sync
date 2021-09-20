@@ -49,7 +49,7 @@ func (s *ToDevice) SessionConfirmed(session *sync3.Session, confirmedPos int64, 
 	if !allSessions {
 		return
 	}
-	_ = s.storage.ToDeviceTable.DeleteMessagesUpToAndIncluding(session.DeviceID, confirmedPos)
+	_ = s.storage.ToDeviceTable.DeleteMessagesUpToAndIncluding(session.V2.DeviceID, confirmedPos)
 }
 
 func (s *ToDevice) DataInRange(session *sync3.Session, fromExcl, toIncl int64, request *Request, resp *Response) (int64, error) {
@@ -65,7 +65,7 @@ func (s *ToDevice) DataInRange(session *sync3.Session, fromExcl, toIncl int64, r
 		request.ToDevice.Limit = MaxToDeviceMessageLimit
 		negotiatedLimit = MaxToDeviceMessageLimit
 	}
-	msgs, upTo, err := s.storage.ToDeviceTable.Messages(session.DeviceID, fromExcl, toIncl, request.ToDevice.Limit)
+	msgs, upTo, err := s.storage.ToDeviceTable.Messages(session.V2.DeviceID, fromExcl, toIncl, request.ToDevice.Limit)
 	if err != nil {
 		return 0, err
 	}
