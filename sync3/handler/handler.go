@@ -9,7 +9,6 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/matrix-org/gomatrixserverlib"
@@ -19,7 +18,6 @@ import (
 	"github.com/matrix-org/sync-v3/sync3/notifier"
 	"github.com/matrix-org/sync-v3/sync3/store"
 	"github.com/matrix-org/sync-v3/sync3/streams"
-	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/hlog"
 	"github.com/rs/zerolog/log"
 	"github.com/tidwall/gjson"
@@ -31,10 +29,9 @@ type SyncV3Handler struct {
 	Storage  *state.Storage
 	Notifier *notifier.Notifier
 
-	streams []streams.Streamer
+	PollerMap *sync2.PollerMap
 
-	pollerMu *sync.Mutex
-	Pollers  map[string]*sync2.Poller // device_id -> poller
+	streams []streams.Streamer
 }
 
 func NewSyncV3Handler(v2Client sync2.Client, postgresDBURI string) *SyncV3Handler {
@@ -42,9 +39,8 @@ func NewSyncV3Handler(v2Client sync2.Client, postgresDBURI string) *SyncV3Handle
 		V2:       v2Client,
 		Sessions: store.NewSessions(postgresDBURI),
 		Storage:  state.NewStorage(postgresDBURI),
-		Pollers:  make(map[string]*sync2.Poller),
-		pollerMu: &sync.Mutex{},
 	}
+	sh.PollerMap = sync2.NewPollerMap(v2Client, sh)
 	sh.streams = append(sh.streams, streams.NewTyping(sh.Storage))
 	sh.streams = append(sh.streams, streams.NewToDevice(sh.Storage))
 	sh.streams = append(sh.streams, streams.NewRoomMember(sh.Storage))
@@ -86,7 +82,9 @@ func (h *SyncV3Handler) serve(w http.ResponseWriter, req *http.Request) *handler
 	log.Info().Str("device", session.DeviceID).Str("user_id", session.UserID).Str("since", req.URL.Query().Get("since")).Str("from", fromToken.String()).Msg("recv /v3/sync")
 
 	// make sure we have a poller for this device
-	h.ensurePolling(req.Header.Get("Authorization"), session, log)
+	h.PollerMap.EnsurePolling(
+		req.Header.Get("Authorization"), session.UserID, session.DeviceID, session.V2Since, log,
+	)
 
 	// fetch the latest value which we'll base our response on
 	upcoming := h.Notifier.CurrentPosition()
@@ -263,29 +261,6 @@ func (h *SyncV3Handler) getOrCreateSession(req *http.Request) (*sync3.Session, *
 		tokv3 = sync3.NewBlankSyncToken(session.ID, 0)
 	}
 	return session, tokv3, nil
-}
-
-// ensurePolling makes sure there is a poller for this device, making one if need be.
-// Blocks until at least 1 sync is done if and only if the poller was just created.
-// This ensures that calls to the database will return data.
-func (h *SyncV3Handler) ensurePolling(authHeader string, session *sync3.Session, logger zerolog.Logger) {
-	h.pollerMu.Lock()
-	poller, ok := h.Pollers[session.DeviceID]
-	// either no poller exists or it did but it died
-	if ok && !poller.Terminated {
-		h.pollerMu.Unlock()
-		return
-	}
-	// replace the poller
-	poller = sync2.NewPoller(session.UserID, authHeader, session.DeviceID, h.V2, h, logger)
-	var wg sync.WaitGroup
-	wg.Add(1)
-	go poller.Poll(session.V2Since, func() {
-		wg.Done()
-	})
-	h.Pollers[session.DeviceID] = poller
-	h.pollerMu.Unlock()
-	wg.Wait()
 }
 
 // Called from the v2 poller, implements V2DataReceiver

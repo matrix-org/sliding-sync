@@ -3,6 +3,7 @@ package sync2
 import (
 	"encoding/json"
 	"math"
+	"sync"
 	"time"
 
 	"github.com/matrix-org/gomatrixserverlib"
@@ -22,6 +23,46 @@ type V2DataReceiver interface {
 	// Add messages for this device. If an error is returned, the poll loop is terminated as continuing
 	// would implicitly acknowledge these messages.
 	AddToDeviceMessages(userID, deviceID string, msgs []gomatrixserverlib.SendToDeviceEvent) error
+}
+
+// PollerMap is a map of device ID to Poller
+type PollerMap struct {
+	v2Client  Client
+	callbacks V2DataReceiver
+	pollerMu  *sync.Mutex
+	Pollers   map[string]*Poller // device_id -> poller
+}
+
+func NewPollerMap(v2Client Client, callbacks V2DataReceiver) *PollerMap {
+	return &PollerMap{
+		v2Client:  v2Client,
+		callbacks: callbacks,
+		pollerMu:  &sync.Mutex{},
+		Pollers:   make(map[string]*Poller),
+	}
+}
+
+// EnsurePolling makes sure there is a poller for this device, making one if need be.
+// Blocks until at least 1 sync is done if and only if the poller was just created.
+// This ensures that calls to the database will return data.
+func (h *PollerMap) EnsurePolling(authHeader, userID, deviceID, v2since string, logger zerolog.Logger) {
+	h.pollerMu.Lock()
+	poller, ok := h.Pollers[deviceID]
+	// either no poller exists or it did but it died
+	if ok && !poller.Terminated {
+		h.pollerMu.Unlock()
+		return
+	}
+	// replace the poller
+	poller = NewPoller(userID, authHeader, deviceID, h.v2Client, h.callbacks, logger)
+	var wg sync.WaitGroup
+	wg.Add(1)
+	go poller.Poll(v2since, func() {
+		wg.Done()
+	})
+	h.Pollers[deviceID] = poller
+	h.pollerMu.Unlock()
+	wg.Wait()
 }
 
 // Poller can automatically poll the sync v2 endpoint and accumulate the responses in storage
