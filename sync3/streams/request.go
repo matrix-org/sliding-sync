@@ -10,7 +10,6 @@ import (
 // A request is made by the combination of the client HTTP request parameters and the stored filters
 // on the server.
 type Request struct {
-	RoomList   *FilterRoomList   `json:"room_list,omitempty"`
 	Typing     *FilterTyping     `json:"typing,omitempty"`
 	ToDevice   *FilterToDevice   `json:"to_device,omitempty"`
 	RoomMember *FilterRoomMember `json:"room_member,omitempty"`

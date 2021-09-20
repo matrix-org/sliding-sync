@@ -48,7 +48,6 @@ func NewSyncV3Handler(v2Client sync2.Client, postgresDBURI string) *SyncV3Handle
 	sh.streams = append(sh.streams, streams.NewTyping(sh.Storage))
 	sh.streams = append(sh.streams, streams.NewToDevice(sh.Storage))
 	sh.streams = append(sh.streams, streams.NewRoomMember(sh.Storage))
-	sh.streams = append(sh.streams, streams.NewRoomList(sh.Storage))
 
 	latestToken := sync3.NewBlankSyncToken(0, 0)
 	nid, err := sh.Storage.LatestEventNID()
