@@ -2,13 +2,10 @@ package handler
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"net/http"
 	"strconv"
-	"strings"
 	"time"
 
 	"github.com/matrix-org/gomatrixserverlib"
@@ -225,7 +222,7 @@ func (h *SyncV3Handler) getOrCreateSession(req *http.Request) (*sync3.Session, *
 	log := hlog.FromRequest(req)
 	var session *sync3.Session
 	var tokv3 *sync3.Token
-	deviceID, err := deviceIDFromRequest(req)
+	deviceID, err := internal.DeviceIDFromRequest(req)
 	if err != nil {
 		log.Warn().Err(err).Msg("failed to get device ID from request")
 		return nil, nil, &internal.HandlerError{
@@ -420,18 +417,6 @@ func (h *SyncV3Handler) waitForEvents(ctx context.Context, session *sync3.Sessio
 		p := listener.GetSyncPosition()
 		return &p
 	}
-}
-
-func deviceIDFromRequest(req *http.Request) (string, error) {
-	// return a hash of the access token
-	ah := req.Header.Get("Authorization")
-	if ah == "" {
-		return "", fmt.Errorf("missing Authorization header")
-	}
-	accessToken := strings.TrimPrefix(ah, "Bearer ")
-	hash := sha256.New()
-	hash.Write([]byte(accessToken))
-	return hex.EncodeToString(hash.Sum(nil)), nil
 }
 
 func shouldReturnImmediately(req *streams.Request, streams []streams.Streamer, fromToken, upcoming *sync3.Token, timeoutMs int64) bool {
