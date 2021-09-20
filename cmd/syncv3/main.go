@@ -2,9 +2,13 @@ package main
 
 import (
 	"flag"
+	"net/http"
 	"os"
+	"time"
 
 	syncv3 "github.com/matrix-org/sync-v3"
+	"github.com/matrix-org/sync-v3/sync2"
+	"github.com/matrix-org/sync-v3/sync3/handler"
 )
 
 var (
@@ -19,5 +23,10 @@ func main() {
 		flag.Usage()
 		os.Exit(1)
 	}
-	syncv3.RunSyncV3Server(*flagDestinationServer, *flagBindAddr, *flagPostgres)
+	syncv3.RunSyncV3Server(handler.NewSyncV3Handler(&sync2.HTTPClient{
+		Client: &http.Client{
+			Timeout: 5 * time.Minute,
+		},
+		DestinationServer: *flagDestinationServer,
+	}, *flagPostgres), *flagBindAddr)
 }

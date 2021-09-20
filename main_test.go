@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/matrix-org/sync-v3/sync2"
+	"github.com/matrix-org/sync-v3/sync3/handler"
 	"github.com/matrix-org/sync-v3/sync3/streams"
 	"github.com/matrix-org/sync-v3/testutils"
 	"github.com/rs/zerolog"
@@ -42,7 +43,7 @@ func newSync3Server(t *testing.T) (http.Handler, *mockV2Client) {
 		sinces:           make(map[string]chan bool),
 		mu:               &sync.Mutex{},
 	}
-	h := NewSyncV3Handler(cli, postgresConnectionString)
+	h := handler.NewSyncV3Handler(cli, postgresConnectionString)
 	return wrapper(h), cli
 }
 
