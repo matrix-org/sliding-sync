@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/matrix-org/gomatrixserverlib"
+	"github.com/matrix-org/sync-v3/internal"
 	"github.com/matrix-org/sync-v3/state"
 	"github.com/matrix-org/sync-v3/sync2"
 	"github.com/matrix-org/sync-v3/sync3"
@@ -69,11 +70,11 @@ func (h *SyncV3Handler) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	err := h.serve(w, req)
 	if err != nil {
 		w.WriteHeader(err.StatusCode)
-		w.Write(asJSONError(err))
+		w.Write(err.JSON())
 	}
 }
 
-func (h *SyncV3Handler) serve(w http.ResponseWriter, req *http.Request) *handlerError {
+func (h *SyncV3Handler) serve(w http.ResponseWriter, req *http.Request) *internal.HandlerError {
 	session, fromToken, herr := h.getOrCreateSession(req)
 	if herr != nil {
 		return herr
@@ -95,9 +96,9 @@ func (h *SyncV3Handler) serve(w http.ResponseWriter, req *http.Request) *handler
 	}
 	timeoutMs, err := strconv.ParseInt(timeout, 10, 64)
 	if err != nil {
-		return &handlerError{
+		return &internal.HandlerError{
 			StatusCode: 400,
-			err:        fmt.Errorf("?timeout= isn't an integer"),
+			Err:        fmt.Errorf("?timeout= isn't an integer"),
 		}
 	}
 
@@ -156,9 +157,9 @@ func (h *SyncV3Handler) serve(w http.ResponseWriter, req *http.Request) *handler
 			continue
 		}
 		if err != nil {
-			return &handlerError{
+			return &internal.HandlerError{
 				StatusCode: 500,
-				err:        fmt.Errorf("stream error: %s", err),
+				Err:        fmt.Errorf("stream error: %s", err),
 			}
 		}
 		if upTo != 0 {
@@ -220,14 +221,17 @@ func (h *SyncV3Handler) confirmPositionCleanup(session *sync3.Session, from *syn
 
 // getOrCreateSession retrieves an existing session if ?since= is set, else makes a new session.
 // Returns a session or an error.
-func (h *SyncV3Handler) getOrCreateSession(req *http.Request) (*sync3.Session, *sync3.Token, *handlerError) {
+func (h *SyncV3Handler) getOrCreateSession(req *http.Request) (*sync3.Session, *sync3.Token, *internal.HandlerError) {
 	log := hlog.FromRequest(req)
 	var session *sync3.Session
 	var tokv3 *sync3.Token
 	deviceID, err := deviceIDFromRequest(req)
 	if err != nil {
 		log.Warn().Err(err).Msg("failed to get device ID from request")
-		return nil, nil, &handlerError{400, err}
+		return nil, nil, &internal.HandlerError{
+			StatusCode: 400,
+			Err:        err,
+		}
 	}
 	sincev3 := req.URL.Query().Get("since")
 	if sincev3 == "" {
@@ -236,23 +240,35 @@ func (h *SyncV3Handler) getOrCreateSession(req *http.Request) (*sync3.Session, *
 		tokv3, err = sync3.NewSyncToken(sincev3)
 		if err != nil {
 			log.Warn().Err(err).Msg("failed to parse sync v3 token")
-			return nil, nil, &handlerError{400, err}
+			return nil, nil, &internal.HandlerError{
+				StatusCode: 400,
+				Err:        err,
+			}
 		}
 		session, err = h.Sessions.Session(tokv3.SessionID, deviceID)
 	}
 	if err != nil {
 		log.Warn().Err(err).Str("device", deviceID).Msg("failed to ensure Session existed for device")
-		return nil, nil, &handlerError{500, err}
+		return nil, nil, &internal.HandlerError{
+			StatusCode: 500,
+			Err:        err,
+		}
 	}
 	if session == nil {
-		return nil, nil, &handlerError{400, fmt.Errorf("unknown session; since = %s session ID = %d device ID = %s", sincev3, tokv3.SessionID, deviceID)}
+		return nil, nil, &internal.HandlerError{
+			StatusCode: 400,
+			Err:        fmt.Errorf("unknown session; since = %s session ID = %d device ID = %s", sincev3, tokv3.SessionID, deviceID),
+		}
 	}
 	if session.UserID == "" {
 		// we need to work out the user ID to do membership queries
 		userID, err := h.userIDFromRequest(req)
 		if err != nil {
 			log.Warn().Err(err).Msg("failed to work out user ID from request, is the authorization header valid?")
-			return nil, nil, &handlerError{400, err}
+			return nil, nil, &internal.HandlerError{
+				StatusCode: 400,
+				Err:        err,
+			}
 		}
 		session.UserID = userID
 		h.Sessions.UpdateUserIDForDevice(deviceID, userID)
@@ -341,16 +357,16 @@ func (h *SyncV3Handler) AddToDeviceMessages(userID, deviceID string, msgs []goma
 	return nil
 }
 
-func (h *SyncV3Handler) parseRequest(req *http.Request, tok *sync3.Token, session *sync3.Session) (*streams.Request, int64, *handlerError) {
+func (h *SyncV3Handler) parseRequest(req *http.Request, tok *sync3.Token, session *sync3.Session) (*streams.Request, int64, *internal.HandlerError) {
 	existing := &streams.Request{} // first request
 	var err error
 	if tok.FilterID != 0 {
 		// load existing filter
 		existing, err = h.Sessions.Filter(tok.SessionID, tok.FilterID)
 		if err != nil {
-			return nil, 0, &handlerError{
+			return nil, 0, &internal.HandlerError{
 				StatusCode: 400,
-				err:        fmt.Errorf("failed to load filters from sync token: %s", err),
+				Err:        fmt.Errorf("failed to load filters from sync token: %s", err),
 			}
 		}
 	}
@@ -358,26 +374,26 @@ func (h *SyncV3Handler) parseRequest(req *http.Request, tok *sync3.Token, sessio
 	defer req.Body.Close()
 	var delta streams.Request
 	if err := json.NewDecoder(req.Body).Decode(&delta); err != nil {
-		return nil, 0, &handlerError{
+		return nil, 0, &internal.HandlerError{
 			StatusCode: 400,
-			err:        fmt.Errorf("failed to parse request body as JSON: %s", err),
+			Err:        fmt.Errorf("failed to parse request body as JSON: %s", err),
 		}
 	}
 	var filterID int64
 	deltasExist, err := existing.ApplyDeltas(&delta)
 	if err != nil {
-		return nil, 0, &handlerError{
+		return nil, 0, &internal.HandlerError{
 			StatusCode: 400,
-			err:        fmt.Errorf("failed to parse request body delta as JSON: %s", err),
+			Err:        fmt.Errorf("failed to parse request body delta as JSON: %s", err),
 		}
 	}
 	if deltasExist {
 		// persist new filters if there were deltas
 		filterID, err = h.Sessions.InsertFilter(session.ID, existing)
 		if err != nil {
-			return nil, 0, &handlerError{
+			return nil, 0, &internal.HandlerError{
 				StatusCode: 500,
-				err:        fmt.Errorf("failed to persist filters: %s", err),
+				Err:        fmt.Errorf("failed to persist filters: %s", err),
 			}
 		}
 	}
@@ -404,16 +420,6 @@ func (h *SyncV3Handler) waitForEvents(ctx context.Context, session *sync3.Sessio
 		p := listener.GetSyncPosition()
 		return &p
 	}
-}
-
-type jsonError struct {
-	Err string `json:"error"`
-}
-
-func asJSONError(err error) []byte {
-	je := jsonError{err.Error()}
-	b, _ := json.Marshal(je)
-	return b
 }
 
 func deviceIDFromRequest(req *http.Request) (string, error) {
@@ -443,13 +449,4 @@ func shouldReturnImmediately(req *streams.Request, streams []streams.Streamer, f
 		}
 	}
 	return false
-}
-
-type handlerError struct {
-	StatusCode int
-	err        error
-}
-
-func (e *handlerError) Error() string {
-	return fmt.Sprintf("HTTP %d : %s", e.StatusCode, e.err.Error())
 }
