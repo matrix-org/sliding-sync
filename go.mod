@@ -3,6 +3,7 @@ module github.com/matrix-org/sync-v3
 go 1.14
 
 require (
+	github.com/ReneKroon/ttlcache/v2 v2.8.1
 	github.com/gorilla/mux v1.8.0
 	github.com/jmoiron/sqlx v1.3.3
 	github.com/lib/pq v1.10.1

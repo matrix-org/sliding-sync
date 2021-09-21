@@ -8,7 +8,7 @@ import (
 
 	syncv3 "github.com/matrix-org/sync-v3"
 	"github.com/matrix-org/sync-v3/sync2"
-	"github.com/matrix-org/sync-v3/sync3/handler"
+	"github.com/matrix-org/sync-v3/synclive"
 )
 
 var (
@@ -23,7 +23,7 @@ func main() {
 		flag.Usage()
 		os.Exit(1)
 	}
-	syncv3.RunSyncV3Server(handler.NewSyncV3Handler(&sync2.HTTPClient{
+	syncv3.RunSyncV3Server(synclive.NewSyncLiveHandler(&sync2.HTTPClient{
 		Client: &http.Client{
 			Timeout: 5 * time.Minute,
 		},

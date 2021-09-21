@@ -1,8 +1,9 @@
-package observables
+package synclive
 
 import (
 	"encoding/json"
 	"fmt"
+	"io/ioutil"
 	"net/http"
 	"strconv"
 
@@ -18,7 +19,7 @@ type SyncLiveHandler struct {
 	Storage   *state.Storage
 	V2Store   *sync2.Storage
 	PollerMap *sync2.PollerMap
-	ConnMap   *ConnMap
+	Notifier  *Notifier
 }
 
 func NewSyncLiveHandler(v2Client sync2.Client, postgresDBURI string) *SyncLiveHandler {
@@ -76,7 +77,7 @@ func (h *SyncLiveHandler) getOrCreateConnection(req *http.Request) (*Conn, error
 	if sessionID != "" {
 		// Lookup the connection
 		// we need to map based on both as the session ID isn't crypto secure but the device ID is (Auth header)
-		conn = h.ConnMap.Conn(ConnID{
+		conn = h.Notifier.Conn(ConnID{
 			SessionID: sessionID,
 			DeviceID:  deviceID,
 		})
@@ -89,13 +90,26 @@ func (h *SyncLiveHandler) getOrCreateConnection(req *http.Request) (*Conn, error
 		}
 		if conn != nil {
 			// conn exists
-			conn.ClientPosition, err = strconv.ParseInt(req.URL.Query().Get("pos"), 10, 64)
+
+			// TODO: Wrap in OnIncomingRequest(http.Request)?
+			cpos, err := strconv.ParseInt(req.URL.Query().Get("pos"), 10, 64)
 			if err != nil {
 				return nil, &internal.HandlerError{
 					StatusCode: 400,
 					Err:        fmt.Errorf("invalid position: %s", req.URL.Query().Get("pos")),
 				}
 			}
+			var body []byte
+			if req.Body != nil {
+				body, err = ioutil.ReadAll(req.Body)
+				if err != nil {
+					return nil, &internal.HandlerError{
+						StatusCode: 400,
+						Err:        err,
+					}
+				}
+			}
+			conn.OnIncomingRequest(req.Context(), cpos, body)
 			return conn, nil
 		}
 		// conn doesn't exist, we probably nuked it.
@@ -143,10 +157,8 @@ func (h *SyncLiveHandler) getOrCreateConnection(req *http.Request) (*Conn, error
 
 func (h *SyncLiveHandler) createConn(connID ConnID) (*Conn, error) {
 	// TODO register the connection with the notifier
-	conn := &Conn{
-		ConnID: connID,
-	}
-	h.ConnMap.SetConn(conn)
+	conn := NewConn(connID)
+	h.Notifier.SetConn(conn)
 	return conn, nil
 }
 

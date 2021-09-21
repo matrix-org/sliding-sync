@@ -1,4 +1,4 @@
-package observables
+package synclive
 
 import (
 	"reflect"

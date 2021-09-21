@@ -1,4 +1,4 @@
-package observables
+package synclive
 
 type Response struct {
 	Ops []ResponseOp `json:"ops"`

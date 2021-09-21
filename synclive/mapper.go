@@ -1,4 +1,4 @@
-package observables
+package synclive
 
 import "github.com/matrix-org/sync-v3/state"
 
