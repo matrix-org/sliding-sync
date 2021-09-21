@@ -24,9 +24,10 @@ type SyncLiveHandler struct {
 
 func NewSyncLiveHandler(v2Client sync2.Client, postgresDBURI string) *SyncLiveHandler {
 	sh := &SyncLiveHandler{
-		V2:      v2Client,
-		Storage: state.NewStorage(postgresDBURI),
-		V2Store: sync2.NewStore(postgresDBURI),
+		V2:       v2Client,
+		Storage:  state.NewStorage(postgresDBURI),
+		V2Store:  sync2.NewStore(postgresDBURI),
+		Notifier: NewNotifier(),
 	}
 	sh.PollerMap = sync2.NewPollerMap(v2Client, sh)
 
@@ -50,11 +51,46 @@ func (h *SyncLiveHandler) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 
 func (h *SyncLiveHandler) serve(w http.ResponseWriter, req *http.Request) error {
 	// associate this request with a connection or make a new connection
-	_, err := h.getOrCreateConnection(req)
+	conn, err := h.getOrCreateConnection(req)
 	if err != nil {
+		hlog.FromRequest(req).Err(err).Msg("failed to get or create Conn")
 		return err
 	}
-
+	log := hlog.FromRequest(req).With().Str("conn_id", conn.ConnID.String()).Logger()
+	var cpos int64
+	queryPos := req.URL.Query().Get("pos")
+	if queryPos != "" {
+		cpos, err = strconv.ParseInt(queryPos, 10, 64)
+		if err != nil {
+			log.Err(err).Msg("failed to get ?pos=")
+			return &internal.HandlerError{
+				StatusCode: 400,
+				Err:        fmt.Errorf("invalid position: %s", queryPos),
+			}
+		}
+	}
+	var body []byte
+	if req.Body != nil {
+		defer req.Body.Close()
+		body, err = ioutil.ReadAll(req.Body)
+		if err != nil {
+			log.Err(err).Msg("failed to read request body")
+			return &internal.HandlerError{
+				StatusCode: 400,
+				Err:        err,
+			}
+		}
+	}
+	nextPos, nextData, herr := conn.OnIncomingRequest(req.Context(), cpos, body)
+	if herr != nil {
+		log.Err(herr).Msg("failed to OnIncomingRequest")
+		return herr
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("X-Sync3-Position", fmt.Sprintf("%d", nextPos))
+	w.Header().Set("X-Sync3-Session", conn.ConnID.SessionID)
+	w.WriteHeader(200)
+	w.Write(nextData)
 	return nil
 }
 
@@ -89,25 +125,7 @@ func (h *SyncLiveHandler) getOrCreateConnection(req *http.Request) (*Conn, error
 			}
 		}
 		if conn != nil {
-			// conn exists
-			cpos, err := strconv.ParseInt(req.URL.Query().Get("pos"), 10, 64)
-			if err != nil {
-				return nil, &internal.HandlerError{
-					StatusCode: 400,
-					Err:        fmt.Errorf("invalid position: %s", req.URL.Query().Get("pos")),
-				}
-			}
-			var body []byte
-			if req.Body != nil {
-				body, err = ioutil.ReadAll(req.Body)
-				if err != nil {
-					return nil, &internal.HandlerError{
-						StatusCode: 400,
-						Err:        err,
-					}
-				}
-			}
-			conn.OnIncomingRequest(req.Context(), cpos, body)
+			log.Info().Str("conn_id", conn.ConnID.String()).Msg("found existing connection")
 			return conn, nil
 		}
 		// conn doesn't exist, we probably nuked it.
@@ -147,17 +165,18 @@ func (h *SyncLiveHandler) getOrCreateConnection(req *http.Request) (*Conn, error
 	)
 
 	// Now the v2 side of things are running, we can make a v3 live sync conn
-	return h.createConn(ConnID{
+	conn = h.createConn(ConnID{
 		SessionID: h.generateSessionID(),
 		DeviceID:  deviceID,
 	})
+	log.Info().Str("conn_id", conn.ConnID.String()).Msg("creating new connection")
+	return conn, nil
 }
 
-func (h *SyncLiveHandler) createConn(connID ConnID) (*Conn, error) {
-	// TODO register the connection with the notifier
-	conn := NewConn(connID)
+func (h *SyncLiveHandler) createConn(connID ConnID) *Conn {
+	conn := NewConn(connID, h.Notifier.HandleIncomingRequest)
 	h.Notifier.SetConn(conn)
-	return conn, nil
+	return conn
 }
 
 func (h *SyncLiveHandler) generateSessionID() string {

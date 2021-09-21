@@ -18,6 +18,8 @@ func (c *ConnID) String() string {
 	return c.SessionID + "-" + c.DeviceID
 }
 
+type HandlerIncomingReqFunc func(ctx context.Context, connID ConnID, reqBody []byte) ([]byte, error)
+
 // Conn is an abstraction of a long-poll connection. It automatically handles the position values
 // of the /sync request, including sending cached data in the event of retries. It does not handle
 // the contents of the data at all.
@@ -26,7 +28,7 @@ type Conn struct {
 	// Callback which is allowed to block as long as the context is active. Return the response
 	// to send back or an error. Errors of type *internal.HandlerError are inspected for the correct
 	// status code to send back.
-	HandleIncomingRequest func(ctx context.Context, connID ConnID, reqBody []byte) ([]byte, error)
+	HandleIncomingRequest HandlerIncomingReqFunc
 
 	// The position/data in the stream last sent by the client
 	lastClientRequest dataFrame
@@ -44,10 +46,11 @@ type dataFrame struct {
 	data []byte
 }
 
-func NewConn(connID ConnID) *Conn {
+func NewConn(connID ConnID, fn HandlerIncomingReqFunc) *Conn {
 	return &Conn{
-		ConnID: connID,
-		mu:     &sync.Mutex{},
+		ConnID:                connID,
+		HandleIncomingRequest: fn,
+		mu:                    &sync.Mutex{},
 	}
 }
 
@@ -93,5 +96,4 @@ func (c *Conn) OnIncomingRequest(ctx context.Context, pos int64, data []byte) (n
 	c.lastServerResponse.data = responseBytes
 
 	return c.lastServerResponse.pos, c.lastServerResponse.data, nil
-
 }

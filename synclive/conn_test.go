@@ -21,16 +21,15 @@ func TestConn(t *testing.T) {
 		DeviceID:  "d",
 		SessionID: "s",
 	}
-	c := NewConn(connID)
 	lastPrefix := "a"
 	pos := 100
-	c.HandleIncomingRequest = func(_ context.Context, _ ConnID, reqBody []byte) ([]byte, error) {
+	c := NewConn(connID, func(_ context.Context, _ ConnID, reqBody []byte) ([]byte, error) {
 		if reqBody != nil {
 			lastPrefix = string(reqBody)
 		}
 		pos += 1
 		return []byte(fmt.Sprintf("%s-%d", lastPrefix, pos)), nil
-	}
+	})
 
 	// initial request
 	nextPos, nextData, err := c.OnIncomingRequest(ctx, 0, []byte(`some_prefix`))
@@ -67,15 +66,15 @@ func TestConnBlocking(t *testing.T) {
 		DeviceID:  "d",
 		SessionID: "s",
 	}
-	c := NewConn(connID)
 	ch := make(chan string)
-	c.HandleIncomingRequest = func(_ context.Context, _ ConnID, reqBody []byte) ([]byte, error) {
+	c := NewConn(connID, func(_ context.Context, _ ConnID, reqBody []byte) ([]byte, error) {
 		if string(reqBody) == "hi" {
 			time.Sleep(10 * time.Millisecond)
 		}
 		ch <- string(reqBody)
 		return reqBody, nil // echo bot
-	}
+	})
+
 	// two connection call the incoming request function at the same time, they should get queued up
 	// and processed in series.
 	// this should block until we read from ch
@@ -110,12 +109,11 @@ func TestConnRetries(t *testing.T) {
 		DeviceID:  "d",
 		SessionID: "s",
 	}
-	c := NewConn(connID)
 	callCount := 0
-	c.HandleIncomingRequest = func(_ context.Context, _ ConnID, _ []byte) ([]byte, error) {
+	c := NewConn(connID, func(_ context.Context, _ ConnID, _ []byte) ([]byte, error) {
 		callCount += 1
 		return []byte(`yep`), nil
-	}
+	})
 	nextPos, nextData, err := c.OnIncomingRequest(ctx, 0, nil)
 	assertPos(t, nextPos, 1)
 	assertData(t, string(nextData), "yep")
@@ -154,11 +152,11 @@ func TestConnErrors(t *testing.T) {
 		DeviceID:  "d",
 		SessionID: "s",
 	}
-	c := NewConn(connID)
 	errCh := make(chan error, 1)
-	c.HandleIncomingRequest = func(_ context.Context, _ ConnID, _ []byte) ([]byte, error) {
+	c := NewConn(connID, func(_ context.Context, _ ConnID, _ []byte) ([]byte, error) {
 		return nil, <-errCh
-	}
+	})
+
 	// random errors = 500
 	errCh <- errors.New("oops")
 	_, _, herr := c.OnIncomingRequest(ctx, 0, nil)

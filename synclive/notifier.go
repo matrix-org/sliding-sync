@@ -1,6 +1,7 @@
 package synclive
 
 import (
+	"context"
 	"sync"
 	"time"
 
@@ -42,6 +43,11 @@ func (m *Notifier) SetConn(conn *Conn) {
 
 func (m *Notifier) connsForRoom(roomID string) []*Conn {
 	return nil
+}
+
+// Implements Conn.HandleIncomingRequest
+func (m *Notifier) HandleIncomingRequest(ctx context.Context, connID ConnID, reqBody []byte) ([]byte, error) {
+	return reqBody, nil // echobot
 }
 
 func (m *Notifier) OnNewEvent(
