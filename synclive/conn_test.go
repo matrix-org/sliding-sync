@@ -2,6 +2,7 @@ package synclive
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sync"
 	"testing"
@@ -46,6 +47,14 @@ func TestConn(t *testing.T) {
 	assertPos(t, nextPos, 3)
 	assertData(t, string(nextData), "more-103")
 	assertNoError(t, err)
+	// bogus position returns a 400
+	_, _, err = c.OnIncomingRequest(ctx, 31415, []byte(`more`))
+	if err == nil {
+		t.Fatalf("expected error, got none")
+	}
+	if err.StatusCode != 400 {
+		t.Fatalf("expected status 400, got %d", err.StatusCode)
+	}
 }
 
 // Test that Conn is blocking and linearises requests to OnIncomingRequest
@@ -137,20 +146,46 @@ func TestConnRetries(t *testing.T) {
 	if callCount != 3 {
 		t.Fatalf("wanted HandleIncomingRequest called 3 times, got %d", callCount)
 	}
+}
 
+func TestConnErrors(t *testing.T) {
+	ctx := context.Background()
+	connID := ConnID{
+		DeviceID:  "d",
+		SessionID: "s",
+	}
+	c := NewConn(connID)
+	errCh := make(chan error, 1)
+	c.HandleIncomingRequest = func(_ context.Context, _ ConnID, _ []byte) ([]byte, error) {
+		return nil, <-errCh
+	}
+	// random errors = 500
+	errCh <- errors.New("oops")
+	_, _, herr := c.OnIncomingRequest(ctx, 0, nil)
+	if herr.StatusCode != 500 {
+		t.Fatalf("random errors should be status 500, got %d", herr.StatusCode)
+	}
+	errCh <- &internal.HandlerError{
+		StatusCode: 400,
+		Err:        errors.New("no way!"),
+	}
+	_, _, herr = c.OnIncomingRequest(ctx, 0, nil)
+	if herr.StatusCode != 400 {
+		t.Fatalf("expected status 400, got %d", herr.StatusCode)
+	}
 }
 
 func assertPos(t *testing.T, nextPos, wantPos int64) {
 	t.Helper()
 	if nextPos != wantPos {
-		t.Fatalf("got pos %d want pos %d", nextPos, wantPos)
+		t.Errorf("got pos %d want pos %d", nextPos, wantPos)
 	}
 }
 
 func assertData(t *testing.T, nextData, wantData string) {
 	t.Helper()
 	if nextData != wantData {
-		t.Fatalf("got data %v want data %v", nextData, wantData)
+		t.Errorf("got data %v want data %v", nextData, wantData)
 	}
 }
 

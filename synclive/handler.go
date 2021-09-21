@@ -90,8 +90,6 @@ func (h *SyncLiveHandler) getOrCreateConnection(req *http.Request) (*Conn, error
 		}
 		if conn != nil {
 			// conn exists
-
-			// TODO: Wrap in OnIncomingRequest(http.Request)?
 			cpos, err := strconv.ParseInt(req.URL.Query().Get("pos"), 10, 64)
 			if err != nil {
 				return nil, &internal.HandlerError{

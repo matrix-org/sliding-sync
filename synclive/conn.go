@@ -3,6 +3,7 @@ package synclive
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"sync"
 
 	"github.com/matrix-org/sync-v3/internal"
@@ -32,7 +33,7 @@ type Conn struct {
 
 	// A buffer of the last response sent to the client.
 	// Can be resent as-is if the server response was lost
-	lastResponse dataFrame
+	lastServerResponse dataFrame
 
 	// ensure only 1 incoming request is handled per connection
 	mu *sync.Mutex
@@ -63,7 +64,16 @@ func (c *Conn) OnIncomingRequest(ctx context.Context, pos int64, data []byte) (n
 		if bytes.Equal(data, c.lastClientRequest.data) {
 			// this is the 2nd+ time we've seen this request, meaning the client likely retried this
 			// request. Send the response we sent before.
-			return c.lastResponse.pos, c.lastResponse.data, nil
+			return c.lastServerResponse.pos, c.lastServerResponse.data, nil
+		}
+	}
+	// if there is a position and it isn't something we've told the client nor a retransmit, they
+	// are playing games
+	if pos != 0 && pos != c.lastServerResponse.pos && c.lastClientRequest.pos != pos {
+		// the client made up a position, reject them
+		return 0, nil, &internal.HandlerError{
+			StatusCode: 400,
+			Err:        fmt.Errorf("unknown position: %d", pos),
 		}
 	}
 	c.lastClientRequest.pos = pos
@@ -77,11 +87,11 @@ func (c *Conn) OnIncomingRequest(ctx context.Context, pos int64, data []byte) (n
 				Err:        err,
 			}
 		}
-		responseBytes = herr.JSON()
+		return 0, nil, herr
 	}
-	c.lastResponse.pos += 1
-	c.lastResponse.data = responseBytes
+	c.lastServerResponse.pos += 1
+	c.lastServerResponse.data = responseBytes
 
-	return c.lastResponse.pos, c.lastResponse.data, nil
+	return c.lastServerResponse.pos, c.lastServerResponse.data, nil
 
 }
