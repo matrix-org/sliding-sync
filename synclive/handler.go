@@ -12,15 +12,16 @@ import (
 	"github.com/matrix-org/sync-v3/state"
 	"github.com/matrix-org/sync-v3/sync2"
 	"github.com/rs/zerolog/hlog"
-	"github.com/tidwall/gjson"
 )
 
+// This is a net.http Handler for sync v3. It is responsible for pairing requests to Conns and to
+// ensure that the sync v2 poller is running for this client.
 type SyncLiveHandler struct {
 	V2        sync2.Client
 	Storage   *state.Storage
 	V2Store   *sync2.Storage
 	PollerMap *sync2.PollerMap
-	Notifier  *Notifier
+	ConnMap   *ConnMap
 }
 
 func NewSyncLiveHandler(v2Client sync2.Client, postgresDBURI string) (*SyncLiveHandler, error) {
@@ -30,13 +31,13 @@ func NewSyncLiveHandler(v2Client sync2.Client, postgresDBURI string) (*SyncLiveH
 		V2Store: sync2.NewStore(postgresDBURI),
 	}
 	sh.PollerMap = sync2.NewPollerMap(v2Client, sh)
-	sh.Notifier = NewNotifier(sh.Storage)
+	sh.ConnMap = NewConnMap(sh.Storage)
 
 	roomToJoinedUsers, err := sh.Storage.AllJoinedMembers()
 	if err != nil {
 		return nil, err
 	}
-	sh.Notifier.LoadJoinedUsers(roomToJoinedUsers)
+	sh.ConnMap.LoadJoinedUsers(roomToJoinedUsers)
 
 	return sh, nil
 }
@@ -123,7 +124,7 @@ func (h *SyncLiveHandler) setupConnection(req *http.Request) (*Conn, error) {
 	if sessionID != "" {
 		// Lookup the connection
 		// we need to map based on both as the session ID isn't crypto secure but the device ID is (Auth header)
-		conn = h.Notifier.Conn(ConnID{
+		conn = h.ConnMap.Conn(ConnID{
 			SessionID: sessionID,
 			DeviceID:  deviceID,
 		})
@@ -179,7 +180,7 @@ func (h *SyncLiveHandler) setupConnection(req *http.Request) (*Conn, error) {
 	// because we *either* do the existing check *or* make a new conn. It's important for CreateConn
 	// to check for an existing connection though, as it's possible for the client to call /sync
 	// twice for a new connection and get the same session ID.
-	conn = h.Notifier.GetOrCreateConn(ConnID{
+	conn = h.ConnMap.GetOrCreateConn(ConnID{
 		SessionID: h.generateSessionID(),
 		DeviceID:  deviceID,
 	}, v2device.UserID)
@@ -208,16 +209,9 @@ func (h *SyncLiveHandler) Accumulate(roomID string, timeline []json.RawMessage) 
 	}
 	newEvents := timeline[len(timeline)-numNew:]
 
-	// we have new events, let the notifier handle them
+	// we have new events, let the connection map handle them
 	for _, event := range newEvents {
-		var stateKey *string
-		ev := gjson.ParseBytes(event)
-		if sk := ev.Get("state_key"); sk.Exists() {
-			stateKey = &sk.Str
-		}
-		h.Notifier.OnNewEvent(
-			roomID, ev.Get("sender").Str, ev.Get("type").Str, stateKey, ev.Get("content"),
-		)
+		h.ConnMap.OnNewEvent(roomID, event)
 	}
 	return err
 }
@@ -232,16 +226,9 @@ func (h *SyncLiveHandler) Initialise(roomID string, state []json.RawMessage) err
 		// no new events
 		return nil
 	}
-	// we have new events, let the notifier handle them
+	// we have new events, let the connection map handle them
 	for _, event := range state {
-		var stateKey *string
-		ev := gjson.ParseBytes(event)
-		if sk := ev.Get("state_key"); sk.Exists() {
-			stateKey = &sk.Str
-		}
-		h.Notifier.OnNewEvent(
-			roomID, ev.Get("sender").Str, ev.Get("type").Str, stateKey, ev.Get("content"),
-		)
+		h.ConnMap.OnNewEvent(roomID, event)
 	}
 	return err
 }

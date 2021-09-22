@@ -23,7 +23,7 @@ func TestConn(t *testing.T) {
 	}
 	lastPrefix := "a"
 	pos := 100
-	c := NewConn(connID, func(_ context.Context, _ ConnID, reqBody []byte) ([]byte, error) {
+	c := NewConn(connID, nil, func(_ context.Context, _ *Conn, reqBody []byte) ([]byte, error) {
 		if reqBody != nil {
 			lastPrefix = string(reqBody)
 		}
@@ -67,7 +67,7 @@ func TestConnBlocking(t *testing.T) {
 		SessionID: "s",
 	}
 	ch := make(chan string)
-	c := NewConn(connID, func(_ context.Context, _ ConnID, reqBody []byte) ([]byte, error) {
+	c := NewConn(connID, nil, func(_ context.Context, _ *Conn, reqBody []byte) ([]byte, error) {
 		if string(reqBody) == "hi" {
 			time.Sleep(10 * time.Millisecond)
 		}
@@ -110,7 +110,7 @@ func TestConnRetries(t *testing.T) {
 		SessionID: "s",
 	}
 	callCount := 0
-	c := NewConn(connID, func(_ context.Context, _ ConnID, _ []byte) ([]byte, error) {
+	c := NewConn(connID, nil, func(_ context.Context, _ *Conn, _ []byte) ([]byte, error) {
 		callCount += 1
 		return []byte(`yep`), nil
 	})
@@ -153,7 +153,7 @@ func TestConnErrors(t *testing.T) {
 		SessionID: "s",
 	}
 	errCh := make(chan error, 1)
-	c := NewConn(connID, func(_ context.Context, _ ConnID, req []byte) ([]byte, error) {
+	c := NewConn(connID, nil, func(_ context.Context, _ *Conn, req []byte) ([]byte, error) {
 		return nil, <-errCh
 	})
 
@@ -181,7 +181,7 @@ func TestConnErrorsNoCache(t *testing.T) {
 		SessionID: "s",
 	}
 	errCh := make(chan error, 1)
-	c := NewConn(connID, func(_ context.Context, _ ConnID, req []byte) ([]byte, error) {
+	c := NewConn(connID, nil, func(_ context.Context, _ *Conn, req []byte) ([]byte, error) {
 		select {
 		case e := <-errCh:
 			return nil, e

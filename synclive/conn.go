@@ -18,7 +18,7 @@ func (c *ConnID) String() string {
 	return c.SessionID + "-" + c.DeviceID
 }
 
-type HandlerIncomingReqFunc func(ctx context.Context, connID ConnID, reqBody []byte) ([]byte, error)
+type HandlerIncomingReqFunc func(ctx context.Context, conn *Conn, reqBody []byte) ([]byte, error)
 
 // Conn is an abstraction of a long-poll connection. It automatically handles the position values
 // of the /sync request, including sending cached data in the event of retries. It does not handle
@@ -39,6 +39,8 @@ type Conn struct {
 
 	// ensure only 1 incoming request is handled per connection
 	mu *sync.Mutex
+
+	connState *ConnState
 }
 
 type dataFrame struct {
@@ -46,12 +48,17 @@ type dataFrame struct {
 	data []byte
 }
 
-func NewConn(connID ConnID, fn HandlerIncomingReqFunc) *Conn {
+func NewConn(connID ConnID, connState *ConnState, fn HandlerIncomingReqFunc) *Conn {
 	return &Conn{
 		ConnID:                connID,
 		HandleIncomingRequest: fn,
 		mu:                    &sync.Mutex{},
+		connState:             connState,
 	}
+}
+
+func (c *Conn) State() *ConnState {
+	return c.connState
 }
 
 // OnIncomingRequest advances the clients position in the stream, returning the response position and data.
@@ -81,8 +88,8 @@ func (c *Conn) OnIncomingRequest(ctx context.Context, pos int64, data []byte) (n
 	}
 	c.lastClientRequest.data = data
 	c.lastClientRequest.pos = pos
-	// notify handler as it may need to recalcualte or invalidate stuff
-	responseBytes, err := c.HandleIncomingRequest(ctx, c.ConnID, data)
+
+	responseBytes, err := c.HandleIncomingRequest(ctx, c, data)
 	if err != nil {
 		herr, ok := err.(*internal.HandlerError)
 		if !ok {
