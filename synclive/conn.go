@@ -79,6 +79,7 @@ func (c *Conn) OnIncomingRequest(ctx context.Context, pos int64, data []byte) (n
 			Err:        fmt.Errorf("unknown position: %d", pos),
 		}
 	}
+	c.lastClientRequest.data = data
 	c.lastClientRequest.pos = pos
 	// notify handler as it may need to recalcualte or invalidate stuff
 	responseBytes, err := c.HandleIncomingRequest(ctx, c.ConnID, data)

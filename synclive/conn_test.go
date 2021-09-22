@@ -153,7 +153,7 @@ func TestConnErrors(t *testing.T) {
 		SessionID: "s",
 	}
 	errCh := make(chan error, 1)
-	c := NewConn(connID, func(_ context.Context, _ ConnID, _ []byte) ([]byte, error) {
+	c := NewConn(connID, func(_ context.Context, _ ConnID, req []byte) ([]byte, error) {
 		return nil, <-errCh
 	})
 
@@ -163,6 +163,7 @@ func TestConnErrors(t *testing.T) {
 	if herr.StatusCode != 500 {
 		t.Fatalf("random errors should be status 500, got %d", herr.StatusCode)
 	}
+	// explicit error codes should be passed through
 	errCh <- &internal.HandlerError{
 		StatusCode: 400,
 		Err:        errors.New("no way!"),
@@ -170,6 +171,42 @@ func TestConnErrors(t *testing.T) {
 	_, _, herr = c.OnIncomingRequest(ctx, 0, nil)
 	if herr.StatusCode != 400 {
 		t.Fatalf("expected status 400, got %d", herr.StatusCode)
+	}
+}
+
+func TestConnErrorsNoCache(t *testing.T) {
+	ctx := context.Background()
+	connID := ConnID{
+		DeviceID:  "d",
+		SessionID: "s",
+	}
+	errCh := make(chan error, 1)
+	c := NewConn(connID, func(_ context.Context, _ ConnID, req []byte) ([]byte, error) {
+		select {
+		case e := <-errCh:
+			return nil, e
+		default:
+			return []byte("ok"), nil
+		}
+	})
+	// errors should not be cached
+	nextPos, _, herr := c.OnIncomingRequest(ctx, 0, []byte("test"))
+	if herr != nil {
+		t.Fatalf("expected no error, got %+v", herr)
+	}
+	// now this returns a temporary error
+	errCh <- &internal.HandlerError{
+		StatusCode: 400,
+		Err:        errors.New("no way!"),
+	}
+	_, _, herr = c.OnIncomingRequest(ctx, nextPos, []byte("test"))
+	if herr.StatusCode != 400 {
+		t.Fatalf("expected status 400, got %d", herr.StatusCode)
+	}
+	// but doing the exact same request should now work
+	_, _, herr = c.OnIncomingRequest(ctx, nextPos, []byte("test"))
+	if herr != nil {
+		t.Fatalf("expected no error, got %+v", herr)
 	}
 }
 
