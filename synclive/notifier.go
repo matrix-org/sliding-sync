@@ -15,19 +15,27 @@ type Notifier struct {
 
 	// map of user_id to active connections. Inspect the ConnID to find the device ID.
 	userIDToConn map[string][]*Conn
-	jrt          *JoinedRoomsTracker
+	connIDToConn map[string]*Conn
+	connIDToUser map[string]string
+
+	jrt   *JoinedRoomsTracker
+	store *state.Storage
 
 	mu *sync.Mutex
 }
 
-func NewNotifier() *Notifier {
+func NewNotifier(store *state.Storage) *Notifier {
 	cm := &Notifier{
 		userIDToConn: make(map[string][]*Conn),
+		connIDToConn: make(map[string]*Conn),
+		connIDToUser: make(map[string]string),
 		cache:        ttlcache.NewCache(),
 		mu:           &sync.Mutex{},
 		jrt:          NewJoinedRoomsTracker(),
+		store:        store,
 	}
 	cm.cache.SetTTL(30 * time.Minute) // TODO: customisable
+	cm.cache.SetExpirationCallback(cm.closeConn)
 	return cm
 }
 
@@ -41,7 +49,7 @@ func (m *Notifier) Conn(cid ConnID) *Conn {
 }
 
 // Atomically gets or creates a connection with this connection ID.
-func (m *Notifier) GetOrCreateConn(cid ConnID) *Conn {
+func (m *Notifier) GetOrCreateConn(cid ConnID, userID string) *Conn {
 	// atomically check if a conn exists already and return that if so
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -50,7 +58,10 @@ func (m *Notifier) GetOrCreateConn(cid ConnID) *Conn {
 		return conn
 	}
 	conn = NewConn(cid, m.handleIncomingSyncRequest)
-	m.cache.Set(conn.ConnID.String(), conn)
+	m.cache.Set(cid.String(), conn)
+	m.connIDToConn[cid.String()] = conn
+	m.userIDToConn[userID] = append(m.userIDToConn[userID], conn)
+	m.connIDToUser[cid.String()] = userID
 	return conn
 }
 
@@ -62,11 +73,32 @@ func (m *Notifier) LoadJoinedUsers(roomIDToUserIDs map[string][]string) {
 	}
 }
 
+func (m *Notifier) closeConn(connID string, _ interface{}) {
+	// remove conn from all the maps
+	delete(m.connIDToConn, connID)
+	userID := m.connIDToUser[connID]
+	delete(m.connIDToUser, connID)
+	if userID != "" {
+		conns := m.userIDToConn[userID]
+		for i := 0; i < len(conns); i++ {
+			if conns[i].ConnID.String() == connID {
+				// delete without preserving order
+				conns[i] = conns[len(conns)-1]
+				conns = conns[:len(conns)-1]
+			}
+		}
+		m.userIDToConn[userID] = conns
+	}
+}
+
 // Implements Conn.HandleIncomingRequest
 func (m *Notifier) handleIncomingSyncRequest(ctx context.Context, connID ConnID, reqBody []byte) ([]byte, error) {
-	// mux together the reqBody to see if the request has fundamentally changed.
-	// the request has changed, invalidate what we have and return fresh.
-	// the requre hasn't changed,
+	// pull sticky request data from ConnID, mux with new reqBody to form complete sync request.
+
+	// update room subscriptions
+
+	// check if the ranges have changed. If there are new ranges, track them and send them back
+
 	return reqBody, nil // echobot
 }
 

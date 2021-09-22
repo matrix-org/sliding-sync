@@ -25,12 +25,12 @@ type SyncLiveHandler struct {
 
 func NewSyncLiveHandler(v2Client sync2.Client, postgresDBURI string) (*SyncLiveHandler, error) {
 	sh := &SyncLiveHandler{
-		V2:       v2Client,
-		Storage:  state.NewStorage(postgresDBURI),
-		V2Store:  sync2.NewStore(postgresDBURI),
-		Notifier: NewNotifier(),
+		V2:      v2Client,
+		Storage: state.NewStorage(postgresDBURI),
+		V2Store: sync2.NewStore(postgresDBURI),
 	}
 	sh.PollerMap = sync2.NewPollerMap(v2Client, sh)
+	sh.Notifier = NewNotifier(sh.Storage)
 
 	roomToJoinedUsers, err := sh.Storage.AllJoinedMembers()
 	if err != nil {
@@ -182,7 +182,7 @@ func (h *SyncLiveHandler) setupConnection(req *http.Request) (*Conn, error) {
 	conn = h.Notifier.GetOrCreateConn(ConnID{
 		SessionID: h.generateSessionID(),
 		DeviceID:  deviceID,
-	})
+	}, v2device.UserID)
 	log.Info().Str("conn_id", conn.ConnID.String()).Msg("creating new connection")
 	return conn, nil
 }
