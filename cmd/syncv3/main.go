@@ -23,10 +23,14 @@ func main() {
 		flag.Usage()
 		os.Exit(1)
 	}
-	syncv3.RunSyncV3Server(synclive.NewSyncLiveHandler(&sync2.HTTPClient{
+	h, err := synclive.NewSyncLiveHandler(&sync2.HTTPClient{
 		Client: &http.Client{
 			Timeout: 5 * time.Minute,
 		},
 		DestinationServer: *flagDestinationServer,
-	}, *flagPostgres), *flagBindAddr)
+	}, *flagPostgres)
+	if err != nil {
+		panic(err)
+	}
+	syncv3.RunSyncV3Server(h, *flagBindAddr)
 }

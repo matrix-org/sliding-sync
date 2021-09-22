@@ -12,6 +12,7 @@ import (
 	"github.com/matrix-org/sync-v3/state"
 	"github.com/matrix-org/sync-v3/sync2"
 	"github.com/rs/zerolog/hlog"
+	"github.com/tidwall/gjson"
 )
 
 type SyncLiveHandler struct {
@@ -22,7 +23,7 @@ type SyncLiveHandler struct {
 	Notifier  *Notifier
 }
 
-func NewSyncLiveHandler(v2Client sync2.Client, postgresDBURI string) *SyncLiveHandler {
+func NewSyncLiveHandler(v2Client sync2.Client, postgresDBURI string) (*SyncLiveHandler, error) {
 	sh := &SyncLiveHandler{
 		V2:       v2Client,
 		Storage:  state.NewStorage(postgresDBURI),
@@ -31,7 +32,13 @@ func NewSyncLiveHandler(v2Client sync2.Client, postgresDBURI string) *SyncLiveHa
 	}
 	sh.PollerMap = sync2.NewPollerMap(v2Client, sh)
 
-	return sh
+	roomToJoinedUsers, err := sh.Storage.AllJoinedMembers()
+	if err != nil {
+		return nil, err
+	}
+	sh.Notifier.LoadJoinedUsers(roomToJoinedUsers)
+
+	return sh, nil
 }
 
 func (h *SyncLiveHandler) ServeHTTP(w http.ResponseWriter, req *http.Request) {
@@ -49,9 +56,9 @@ func (h *SyncLiveHandler) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	}
 }
 
+// Entry point for sync v3
 func (h *SyncLiveHandler) serve(w http.ResponseWriter, req *http.Request) error {
-	// associate this request with a connection or make a new connection
-	conn, err := h.getOrCreateConnection(req)
+	conn, err := h.setupConnection(req)
 	if err != nil {
 		hlog.FromRequest(req).Err(err).Msg("failed to get or create Conn")
 		return err
@@ -94,7 +101,10 @@ func (h *SyncLiveHandler) serve(w http.ResponseWriter, req *http.Request) error 
 	return nil
 }
 
-func (h *SyncLiveHandler) getOrCreateConnection(req *http.Request) (*Conn, error) {
+// setupConnection associates this request with an existing connection or makes a new connection.
+// It also sets a v2 sync poll loop going if one didn't exist already for this user.
+// When this function returns, the connection is alive and active.
+func (h *SyncLiveHandler) setupConnection(req *http.Request) (*Conn, error) {
 	log := hlog.FromRequest(req)
 	var conn *Conn
 
@@ -165,18 +175,16 @@ func (h *SyncLiveHandler) getOrCreateConnection(req *http.Request) (*Conn, error
 	)
 
 	// Now the v2 side of things are running, we can make a v3 live sync conn
-	conn = h.createConn(ConnID{
+	// NB: this isn't inherently racey (we did the check for an existing conn before EnsurePolling)
+	// because we *either* do the existing check *or* make a new conn. It's important for CreateConn
+	// to check for an existing connection though, as it's possible for the client to call /sync
+	// twice for a new connection and get the same session ID.
+	conn = h.Notifier.GetOrCreateConn(ConnID{
 		SessionID: h.generateSessionID(),
 		DeviceID:  deviceID,
 	})
 	log.Info().Str("conn_id", conn.ConnID.String()).Msg("creating new connection")
 	return conn, nil
-}
-
-func (h *SyncLiveHandler) createConn(connID ConnID) *Conn {
-	conn := NewConn(connID, h.Notifier.HandleIncomingRequest)
-	h.Notifier.SetConn(conn)
-	return conn
 }
 
 func (h *SyncLiveHandler) generateSessionID() string {
@@ -190,19 +198,60 @@ func (h *SyncLiveHandler) UpdateDeviceSince(deviceID, since string) error {
 
 // Called from the v2 poller, implements V2DataReceiver
 func (h *SyncLiveHandler) Accumulate(roomID string, timeline []json.RawMessage) error {
-	_, err := h.Storage.Accumulate(roomID, timeline)
+	numNew, err := h.Storage.Accumulate(roomID, timeline)
+	if err != nil {
+		return err
+	}
+	if numNew == 0 {
+		// no new events
+		return nil
+	}
+	newEvents := timeline[len(timeline)-numNew:]
+
+	// we have new events, let the notifier handle them
+	for _, event := range newEvents {
+		var stateKey *string
+		ev := gjson.ParseBytes(event)
+		if sk := ev.Get("state_key"); sk.Exists() {
+			stateKey = &sk.Str
+		}
+		h.Notifier.OnNewEvent(
+			roomID, ev.Get("sender").Str, ev.Get("type").Str, stateKey, ev.Get("content"),
+		)
+	}
 	return err
 }
 
+// Called from the v2 poller, implements V2DataReceiver
 func (h *SyncLiveHandler) Initialise(roomID string, state []json.RawMessage) error {
-	_, err := h.Storage.Initialise(roomID, state)
+	added, err := h.Storage.Initialise(roomID, state)
+	if err != nil {
+		return err
+	}
+	if !added {
+		// no new events
+		return nil
+	}
+	// we have new events, let the notifier handle them
+	for _, event := range state {
+		var stateKey *string
+		ev := gjson.ParseBytes(event)
+		if sk := ev.Get("state_key"); sk.Exists() {
+			stateKey = &sk.Str
+		}
+		h.Notifier.OnNewEvent(
+			roomID, ev.Get("sender").Str, ev.Get("type").Str, stateKey, ev.Get("content"),
+		)
+	}
 	return err
 }
 
+// Called from the v2 poller, implements V2DataReceiver
 func (h *SyncLiveHandler) SetTyping(roomID string, userIDs []string) (int64, error) {
 	return h.Storage.TypingTable.SetTyping(roomID, userIDs)
 }
 
+// Called from the v2 poller, implements V2DataReceiver
 // Add messages for this device. If an error is returned, the poll loop is terminated as continuing
 // would implicitly acknowledge these messages.
 func (h *SyncLiveHandler) AddToDeviceMessages(userID, deviceID string, msgs []gomatrixserverlib.SendToDeviceEvent) error {

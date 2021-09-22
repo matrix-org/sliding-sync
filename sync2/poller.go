@@ -45,10 +45,11 @@ func NewPollerMap(v2Client Client, callbacks V2DataReceiver) *PollerMap {
 // EnsurePolling makes sure there is a poller for this device, making one if need be.
 // Blocks until at least 1 sync is done if and only if the poller was just created.
 // This ensures that calls to the database will return data.
+// Guarantees only 1 poller will be running per deviceID.
 func (h *PollerMap) EnsurePolling(authHeader, userID, deviceID, v2since string, logger zerolog.Logger) {
 	h.pollerMu.Lock()
 	poller, ok := h.Pollers[deviceID]
-	// either no poller exists or it did but it died
+	// a poller exists and hasn't been terminated so we don't need to do anything
 	if ok && !poller.Terminated {
 		h.pollerMu.Unlock()
 		return
