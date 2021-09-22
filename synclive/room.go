@@ -10,3 +10,11 @@ type Room struct {
 	NotificationCount int64             `json:"notification_count"`
 	HighlightCount    int64             `json:"highlight_count"`
 }
+
+// SortableRoom is a room with all globally sortable fields included
+// Does not include notif counts as that is user-specific.
+type SortableRoom struct {
+	RoomID               string
+	Name                 string // by_name
+	LastMessageTimestamp int64  // by_recency
+}

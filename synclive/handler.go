@@ -37,7 +37,10 @@ func NewSyncLiveHandler(v2Client sync2.Client, postgresDBURI string) (*SyncLiveH
 	if err != nil {
 		return nil, err
 	}
-	sh.ConnMap.LoadJoinedUsers(roomToJoinedUsers)
+	err = sh.ConnMap.LoadBaseline(roomToJoinedUsers)
+	if err != nil {
+		return nil, err
+	}
 
 	return sh, nil
 }

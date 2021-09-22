@@ -128,6 +128,14 @@ func TestEventTable(t *testing.T) {
 		t.Errorf("SelectHighestNID didn't select highest, got %d want %d", gotHighestNID, wantHighestNID)
 	}
 
+	latest, err := table.SelectLatestEventInRoom(txn, roomID, gotHighestNID)
+	if err != nil {
+		t.Errorf("SelectLatestEventInRoom returned error: %s", err)
+	}
+	if latest.ID != "102" {
+		t.Errorf("SelectLatestEventInRoom returned unexpect latest event: %+v", latest)
+	}
+
 	var nids []int64
 	for _, ev := range events {
 		nids = append(nids, int64(ev.NID))

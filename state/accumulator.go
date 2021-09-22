@@ -221,6 +221,7 @@ func (a *Accumulator) Accumulate(roomID string, timeline []json.RawMessage) (num
 			return err
 		}
 		if len(newEventNIDs) != len(newEventIDs) {
+			log.Error().Strs("asked", newEventIDs).Ints64("gots", newEventNIDs).Msg("missing events in database!")
 			return fmt.Errorf("failed to extract nids from inserted events, asked for %d got %d", len(newEventIDs), len(newEventNIDs))
 		}
 		for i, nid := range newEventNIDs {

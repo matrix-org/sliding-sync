@@ -239,6 +239,15 @@ func (t *EventTable) SelectEventsBetween(txn *sqlx.Tx, roomID string, lowerExclu
 	return events, err
 }
 
+func (t *EventTable) SelectLatestEventInRoom(txn *sqlx.Tx, roomID string, upperInclusive int64) (*Event, error) {
+	var event Event
+	err := txn.Get(&event, `SELECT event_nid, event, event_type, state_key, event_id, room_id FROM syncv3_events 
+	WHERE event_nid <= $1 AND room_id = $2 ORDER BY event_nid DESC LIMIT 1`,
+		upperInclusive, roomID,
+	)
+	return &event, err
+}
+
 // Select all events between the bounds matching the type, state_key given.
 // Used to work out which rooms the user was joined to at a given point in time.
 func (t *EventTable) SelectEventsWithTypeStateKey(eventType, stateKey string, lowerExclusive, upperInclusive int64) ([]Event, error) {

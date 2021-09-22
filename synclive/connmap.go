@@ -22,7 +22,10 @@ type ConnMap struct {
 	userIDToConn map[string][]*Conn
 	connIDToConn map[string]*Conn
 
-	jrt   *JoinedRoomsTracker
+	// global room trackers (not connection or user specific)
+	jrt            *JoinedRoomsTracker
+	globalRoomInfo map[string]*SortableRoom
+
 	store *state.Storage
 
 	mu *sync.Mutex
@@ -30,12 +33,13 @@ type ConnMap struct {
 
 func NewConnMap(store *state.Storage) *ConnMap {
 	cm := &ConnMap{
-		userIDToConn: make(map[string][]*Conn),
-		connIDToConn: make(map[string]*Conn),
-		cache:        ttlcache.NewCache(),
-		mu:           &sync.Mutex{},
-		jrt:          NewJoinedRoomsTracker(),
-		store:        store,
+		userIDToConn:   make(map[string][]*Conn),
+		connIDToConn:   make(map[string]*Conn),
+		cache:          ttlcache.NewCache(),
+		mu:             &sync.Mutex{},
+		jrt:            NewJoinedRoomsTracker(),
+		store:          store,
+		globalRoomInfo: make(map[string]*SortableRoom),
 	}
 	cm.cache.SetTTL(30 * time.Minute) // TODO: customisable
 	cm.cache.SetExpirationCallback(cm.closeConn)
@@ -67,12 +71,39 @@ func (m *ConnMap) GetOrCreateConn(cid ConnID, userID string) *Conn {
 	return conn
 }
 
-func (m *ConnMap) LoadJoinedUsers(roomIDToUserIDs map[string][]string) {
+func (m *ConnMap) LoadBaseline(roomIDToUserIDs map[string][]string) error {
+	latest, err := m.store.LatestEventNID()
+	if err != nil {
+		return err
+	}
 	for roomID, userIDs := range roomIDToUserIDs {
+		room := &SortableRoom{
+			RoomID: roomID,
+		}
+		// load current state for room
+		stateEvents, err := m.store.RoomStateAfterEventPosition(roomID, latest)
+		if err != nil {
+			return err
+		}
+		for _, ev := range stateEvents {
+			// TODO: name algorithm
+			if ev.Type == "m.room.name" {
+				room.Name = gjson.ParseBytes(ev.JSON).Get("content.name").Str
+				break
+			}
+		}
+		latest, err := m.store.LatestEventInRoom(roomID, latest)
+		if err != nil {
+			return err
+		}
+		room.LastMessageTimestamp = gjson.ParseBytes(latest.JSON).Get("origin_server_ts").Int()
+		m.globalRoomInfo[room.RoomID] = room
 		for _, userID := range userIDs {
 			m.jrt.UserJoinedRoom(userID, roomID)
 		}
+		fmt.Printf("Room: %+v \n", room)
 	}
+	return nil
 }
 
 func (m *ConnMap) closeConn(connID string, value interface{}) {

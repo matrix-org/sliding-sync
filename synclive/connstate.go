@@ -14,7 +14,7 @@ import (
 type ConnState struct {
 	muxedReq          *Request
 	userID            string
-	sortedRooms       []*Room
+	sortedJoinedRooms []*Room
 	roomSubscriptions map[string]*Room
 }
 
@@ -44,19 +44,9 @@ func (s *ConnState) OnIncomingRequest(ctx context.Context, req *Request) (*Respo
 		s.muxedReq = combinedReq
 		unsubs = unsubRooms
 	}
-	fmt.Println("subs", subs, "unsubs", unsubs)
-	/*
-		// pull sticky request data from ConnID, mux with new reqBody to form complete sync request.
-
-		req, _, _, err := state.MultiplexRequest(reqBody)
-		if err != nil {
-			return nil, &internal.HandlerError{
-				StatusCode: 400,
-				Err:        fmt.Errorf("failed to multiplex request data: %s", err),
-			}
-		} */
-
 	// TODO update room subscriptions
+	fmt.Println("subs", subs, "unsubs", unsubs, "range", s.muxedReq.Rooms)
+
 	// TODO check if the ranges have changed. If there are new ranges, track them and send them back
 	return nil, nil
 }
