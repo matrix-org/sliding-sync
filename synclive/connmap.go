@@ -17,6 +17,9 @@ type EventData struct {
 	eventType string
 	stateKey  *string
 	content   gjson.Result
+	// the absolute latest position for this event data. The NID for this event is guaranteed to
+	// be <= this value.
+	latestPos int64
 }
 
 // ConnMap stores a collection of Conns along with other global server-wide state e.g the in-memory
@@ -29,7 +32,11 @@ type ConnMap struct {
 	connIDToConn map[string]*Conn
 
 	// global room trackers (not connection or user specific)
-	jrt            *JoinedRoomsTracker
+	// The joined room tracker must be loaded with the current joined room state for all users
+	// BEFORE v2 poll loops are started, else it could race with live updates.
+	jrt *JoinedRoomsTracker
+
+	// TODO: this can be pulled out of here and invoked from handler?
 	globalRoomInfo map[string]*SortableRoom
 
 	store *state.Storage
@@ -70,7 +77,7 @@ func (m *ConnMap) GetOrCreateConn(cid ConnID, userID string) *Conn {
 	if conn != nil {
 		return conn
 	}
-	state := NewConnState(userID, m.store)
+	state := NewConnState(userID, m.store, m.roomInfo)
 	conn = NewConn(cid, state, state.HandleIncomingRequest)
 	m.cache.Set(cid.String(), conn)
 	m.connIDToConn[cid.String()] = conn
@@ -78,6 +85,13 @@ func (m *ConnMap) GetOrCreateConn(cid ConnID, userID string) *Conn {
 	return conn
 }
 
+// LoadBaseline must be called before any v2 poll loops are made. Failure to do so can result in
+// duplicate event processing which could corrupt state. Consider:
+//   - V2 poll loop started early
+//   - Join event arrives, NID=50
+//   - LoadBaseline loads the latest NID=50 due to LatestEventNID, processes this join event in the process
+//   - OnNewEvents is called with the join event
+//   - join event is processed twice.
 func (m *ConnMap) LoadBaseline(roomIDToUserIDs map[string][]string) error {
 	latest, err := m.store.LatestEventNID()
 	if err != nil {
@@ -113,6 +127,12 @@ func (m *ConnMap) LoadBaseline(roomIDToUserIDs map[string][]string) error {
 	return nil
 }
 
+func (m *ConnMap) roomInfo(roomID string) *SortableRoom {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.globalRoomInfo[roomID]
+}
+
 func (m *ConnMap) closeConn(connID string, value interface{}) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -135,8 +155,15 @@ func (m *ConnMap) closeConn(connID string, value interface{}) {
 
 // Call this when there is a new event received on a v2 stream.
 // This event must be globally unique, i.e indicated so by the state store.
-func (m *ConnMap) OnNewEvent(
-	roomID string, event json.RawMessage,
+func (m *ConnMap) OnNewEvents(
+	roomID string, events []json.RawMessage, latestPos int64,
+) {
+	for _, event := range events {
+		m.onNewEvent(roomID, event, latestPos)
+	}
+}
+func (m *ConnMap) onNewEvent(
+	roomID string, event json.RawMessage, latestPos int64,
 ) {
 	// parse the event to pull out fields we care about
 	var stateKey *string
@@ -161,6 +188,20 @@ func (m *ConnMap) OnNewEvent(
 			m.jrt.UserLeftRoom(targetUser, roomID)
 		}
 	}
+	// update global state
+	m.mu.Lock()
+	globalRoom := m.globalRoomInfo[roomID]
+	if globalRoom == nil {
+		globalRoom = &SortableRoom{
+			RoomID: roomID,
+		}
+	}
+	if eventType == "m.room.name" && stateKey != nil && *stateKey == "" {
+		globalRoom.Name = gjson.ParseBytes(event).Get("content.name").Str
+	}
+	globalRoom.LastMessageTimestamp = gjson.ParseBytes(event).Get("origin_server_ts").Int()
+	m.globalRoomInfo[globalRoom.RoomID] = globalRoom
+	m.mu.Unlock()
 
 	ed := &EventData{
 		event:     event,
@@ -168,6 +209,7 @@ func (m *ConnMap) OnNewEvent(
 		eventType: eventType,
 		stateKey:  stateKey,
 		content:   ev.Get("content"),
+		latestPos: latestPos,
 	}
 
 	// notify all people in this room

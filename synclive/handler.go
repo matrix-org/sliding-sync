@@ -209,7 +209,7 @@ func (h *SyncLiveHandler) UpdateDeviceSince(deviceID, since string) error {
 
 // Called from the v2 poller, implements V2DataReceiver
 func (h *SyncLiveHandler) Accumulate(roomID string, timeline []json.RawMessage) error {
-	numNew, err := h.Storage.Accumulate(roomID, timeline)
+	numNew, latestPos, err := h.Storage.Accumulate(roomID, timeline)
 	if err != nil {
 		return err
 	}
@@ -220,9 +220,7 @@ func (h *SyncLiveHandler) Accumulate(roomID string, timeline []json.RawMessage) 
 	newEvents := timeline[len(timeline)-numNew:]
 
 	// we have new events, let the connection map handle them
-	for _, event := range newEvents {
-		h.ConnMap.OnNewEvent(roomID, event)
-	}
+	h.ConnMap.OnNewEvents(roomID, newEvents, latestPos)
 	return err
 }
 
@@ -237,9 +235,7 @@ func (h *SyncLiveHandler) Initialise(roomID string, state []json.RawMessage) err
 		return nil
 	}
 	// we have new events, let the connection map handle them
-	for _, event := range state {
-		h.ConnMap.OnNewEvent(roomID, event)
-	}
+	h.ConnMap.OnNewEvents(roomID, state, 0)
 	return err
 }
 

@@ -169,9 +169,9 @@ func (a *Accumulator) Initialise(roomID string, state []json.RawMessage) (bool, 
 //     to exist in the database, and the sync stream is already linearised for us.
 //   - Else it creates a new room state snapshot if the timeline contains state events (as this now represents the current state)
 //   - It adds entries to the membership log for membership events.
-func (a *Accumulator) Accumulate(roomID string, timeline []json.RawMessage) (numNew int, err error) {
+func (a *Accumulator) Accumulate(roomID string, timeline []json.RawMessage) (numNew int, latestNID int64, err error) {
 	if len(timeline) == 0 {
-		return 0, nil
+		return 0, 0, nil
 	}
 	err = sqlutil.WithTransaction(a.db, func(txn *sqlx.Tx) error {
 		// Insert the events
@@ -226,6 +226,11 @@ func (a *Accumulator) Accumulate(roomID string, timeline []json.RawMessage) (num
 		}
 		for i, nid := range newEventNIDs {
 			newEventsDec[i].NID = nid
+			// assign the highest nid value to the latest nid.
+			// we'll return this to the caller so they can stay in-sync
+			if nid > latestNID {
+				latestNID = nid
+			}
 		}
 
 		// Given a timeline of [E1, E2, S3, E4, S5, S6, E7] (E=message event, S=state event)
@@ -285,7 +290,7 @@ func (a *Accumulator) Accumulate(roomID string, timeline []json.RawMessage) (num
 		}
 		return nil
 	})
-	return numNew, err
+	return numNew, latestNID, err
 }
 
 // Delta returns a list of events of at most `limit` for the room not including `lastEventNID`.

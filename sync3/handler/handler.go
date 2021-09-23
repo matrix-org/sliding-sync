@@ -283,7 +283,7 @@ func (h *SyncV3Handler) UpdateDeviceSince(deviceID, since string) error {
 
 // Called from the v2 poller, implements V2DataReceiver
 func (h *SyncV3Handler) Accumulate(roomID string, timeline []json.RawMessage) error {
-	numNew, err := h.Storage.Accumulate(roomID, timeline)
+	numNew, nid, err := h.Storage.Accumulate(roomID, timeline)
 	if err != nil {
 		return err
 	}
@@ -291,11 +291,6 @@ func (h *SyncV3Handler) Accumulate(roomID string, timeline []json.RawMessage) er
 		return nil
 	}
 	updateToken := sync3.NewBlankSyncToken(0, 0)
-	// TODO: read from memory, persist in Storage?
-	nid, err := h.Storage.LatestEventNID()
-	if err != nil {
-		return err
-	}
 	updateToken.SetEventPosition(nid)
 	newEvents := timeline[len(timeline)-numNew:]
 	for _, eventJSON := range newEvents {

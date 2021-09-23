@@ -105,11 +105,20 @@ func TestAccumulatorAccumulate(t *testing.T) {
 		[]byte(`{"event_id":"I", "type":"m.room.history_visibility", "state_key":"", "content":{"visibility":"public"}}`),
 	}
 	var numNew int
-	if numNew, err = accumulator.Accumulate(roomID, newEvents); err != nil {
+	var gotLatestNID int64
+	if numNew, gotLatestNID, err = accumulator.Accumulate(roomID, newEvents); err != nil {
 		t.Fatalf("failed to Accumulate: %s", err)
 	}
 	if numNew != len(newEvents) {
 		t.Fatalf("got %d new events, want %d", numNew, len(newEvents))
+	}
+	// latest nid shoould match
+	wantLatestNID, err := accumulator.eventsTable.SelectHighestNID()
+	if err != nil {
+		t.Fatalf("failed to check latest NID from Accumulate: %s", err)
+	}
+	if gotLatestNID != wantLatestNID {
+		t.Errorf("Accumulator.Accumulate returned latest nid %d, want %d", gotLatestNID, wantLatestNID)
 	}
 
 	// Begin assertions
@@ -158,7 +167,7 @@ func TestAccumulatorAccumulate(t *testing.T) {
 	}
 
 	// subsequent calls do nothing and are not an error
-	if _, err = accumulator.Accumulate(roomID, newEvents); err != nil {
+	if _, _, err = accumulator.Accumulate(roomID, newEvents); err != nil {
 		t.Fatalf("failed to Accumulate: %s", err)
 	}
 }
@@ -182,7 +191,7 @@ func TestAccumulatorDelta(t *testing.T) {
 		[]byte(`{"event_id":"aH", "type":"m.room.join_rules", "state_key":"", "content":{"join_rule":"public"}}`),
 		[]byte(`{"event_id":"aI", "type":"m.room.history_visibility", "state_key":"", "content":{"visibility":"public"}}`),
 	}
-	if _, err = accumulator.Accumulate(roomID, roomEvents); err != nil {
+	if _, _, err = accumulator.Accumulate(roomID, roomEvents); err != nil {
 		t.Fatalf("failed to Accumulate: %s", err)
 	}
 
@@ -243,7 +252,7 @@ func TestAccumulatorMembershipLogs(t *testing.T) {
 		// @me leaves the room
 		[]byte(`{"event_id":"` + roomEventIDs[7] + `", "type":"m.room.member", "state_key":"@me:localhost","unsigned":{"prev_content":{"membership":"join", "displayname":"Me"}}, "content":{"membership":"leave"}}`),
 	}
-	if _, err = accumulator.Accumulate(roomID, roomEvents); err != nil {
+	if _, _, err = accumulator.Accumulate(roomID, roomEvents); err != nil {
 		t.Fatalf("failed to Accumulate: %s", err)
 	}
 	txn, err := accumulator.db.Beginx()
