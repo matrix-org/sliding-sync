@@ -15,21 +15,9 @@ func (r SliceRanges) Valid() bool {
 	return true
 }
 
-// Same returns true if these slice ranges are equivalent
-func (r SliceRanges) Same(other SliceRanges) bool {
-	// TODO: allow reordered ranges
-	if len(r) != len(other) {
-		return false
-	}
-	for i := range r {
-		if r[i][0] != other[i][0] {
-			return false
-		}
-		if r[i][1] != other[i][1] {
-			return false
-		}
-	}
-	return true
+// Delta returns the ranges added and removed
+func (r SliceRanges) Delta(other SliceRanges) (added SliceRanges, removed SliceRanges, same SliceRanges) {
+	return
 }
 
 // Slice into this range.

@@ -13,9 +13,9 @@ type ResponseOp interface {
 }
 
 type ResponseOpRange struct {
-	Operation string `json:"op"`
-	Range     []int  `json:"range,omitempty"`
-	Rooms     []Room `json:"rooms,omitempty"`
+	Operation string  `json:"op"`
+	Range     []int64 `json:"range,omitempty"`
+	Rooms     []Room  `json:"rooms,omitempty"`
 }
 
 func (r *ResponseOpRange) Op() string {

@@ -1,17 +1,23 @@
 package synclive
 
 import (
-	"context"
 	"encoding/json"
 	"fmt"
 	"sync"
 	"time"
 
 	"github.com/ReneKroon/ttlcache/v2"
-	"github.com/matrix-org/sync-v3/internal"
 	"github.com/matrix-org/sync-v3/state"
 	"github.com/tidwall/gjson"
 )
+
+type EventData struct {
+	event     json.RawMessage
+	roomID    string
+	eventType string
+	stateKey  *string
+	content   gjson.Result
+}
 
 // ConnMap stores a collection of Conns along with other global server-wide state e.g the in-memory
 // map of which users are joined to which rooms.
@@ -64,7 +70,8 @@ func (m *ConnMap) GetOrCreateConn(cid ConnID, userID string) *Conn {
 	if conn != nil {
 		return conn
 	}
-	conn = NewConn(cid, NewConnState(userID), m.handleIncomingSyncRequest)
+	state := NewConnState(userID, m.store)
+	conn = NewConn(cid, state, state.HandleIncomingRequest)
 	m.cache.Set(cid.String(), conn)
 	m.connIDToConn[cid.String()] = conn
 	m.userIDToConn[userID] = append(m.userIDToConn[userID], conn)
@@ -107,10 +114,12 @@ func (m *ConnMap) LoadBaseline(roomIDToUserIDs map[string][]string) error {
 }
 
 func (m *ConnMap) closeConn(connID string, value interface{}) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	// remove conn from all the maps
 	conn := value.(*Conn)
 	delete(m.connIDToConn, connID)
-	state := conn.State()
+	state := conn.connState
 	if state != nil {
 		conns := m.userIDToConn[state.UserID()]
 		for i := 0; i < len(conns); i++ {
@@ -122,26 +131,6 @@ func (m *ConnMap) closeConn(connID string, value interface{}) {
 		}
 		m.userIDToConn[state.UserID()] = conns
 	}
-}
-
-// Implements Conn.HandleIncomingRequest
-func (m *ConnMap) handleIncomingSyncRequest(ctx context.Context, conn *Conn, reqBody []byte) ([]byte, error) {
-	state := conn.State()
-	if state == nil {
-		return nil, fmt.Errorf("unknown connection ID %v, missing ConnState!", conn.ConnID.String())
-	}
-	var req Request
-	if err := json.Unmarshal(reqBody, &req); err != nil {
-		return nil, &internal.HandlerError{
-			StatusCode: 400,
-			Err:        fmt.Errorf("failed to multiplex request data: %s", err),
-		}
-	}
-	resp, err := state.OnIncomingRequest(ctx, &req)
-	if err != nil {
-		return nil, err
-	}
-	return json.Marshal(resp)
 }
 
 // Call this when there is a new event received on a v2 stream.
@@ -173,22 +162,34 @@ func (m *ConnMap) OnNewEvent(
 		}
 	}
 
+	ed := &EventData{
+		event:     event,
+		roomID:    roomID,
+		eventType: eventType,
+		stateKey:  stateKey,
+		content:   ev.Get("content"),
+	}
+
 	// notify all people in this room
 	notifiedTargetUser := false
 	userIDs := m.jrt.JoinedUsersForRoom(roomID)
 	for _, userID := range userIDs {
+		m.mu.Lock()
 		conns := m.userIDToConn[userID]
+		m.mu.Unlock()
 		for _, conn := range conns {
-			conn.State().PushNewEvent(event, roomID, eventType, stateKey, ev.Get("content"))
+			conn.PushNewEvent(ed)
 			if userID == targetUser {
 				notifiedTargetUser = true
 			}
 		}
 	}
 	if !notifiedTargetUser {
+		m.mu.Lock()
 		conns := m.userIDToConn[targetUser]
+		m.mu.Unlock()
 		for _, conn := range conns {
-			conn.State().PushNewEvent(event, roomID, eventType, stateKey, ev.Get("content"))
+			conn.PushNewEvent(ed)
 		}
 	}
 }

@@ -5,14 +5,21 @@ import (
 	"fmt"
 	"io/ioutil"
 	"net/http"
+	"os"
 	"strconv"
 
 	"github.com/matrix-org/gomatrixserverlib"
 	"github.com/matrix-org/sync-v3/internal"
 	"github.com/matrix-org/sync-v3/state"
 	"github.com/matrix-org/sync-v3/sync2"
+	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/hlog"
 )
+
+var logger = zerolog.New(os.Stdout).With().Timestamp().Logger().Output(zerolog.ConsoleWriter{
+	Out:        os.Stderr,
+	TimeFormat: "15:04:05",
+})
 
 // This is a net.http Handler for sync v3. It is responsible for pairing requests to Conns and to
 // ensure that the sync v2 poller is running for this client.

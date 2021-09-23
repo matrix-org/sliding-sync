@@ -57,8 +57,8 @@ func NewConn(connID ConnID, connState *ConnState, fn HandlerIncomingReqFunc) *Co
 	}
 }
 
-func (c *Conn) State() *ConnState {
-	return c.connState
+func (c *Conn) PushNewEvent(eventData *EventData) {
+	c.connState.PushNewEvent(eventData)
 }
 
 // OnIncomingRequest advances the clients position in the stream, returning the response position and data.
