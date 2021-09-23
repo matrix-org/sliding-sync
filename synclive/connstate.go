@@ -23,7 +23,7 @@ type ConnState struct {
 	store               *state.Storage
 	muxedReq            *Request
 	userID              string
-	sortedJoinedRooms   []*Room
+	sortedJoinedRooms   SortableRooms
 	roomSubscriptions   map[string]*Room
 	initialLoadPosition int64
 	loadRoom            func(roomID string) *SortableRoom
@@ -65,11 +65,11 @@ func (c *ConnState) load() error {
 	if err != nil {
 		return err
 	}
-	c.sortedJoinedRooms = make([]*Room, len(joinedRoomIDs))
+	c.sortedJoinedRooms = make([]SortableRoom, len(joinedRoomIDs))
 	for i, roomID := range joinedRoomIDs {
 		// load global room info
 		sr := c.loadRoom(roomID)
-		c.sortedJoinedRooms[i] = &Room{
+		c.sortedJoinedRooms[i] = SortableRoom{
 			RoomID: sr.RoomID,
 			Name:   sr.Name,
 		}
@@ -151,14 +151,24 @@ func (s *ConnState) onIncomingRequest(ctx context.Context, req *Request) (*Respo
 	}
 	// send full room data for these ranges
 	for _, r := range added {
+		sr := SliceRanges([][2]int64{r})
+		subslice := sr.SliceInto(s.sortedJoinedRooms)
+		rooms := subslice[0].(SortableRooms)
+		roomsResponse := make([]Room, len(rooms))
+		for i := range rooms {
+			roomsResponse[i] = Room{
+				RoomID: rooms[i].RoomID,
+				Name:   rooms[i].Name,
+			}
+		}
 		responseOperations = append(responseOperations, &ResponseOpRange{
 			Operation: "SYNC",
 			Range:     r[:],
-			Rooms:     nil, // TODO
+			Rooms:     roomsResponse,
 		})
 	}
-	// continue tracking these rooms
-	if same != nil {
+	// do live tracking if we haven't changed the range and we have nothing to tell the client yet
+	if same != nil && len(responseOperations) == 0 {
 		// block until we get a new event, with appropriate timeout
 	blockloop:
 		for {
@@ -173,7 +183,7 @@ func (s *ConnState) onIncomingRequest(ctx context.Context, req *Request) (*Respo
 				// If the event causes the room list to sort differently -> DELETE/INSERT
 				// For now we treat the room list as 'by_recency' always so every event causes the
 				// room list to re-sort.
-				fmt.Println(updateEvent.roomID)
+				fmt.Printf("%+v\n", updateEvent)
 			}
 		}
 	}

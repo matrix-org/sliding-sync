@@ -101,3 +101,91 @@ func TestRange(t *testing.T) {
 
 	}
 }
+
+func TestRangeDelta(t *testing.T) {
+	testCases := []struct {
+		oldRange    SliceRanges
+		newRange    SliceRanges
+		wantAdded   SliceRanges
+		wantSames   SliceRanges
+		wantRemoved SliceRanges
+	}{
+		// added
+		{
+			oldRange: SliceRanges([][2]int64{}),
+			newRange: SliceRanges([][2]int64{
+				{0, 9},
+			}),
+			wantAdded: SliceRanges([][2]int64{
+				{0, 9},
+			}),
+		},
+		// removed
+		{
+			oldRange: SliceRanges([][2]int64{
+				{0, 9},
+			}),
+			newRange: SliceRanges([][2]int64{}),
+			wantRemoved: SliceRanges([][2]int64{
+				{0, 9},
+			}),
+		},
+		// same
+		{
+			oldRange: SliceRanges([][2]int64{
+				{0, 9},
+			}),
+			newRange: SliceRanges([][2]int64{
+				{0, 9},
+			}),
+			wantSames: SliceRanges([][2]int64{
+				{0, 9},
+			}),
+		},
+		// typical range increase
+		{
+			oldRange: SliceRanges([][2]int64{
+				{0, 9},
+			}),
+			newRange: SliceRanges([][2]int64{
+				{0, 9}, {10, 19},
+			}),
+			wantSames: SliceRanges([][2]int64{
+				{0, 9},
+			}),
+			wantAdded: SliceRanges([][2]int64{
+				{10, 19},
+			}),
+		},
+		// typical range swap
+		{
+			oldRange: SliceRanges([][2]int64{
+				{0, 9}, {10, 19},
+			}),
+			newRange: SliceRanges([][2]int64{
+				{0, 9}, {20, 29},
+			}),
+			wantSames: SliceRanges([][2]int64{
+				{0, 9},
+			}),
+			wantAdded: SliceRanges([][2]int64{
+				{20, 29},
+			}),
+			wantRemoved: SliceRanges([][2]int64{
+				{10, 19},
+			}),
+		},
+	}
+	for _, tc := range testCases {
+		gotAdd, gotRm, gotSame := tc.oldRange.Delta(tc.newRange)
+		if tc.wantAdded != nil && !reflect.DeepEqual(gotAdd, tc.wantAdded) {
+			t.Errorf("%+v got added %+v", tc, gotAdd)
+		}
+		if tc.wantRemoved != nil && !reflect.DeepEqual(gotRm, tc.wantRemoved) {
+			t.Errorf("%+v got removed %+v", tc, gotRm)
+		}
+		if tc.wantSames != nil && !reflect.DeepEqual(gotSame, tc.wantSames) {
+			t.Errorf("%+v got sames %+v", tc, gotSame)
+		}
+	}
+}

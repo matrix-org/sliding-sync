@@ -18,3 +18,12 @@ type SortableRoom struct {
 	Name                 string // by_name
 	LastMessageTimestamp int64  // by_recency
 }
+
+type SortableRooms []SortableRoom
+
+func (s SortableRooms) Len() int64 {
+	return int64(len(s))
+}
+func (s SortableRooms) Subslice(i, j int64) Subslicer {
+	return s[i:j]
+}

@@ -16,7 +16,29 @@ func (r SliceRanges) Valid() bool {
 }
 
 // Delta returns the ranges added and removed
-func (r SliceRanges) Delta(other SliceRanges) (added SliceRanges, removed SliceRanges, same SliceRanges) {
+func (r SliceRanges) Delta(next SliceRanges) (added SliceRanges, removed SliceRanges, same SliceRanges) {
+	olds := make(map[[2]int64]bool)
+	for _, oldStartEnd := range r {
+		olds[oldStartEnd] = true
+	}
+	news := make(map[[2]int64]bool)
+	for _, newStartEnd := range next {
+		news[newStartEnd] = true
+	}
+
+	for oldStartEnd := range olds {
+		if news[oldStartEnd] {
+			same = append(same, oldStartEnd)
+		} else {
+			removed = append(removed, oldStartEnd)
+		}
+	}
+	for newStartEnd := range news {
+		if olds[newStartEnd] {
+			continue
+		}
+		added = append(added, newStartEnd)
+	}
 	return
 }
 
