@@ -30,6 +30,10 @@ func (c *ConnState) PushNewEvent(raw json.RawMessage, roomID, evType string, sta
 }
 
 func (s *ConnState) OnIncomingRequest(ctx context.Context, req *Request) (*Response, error) {
+	var prevRange SliceRanges
+	if s.muxedReq != nil {
+		prevRange = s.muxedReq.Rooms
+	}
 	subs := make(map[string]RoomSubscription)
 	var unsubs []string
 	if s.muxedReq == nil {
@@ -44,10 +48,16 @@ func (s *ConnState) OnIncomingRequest(ctx context.Context, req *Request) (*Respo
 		s.muxedReq = combinedReq
 		unsubs = unsubRooms
 	}
-	// TODO update room subscriptions
-	fmt.Println("subs", subs, "unsubs", unsubs, "range", s.muxedReq.Rooms)
+	// TODO: update room subscriptions
+	// TODO: calculate the M values for N < M calcs
+	fmt.Println("subs", subs, "unsubs", unsubs, "range", s.muxedReq.Rooms, "prev_range", prevRange)
 
-	// TODO check if the ranges have changed. If there are new ranges, track them and send them back
+	if prevRange != nil && !prevRange.Same(s.muxedReq.Rooms) {
+		// range has changed
+	}
+
+	// check if the ranges have changed. If there are new ranges, track them and send them back
+
 	return nil, nil
 }
 

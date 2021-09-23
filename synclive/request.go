@@ -11,7 +11,7 @@ var (
 
 type Request struct {
 	SessionID         string                      `json:"session_id"`
-	Rooms             [][2]int64                  `json:"rooms"`
+	Rooms             SliceRanges                 `json:"rooms"`
 	Sort              []string                    `json:"sort"`
 	RequiredState     [][2]string                 `json:"required_state"`
 	TimelineLimit     int64                       `json:"timeline_limit"`

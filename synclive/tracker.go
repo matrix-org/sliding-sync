@@ -55,10 +55,22 @@ func (t *JoinedRoomsTracker) UserLeftRoom(userID, roomID string) {
 func (t *JoinedRoomsTracker) JoinedRoomsForUser(userID string) []string {
 	t.mu.RLock()
 	defer t.mu.RUnlock()
-	return t.userIDToJoinedRooms[userID]
+	rooms := t.userIDToJoinedRooms[userID]
+	if len(rooms) == 0 {
+		return nil
+	}
+	roomsCopy := make([]string, len(rooms))
+	copy(roomsCopy, rooms)
+	return roomsCopy
 }
 func (t *JoinedRoomsTracker) JoinedUsersForRoom(roomID string) []string {
 	t.mu.RLock()
 	defer t.mu.RUnlock()
-	return t.roomIDToJoinedUsers[roomID]
+	users := t.roomIDToJoinedUsers[roomID]
+	if len(users) == 0 {
+		return nil
+	}
+	usersCopy := make([]string, len(users))
+	copy(usersCopy, users)
+	return usersCopy
 }
