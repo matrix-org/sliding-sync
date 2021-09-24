@@ -3,7 +3,6 @@ package synclive
 import (
 	"context"
 	"errors"
-	"fmt"
 	"sync"
 	"testing"
 	"time"
@@ -11,43 +10,39 @@ import (
 	"github.com/matrix-org/sync-v3/internal"
 )
 
-// Test that Conn can send and receive arbitrary bytes based on positions
-// The handler simply prefixes a string based on the request body and then increments with
-// a basic counter. This ensures that we can modify the handler based on client data (which is
-// required for ranges to work correctly). Note that 'positions' are entirely hidden from the handler.
+// Test that Conn can send and receive requests based on positions
 func TestConn(t *testing.T) {
 	ctx := context.Background()
 	connID := ConnID{
 		DeviceID:  "d",
 		SessionID: "s",
 	}
-	lastPrefix := "a"
-	pos := 100
-	c := NewConn(connID, nil, func(_ context.Context, _ *Conn, reqBody []byte) ([]byte, error) {
-		if reqBody != nil {
-			lastPrefix = string(reqBody)
-		}
-		pos += 1
-		return []byte(fmt.Sprintf("%s-%d", lastPrefix, pos)), nil
+	count := int64(100)
+	c := NewConn(connID, nil, func(ctx context.Context, conn *Conn, req *Request) (*Response, error) {
+		count += 1
+		return &Response{
+			Count: count,
+		}, nil
 	})
 
 	// initial request
-	nextPos, nextData, err := c.OnIncomingRequest(ctx, 0, []byte(`some_prefix`))
-	assertPos(t, nextPos, 1)
-	assertData(t, string(nextData), "some_prefix-101")
+	resp, err := c.OnIncomingRequest(ctx, &Request{
+		pos: 0,
+	})
+	assertInt(t, resp.Pos, 1)
+	assertInt(t, resp.Count, 101)
 	assertNoError(t, err)
-	// happy case, pos=1 and no prefix, so should use the last one
-	nextPos, nextData, err = c.OnIncomingRequest(ctx, 1, nil)
-	assertPos(t, nextPos, 2)
-	assertData(t, string(nextData), "some_prefix-102")
-	assertNoError(t, err)
-	// updates work too
-	nextPos, nextData, err = c.OnIncomingRequest(ctx, 2, []byte(`more`))
-	assertPos(t, nextPos, 3)
-	assertData(t, string(nextData), "more-103")
+	// happy case, pos=1
+	resp, err = c.OnIncomingRequest(ctx, &Request{
+		pos: 1,
+	})
+	assertInt(t, resp.Pos, 2)
+	assertInt(t, resp.Count, 102)
 	assertNoError(t, err)
 	// bogus position returns a 400
-	_, _, err = c.OnIncomingRequest(ctx, 31415, []byte(`more`))
+	_, err = c.OnIncomingRequest(ctx, &Request{
+		pos: 31415,
+	})
 	if err == nil {
 		t.Fatalf("expected error, got none")
 	}
@@ -67,12 +62,12 @@ func TestConnBlocking(t *testing.T) {
 		SessionID: "s",
 	}
 	ch := make(chan string)
-	c := NewConn(connID, nil, func(_ context.Context, _ *Conn, reqBody []byte) ([]byte, error) {
-		if string(reqBody) == "hi" {
+	c := NewConn(connID, nil, func(ctx context.Context, conn *Conn, req *Request) (*Response, error) {
+		if req.Sort[0] == "hi" {
 			time.Sleep(10 * time.Millisecond)
 		}
-		ch <- string(reqBody)
-		return reqBody, nil // echo bot
+		ch <- req.Sort[0]
+		return &Response{}, nil
 	})
 
 	// two connection call the incoming request function at the same time, they should get queued up
@@ -82,12 +77,16 @@ func TestConnBlocking(t *testing.T) {
 	wg.Add(2)
 	go func() {
 		defer wg.Done()
-		c.OnIncomingRequest(ctx, 0, []byte(`hi`))
+		c.OnIncomingRequest(ctx, &Request{
+			Sort: []string{"hi"},
+		})
 	}()
 	go func() {
 		defer wg.Done()
 		time.Sleep(1 * time.Millisecond) // this req happens 2nd
-		c.OnIncomingRequest(ctx, 0, []byte(`hi2`))
+		c.OnIncomingRequest(ctx, &Request{
+			Sort: []string{"hi2"},
+		})
 	}()
 	go func() {
 		wg.Wait()
@@ -109,41 +108,33 @@ func TestConnRetries(t *testing.T) {
 		DeviceID:  "d",
 		SessionID: "s",
 	}
-	callCount := 0
-	c := NewConn(connID, nil, func(_ context.Context, _ *Conn, _ []byte) ([]byte, error) {
+	callCount := int64(0)
+	c := NewConn(connID, nil, func(ctx context.Context, conn *Conn, req *Request) (*Response, error) {
 		callCount += 1
-		return []byte(`yep`), nil
+		return &Response{Count: 20}, nil
 	})
-	nextPos, nextData, err := c.OnIncomingRequest(ctx, 0, nil)
-	assertPos(t, nextPos, 1)
-	assertData(t, string(nextData), "yep")
+	resp, err := c.OnIncomingRequest(ctx, &Request{})
+	assertInt(t, resp.Pos, 1)
+	assertInt(t, resp.Count, 20)
+	assertInt(t, callCount, 1)
 	assertNoError(t, err)
-	if callCount != 1 {
-		t.Fatalf("wanted HandleIncomingRequest called 1 times, got %d", callCount)
-	}
-	nextPos, nextData, err = c.OnIncomingRequest(ctx, 1, nil)
-	assertPos(t, nextPos, 2)
-	assertData(t, string(nextData), "yep")
+	resp, err = c.OnIncomingRequest(ctx, &Request{pos: 1})
+	assertInt(t, resp.Pos, 2)
+	assertInt(t, resp.Count, 20)
+	assertInt(t, callCount, 2)
 	assertNoError(t, err)
-	if callCount != 2 {
-		t.Fatalf("wanted HandleIncomingRequest called 2 times, got %d", callCount)
-	}
 	// retry! Shouldn't invoke handler again
-	nextPos, nextData, err = c.OnIncomingRequest(ctx, 1, nil)
-	assertPos(t, nextPos, 2)
-	assertData(t, string(nextData), "yep")
+	resp, err = c.OnIncomingRequest(ctx, &Request{pos: 1})
+	assertInt(t, resp.Pos, 2)
+	assertInt(t, resp.Count, 20)
+	assertInt(t, callCount, 2) // this doesn't increment
 	assertNoError(t, err)
-	if callCount != 2 {
-		t.Fatalf("wanted HandleIncomingRequest called 2 times, got %d", callCount)
-	}
 	// retry! but with modified request body, so should invoke handler again
-	nextPos, nextData, err = c.OnIncomingRequest(ctx, 1, []byte(`data`))
-	assertPos(t, nextPos, 3)
-	assertData(t, string(nextData), "yep")
+	resp, err = c.OnIncomingRequest(ctx, &Request{pos: 1, Sort: []string{"by_name"}})
+	assertInt(t, resp.Pos, 3)
+	assertInt(t, resp.Count, 20)
+	assertInt(t, callCount, 3)
 	assertNoError(t, err)
-	if callCount != 3 {
-		t.Fatalf("wanted HandleIncomingRequest called 3 times, got %d", callCount)
-	}
 }
 
 func TestConnErrors(t *testing.T) {
@@ -153,13 +144,13 @@ func TestConnErrors(t *testing.T) {
 		SessionID: "s",
 	}
 	errCh := make(chan error, 1)
-	c := NewConn(connID, nil, func(_ context.Context, _ *Conn, req []byte) ([]byte, error) {
+	c := NewConn(connID, nil, func(ctx context.Context, conn *Conn, req *Request) (*Response, error) {
 		return nil, <-errCh
 	})
 
 	// random errors = 500
 	errCh <- errors.New("oops")
-	_, _, herr := c.OnIncomingRequest(ctx, 0, nil)
+	_, herr := c.OnIncomingRequest(ctx, &Request{})
 	if herr.StatusCode != 500 {
 		t.Fatalf("random errors should be status 500, got %d", herr.StatusCode)
 	}
@@ -168,7 +159,7 @@ func TestConnErrors(t *testing.T) {
 		StatusCode: 400,
 		Err:        errors.New("no way!"),
 	}
-	_, _, herr = c.OnIncomingRequest(ctx, 0, nil)
+	_, herr = c.OnIncomingRequest(ctx, &Request{})
 	if herr.StatusCode != 400 {
 		t.Fatalf("expected status 400, got %d", herr.StatusCode)
 	}
@@ -181,16 +172,16 @@ func TestConnErrorsNoCache(t *testing.T) {
 		SessionID: "s",
 	}
 	errCh := make(chan error, 1)
-	c := NewConn(connID, nil, func(_ context.Context, _ *Conn, req []byte) ([]byte, error) {
+	c := NewConn(connID, nil, func(ctx context.Context, conn *Conn, req *Request) (*Response, error) {
 		select {
 		case e := <-errCh:
 			return nil, e
 		default:
-			return []byte("ok"), nil
+			return &Response{}, nil
 		}
 	})
 	// errors should not be cached
-	nextPos, _, herr := c.OnIncomingRequest(ctx, 0, []byte("test"))
+	resp, herr := c.OnIncomingRequest(ctx, &Request{})
 	if herr != nil {
 		t.Fatalf("expected no error, got %+v", herr)
 	}
@@ -199,28 +190,21 @@ func TestConnErrorsNoCache(t *testing.T) {
 		StatusCode: 400,
 		Err:        errors.New("no way!"),
 	}
-	_, _, herr = c.OnIncomingRequest(ctx, nextPos, []byte("test"))
+	_, herr = c.OnIncomingRequest(ctx, &Request{pos: resp.Pos})
 	if herr.StatusCode != 400 {
 		t.Fatalf("expected status 400, got %d", herr.StatusCode)
 	}
 	// but doing the exact same request should now work
-	_, _, herr = c.OnIncomingRequest(ctx, nextPos, []byte("test"))
+	_, herr = c.OnIncomingRequest(ctx, &Request{pos: resp.Pos})
 	if herr != nil {
 		t.Fatalf("expected no error, got %+v", herr)
 	}
 }
 
-func assertPos(t *testing.T, nextPos, wantPos int64) {
+func assertInt(t *testing.T, nextPos, wantPos int64) {
 	t.Helper()
 	if nextPos != wantPos {
-		t.Errorf("got pos %d want pos %d", nextPos, wantPos)
-	}
-}
-
-func assertData(t *testing.T, nextData, wantData string) {
-	t.Helper()
-	if nextData != wantData {
-		t.Errorf("got data %v want data %v", nextData, wantData)
+		t.Errorf("got %d pos %d", nextPos, wantPos)
 	}
 }
 

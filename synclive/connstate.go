@@ -8,7 +8,6 @@ import (
 	"sort"
 	"time"
 
-	"github.com/matrix-org/sync-v3/internal"
 	"github.com/matrix-org/sync-v3/state"
 )
 
@@ -93,22 +92,11 @@ func (c *ConnState) sort(sortBy []string) {
 	}
 }
 
-func (c *ConnState) HandleIncomingRequest(ctx context.Context, conn *Conn, reqBody []byte) ([]byte, error) {
+func (c *ConnState) HandleIncomingRequest(ctx context.Context, conn *Conn, req *Request) (*Response, error) {
 	if c.initialLoadPosition == 0 {
 		c.load()
 	}
-	var req Request
-	if err := json.Unmarshal(reqBody, &req); err != nil {
-		return nil, &internal.HandlerError{
-			StatusCode: 400,
-			Err:        fmt.Errorf("failed to multiplex request data: %s", err),
-		}
-	}
-	resp, err := c.onIncomingRequest(ctx, &req)
-	if err != nil {
-		return nil, err
-	}
-	return json.Marshal(resp)
+	return c.onIncomingRequest(ctx, req)
 }
 
 // PushNewEvent is a callback which fires when the server gets a new event and determines this connection MAY be
@@ -227,10 +215,7 @@ func (s *ConnState) onIncomingRequest(ctx context.Context, req *Request) (*Respo
 				swap := s.sortedJoinedRooms[toIndex]
 				var room *SortableRoom
 				if fromIndex == -1 {
-					room = &SortableRoom{
-						RoomID: updateEvent.roomID,
-						Name:   "new room", // TODO
-					}
+					room = s.loadRoom(updateEvent.roomID)
 					// TODO: work out which index position this should be sorted into, depending on the sort operations
 					// for now we always insert it into toIndex+1
 					s.sortedJoinedRooms = append([]SortableRoom{
@@ -242,6 +227,8 @@ func (s *ConnState) onIncomingRequest(ctx context.Context, req *Request) (*Respo
 				}
 				s.sortedJoinedRooms[toIndex] = *room
 				s.sortedJoinedRooms[fromIndex] = swap
+				s.sortedJoinedRoomsPositions[room.RoomID] = toIndex
+				s.sortedJoinedRoomsPositions[swap.RoomID] = fromIndex
 
 				responseOperations = append(
 					responseOperations, s.moveRoom(updateEvent, fromIndex, toIndex, s.muxedReq.Rooms)...,

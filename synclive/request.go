@@ -1,5 +1,10 @@
 package synclive
 
+import (
+	"bytes"
+	"encoding/json"
+)
+
 var (
 	SortByName              = "by_name"
 	SortByRecency           = "by_recency"
@@ -10,7 +15,6 @@ var (
 )
 
 type Request struct {
-	SessionID         string                      `json:"session_id"`
 	Rooms             SliceRanges                 `json:"rooms"`
 	Sort              []string                    `json:"sort"`
 	RequiredState     [][2]string                 `json:"required_state"`
@@ -18,6 +22,21 @@ type Request struct {
 	RoomSubscriptions map[string]RoomSubscription `json:"room_subscriptions"`
 	UnsubscribeRooms  []string                    `json:"unsubscribe_rooms"`
 	Filters           *RequestFilters             `json:"filters"`
+	// set via query params or inferred
+	pos       int64
+	SessionID string `json:"session_id"`
+}
+
+func (r *Request) Same(other *Request) bool {
+	serialised, err := json.Marshal(r)
+	if err != nil {
+		return false
+	}
+	otherSer, err := json.Marshal(other)
+	if err != nil {
+		return false
+	}
+	return bytes.Equal(serialised, otherSer)
 }
 
 // Apply this delta on top of the request. Returns a new Request with the combined output, ready for

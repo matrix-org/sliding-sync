@@ -3,7 +3,6 @@ package synclive
 import (
 	"encoding/json"
 	"fmt"
-	"io/ioutil"
 	"net/http"
 	"os"
 	"strconv"
@@ -14,7 +13,10 @@ import (
 	"github.com/matrix-org/sync-v3/sync2"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/hlog"
+	"github.com/rs/zerolog/log"
 )
+
+const DefaultSessionID = "default"
 
 var logger = zerolog.New(os.Stdout).With().Timestamp().Logger().Output(zerolog.ConsoleWriter{
 	Out:        os.Stderr,
@@ -69,12 +71,25 @@ func (h *SyncLiveHandler) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 
 // Entry point for sync v3
 func (h *SyncLiveHandler) serve(w http.ResponseWriter, req *http.Request) error {
-	conn, err := h.setupConnection(req)
+	var requestBody Request
+	if req.Body != nil {
+		defer req.Body.Close()
+		if err := json.NewDecoder(req.Body).Decode(&requestBody); err != nil {
+			log.Err(err).Msg("failed to read/decode request body")
+			return &internal.HandlerError{
+				StatusCode: 400,
+				Err:        err,
+			}
+		}
+	}
+
+	conn, err := h.setupConnection(req, &requestBody)
 	if err != nil {
 		hlog.FromRequest(req).Err(err).Msg("failed to get or create Conn")
 		return err
 	}
 	log := hlog.FromRequest(req).With().Str("conn_id", conn.ConnID.String()).Logger()
+	// set pos if specified
 	var cpos int64
 	queryPos := req.URL.Query().Get("pos")
 	if queryPos != "" {
@@ -87,35 +102,28 @@ func (h *SyncLiveHandler) serve(w http.ResponseWriter, req *http.Request) error 
 			}
 		}
 	}
-	var body []byte
-	if req.Body != nil {
-		defer req.Body.Close()
-		body, err = ioutil.ReadAll(req.Body)
-		if err != nil {
-			log.Err(err).Msg("failed to read request body")
-			return &internal.HandlerError{
-				StatusCode: 400,
-				Err:        err,
-			}
-		}
-	}
-	nextPos, nextData, herr := conn.OnIncomingRequest(req.Context(), cpos, body)
+	requestBody.pos = cpos
+
+	resp, herr := conn.OnIncomingRequest(req.Context(), &requestBody)
 	if herr != nil {
 		log.Err(herr).Msg("failed to OnIncomingRequest")
 		return herr
 	}
 	w.Header().Set("Content-Type", "application/json")
-	w.Header().Set("X-Sync3-Position", fmt.Sprintf("%d", nextPos))
-	w.Header().Set("X-Sync3-Session", conn.ConnID.SessionID)
 	w.WriteHeader(200)
-	w.Write(nextData)
+	if err := json.NewEncoder(w).Encode(resp); err != nil {
+		return &internal.HandlerError{
+			StatusCode: 500,
+			Err:        err,
+		}
+	}
 	return nil
 }
 
 // setupConnection associates this request with an existing connection or makes a new connection.
 // It also sets a v2 sync poll loop going if one didn't exist already for this user.
 // When this function returns, the connection is alive and active.
-func (h *SyncLiveHandler) setupConnection(req *http.Request) (*Conn, error) {
+func (h *SyncLiveHandler) setupConnection(req *http.Request, syncReq *Request) (*Conn, error) {
 	log := hlog.FromRequest(req)
 	var conn *Conn
 
@@ -128,14 +136,13 @@ func (h *SyncLiveHandler) setupConnection(req *http.Request) (*Conn, error) {
 			Err:        err,
 		}
 	}
-	sessionID := req.URL.Query().Get("session")
 
 	// client thinks they have a connection
-	if sessionID != "" {
+	if syncReq.SessionID != "" {
 		// Lookup the connection
 		// we need to map based on both as the session ID isn't crypto secure but the device ID is (Auth header)
 		conn = h.ConnMap.Conn(ConnID{
-			SessionID: sessionID,
+			SessionID: syncReq.SessionID,
 			DeviceID:  deviceID,
 		})
 		if err != nil {
@@ -190,16 +197,17 @@ func (h *SyncLiveHandler) setupConnection(req *http.Request) (*Conn, error) {
 	// because we *either* do the existing check *or* make a new conn. It's important for CreateConn
 	// to check for an existing connection though, as it's possible for the client to call /sync
 	// twice for a new connection and get the same session ID.
-	conn = h.ConnMap.GetOrCreateConn(ConnID{
-		SessionID: h.generateSessionID(),
+	conn, created := h.ConnMap.GetOrCreateConn(ConnID{
+		SessionID: DefaultSessionID,
 		DeviceID:  deviceID,
 	}, v2device.UserID)
-	log.Info().Str("conn_id", conn.ConnID.String()).Msg("creating new connection")
+	if created {
+		log.Info().Str("conn_id", conn.ConnID.String()).Msg("created new connection")
+	} else {
+		log.Info().Str("conn_id", conn.ConnID.String()).Msg("using existing connection")
+	}
+	syncReq.SessionID = conn.ConnID.SessionID
 	return conn, nil
-}
-
-func (h *SyncLiveHandler) generateSessionID() string {
-	return "1"
 }
 
 // Called from the v2 poller, implements V2DataReceiver

@@ -1,7 +1,6 @@
 package synclive
 
 import (
-	"bytes"
 	"context"
 	"fmt"
 	"sync"
@@ -18,7 +17,7 @@ func (c *ConnID) String() string {
 	return c.SessionID + "-" + c.DeviceID
 }
 
-type HandlerIncomingReqFunc func(ctx context.Context, conn *Conn, reqBody []byte) ([]byte, error)
+type HandlerIncomingReqFunc func(ctx context.Context, conn *Conn, req *Request) (*Response, error)
 
 // Conn is an abstraction of a long-poll connection. It automatically handles the position values
 // of the /sync request, including sending cached data in the event of retries. It does not handle
@@ -31,21 +30,16 @@ type Conn struct {
 	HandleIncomingRequest HandlerIncomingReqFunc
 
 	// The position/data in the stream last sent by the client
-	lastClientRequest dataFrame
+	lastClientRequest Request
 
 	// A buffer of the last response sent to the client.
 	// Can be resent as-is if the server response was lost
-	lastServerResponse dataFrame
+	lastServerResponse Response
 
 	// ensure only 1 incoming request is handled per connection
 	mu *sync.Mutex
 
 	connState *ConnState
-}
-
-type dataFrame struct {
-	pos  int64 // The first position sent back is 1, so 0 means there was a problem.
-	data []byte
 }
 
 func NewConn(connID ConnID, connState *ConnState, fn HandlerIncomingReqFunc) *Conn {
@@ -62,34 +56,33 @@ func (c *Conn) PushNewEvent(eventData *EventData) {
 }
 
 // OnIncomingRequest advances the clients position in the stream, returning the response position and data.
-func (c *Conn) OnIncomingRequest(ctx context.Context, pos int64, data []byte) (nextPos int64, nextData []byte, herr *internal.HandlerError) {
+func (c *Conn) OnIncomingRequest(ctx context.Context, req *Request) (resp *Response, herr *internal.HandlerError) {
 	c.mu.Lock()
 	// it's intentional for the lock to be held whilst inside HandleIncomingRequest
 	// as it guarantees linearisation of data within a single connection
 	defer c.mu.Unlock()
 
-	if pos != 0 && c.lastClientRequest.pos == pos {
+	if req.pos != 0 && c.lastClientRequest.pos == req.pos {
 		// if the request bodies match up then this is a retry, else it could be the client modifying
 		// their filter params, so fallthrough
-		if bytes.Equal(data, c.lastClientRequest.data) {
+		if c.lastClientRequest.Same(req) {
 			// this is the 2nd+ time we've seen this request, meaning the client likely retried this
 			// request. Send the response we sent before.
-			return c.lastServerResponse.pos, c.lastServerResponse.data, nil
+			return &c.lastServerResponse, nil
 		}
 	}
 	// if there is a position and it isn't something we've told the client nor a retransmit, they
 	// are playing games
-	if pos != 0 && pos != c.lastServerResponse.pos && c.lastClientRequest.pos != pos {
+	if req.pos != 0 && req.pos != c.lastServerResponse.Pos && c.lastClientRequest.pos != req.pos {
 		// the client made up a position, reject them
-		return 0, nil, &internal.HandlerError{
+		return nil, &internal.HandlerError{
 			StatusCode: 400,
-			Err:        fmt.Errorf("unknown position: %d", pos),
+			Err:        fmt.Errorf("unknown position: %d", req.pos),
 		}
 	}
-	c.lastClientRequest.data = data
-	c.lastClientRequest.pos = pos
+	c.lastClientRequest = *req
 
-	responseBytes, err := c.HandleIncomingRequest(ctx, c, data)
+	resp, err := c.HandleIncomingRequest(ctx, c, req)
 	if err != nil {
 		herr, ok := err.(*internal.HandlerError)
 		if !ok {
@@ -98,10 +91,10 @@ func (c *Conn) OnIncomingRequest(ctx context.Context, pos int64, data []byte) (n
 				Err:        err,
 			}
 		}
-		return 0, nil, herr
+		return nil, herr
 	}
-	c.lastServerResponse.pos += 1
-	c.lastServerResponse.data = responseBytes
+	resp.Pos = c.lastServerResponse.Pos + 1
+	c.lastServerResponse = *resp
 
-	return c.lastServerResponse.pos, c.lastServerResponse.data, nil
+	return resp, nil
 }

@@ -69,20 +69,20 @@ func (m *ConnMap) Conn(cid ConnID) *Conn {
 }
 
 // Atomically gets or creates a connection with this connection ID.
-func (m *ConnMap) GetOrCreateConn(cid ConnID, userID string) *Conn {
+func (m *ConnMap) GetOrCreateConn(cid ConnID, userID string) (*Conn, bool) {
 	// atomically check if a conn exists already and return that if so
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	conn := m.Conn(cid)
 	if conn != nil {
-		return conn
+		return conn, false
 	}
 	state := NewConnState(userID, m.store, m.roomInfo)
 	conn = NewConn(cid, state, state.HandleIncomingRequest)
 	m.cache.Set(cid.String(), conn)
 	m.connIDToConn[cid.String()] = conn
 	m.userIDToConn[userID] = append(m.userIDToConn[userID], conn)
-	return conn
+	return conn, true
 }
 
 // LoadBaseline must be called before any v2 poll loops are made. Failure to do so can result in

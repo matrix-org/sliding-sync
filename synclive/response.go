@@ -5,6 +5,9 @@ type Response struct {
 
 	RoomSubscriptions map[string]ResponseOp `json:"room_subscriptions"`
 	Count             int64                 `json:"count"`
+
+	Pos     int64  `json:"pos"`
+	Session string `json:"session_id,omitempty"`
 }
 
 type ResponseOp interface {
