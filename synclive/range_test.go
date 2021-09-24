@@ -102,6 +102,120 @@ func TestRange(t *testing.T) {
 	}
 }
 
+func TestRangeInside(t *testing.T) {
+	testCases := []struct {
+		testRange SliceRanges
+		i         int64
+		inside    bool
+	}{
+		{
+			testRange: SliceRanges([][2]int64{
+				{0, 9},
+			}),
+			i:      6,
+			inside: true,
+		},
+		{
+			testRange: SliceRanges([][2]int64{
+				{0, 9},
+			}),
+			i:      0,
+			inside: true,
+		},
+		{
+			testRange: SliceRanges([][2]int64{
+				{0, 9},
+			}),
+			i:      9,
+			inside: true,
+		},
+		{
+			testRange: SliceRanges([][2]int64{
+				{0, 9},
+			}),
+			i:      -1,
+			inside: false,
+		},
+		{
+			testRange: SliceRanges([][2]int64{
+				{0, 9},
+			}),
+			i:      10,
+			inside: false,
+		},
+		{
+			testRange: SliceRanges([][2]int64{
+				{0, 9}, {10, 19},
+			}),
+			i:      10,
+			inside: true,
+		},
+		{
+			testRange: SliceRanges([][2]int64{
+				{0, 9}, {20, 29},
+			}),
+			i:      10,
+			inside: false,
+		},
+	}
+	for _, tc := range testCases {
+		gotInside := tc.testRange.Inside(tc.i)
+		if gotInside != tc.inside {
+			t.Errorf("%+v got Inside:%v want %v", tc, gotInside, tc.inside)
+		}
+	}
+}
+
+func TestRangeLowerClamp(t *testing.T) {
+	testCases := []struct {
+		testRange SliceRanges
+		i         int64
+		clampVal  int64
+	}{
+		{
+			testRange: SliceRanges([][2]int64{
+				{0, 9},
+			}),
+			i:        14,
+			clampVal: 9,
+		},
+		{
+			testRange: SliceRanges([][2]int64{
+				{0, 9},
+			}),
+			i:        6,
+			clampVal: -1,
+		},
+		{
+			testRange: SliceRanges([][2]int64{
+				{0, 9}, {10, 19},
+			}),
+			i:        14,
+			clampVal: 9,
+		},
+		{
+			testRange: SliceRanges([][2]int64{
+				{0, 9}, {20, 29},
+			}),
+			i:        24,
+			clampVal: 9,
+		},
+		{
+			testRange: SliceRanges([][2]int64{
+				{0, 9}, {20, 29},
+			}),
+			i:        34,
+			clampVal: 29,
+		},
+	}
+	for _, tc := range testCases {
+		gotVal := tc.testRange.LowerClamp(tc.i)
+		if gotVal != tc.clampVal {
+			t.Errorf("%+v got LowerClamp %v want %v", tc, gotVal, tc.clampVal)
+		}
+	}
+}
+
 func TestRangeDelta(t *testing.T) {
 	testCases := []struct {
 		oldRange    SliceRanges

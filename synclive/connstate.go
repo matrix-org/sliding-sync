@@ -22,13 +22,14 @@ var (
 // ConnState tracks all high-level connection state for this connection, like the combined request
 // and the underlying sorted room list. It doesn't track session IDs or positions of the connection.
 type ConnState struct {
-	store               *state.Storage
-	muxedReq            *Request
-	userID              string
-	sortedJoinedRooms   SortableRooms
-	roomSubscriptions   map[string]*Room
-	initialLoadPosition int64
-	loadRoom            func(roomID string) *SortableRoom
+	store                      *state.Storage
+	muxedReq                   *Request
+	userID                     string
+	sortedJoinedRooms          SortableRooms
+	sortedJoinedRoomsPositions map[string]int   // room_id -> index in sortedJoinedRooms
+	roomSubscriptions          map[string]*Room // TODO
+	initialLoadPosition        int64
+	loadRoom                   func(roomID string) *SortableRoom
 	// A channel which v2 poll loops use to send updates to, via the ConnMap.
 	// Consumed when the conn is read. There is a limit to how many updates we will store before
 	// saying the client is ded and cleaning up the conn.
@@ -37,11 +38,12 @@ type ConnState struct {
 
 func NewConnState(userID string, store *state.Storage, loadRoom func(roomID string) *SortableRoom) *ConnState {
 	return &ConnState{
-		store:             store,
-		userID:            userID,
-		loadRoom:          loadRoom,
-		roomSubscriptions: make(map[string]*Room),
-		updateEvents:      make(chan *EventData, MaxPendingEventUpdates), // TODO: customisable
+		store:                      store,
+		userID:                     userID,
+		loadRoom:                   loadRoom,
+		roomSubscriptions:          make(map[string]*Room),
+		sortedJoinedRoomsPositions: make(map[string]int),
+		updateEvents:               make(chan *EventData, MaxPendingEventUpdates), // TODO: customisable
 	}
 }
 
@@ -75,6 +77,7 @@ func (c *ConnState) load() error {
 			RoomID: sr.RoomID,
 			Name:   sr.Name,
 		}
+		c.sortedJoinedRoomsPositions[sr.RoomID] = i
 	}
 	return nil
 }
@@ -85,6 +88,9 @@ func (c *ConnState) sort(sortBy []string) {
 	sort.SliceStable(c.sortedJoinedRooms, func(i, j int) bool {
 		return c.sortedJoinedRooms[i].LastMessageTimestamp < c.sortedJoinedRooms[j].LastMessageTimestamp
 	})
+	for i := range c.sortedJoinedRooms {
+		c.sortedJoinedRoomsPositions[c.sortedJoinedRooms[i].RoomID] = i
+	}
 }
 
 func (c *ConnState) HandleIncomingRequest(ctx context.Context, conn *Conn, reqBody []byte) ([]byte, error) {
@@ -157,7 +163,7 @@ func (s *ConnState) onIncomingRequest(ctx context.Context, req *Request) (*Respo
 	}
 
 	if !reflect.DeepEqual(prevSort, s.muxedReq.Sort) {
-		// the sort operations have changed, invalidate everything, resort and re-SYNC
+		// the sort operations have changed, invalidate everything, re-sort and re-SYNC
 		for _, r := range s.muxedReq.Rooms {
 			responseOperations = append(responseOperations, &ResponseOpRange{
 				Operation: "INVALIDATE",
@@ -206,12 +212,40 @@ func (s *ConnState) onIncomingRequest(ctx context.Context, req *Request) (*Respo
 			case <-time.After(10 * time.Second): // TODO configurable
 				break blockloop
 			case updateEvent := <-s.updateEvents:
-				// does this event affect a range we're tracking? For now, always yes
-				// If the event is for a room in the range -> UPDATE
-				// If the event causes the room list to sort differently -> DELETE/INSERT
-				// For now we treat the room list as 'by_recency' always so every event causes the
-				// room list to re-sort.
-				fmt.Printf("%+v\n", updateEvent)
+				// TODO: Add filters to check if this event should cause a response or should be dropped (e.g filtering out messages)
+				// TODO: Implement sorting by something other than recency. With recency sorting,
+				// most operations are DELETE/INSERT to bump rooms to the top of the list. We only
+				// do an UPDATE if the most recent room gets a 2nd event.
+				fromIndex, ok := s.sortedJoinedRoomsPositions[updateEvent.roomID]
+				if !ok {
+					// the user may have just joined the room hence not have an entry in this list yet.
+					fromIndex = -1
+				}
+				toIndex := 0 // TODO: this won't always be 0 if we sort by something other than recency
+
+				// move the server's representation
+				swap := s.sortedJoinedRooms[toIndex]
+				var room *SortableRoom
+				if fromIndex == -1 {
+					room = &SortableRoom{
+						RoomID: updateEvent.roomID,
+						Name:   "new room", // TODO
+					}
+					// TODO: work out which index position this should be sorted into, depending on the sort operations
+					// for now we always insert it into toIndex+1
+					s.sortedJoinedRooms = append([]SortableRoom{
+						s.sortedJoinedRooms[0], *room,
+					}, s.sortedJoinedRooms[1:]...)
+					fromIndex = 1
+				} else {
+					room = &s.sortedJoinedRooms[fromIndex]
+				}
+				s.sortedJoinedRooms[toIndex] = *room
+				s.sortedJoinedRooms[fromIndex] = swap
+
+				responseOperations = append(
+					responseOperations, s.moveRoom(updateEvent, fromIndex, toIndex, s.muxedReq.Rooms)...,
+				)
 			}
 		}
 	}
@@ -226,7 +260,54 @@ func (s *ConnState) UserID() string {
 	return s.userID
 }
 
-// Load the current state of rooms from storage based on the request parameters
-func LoadRooms(s *state.Storage, req *Request, roomIDs []string) (map[string]Room, error) {
-	return nil, nil
+// 1,2,3,4,5
+// 3 bumps to top -> 3,1,2,4,5 -> DELETE index=2, INSERT val=3 index=0
+// 7 bumps to top -> 7,1,2,3,4 -> DELETE index=4, INSERT val=7 index=0
+func (s *ConnState) moveRoom(updateEvent *EventData, fromIndex, toIndex int, ranges SliceRanges) []ResponseOp {
+	if fromIndex == toIndex {
+		// issue an UPDATE, nice and easy because we don't need to move entries in the list
+		return []ResponseOp{
+			&ResponseOpSingle{
+				Operation: "UPDATE",
+				Index:     &fromIndex,
+				Room: &Room{
+					RoomID: updateEvent.roomID,
+					Name:   s.sortedJoinedRooms[fromIndex].Name,
+					Timeline: []json.RawMessage{
+						updateEvent.event,
+					},
+				},
+			},
+		}
+	}
+	// work out which value to DELETE. This varies depending on where the room was and how much of the
+	// list we are tracking. E.g moving to index=0 with ranges [0,99][100,199] and an update in
+	// pos 150 -> DELETE 150, but if we weren't tracking [100,199] then we would DELETE 99. If we were
+	// tracking [0,99][200,299] then it's still DELETE 99 as the 200-299 range isn't touched.
+	deleteIndex := fromIndex
+	if !ranges.Inside(int64(fromIndex)) {
+		// we are not tracking this room, so no point issuing a DELETE for it. Instead, clamp the index
+		// to the highest end-range marker < index
+		deleteIndex = int(ranges.LowerClamp(int64(fromIndex)))
+	}
+	room := s.loadRoom(updateEvent.roomID)
+	return []ResponseOp{
+		&ResponseOpSingle{
+			Operation: "DELETE",
+			Index:     &deleteIndex,
+		},
+		&ResponseOpSingle{
+			Operation: "INSERT",
+			Index:     &toIndex,
+			// TODO: check if we have sent this room before and if so, don't send all the data ever
+			Room: &Room{
+				RoomID: room.RoomID,
+				Name:   room.Name,
+				Timeline: []json.RawMessage{
+					updateEvent.event,
+				},
+			},
+		},
+	}
+
 }
