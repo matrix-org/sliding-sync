@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"reflect"
+	"sort"
 	"time"
 
 	"github.com/matrix-org/sync-v3/internal"
@@ -77,6 +79,14 @@ func (c *ConnState) load() error {
 	return nil
 }
 
+func (c *ConnState) sort(sortBy []string) {
+	logger.Info().Msg("sorting")
+	// TODO: read sortBy, for now we always sort by most recent timestamp
+	sort.SliceStable(c.sortedJoinedRooms, func(i, j int) bool {
+		return c.sortedJoinedRooms[i].LastMessageTimestamp < c.sortedJoinedRooms[j].LastMessageTimestamp
+	})
+}
+
 func (c *ConnState) HandleIncomingRequest(ctx context.Context, conn *Conn, reqBody []byte) ([]byte, error) {
 	if c.initialLoadPosition == 0 {
 		c.load()
@@ -121,8 +131,10 @@ func (c *ConnState) PushNewEvent(eventData *EventData) {
 // additional locking mechanisms.
 func (s *ConnState) onIncomingRequest(ctx context.Context, req *Request) (*Response, error) {
 	var prevRange SliceRanges
+	var prevSort []string
 	if s.muxedReq != nil {
 		prevRange = s.muxedReq.Rooms
+		prevSort = s.muxedReq.Sort
 	}
 	if s.muxedReq == nil {
 		s.muxedReq = req
@@ -133,15 +145,31 @@ func (s *ConnState) onIncomingRequest(ctx context.Context, req *Request) (*Respo
 
 	// TODO: update room subscriptions
 	// TODO: calculate the M values for N < M calcs
-	fmt.Println("range", s.muxedReq.Rooms, "prev_range", prevRange)
+	fmt.Println("range", s.muxedReq.Rooms, "prev_range", prevRange, "sort", prevSort)
 
 	var responseOperations []ResponseOp
+
 	var added, removed, same SliceRanges
 	if prevRange != nil {
 		added, removed, same = prevRange.Delta(s.muxedReq.Rooms)
 	} else {
 		added = s.muxedReq.Rooms
 	}
+
+	if !reflect.DeepEqual(prevSort, s.muxedReq.Sort) {
+		// the sort operations have changed, invalidate everything, resort and re-SYNC
+		for _, r := range s.muxedReq.Rooms {
+			responseOperations = append(responseOperations, &ResponseOpRange{
+				Operation: "INVALIDATE",
+				Range:     r[:],
+			})
+		}
+		s.sort(s.muxedReq.Sort)
+		added = s.muxedReq.Rooms
+		removed = nil
+		same = nil
+	}
+
 	// send INVALIDATE for these ranges
 	for _, r := range removed {
 		responseOperations = append(responseOperations, &ResponseOpRange{

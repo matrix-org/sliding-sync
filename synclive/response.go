@@ -5,7 +5,6 @@ type Response struct {
 
 	RoomSubscriptions map[string]ResponseOp `json:"room_subscriptions"`
 	Count             int64                 `json:"count"`
-	Notifications     bool                  `json:"notifications"`
 }
 
 type ResponseOp interface {
