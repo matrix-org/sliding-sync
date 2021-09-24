@@ -3,6 +3,7 @@ package syncv3
 import (
 	"encoding/json"
 	"fmt"
+	"io/ioutil"
 	"net/http"
 	"os"
 	"time"
@@ -12,16 +13,17 @@ import (
 	"github.com/rs/zerolog/hlog"
 )
 
+var logger = zerolog.New(os.Stdout).With().Timestamp().Logger().Output(zerolog.ConsoleWriter{
+	Out:        os.Stderr,
+	TimeFormat: "15:04:05",
+})
+
 type server struct {
 	chain []func(next http.Handler) http.Handler
 	final http.Handler
 }
 
 func (s *server) ServeHTTP(w http.ResponseWriter, req *http.Request) {
-	if req.Method != "POST" {
-		w.WriteHeader(http.StatusMethodNotAllowed)
-		return
-	}
 	h := s.final
 	for i := range s.chain {
 		h = s.chain[len(s.chain)-1-i](h)
@@ -29,16 +31,38 @@ func (s *server) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	h.ServeHTTP(w, req)
 }
 
+func jsClient(file []byte) http.HandlerFunc {
+	return func(w http.ResponseWriter, req *http.Request) {
+		if req.Method == "OPTIONS" {
+			w.Header().Set("Access-Control-Allow-Origin", "*")
+			w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
+			w.Header().Set("Access-Control-Allow-Headers", "Origin, X-Requested-With, Content-Type, Accept, Authorization")
+			w.WriteHeader(200)
+			return
+		}
+		// TODO: remove when don't need live updates
+		jsFile, err := ioutil.ReadFile("client.html")
+		if err != nil {
+			logger.Fatal().Err(err).Msg("failed to read client.html")
+		}
+		w.WriteHeader(200)
+		w.Write(jsFile)
+	}
+
+}
+
 // RunSyncV3Server is the main entry point to the server
 func RunSyncV3Server(h http.Handler, bindAddr string) {
-	logger := zerolog.New(os.Stdout).With().Timestamp().Logger().Output(zerolog.ConsoleWriter{
-		Out:        os.Stderr,
-		TimeFormat: "15:04:05",
-	})
+
+	jsFile, err := ioutil.ReadFile("client.html")
+	if err != nil {
+		logger.Fatal().Err(err).Msg("failed to read client.html")
+	}
 
 	// HTTP path routing
 	r := mux.NewRouter()
 	r.Handle("/_matrix/client/v3/sync", h)
+	r.HandleFunc("/client", jsClient(jsFile)).Methods("GET", "OPTIONS", "HEAD")
 
 	srv := &server{
 		chain: []func(next http.Handler) http.Handler{

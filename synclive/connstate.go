@@ -57,7 +57,7 @@ func NewConnState(userID string, store *state.Storage, loadRoom func(roomID stri
 //     N events arrive and get buffered.
 //   - load() bases its current state based on the latest position, which includes processing of these N events.
 //   - post load() we read N events, processing them a 2nd time.
-func (c *ConnState) load() error {
+func (c *ConnState) load(req *Request) error {
 	// load from store
 	var err error
 	c.initialLoadPosition, err = c.store.LatestEventNID()
@@ -78,6 +78,7 @@ func (c *ConnState) load() error {
 		}
 		c.sortedJoinedRoomsPositions[sr.RoomID] = i
 	}
+	c.sort(req.Sort)
 	return nil
 }
 
@@ -85,7 +86,7 @@ func (c *ConnState) sort(sortBy []string) {
 	logger.Info().Msg("sorting")
 	// TODO: read sortBy, for now we always sort by most recent timestamp
 	sort.SliceStable(c.sortedJoinedRooms, func(i, j int) bool {
-		return c.sortedJoinedRooms[i].LastMessageTimestamp < c.sortedJoinedRooms[j].LastMessageTimestamp
+		return c.sortedJoinedRooms[i].LastMessageTimestamp > c.sortedJoinedRooms[j].LastMessageTimestamp
 	})
 	for i := range c.sortedJoinedRooms {
 		c.sortedJoinedRoomsPositions[c.sortedJoinedRooms[i].RoomID] = i
@@ -94,7 +95,7 @@ func (c *ConnState) sort(sortBy []string) {
 
 func (c *ConnState) HandleIncomingRequest(ctx context.Context, conn *Conn, req *Request) (*Response, error) {
 	if c.initialLoadPosition == 0 {
-		c.load()
+		c.load(req)
 	}
 	return c.onIncomingRequest(ctx, req)
 }

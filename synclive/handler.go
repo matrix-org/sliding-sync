@@ -55,6 +55,10 @@ func NewSyncLiveHandler(v2Client sync2.Client, postgresDBURI string) (*SyncLiveH
 }
 
 func (h *SyncLiveHandler) ServeHTTP(w http.ResponseWriter, req *http.Request) {
+	if req.Method != "POST" {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
 	err := h.serve(w, req)
 	if err != nil {
 		herr, ok := err.(*internal.HandlerError)

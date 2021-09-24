@@ -64,6 +64,10 @@ func NewSyncV3Handler(v2Client sync2.Client, postgresDBURI string) *SyncV3Handle
 }
 
 func (h *SyncV3Handler) ServeHTTP(w http.ResponseWriter, req *http.Request) {
+	if req.Method != "POST" {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
 	err := h.serve(w, req)
 	if err != nil {
 		w.WriteHeader(err.StatusCode)
