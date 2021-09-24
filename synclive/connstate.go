@@ -83,7 +83,6 @@ func (c *ConnState) load(req *Request) error {
 }
 
 func (c *ConnState) sort(sortBy []string) {
-	logger.Info().Msg("sorting")
 	// TODO: read sortBy, for now we always sort by most recent timestamp
 	sort.SliceStable(c.sortedJoinedRooms, func(i, j int) bool {
 		return c.sortedJoinedRooms[i].LastMessageTimestamp > c.sortedJoinedRooms[j].LastMessageTimestamp
@@ -91,6 +90,7 @@ func (c *ConnState) sort(sortBy []string) {
 	for i := range c.sortedJoinedRooms {
 		c.sortedJoinedRoomsPositions[c.sortedJoinedRooms[i].RoomID] = i
 	}
+	//logger.Info().Interface("pos", c.sortedJoinedRoomsPositions).Msg("sorted")
 }
 
 func (c *ConnState) HandleIncomingRequest(ctx context.Context, conn *Conn, req *Request) (*Response, error) {
@@ -202,6 +202,8 @@ func (s *ConnState) onIncomingRequest(ctx context.Context, req *Request) (*Respo
 				break blockloop
 			case updateEvent := <-s.updateEvents:
 				// TODO: Add filters to check if this event should cause a response or should be dropped (e.g filtering out messages)
+				// this is why this select is in a while loop as not all update event will wake up the stream
+
 				// TODO: Implement sorting by something other than recency. With recency sorting,
 				// most operations are DELETE/INSERT to bump rooms to the top of the list. We only
 				// do an UPDATE if the most recent room gets a 2nd event.
@@ -211,11 +213,15 @@ func (s *ConnState) onIncomingRequest(ctx context.Context, req *Request) (*Respo
 					fromIndex = -1
 				}
 				toIndex := 0 // TODO: this won't always be 0 if we sort by something other than recency
+				logger.Info().Int("from", fromIndex).Int("to", toIndex).Str("room", updateEvent.roomID).Msg(
+					"moving room",
+				)
 
 				// move the server's representation
 				swap := s.sortedJoinedRooms[toIndex]
 				var room *SortableRoom
 				if fromIndex == -1 {
+					logger.Info().Str("room", updateEvent.roomID).Msg("loading brand new room into sorted list")
 					room = s.loadRoom(updateEvent.roomID)
 					// TODO: work out which index position this should be sorted into, depending on the sort operations
 					// for now we always insert it into toIndex+1
@@ -234,6 +240,7 @@ func (s *ConnState) onIncomingRequest(ctx context.Context, req *Request) (*Respo
 				responseOperations = append(
 					responseOperations, s.moveRoom(updateEvent, fromIndex, toIndex, s.muxedReq.Rooms)...,
 				)
+				break blockloop
 			}
 		}
 	}
