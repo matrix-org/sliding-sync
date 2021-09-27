@@ -3,12 +3,9 @@ package synclive
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"reflect"
 	"sort"
 	"time"
-
-	"github.com/matrix-org/sync-v3/state"
 )
 
 var (
@@ -18,28 +15,31 @@ var (
 	MaxPendingEventUpdates = 100
 )
 
+type ConnStateStore interface {
+	LoadRoom(roomID string) *SortableRoom
+	Load(userID string) (joinedRoomIDs []string, initialLoadPosition int64, err error)
+}
+
 // ConnState tracks all high-level connection state for this connection, like the combined request
 // and the underlying sorted room list. It doesn't track session IDs or positions of the connection.
 type ConnState struct {
-	store                      *state.Storage
+	store                      ConnStateStore
 	muxedReq                   *Request
 	userID                     string
 	sortedJoinedRooms          SortableRooms
 	sortedJoinedRoomsPositions map[string]int   // room_id -> index in sortedJoinedRooms
 	roomSubscriptions          map[string]*Room // TODO
 	initialLoadPosition        int64
-	loadRoom                   func(roomID string) *SortableRoom
 	// A channel which v2 poll loops use to send updates to, via the ConnMap.
 	// Consumed when the conn is read. There is a limit to how many updates we will store before
 	// saying the client is ded and cleaning up the conn.
 	updateEvents chan *EventData
 }
 
-func NewConnState(userID string, store *state.Storage, loadRoom func(roomID string) *SortableRoom) *ConnState {
+func NewConnState(userID string, store ConnStateStore) *ConnState {
 	return &ConnState{
 		store:                      store,
 		userID:                     userID,
-		loadRoom:                   loadRoom,
 		roomSubscriptions:          make(map[string]*Room),
 		sortedJoinedRoomsPositions: make(map[string]int),
 		updateEvents:               make(chan *EventData, MaxPendingEventUpdates), // TODO: customisable
@@ -58,27 +58,20 @@ func NewConnState(userID string, store *state.Storage, loadRoom func(roomID stri
 //   - load() bases its current state based on the latest position, which includes processing of these N events.
 //   - post load() we read N events, processing them a 2nd time.
 func (c *ConnState) load(req *Request) error {
-	// load from store
-	var err error
-	c.initialLoadPosition, err = c.store.LatestEventNID()
+	joinedRoomIDs, initialLoadPosition, err := c.store.Load(c.userID)
 	if err != nil {
 		return err
 	}
-	joinedRoomIDs, err := c.store.JoinedRoomsAfterPosition(c.userID, c.initialLoadPosition)
-	if err != nil {
-		return err
-	}
+	c.initialLoadPosition = initialLoadPosition
 	c.sortedJoinedRooms = make([]SortableRoom, len(joinedRoomIDs))
 	for i, roomID := range joinedRoomIDs {
 		// load global room info
-		sr := c.loadRoom(roomID)
-		c.sortedJoinedRooms[i] = SortableRoom{
-			RoomID: sr.RoomID,
-			Name:   sr.Name,
-		}
+		sr := c.store.LoadRoom(roomID)
+		c.sortedJoinedRooms[i] = *sr
 		c.sortedJoinedRoomsPositions[sr.RoomID] = i
 	}
 	c.sort(req.Sort)
+
 	return nil
 }
 
@@ -93,7 +86,7 @@ func (c *ConnState) sort(sortBy []string) {
 	//logger.Info().Interface("pos", c.sortedJoinedRoomsPositions).Msg("sorted")
 }
 
-func (c *ConnState) HandleIncomingRequest(ctx context.Context, conn *Conn, req *Request) (*Response, error) {
+func (c *ConnState) HandleIncomingRequest(ctx context.Context, cid ConnID, req *Request) (*Response, error) {
 	if c.initialLoadPosition == 0 {
 		c.load(req)
 	}
@@ -140,7 +133,6 @@ func (s *ConnState) onIncomingRequest(ctx context.Context, req *Request) (*Respo
 
 	// TODO: update room subscriptions
 	// TODO: calculate the M values for N < M calcs
-	fmt.Println("range", s.muxedReq.Rooms, "prev_range", prevRange, "sort", prevSort)
 
 	var responseOperations []ResponseOp
 
@@ -152,12 +144,14 @@ func (s *ConnState) onIncomingRequest(ctx context.Context, req *Request) (*Respo
 	}
 
 	if !reflect.DeepEqual(prevSort, s.muxedReq.Sort) {
-		// the sort operations have changed, invalidate everything, re-sort and re-SYNC
-		for _, r := range s.muxedReq.Rooms {
-			responseOperations = append(responseOperations, &ResponseOpRange{
-				Operation: "INVALIDATE",
-				Range:     r[:],
-			})
+		// the sort operations have changed, invalidate everything (if there were previous syncs), re-sort and re-SYNC
+		if prevSort != nil {
+			for _, r := range s.muxedReq.Rooms {
+				responseOperations = append(responseOperations, &ResponseOpRange{
+					Operation: "INVALIDATE",
+					Range:     r[:],
+				})
+			}
 		}
 		s.sort(s.muxedReq.Sort)
 		added = s.muxedReq.Rooms
@@ -207,35 +201,28 @@ func (s *ConnState) onIncomingRequest(ctx context.Context, req *Request) (*Respo
 				// TODO: Implement sorting by something other than recency. With recency sorting,
 				// most operations are DELETE/INSERT to bump rooms to the top of the list. We only
 				// do an UPDATE if the most recent room gets a 2nd event.
+				var targetRoom SortableRoom
 				fromIndex, ok := s.sortedJoinedRoomsPositions[updateEvent.roomID]
 				if !ok {
 					// the user may have just joined the room hence not have an entry in this list yet.
-					fromIndex = -1
+					fromIndex = len(s.sortedJoinedRooms)
+					newRoom := s.store.LoadRoom(updateEvent.roomID)
+					newRoom.LastMessageTimestamp = updateEvent.timestamp
+					s.sortedJoinedRooms = append(s.sortedJoinedRooms, *newRoom)
+					targetRoom = *newRoom
+				} else {
+					targetRoom = s.sortedJoinedRooms[fromIndex]
+					targetRoom.LastMessageTimestamp = updateEvent.timestamp
+					s.sortedJoinedRooms[fromIndex] = targetRoom
 				}
-				toIndex := 0 // TODO: this won't always be 0 if we sort by something other than recency
-				logger.Info().Int("from", fromIndex).Int("to", toIndex).Str("room", updateEvent.roomID).Msg(
+
+				logger.Info().Int("from", fromIndex).Interface("room", targetRoom).Msg(
 					"moving room",
 				)
-
-				// move the server's representation
-				swap := s.sortedJoinedRooms[toIndex]
-				var room *SortableRoom
-				if fromIndex == -1 {
-					logger.Info().Str("room", updateEvent.roomID).Msg("loading brand new room into sorted list")
-					room = s.loadRoom(updateEvent.roomID)
-					// TODO: work out which index position this should be sorted into, depending on the sort operations
-					// for now we always insert it into toIndex+1
-					s.sortedJoinedRooms = append([]SortableRoom{
-						s.sortedJoinedRooms[0], *room,
-					}, s.sortedJoinedRooms[1:]...)
-					fromIndex = 1
-				} else {
-					room = &s.sortedJoinedRooms[fromIndex]
-				}
-				s.sortedJoinedRooms[toIndex] = *room
-				s.sortedJoinedRooms[fromIndex] = swap
-				s.sortedJoinedRoomsPositions[room.RoomID] = toIndex
-				s.sortedJoinedRoomsPositions[swap.RoomID] = fromIndex
+				// re-sort
+				s.sort(nil)
+				toIndex := s.sortedJoinedRoomsPositions[updateEvent.roomID]
+				logger.Info().Int("to", toIndex).Msg("moved!")
 
 				responseOperations = append(
 					responseOperations, s.moveRoom(updateEvent, fromIndex, toIndex, s.muxedReq.Rooms)...,
@@ -255,6 +242,7 @@ func (s *ConnState) UserID() string {
 	return s.userID
 }
 
+// Move a room from an absolute index position to another absolute position.
 // 1,2,3,4,5
 // 3 bumps to top -> 3,1,2,4,5 -> DELETE index=2, INSERT val=3 index=0
 // 7 bumps to top -> 7,1,2,3,4 -> DELETE index=4, INSERT val=7 index=0
@@ -285,7 +273,7 @@ func (s *ConnState) moveRoom(updateEvent *EventData, fromIndex, toIndex int, ran
 		// to the highest end-range marker < index
 		deleteIndex = int(ranges.LowerClamp(int64(fromIndex)))
 	}
-	room := s.loadRoom(updateEvent.roomID)
+	room := s.store.LoadRoom(updateEvent.roomID)
 	return []ResponseOp{
 		&ResponseOpSingle{
 			Operation: "DELETE",

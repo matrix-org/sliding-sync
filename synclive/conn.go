@@ -17,7 +17,7 @@ func (c *ConnID) String() string {
 	return c.SessionID + "-" + c.DeviceID
 }
 
-type HandlerIncomingReqFunc func(ctx context.Context, conn *Conn, req *Request) (*Response, error)
+type HandlerIncomingReqFunc func(ctx context.Context, cid ConnID, req *Request) (*Response, error)
 
 // Conn is an abstraction of a long-poll connection. It automatically handles the position values
 // of the /sync request, including sending cached data in the event of retries. It does not handle
@@ -82,7 +82,7 @@ func (c *Conn) OnIncomingRequest(ctx context.Context, req *Request) (resp *Respo
 	}
 	c.lastClientRequest = *req
 
-	resp, err := c.HandleIncomingRequest(ctx, c, req)
+	resp, err := c.HandleIncomingRequest(ctx, c.ConnID, req)
 	if err != nil {
 		herr, ok := err.(*internal.HandlerError)
 		if !ok {

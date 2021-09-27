@@ -2,10 +2,11 @@
     <head>
         <title>Sync v3 experiments</title>
         <script>
+            let restart = false;
             const doSyncLoop = async(accessToken) => {
                 let currentPos;
                 let rooms = [];
-                while (true) {
+                while (!restart) {
                     let resp = await doSyncRequest(accessToken, currentPos, [0,9]);
                     currentPos = resp.pos;
                     if (!resp.ops) {
@@ -74,6 +75,10 @@
                     console.log(output);
                     document.getElementById("list").textContent = output;
                 }
+                console.log("restarting");
+                document.getElementById("list").textContent = "";
+                restart = false;
+                doSyncLoop(accessToken);
             }
             // accessToken = string, pos = int, ranges = [2]int e.g [0,99]
             const doSyncRequest = async (accessToken, pos, ranges) => {
@@ -96,7 +101,9 @@
                 document.getElementById("syncButton").onclick = () => {
                     const accessToken = document.getElementById("accessToken").value;
                     doSyncLoop(accessToken);
-                    
+                }
+                document.getElementById("resetButton").onclick = () => {
+                    restart = true;
                 }
             });
         </script>
@@ -105,6 +112,7 @@
         <div>
             <input id="accessToken" type="password" placeholder="matrix.org access token" />
             <input id="syncButton" type="button" value="Sync" />
+            <input id="resetButton" type="button" value="Reset" />
             <p id="list" style="white-space: pre;"></p>
         </div>
     </body>

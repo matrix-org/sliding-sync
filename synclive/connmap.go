@@ -17,6 +17,7 @@ type EventData struct {
 	eventType string
 	stateKey  *string
 	content   gjson.Result
+	timestamp int64
 	// the absolute latest position for this event data. The NID for this event is guaranteed to
 	// be <= this value.
 	latestPos int64
@@ -77,7 +78,7 @@ func (m *ConnMap) GetOrCreateConn(cid ConnID, userID string) (*Conn, bool) {
 	if conn != nil {
 		return conn, false
 	}
-	state := NewConnState(userID, m.store, m.roomInfo)
+	state := NewConnState(userID, m)
 	conn = NewConn(cid, state, state.HandleIncomingRequest)
 	m.cache.Set(cid.String(), conn)
 	m.connIDToConn[cid.String()] = conn
@@ -122,15 +123,24 @@ func (m *ConnMap) LoadBaseline(roomIDToUserIDs map[string][]string) error {
 		for _, userID := range userIDs {
 			m.jrt.UserJoinedRoom(userID, roomID)
 		}
-		fmt.Printf("Room: %+v \n", room)
+		fmt.Printf("Room: %s - %s - %s \n", room.RoomID, room.Name, time.Unix(room.LastMessageTimestamp/1000, 0))
 	}
 	return nil
 }
 
-func (m *ConnMap) roomInfo(roomID string) *SortableRoom {
+func (m *ConnMap) LoadRoom(roomID string) *SortableRoom {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	return m.globalRoomInfo[roomID]
+}
+
+func (m *ConnMap) Load(userID string) (joinedRoomIDs []string, initialLoadPosition int64, err error) {
+	initialLoadPosition, err = m.store.LatestEventNID()
+	if err != nil {
+		return
+	}
+	joinedRoomIDs, err = m.store.JoinedRoomsAfterPosition(userID, initialLoadPosition)
+	return
 }
 
 func (m *ConnMap) closeConn(connID string, value interface{}) {
@@ -210,6 +220,7 @@ func (m *ConnMap) onNewEvent(
 		stateKey:  stateKey,
 		content:   ev.Get("content"),
 		latestPos: latestPos,
+		timestamp: ev.Get("origin_server_ts").Int(),
 	}
 
 	// notify all people in this room

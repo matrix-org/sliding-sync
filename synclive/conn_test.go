@@ -18,7 +18,7 @@ func TestConn(t *testing.T) {
 		SessionID: "s",
 	}
 	count := int64(100)
-	c := NewConn(connID, nil, func(ctx context.Context, conn *Conn, req *Request) (*Response, error) {
+	c := NewConn(connID, nil, func(ctx context.Context, cid ConnID, req *Request) (*Response, error) {
 		count += 1
 		return &Response{
 			Count: count,
@@ -62,7 +62,7 @@ func TestConnBlocking(t *testing.T) {
 		SessionID: "s",
 	}
 	ch := make(chan string)
-	c := NewConn(connID, nil, func(ctx context.Context, conn *Conn, req *Request) (*Response, error) {
+	c := NewConn(connID, nil, func(ctx context.Context, cid ConnID, req *Request) (*Response, error) {
 		if req.Sort[0] == "hi" {
 			time.Sleep(10 * time.Millisecond)
 		}
@@ -109,7 +109,7 @@ func TestConnRetries(t *testing.T) {
 		SessionID: "s",
 	}
 	callCount := int64(0)
-	c := NewConn(connID, nil, func(ctx context.Context, conn *Conn, req *Request) (*Response, error) {
+	c := NewConn(connID, nil, func(ctx context.Context, cid ConnID, req *Request) (*Response, error) {
 		callCount += 1
 		return &Response{Count: 20}, nil
 	})
@@ -144,7 +144,7 @@ func TestConnErrors(t *testing.T) {
 		SessionID: "s",
 	}
 	errCh := make(chan error, 1)
-	c := NewConn(connID, nil, func(ctx context.Context, conn *Conn, req *Request) (*Response, error) {
+	c := NewConn(connID, nil, func(ctx context.Context, cid ConnID, req *Request) (*Response, error) {
 		return nil, <-errCh
 	})
 
@@ -172,7 +172,7 @@ func TestConnErrorsNoCache(t *testing.T) {
 		SessionID: "s",
 	}
 	errCh := make(chan error, 1)
-	c := NewConn(connID, nil, func(ctx context.Context, conn *Conn, req *Request) (*Response, error) {
+	c := NewConn(connID, nil, func(ctx context.Context, cid ConnID, req *Request) (*Response, error) {
 		select {
 		case e := <-errCh:
 			return nil, e
