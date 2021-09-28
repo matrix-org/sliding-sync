@@ -3,18 +3,30 @@
         <title>Sync v3 experiments</title>
         <script>
             let activeSessionId;
+            // rooms array is stored as a map since we just keep indices. E.g 0-99, 500-599, we don't want to have a 600 element array
+            let allRooms = {};
+            let allRoomsCount = 0;
             const roomIdToRoom = {};
             const roomIdToDiv = {}; // cached innerHTML 
-            const render = (container, rooms) => {
+            const render = (container) => {
                 // TODO: don't nuke all cells
                 while (container.firstChild) {
                     container.removeChild(container.firstChild);
                 }
-                rooms.forEach((r) => {
-                    roomIdToRoom[r.room_id] = r;
+                for (let i = 0; i < allRoomsCount; i++) {
                     const template = document.getElementById("roomCellTemplate");
                     // https://developer.mozilla.org/en-US/docs/Web/HTML/Element/template#avoiding_documentfragment_pitfall
                     const roomCell = template.content.firstElementChild.cloneNode(true);
+
+                    const r = allRooms[i];
+                    if (!r) {
+                        // placeholder
+                        roomCell.getElementsByClassName("roomInfo")[0].style = "filter: blur(5px);";
+                        container.appendChild(roomCell);
+                        continue;
+                    }
+                    roomIdToRoom[r.room_id] = r;
+                    
                     roomCell.addEventListener("click", (e) => {
                         console.log(r, e);
                     });
@@ -30,9 +42,8 @@
                             roomCell.getElementsByClassName("roomContent")[0].textContent = mostRecentEvent.type + " event";
                         }
                     }
-                    
                     container.appendChild(roomCell);
-                });
+                }
 
 
             }
@@ -40,21 +51,23 @@
             const doSyncLoop = async(accessToken, sessionId) => {
                 console.log("Starting sync loop. Active: ", activeSessionId, " this:", sessionId);
                 let currentPos;
-                let rooms = [];
                 while (sessionId === activeSessionId) {
                     let resp = await doSyncRequest(accessToken, currentPos, [0,99], sessionId);
                     currentPos = resp.pos;
                     if (!resp.ops) {
                         continue;
                     }
+                    if (resp.count) {
+                        allRoomsCount = resp.count;
+                    }
 
                     let gapIndex = -1;
                     resp.ops.forEach((op) => {
                         if (op.op === "DELETE") {
-                            rooms[op.index] = null;
+                            delete allRooms[op.index];
                             gapIndex = op.index;
                         } else if (op.op === "INSERT") {
-                            if (rooms[op.index]) {
+                            if (allRooms[op.index]) {
                                 // something is in this space, shift items out of the way
                                 if (gapIndex < 0) {
                                     console.log("cannot work out where gap is, INSERT without previous DELETE!");
@@ -75,27 +88,27 @@
                                     // [A,A,B,C] i=1
                                     // Terminate. We'll assign into op.index next.
                                     for (let i = gapIndex; i > op.index; i--) {
-                                        rooms[i] = rooms[i-1];
+                                        allRooms[i] = allRooms[i-1];
                                     }
                                 } else if (gapIndex < op.index) {
                                     // the gap is further up the list, shift every element to the left
                                     // starting at the gap so we can just shift each element in turn
                                     for (let i = gapIndex; i < op.index; i++) {
-                                        rooms[i] = rooms[i+1];
+                                        allRooms[i] = allRooms[i+1];
                                     }
                                 }
                             }
-                            rooms[op.index] = op.room;
+                            allRooms[op.index] = op.room;
                         } else if (op.op === "UPDATE") {
-                            rooms[op.index] = op.room;
+                            allRooms[op.index] = op.room;
                         } else if (op.op === "SYNC") {
                             const startIndex = op.range[0];
                             for (let i = startIndex; i <= op.range[1]; i++) {
-                                rooms[i] = op.rooms[i - startIndex];
+                                allRooms[i] = op.rooms[i - startIndex];
                             }
                         }
                     });
-                    render(document.getElementById("listContainer"), rooms);
+                    render(document.getElementById("listContainer"));
                 }
                 console.log("active session: ", activeSessionId, " this session: ", sessionId, " terminating.");
             }
@@ -142,7 +155,7 @@
             <template id="roomCellTemplate">
                 <div style="padding: 5px; display: flex; align-items: center; cursor: pointer; border-bottom: 1px solid #8d99a5; height: 40px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
                     <img src="/client/placeholder.svg" style="width: 32px; height: 32px; margin-right: 6px;"/>
-                    <div >
+                    <div class="roomInfo">
                         <span class="roomName">Placeholder Room Name</span>
                         <div>
                             <span class="roomSender" style="color: #737d8c;">Alice</span>

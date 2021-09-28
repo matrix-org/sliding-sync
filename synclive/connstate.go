@@ -173,12 +173,14 @@ func (s *ConnState) onIncomingRequest(ctx context.Context, req *Request) (*Respo
 		rooms := subslice[0].(SortableRooms)
 		roomsResponse := make([]Room, len(rooms))
 		for i := range rooms {
+			timeline := []json.RawMessage{}
+			if rooms[i].LastEvent != nil {
+				timeline = append(timeline, rooms[i].LastEvent.JSON)
+			}
 			roomsResponse[i] = Room{
-				RoomID: rooms[i].RoomID,
-				Name:   rooms[i].Name,
-				Timeline: []json.RawMessage{
-					rooms[i].LastEvent.JSON,
-				},
+				RoomID:   rooms[i].RoomID,
+				Name:     rooms[i].Name,
+				Timeline: timeline,
 			}
 		}
 		responseOperations = append(responseOperations, &ResponseOpRange{
