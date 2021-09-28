@@ -3,7 +3,6 @@ package syncv3
 import (
 	"encoding/json"
 	"fmt"
-	"io/ioutil"
 	"net/http"
 	"os"
 	"time"
@@ -31,7 +30,7 @@ func (s *server) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	h.ServeHTTP(w, req)
 }
 
-func jsClient(file []byte) http.HandlerFunc {
+func allowCORS(next http.Handler) http.HandlerFunc {
 	return func(w http.ResponseWriter, req *http.Request) {
 		if req.Method == "OPTIONS" {
 			w.Header().Set("Access-Control-Allow-Origin", "*")
@@ -40,29 +39,20 @@ func jsClient(file []byte) http.HandlerFunc {
 			w.WriteHeader(200)
 			return
 		}
-		// TODO: remove when don't need live updates
-		jsFile, err := ioutil.ReadFile("client.html")
-		if err != nil {
-			logger.Fatal().Err(err).Msg("failed to read client.html")
-		}
-		w.WriteHeader(200)
-		w.Write(jsFile)
+		next.ServeHTTP(w, req)
 	}
-
 }
 
 // RunSyncV3Server is the main entry point to the server
 func RunSyncV3Server(h http.Handler, bindAddr string) {
-
-	jsFile, err := ioutil.ReadFile("client.html")
-	if err != nil {
-		logger.Fatal().Err(err).Msg("failed to read client.html")
-	}
-
 	// HTTP path routing
 	r := mux.NewRouter()
 	r.Handle("/_matrix/client/v3/sync", h)
-	r.HandleFunc("/client", jsClient(jsFile)).Methods("GET", "OPTIONS", "HEAD")
+	r.PathPrefix("/client/").HandlerFunc(
+		allowCORS(
+			http.StripPrefix("/client/", http.FileServer(http.Dir("./client"))),
+		),
+	)
 
 	srv := &server{
 		chain: []func(next http.Handler) http.Handler{
@@ -73,7 +63,7 @@ func RunSyncV3Server(h http.Handler, bindAddr string) {
 					Int("status", status).
 					Int("size", size).
 					Dur("duration", duration).
-					Str("since", r.URL.Query().Get("since")).
+					Str("path", r.URL.Path).
 					Msg("")
 			}),
 			hlog.RemoteAddrHandler("ip"),

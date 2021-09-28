@@ -86,8 +86,11 @@ func (h *SyncLiveHandler) serve(w http.ResponseWriter, req *http.Request) error 
 			}
 		}
 	}
+	if requestBody.SessionID == "" {
+		requestBody.SessionID = DefaultSessionID
+	}
 
-	conn, err := h.setupConnection(req, &requestBody)
+	conn, err := h.setupConnection(req, &requestBody, req.URL.Query().Get("pos") != "")
 	if err != nil {
 		hlog.FromRequest(req).Err(err).Msg("failed to get or create Conn")
 		return err
@@ -127,7 +130,7 @@ func (h *SyncLiveHandler) serve(w http.ResponseWriter, req *http.Request) error 
 // setupConnection associates this request with an existing connection or makes a new connection.
 // It also sets a v2 sync poll loop going if one didn't exist already for this user.
 // When this function returns, the connection is alive and active.
-func (h *SyncLiveHandler) setupConnection(req *http.Request, syncReq *Request) (*Conn, error) {
+func (h *SyncLiveHandler) setupConnection(req *http.Request, syncReq *Request, containsPos bool) (*Conn, error) {
 	log := hlog.FromRequest(req)
 	var conn *Conn
 
@@ -142,7 +145,7 @@ func (h *SyncLiveHandler) setupConnection(req *http.Request, syncReq *Request) (
 	}
 
 	// client thinks they have a connection
-	if syncReq.SessionID != "" {
+	if containsPos {
 		// Lookup the connection
 		// we need to map based on both as the session ID isn't crypto secure but the device ID is (Auth header)
 		conn = h.ConnMap.Conn(ConnID{
@@ -202,7 +205,7 @@ func (h *SyncLiveHandler) setupConnection(req *http.Request, syncReq *Request) (
 	// to check for an existing connection though, as it's possible for the client to call /sync
 	// twice for a new connection and get the same session ID.
 	conn, created := h.ConnMap.GetOrCreateConn(ConnID{
-		SessionID: DefaultSessionID,
+		SessionID: syncReq.SessionID,
 		DeviceID:  deviceID,
 	}, v2device.UserID)
 	if created {
@@ -210,7 +213,6 @@ func (h *SyncLiveHandler) setupConnection(req *http.Request, syncReq *Request) (
 	} else {
 		log.Info().Str("conn_id", conn.ConnID.String()).Msg("using existing connection")
 	}
-	syncReq.SessionID = conn.ConnID.SessionID
 	return conn, nil
 }
 

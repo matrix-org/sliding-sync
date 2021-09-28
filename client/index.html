@@ -2,12 +2,36 @@
     <head>
         <title>Sync v3 experiments</title>
         <script>
-            let restart = false;
-            const doSyncLoop = async(accessToken) => {
+            let activeSessionId;
+            const roomIdToRoom = {};
+            const roomIdToDiv = {}; // cached innerHTML 
+            const render = (container, rooms) => {
+                // TODO: don't nuke all cells
+                while (container.firstChild) {
+                    container.removeChild(container.firstChild);
+                }
+                rooms.forEach((r) => {
+                    roomIdToRoom[r.room_id] = r;
+                    const template = document.getElementById("roomCellTemplate");
+                    // https://developer.mozilla.org/en-US/docs/Web/HTML/Element/template#avoiding_documentfragment_pitfall
+                    const roomCell = template.content.firstElementChild.cloneNode(true);
+                    roomCell.addEventListener("click", (e) => {
+                        console.log(r, e);
+                    });
+                    roomIdToDiv[r.room_id] = roomCell;
+                    roomCell.getElementsByClassName("roomName")[0].textContent = r.name;
+                    container.appendChild(roomCell);
+                });
+
+
+            }
+
+            const doSyncLoop = async(accessToken, sessionId) => {
+                console.log("Starting sync loop. Active: ", activeSessionId, " this:", sessionId);
                 let currentPos;
                 let rooms = [];
-                while (!restart) {
-                    let resp = await doSyncRequest(accessToken, currentPos, [0,9]);
+                while (sessionId === activeSessionId) {
+                    let resp = await doSyncRequest(accessToken, currentPos, [0,99], sessionId);
                     currentPos = resp.pos;
                     if (!resp.ops) {
                         continue;
@@ -60,28 +84,12 @@
                             }
                         }
                     });
-
-                    let output = "";
-                    rooms.forEach((r) => {
-                        if (!r) {
-                            output += "_____\r\n";
-                            return;
-                        }
-                        output += (r.name || r.room_id) + "\r\n";
-                    })
-
-                    // re-render the rooms array
-                    console.log(rooms);
-                    console.log(output);
-                    document.getElementById("list").textContent = output;
+                    render(document.getElementById("listContainer"), rooms);
                 }
-                console.log("restarting");
-                document.getElementById("list").textContent = "";
-                restart = false;
-                doSyncLoop(accessToken);
+                console.log("active session: ", activeSessionId, " this session: ", sessionId, " terminating.");
             }
             // accessToken = string, pos = int, ranges = [2]int e.g [0,99]
-            const doSyncRequest = async (accessToken, pos, ranges) => {
+            const doSyncRequest = async (accessToken, pos, ranges, sessionId) => {
                 let resp = await fetch("/_matrix/client/v3/sync" + (pos ? "?pos=" + pos : ""), {
                     method: "POST",
                     headers: {
@@ -89,7 +97,8 @@
                         "Content-Type": "application/json",
                     },
                     body: JSON.stringify({
-                        rooms: [ranges]
+                        rooms: [ranges],
+                        session_id: (sessionId ? sessionId : undefined),
                     })
                 });
                 let respBody = await resp.json();
@@ -98,12 +107,17 @@
             }
 
             window.addEventListener('load', (event) => {
+                const storedAccessToken = window.localStorage.getItem("accessToken");
+                if (storedAccessToken) {
+                    document.getElementById("accessToken").value = storedAccessToken;
+                }
                 document.getElementById("syncButton").onclick = () => {
                     const accessToken = document.getElementById("accessToken").value;
-                    doSyncLoop(accessToken);
+                    window.localStorage.setItem("accessToken", accessToken);
+                    doSyncLoop(accessToken, activeSessionId);
                 }
                 document.getElementById("resetButton").onclick = () => {
-                    restart = true;
+                    activeSessionId = new Date().getTime() + "";
                 }
             });
         </script>
@@ -112,8 +126,14 @@
         <div>
             <input id="accessToken" type="password" placeholder="matrix.org access token" />
             <input id="syncButton" type="button" value="Sync" />
-            <input id="resetButton" type="button" value="Reset" />
-            <p id="list" style="white-space: pre;"></p>
+            <input id="resetButton" type="button" value="New Session" />
+            <div id="listContainer" ></div>
+            <template id="roomCellTemplate">
+                <div style="padding: 5px; display: flex; align-items: center;">
+                    <img src="/client/placeholder.svg" style="width: 32px; height: 32px;"/>
+                    <span class="roomName"> </span>
+                </div>
+            </template>
         </div>
     </body>
 </html>
