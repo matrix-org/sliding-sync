@@ -19,7 +19,18 @@
                         console.log(r, e);
                     });
                     roomIdToDiv[r.room_id] = roomCell;
-                    roomCell.getElementsByClassName("roomName")[0].textContent = r.name;
+                    roomCell.getElementsByClassName("roomName")[0].textContent = r.name || r.room_id;
+                    if (r.timeline && r.timeline.length > 0) {
+                        const mostRecentEvent = r.timeline[r.timeline.length-1];
+                        roomCell.getElementsByClassName("roomSender")[0].textContent = mostRecentEvent.sender;
+
+                        if (mostRecentEvent.type === "m.room.message") {
+                            roomCell.getElementsByClassName("roomContent")[0].textContent = mostRecentEvent.content.body;
+                        } else if (mostRecentEvent.type) {
+                            roomCell.getElementsByClassName("roomContent")[0].textContent = mostRecentEvent.type + " event";
+                        }
+                    }
+                    
                     container.appendChild(roomCell);
                 });
 
@@ -123,15 +134,21 @@
         </script>
     </head>
     <body>
-        <div>
+        <div style="max-width: 960px; margin: 0 auto">
             <input id="accessToken" type="password" placeholder="matrix.org access token" />
             <input id="syncButton" type="button" value="Sync" />
             <input id="resetButton" type="button" value="New Session" />
-            <div id="listContainer" ></div>
+            <div id="listContainer" style="background: #f7f7f7;" ></div>
             <template id="roomCellTemplate">
-                <div style="padding: 5px; display: flex; align-items: center;">
-                    <img src="/client/placeholder.svg" style="width: 32px; height: 32px;"/>
-                    <span class="roomName"> </span>
+                <div style="padding: 5px; display: flex; align-items: center; cursor: pointer; border-bottom: 1px solid #8d99a5; height: 40px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
+                    <img src="/client/placeholder.svg" style="width: 32px; height: 32px; margin-right: 6px;"/>
+                    <div >
+                        <span class="roomName">Placeholder Room Name</span>
+                        <div>
+                            <span class="roomSender" style="color: #737d8c;">Alice</span>
+                            <span class="roomContent">Lorem Ipsum Dolor...</span>
+                        </div>
+                    </div>
                 </div>
             </template>
         </div>
