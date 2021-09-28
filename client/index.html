@@ -2,6 +2,40 @@
     <head>
         <title>Sync v3 experiments</title>
         <script>
+            let debounceTimeoutId;
+            let visibleIndexes = {};
+            const intersectionObserver = new IntersectionObserver((entries) => {
+                entries.forEach((entry) => {
+                    let key = entry.target.id.substr("room".length);
+                    if (entry.isIntersecting) {
+                        visibleIndexes[key] = true;
+                    } else {
+                        delete visibleIndexes[key];
+                    }
+                });
+                // we will process the intersections after a short period of inactivity to not thrash the server
+                clearTimeout(debounceTimeoutId);
+                debounceTimeoutId = setTimeout(() => {
+                    let startIndex = 0;
+                    let endIndex = 0;
+                    Object.keys(visibleIndexes).forEach((i) => {
+                        i = Number(i);
+                        startIndex = startIndex || i;
+                        endIndex = endIndex || i;
+                        if (i < startIndex) {
+                            startIndex = i;
+                        }
+                        if (i > endIndex) {
+                            endIndex = i;
+                        }
+                    });
+
+                    console.log("next: ", startIndex, "-", endIndex);
+                }, 100);
+            }, {
+                threshold: [0],
+            });
+
             let activeSessionId;
             // rooms array is stored as a map since we just keep indices. E.g 0-99, 500-599, we don't want to have a 600 element array
             let allRooms = {};
@@ -17,12 +51,16 @@
                     const template = document.getElementById("roomCellTemplate");
                     // https://developer.mozilla.org/en-US/docs/Web/HTML/Element/template#avoiding_documentfragment_pitfall
                     const roomCell = template.content.firstElementChild.cloneNode(true);
+                    roomCell.setAttribute("id", "room"+i);
 
                     const r = allRooms[i];
                     if (!r) {
                         // placeholder
+                        roomCell.getElementsByClassName("roomName")[0].textContent = randomName(i, false);
+                        roomCell.getElementsByClassName("roomContent")[0].textContent = randomName(i, true);
                         roomCell.getElementsByClassName("roomInfo")[0].style = "filter: blur(5px);";
                         container.appendChild(roomCell);
+                        intersectionObserver.observe(roomCell);
                         continue;
                     }
                     roomIdToRoom[r.room_id] = r;
@@ -43,6 +81,7 @@
                         }
                     }
                     container.appendChild(roomCell);
+                    intersectionObserver.observe(roomCell);
                 }
 
 
@@ -52,7 +91,7 @@
                 console.log("Starting sync loop. Active: ", activeSessionId, " this:", sessionId);
                 let currentPos;
                 while (sessionId === activeSessionId) {
-                    let resp = await doSyncRequest(accessToken, currentPos, [0,99], sessionId);
+                    let resp = await doSyncRequest(accessToken, currentPos, [0,20], sessionId);
                     currentPos = resp.pos;
                     if (!resp.ops) {
                         continue;
@@ -126,8 +165,28 @@
                     })
                 });
                 let respBody = await resp.json();
-                console.log(respBody);
+                if (respBody.ops) {
+                    console.log(respBody);
+                }
                 return respBody;
+            }
+
+            const randomName = (i, long) => {
+                if (i % 17 === 0) {
+                    return long ? "Ever have that feeling where you’re not sure if you’re awake or dreaming?" : "There is no spoon";
+                } else if (i % 13 === 0) {
+                    return long ? "Choice is an illusion created between those with power and those without." : "Get Up Trinity";
+                } else if (i % 11 === 0) {
+                    return long ? "That’s how it is with people. Nobody cares how it works as long as it works.": "I know kung fu";
+                } else if (i % 7 === 0) {
+                    return long ? "The body cannot live without the mind." : "Free your mind";
+                } else if (i % 5 === 0) {
+                    return long ? "Perhaps we are asking the wrong questions…" : "Agent Smith";
+                } else if (i % 3 === 0) {
+                    return long ? "You've been living in a dream world, Neo." : "Mr Anderson";
+                } else {
+                    return long ? "Mr. Wizard, get me the hell out of here! " : "Morpheus";
+                }
             }
 
             window.addEventListener('load', (event) => {
