@@ -1,6 +1,10 @@
 package synclive
 
-import "encoding/json"
+import (
+	"encoding/json"
+
+	"github.com/matrix-org/sync-v3/state"
+)
 
 type Room struct {
 	RoomID            string            `json:"room_id,omitempty"`
@@ -17,6 +21,7 @@ type SortableRoom struct {
 	RoomID               string
 	Name                 string // by_name
 	LastMessageTimestamp int64  // by_recency
+	LastEvent            *state.Event
 }
 
 type SortableRooms []SortableRoom

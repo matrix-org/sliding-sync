@@ -119,6 +119,8 @@ func (m *ConnMap) LoadBaseline(roomIDToUserIDs map[string][]string) error {
 			return err
 		}
 		room.LastMessageTimestamp = gjson.ParseBytes(latest.JSON).Get("origin_server_ts").Int()
+		// TODO: load last N events as a sliding window?
+		room.LastEvent = latest
 		m.globalRoomInfo[room.RoomID] = room
 		for _, userID := range userIDs {
 			m.jrt.UserJoinedRoom(userID, roomID)

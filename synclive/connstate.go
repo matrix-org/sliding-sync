@@ -176,6 +176,9 @@ func (s *ConnState) onIncomingRequest(ctx context.Context, req *Request) (*Respo
 			roomsResponse[i] = Room{
 				RoomID: rooms[i].RoomID,
 				Name:   rooms[i].Name,
+				Timeline: []json.RawMessage{
+					rooms[i].LastEvent.JSON,
+				},
 			}
 		}
 		responseOperations = append(responseOperations, &ResponseOpRange{
