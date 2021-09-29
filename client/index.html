@@ -2,8 +2,18 @@
     <head>
         <title>Sync v3 experiments</title>
         <script>
+            let activeAbortController = new AbortController();
+            let activeSessionId;
+            let activeRanges = [[0,20]];
+            // rooms array is stored as a map since we just keep indices. E.g 0-99, 500-599, we don't want to have a 600 element array
+            let allRooms = {};
+            let allRoomsCount = 0;
+            const roomIdToRoom = {};
+            const roomIdToDiv = {}; // cached innerHTML 
+
             let debounceTimeoutId;
             let visibleIndexes = {};
+            
             const intersectionObserver = new IntersectionObserver((entries) => {
                 entries.forEach((entry) => {
                     let key = entry.target.id.substr("room".length);
@@ -29,19 +39,20 @@
                             endIndex = i;
                         }
                     });
+                    // buffer range
+                    const bufferRange = 5;
+                    startIndex = (startIndex - bufferRange) < 0 ? 0 : (startIndex - bufferRange);
+                    endIndex = (endIndex + bufferRange) >= allRoomsCount ? allRoomsCount-1 : (endIndex + bufferRange);
 
+
+                    activeRanges[1] = [startIndex, endIndex];
+                    activeAbortController.abort();
                     console.log("next: ", startIndex, "-", endIndex);
                 }, 100);
             }, {
                 threshold: [0],
             });
 
-            let activeSessionId;
-            // rooms array is stored as a map since we just keep indices. E.g 0-99, 500-599, we don't want to have a 600 element array
-            let allRooms = {};
-            let allRoomsCount = 0;
-            const roomIdToRoom = {};
-            const roomIdToDiv = {}; // cached innerHTML 
             const render = (container) => {
                 // TODO: don't nuke all cells
                 while (container.firstChild) {
@@ -73,6 +84,10 @@
                     if (r.timeline && r.timeline.length > 0) {
                         const mostRecentEvent = r.timeline[r.timeline.length-1];
                         roomCell.getElementsByClassName("roomSender")[0].textContent = mostRecentEvent.sender;
+                        const d = new Date(mostRecentEvent.origin_server_ts);
+                        roomCell.getElementsByClassName("roomTimestamp")[0].textContent = (
+                            d.toDateString() + " " + d.getHours() + ":" + d.getMinutes() + ":" + d.getSeconds()
+                        );
 
                         if (mostRecentEvent.type === "m.room.message") {
                             roomCell.getElementsByClassName("roomContent")[0].textContent = mostRecentEvent.content.body;
@@ -83,21 +98,33 @@
                     container.appendChild(roomCell);
                     intersectionObserver.observe(roomCell);
                 }
-
-
+            }
+            const sleep = (ms) => {
+                return new Promise(resolve => setTimeout(resolve, ms));
             }
 
             const doSyncLoop = async(accessToken, sessionId) => {
                 console.log("Starting sync loop. Active: ", activeSessionId, " this:", sessionId);
                 let currentPos;
                 while (sessionId === activeSessionId) {
-                    let resp = await doSyncRequest(accessToken, currentPos, [0,20], sessionId);
-                    currentPos = resp.pos;
-                    if (!resp.ops) {
-                        continue;
+                    let resp;
+                    try {
+                        resp = await doSyncRequest(accessToken, currentPos, activeRanges, sessionId);
+                        currentPos = resp.pos;
+                        if (!resp.ops) {
+                            continue;
+                        }
+                        if (resp.count) {
+                            allRoomsCount = resp.count;
+                        }
+                    } catch (err) {
+                        if (err.name !== "AbortError") {
+                            console.error("/sync failed:",err);
+                            await sleep(1000);
+                        }
                     }
-                    if (resp.count) {
-                        allRoomsCount = resp.count;
+                    if (!resp) {
+                        continue;
                     }
 
                     let gapIndex = -1;
@@ -145,6 +172,11 @@
                             for (let i = startIndex; i <= op.range[1]; i++) {
                                 allRooms[i] = op.rooms[i - startIndex];
                             }
+                        } else if (op.op === "INVALIDATE") {
+                            const startIndex = op.range[0];
+                            for (let i = startIndex; i <= op.range[1]; i++) {
+                                delete allRooms[i];
+                            }
                         }
                     });
                     render(document.getElementById("listContainer"));
@@ -153,14 +185,16 @@
             }
             // accessToken = string, pos = int, ranges = [2]int e.g [0,99]
             const doSyncRequest = async (accessToken, pos, ranges, sessionId) => {
+                activeAbortController = new AbortController();
                 let resp = await fetch("/_matrix/client/v3/sync" + (pos ? "?pos=" + pos : ""), {
+                    signal: activeAbortController.signal,
                     method: "POST",
                     headers: {
                         "Authorization": "Bearer " + accessToken,
                         "Content-Type": "application/json",
                     },
                     body: JSON.stringify({
-                        rooms: [ranges],
+                        rooms: ranges,
                         session_id: (sessionId ? sessionId : undefined),
                     })
                 });
@@ -216,6 +250,7 @@
                     <img src="/client/placeholder.svg" style="width: 32px; height: 32px; margin-right: 6px;"/>
                     <div class="roomInfo">
                         <span class="roomName">Placeholder Room Name</span>
+                        <span class="roomTimestamp" style="color: #737d8c;">11/06/1999</span>
                         <div>
                             <span class="roomSender" style="color: #737d8c;">Alice</span>
                             <span class="roomContent">Lorem Ipsum Dolor...</span>

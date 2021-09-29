@@ -174,8 +174,8 @@ func (s *ConnState) onIncomingRequest(ctx context.Context, req *Request) (*Respo
 		roomsResponse := make([]Room, len(rooms))
 		for i := range rooms {
 			timeline := []json.RawMessage{}
-			if rooms[i].LastEvent != nil {
-				timeline = append(timeline, rooms[i].LastEvent.JSON)
+			if rooms[i].LastEventJSON != nil {
+				timeline = append(timeline, rooms[i].LastEventJSON)
 			}
 			roomsResponse[i] = Room{
 				RoomID:   rooms[i].RoomID,
@@ -208,6 +208,7 @@ func (s *ConnState) onIncomingRequest(ctx context.Context, req *Request) (*Respo
 				// do an UPDATE if the most recent room gets a 2nd event.
 				var targetRoom SortableRoom
 				fromIndex, ok := s.sortedJoinedRoomsPositions[updateEvent.roomID]
+				var lastTimestamp int64
 				if !ok {
 					// the user may have just joined the room hence not have an entry in this list yet.
 					fromIndex = len(s.sortedJoinedRooms)
@@ -217,13 +218,17 @@ func (s *ConnState) onIncomingRequest(ctx context.Context, req *Request) (*Respo
 					targetRoom = *newRoom
 				} else {
 					targetRoom = s.sortedJoinedRooms[fromIndex]
+					lastTimestamp = targetRoom.LastMessageTimestamp
+					targetRoom.LastEventJSON = updateEvent.event
 					targetRoom.LastMessageTimestamp = updateEvent.timestamp
 					s.sortedJoinedRooms[fromIndex] = targetRoom
 				}
 				// re-sort
 				s.sort(nil)
 				toIndex := s.sortedJoinedRoomsPositions[updateEvent.roomID]
-				logger.Info().Int("from", fromIndex).Int("to", toIndex).Interface("room", targetRoom).Msg("moved!")
+				logger.Info().Int("from", fromIndex).Int("to", toIndex).
+					Int64("prev_ts", lastTimestamp).Int64("event_ts", updateEvent.timestamp).
+					Interface("room", targetRoom).Msg("moved!")
 				// the toIndex may not be inside a tracked range. If it isn't, we actually need to notify about a
 				// different room
 				if !s.muxedReq.Rooms.Inside(int64(toIndex)) {
@@ -243,7 +248,7 @@ func (s *ConnState) onIncomingRequest(ctx context.Context, req *Request) (*Respo
 					// tracking [10,20] and room 24 jumps to position 0, so now we are tracking [9,19] as all rooms
 					// have been shifted to the right
 					updateEvent = &EventData{
-						event:  toRoom.LastEvent.JSON,
+						event:  toRoom.LastEventJSON,
 						roomID: toRoom.RoomID,
 					}
 				}

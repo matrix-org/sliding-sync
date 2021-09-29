@@ -7,8 +7,6 @@ import (
 	"fmt"
 	"reflect"
 	"testing"
-
-	"github.com/matrix-org/sync-v3/state"
 )
 
 type connStateStoreMock struct {
@@ -182,13 +180,7 @@ func TestConnStateMultipleRanges(t *testing.T) {
 			Name:   fmt.Sprintf("Room %d", i),
 			// room 1 is most recent, 10 is least recent
 			LastMessageTimestamp: timestampNow - int64(i*1000),
-			LastEvent: &state.Event{
-				NID:    int64(i),
-				Type:   "m.room.message",
-				ID:     fmt.Sprintf("$%d:localhost", i),
-				RoomID: roomID,
-				JSON:   []byte(`{}`),
-			},
+			LastEventJSON:        []byte(`{}`),
 		}
 		rooms = append(rooms, room)
 		roomIDs = append(roomIDs, roomID)

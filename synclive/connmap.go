@@ -120,7 +120,7 @@ func (m *ConnMap) LoadBaseline(roomIDToUserIDs map[string][]string) error {
 		}
 		room.LastMessageTimestamp = gjson.ParseBytes(latest.JSON).Get("origin_server_ts").Int()
 		// TODO: load last N events as a sliding window?
-		room.LastEvent = latest
+		room.LastEventJSON = latest.JSON
 		m.globalRoomInfo[room.RoomID] = room
 		for _, userID := range userIDs {
 			m.jrt.UserJoinedRoom(userID, roomID)
@@ -211,7 +211,9 @@ func (m *ConnMap) onNewEvent(
 	if eventType == "m.room.name" && stateKey != nil && *stateKey == "" {
 		globalRoom.Name = gjson.ParseBytes(event).Get("content.name").Str
 	}
-	globalRoom.LastMessageTimestamp = gjson.ParseBytes(event).Get("origin_server_ts").Int()
+	eventTimestamp := ev.Get("origin_server_ts").Int()
+	globalRoom.LastMessageTimestamp = eventTimestamp
+	globalRoom.LastEventJSON = event
 	m.globalRoomInfo[globalRoom.RoomID] = globalRoom
 	m.mu.Unlock()
 
@@ -222,7 +224,7 @@ func (m *ConnMap) onNewEvent(
 		stateKey:  stateKey,
 		content:   ev.Get("content"),
 		latestPos: latestPos,
-		timestamp: ev.Get("origin_server_ts").Int(),
+		timestamp: eventTimestamp,
 	}
 
 	// notify all people in this room
