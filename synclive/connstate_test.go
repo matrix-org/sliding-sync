@@ -4,8 +4,11 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"reflect"
 	"testing"
+
+	"github.com/matrix-org/sync-v3/state"
 )
 
 type connStateStoreMock struct {
@@ -160,6 +163,185 @@ func TestConnStateInitial(t *testing.T) {
 			},
 		},
 	})
+}
+
+func TestConnStateMultipleRanges(t *testing.T) {
+	connID := ConnID{
+		SessionID: "s",
+		DeviceID:  "d",
+	}
+	userID := "@alice:localhost"
+	timestampNow := int64(1632131678061)
+	var rooms []*SortableRoom
+	var roomIDs []string
+	roomIDToRoom := make(map[string]*SortableRoom)
+	for i := 0; i < 10; i++ {
+		roomID := fmt.Sprintf("!%d:localhost", i)
+		room := &SortableRoom{
+			RoomID: roomID,
+			Name:   fmt.Sprintf("Room %d", i),
+			// room 1 is most recent, 10 is least recent
+			LastMessageTimestamp: timestampNow - int64(i*1000),
+			LastEvent: &state.Event{
+				NID:    int64(i),
+				Type:   "m.room.message",
+				ID:     fmt.Sprintf("$%d:localhost", i),
+				RoomID: roomID,
+				JSON:   []byte(`{}`),
+			},
+		}
+		rooms = append(rooms, room)
+		roomIDs = append(roomIDs, roomID)
+		roomIDToRoom[roomID] = room
+	}
+
+	// initial sort order B, C, A
+	cs := NewConnState(userID, &connStateStoreMock{
+		userIDToJoinedRooms: map[string][]string{
+			userID: roomIDs,
+		},
+		roomIDToRoom: roomIDToRoom,
+	})
+
+	// request first page
+	res, err := cs.HandleIncomingRequest(context.Background(), connID, &Request{
+		Sort: []string{SortByRecency},
+		Rooms: SliceRanges([][2]int64{
+			{0, 2},
+		}),
+	})
+	if err != nil {
+		t.Fatalf("HandleIncomingRequest returned error : %s", err)
+	}
+	checkResponse(t, true, res, &Response{
+		Count: int64(len(rooms)),
+		Ops: []ResponseOp{
+			&ResponseOpRange{
+				Operation: "SYNC",
+				Range:     []int64{0, 2},
+				Rooms: []Room{
+					{
+						RoomID: roomIDs[0],
+					},
+					{
+						RoomID: roomIDs[1],
+					},
+					{
+						RoomID: roomIDs[2],
+					},
+				},
+			},
+		},
+	})
+	// add on a different non-overlapping range
+	res, err = cs.HandleIncomingRequest(context.Background(), connID, &Request{
+		Sort: []string{SortByRecency},
+		Rooms: SliceRanges([][2]int64{
+			{0, 2}, {4, 6},
+		}),
+	})
+	if err != nil {
+		t.Fatalf("HandleIncomingRequest returned error : %s", err)
+	}
+	checkResponse(t, true, res, &Response{
+		Count: int64(len(rooms)),
+		Ops: []ResponseOp{
+			&ResponseOpRange{
+				Operation: "SYNC",
+				Range:     []int64{4, 6},
+				Rooms: []Room{
+					{
+						RoomID: roomIDs[4],
+					},
+					{
+						RoomID: roomIDs[5],
+					},
+					{
+						RoomID: roomIDs[6],
+					},
+				},
+			},
+		},
+	})
+
+	// pull room 8 to position 0 should result in DELETE[6] and INSERT[0]
+	// 0,1,2,3,4,5,6,7,8,9
+	// `----`  `----`
+	// `    `  `    `
+	// 8,0,1,2,3,4,5,6,7,9
+	//
+	cs.PushNewEvent(&EventData{
+		event:     json.RawMessage(`{}`),
+		roomID:    roomIDs[8],
+		eventType: "unimportant",
+		timestamp: timestampNow + 2000,
+	})
+
+	res, err = cs.HandleIncomingRequest(context.Background(), connID, &Request{
+		Sort: []string{SortByRecency},
+		Rooms: SliceRanges([][2]int64{
+			{0, 2}, {4, 6},
+		}),
+	})
+	if err != nil {
+		t.Fatalf("HandleIncomingRequest returned error : %s", err)
+	}
+	checkResponse(t, true, res, &Response{
+		Count: int64(len(rooms)),
+		Ops: []ResponseOp{
+			&ResponseOpSingle{
+				Operation: "DELETE",
+				Index:     intPtr(6),
+			},
+			&ResponseOpSingle{
+				Operation: "INSERT",
+				Index:     intPtr(0),
+				Room: &Room{
+					RoomID: roomIDs[8],
+				},
+			},
+		},
+	})
+
+	// pull room 9 to position 3 should result in DELETE[6] and INSERT[4] with room 2
+	// 0,1,2,3,4,5,6,7,8,9 index
+	// 8,0,1,2,3,4,5,6,7,9 room
+	// `----`  `----`
+	// `    `  `    `
+	// 8,0,1,9,2,3,4,5,6,7 room
+	middleTimestamp := int64((roomIDToRoom[roomIDs[1]].LastMessageTimestamp + roomIDToRoom[roomIDs[2]].LastMessageTimestamp) / 2)
+	cs.PushNewEvent(&EventData{
+		event:     json.RawMessage(`{}`),
+		roomID:    roomIDs[9],
+		eventType: "unimportant",
+		timestamp: middleTimestamp,
+	})
+	res, err = cs.HandleIncomingRequest(context.Background(), connID, &Request{
+		Sort: []string{SortByRecency},
+		Rooms: SliceRanges([][2]int64{
+			{0, 2}, {4, 6},
+		}),
+	})
+	if err != nil {
+		t.Fatalf("HandleIncomingRequest returned error : %s", err)
+	}
+	checkResponse(t, true, res, &Response{
+		Count: int64(len(rooms)),
+		Ops: []ResponseOp{
+			&ResponseOpSingle{
+				Operation: "DELETE",
+				Index:     intPtr(6),
+			},
+			&ResponseOpSingle{
+				Operation: "INSERT",
+				Index:     intPtr(4),
+				Room: &Room{
+					RoomID: roomIDs[2],
+				},
+			},
+		},
+	})
+
 }
 
 func checkResponse(t *testing.T, checkRoomIDsOnly bool, got, want *Response) {

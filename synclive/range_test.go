@@ -216,6 +216,49 @@ func TestRangeLowerClamp(t *testing.T) {
 	}
 }
 
+func TestRangeUpperClamp(t *testing.T) {
+	testCases := []struct {
+		testRange SliceRanges
+		i         int64
+		clampVal  int64
+	}{
+		{
+			testRange: SliceRanges([][2]int64{
+				{10, 19},
+			}),
+			i:        6,
+			clampVal: 10,
+		},
+		{
+			testRange: SliceRanges([][2]int64{
+				{10, 19},
+			}),
+			i:        16,
+			clampVal: -1,
+		},
+		{
+			testRange: SliceRanges([][2]int64{
+				{10, 19}, {20, 29},
+			}),
+			i:        16,
+			clampVal: 20,
+		},
+		{
+			testRange: SliceRanges([][2]int64{
+				{20, 29}, {30, 39}, {40, 49}, {10, 19},
+			}),
+			i:        6,
+			clampVal: 10,
+		},
+	}
+	for _, tc := range testCases {
+		gotVal := tc.testRange.UpperClamp(tc.i)
+		if gotVal != tc.clampVal {
+			t.Errorf("%+v got LowerClamp %v want %v", tc, gotVal, tc.clampVal)
+		}
+	}
+}
+
 func TestRangeDelta(t *testing.T) {
 	testCases := []struct {
 		oldRange    SliceRanges

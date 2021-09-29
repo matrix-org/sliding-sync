@@ -220,14 +220,33 @@ func (s *ConnState) onIncomingRequest(ctx context.Context, req *Request) (*Respo
 					targetRoom.LastMessageTimestamp = updateEvent.timestamp
 					s.sortedJoinedRooms[fromIndex] = targetRoom
 				}
-
-				logger.Info().Int("from", fromIndex).Interface("room", targetRoom).Msg(
-					"moving room",
-				)
 				// re-sort
 				s.sort(nil)
 				toIndex := s.sortedJoinedRoomsPositions[updateEvent.roomID]
-				logger.Info().Int("to", toIndex).Msg("moved!")
+				logger.Info().Int("from", fromIndex).Int("to", toIndex).Interface("room", targetRoom).Msg("moved!")
+				// the toIndex may not be inside a tracked range. If it isn't, we actually need to notify about a
+				// different room
+				if !s.muxedReq.Rooms.Inside(int64(toIndex)) {
+					logger.Info().Msg("room isn't inside tracked range")
+					toIndex = int(s.muxedReq.Rooms.UpperClamp(int64(toIndex)))
+					if toIndex >= len(s.sortedJoinedRooms) {
+						// no room exists
+						logger.Warn().Int("to", toIndex).Int("size", len(s.sortedJoinedRooms)).Msg(
+							"cannot move to index, it's greater than the list of sorted rooms",
+						)
+						continue
+					}
+					// TODO inject last event if never seen before, else just room ID updateEvent = s.sortedJoinedRooms[toIndex].LastEvent
+					toRoom := s.sortedJoinedRooms[toIndex]
+					// fake an update event for this room.
+					// We do this because we are introducing a new room in the list because of this situation:
+					// tracking [10,20] and room 24 jumps to position 0, so now we are tracking [9,19] as all rooms
+					// have been shifted to the right
+					updateEvent = &EventData{
+						event:  toRoom.LastEvent.JSON,
+						roomID: toRoom.RoomID,
+					}
+				}
 
 				responseOperations = append(
 					responseOperations, s.moveRoom(updateEvent, fromIndex, toIndex, s.muxedReq.Rooms)...,

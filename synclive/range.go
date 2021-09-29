@@ -1,5 +1,7 @@
 package synclive
 
+import "math"
+
 type SliceRanges [][2]int64
 
 func (r SliceRanges) Valid() bool {
@@ -23,6 +25,24 @@ func (r SliceRanges) Inside(i int64) bool {
 		}
 	}
 	return false
+}
+
+// UpperClamp returns the start-index e.g [50,99] -> 50 of the first range higher than i.
+// If `i` is inside a range, returns -1.
+// E.g [50,99] i=30 -> 50, [50,99] i=55 -> -1
+func (r SliceRanges) UpperClamp(i int64) (clampIndex int64) {
+	clampIndex = math.MaxInt64 - 1
+	modified := false
+	for _, sr := range r {
+		if sr[0] > i && sr[0] < int64(clampIndex) {
+			clampIndex = sr[0]
+			modified = true
+		}
+	}
+	if !modified {
+		clampIndex = -1
+	}
+	return
 }
 
 // LowerClamp returns the end-index e.g [0,99] -> 99 of the first range lower than i.
