@@ -65,6 +65,29 @@ func TestStorageJoinedRoomsAfterPosition(t *testing.T) {
 	if len(bobJoinedRooms) != 3 {
 		t.Fatalf("JoinedRoomsAfterPosition for %s got %v rooms want %v", bob, len(bobJoinedRooms), 3)
 	}
+
+	// also test CurrentStateEventsInAllRooms
+	roomIDToCreateEvents, err := store.CurrentStateEventsInAllRooms([]string{"m.room.create"})
+	if err != nil {
+		t.Fatalf("CurrentStateEventsInAllRooms returned error: %s", err)
+	}
+	for roomID := range roomIDToEventMap {
+		if _, ok := roomIDToCreateEvents[roomID]; !ok {
+			t.Fatalf("CurrentStateEventsInAllRooms missed room ID %s", roomID)
+		}
+	}
+	for roomID := range roomIDToEventMap {
+		createEvents := roomIDToCreateEvents[roomID]
+		if createEvents == nil {
+			t.Errorf("CurrentStateEventsInAllRooms: unknown room %v", roomID)
+		}
+		if len(createEvents) != 1 {
+			t.Fatalf("CurrentStateEventsInAllRooms got %d events, want 1", len(createEvents))
+		}
+		if len(createEvents[0].JSON) < 20 { // make sure there's something here
+			t.Errorf("CurrentStateEventsInAllRooms: got wrong json for event, got %s", string(createEvents[0].JSON))
+		}
+	}
 }
 
 // Test the examples on VisibleEventNIDsBetween docs

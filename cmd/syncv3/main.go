@@ -3,6 +3,7 @@ package main
 import (
 	"flag"
 	"net/http"
+	_ "net/http/pprof"
 	"os"
 	"time"
 
@@ -23,6 +24,12 @@ func main() {
 		flag.Usage()
 		os.Exit(1)
 	}
+	// pprof
+	go func() {
+		if err := http.ListenAndServe(":6060", nil); err != nil {
+			panic(err)
+		}
+	}()
 	h, err := synclive.NewSyncLiveHandler(&sync2.HTTPClient{
 		Client: &http.Client{
 			Timeout: 5 * time.Minute,

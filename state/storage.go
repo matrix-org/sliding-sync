@@ -43,6 +43,40 @@ func (s *Storage) LatestTypingID() (int64, error) {
 	return s.TypingTable.SelectHighestID()
 }
 
+// Returns all current state events matching the event types given in all rooms. Returns a map of
+// room ID to events in that room.
+func (s *Storage) CurrentStateEventsInAllRooms(eventTypes []string) (map[string][]Event, error) {
+	eventTypesInt := make([]interface{}, len(eventTypes))
+	for i := range eventTypes {
+		eventTypesInt[i] = eventTypes[i]
+	}
+	query, args, err := sqlx.In(
+		`SELECT syncv3_events.room_id, syncv3_events.event_type, syncv3_events.state_key, syncv3_events.event FROM syncv3_events
+		WHERE syncv3_events.event_type IN (?)
+		AND syncv3_events.event_nid IN (
+			SELECT unnest(events) FROM syncv3_snapshots WHERE syncv3_snapshots.snapshot_id IN (SELECT current_snapshot_id FROM syncv3_rooms)
+		)`,
+		eventTypesInt,
+	)
+	if err != nil {
+		return nil, err
+	}
+	rows, err := s.accumulator.db.Query(s.accumulator.db.Rebind(query), args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	result := make(map[string][]Event)
+	for rows.Next() {
+		var ev Event
+		if err := rows.Scan(&ev.RoomID, &ev.Type, &ev.StateKey, &ev.JSON); err != nil {
+			return nil, err
+		}
+		result[ev.RoomID] = append(result[ev.RoomID], ev)
+	}
+	return result, nil
+}
+
 func (s *Storage) Accumulate(roomID string, timeline []json.RawMessage) (int, int64, error) {
 	return s.accumulator.Accumulate(roomID, timeline)
 }
