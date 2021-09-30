@@ -9,7 +9,6 @@
             let allRooms = {};
             let allRoomsCount = 0;
             const roomIdToRoom = {};
-            const roomIdToDiv = {}; // cached innerHTML 
 
             let debounceTimeoutId;
             let visibleIndexes = {};
@@ -60,50 +59,78 @@
                 threshold: [0],
             });
 
-            const render = (container) => {
-                // TODO: don't nuke all cells
-                while (container.firstChild) {
-                    container.removeChild(container.firstChild);
+            const onRoomClick = (e) => {
+                let index = -1;
+                // walk up the pointer event path until we find a room## id=
+                for (let i = 0; i < e.path.length; i++) {
+                    if (e.path[i].id && e.path[i].id.startsWith("room")) {
+                        index = Number(e.path[i].id.substr("room".length));
+                    }
                 }
-                for (let i = 0; i < allRoomsCount; i++) {
+                if (index === -1) {
+                    console.log("failed to find room for onclick");
+                    return;
+                }
+                console.log(allRooms[index]);
+            }
+
+            const render = (container) => {
+                let addCount = 0;
+                let removeCount = 0;
+                // ensure we have the right number of children, remove or add appropriately.
+                while (container.childElementCount > allRoomsCount) {
+                    intersectionObserver.unobserve(container.firstChild);
+                    container.removeChid(container.firstChild);
+                    removeCount += 1;
+                }
+                for (let i = container.childElementCount; i < allRoomsCount; i++) {
                     const template = document.getElementById("roomCellTemplate");
                     // https://developer.mozilla.org/en-US/docs/Web/HTML/Element/template#avoiding_documentfragment_pitfall
                     const roomCell = template.content.firstElementChild.cloneNode(true);
                     roomCell.setAttribute("id", "room"+i);
-
+                    // placeholder
+                    roomCell.getElementsByClassName("roomname")[0].textContent = randomName(i, false);
+                    roomCell.getElementsByClassName("roomcontent")[0].textContent = randomName(i, true);
+                    roomCell.getElementsByClassName("roominfo")[0].style = "filter: blur(5px);";
+                    container.appendChild(roomCell);
+                    intersectionObserver.observe(roomCell);
+                    roomCell.addEventListener("click", onRoomClick);
+                    addCount += 1;
+                }
+                if (addCount > 0 || removeCount > 0) {
+                    console.log("render: added ", addCount, "nodes, removed", removeCount, "nodes");
+                }
+                window.cc = container;
+                // loop all elements and modify the contents
+                for (let i = 0; i < container.children.length; i++) {
+                    const roomCell = container.children[i];
                     const r = allRooms[i];
                     if (!r) {
                         // placeholder
-                        roomCell.getElementsByClassName("roomName")[0].textContent = randomName(i, false);
-                        roomCell.getElementsByClassName("roomContent")[0].textContent = randomName(i, true);
-                        roomCell.getElementsByClassName("roomInfo")[0].style = "filter: blur(5px);";
-                        container.appendChild(roomCell);
-                        intersectionObserver.observe(roomCell);
+                        roomCell.getElementsByClassName("roomname")[0].textContent = randomName(i, false);
+                        roomCell.getElementsByClassName("roomcontent")[0].textContent = randomName(i, true);
+                        roomCell.getElementsByClassName("roominfo")[0].style = "filter: blur(5px);";
                         continue;
                     }
+                    roomCell.getElementsByClassName("roominfo")[0].style = "";
                     roomIdToRoom[r.room_id] = r;
-                    
-                    roomCell.addEventListener("click", (e) => {
-                        console.log(r, e);
-                    });
-                    roomIdToDiv[r.room_id] = roomCell;
-                    roomCell.getElementsByClassName("roomName")[0].textContent = r.name || r.room_id;
+                    roomCell.getElementsByClassName("roomname")[0].textContent = r.name || r.room_id;
                     if (r.timeline && r.timeline.length > 0) {
                         const mostRecentEvent = r.timeline[r.timeline.length-1];
-                        roomCell.getElementsByClassName("roomSender")[0].textContent = mostRecentEvent.sender;
+                        roomCell.getElementsByClassName("roomsender")[0].textContent = mostRecentEvent.sender;
                         const d = new Date(mostRecentEvent.origin_server_ts);
-                        roomCell.getElementsByClassName("roomTimestamp")[0].textContent = (
+                        roomCell.getElementsByClassName("roomtimestamp")[0].textContent = (
                             d.toDateString() + " " + d.getHours() + ":" + d.getMinutes() + ":" + d.getSeconds()
                         );
 
                         if (mostRecentEvent.type === "m.room.message") {
-                            roomCell.getElementsByClassName("roomContent")[0].textContent = mostRecentEvent.content.body;
+                            roomCell.getElementsByClassName("roomcontent")[0].textContent = mostRecentEvent.content.body;
                         } else if (mostRecentEvent.type) {
-                            roomCell.getElementsByClassName("roomContent")[0].textContent = mostRecentEvent.type + " event";
+                            roomCell.getElementsByClassName("roomcontent")[0].textContent = mostRecentEvent.type + " event";
                         }
+                    } else {
+                        roomCell.getElementsByClassName("roomcontent")[0].textContent = "";
                     }
-                    container.appendChild(roomCell);
-                    intersectionObserver.observe(roomCell);
                 }
             }
             const sleep = (ms) => {
@@ -255,12 +282,12 @@
             <template id="roomCellTemplate">
                 <div style="padding: 5px; display: flex; align-items: center; cursor: pointer; border-bottom: 1px solid #8d99a5; height: 40px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
                     <img src="/client/placeholder.svg" style="width: 32px; height: 32px; margin-right: 6px;"/>
-                    <div class="roomInfo">
-                        <span class="roomName">Placeholder Room Name</span>
-                        <span class="roomTimestamp" style="color: #737d8c;">11/06/1999</span>
+                    <div class="roominfo">
+                        <span class="roomname">Placeholder Room Name</span>
+                        <span class="roomtimestamp" style="color: #737d8c;">11/06/1999</span>
                         <div>
-                            <span class="roomSender" style="color: #737d8c;">Alice</span>
-                            <span class="roomContent">Lorem Ipsum Dolor...</span>
+                            <span class="roomsender" style="color: #737d8c;">Alice</span>
+                            <span class="roomcontent">Lorem Ipsum Dolor...</span>
                         </div>
                     </div>
                 </div>
