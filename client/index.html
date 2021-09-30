@@ -39,11 +39,18 @@
                             endIndex = i;
                         }
                     });
+                    // we don't need to request rooms between 0,20 as we always have a filter for this
+                    if (endIndex <= 20) {
+                        return;
+                    }
+                    // ensure we don't overlap with the 0,20 range
+                    if (startIndex < 20) {
+                        startIndex = 20;
+                    }
                     // buffer range
                     const bufferRange = 5;
                     startIndex = (startIndex - bufferRange) < 0 ? 0 : (startIndex - bufferRange);
                     endIndex = (endIndex + bufferRange) >= allRoomsCount ? allRoomsCount-1 : (endIndex + bufferRange);
-
 
                     activeRanges[1] = [startIndex, endIndex];
                     activeAbortController.abort();
