@@ -126,6 +126,9 @@
 
                         if (mostRecentEvent.type === "m.room.message") {
                             roomCell.getElementsByClassName("roomcontent")[0].textContent = mostRecentEvent.content.body;
+                        } else if (mostRecentEvent.type === "m.room.member") {
+                            roomCell.getElementsByClassName("roomcontent")[0].textContent = "";
+                            roomCell.getElementsByClassName("roomsender")[0].textContent = membershipChangeText(mostRecentEvent);
                         } else if (mostRecentEvent.type) {
                             roomCell.getElementsByClassName("roomcontent")[0].textContent = mostRecentEvent.type + " event";
                         }
@@ -252,6 +255,36 @@
                 }
                 lastError = null;
                 return respBody;
+            }
+
+            const membershipChangeText = (ev) => {
+                const prevContent = (ev.unsigned || {}).prev_content || {};
+                const prevMembership = prevContent.membership || "leave";
+                const nowMembership = ev.content.membership;
+                if (nowMembership != prevMembership) {
+                    switch (nowMembership) {
+                        case "join":
+                            return ev.state_key + " joined the room";
+                        case "leave":
+                            return ev.state_key + " left the room";
+                        case "ban":
+                            return ev.sender + " banned " + ev.state_key + " from the room";
+                        case "invite":
+                            return ev.sender + " invited " + ev.state_key + " to the room";
+                        case "knock":
+                            return ev.state_key + " knocked on the room";
+                    }
+                }
+                if (nowMembership == prevMembership && nowMembership == "join") {
+                    // display name or avatar change
+                    if (prevContent.displayname !== ev.content.displayname) {
+                        return ev.state_key + " set their name to " + ev.content.displayname;
+                    }
+                    if (prevContent.avatar_url !== ev.content.avatar_url) {
+                        return ev.state_key + " changed their profile picture";
+                    }
+                }
+                return ev.type + " event";
             }
 
             const randomName = (i, long) => {
