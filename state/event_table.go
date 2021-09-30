@@ -248,6 +248,25 @@ func (t *EventTable) SelectLatestEventInRoom(txn *sqlx.Tx, roomID string, upperI
 	return &event, err
 }
 
+func (t *EventTable) SelectLatestEventInAllRooms() ([]Event, error) {
+	result := []Event{}
+	rows, err := t.db.Query(
+		`SELECT room_id, event FROM syncv3_events WHERE event_nid in (SELECT MAX(event_nid) FROM syncv3_events GROUP BY room_id)`,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var ev Event
+		if err := rows.Scan(&ev.RoomID, &ev.JSON); err != nil {
+			return nil, err
+		}
+		result = append(result, ev)
+	}
+	return result, nil
+}
+
 // Select all events between the bounds matching the type, state_key given.
 // Used to work out which rooms the user was joined to at a given point in time.
 func (t *EventTable) SelectEventsWithTypeStateKey(eventType, stateKey string, lowerExclusive, upperInclusive int64) ([]Event, error) {

@@ -94,53 +94,47 @@ func (m *ConnMap) GetOrCreateConn(cid ConnID, userID string) (*Conn, bool) {
 //   - OnNewEvents is called with the join event
 //   - join event is processed twice.
 func (m *ConnMap) LoadBaseline(roomIDToUserIDs map[string][]string) error {
-	latest, err := m.store.LatestEventNID()
+	// TODO: load last N events as a sliding window?
+	latestEvents, err := m.store.SelectLatestEventInAllRooms()
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to load latest event for all rooms: %s", err)
 	}
-	// first accumulate state events we care about for sync v3
+	// every room will be present here
+	for _, ev := range latestEvents {
+		room := &SortableRoom{
+			RoomID: ev.RoomID,
+		}
+		room.LastEventJSON = ev.JSON
+		room.LastMessageTimestamp = gjson.ParseBytes(ev.JSON).Get("origin_server_ts").Int()
+		m.globalRoomInfo[room.RoomID] = room
+	}
+	// load state events we care about for sync v3
 	roomIDToStateEvents, err := m.store.CurrentStateEventsInAllRooms([]string{
-		"m.room.name",
+		"m.room.name", "m.room.canonical_alias",
 	})
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to load state events for all rooms: %s", err)
 	}
 	for roomID, stateEvents := range roomIDToStateEvents {
-		room := &SortableRoom{
-			RoomID: roomID,
+		room := m.globalRoomInfo[roomID]
+		if room == nil {
+			return fmt.Errorf("room %s has no latest event but does have state; this should be impossible", roomID)
 		}
 		for _, ev := range stateEvents {
 			if ev.Type == "m.room.name" && ev.StateKey == "" {
 				room.Name = gjson.ParseBytes(ev.JSON).Get("content.name").Str
+			} else if ev.Type == "m.room.canonical_alias" && ev.StateKey == "" && room.Name == "" {
+				room.Name = gjson.ParseBytes(ev.JSON).Get("content.alias").Str
 			}
 		}
-
-		m.globalRoomInfo[room.RoomID] = room
+		m.globalRoomInfo[roomID] = room
+		fmt.Printf("Room: %s - %s - %s \n", room.RoomID, room.Name, time.Unix(room.LastMessageTimestamp/1000, 0))
 	}
 	// now loop all joined rooms, some of which may not be present in globalRoomInfo if they have no state
 	for roomID, userIDs := range roomIDToUserIDs {
 		for _, userID := range userIDs {
 			m.jrt.UserJoinedRoom(userID, roomID)
 		}
-		room := m.globalRoomInfo[roomID]
-		if room == nil {
-			// possible if there is no room name etc in this room
-			room = &SortableRoom{
-				RoomID: roomID,
-			}
-		}
-
-		latest, err := m.store.LatestEventInRoom(roomID, latest)
-		if err != nil {
-			return err
-		}
-		room.LastMessageTimestamp = gjson.ParseBytes(latest.JSON).Get("origin_server_ts").Int()
-		// TODO: load last N events as a sliding window?
-		room.LastEventJSON = latest.JSON
-
-		// re-assign in case this is a new room
-		m.globalRoomInfo[room.RoomID] = room
-		fmt.Printf("Room: %s - %s - %s \n", room.RoomID, room.Name, time.Unix(room.LastMessageTimestamp/1000, 0))
 	}
 	return nil
 }

@@ -43,6 +43,10 @@ func (s *Storage) LatestTypingID() (int64, error) {
 	return s.TypingTable.SelectHighestID()
 }
 
+func (s *Storage) SelectLatestEventInAllRooms() ([]Event, error) {
+	return s.accumulator.eventsTable.SelectLatestEventInAllRooms()
+}
+
 // Returns all current state events matching the event types given in all rooms. Returns a map of
 // room ID to events in that room.
 func (s *Storage) CurrentStateEventsInAllRooms(eventTypes []string) (map[string][]Event, error) {
