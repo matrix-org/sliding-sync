@@ -27,6 +27,7 @@ func (v *HTTPClient) WhoAmI(authHeader string) (string, error) {
 	if err != nil {
 		return "", err
 	}
+	req.Header.Set("User-Agent", "sync-v3-proxy")
 	req.Header.Set("Authorization", authHeader)
 	res, err := v.Client.Do(req)
 	if err != nil {
@@ -53,6 +54,7 @@ func (v *HTTPClient) DoSyncV2(authHeader, since string) (*SyncResponse, int, err
 	req, err := http.NewRequest(
 		"GET", v.DestinationServer+"/_matrix/client/r0/sync"+qps, nil,
 	)
+	req.Header.Set("User-Agent", "sync-v3-proxy")
 	req.Header.Set("Authorization", authHeader)
 	if err != nil {
 		return nil, 0, fmt.Errorf("DoSyncV2: NewRequest failed: %w", err)
