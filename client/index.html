@@ -2,6 +2,7 @@
     <head>
         <title>Sync v3 experiments</title>
         <script>
+            let lastError = null;
             let activeAbortController = new AbortController();
             let activeSessionId;
             let activeRanges = [[0,20]];
@@ -140,6 +141,7 @@
             const doSyncLoop = async(accessToken, sessionId) => {
                 console.log("Starting sync loop. Active: ", activeSessionId, " this:", sessionId);
                 let currentPos;
+                let currentError = null;
                 while (sessionId === activeSessionId) {
                     let resp;
                     try {
@@ -154,6 +156,12 @@
                     } catch (err) {
                         if (err.name !== "AbortError") {
                             console.error("/sync failed:",err);
+                            console.log("current", currentError, "last", lastError);
+                            if (currentError != lastError) {
+                                console.log("set!");
+                                document.getElementById("errorMsg").textContent = lastError ? lastError : "";
+                            }
+                            currentError = lastError;
                             await sleep(1000);
                         }
                     }
@@ -236,6 +244,13 @@
                 if (respBody.ops) {
                     console.log(respBody);
                 }
+                if (resp.status != 200) {
+                    if (respBody.error) {
+                        lastError = respBody.error;
+                    }
+                    throw new Error("/sync returned HTTP " + resp.status + " " + respBody.error);
+                }
+                lastError = null;
                 return respBody;
             }
 
@@ -285,6 +300,7 @@
             <input id="accessToken" type="password" placeholder="matrix.org access token" />
             <input id="syncButton" type="button" value="Sync" />
             <input id="resetButton" type="button" value="New Session" />
+            <span id="errorMsg"></span>
             <div id="listContainer" style="background: #f7f7f7;" ></div>
             <template id="roomCellTemplate">
                 <div style="padding: 5px; display: flex; align-items: center; cursor: pointer; border-bottom: 1px solid #8d99a5; height: 40px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">

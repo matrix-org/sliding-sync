@@ -218,7 +218,9 @@ func (m *ConnMap) onNewEvent(
 		}
 	}
 	if eventType == "m.room.name" && stateKey != nil && *stateKey == "" {
-		globalRoom.Name = gjson.ParseBytes(event).Get("content.name").Str
+		globalRoom.Name = ev.Get("content.name").Str
+	} else if eventType == "m.room.canonical_alias" && stateKey != nil && *stateKey == "" && globalRoom.Name == "" {
+		globalRoom.Name = ev.Get("content.alias").Str
 	}
 	eventTimestamp := ev.Get("origin_server_ts").Int()
 	globalRoom.LastMessageTimestamp = eventTimestamp
