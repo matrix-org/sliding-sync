@@ -120,7 +120,7 @@
                         roomCell.getElementsByClassName("roomsender")[0].textContent = mostRecentEvent.sender;
                         const d = new Date(mostRecentEvent.origin_server_ts);
                         roomCell.getElementsByClassName("roomtimestamp")[0].textContent = (
-                            d.toDateString() + " " + d.getHours() + ":" + d.getMinutes() + ":" + d.getSeconds()
+                            d.toDateString() + " " + zeroPad(d.getHours()) + ":" + zeroPad(d.getMinutes()) + ":" + zeroPad(d.getSeconds())
                         );
 
                         if (mostRecentEvent.type === "m.room.message") {
@@ -255,6 +255,13 @@
                 } else {
                     return long ? "Mr. Wizard, get me the hell out of here! " : "Morpheus";
                 }
+            }
+
+            const zeroPad = (n) => {
+                if (n < 10) {
+                    return "0" + n;
+                }
+                return n;
             }
 
             window.addEventListener('load', (event) => {
