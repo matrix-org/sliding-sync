@@ -228,7 +228,7 @@ func (s *ConnState) onIncomingRequest(ctx context.Context, req *Request) (*Respo
 				toIndex := s.sortedJoinedRoomsPositions[updateEvent.roomID]
 				logger.Info().Int("from", fromIndex).Int("to", toIndex).
 					Int64("prev_ts", lastTimestamp).Int64("event_ts", updateEvent.timestamp).
-					Interface("room", targetRoom).Msg("moved!")
+					Interface("room", targetRoom.RoomID).Msg("moved!")
 				// the toIndex may not be inside a tracked range. If it isn't, we actually need to notify about a
 				// different room
 				if !s.muxedReq.Rooms.Inside(int64(toIndex)) {
