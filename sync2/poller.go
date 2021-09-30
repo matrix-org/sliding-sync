@@ -118,7 +118,7 @@ func (p *Poller) Poll(since string, callback func()) {
 			}
 		}
 		failCount = 0
-		p.parseJoinResponse(resp)
+		p.parseRoomsResponse(resp)
 		if err = p.parseToDeviceMessages(resp); err != nil {
 			p.logger.Err(err).Str("since", since).Msg("Poller: V2DataReceiver failed to persist to-device messages. Terminating loop.")
 			p.Terminated = true
@@ -146,11 +146,7 @@ func (p *Poller) parseToDeviceMessages(res *SyncResponse) error {
 	return p.receiver.AddToDeviceMessages(p.userID, p.deviceID, res.ToDevice.Events)
 }
 
-func (p *Poller) parseJoinResponse(res *SyncResponse) {
-	if len(res.Rooms.Join) == 0 {
-		p.logger.Info().Msg("Poller: no rooms in join response")
-		return
-	}
+func (p *Poller) parseRoomsResponse(res *SyncResponse) {
 	stateCalls := 0
 	timelineCalls := 0
 	typingCalls := 0
@@ -186,6 +182,16 @@ func (p *Poller) parseJoinResponse(res *SyncResponse) {
 				if err != nil {
 					p.logger.Err(err).Str("room_id", roomID).Strs("user_ids", userIDs).Msg("Poller: V2DataReceiver failed to SetTyping")
 				}
+			}
+		}
+	}
+	for roomID, roomData := range res.Rooms.Leave {
+		// TODO: do we care about state?
+
+		if len(roomData.Timeline.Events) > 0 {
+			err := p.receiver.Accumulate(roomID, roomData.Timeline.Events)
+			if err != nil {
+				p.logger.Err(err).Str("room_id", roomID).Int("num_timeline_events", len(roomData.Timeline.Events)).Msg("Poller: V2DataReceiver.Accumulate left room failed")
 			}
 		}
 	}

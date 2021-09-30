@@ -276,6 +276,7 @@ func (s *ConnState) UserID() string {
 // 3 bumps to top -> 3,1,2,4,5 -> DELETE index=2, INSERT val=3 index=0
 // 7 bumps to top -> 7,1,2,3,4 -> DELETE index=4, INSERT val=7 index=0
 func (s *ConnState) moveRoom(updateEvent *EventData, fromIndex, toIndex int, ranges SliceRanges) []ResponseOp {
+	room := s.store.LoadRoom(updateEvent.roomID)
 	if fromIndex == toIndex {
 		// issue an UPDATE, nice and easy because we don't need to move entries in the list
 		return []ResponseOp{
@@ -284,7 +285,7 @@ func (s *ConnState) moveRoom(updateEvent *EventData, fromIndex, toIndex int, ran
 				Index:     &fromIndex,
 				Room: &Room{
 					RoomID: updateEvent.roomID,
-					Name:   s.sortedJoinedRooms[fromIndex].Name,
+					Name:   room.Name,
 					Timeline: []json.RawMessage{
 						updateEvent.event,
 					},
@@ -302,7 +303,6 @@ func (s *ConnState) moveRoom(updateEvent *EventData, fromIndex, toIndex int, ran
 		// to the highest end-range marker < index
 		deleteIndex = int(ranges.LowerClamp(int64(fromIndex)))
 	}
-	room := s.store.LoadRoom(updateEvent.roomID)
 	return []ResponseOp{
 		&ResponseOpSingle{
 			Operation: "DELETE",
