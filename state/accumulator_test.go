@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/jmoiron/sqlx"
+	"github.com/matrix-org/sync-v3/sync2"
 	"github.com/tidwall/gjson"
 )
 
@@ -311,5 +312,74 @@ func TestAccumulatorMembershipLogs(t *testing.T) {
 		if !reflect.DeepEqual(gotNIDs, tc.wantNIDs) {
 			t.Errorf("MembershipsBetween(%d,%d) got wrong nids, got %v want %v", tc.startExcl, tc.endIncl, gotNIDs, tc.wantNIDs)
 		}
+	}
+}
+
+// This was a bug in the wild on M's account, where the same state event is present in state/timeline
+// This is a bug in Synapse, but it shouldn't cause us to fall over.
+func TestAccumulatorDupeEvents(t *testing.T) {
+	data := `
+	{
+		"state": {
+			"events": [{
+				"content": {
+					"foo": "bar"
+				},
+				"origin_server_ts": 1632840448390,
+				"sender": "@alice:localhost",
+				"state_key": "something",
+				"type": "dupe",
+				"event_id": "$b"
+			}]
+		},
+		"timeline": {
+			"events": [{
+				"content": {
+					"body": "foo"
+				},
+				"origin_server_ts": 1631606550669,
+				"sender": "@alice:localhost",
+				"type": "first",
+				"event_id": "$a"
+			}, {
+				"content": {
+					"key": "unimportant"
+				},
+				"origin_server_ts": 1632132357344,
+				"sender": "@alice:localhost",
+				"state_key": "anything",
+				"type": "second",
+				"event_id": "$c"
+			}, {
+				"content": {
+					"foo": "bar"
+				},
+				"origin_server_ts": 1632840448390,
+				"sender": "@alice:localhost",
+				"state_key": "something",
+				"type": "dupe",
+				"event_id": "$b"
+			}]
+		}
+	}`
+	var joinRoom sync2.SyncV2JoinResponse
+	if err := json.Unmarshal([]byte(data), &joinRoom); err != nil {
+		t.Fatalf("failed to unmarshal: %s", err)
+	}
+
+	db, err := sqlx.Open("postgres", postgresConnectionString)
+	if err != nil {
+		t.Fatalf("failed to open SQL db: %s", err)
+	}
+	accumulator := NewAccumulator(db)
+	roomID := "!buggy:localhost"
+	_, err = accumulator.Initialise(roomID, joinRoom.State.Events)
+	if err != nil {
+		t.Fatalf("failed to Initialise accumulator: %s", err)
+	}
+
+	_, _, err = accumulator.Accumulate(roomID, joinRoom.Timeline.Events)
+	if err != nil {
+		t.Fatalf("failed to Accumulate: %s", err)
 	}
 }

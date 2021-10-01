@@ -241,6 +241,73 @@ func TestEventTableNullValue(t *testing.T) {
 	}
 }
 
+func TestEventTableDupeInsert(t *testing.T) {
+	db, err := sqlx.Open("postgres", postgresConnectionString)
+	if err != nil {
+		t.Fatalf("failed to open SQL db: %s", err)
+	}
+	// first insert
+	txn, err := db.Beginx()
+	if err != nil {
+		t.Fatalf("failed to start txn: %s", err)
+	}
+	roomID := "!TestEventTableDupeInsert:localhost"
+	table := NewEventTable(db)
+	originalJSON := []byte(`{"event_id":"dupeevent", "state_key":"foo", "type":"bar", "room_id":"` + roomID + `"}`)
+	events := []Event{
+		{
+			JSON:   originalJSON,
+			RoomID: roomID,
+		},
+	}
+	numNew, err := table.Insert(txn, events)
+	if err != nil {
+		t.Fatalf("Insert failed: %s", err)
+	}
+	if numNew != len(events) {
+		t.Fatalf("wanted %d new events, got %d", len(events), numNew)
+	}
+
+	// pull out the nid
+	nids, err := table.SelectNIDsByIDs(txn, []string{"dupeevent"})
+	if err != nil {
+		t.Fatalf("SelectNIDsByIDs: %s", err)
+	}
+	nid := nids[0]
+	txn.Commit()
+
+	// now insert again
+	txn, err = db.Beginx()
+	if err != nil {
+		t.Fatalf("failed to start txn: %s", err)
+	}
+	events = []Event{
+		{
+			JSON:   originalJSON,
+			RoomID: roomID,
+		},
+	}
+	numNew, err = table.Insert(txn, events)
+	if err != nil {
+		t.Fatalf("Insert failed: %s", err)
+	}
+	if numNew != 0 {
+		t.Fatalf("wanted 0 new events, got %d", numNew)
+	}
+
+	// pull out the nid
+	nids, err = table.SelectNIDsByIDs(txn, []string{"dupeevent"})
+	if err != nil {
+		t.Fatalf("SelectNIDsByIDs: %s", err)
+	}
+	nid2 := nids[0]
+	txn.Commit()
+
+	if nid != nid2 {
+		t.Fatalf("nid mismatch, got %v want %v", nid2, nid)
+	}
+}
+
 func TestEventTableSelectEventsBetween(t *testing.T) {
 	db, err := sqlx.Open("postgres", postgresConnectionString)
 	if err != nil {
