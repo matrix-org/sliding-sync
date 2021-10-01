@@ -1,6 +1,7 @@
 package state
 
 import (
+	"bytes"
 	"testing"
 
 	"github.com/jmoiron/sqlx"
@@ -196,6 +197,47 @@ func TestEventTable(t *testing.T) {
 		t.Fatalf("SelectStrippedEventsByIDs returned %d events, want 3", len(strippedEvents))
 	}
 	verifyStripped(strippedEvents)
+}
+
+func TestEventTableNullValue(t *testing.T) {
+	db, err := sqlx.Open("postgres", postgresConnectionString)
+	if err != nil {
+		t.Fatalf("failed to open SQL db: %s", err)
+	}
+	txn, err := db.Beginx()
+	if err != nil {
+		t.Fatalf("failed to start txn: %s", err)
+	}
+	roomID := "!0:localhost"
+	table := NewEventTable(db)
+	// `state_key` has a null byte value, but `type` has an escaped literal "\u0000". Ensure the former is culled but the latter is not.
+	originalJSON := []byte(`{"event_id":"nullevent", "state_key":"foo", "null":"\u0000", "type": "\\u0000", "room_id":"` + roomID + `"}`)
+	events := []Event{
+		{
+			ID:   "nullevent",
+			JSON: originalJSON,
+		},
+	}
+	numNew, err := table.Insert(txn, events)
+	if err != nil {
+		t.Fatalf("Insert failed: %s", err)
+	}
+	if numNew != len(events) {
+		t.Fatalf("wanted %d new events, got %d", len(events), numNew)
+	}
+	gotEvents, err := table.SelectByIDs(txn, true, []string{"nullevent"})
+	if err != nil {
+		t.Fatalf("SelectByIDs: %s", err)
+	}
+	if len(gotEvents) != 1 {
+		t.Fatalf("SelectByIDs: got %d events want 1", len(gotEvents))
+	}
+	if gotEvents[0].Type != `\u0000` {
+		t.Fatalf(`Escaped null byte didn't survive storage, got %s want \u0000`, gotEvents[0].Type)
+	}
+	if !bytes.Equal(gotEvents[0].JSON, originalJSON) {
+		t.Fatalf("event JSON was modified, \ngot  %v \nwant %v", string(gotEvents[0].JSON), string(originalJSON))
+	}
 }
 
 func TestEventTableSelectEventsBetween(t *testing.T) {

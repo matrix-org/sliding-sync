@@ -61,7 +61,7 @@ func NewEventTable(db *sqlx.DB) *EventTable {
 		room_id TEXT NOT NULL,
 		event_type TEXT NOT NULL,
 		state_key TEXT NOT NULL,
-		event JSONB NOT NULL
+		event BYTEA NOT NULL
 	);
 	-- index for querying all joined rooms for a given user
 	CREATE INDEX IF NOT EXISTS syncv3_events_type_sk_idx ON syncv3_events(event_type, state_key);
@@ -114,6 +114,7 @@ func (t *EventTable) Insert(txn *sqlx.Tx, events []Event) (int, error) {
 			// valid for this to be "" on message events
 			ev.StateKey = evJSON.Get("state_key").Str
 		}
+
 		events[i] = ev
 	}
 	chunks := sqlutil.Chunkify(6, 65535, EventChunker(events))
