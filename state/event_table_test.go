@@ -208,6 +208,7 @@ func TestEventTableNullValue(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to start txn: %s", err)
 	}
+	defer txn.Rollback()
 	roomID := "!0:localhost"
 	table := NewEventTable(db)
 	// `state_key` has a null byte value, but `type` has an escaped literal "\u0000". Ensure the former is culled but the latter is not.
