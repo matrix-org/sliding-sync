@@ -1,4 +1,4 @@
-package synclive
+package sync3
 
 import (
 	"encoding/json"
@@ -33,7 +33,7 @@ type SyncLiveHandler struct {
 	ConnMap   *ConnMap
 }
 
-func NewSyncLiveHandler(v2Client sync2.Client, postgresDBURI string) (*SyncLiveHandler, error) {
+func NewSync3Handler(v2Client sync2.Client, postgresDBURI string) (*SyncLiveHandler, error) {
 	sh := &SyncLiveHandler{
 		V2:      v2Client,
 		Storage: state.NewStorage(postgresDBURI),

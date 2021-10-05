@@ -1,4 +1,4 @@
-package synclive
+package sync3
 
 type Response struct {
 	Ops []ResponseOp `json:"ops"`

@@ -1,4 +1,4 @@
-package synclive
+package sync3
 
 import (
 	"context"
