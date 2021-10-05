@@ -72,7 +72,10 @@
                     console.log("failed to find room for onclick");
                     return;
                 }
+                const room = allRooms[index];
                 console.log(allRooms[index]);
+                document.getElementById("selectedroomname").textContent = room.name;
+                
             }
 
             const render = (container) => {
@@ -81,7 +84,7 @@
                 // ensure we have the right number of children, remove or add appropriately.
                 while (container.childElementCount > allRoomsCount) {
                     intersectionObserver.unobserve(container.firstChild);
-                    container.removeChid(container.firstChild);
+                    container.removeChild(container.firstChild);
                     removeCount += 1;
                 }
                 for (let i = container.childElementCount; i < allRoomsCount; i++) {
@@ -101,7 +104,6 @@
                 if (addCount > 0 || removeCount > 0) {
                     console.log("render: added ", addCount, "nodes, removed", removeCount, "nodes");
                 }
-                window.cc = container;
                 // loop all elements and modify the contents
                 for (let i = 0; i < container.children.length; i++) {
                     const roomCell = container.children[i];
@@ -328,22 +330,30 @@
             });
         </script>
     </head>
-    <body>
+    <body style="font-family: Arial, Helvetica, sans-serif;">
         <div style="max-width: 960px; margin: 0 auto">
-            <input id="accessToken" type="password" placeholder="matrix.org access token" />
-            <input id="syncButton" type="button" value="Sync" />
-            <input id="resetButton" type="button" value="New Session" />
-            <span id="errorMsg"></span>
-            <div id="listContainer" style="background: #f7f7f7;" ></div>
+            <div style="float: top; margin: 5px;">
+                <input id="accessToken" type="password" placeholder="matrix.org access token" />
+                <input id="syncButton" type="button" value="Sync" />
+                <input id="resetButton" type="button" value="New Session" />
+                <span id="errorMsg"></span>
+            </div>
+            <div style="background: #f7f7f7;">
+                <div id="listContainer" style="float: left; overflow: scroll; height: 100%; max-width: 500px; background: #f7f7f7;" ></div>
+                <div id="roomContainer" style="margin: 5px;  background: #f7f7f7;">
+                    <img src="/client/placeholder.svg" style="width: 32px; height: 32px; margin-right: 6px;"/>
+                    <span id="selectedroomname">Select a room</span>
+                </div>
+            </div>
             <template id="roomCellTemplate">
-                <div style="padding: 5px; display: flex; align-items: center; cursor: pointer; border-bottom: 1px solid #8d99a5; height: 40px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
+                <div style="padding: 5px; display: flex; align-items: center; cursor: pointer; border-bottom: 1px solid #8d99a5; border-right: 1px solid #8d99a5; height: 40px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
                     <img src="/client/placeholder.svg" style="width: 32px; height: 32px; margin-right: 6px;"/>
                     <div class="roominfo">
                         <span class="roomname">Placeholder Room Name</span>
-                        <span class="roomtimestamp" style="color: #737d8c;">11/06/1999</span>
+                        <span class="roomtimestamp" style="color: #737d8c; font-size: small;">11/06/1999</span>
                         <div>
-                            <span class="roomsender" style="color: #737d8c;">Alice</span>
-                            <span class="roomcontent">Lorem Ipsum Dolor...</span>
+                            <span class="roomsender" style="color: #737d8c; font-size: small;">Alice</span>
+                            <span class="roomcontent" style="font-size: small;">Lorem Ipsum Dolor...</span>
                         </div>
                     </div>
                 </div>
