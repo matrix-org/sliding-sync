@@ -26,6 +26,16 @@ func (s *connStateStoreMock) Load(userID string) (joinedRoomIDs []string, initia
 	}
 	return
 }
+func (s *connStateStoreMock) PushNewEvent(cs *ConnState, ed *EventData) {
+	room := s.roomIDToRoom[ed.roomID]
+	room.LastEventJSON = ed.event
+	room.LastMessageTimestamp = ed.timestamp
+	if ed.eventType == "m.room.name" {
+		room.Name = ed.content.Get("name").Str
+	}
+	s.roomIDToRoom[ed.roomID] = room
+	cs.PushNewEvent(ed)
+}
 
 // Sync an account with 3 rooms and check that we can grab all rooms and they are sorted correctly initially. Checks
 // that basic UPDATE and DELETE/INSERT works when tracking all rooms.
@@ -40,7 +50,7 @@ func TestConnStateInitial(t *testing.T) {
 	roomC := "!c:localhost"
 	timestampNow := int64(1632131678061)
 	// initial sort order B, C, A
-	cs := NewConnState(userID, &connStateStoreMock{
+	csm := &connStateStoreMock{
 		userIDToJoinedRooms: map[string][]string{
 			userID: {roomA, roomB, roomC},
 		},
@@ -61,7 +71,8 @@ func TestConnStateInitial(t *testing.T) {
 				LastMessageTimestamp: timestampNow - 4000,
 			},
 		},
-	})
+	}
+	cs := NewConnState(userID, csm)
 	if userID != cs.UserID() {
 		t.Fatalf("UserID returned wrong value, got %v want %v", cs.UserID(), userID)
 	}
@@ -99,7 +110,7 @@ func TestConnStateInitial(t *testing.T) {
 	})
 
 	// bump A to the top
-	cs.PushNewEvent(&EventData{
+	csm.PushNewEvent(cs, &EventData{
 		event:     json.RawMessage(`{}`),
 		roomID:    roomA,
 		eventType: "unimportant",
@@ -134,7 +145,7 @@ func TestConnStateInitial(t *testing.T) {
 	})
 
 	// another message should just update
-	cs.PushNewEvent(&EventData{
+	csm.PushNewEvent(cs, &EventData{
 		event:     json.RawMessage(`{}`),
 		roomID:    roomA,
 		eventType: "still unimportant",
@@ -188,12 +199,13 @@ func TestConnStateMultipleRanges(t *testing.T) {
 	}
 
 	// initial sort order B, C, A
-	cs := NewConnState(userID, &connStateStoreMock{
+	csm := &connStateStoreMock{
 		userIDToJoinedRooms: map[string][]string{
 			userID: roomIDs,
 		},
 		roomIDToRoom: roomIDToRoom,
-	})
+	}
+	cs := NewConnState(userID, csm)
 
 	// request first page
 	res, err := cs.HandleIncomingRequest(context.Background(), connID, &Request{
@@ -262,7 +274,7 @@ func TestConnStateMultipleRanges(t *testing.T) {
 	// `    `  `    `
 	// 8,0,1,2,3,4,5,6,7,9
 	//
-	cs.PushNewEvent(&EventData{
+	csm.PushNewEvent(cs, &EventData{
 		event:     json.RawMessage(`{}`),
 		roomID:    roomIDs[8],
 		eventType: "unimportant",
@@ -302,7 +314,7 @@ func TestConnStateMultipleRanges(t *testing.T) {
 	// `    `  `    `
 	// 8,0,1,9,2,3,4,5,6,7 room
 	middleTimestamp := int64((roomIDToRoom[roomIDs[1]].LastMessageTimestamp + roomIDToRoom[roomIDs[2]].LastMessageTimestamp) / 2)
-	cs.PushNewEvent(&EventData{
+	csm.PushNewEvent(cs, &EventData{
 		event:     json.RawMessage(`{}`),
 		roomID:    roomIDs[9],
 		eventType: "unimportant",
@@ -430,7 +442,7 @@ func TestConnStateRoomSubscriptions(t *testing.T) {
 		},
 	})
 	// room D gets a new event
-	cs.PushNewEvent(&EventData{
+	csm.PushNewEvent(cs, &EventData{
 		event:     json.RawMessage(`{}`),
 		roomID:    roomD,
 		eventType: "unimportant",
