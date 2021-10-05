@@ -12,7 +12,7 @@ var (
 	// The max number of events the client is eligible to read (unfiltered) which we are willing to
 	// buffer on this connection. Too large and we consume lots of memory. Too small and busy accounts
 	// will trip the connection knifing.
-	MaxPendingEventUpdates = 100
+	MaxPendingEventUpdates = 200
 )
 
 type ConnStateStore interface {
@@ -27,8 +27,8 @@ type ConnState struct {
 	muxedReq                   *Request
 	userID                     string
 	sortedJoinedRooms          SortableRooms
-	sortedJoinedRoomsPositions map[string]int   // room_id -> index in sortedJoinedRooms
-	roomSubscriptions          map[string]*Room // TODO
+	sortedJoinedRoomsPositions map[string]int // room_id -> index in sortedJoinedRooms
+	roomSubscriptions          map[string]RoomSubscription
 	initialLoadPosition        int64
 	// A channel which v2 poll loops use to send updates to, via the ConnMap.
 	// Consumed when the conn is read. There is a limit to how many updates we will store before
@@ -40,7 +40,7 @@ func NewConnState(userID string, store ConnStateStore) *ConnState {
 	return &ConnState{
 		store:                      store,
 		userID:                     userID,
-		roomSubscriptions:          make(map[string]*Room),
+		roomSubscriptions:          make(map[string]RoomSubscription),
 		sortedJoinedRoomsPositions: make(map[string]int),
 		updateEvents:               make(chan *EventData, MaxPendingEventUpdates), // TODO: customisable
 	}
@@ -124,14 +124,26 @@ func (s *ConnState) onIncomingRequest(ctx context.Context, req *Request) (*Respo
 		prevRange = s.muxedReq.Rooms
 		prevSort = s.muxedReq.Sort
 	}
+	var newSubs []string
+	var newUnsubs []string
 	if s.muxedReq == nil {
 		s.muxedReq = req
+		for roomID := range req.RoomSubscriptions {
+			newSubs = append(newSubs, roomID)
+		}
 	} else {
-		combinedReq, _, _ := s.muxedReq.ApplyDelta(req)
+		combinedReq, subs, unsubs := s.muxedReq.ApplyDelta(req)
 		s.muxedReq = combinedReq
+		newSubs = subs
+		newUnsubs = unsubs
 	}
 
-	// TODO: update room subscriptions
+	// start forming the response
+	response := &Response{
+		RoomSubscriptions: s.updateRoomSubscriptions(newSubs, newUnsubs),
+		Count:             int64(len(s.sortedJoinedRooms)),
+	}
+
 	// TODO: calculate the M values for N < M calcs
 
 	var responseOperations []ResponseOp
@@ -190,7 +202,7 @@ func (s *ConnState) onIncomingRequest(ctx context.Context, req *Request) (*Respo
 		})
 	}
 	// do live tracking if we haven't changed the range and we have nothing to tell the client yet
-	if same != nil && len(responseOperations) == 0 {
+	if same != nil && len(responseOperations) == 0 && len(response.RoomSubscriptions) == 0 {
 		// block until we get a new event, with appropriate timeout
 	blockloop:
 		for {
@@ -225,6 +237,18 @@ func (s *ConnState) onIncomingRequest(ctx context.Context, req *Request) (*Respo
 				}
 				// re-sort
 				s.sort(nil)
+
+				if _, ok := s.roomSubscriptions[updateEvent.roomID]; ok {
+					// there is a subscription for this room, so update the room subscription field
+					// TODO: optimise by only sending the room ID delta for index positions
+					// TODO: look for required state
+					response.RoomSubscriptions[updateEvent.roomID] = Room{
+						RoomID: updateEvent.roomID,
+						Timeline: []json.RawMessage{
+							updateEvent.event,
+						},
+					}
+				}
 				toIndex := s.sortedJoinedRoomsPositions[updateEvent.roomID]
 				logger.Info().Int("from", fromIndex).Int("to", toIndex).
 					Int64("prev_ts", lastTimestamp).Int64("event_ts", updateEvent.timestamp).
@@ -261,10 +285,36 @@ func (s *ConnState) onIncomingRequest(ctx context.Context, req *Request) (*Respo
 		}
 	}
 
-	return &Response{
-		Ops:   responseOperations,
-		Count: int64(len(s.sortedJoinedRooms)),
-	}, nil
+	response.Ops = responseOperations
+
+	return response, nil
+}
+
+func (s *ConnState) updateRoomSubscriptions(subs, unsubs []string) map[string]Room {
+	result := make(map[string]Room)
+	for _, roomID := range subs {
+		sub, ok := s.muxedReq.RoomSubscriptions[roomID]
+		if !ok {
+			logger.Warn().Str("room_id", roomID).Msg(
+				"room listed in subscriptions but there is no subscription information in the request, ignoring room subscription.",
+			)
+			continue
+		}
+		s.roomSubscriptions[roomID] = sub
+		// send initial room information
+		r := s.store.LoadRoom(roomID)
+		result[roomID] = Room{
+			RoomID: roomID,
+			Name:   r.Name,
+			Timeline: []json.RawMessage{
+				r.LastEventJSON,
+			},
+		}
+	}
+	for _, roomID := range unsubs {
+		delete(s.roomSubscriptions, roomID)
+	}
+	return result
 }
 
 func (s *ConnState) UserID() string {

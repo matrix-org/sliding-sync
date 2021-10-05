@@ -333,7 +333,160 @@ func TestConnStateMultipleRanges(t *testing.T) {
 			},
 		},
 	})
+}
 
+func TestConnStateRoomSubscriptions(t *testing.T) {
+	connID := ConnID{
+		SessionID: "s",
+		DeviceID:  "d",
+	}
+	userID := "@alice:localhost"
+	roomA := "!a:localhost"
+	roomB := "!b:localhost"
+	roomC := "!c:localhost"
+	roomD := "!d:localhost"
+	roomIDs := []string{roomA, roomB, roomC, roomD}
+	timestampNow := int64(1632131678061)
+	// initial sort order A,B,C,D
+	csm := &connStateStoreMock{
+		userIDToJoinedRooms: map[string][]string{
+			userID: roomIDs,
+		},
+		roomIDToRoom: map[string]*SortableRoom{
+			roomA: {
+				RoomID:               roomA,
+				Name:                 "Room A",
+				LastMessageTimestamp: timestampNow,
+				LastEventJSON:        json.RawMessage(fmt.Sprintf(`{"origin_server_ts":%d, "type":"m.room.message", "a":"yep"}`, timestampNow)),
+			},
+			roomB: {
+				RoomID:               roomB,
+				Name:                 "Room B",
+				LastMessageTimestamp: timestampNow - 2000,
+				LastEventJSON:        json.RawMessage(fmt.Sprintf(`{"origin_server_ts":%d, "type":"m.room.message", "b":"yep"}`, timestampNow-2000)),
+			},
+			roomC: {
+				RoomID:               roomC,
+				Name:                 "Room C",
+				LastMessageTimestamp: timestampNow - 4000,
+				LastEventJSON:        json.RawMessage(fmt.Sprintf(`{"origin_server_ts":%d, "type":"m.room.message", "c":"yep"}`, timestampNow-4000)),
+			},
+			roomD: {
+				RoomID:               roomD,
+				Name:                 "Room D",
+				LastMessageTimestamp: timestampNow - 6000,
+				LastEventJSON:        json.RawMessage(fmt.Sprintf(`{"origin_server_ts":%d, "type":"m.room.message", "d":"yep"}`, timestampNow-6000)),
+			},
+		},
+	}
+	cs := NewConnState(userID, csm)
+	// subscribe to room D
+	res, err := cs.HandleIncomingRequest(context.Background(), connID, &Request{
+		Sort: []string{SortByRecency},
+		RoomSubscriptions: map[string]RoomSubscription{
+			roomD: {
+				TimelineLimit: 20,
+			},
+		},
+		Rooms: SliceRanges([][2]int64{
+			{0, 1},
+		}),
+	})
+	if err != nil {
+		t.Fatalf("HandleIncomingRequest returned error : %s", err)
+	}
+	checkResponse(t, false, res, &Response{
+		Count: int64(len(roomIDs)),
+		RoomSubscriptions: map[string]Room{
+			roomD: {
+				RoomID: roomD,
+				Name:   "Room D",
+				Timeline: []json.RawMessage{
+					csm.roomIDToRoom[roomD].LastEventJSON,
+				},
+			},
+		},
+		Ops: []ResponseOp{
+			&ResponseOpRange{
+				Operation: "SYNC",
+				Range:     []int64{0, 1},
+				Rooms: []Room{
+					{
+						RoomID: roomIDs[0],
+						Name:   csm.roomIDToRoom[roomIDs[0]].Name,
+						Timeline: []json.RawMessage{
+							csm.roomIDToRoom[roomIDs[0]].LastEventJSON,
+						},
+					},
+					{
+						RoomID: roomIDs[1],
+						Name:   csm.roomIDToRoom[roomIDs[1]].Name,
+						Timeline: []json.RawMessage{
+							csm.roomIDToRoom[roomIDs[1]].LastEventJSON,
+						},
+					},
+				},
+			},
+		},
+	})
+	// room D gets a new event
+	cs.PushNewEvent(&EventData{
+		event:     json.RawMessage(`{}`),
+		roomID:    roomD,
+		eventType: "unimportant",
+		timestamp: timestampNow + 2000,
+	})
+	// we should get this message even though it's not in the range because we are subscribed to this room.
+	res, err = cs.HandleIncomingRequest(context.Background(), connID, &Request{
+		Sort: []string{SortByRecency},
+		Rooms: SliceRanges([][2]int64{
+			{0, 1},
+		}),
+	})
+	if err != nil {
+		t.Fatalf("HandleIncomingRequest returned error : %s", err)
+	}
+	checkResponse(t, false, res, &Response{
+		Count: int64(len(roomIDs)),
+		RoomSubscriptions: map[string]Room{
+			roomD: {
+				RoomID: roomD,
+				Timeline: []json.RawMessage{
+					json.RawMessage(`{}`),
+				},
+			},
+		},
+		// TODO: index markers as this new event should bump D into the tracked range
+	})
+
+	// now swap to room C
+	res, err = cs.HandleIncomingRequest(context.Background(), connID, &Request{
+		Sort: []string{SortByRecency},
+		RoomSubscriptions: map[string]RoomSubscription{
+			roomC: {
+				TimelineLimit: 20,
+			},
+		},
+		UnsubscribeRooms: []string{roomD},
+		Rooms: SliceRanges([][2]int64{
+			{0, 1},
+		}),
+	})
+	if err != nil {
+		t.Fatalf("HandleIncomingRequest returned error : %s", err)
+	}
+	checkResponse(t, false, res, &Response{
+		Count: int64(len(roomIDs)),
+		RoomSubscriptions: map[string]Room{
+			roomC: {
+				RoomID: roomC,
+				Name:   "Room C",
+				Timeline: []json.RawMessage{
+					csm.roomIDToRoom[roomC].LastEventJSON,
+				},
+			},
+		},
+	})
 }
 
 func checkResponse(t *testing.T, checkRoomIDsOnly bool, got, want *Response) {
@@ -385,6 +538,19 @@ func checkResponse(t *testing.T, checkRoomIDsOnly bool, got, want *Response) {
 				}
 				checkRoomsEqual(t, checkRoomIDsOnly, gotOpSingle.Room, wantOp.Room)
 			}
+		}
+	}
+	if len(want.RoomSubscriptions) > 0 {
+		if len(want.RoomSubscriptions) != len(got.RoomSubscriptions) {
+			t.Errorf("wrong number of room subs returned, got %d want %d", len(got.RoomSubscriptions), len(want.RoomSubscriptions))
+		}
+		for roomID, wantData := range want.RoomSubscriptions {
+			gotData, ok := got.RoomSubscriptions[roomID]
+			if !ok {
+				t.Errorf("wanted room subscription for %s but it was not returned", roomID)
+				continue
+			}
+			checkRoomsEqual(t, checkRoomIDsOnly, &gotData, &wantData)
 		}
 	}
 }
