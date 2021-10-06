@@ -2,6 +2,7 @@ let lastError = null;
 let activeAbortController = new AbortController();
 let activeSessionId;
 let activeRanges = [[0,20]];
+let activeRoomId = ""; // the room currently being viewed
 
 // this is the main data structure the client uses to remember and render rooms. Attach it to
 // the window to allow easy introspection.
@@ -91,9 +92,17 @@ const intersectionObserver = new IntersectionObserver((entries) => {
 });
 
 const renderMessage = (container, ev) => {
+    const eventIdKey = "msg" + ev.event_id;
+    // try to find the element. If it exists then don't re-render.
+    const existing = document.getElementById(eventIdKey);
+    if (existing) {
+        return;
+    }
+
     const template = document.getElementById("messagetemplate");
     // https://developer.mozilla.org/en-US/docs/Web/HTML/Element/template#avoiding_documentfragment_pitfall
     const msgCell = template.content.firstElementChild.cloneNode(true);
+    msgCell.setAttribute("id", eventIdKey);
     // placeholder
     msgCell.getElementsByClassName("msgsender")[0].textContent = ev.sender;
     let body = "";
@@ -118,26 +127,43 @@ const onRoomClick = (e) => {
     for (let i = 0; i < e.path.length; i++) {
         if (e.path[i].id && e.path[i].id.startsWith("room")) {
             index = Number(e.path[i].id.substr("room".length));
+            break;
         }
     }
     if (index === -1) {
         console.log("failed to find room for onclick");
         return;
     }
-    const roomId = rooms.roomIndexToRoomId[index];
-    console.log(roomId, rooms.roomIdToRoom[roomId]);
-    const room = rooms.roomIdToRoom[roomId];
-    document.getElementById("selectedroomname").textContent = room.name;
-    // wipe all message entries
-    const container = document.getElementById("messages")
-    while (container.hasChildNodes()) {
-        container.removeChild(container.firstChild);
+    // assign global state
+    activeRoomId = rooms.roomIndexToRoomId[index];
+    renderRoom(activeRoomId, true);
+};
+
+const renderRoom = (roomId, refresh) => {
+    if (roomId !== activeRoomId) {
+        return;
     }
+    const container = document.getElementById("messages");
+    if (refresh) {
+        document.getElementById("selectedroomname").textContent = "";
+        // wipe all message entries
+        while (container.hasChildNodes()) {
+            container.removeChild(container.firstChild);
+        }
+    }
+    let room = rooms.roomIdToRoom[activeRoomId];
+    if (!room) {
+        console.error("renderRoom: unknown active room ID ", activeRoomId);
+        return;
+    }
+    console.log(room);
+    document.getElementById("selectedroomname").textContent = room.name || room.room_id;
+    
     // insert timeline messages
     (room.timeline || []).forEach((ev) => {
         renderMessage(container, ev);
     });
-};
+}
 
 const render = (container) => {
     let addCount = 0;
@@ -274,8 +300,10 @@ const doSyncLoop = async(accessToken, sessionId) => {
                 }
                 accumulateRoomData(op.room, rooms.roomIdToRoom[op.room.room_id] !== undefined);
                 rooms.roomIndexToRoomId[op.index] = op.room.room_id;
+                renderRoom(op.room.room_id);
             } else if (op.op === "UPDATE") {
                 accumulateRoomData(op.room, true);
+                renderRoom(op.room.room_id);
             } else if (op.op === "SYNC") {
                 const startIndex = op.range[0];
                 for (let i = startIndex; i <= op.range[1]; i++) {
