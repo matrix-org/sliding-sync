@@ -70,6 +70,12 @@ const intersectionObserver = new IntersectionObserver((entries) => {
                 endIndex = i;
             }
         });
+        console.log("start", startIndex, "end", endIndex);
+        // buffer range
+        const bufferRange = 5;
+        startIndex = (startIndex - bufferRange) < 0 ? 0 : (startIndex - bufferRange);
+        endIndex = (endIndex + bufferRange) >= rooms.joinedCount ? rooms.joinedCount-1 : (endIndex + bufferRange);
+
         // we don't need to request rooms between 0,20 as we always have a filter for this
         if (endIndex <= 20) {
             return;
@@ -78,10 +84,6 @@ const intersectionObserver = new IntersectionObserver((entries) => {
         if (startIndex < 20) {
             startIndex = 20;
         }
-        // buffer range
-        const bufferRange = 5;
-        startIndex = (startIndex - bufferRange) < 0 ? 0 : (startIndex - bufferRange);
-        endIndex = (endIndex + bufferRange) >= rooms.joinedCount ? rooms.joinedCount-1 : (endIndex + bufferRange);
 
         activeRanges[1] = [startIndex, endIndex];
         activeAbortController.abort();
@@ -156,7 +158,6 @@ const renderRoom = (roomId, refresh) => {
         console.error("renderRoom: unknown active room ID ", activeRoomId);
         return;
     }
-    console.log(room);
     document.getElementById("selectedroomname").textContent = room.name || room.room_id;
     
     // insert timeline messages
@@ -264,9 +265,11 @@ const doSyncLoop = async(accessToken, sessionId) => {
         let gapIndex = -1;
         resp.ops.forEach((op) => {
             if (op.op === "DELETE") {
+                console.log("DELETE", op.index);
                 delete rooms.roomIndexToRoomId[op.index];
                 gapIndex = op.index;
             } else if (op.op === "INSERT") {
+                console.log("INSERT", op.index);
                 if (rooms.roomIndexToRoomId[op.index]) {
                     // something is in this space, shift items out of the way
                     if (gapIndex < 0) {
@@ -302,9 +305,11 @@ const doSyncLoop = async(accessToken, sessionId) => {
                 rooms.roomIndexToRoomId[op.index] = op.room.room_id;
                 renderRoom(op.room.room_id);
             } else if (op.op === "UPDATE") {
+                console.log("UPDATE", op.index);
                 accumulateRoomData(op.room, true);
                 renderRoom(op.room.room_id);
             } else if (op.op === "SYNC") {
+                console.log("SYNC", JSON.stringify(op.range));
                 const startIndex = op.range[0];
                 for (let i = startIndex; i <= op.range[1]; i++) {
                     const r = op.rooms[i - startIndex];
@@ -312,6 +317,7 @@ const doSyncLoop = async(accessToken, sessionId) => {
                     accumulateRoomData(r);
                 }
             } else if (op.op === "INVALIDATE") {
+                console.log("INVALIDATE", JSON.stringify(op.range));
                 const startIndex = op.range[0];
                 for (let i = startIndex; i <= op.range[1]; i++) {
                     delete rooms.roomIndexToRoomId[i];
