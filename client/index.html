@@ -16,8 +16,10 @@
                 <div id="listContainer" class="roomlist" ></div>
             </div>
             <div class="rightSide">
-                <img class="roomavatar" src="/client/placeholder.svg"/>
-                <span id="selectedroomname">Select a room</span>
+                <div class="roomheading">
+                    <img class="roomavatar" src="/client/placeholder.svg"/>
+                    <span id="selectedroomname">Select a room</span>
+                </div>
                 <div id="messages"></div>
             </div>
             <template id="roomCellTemplate">
@@ -35,8 +37,11 @@
             </template>
             <template id="messagetemplate">
                 <div>
-                    <span class="msgsender">Alice</span>
-                    <span class="msgcontent">Lorem Ipsum Dolor...</span>
+                    <div class="msgheader">
+                        <div class="msgsender">Alice</div>
+                        <div class="msgtimestamp">11/06/1999 11:22:33</div>
+                    </div>
+                    <div class="msgcontent">Lorem Ipsum Dolor...</div>
                 </div>
             </template>
         </div>

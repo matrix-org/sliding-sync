@@ -105,8 +105,8 @@ const renderMessage = (container, ev) => {
     // https://developer.mozilla.org/en-US/docs/Web/HTML/Element/template#avoiding_documentfragment_pitfall
     const msgCell = template.content.firstElementChild.cloneNode(true);
     msgCell.setAttribute("id", eventIdKey);
-    // placeholder
     msgCell.getElementsByClassName("msgsender")[0].textContent = ev.sender;
+    msgCell.getElementsByClassName("msgtimestamp")[0].textContent = formatTimestamp(ev.origin_server_ts);
     let body = "";
     switch (ev.type) {
         case "m.room.message":
@@ -139,6 +139,7 @@ const onRoomClick = (e) => {
     // assign global state
     activeRoomId = rooms.roomIndexToRoomId[index];
     renderRoomContent(activeRoomId, true);
+    render(document.getElementById("listContainer")); // get the highlight on the room
 };
 
 const renderRoomContent = (roomId, refresh) => {
@@ -198,17 +199,19 @@ const render = (container) => {
             roomCell.getElementsByClassName("roomname")[0].textContent = randomName(i, false);
             roomCell.getElementsByClassName("roomcontent")[0].textContent = randomName(i, true);
             roomCell.getElementsByClassName("roominfo")[0].style = "filter: blur(5px);";
+            roomCell.style = "";
             continue;
         }
+        roomCell.style = "";
         roomCell.getElementsByClassName("roominfo")[0].style = "";
         roomCell.getElementsByClassName("roomname")[0].textContent = r.name || r.room_id;
+        if (roomId === activeRoomId) {
+            roomCell.style = "background: #d7d7f7";
+        }
         if (r.timeline && r.timeline.length > 0) {
             const mostRecentEvent = r.timeline[r.timeline.length-1];
             roomCell.getElementsByClassName("roomsender")[0].textContent = mostRecentEvent.sender;
-            const d = new Date(mostRecentEvent.origin_server_ts);
-            roomCell.getElementsByClassName("roomtimestamp")[0].textContent = (
-                d.toDateString() + " " + zeroPad(d.getHours()) + ":" + zeroPad(d.getMinutes()) + ":" + zeroPad(d.getSeconds())
-            );
+            roomCell.getElementsByClassName("roomtimestamp")[0].textContent = formatTimestamp(mostRecentEvent.origin_server_ts);
 
             if (mostRecentEvent.type === "m.room.message") {
                 roomCell.getElementsByClassName("roomcontent")[0].textContent = mostRecentEvent.content.body;
@@ -225,6 +228,13 @@ const render = (container) => {
 }
 const sleep = (ms) => {
     return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+const formatTimestamp = (originServerTs) => {
+    const d = new Date(originServerTs);
+    return (
+        d.toDateString() + " " + zeroPad(d.getHours()) + ":" + zeroPad(d.getMinutes()) + ":" + zeroPad(d.getSeconds())
+    );
 }
 
 const doSyncLoop = async(accessToken, sessionId) => {

@@ -68,8 +68,21 @@ body {
     font-size: small;
 }
 
+.msgheader {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin: 5px 5px 0px 5px;
+}
+
 .msgsender {
-    color: #737d8c; font-size: small;
+    color: #737d8c;
+    font-size: small;
+}
+
+.msgtimestamp {
+    color: #737d8c;
+    font-size: x-small;
 }
 
 .msgcontent {
