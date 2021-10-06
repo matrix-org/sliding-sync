@@ -1,41 +1,42 @@
 <html>
     <head>
         <title>Sync v3 experiments</title>
+        <link rel="stylesheet" href="styles.css">
         <script src="index.js"></script>
     </head>
-    <body style="font-family: Arial, Helvetica, sans-serif;">
-        <div style="max-width: 960px; margin: 0 auto">
-            <div style="float: top; margin: 5px;">
+    <body>
+        <div class="page">
+            <div class="header">
                 <input id="accessToken" type="password" placeholder="matrix.org access token" />
                 <input id="syncButton" type="button" value="Sync" />
                 <input id="newsession" type="button" value="New Session" />
                 <span id="errorMsg"></span>
             </div>
-            <div style="background: #f7f7f7;">
-                <div id="listContainer" style="float: left; overflow: scroll; height: 90%; max-width: 500px; background: #f7f7f7; border-right: 1px solid #8d99a5;" ></div>
-                <div id="roomContainer" style="margin: 5px;  background: #f7f7f7;">
-                    <img src="/client/placeholder.svg" style="width: 32px; height: 32px; margin-right: 6px;"/>
+            <div class="content">
+                <div id="listContainer" class="roomlist" ></div>
+                <div id="roomContainer" class="roomcontainer">
+                    <img class="roomavatar" src="/client/placeholder.svg"/>
                     <span id="selectedroomname">Select a room</span>
                     <div id="messages"></div>
                 </div>
             </div>
             <template id="roomCellTemplate">
-                <div class="roomcell" style="padding: 5px; display: flex; align-items: center; cursor: pointer; border-bottom: 1px solid #8d99a5; height: 40px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
-                    <img src="/client/placeholder.svg" style="width: 32px; height: 32px; margin-right: 6px;"/>
+                <div class="roomcell">
+                    <img class="roomavatar" src="/client/placeholder.svg"/>
                     <div class="roominfo">
                         <span class="roomname">Placeholder Room Name</span>
-                        <span class="roomtimestamp" style="color: #737d8c; font-size: small;">11/06/1999</span>
+                        <span class="roomtimestamp">11/06/1999</span>
                         <div>
-                            <span class="roomsender" style="color: #737d8c; font-size: small;">Alice</span>
-                            <span class="roomcontent" style="font-size: small;">Lorem Ipsum Dolor...</span>
+                            <span class="roomsender">Alice</span>
+                            <span class="roomcontent">Lorem Ipsum Dolor...</span>
                         </div>
                     </div>
                 </div>
             </template>
             <template id="messagetemplate">
                 <div>
-                    <span class="msgsender" style="color: #737d8c; font-size: small;">Alice</span>
-                    <span class="msgcontent" style="font-size: small;">Lorem Ipsum Dolor...</span>
+                    <span class="msgsender">Alice</span>
+                    <span class="msgcontent">Lorem Ipsum Dolor...</span>
                 </div>
             </template>
         </div>

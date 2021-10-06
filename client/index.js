@@ -180,10 +180,6 @@ const render = (container) => {
         // https://developer.mozilla.org/en-US/docs/Web/HTML/Element/template#avoiding_documentfragment_pitfall
         const roomCell = template.content.firstElementChild.cloneNode(true);
         roomCell.setAttribute("id", "room"+i);
-        // placeholder
-        roomCell.getElementsByClassName("roomname")[0].textContent = randomName(i, false);
-        roomCell.getElementsByClassName("roomcontent")[0].textContent = randomName(i, true);
-        roomCell.getElementsByClassName("roominfo")[0].style = "filter: blur(5px);";
         container.appendChild(roomCell);
         intersectionObserver.observe(roomCell);
         roomCell.addEventListener("click", onRoomClick);

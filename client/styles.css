@@ -1,0 +1,71 @@
+body {
+    font-family: Arial, Helvetica, sans-serif;
+}
+
+.page {
+    max-width: 960px;
+    margin: 0 auto;
+}
+
+.header {
+    float: top;
+    margin: 5px;
+}
+
+.content {
+    background: #f7f7f7;
+}
+
+.roomlist {
+    float: left;
+    overflow: scroll;
+    height: 90%;
+    max-width: 500px;
+    background: #f7f7f7;
+    border-right: 1px solid #8d99a5;
+}
+
+.roomcontainer {
+    margin: 5px;
+    background: #f7f7f7;
+}
+
+.roomcell {
+    padding: 5px;
+    display: flex;
+    align-items: center;
+    cursor: pointer;
+    border-bottom: 1px solid #8d99a5;
+    height: 40px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.roomavatar {
+    width: 32px;
+    height: 32px;
+    margin-right: 6px;
+}
+
+.roomtimestamp {
+    color: #737d8c;
+    font-size: small;
+}
+
+.roomsender {
+    color: #737d8c;
+    font-size: small;
+}
+
+.roomcontent {
+    font-size: small;
+}
+
+.msgsender {
+    color: #737d8c; font-size: small;
+}
+
+.msgcontent {
+    font-size: small;
+}
