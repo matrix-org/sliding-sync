@@ -265,6 +265,12 @@ func (s *ConnState) onIncomingRequest(ctx context.Context, req *Request) (*Respo
 						)
 						continue
 					}
+					if toIndex == -1 {
+						logger.Warn().Int("from", fromIndex).Int("to", toIndex).Interface("ranges", s.muxedReq.Rooms).Msg(
+							"room moved but not in tracked ranges, ignoring",
+						)
+						continue
+					}
 					// TODO inject last event if never seen before, else just room ID updateEvent = s.sortedJoinedRooms[toIndex].LastEvent
 					toRoom := s.sortedJoinedRooms[toIndex]
 					// fake an update event for this room.

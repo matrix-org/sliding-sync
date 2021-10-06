@@ -12,7 +12,7 @@
                 <span id="errorMsg"></span>
             </div>
             <div style="background: #f7f7f7;">
-                <div id="listContainer" style="float: left; overflow: scroll; height: 100%; max-width: 500px; background: #f7f7f7;" ></div>
+                <div id="listContainer" style="float: left; overflow: scroll; height: 90%; max-width: 500px; background: #f7f7f7; border-right: 1px solid #8d99a5;" ></div>
                 <div id="roomContainer" style="margin: 5px;  background: #f7f7f7;">
                     <img src="/client/placeholder.svg" style="width: 32px; height: 32px; margin-right: 6px;"/>
                     <span id="selectedroomname">Select a room</span>
@@ -20,7 +20,7 @@
                 </div>
             </div>
             <template id="roomCellTemplate">
-                <div style="padding: 5px; display: flex; align-items: center; cursor: pointer; border-bottom: 1px solid #8d99a5; border-right: 1px solid #8d99a5; height: 40px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
+                <div class="roomcell" style="padding: 5px; display: flex; align-items: center; cursor: pointer; border-bottom: 1px solid #8d99a5; height: 40px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
                     <img src="/client/placeholder.svg" style="width: 32px; height: 32px; margin-right: 6px;"/>
                     <div class="roominfo">
                         <span class="roomname">Placeholder Room Name</span>

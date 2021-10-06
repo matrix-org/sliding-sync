@@ -138,10 +138,10 @@ const onRoomClick = (e) => {
     }
     // assign global state
     activeRoomId = rooms.roomIndexToRoomId[index];
-    renderRoom(activeRoomId, true);
+    renderRoomContent(activeRoomId, true);
 };
 
-const renderRoom = (roomId, refresh) => {
+const renderRoomContent = (roomId, refresh) => {
     if (roomId !== activeRoomId) {
         return;
     }
@@ -155,7 +155,7 @@ const renderRoom = (roomId, refresh) => {
     }
     let room = rooms.roomIdToRoom[activeRoomId];
     if (!room) {
-        console.error("renderRoom: unknown active room ID ", activeRoomId);
+        console.error("renderRoomContent: unknown active room ID ", activeRoomId);
         return;
     }
     document.getElementById("selectedroomname").textContent = room.name || room.room_id;
@@ -303,11 +303,11 @@ const doSyncLoop = async(accessToken, sessionId) => {
                 }
                 accumulateRoomData(op.room, rooms.roomIdToRoom[op.room.room_id] !== undefined);
                 rooms.roomIndexToRoomId[op.index] = op.room.room_id;
-                renderRoom(op.room.room_id);
+                renderRoomContent(op.room.room_id);
             } else if (op.op === "UPDATE") {
                 console.log("UPDATE", op.index);
                 accumulateRoomData(op.room, true);
-                renderRoom(op.room.room_id);
+                renderRoomContent(op.room.room_id);
             } else if (op.op === "SYNC") {
                 console.log("SYNC", JSON.stringify(op.range));
                 const startIndex = op.range[0];

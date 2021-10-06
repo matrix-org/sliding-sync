@@ -160,7 +160,6 @@ func (h *SyncLiveHandler) setupConnection(req *http.Request, syncReq *Request, c
 			}
 		}
 		if conn != nil {
-			log.Info().Str("conn_id", conn.ConnID.String()).Msg("found existing connection")
 			return conn, nil
 		}
 		// conn doesn't exist, we probably nuked it.
