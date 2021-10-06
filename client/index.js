@@ -2,10 +2,44 @@ let lastError = null;
 let activeAbortController = new AbortController();
 let activeSessionId;
 let activeRanges = [[0,20]];
-// rooms array is stored as a map since we just keep indices. E.g 0-99, 500-599, we don't want to have a 600 element array
-let allRooms = {};
-let allRoomsCount = 0;
-const roomIdToRoom = {};
+
+// this is the main data structure the client uses to remember and render rooms. Attach it to
+// the window to allow easy introspection.
+let rooms = {
+    // the total number of joined rooms according to the server, always >= len(roomIndexToRoomId)
+    joinedCount: 0,
+    // this map is never deleted and forms the persistent storage of the client
+    roomIdToRoom: {},
+    // the constantly changing sliding window ranges. Not an array for performance reasons
+    // E.g tracking ranges 0-99, 500-599, we don't want to have a 600 element array
+    roomIndexToRoomId: {},
+};
+window.rooms = rooms;
+const accumulateRoomData = (r, isUpdate) => {
+    let room = r;
+    if (isUpdate) {
+        // use what we already have, if any
+        let existingRoom = rooms.roomIdToRoom[r.room_id];
+        if (existingRoom) {
+            if (r.name) {
+                existingRoom.name = r.name;
+            }
+            if (r.highlight_count) {
+                existingRoom.highlight_count = r.highlight_count;
+            }
+            if (r.notification_count) {
+                existingRoom.notification_count = r.notification_count;
+            }
+            if (r.timeline) {
+                r.timeline.forEach((e) => {
+                    existingRoom.timeline.push(e);
+                });
+            }
+            room = existingRoom;
+        }
+    }
+    rooms.roomIdToRoom[room.room_id] = room;
+};
 
 let debounceTimeoutId;
 let visibleIndexes = {};
@@ -46,7 +80,7 @@ const intersectionObserver = new IntersectionObserver((entries) => {
         // buffer range
         const bufferRange = 5;
         startIndex = (startIndex - bufferRange) < 0 ? 0 : (startIndex - bufferRange);
-        endIndex = (endIndex + bufferRange) >= allRoomsCount ? allRoomsCount-1 : (endIndex + bufferRange);
+        endIndex = (endIndex + bufferRange) >= rooms.joinedCount ? rooms.joinedCount-1 : (endIndex + bufferRange);
 
         activeRanges[1] = [startIndex, endIndex];
         activeAbortController.abort();
@@ -90,8 +124,9 @@ const onRoomClick = (e) => {
         console.log("failed to find room for onclick");
         return;
     }
-    const room = allRooms[index];
-    console.log(allRooms[index]);
+    const roomId = rooms.roomIndexToRoomId[index];
+    console.log(roomId, rooms.roomIdToRoom[roomId]);
+    const room = rooms.roomIdToRoom[roomId];
     document.getElementById("selectedroomname").textContent = room.name;
     // wipe all message entries
     const container = document.getElementById("messages")
@@ -108,12 +143,12 @@ const render = (container) => {
     let addCount = 0;
     let removeCount = 0;
     // ensure we have the right number of children, remove or add appropriately.
-    while (container.childElementCount > allRoomsCount) {
+    while (container.childElementCount > rooms.joinedCount) {
         intersectionObserver.unobserve(container.firstChild);
         container.removeChild(container.firstChild);
         removeCount += 1;
     }
-    for (let i = container.childElementCount; i < allRoomsCount; i++) {
+    for (let i = container.childElementCount; i < rooms.joinedCount; i++) {
         const template = document.getElementById("roomCellTemplate");
         // https://developer.mozilla.org/en-US/docs/Web/HTML/Element/template#avoiding_documentfragment_pitfall
         const roomCell = template.content.firstElementChild.cloneNode(true);
@@ -133,7 +168,8 @@ const render = (container) => {
     // loop all elements and modify the contents
     for (let i = 0; i < container.children.length; i++) {
         const roomCell = container.children[i];
-        const r = allRooms[i];
+        const roomId = rooms.roomIndexToRoomId[i];
+        const r = rooms.roomIdToRoom[roomId];
         if (!r) {
             // placeholder
             roomCell.getElementsByClassName("roomname")[0].textContent = randomName(i, false);
@@ -142,7 +178,6 @@ const render = (container) => {
             continue;
         }
         roomCell.getElementsByClassName("roominfo")[0].style = "";
-        roomIdToRoom[r.room_id] = r;
         roomCell.getElementsByClassName("roomname")[0].textContent = r.name || r.room_id;
         if (r.timeline && r.timeline.length > 0) {
             const mostRecentEvent = r.timeline[r.timeline.length-1];
@@ -182,7 +217,7 @@ const doSyncLoop = async(accessToken, sessionId) => {
                 continue;
             }
             if (resp.count) {
-                allRoomsCount = resp.count;
+                rooms.joinedCount = resp.count;
             }
         } catch (err) {
             if (err.name !== "AbortError") {
@@ -203,10 +238,10 @@ const doSyncLoop = async(accessToken, sessionId) => {
         let gapIndex = -1;
         resp.ops.forEach((op) => {
             if (op.op === "DELETE") {
-                delete allRooms[op.index];
+                delete rooms.roomIndexToRoomId[op.index];
                 gapIndex = op.index;
             } else if (op.op === "INSERT") {
-                if (allRooms[op.index]) {
+                if (rooms.roomIndexToRoomId[op.index]) {
                     // something is in this space, shift items out of the way
                     if (gapIndex < 0) {
                         console.log("cannot work out where gap is, INSERT without previous DELETE!");
@@ -227,28 +262,31 @@ const doSyncLoop = async(accessToken, sessionId) => {
                         // [A,A,B,C] i=1
                         // Terminate. We'll assign into op.index next.
                         for (let i = gapIndex; i > op.index; i--) {
-                            allRooms[i] = allRooms[i-1];
+                            rooms.roomIndexToRoomId[i] = rooms.roomIndexToRoomId[i-1];
                         }
                     } else if (gapIndex < op.index) {
                         // the gap is further up the list, shift every element to the left
                         // starting at the gap so we can just shift each element in turn
                         for (let i = gapIndex; i < op.index; i++) {
-                            allRooms[i] = allRooms[i+1];
+                            rooms.roomIndexToRoomId[i] = rooms.roomIndexToRoomId[i+1];
                         }
                     }
                 }
-                allRooms[op.index] = op.room;
+                accumulateRoomData(op.room, rooms.roomIdToRoom[op.room.room_id] !== undefined);
+                rooms.roomIndexToRoomId[op.index] = op.room.room_id;
             } else if (op.op === "UPDATE") {
-                allRooms[op.index] = op.room;
+                accumulateRoomData(op.room, true);
             } else if (op.op === "SYNC") {
                 const startIndex = op.range[0];
                 for (let i = startIndex; i <= op.range[1]; i++) {
-                    allRooms[i] = op.rooms[i - startIndex];
+                    const r = op.rooms[i - startIndex];
+                    rooms.roomIndexToRoomId[i] = r.room_id;
+                    accumulateRoomData(r);
                 }
             } else if (op.op === "INVALIDATE") {
                 const startIndex = op.range[0];
                 for (let i = startIndex; i <= op.range[1]; i++) {
-                    delete allRooms[i];
+                    delete rooms.roomIndexToRoomId[i];
                 }
             }
         });
