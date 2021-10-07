@@ -235,10 +235,11 @@ func (s *ConnState) onIncomingRequest(ctx context.Context, req *Request) (*Respo
 				// re-sort
 				s.sort(nil)
 
+				isSubscribedToRoom := false
 				if _, ok := s.roomSubscriptions[updateEvent.roomID]; ok {
 					// there is a subscription for this room, so update the room subscription field
-					// TODO: optimise by only sending the room ID delta for index positions
 					response.RoomSubscriptions[updateEvent.roomID] = *s.getDeltaRoomData(updateEvent)
+					isSubscribedToRoom = true
 				}
 				toIndex := s.sortedJoinedRoomsPositions[updateEvent.roomID]
 				logger.Info().Int("from", fromIndex).Int("to", toIndex).
@@ -275,7 +276,7 @@ func (s *ConnState) onIncomingRequest(ctx context.Context, req *Request) (*Respo
 				}
 
 				responseOperations = append(
-					responseOperations, s.moveRoom(updateEvent, fromIndex, toIndex, s.muxedReq.Rooms)...,
+					responseOperations, s.moveRoom(updateEvent, fromIndex, toIndex, s.muxedReq.Rooms, isSubscribedToRoom)...,
 				)
 				break blockloop
 			}
@@ -340,14 +341,20 @@ func (s *ConnState) UserID() string {
 // 1,2,3,4,5
 // 3 bumps to top -> 3,1,2,4,5 -> DELETE index=2, INSERT val=3 index=0
 // 7 bumps to top -> 7,1,2,3,4 -> DELETE index=4, INSERT val=7 index=0
-func (s *ConnState) moveRoom(updateEvent *EventData, fromIndex, toIndex int, ranges SliceRanges) []ResponseOp {
+func (s *ConnState) moveRoom(updateEvent *EventData, fromIndex, toIndex int, ranges SliceRanges, onlySendRoomID bool) []ResponseOp {
 	if fromIndex == toIndex {
 		// issue an UPDATE, nice and easy because we don't need to move entries in the list
+		room := &Room{
+			RoomID: updateEvent.roomID,
+		}
+		if !onlySendRoomID {
+			room = s.getDeltaRoomData(updateEvent)
+		}
 		return []ResponseOp{
 			&ResponseOpSingle{
 				Operation: "UPDATE",
 				Index:     &fromIndex,
-				Room:      s.getDeltaRoomData(updateEvent),
+				Room:      room,
 			},
 		}
 	}
@@ -361,6 +368,12 @@ func (s *ConnState) moveRoom(updateEvent *EventData, fromIndex, toIndex int, ran
 		// to the highest end-range marker < index
 		deleteIndex = int(ranges.LowerClamp(int64(fromIndex)))
 	}
+	room := &Room{
+		RoomID: updateEvent.roomID,
+	}
+	if !onlySendRoomID {
+		room = s.getInitialRoomData(updateEvent.roomID)
+	}
 	return []ResponseOp{
 		&ResponseOpSingle{
 			Operation: "DELETE",
@@ -369,8 +382,7 @@ func (s *ConnState) moveRoom(updateEvent *EventData, fromIndex, toIndex int, ran
 		&ResponseOpSingle{
 			Operation: "INSERT",
 			Index:     &toIndex,
-			// TODO: check if we have sent this room before and if so, don't send all the data ever
-			Room: s.getInitialRoomData(updateEvent.roomID),
+			Room:      room,
 		},
 	}
 

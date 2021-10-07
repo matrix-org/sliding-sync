@@ -317,7 +317,7 @@ const doSyncLoop = async(accessToken, sessionId) => {
                 currentSub = subscribingToRoom;
             }
             if (!resp.ops) {
-                continue;
+                resp.ops = [];
             }
             if (resp.count) {
                 rooms.joinedCount = resp.count;
@@ -337,6 +337,13 @@ const doSyncLoop = async(accessToken, sessionId) => {
         if (!resp) {
             continue;
         }
+
+        Object.keys(resp.room_subscriptions).forEach((roomId) => {
+            accumulateRoomData(
+                resp.room_subscriptions[roomId], rooms.roomIdToRoom[roomId] !== undefined,
+            );
+            renderRoomContent(roomId);
+        });
 
         let gapIndex = -1;
         resp.ops.forEach((op) => {
