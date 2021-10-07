@@ -3,6 +3,12 @@ let activeAbortController = new AbortController();
 let activeSessionId;
 let activeRanges = [[0,20]];
 let activeRoomId = ""; // the room currently being viewed
+const requiredStateEventsInList = [
+    ["m.room.avatar", ""]
+];
+const requiredStateEventsInRoom = [
+    ["m.room.avatar", ""], ["m.room.topic", ""],
+];
 
 // this is the main data structure the client uses to remember and render rooms. Attach it to
 // the window to allow easy introspection.
@@ -38,6 +44,19 @@ const accumulateRoomData = (r, isUpdate) => {
             }
             room = existingRoom;
         }
+    }
+    // pull out m.room.avatar if it exists
+    let avatar;
+    if (r.required_state) {
+        const avatarEvent = r.required_state.find(ev => {
+            return ev.type === "m.room.avatar";
+        });
+        if (avatarEvent) {
+            avatar = avatarEvent.content.url;
+        }
+    }
+    if (avatar) {
+        room.avatar = avatar;
     }
     rooms.roomIdToRoom[room.room_id] = room;
 };
@@ -140,6 +159,8 @@ const onRoomClick = (e) => {
     activeRoomId = rooms.roomIndexToRoomId[index];
     renderRoomContent(activeRoomId, true);
     render(document.getElementById("listContainer")); // get the highlight on the room
+    // interrupt the sync to get extra state events
+    activeAbortController.abort();
 };
 
 const renderRoomContent = (roomId, refresh) => {
@@ -160,6 +181,11 @@ const renderRoomContent = (roomId, refresh) => {
         return;
     }
     document.getElementById("selectedroomname").textContent = room.name || room.room_id;
+    if (room.avatar) {
+        document.getElementById("selectedroomavatar").src = mxcToUrl(room.avatar);
+    } else {
+        document.getElementById("selectedroomavatar").src = "/client/placeholder.svg";
+    }
     
     // insert timeline messages
     (room.timeline || []).forEach((ev) => {
@@ -199,12 +225,18 @@ const render = (container) => {
             roomCell.getElementsByClassName("roomname")[0].textContent = randomName(i, false);
             roomCell.getElementsByClassName("roomcontent")[0].textContent = randomName(i, true);
             roomCell.getElementsByClassName("roominfo")[0].style = "filter: blur(5px);";
+            roomCell.getElementsByClassName("roomavatar")[0].src = "/client/placeholder.svg";
             roomCell.style = "";
             continue;
         }
         roomCell.style = "";
         roomCell.getElementsByClassName("roominfo")[0].style = "";
         roomCell.getElementsByClassName("roomname")[0].textContent = r.name || r.room_id;
+        if (r.avatar) {
+            roomCell.getElementsByClassName("roomavatar")[0].src = mxcToUrl(r.avatar);
+        } else {
+            roomCell.getElementsByClassName("roomavatar")[0].src = "/client/placeholder.svg";
+        }
         if (roomId === activeRoomId) {
             roomCell.style = "background: #d7d7f7";
         }
@@ -337,6 +369,11 @@ const doSyncLoop = async(accessToken, sessionId) => {
 // accessToken = string, pos = int, ranges = [2]int e.g [0,99]
 const doSyncRequest = async (accessToken, pos, ranges, sessionId) => {
     activeAbortController = new AbortController();
+    const reqBody = {
+        required_state: requiredStateEventsInList,
+        rooms: ranges,
+        session_id: (sessionId ? sessionId : undefined),
+    };
     let resp = await fetch("/_matrix/client/v3/sync" + (pos ? "?pos=" + pos : ""), {
         signal: activeAbortController.signal,
         method: "POST",
@@ -344,10 +381,7 @@ const doSyncRequest = async (accessToken, pos, ranges, sessionId) => {
             "Authorization": "Bearer " + accessToken,
             "Content-Type": "application/json",
         },
-        body: JSON.stringify({
-            rooms: ranges,
-            session_id: (sessionId ? sessionId : undefined),
-        })
+        body: JSON.stringify(reqBody)
     });
     let respBody = await resp.json();
     if (respBody.ops) {
@@ -416,6 +450,12 @@ const zeroPad = (n) => {
         return "0" + n;
     }
     return n;
+}
+
+const mxcToUrl = (mxc) => {
+    const path = mxc.substr("mxc://".length);
+    // TODO: we should really use the proxy HS not matrix.org
+    return `https://matrix-client.matrix.org/_matrix/media/r0/thumbnail/${path}?width=64&height=64&method=crop`;
 }
 
 window.addEventListener('load', (event) => {
