@@ -426,9 +426,7 @@ window.addEventListener('load', (event) => {
     document.getElementById("syncButton").onclick = () => {
         const accessToken = document.getElementById("accessToken").value;
         window.localStorage.setItem("accessToken", accessToken);
-        doSyncLoop(accessToken, activeSessionId);
-    }
-    document.getElementById("newsession").onclick = () => {
         activeSessionId = new Date().getTime() + "";
+        doSyncLoop(accessToken, activeSessionId);
     }
 });
