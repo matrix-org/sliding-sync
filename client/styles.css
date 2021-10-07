@@ -10,7 +10,6 @@ body {
 }
 
 .header {
-    float: top;
     margin: 5px;
 }
 
@@ -23,10 +22,16 @@ body {
 }
 
 .rightSide {
+    display: flex;
+    flex-direction: column;
     margin: 5px;
     background: #f7f7f7;
     height: 100%;
     width: 50%;
+}
+
+#messages {
+    overflow: scroll;
 }
 
 .roomlist {
