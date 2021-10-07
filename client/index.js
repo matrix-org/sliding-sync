@@ -236,15 +236,13 @@ const render = (container) => {
         const r = rooms.roomIdToRoom[roomId];
         if (!r) {
             // placeholder
-            roomCell.getElementsByClassName("roomname")[0].textContent = randomName(i, false);
-            roomCell.getElementsByClassName("roomcontent")[0].textContent = randomName(i, true);
-            roomCell.getElementsByClassName("roominfo")[0].style = "filter: blur(5px);";
+            roomCell.getElementsByClassName("roomname")[0].textContent = "";
+            roomCell.getElementsByClassName("roomcontent")[0].textContent = "";
             roomCell.getElementsByClassName("roomavatar")[0].src = "/client/placeholder.svg";
             roomCell.style = "";
             continue;
         }
         roomCell.style = "";
-        roomCell.getElementsByClassName("roominfo")[0].style = "";
         roomCell.getElementsByClassName("roomname")[0].textContent = r.name || r.room_id;
         if (r.avatar) {
             roomCell.getElementsByClassName("roomavatar")[0].src = mxcToUrl(r.avatar);

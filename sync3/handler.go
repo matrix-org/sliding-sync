@@ -264,3 +264,10 @@ func (h *SyncLiveHandler) AddToDeviceMessages(userID, deviceID string, msgs []go
 	_, err := h.Storage.ToDeviceTable.InsertMessages(deviceID, msgs)
 	return err
 }
+
+func (h *SyncLiveHandler) UpdateUnreadCounts(roomID, userID string, highlightCount, notifCount *int) {
+	err := h.Storage.UnreadTable.UpdateUnreadCounters(userID, roomID, highlightCount, notifCount)
+	if err != nil {
+		logger.Err(err).Str("user", userID).Str("room", roomID).Msg("failed to update unread counters")
+	}
+}
