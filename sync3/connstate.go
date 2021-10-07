@@ -329,7 +329,7 @@ func (s *ConnState) getInitialRoomData(roomID string) *Room {
 		Timeline: []json.RawMessage{
 			r.LastEventJSON,
 		},
-		RequiredState: s.store.LoadState(roomID, s.loadPosition, s.muxedReq.RequiredState),
+		RequiredState: s.store.LoadState(roomID, s.loadPosition, s.muxedReq.GetRequiredState(roomID)),
 	}
 }
 

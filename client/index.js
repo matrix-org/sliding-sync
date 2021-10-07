@@ -195,6 +195,11 @@ const renderRoomContent = (roomId, refresh) => {
     } else {
         document.getElementById("selectedroomavatar").src = "/client/placeholder.svg";
     }
+    if (room.topic) {
+        document.getElementById("selectedroomtopic").textContent = room.topic;
+    } else {
+        document.getElementById("selectedroomtopic").textContent = "";
+    }
     
     // insert timeline messages
     (room.timeline || []).forEach((ev) => {

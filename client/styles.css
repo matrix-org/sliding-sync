@@ -93,3 +93,7 @@ body {
 .msgcontent {
     font-size: small;
 }
+
+#selectedroomtopic {
+    font-size: x-small;
+}
