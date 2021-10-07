@@ -1,12 +1,98 @@
 package state
 
 import (
+	"bytes"
 	"encoding/json"
 	"reflect"
 	"testing"
 
 	"github.com/matrix-org/sync-v3/testutils"
 )
+
+func TestStorageRoomStateBeforeAndAfterEventPosition(t *testing.T) {
+	store := NewStorage(postgresConnectionString)
+	roomID := "!TestStorageRoomStateAfterEventPosition:localhost"
+	alice := "@alice:localhost"
+	bob := "@bob:localhost"
+	events := []json.RawMessage{
+		testutils.NewStateEvent(t, "m.room.create", "", alice, map[string]interface{}{"creator": alice}),
+		testutils.NewStateEvent(t, "m.room.member", alice, alice, map[string]interface{}{"membership": "join"}),
+		testutils.NewStateEvent(t, "m.room.join_rules", "", alice, map[string]interface{}{"join_rule": "invite"}),
+		testutils.NewStateEvent(t, "m.room.member", bob, alice, map[string]interface{}{"membership": "invite"}),
+	}
+	_, latest, err := store.Accumulate(roomID, events)
+	if err != nil {
+		t.Fatalf("Accumulate returned error: %s", err)
+	}
+
+	testCases := []struct {
+		name       string
+		getEvents  func() []Event
+		wantEvents []json.RawMessage
+	}{
+		{
+			name: "room state before the latest position excludes the invite event",
+			getEvents: func() []Event {
+				events, err := store.RoomStateBeforeEventPosition(roomID, latest)
+				if err != nil {
+					t.Fatalf("RoomStateBeforeEventPosition: %s", err)
+				}
+				return events
+			},
+			wantEvents: events[0:3],
+		},
+		{
+			name: "room state after the latest position includes the invite event",
+			getEvents: func() []Event {
+				events, err := store.RoomStateAfterEventPosition(roomID, latest)
+				if err != nil {
+					t.Fatalf("RoomStateAfterEventPosition: %s", err)
+				}
+				return events
+			},
+			wantEvents: events[:],
+		},
+		{
+			name: "room state after the latest position filtered for join_rule returns a single event",
+			getEvents: func() []Event {
+				events, err := store.RoomStateAfterEventPosition(roomID, latest, "m.room.join_rules")
+				if err != nil {
+					t.Fatalf("RoomStateAfterEventPosition: %s", err)
+				}
+				return events
+			},
+			wantEvents: []json.RawMessage{
+				events[2],
+			},
+		},
+		{
+			name: "room state after the latest position filtered for join_rule and create event excludes member events",
+			getEvents: func() []Event {
+				events, err := store.RoomStateAfterEventPosition(roomID, latest, "m.room.create", "m.room.join_rules")
+				if err != nil {
+					t.Fatalf("RoomStateAfterEventPosition: %s", err)
+				}
+				return events
+			},
+			wantEvents: []json.RawMessage{
+				events[0], events[2],
+			},
+		},
+	}
+
+	for _, tc := range testCases {
+		gotEvents := tc.getEvents()
+		if len(gotEvents) != len(tc.wantEvents) {
+			t.Errorf("%s: got %d events want %d", tc.name, len(gotEvents), len(tc.wantEvents))
+			continue
+		}
+		for i, eventJSON := range tc.wantEvents {
+			if !bytes.Equal(eventJSON, gotEvents[i].JSON) {
+				t.Errorf("%s: pos %d\ngot  %s\nwant %s", tc.name, i, string(gotEvents[i].JSON), string(eventJSON))
+			}
+		}
+	}
+}
 
 func TestStorageJoinedRoomsAfterPosition(t *testing.T) {
 	store := NewStorage(postgresConnectionString)

@@ -145,6 +145,15 @@ func (m *ConnMap) LoadRoom(roomID string) *SortableRoom {
 	return m.globalRoomInfo[roomID]
 }
 
+func (m *ConnMap) LoadState(roomID string, loadPosition int64, requiredState [][2]string) []json.RawMessage {
+	_, err := m.store.RoomStateAfterEventPosition(roomID, loadPosition)
+	if err != nil {
+		logger.Err(err).Str("room", roomID).Int64("pos", loadPosition).Msg("failed to load room state")
+		return nil
+	}
+	return nil
+}
+
 func (m *ConnMap) Load(userID string) (joinedRoomIDs []string, initialLoadPosition int64, err error) {
 	initialLoadPosition, err = m.store.LatestEventNID()
 	if err != nil {

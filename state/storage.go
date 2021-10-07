@@ -50,17 +50,13 @@ func (s *Storage) SelectLatestEventInAllRooms() ([]Event, error) {
 // Returns all current state events matching the event types given in all rooms. Returns a map of
 // room ID to events in that room.
 func (s *Storage) CurrentStateEventsInAllRooms(eventTypes []string) (map[string][]Event, error) {
-	eventTypesInt := make([]interface{}, len(eventTypes))
-	for i := range eventTypes {
-		eventTypesInt[i] = eventTypes[i]
-	}
 	query, args, err := sqlx.In(
 		`SELECT syncv3_events.room_id, syncv3_events.event_type, syncv3_events.state_key, syncv3_events.event FROM syncv3_events
 		WHERE syncv3_events.event_type IN (?)
 		AND syncv3_events.event_nid IN (
 			SELECT unnest(events) FROM syncv3_snapshots WHERE syncv3_snapshots.snapshot_id IN (SELECT current_snapshot_id FROM syncv3_rooms)
 		)`,
-		eventTypesInt,
+		eventTypes,
 	)
 	if err != nil {
 		return nil, err
@@ -81,7 +77,7 @@ func (s *Storage) CurrentStateEventsInAllRooms(eventTypes []string) (map[string]
 	return result, nil
 }
 
-func (s *Storage) Accumulate(roomID string, timeline []json.RawMessage) (int, int64, error) {
+func (s *Storage) Accumulate(roomID string, timeline []json.RawMessage) (numNew int, latestNID int64, err error) {
 	return s.accumulator.Accumulate(roomID, timeline)
 }
 
@@ -99,7 +95,7 @@ func (s *Storage) LatestEventInRoom(roomID string, pos int64) (*Event, error) {
 	return ev, err
 }
 
-func (s *Storage) RoomStateAfterEventPosition(roomID string, pos int64) (events []Event, err error) {
+func (s *Storage) RoomStateAfterEventPosition(roomID string, pos int64, eventTypes ...string) (events []Event, err error) {
 	err = sqlutil.WithTransaction(s.accumulator.db, func(txn *sqlx.Tx) error {
 		lastEventNID, replacesNID, snapID, err := s.accumulator.eventsTable.BeforeStateSnapshotIDForEventNID(txn, roomID, pos)
 		if err != nil {
@@ -115,41 +111,74 @@ func (s *Storage) RoomStateAfterEventPosition(roomID string, pos int64) (events 
 			}
 		}
 		currEventIsState := false
+		var lastEvent *Event
 		if lastEventNID > 0 {
 			// now load the event which has this before_snapshot and see if we need to roll it forward
 			lastEvents, err := s.accumulator.eventsTable.SelectByNIDs(txn, true, []int64{lastEventNID})
 			if err != nil {
 				return fmt.Errorf("SelectByNIDs last event nid %d : %s", lastEventNID, err)
 			}
-			lastEvent := gjson.ParseBytes(lastEvents[0].JSON)
-			currEventIsState = lastEvent.Get("state_key").Exists()
-		}
-		snapshotRow, err := s.accumulator.snapshotTable.Select(txn, snapID)
-		if err != nil {
-			return err
-		}
-		// we need to roll forward if this event is state
-		if currEventIsState {
-			if replacesNID != 0 {
-				// we determined at insert time of this event that this event replaces a nid in the snapshot.
-				// find it and replace it
-				for i := range snapshotRow.Events {
-					if snapshotRow.Events[i] == replacesNID {
-						snapshotRow.Events[i] = lastEventNID
-						break
-					}
-				}
-			} else {
-				// the event is still state, but it doesn't replace anything, so just add it onto the snapshot
-				snapshotRow.Events = append(snapshotRow.Events, lastEventNID)
-			}
-		}
-		events, err = s.accumulator.eventsTable.SelectByNIDs(txn, true, snapshotRow.Events)
-		if err != nil {
-			return err
+			lastEvent = &lastEvents[0]
+			currEventIsState = gjson.ParseBytes(lastEvent.JSON).Get("state_key").Exists()
 		}
 
-		return err
+		if len(eventTypes) == 0 {
+			snapshotRow, err := s.accumulator.snapshotTable.Select(txn, snapID)
+			if err != nil {
+				return err
+			}
+			// we need to roll forward if this event is state
+			if currEventIsState {
+				if replacesNID != 0 {
+					// we determined at insert time of this event that this event replaces a nid in the snapshot.
+					// find it and replace it
+					for i := range snapshotRow.Events {
+						if snapshotRow.Events[i] == replacesNID {
+							snapshotRow.Events[i] = lastEventNID
+							break
+						}
+					}
+				} else {
+					// the event is still state, but it doesn't replace anything, so just add it onto the snapshot
+					snapshotRow.Events = append(snapshotRow.Events, lastEventNID)
+				}
+			}
+			events, err = s.accumulator.eventsTable.SelectByNIDs(txn, true, snapshotRow.Events)
+			if err != nil {
+				return err
+			}
+		} else {
+			// do an optimised query to pull out only the event types we care about.
+			// Similar to CurrentStateEventsInAllRooms
+			query, args, err := sqlx.In(
+				`SELECT syncv3_events.event_nid, syncv3_events.event_type, syncv3_events.state_key, syncv3_events.event FROM syncv3_events
+				WHERE syncv3_events.event_type IN (?) AND syncv3_events.event_nid IN (
+					SELECT unnest(events) FROM syncv3_snapshots WHERE syncv3_snapshots.snapshot_id = ?
+				)`,
+				eventTypes, snapID,
+			)
+			if err != nil {
+				return fmt.Errorf("failed to form sql query: %s", err)
+			}
+			rows, err := s.accumulator.db.Query(s.accumulator.db.Rebind(query), args...)
+			if err != nil {
+				return fmt.Errorf("failed to execute query: %s", err)
+			}
+			defer rows.Close()
+			for rows.Next() {
+				var ev Event
+				if err := rows.Scan(&ev.NID, &ev.Type, &ev.StateKey, &ev.JSON); err != nil {
+					return err
+				}
+				if currEventIsState && replacesNID == ev.NID {
+					// this event is replaced by the last event
+					ev = *lastEvent
+				}
+				events = append(events, ev)
+			}
+		}
+
+		return nil
 	})
 	return
 }

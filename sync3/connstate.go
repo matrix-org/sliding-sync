@@ -17,6 +17,7 @@ var (
 
 type ConnStateStore interface {
 	LoadRoom(roomID string) *SortableRoom
+	LoadState(roomID string, loadPosition int64, requiredState [][2]string) []json.RawMessage
 	Load(userID string) (joinedRoomIDs []string, initialLoadPosition int64, err error)
 }
 
@@ -29,7 +30,7 @@ type ConnState struct {
 	sortedJoinedRooms          SortableRooms
 	sortedJoinedRoomsPositions map[string]int // room_id -> index in sortedJoinedRooms
 	roomSubscriptions          map[string]RoomSubscription
-	initialLoadPosition        int64
+	loadPosition               int64
 	// A channel which v2 poll loops use to send updates to, via the ConnMap.
 	// Consumed when the conn is read. There is a limit to how many updates we will store before
 	// saying the client is ded and cleaning up the conn.
@@ -57,58 +58,58 @@ func NewConnState(userID string, store ConnStateStore) *ConnState {
 //     N events arrive and get buffered.
 //   - load() bases its current state based on the latest position, which includes processing of these N events.
 //   - post load() we read N events, processing them a 2nd time.
-func (c *ConnState) load(req *Request) error {
-	joinedRoomIDs, initialLoadPosition, err := c.store.Load(c.userID)
+func (s *ConnState) load(req *Request) error {
+	joinedRoomIDs, initialLoadPosition, err := s.store.Load(s.userID)
 	if err != nil {
 		return err
 	}
-	c.initialLoadPosition = initialLoadPosition
-	c.sortedJoinedRooms = make([]SortableRoom, len(joinedRoomIDs))
+	s.loadPosition = initialLoadPosition
+	s.sortedJoinedRooms = make([]SortableRoom, len(joinedRoomIDs))
 	for i, roomID := range joinedRoomIDs {
 		// load global room info
-		sr := c.store.LoadRoom(roomID)
-		c.sortedJoinedRooms[i] = *sr
-		c.sortedJoinedRoomsPositions[sr.RoomID] = i
+		sr := s.store.LoadRoom(roomID)
+		s.sortedJoinedRooms[i] = *sr
+		s.sortedJoinedRoomsPositions[sr.RoomID] = i
 	}
-	c.sort(req.Sort)
+	s.sort(req.Sort)
 
 	return nil
 }
 
-func (c *ConnState) sort(sortBy []string) {
+func (s *ConnState) sort(sortBy []string) {
 	// TODO: read sortBy, for now we always sort by most recent timestamp
-	sort.SliceStable(c.sortedJoinedRooms, func(i, j int) bool {
-		return c.sortedJoinedRooms[i].LastMessageTimestamp > c.sortedJoinedRooms[j].LastMessageTimestamp
+	sort.SliceStable(s.sortedJoinedRooms, func(i, j int) bool {
+		return s.sortedJoinedRooms[i].LastMessageTimestamp > s.sortedJoinedRooms[j].LastMessageTimestamp
 	})
-	for i := range c.sortedJoinedRooms {
-		c.sortedJoinedRoomsPositions[c.sortedJoinedRooms[i].RoomID] = i
+	for i := range s.sortedJoinedRooms {
+		s.sortedJoinedRoomsPositions[s.sortedJoinedRooms[i].RoomID] = i
 	}
 	//logger.Info().Interface("pos", c.sortedJoinedRoomsPositions).Msg("sorted")
 }
 
-func (c *ConnState) HandleIncomingRequest(ctx context.Context, cid ConnID, req *Request) (*Response, error) {
-	if c.initialLoadPosition == 0 {
-		c.load(req)
+func (s *ConnState) HandleIncomingRequest(ctx context.Context, cid ConnID, req *Request) (*Response, error) {
+	if s.loadPosition == 0 {
+		s.load(req)
 	}
-	return c.onIncomingRequest(ctx, req)
+	return s.onIncomingRequest(ctx, req)
 }
 
 // PushNewEvent is a callback which fires when the server gets a new event and determines this connection MAY be
 // interested in it (e.g the client is joined to the room or it's an invite, etc). Each callback can fire
 // from different v2 poll loops, and there is no locking in order to prevent a slow ConnState from wedging the poll loop.
 // We need to move this data onto a channel for onIncomingRequest to consume later.
-func (c *ConnState) PushNewEvent(eventData *EventData) {
+func (s *ConnState) PushNewEvent(eventData *EventData) {
 	// TODO: remove 0 check when Initialise state returns sensible positions
-	if eventData.latestPos != 0 && eventData.latestPos < c.initialLoadPosition {
+	if eventData.latestPos != 0 && eventData.latestPos < s.loadPosition {
 		// do not push this event down the stream as we have already processed it when we loaded
 		// the room list initially.
 		return
 	}
 	select {
-	case c.updateEvents <- eventData:
+	case s.updateEvents <- eventData:
 	case <-time.After(5 * time.Second):
 		// TODO: kill the connection
-		logger.Warn().Interface("event", *eventData).Str("user", c.userID).Msg(
+		logger.Warn().Interface("event", *eventData).Str("user", s.userID).Msg(
 			"cannot send event to connection, buffer exceeded",
 		)
 	}
@@ -205,6 +206,9 @@ func (s *ConnState) onIncomingRequest(ctx context.Context, req *Request) (*Respo
 			case <-time.After(10 * time.Second): // TODO configurable
 				break blockloop
 			case updateEvent := <-s.updateEvents:
+				if updateEvent.latestPos > s.loadPosition {
+					s.loadPosition = updateEvent.latestPos
+				}
 				// TODO: Add filters to check if this event should cause a response or should be dropped (e.g filtering out messages)
 				// this is why this select is in a while loop as not all update event will wake up the stream
 
@@ -324,12 +328,8 @@ func (s *ConnState) getInitialRoomData(roomID string) *Room {
 		Timeline: []json.RawMessage{
 			r.LastEventJSON,
 		},
-		RequiredState: s.getRequiredState(s.muxedReq.RequiredState, roomID),
+		RequiredState: s.store.LoadState(roomID, s.loadPosition, s.muxedReq.RequiredState),
 	}
-}
-
-func (s *ConnState) getRequiredState(reqState [][2]string, roomID string) []json.RawMessage {
-	return nil
 }
 
 func (s *ConnState) UserID() string {
