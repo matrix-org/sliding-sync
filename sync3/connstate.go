@@ -185,15 +185,8 @@ func (s *ConnState) onIncomingRequest(ctx context.Context, req *Request) (*Respo
 		rooms := subslice[0].(SortableRooms)
 		roomsResponse := make([]Room, len(rooms))
 		for i := range rooms {
-			timeline := []json.RawMessage{}
-			if rooms[i].LastEventJSON != nil {
-				timeline = append(timeline, rooms[i].LastEventJSON)
-			}
-			roomsResponse[i] = Room{
-				RoomID:   rooms[i].RoomID,
-				Name:     rooms[i].Name,
-				Timeline: timeline,
-			}
+			roomData := s.getInitialRoomData(rooms[i].RoomID)
+			roomsResponse[i] = *roomData
 		}
 		responseOperations = append(responseOperations, &ResponseOpRange{
 			Operation: "SYNC",
@@ -241,13 +234,7 @@ func (s *ConnState) onIncomingRequest(ctx context.Context, req *Request) (*Respo
 				if _, ok := s.roomSubscriptions[updateEvent.roomID]; ok {
 					// there is a subscription for this room, so update the room subscription field
 					// TODO: optimise by only sending the room ID delta for index positions
-					// TODO: look for required state
-					response.RoomSubscriptions[updateEvent.roomID] = Room{
-						RoomID: updateEvent.roomID,
-						Timeline: []json.RawMessage{
-							updateEvent.event,
-						},
-					}
+					response.RoomSubscriptions[updateEvent.roomID] = *s.getDeltaRoomData(updateEvent)
 				}
 				toIndex := s.sortedJoinedRoomsPositions[updateEvent.roomID]
 				logger.Info().Int("from", fromIndex).Int("to", toIndex).
@@ -308,19 +295,41 @@ func (s *ConnState) updateRoomSubscriptions(subs, unsubs []string) map[string]Ro
 		}
 		s.roomSubscriptions[roomID] = sub
 		// send initial room information
-		r := s.store.LoadRoom(roomID)
-		result[roomID] = Room{
-			RoomID: roomID,
-			Name:   r.Name,
-			Timeline: []json.RawMessage{
-				r.LastEventJSON,
-			},
-		}
+		room := s.getInitialRoomData(roomID)
+		result[roomID] = *room
 	}
 	for _, roomID := range unsubs {
 		delete(s.roomSubscriptions, roomID)
 	}
 	return result
+}
+
+func (s *ConnState) getDeltaRoomData(updateEvent *EventData) *Room {
+	return &Room{
+		RoomID: updateEvent.roomID,
+		// TODO: notif counts
+		Timeline: []json.RawMessage{
+			updateEvent.event,
+		},
+	}
+}
+
+func (s *ConnState) getInitialRoomData(roomID string) *Room {
+	r := s.store.LoadRoom(roomID)
+	return &Room{
+		RoomID: roomID,
+		Name:   r.Name,
+		// TODO: notif counts
+		// TODO: timeline limits
+		Timeline: []json.RawMessage{
+			r.LastEventJSON,
+		},
+		RequiredState: s.getRequiredState(s.muxedReq.RequiredState, roomID),
+	}
+}
+
+func (s *ConnState) getRequiredState(reqState [][2]string, roomID string) []json.RawMessage {
+	return nil
 }
 
 func (s *ConnState) UserID() string {
@@ -332,20 +341,13 @@ func (s *ConnState) UserID() string {
 // 3 bumps to top -> 3,1,2,4,5 -> DELETE index=2, INSERT val=3 index=0
 // 7 bumps to top -> 7,1,2,3,4 -> DELETE index=4, INSERT val=7 index=0
 func (s *ConnState) moveRoom(updateEvent *EventData, fromIndex, toIndex int, ranges SliceRanges) []ResponseOp {
-	room := s.store.LoadRoom(updateEvent.roomID)
 	if fromIndex == toIndex {
 		// issue an UPDATE, nice and easy because we don't need to move entries in the list
 		return []ResponseOp{
 			&ResponseOpSingle{
 				Operation: "UPDATE",
 				Index:     &fromIndex,
-				Room: &Room{
-					RoomID: updateEvent.roomID,
-					Name:   room.Name,
-					Timeline: []json.RawMessage{
-						updateEvent.event,
-					},
-				},
+				Room:      s.getDeltaRoomData(updateEvent),
 			},
 		}
 	}
@@ -368,13 +370,7 @@ func (s *ConnState) moveRoom(updateEvent *EventData, fromIndex, toIndex int, ran
 			Operation: "INSERT",
 			Index:     &toIndex,
 			// TODO: check if we have sent this room before and if so, don't send all the data ever
-			Room: &Room{
-				RoomID: room.RoomID,
-				Name:   room.Name,
-				Timeline: []json.RawMessage{
-					updateEvent.event,
-				},
-			},
+			Room: s.getInitialRoomData(updateEvent.roomID),
 		},
 	}
 
