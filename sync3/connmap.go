@@ -146,12 +146,47 @@ func (m *ConnMap) LoadRoom(roomID string) *SortableRoom {
 }
 
 func (m *ConnMap) LoadState(roomID string, loadPosition int64, requiredState [][2]string) []json.RawMessage {
-	_, err := m.store.RoomStateAfterEventPosition(roomID, loadPosition)
+	if len(requiredState) == 0 {
+		return nil
+	}
+	// pull out unique event types and convert the required state into a map
+	eventTypeSet := make(map[string]bool)
+	requiredStateMap := make(map[string][]string) // event_type -> []state_key
+	for _, rs := range requiredState {
+		eventTypeSet[rs[0]] = true
+		requiredStateMap[rs[0]] = append(requiredStateMap[rs[0]], rs[1])
+	}
+	eventTypes := make([]string, len(eventTypeSet))
+	i := 0
+	for et := range eventTypeSet {
+		eventTypes[i] = et
+		i++
+	}
+	stateEvents, err := m.store.RoomStateAfterEventPosition(roomID, loadPosition, eventTypes...)
 	if err != nil {
 		logger.Err(err).Str("room", roomID).Int64("pos", loadPosition).Msg("failed to load room state")
 		return nil
 	}
-	return nil
+	var result []json.RawMessage
+	for _, ev := range stateEvents {
+		stateKeys := requiredStateMap[ev.Type]
+		include := false
+		for _, sk := range stateKeys {
+			if sk == "*" { // wildcard
+				include = true
+				break
+			}
+			if sk == ev.StateKey {
+				include = true
+				break
+			}
+		}
+		if include {
+			result = append(result, ev.JSON)
+		}
+	}
+	// TODO: cache?
+	return result
 }
 
 func (m *ConnMap) Load(userID string) (joinedRoomIDs []string, initialLoadPosition int64, err error) {
