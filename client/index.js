@@ -45,18 +45,27 @@ const accumulateRoomData = (r, isUpdate) => {
             room = existingRoom;
         }
     }
-    // pull out m.room.avatar if it exists
+    // pull out avatar and topic if it exists
     let avatar;
+    let topic;
     if (r.required_state) {
-        const avatarEvent = r.required_state.find(ev => {
-            return ev.type === "m.room.avatar";
-        });
-        if (avatarEvent) {
-            avatar = avatarEvent.content.url;
+        for (let i = 0; i < r.required_state.length; i++) {
+            const ev = r.required_state[i];
+            switch (ev.type) {
+                case "m.room.avatar":
+                    avatar = ev.content.url;
+                    break;
+                case "m.room.topic":
+                    topic = ev.content.topic;
+                    break;
+            }
         }
     }
-    if (avatar) {
+    if (avatar !== undefined) {
         room.avatar = avatar;
+    }
+    if (topic !== undefined) {
+        room.topic = topic;
     }
     rooms.roomIdToRoom[room.room_id] = room;
 };
@@ -273,11 +282,40 @@ const doSyncLoop = async(accessToken, sessionId) => {
     console.log("Starting sync loop. Active: ", activeSessionId, " this:", sessionId);
     let currentPos;
     let currentError = null;
+    let currentSub = "";
     while (sessionId === activeSessionId) {
         let resp;
         try {
-            resp = await doSyncRequest(accessToken, currentPos, activeRanges, sessionId);
+            // these fields are always required
+            let reqBody = {
+                rooms: activeRanges,
+                session_id: (sessionId ? sessionId : undefined),
+            };
+            // if this is the first request on this session, send sticky request data which never changes
+            if (!currentPos) {
+                reqBody.required_state = requiredStateEventsInList;
+            }
+            // check if we are (un)subscribing to a room and modify request this one time for it
+            let subscribingToRoom;
+            if (activeRoomId && currentSub !== activeRoomId) {
+                if (currentSub) {
+                    reqBody.unsubscribe_rooms = [currentSub];
+                }
+                reqBody.room_subscriptions = {
+                    [activeRoomId]: {
+                        required_state: requiredStateEventsInRoom,
+                        timeline_limit: 30,
+                    }
+                };
+                // hold a ref to the active room ID as it may change by the time we return from doSyncRequest
+                subscribingToRoom = activeRoomId;
+            }
+            resp = await doSyncRequest(accessToken, currentPos, reqBody);
             currentPos = resp.pos;
+            // update what we think we're subscribed to.
+            if (subscribingToRoom) {
+                currentSub = subscribingToRoom;
+            }
             if (!resp.ops) {
                 continue;
             }
@@ -293,7 +331,7 @@ const doSyncLoop = async(accessToken, sessionId) => {
                     document.getElementById("errorMsg").textContent = lastError ? lastError : "";
                 }
                 currentError = lastError;
-                await sleep(1000);
+                await sleep(3000);
             }
         }
         if (!resp) {
@@ -367,13 +405,8 @@ const doSyncLoop = async(accessToken, sessionId) => {
     console.log("active session: ", activeSessionId, " this session: ", sessionId, " terminating.");
 }
 // accessToken = string, pos = int, ranges = [2]int e.g [0,99]
-const doSyncRequest = async (accessToken, pos, ranges, sessionId) => {
+const doSyncRequest = async (accessToken, pos, reqBody) => {
     activeAbortController = new AbortController();
-    const reqBody = {
-        required_state: requiredStateEventsInList,
-        rooms: ranges,
-        session_id: (sessionId ? sessionId : undefined),
-    };
     let resp = await fetch("/_matrix/client/v3/sync" + (pos ? "?pos=" + pos : ""), {
         signal: activeAbortController.signal,
         method: "POST",
