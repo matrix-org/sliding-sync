@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"reflect"
 	"testing"
+	"time"
 )
 
 func newSortableRoom(roomID string, lastMsgTimestamp int64) SortableRoom {
@@ -352,6 +353,85 @@ func TestConnStateMultipleRanges(t *testing.T) {
 	})
 }
 
+// Regression test for https://github.com/matrix-org/sync-v3/commit/732ea46f1ccde2b6a382e0f849bbd166b80900ed
+func TestBumpToOutsideRange(t *testing.T) {
+	connID := ConnID{
+		SessionID: "s",
+		DeviceID:  "d",
+	}
+	userID := "@alice:localhost"
+	timestampNow := int64(1632131678061)
+	roomA := newSortableRoom("!a:localhost", timestampNow)
+	roomB := newSortableRoom("!b:localhost", timestampNow-1000)
+	roomC := newSortableRoom("!c:localhost", timestampNow-2000)
+	roomD := newSortableRoom("!d:localhost", timestampNow-3000)
+
+	// initial sort order A,B,C,D
+	csm := &connStateStoreMock{
+		userIDToJoinedRooms: map[string][]string{
+			userID: {roomA.RoomID, roomB.RoomID, roomC.RoomID, roomD.RoomID},
+		},
+		roomIDToRoom: map[string]SortableRoom{
+			roomA.RoomID: roomA,
+			roomB.RoomID: roomB,
+			roomC.RoomID: roomC,
+			roomD.RoomID: roomD,
+		},
+	}
+	cs := NewConnState(userID, csm)
+	// Ask for A,B
+	res, err := cs.HandleIncomingRequest(context.Background(), connID, &Request{
+		Sort: []string{SortByRecency},
+		Rooms: SliceRanges([][2]int64{
+			{0, 1},
+		}),
+	})
+	if err != nil {
+		t.Fatalf("HandleIncomingRequest returned error : %s", err)
+	}
+	checkResponse(t, true, res, &Response{
+		Count: int64(len(csm.userIDToJoinedRooms[userID])),
+		Ops: []ResponseOp{
+			&ResponseOpRange{
+				Operation: "SYNC",
+				Range:     []int64{0, 1},
+				Rooms: []Room{
+					{
+						RoomID: roomA.RoomID,
+					},
+					{
+						RoomID: roomB.RoomID,
+					},
+				},
+			},
+		},
+	})
+
+	// D gets bumped to C's position but it's still outside the range so nothing should happen
+	csm.PushNewEvent(cs, &EventData{
+		event:     json.RawMessage(`{}`),
+		roomID:    roomD.RoomID,
+		eventType: "unimportant",
+		timestamp: roomC.LastMessageTimestamp + 2,
+	})
+
+	// expire the context after 10ms so we don't wait forevar
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Millisecond)
+	defer cancel()
+	res, err = cs.HandleIncomingRequest(ctx, connID, &Request{
+		Sort: []string{SortByRecency},
+		Rooms: SliceRanges([][2]int64{
+			{0, 1},
+		}),
+	})
+	if err != nil {
+		t.Fatalf("HandleIncomingRequest returned error : %s", err)
+	}
+	if len(res.Ops) > 0 {
+		t.Errorf("response returned ops, expected none")
+	}
+}
+
 // Test that room subscriptions can be made and that events are pushed for them.
 func TestConnStateRoomSubscriptions(t *testing.T) {
 	connID := ConnID{
@@ -361,9 +441,9 @@ func TestConnStateRoomSubscriptions(t *testing.T) {
 	userID := "@alice:localhost"
 	timestampNow := int64(1632131678061)
 	roomA := newSortableRoom("!a:localhost", timestampNow)
-	roomB := newSortableRoom("!b:localhost", timestampNow)
-	roomC := newSortableRoom("!c:localhost", timestampNow)
-	roomD := newSortableRoom("!d:localhost", timestampNow)
+	roomB := newSortableRoom("!b:localhost", timestampNow-1000)
+	roomC := newSortableRoom("!c:localhost", timestampNow-2000)
+	roomD := newSortableRoom("!d:localhost", timestampNow-3000)
 	roomIDs := []string{roomA.RoomID, roomB.RoomID, roomC.RoomID, roomD.RoomID}
 
 	// initial sort order A,B,C,D
