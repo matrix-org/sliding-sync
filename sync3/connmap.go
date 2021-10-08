@@ -38,7 +38,8 @@ type ConnMap struct {
 	jrt *JoinedRoomsTracker
 
 	// TODO: this can be pulled out of here and invoked from handler?
-	globalRoomInfo map[string]*SortableRoom
+	globalRoomInfo     map[string]*SortableRoom
+	perUserPerRoomData map[string]userRoomData
 
 	store *state.Storage
 
@@ -47,13 +48,14 @@ type ConnMap struct {
 
 func NewConnMap(store *state.Storage) *ConnMap {
 	cm := &ConnMap{
-		userIDToConn:   make(map[string][]*Conn),
-		connIDToConn:   make(map[string]*Conn),
-		cache:          ttlcache.NewCache(),
-		mu:             &sync.Mutex{},
-		jrt:            NewJoinedRoomsTracker(),
-		store:          store,
-		globalRoomInfo: make(map[string]*SortableRoom),
+		userIDToConn:       make(map[string][]*Conn),
+		connIDToConn:       make(map[string]*Conn),
+		cache:              ttlcache.NewCache(),
+		mu:                 &sync.Mutex{},
+		jrt:                NewJoinedRoomsTracker(),
+		store:              store,
+		globalRoomInfo:     make(map[string]*SortableRoom),
+		perUserPerRoomData: make(map[string]userRoomData),
 	}
 	cm.cache.SetTTL(30 * time.Minute) // TODO: customisable
 	cm.cache.SetExpirationCallback(cm.closeConn)
@@ -93,6 +95,7 @@ func (m *ConnMap) GetOrCreateConn(cid ConnID, userID string) (*Conn, bool) {
 //   - LoadBaseline loads the latest NID=50 due to LatestEventNID, processes this join event in the process
 //   - OnNewEvents is called with the join event
 //   - join event is processed twice.
+// TODO: Move to cache struct
 func (m *ConnMap) LoadBaseline(roomIDToUserIDs map[string][]string) error {
 	// TODO: load last N events as a sliding window?
 	latestEvents, err := m.store.SelectLatestEventInAllRooms()
@@ -136,9 +139,17 @@ func (m *ConnMap) LoadBaseline(roomIDToUserIDs map[string][]string) error {
 			m.jrt.UserJoinedRoom(userID, roomID)
 		}
 	}
+	// select all non-zero highlight or notif counts and set them, as this is less costly than looping every room/user pair
+	err = m.store.UnreadTable.SelectAllNonZeroCounts(func(roomID, userID string, highlightCount, notificationCount int) {
+		m.OnUnreadCounts(roomID, userID, &highlightCount, &notificationCount)
+	})
+	if err != nil {
+		return fmt.Errorf("failed to load unread counts: %s", err)
+	}
 	return nil
 }
 
+// TODO: Move to cache struct
 func (m *ConnMap) LoadRoom(roomID string) *SortableRoom {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -218,6 +229,20 @@ func (m *ConnMap) closeConn(connID string, value interface{}) {
 	}
 }
 
+// TODO: Move to cache struct
+func (m *ConnMap) OnUnreadCounts(roomID, userID string, highlightCount, notifCount *int) {
+	key := userID + " " + roomID
+	userData := m.perUserPerRoomData[key]
+	if highlightCount != nil {
+		userData.highlightCount = *highlightCount
+	}
+	if notifCount != nil {
+		userData.notificationCount = *notifCount
+	}
+	m.perUserPerRoomData[key] = userData
+}
+
+// TODO: Move to cache struct
 // Call this when there is a new event received on a v2 stream.
 // This event must be globally unique, i.e indicated so by the state store.
 func (m *ConnMap) OnNewEvents(
@@ -227,6 +252,8 @@ func (m *ConnMap) OnNewEvents(
 		m.onNewEvent(roomID, event, latestPos)
 	}
 }
+
+// TODO: Move to cache struct
 func (m *ConnMap) onNewEvent(
 	roomID string, event json.RawMessage, latestPos int64,
 ) {

@@ -30,12 +30,41 @@ func TestUnreadTable(t *testing.T) {
 	assertUnread(t, table, userID, roomC, 0, 2)
 
 	// try all kinds of updates
-	assertNoError(t, table.UpdateUnreadCounters(userID, roomA, &zero, nil)) // one
-	assertNoError(t, table.UpdateUnreadCounters(userID, roomB, nil, &two))  // one
-	assertNoError(t, table.UpdateUnreadCounters(userID, roomC, &two, &two)) // both
+	assertNoError(t, table.UpdateUnreadCounters(userID, roomA, &zero, nil))   // one
+	assertNoError(t, table.UpdateUnreadCounters(userID, roomB, nil, &two))    // one
+	assertNoError(t, table.UpdateUnreadCounters(userID, roomC, &zero, &zero)) // both
 	assertUnread(t, table, userID, roomA, 0, 1)
 	assertUnread(t, table, userID, roomB, 2, 2)
-	assertUnread(t, table, userID, roomC, 2, 2)
+	assertUnread(t, table, userID, roomC, 0, 0)
+
+	wantHighlights := map[string]int{
+		roomB: 2,
+	}
+	wantNotifs := map[string]int{
+		roomA: 1,
+		roomB: 2,
+	}
+	assertNoError(t, table.SelectAllNonZeroCounts(func(gotRoomID string, gotUserID string, gotHighlight int, gotNotif int) {
+		if userID != gotUserID {
+			t.Errorf("SelectAllNonZeroCounts: got user %v want %v", gotUserID, userID)
+		}
+		wantHighlight := wantHighlights[gotRoomID]
+		if wantHighlight != gotHighlight {
+			t.Errorf("SelectAllNonZeroCounts for %v got %d highlights, want %d", gotRoomID, gotHighlight, wantHighlight)
+		}
+		wantNotif := wantNotifs[gotRoomID]
+		if wantNotif != gotNotif {
+			t.Errorf("SelectAllNonZeroCounts for %v got %d notifs, want %d", gotRoomID, gotNotif, wantNotif)
+		}
+		delete(wantHighlights, gotRoomID)
+		delete(wantNotifs, gotRoomID)
+	}))
+	if len(wantHighlights) != 0 {
+		t.Errorf("SelectAllNonZeroCounts missed highlight rooms: %+v", wantHighlights)
+	}
+	if len(wantNotifs) != 0 {
+		t.Errorf("SelectAllNonZeroCounts missed notif rooms: %+v", wantNotifs)
+	}
 }
 
 func assertUnread(t *testing.T, table *UnreadTable, userID, roomID string, wantHighight, wantNotif int) {

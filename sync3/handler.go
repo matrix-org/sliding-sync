@@ -270,4 +270,5 @@ func (h *SyncLiveHandler) UpdateUnreadCounts(roomID, userID string, highlightCou
 	if err != nil {
 		logger.Err(err).Str("user", userID).Str("room", roomID).Msg("failed to update unread counters")
 	}
+	h.ConnMap.OnUnreadCounts(roomID, userID, highlightCount, notifCount)
 }
