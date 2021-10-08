@@ -14,6 +14,7 @@ type Storage struct {
 	accumulator   *Accumulator
 	TypingTable   *TypingTable
 	ToDeviceTable *ToDeviceTable
+	UnreadTable   *UnreadTable
 }
 
 func NewStorage(postgresURI string) *Storage {
@@ -32,6 +33,7 @@ func NewStorage(postgresURI string) *Storage {
 		accumulator:   acc,
 		TypingTable:   NewTypingTable(db),
 		ToDeviceTable: NewToDeviceTable(db),
+		UnreadTable:   NewUnreadTable(db),
 	}
 }
 

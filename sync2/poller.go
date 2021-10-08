@@ -23,6 +23,8 @@ type V2DataReceiver interface {
 	// Add messages for this device. If an error is returned, the poll loop is terminated as continuing
 	// would implicitly acknowledge these messages.
 	AddToDeviceMessages(userID, deviceID string, msgs []gomatrixserverlib.SendToDeviceEvent) error
+
+	UpdateUnreadCounts(roomID, userID string, highlightCount, notifCount *int)
 }
 
 // PollerMap is a map of device ID to Poller
@@ -183,6 +185,11 @@ func (p *Poller) parseRoomsResponse(res *SyncResponse) {
 					p.logger.Err(err).Str("room_id", roomID).Strs("user_ids", userIDs).Msg("Poller: V2DataReceiver failed to SetTyping")
 				}
 			}
+		}
+		if roomData.UnreadNotifications.HighlightCount != nil || roomData.UnreadNotifications.NotificationCount != nil {
+			p.receiver.UpdateUnreadCounts(
+				roomID, p.userID, roomData.UnreadNotifications.HighlightCount, roomData.UnreadNotifications.NotificationCount,
+			)
 		}
 	}
 	for roomID, roomData := range res.Rooms.Leave {

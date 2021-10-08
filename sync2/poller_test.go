@@ -244,6 +244,9 @@ func (s *mockDataReceiver) AddToDeviceMessages(userID, deviceID string, msgs []g
 	return nil
 }
 
+func (s *mockDataReceiver) UpdateUnreadCounts(roomID, userID string, highlightCount, notifCount *int) {
+}
+
 func newMocks(doSyncV2 func(authHeader, since string) (*SyncResponse, int, error)) (*mockDataReceiver, *mockClient) {
 	client := &mockClient{
 		fn: doSyncV2,

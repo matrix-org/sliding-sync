@@ -114,6 +114,10 @@ type SyncV2JoinResponse struct {
 	AccountData struct {
 		Events []json.RawMessage `json:"events"`
 	} `json:"account_data"`
+	UnreadNotifications struct {
+		HighlightCount    *int `json:"highlight_count,omitempty"`
+		NotificationCount *int `json:"notification_count,omitempty"`
+	} `json:"unread_notifications"`
 }
 
 // InviteResponse represents a /sync response for a room which is under the 'invite' key.
