@@ -1,6 +1,8 @@
 package state
 
-import "github.com/jmoiron/sqlx"
+import (
+	"github.com/jmoiron/sqlx"
+)
 
 // UnreadTable stores unread counts per-user
 type UnreadTable struct {
@@ -33,7 +35,7 @@ func (t *UnreadTable) UpdateUnreadCounters(userID, roomID string, highlightCount
 	if highlightCount != nil && notificationCount != nil {
 		_, err = t.db.Exec(
 			`INSERT INTO syncv3_unread(room_id, user_id, notification_count, highlight_count) VALUES($1, $2, $3, $4)
-		ON CONFLICT (room_id, user_id) DO UPDATE SET notification_count = $4, highlight_count = $4`,
+		ON CONFLICT (room_id, user_id) DO UPDATE SET notification_count = $3, highlight_count = $4`,
 			roomID, userID, *notificationCount, *highlightCount,
 		)
 	} else if highlightCount != nil {

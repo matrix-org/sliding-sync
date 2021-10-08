@@ -18,13 +18,14 @@ func TestUnreadTable(t *testing.T) {
 	roomC := "!TestUnreadTableC:localhost"
 
 	two := 2
+	one := 1
 	zero := 0
 
 	// try all kinds of insertions
-	assertNoError(t, table.UpdateUnreadCounters(userID, roomA, &two, &two)) // both
+	assertNoError(t, table.UpdateUnreadCounters(userID, roomA, &two, &one)) // both
 	assertNoError(t, table.UpdateUnreadCounters(userID, roomB, &two, nil))  // one
 	assertNoError(t, table.UpdateUnreadCounters(userID, roomC, nil, &two))  // one
-	assertUnread(t, table, userID, roomA, 2, 2)
+	assertUnread(t, table, userID, roomA, 2, 1)
 	assertUnread(t, table, userID, roomB, 2, 0)
 	assertUnread(t, table, userID, roomC, 0, 2)
 
@@ -32,7 +33,7 @@ func TestUnreadTable(t *testing.T) {
 	assertNoError(t, table.UpdateUnreadCounters(userID, roomA, &zero, nil)) // one
 	assertNoError(t, table.UpdateUnreadCounters(userID, roomB, nil, &two))  // one
 	assertNoError(t, table.UpdateUnreadCounters(userID, roomC, &two, &two)) // both
-	assertUnread(t, table, userID, roomA, 0, 2)
+	assertUnread(t, table, userID, roomA, 0, 1)
 	assertUnread(t, table, userID, roomB, 2, 2)
 	assertUnread(t, table, userID, roomC, 2, 2)
 }
