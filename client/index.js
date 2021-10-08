@@ -4,7 +4,7 @@ let activeSessionId;
 let activeRanges = [[0,20]];
 let activeRoomId = ""; // the room currently being viewed
 const requiredStateEventsInList = [
-    ["m.room.avatar", ""]
+    ["m.room.avatar", ""], ["m.room.tombstone", ""]
 ];
 const requiredStateEventsInRoom = [
     ["m.room.avatar", ""], ["m.room.topic", ""],
@@ -48,6 +48,7 @@ const accumulateRoomData = (r, isUpdate) => {
     // pull out avatar and topic if it exists
     let avatar;
     let topic;
+    let obsolete;
     if (r.required_state) {
         for (let i = 0; i < r.required_state.length; i++) {
             const ev = r.required_state[i];
@@ -58,6 +59,9 @@ const accumulateRoomData = (r, isUpdate) => {
                 case "m.room.topic":
                     topic = ev.content.topic;
                     break;
+                case "m.room.tombstone":
+                    obsolete = ev.content.body || "m.room.tombstone";
+                    break;
             }
         }
     }
@@ -66,6 +70,9 @@ const accumulateRoomData = (r, isUpdate) => {
     }
     if (topic !== undefined) {
         room.topic = topic;
+    }
+    if (obsolete !== undefined) {
+        room.obsolete = obsolete;
     }
     rooms.roomIdToRoom[room.room_id] = room;
 };
@@ -267,7 +274,8 @@ const render = (container) => {
             roomCell.style = "background: #d7d7f7";
         }
         if (r.highlight_count > 0) {
-            unreadCountSpan.textContent = r.highlight_count + "";
+            // use the notification count instead to avoid counts dropping down. This matches ele-web
+            unreadCountSpan.textContent = r.notification_count + "";
             unreadCountSpan.classList.add("unreadcounthighlight");
         } else if (r.notification_count > 0) {
             unreadCountSpan.textContent = r.notification_count + "";
@@ -275,7 +283,11 @@ const render = (container) => {
         } else {
             unreadCountSpan.textContent = "";
         }
-        if (r.timeline && r.timeline.length > 0) {
+
+        if (r.obsolete) {
+            roomContentSpan.textContent = "";
+            roomSenderSpan.textContent = r.obsolete;
+        } else if (r.timeline && r.timeline.length > 0) {
             const mostRecentEvent = r.timeline[r.timeline.length-1];
             roomSenderSpan.textContent = mostRecentEvent.sender;
             roomTimestampSpan.textContent = formatTimestamp(mostRecentEvent.origin_server_ts);

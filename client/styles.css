@@ -79,7 +79,8 @@ body {
     font-weight: bold;
 }
 .unreadcounthighlight {
-    background: #f08080;
+    background: #f33;
+    color: #fff;
     padding: 2px;
     font-weight: bold;
 }
