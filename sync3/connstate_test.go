@@ -42,6 +42,9 @@ func (s *connStateStoreMock) Load(userID string) (joinedRoomIDs []string, initia
 func (s *connStateStoreMock) LoadState(roomID string, loadPosition int64, requiredState [][2]string) []json.RawMessage {
 	return nil
 }
+func (s *connStateStoreMock) LoadUserRoomData(roomID, userID string) userRoomData {
+	return userRoomData{}
+}
 func (s *connStateStoreMock) PushNewEvent(cs *ConnState, ed *EventData) {
 	room := s.roomIDToRoom[ed.roomID]
 	room.LastEventJSON = ed.event

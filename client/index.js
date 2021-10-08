@@ -31,10 +31,10 @@ const accumulateRoomData = (r, isUpdate) => {
             if (r.name) {
                 existingRoom.name = r.name;
             }
-            if (r.highlight_count) {
+            if (r.highlight_count !== undefined) {
                 existingRoom.highlight_count = r.highlight_count;
             }
-            if (r.notification_count) {
+            if (r.notification_count !== undefined) {
                 existingRoom.notification_count = r.notification_count;
             }
             if (r.timeline) {
@@ -238,6 +238,7 @@ const render = (container) => {
         const roomContentSpan = roomCell.getElementsByClassName("roomcontent")[0];
         const roomSenderSpan = roomCell.getElementsByClassName("roomsender")[0];
         const roomTimestampSpan = roomCell.getElementsByClassName("roomtimestamp")[0];
+        const unreadCountSpan = roomCell.getElementsByClassName("unreadcount")[0];
         if (!r) {
             // placeholder
             roomNameSpan.textContent = randomName(i, false);
@@ -248,6 +249,7 @@ const render = (container) => {
             roomTimestampSpan.textContent = "";
             roomCell.getElementsByClassName("roomavatar")[0].src = "/client/placeholder.svg";
             roomCell.style = "";
+            unreadCountSpan.textContent = "";
             continue;
         }
         roomCell.style = "";
@@ -261,6 +263,13 @@ const render = (container) => {
         }
         if (roomId === activeRoomId) {
             roomCell.style = "background: #d7d7f7";
+        }
+        if (r.highlight_count > 0) {
+            unreadCountSpan.textContent = r.highlight_count + "! ";
+        } else if (r.notification_count > 0) {
+            unreadCountSpan.textContent = r.notification_count + " ";
+        } else {
+            unreadCountSpan.textContent = "";
         }
         if (r.timeline && r.timeline.length > 0) {
             const mostRecentEvent = r.timeline[r.timeline.length-1];

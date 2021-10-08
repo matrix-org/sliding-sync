@@ -17,6 +17,7 @@ var (
 
 type ConnStateStore interface {
 	LoadRoom(roomID string) *SortableRoom
+	LoadUserRoomData(roomID, userID string) userRoomData
 	LoadState(roomID string, loadPosition int64, requiredState [][2]string) []json.RawMessage
 	Load(userID string) (joinedRoomIDs []string, initialLoadPosition int64, err error)
 }
@@ -310,21 +311,28 @@ func (s *ConnState) updateRoomSubscriptions(subs, unsubs []string) map[string]Ro
 }
 
 func (s *ConnState) getDeltaRoomData(updateEvent *EventData) *Room {
-	return &Room{
-		RoomID: updateEvent.roomID,
-		// TODO: notif counts
-		Timeline: []json.RawMessage{
-			updateEvent.event,
-		},
+	userRoomData := s.store.LoadUserRoomData(updateEvent.roomID, s.userID)
+	room := &Room{
+		RoomID:            updateEvent.roomID,
+		NotificationCount: int64(userRoomData.notificationCount),
+		HighlightCount:    int64(userRoomData.highlightCount),
 	}
+	if updateEvent.event != nil {
+		room.Timeline = []json.RawMessage{
+			updateEvent.event,
+		}
+	}
+	return room
 }
 
 func (s *ConnState) getInitialRoomData(roomID string) *Room {
 	r := s.store.LoadRoom(roomID)
+	userRoomData := s.store.LoadUserRoomData(roomID, s.userID)
 	return &Room{
-		RoomID: roomID,
-		Name:   r.Name,
-		// TODO: notif counts
+		RoomID:            roomID,
+		Name:              r.Name,
+		NotificationCount: int64(userRoomData.notificationCount),
+		HighlightCount:    int64(userRoomData.highlightCount),
 		// TODO: timeline limits
 		Timeline: []json.RawMessage{
 			r.LastEventJSON,

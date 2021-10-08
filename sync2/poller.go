@@ -160,6 +160,12 @@ func (p *Poller) parseRoomsResponse(res *SyncResponse) {
 				p.logger.Err(err).Str("room_id", roomID).Int("num_state_events", len(roomData.State.Events)).Msg("Poller: V2DataReceiver.Initialise failed")
 			}
 		}
+		// process unread counts before events else we might push the event without including said event in the count
+		if roomData.UnreadNotifications.HighlightCount != nil || roomData.UnreadNotifications.NotificationCount != nil {
+			p.receiver.UpdateUnreadCounts(
+				roomID, p.userID, roomData.UnreadNotifications.HighlightCount, roomData.UnreadNotifications.NotificationCount,
+			)
+		}
 		if len(roomData.Timeline.Events) > 0 {
 			timelineCalls++
 			err := p.receiver.Accumulate(roomID, roomData.Timeline.Events)
@@ -185,11 +191,6 @@ func (p *Poller) parseRoomsResponse(res *SyncResponse) {
 					p.logger.Err(err).Str("room_id", roomID).Strs("user_ids", userIDs).Msg("Poller: V2DataReceiver failed to SetTyping")
 				}
 			}
-		}
-		if roomData.UnreadNotifications.HighlightCount != nil || roomData.UnreadNotifications.NotificationCount != nil {
-			p.receiver.UpdateUnreadCounts(
-				roomID, p.userID, roomData.UnreadNotifications.HighlightCount, roomData.UnreadNotifications.NotificationCount,
-			)
 		}
 	}
 	for roomID, roomData := range res.Rooms.Leave {

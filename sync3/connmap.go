@@ -21,6 +21,8 @@ type EventData struct {
 	// the absolute latest position for this event data. The NID for this event is guaranteed to
 	// be <= this value.
 	latestPos int64
+
+	userRoomData *userRoomData
 }
 
 // ConnMap stores a collection of Conns along with other global server-wide state e.g the in-memory
@@ -38,12 +40,18 @@ type ConnMap struct {
 	jrt *JoinedRoomsTracker
 
 	// TODO: this can be pulled out of here and invoked from handler?
-	globalRoomInfo     map[string]*SortableRoom
-	perUserPerRoomData map[string]userRoomData
+	// inserts are done by v2 poll loops, selects are done by v3 request threads
+	// there are lots of overlapping keys as many users (threads) can be joined to the same room (key)
+	// hence you must lock this with `mu` before r/w
+	globalRoomInfo map[string]*SortableRoom
+	mu             *sync.Mutex
+
+	// inserts are done by v2 poll loops, selects are done by v3 request threads
+	// but the v3 requests touch non-overlapping keys, which is a good use case for sync.Map
+	// > (2) when multiple goroutines read, write, and overwrite entries for disjoint sets of keys.
+	perUserPerRoomData *sync.Map // map[string]userRoomData
 
 	store *state.Storage
-
-	mu *sync.Mutex
 }
 
 func NewConnMap(store *state.Storage) *ConnMap {
@@ -55,7 +63,7 @@ func NewConnMap(store *state.Storage) *ConnMap {
 		jrt:                NewJoinedRoomsTracker(),
 		store:              store,
 		globalRoomInfo:     make(map[string]*SortableRoom),
-		perUserPerRoomData: make(map[string]userRoomData),
+		perUserPerRoomData: &sync.Map{},
 	}
 	cm.cache.SetTTL(30 * time.Minute) // TODO: customisable
 	cm.cache.SetExpirationCallback(cm.closeConn)
@@ -229,17 +237,46 @@ func (m *ConnMap) closeConn(connID string, value interface{}) {
 	}
 }
 
+func (m *ConnMap) LoadUserRoomData(roomID, userID string) userRoomData {
+	key := userID + " " + roomID
+	data, ok := m.perUserPerRoomData.Load(key)
+	if !ok {
+		return userRoomData{}
+	}
+	return data.(userRoomData)
+}
+
 // TODO: Move to cache struct
 func (m *ConnMap) OnUnreadCounts(roomID, userID string, highlightCount, notifCount *int) {
-	key := userID + " " + roomID
-	userData := m.perUserPerRoomData[key]
+	data := m.LoadUserRoomData(roomID, userID)
+	hasCountDecreased := false
 	if highlightCount != nil {
-		userData.highlightCount = *highlightCount
+		hasCountDecreased = *highlightCount < data.highlightCount
+		data.highlightCount = *highlightCount
 	}
 	if notifCount != nil {
-		userData.notificationCount = *notifCount
+		if !hasCountDecreased {
+			hasCountDecreased = *notifCount < data.notificationCount
+		}
+		data.notificationCount = *notifCount
 	}
-	m.perUserPerRoomData[key] = userData
+	key := userID + " " + roomID
+	m.perUserPerRoomData.Store(key, data)
+	if hasCountDecreased {
+		// we will notify the connection for count decreases so the client can update their badge counter.
+		// we don't do this on increases as this should always be associated with an actual event which
+		// we will notify the connection for (and unread counts are processed prior to this). By doing
+		// this we ensure atomic style updates of badge counts and events, rather than getting the badge
+		// count update without a message.
+		m.mu.Lock()
+		conns := m.userIDToConn[userID]
+		m.mu.Unlock()
+		room := m.LoadRoom(roomID)
+		// TODO: don't indirect via conn :S this is dumb
+		for _, conn := range conns {
+			conn.PushUserRoomData(userID, roomID, data, room.LastMessageTimestamp)
+		}
+	}
 }
 
 // TODO: Move to cache struct
