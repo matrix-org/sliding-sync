@@ -239,6 +239,9 @@ const render = (container) => {
         const roomSenderSpan = roomCell.getElementsByClassName("roomsender")[0];
         const roomTimestampSpan = roomCell.getElementsByClassName("roomtimestamp")[0];
         const unreadCountSpan = roomCell.getElementsByClassName("unreadcount")[0];
+        unreadCountSpan.textContent = "";
+        unreadCountSpan.classList.remove("unreadcountnotify");
+        unreadCountSpan.classList.remove("unreadcounthighlight");
         if (!r) {
             // placeholder
             roomNameSpan.textContent = randomName(i, false);
@@ -249,7 +252,6 @@ const render = (container) => {
             roomTimestampSpan.textContent = "";
             roomCell.getElementsByClassName("roomavatar")[0].src = "/client/placeholder.svg";
             roomCell.style = "";
-            unreadCountSpan.textContent = "";
             continue;
         }
         roomCell.style = "";
@@ -265,9 +267,11 @@ const render = (container) => {
             roomCell.style = "background: #d7d7f7";
         }
         if (r.highlight_count > 0) {
-            unreadCountSpan.textContent = r.highlight_count + "! ";
+            unreadCountSpan.textContent = r.highlight_count + "";
+            unreadCountSpan.classList.add("unreadcounthighlight");
         } else if (r.notification_count > 0) {
-            unreadCountSpan.textContent = r.notification_count + " ";
+            unreadCountSpan.textContent = r.notification_count + "";
+            unreadCountSpan.classList.add("unreadcountnotify");
         } else {
             unreadCountSpan.textContent = "";
         }

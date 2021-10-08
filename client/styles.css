@@ -73,6 +73,17 @@ body {
     font-size: small;
 }
 
+.unreadcountnotify {
+    background: #d0d0d0;
+    padding: 2px;
+    font-weight: bold;
+}
+.unreadcounthighlight {
+    background: #f08080;
+    padding: 2px;
+    font-weight: bold;
+}
+
 .msgheader {
     display: flex;
     align-items: center;
