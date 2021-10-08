@@ -234,16 +234,26 @@ const render = (container) => {
         const roomCell = container.children[i];
         const roomId = rooms.roomIndexToRoomId[i];
         const r = rooms.roomIdToRoom[roomId];
+        const roomNameSpan = roomCell.getElementsByClassName("roomname")[0];
+        const roomContentSpan = roomCell.getElementsByClassName("roomcontent")[0];
+        const roomSenderSpan = roomCell.getElementsByClassName("roomsender")[0];
+        const roomTimestampSpan = roomCell.getElementsByClassName("roomtimestamp")[0];
         if (!r) {
             // placeholder
-            roomCell.getElementsByClassName("roomname")[0].textContent = "";
-            roomCell.getElementsByClassName("roomcontent")[0].textContent = "";
+            roomNameSpan.textContent = randomName(i, false);
+            roomNameSpan.style = "background: #e0e0e0; color: #e0e0e0;";
+            roomContentSpan.textContent = randomName(i, true);
+            roomContentSpan.style = "background: #e0e0e0; color: #e0e0e0;";
+            roomSenderSpan.textContent = "";
+            roomTimestampSpan.textContent = "";
             roomCell.getElementsByClassName("roomavatar")[0].src = "/client/placeholder.svg";
             roomCell.style = "";
             continue;
         }
         roomCell.style = "";
-        roomCell.getElementsByClassName("roomname")[0].textContent = r.name || r.room_id;
+        roomNameSpan.textContent = r.name || r.room_id;
+        roomNameSpan.style = "";
+        roomContentSpan.style = "";
         if (r.avatar) {
             roomCell.getElementsByClassName("roomavatar")[0].src = mxcToUrl(r.avatar);
         } else {
@@ -254,19 +264,19 @@ const render = (container) => {
         }
         if (r.timeline && r.timeline.length > 0) {
             const mostRecentEvent = r.timeline[r.timeline.length-1];
-            roomCell.getElementsByClassName("roomsender")[0].textContent = mostRecentEvent.sender;
-            roomCell.getElementsByClassName("roomtimestamp")[0].textContent = formatTimestamp(mostRecentEvent.origin_server_ts);
+            roomSenderSpan.textContent = mostRecentEvent.sender;
+            roomTimestampSpan.textContent = formatTimestamp(mostRecentEvent.origin_server_ts);
 
             if (mostRecentEvent.type === "m.room.message") {
-                roomCell.getElementsByClassName("roomcontent")[0].textContent = mostRecentEvent.content.body;
+                roomContentSpan.textContent = mostRecentEvent.content.body;
             } else if (mostRecentEvent.type === "m.room.member") {
-                roomCell.getElementsByClassName("roomcontent")[0].textContent = "";
-                roomCell.getElementsByClassName("roomsender")[0].textContent = membershipChangeText(mostRecentEvent);
+                roomContentSpan.textContent = "";
+                roomSenderSpan.textContent = membershipChangeText(mostRecentEvent);
             } else if (mostRecentEvent.type) {
-                roomCell.getElementsByClassName("roomcontent")[0].textContent = mostRecentEvent.type + " event";
+                roomContentSpan.textContent = mostRecentEvent.type + " event";
             }
         } else {
-            roomCell.getElementsByClassName("roomcontent")[0].textContent = "";
+            roomContentSpan.textContent = "";
         }
     }
 }
