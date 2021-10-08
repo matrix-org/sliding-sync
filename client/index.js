@@ -198,7 +198,7 @@ const renderRoomContent = (roomId, refresh) => {
     }
     document.getElementById("selectedroomname").textContent = room.name || room.room_id;
     if (room.avatar) {
-        document.getElementById("selectedroomavatar").src = mxcToUrl(room.avatar);
+        document.getElementById("selectedroomavatar").src = mxcToUrl(room.avatar) || "/client/placeholder.svg";
     } else {
         document.getElementById("selectedroomavatar").src = "/client/placeholder.svg";
     }
@@ -266,7 +266,7 @@ const render = (container) => {
         roomNameSpan.style = "";
         roomContentSpan.style = "";
         if (r.avatar) {
-            roomCell.getElementsByClassName("roomavatar")[0].src = mxcToUrl(r.avatar);
+            roomCell.getElementsByClassName("roomavatar")[0].src = mxcToUrl(r.avatar) || "/client/placeholder.svg";
         } else {
             roomCell.getElementsByClassName("roomavatar")[0].src = "/client/placeholder.svg";
         }
@@ -532,6 +532,9 @@ const zeroPad = (n) => {
 
 const mxcToUrl = (mxc) => {
     const path = mxc.substr("mxc://".length);
+    if (!path) {
+        return;
+    }
     // TODO: we should really use the proxy HS not matrix.org
     return `https://matrix-client.matrix.org/_matrix/media/r0/thumbnail/${path}?width=64&height=64&method=crop`;
 }
