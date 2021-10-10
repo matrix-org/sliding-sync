@@ -161,9 +161,10 @@ const renderMessage = (container, ev) => {
 const onRoomClick = (e) => {
     let index = -1;
     // walk up the pointer event path until we find a room## id=
-    for (let i = 0; i < e.path.length; i++) {
-        if (e.path[i].id && e.path[i].id.startsWith("room")) {
-            index = Number(e.path[i].id.substr("room".length));
+    const path = e.composedPath();
+    for (let i = 0; i < path.length; i++) {
+        if (path[i].id && path[i].id.startsWith("room")) {
+            index = Number(path[i].id.substr("room".length));
             break;
         }
     }
