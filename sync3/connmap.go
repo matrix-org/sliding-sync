@@ -6,7 +6,6 @@ import (
 	"time"
 
 	"github.com/ReneKroon/ttlcache/v2"
-	"github.com/matrix-org/sync-v3/state"
 	"github.com/tidwall/gjson"
 )
 
@@ -41,18 +40,19 @@ type ConnMap struct {
 
 	mu *sync.Mutex
 
-	store *state.Storage
+	globalCache *GlobalCache
 }
 
-func NewConnMap(store *state.Storage) *ConnMap {
+func NewConnMap(globalCache *GlobalCache) *ConnMap {
 	cm := &ConnMap{
 		userIDToConn: make(map[string][]*Conn),
 		connIDToConn: make(map[string]*Conn),
 		cache:        ttlcache.NewCache(),
 		mu:           &sync.Mutex{},
 		jrt:          NewJoinedRoomsTracker(),
-		store:        store,
+		globalCache:  globalCache,
 	}
+	globalCache.Subsribe(cm)
 	cm.cache.SetTTL(30 * time.Minute) // TODO: customisable
 	cm.cache.SetExpirationCallback(cm.closeConn)
 	return cm
@@ -122,65 +122,32 @@ func (m *ConnMap) closeConn(connID string, value interface{}) {
 	}
 }
 
-// TODO: Move to cache struct
-// Call this when there is a new event received on a v2 stream.
-// This event must be globally unique, i.e indicated so by the state store.
-func (m *ConnMap) OnNewEvents(
-	roomID string, events []json.RawMessage, latestPos int64,
-) {
-	for _, event := range events {
-		m.onNewEvent(roomID, event, latestPos)
-	}
-}
-
-// TODO: Move to cache struct
-func (m *ConnMap) onNewEvent(
-	roomID string, event json.RawMessage, latestPos int64,
-) {
-	// parse the event to pull out fields we care about
-	var stateKey *string
-	ev := gjson.ParseBytes(event)
-	if sk := ev.Get("state_key"); sk.Exists() {
-		stateKey = &sk.Str
-	}
-	eventType := ev.Get("type").Str
-
+func (m *ConnMap) OnNewEvent(event *EventData) {
 	// update the tracker
 	targetUser := ""
-	if eventType == "m.room.member" && stateKey != nil {
-		targetUser = *stateKey
+	if event.eventType == "m.room.member" && event.stateKey != nil {
+		targetUser = *event.stateKey
 		// TODO: de-dupe joins in jrt else profile changes will results in 2x room IDs
-		membership := ev.Get("content.membership").Str
+		membership := event.content.Get("membership").Str
 		switch membership {
 		case "join":
-			m.jrt.UserJoinedRoom(targetUser, roomID)
+			m.jrt.UserJoinedRoom(targetUser, event.roomID)
 		case "ban":
 			fallthrough
 		case "leave":
-			m.jrt.UserLeftRoom(targetUser, roomID)
+			m.jrt.UserLeftRoom(targetUser, event.roomID)
 		}
-	}
-	eventTimestamp := ev.Get("origin_server_ts").Int()
-
-	ed := &EventData{
-		event:     event,
-		roomID:    roomID,
-		eventType: eventType,
-		stateKey:  stateKey,
-		content:   ev.Get("content"),
-		latestPos: latestPos,
-		timestamp: eventTimestamp,
 	}
 
 	// notify all people in this room
 	notifiedTargetUser := false
-	userIDs := m.jrt.JoinedUsersForRoom(roomID)
+	userIDs := m.jrt.JoinedUsersForRoom(event.roomID)
 	for _, userID := range userIDs {
 		m.mu.Lock()
 		conns := m.userIDToConn[userID]
 		m.mu.Unlock()
 		for _, conn := range conns {
-			conn.PushNewEvent(ed)
+			conn.PushNewEvent(event)
 			if userID == targetUser {
 				notifiedTargetUser = true
 			}
@@ -191,7 +158,7 @@ func (m *ConnMap) onNewEvent(
 		conns := m.userIDToConn[targetUser]
 		m.mu.Unlock()
 		for _, conn := range conns {
-			conn.PushNewEvent(ed)
+			conn.PushNewEvent(event)
 		}
 	}
 }

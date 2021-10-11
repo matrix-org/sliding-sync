@@ -57,7 +57,6 @@ func NewConnState(userID string, userCache *UserCache, globalCache *GlobalCache)
 //   - post load() we read N events, processing them a 2nd time.
 func (s *ConnState) load(req *Request) error {
 	s.userCache.Subsribe(s)
-	s.globalCache.Subsribe(s)
 
 	initialLoadPosition, joinedRooms, err := s.globalCache.LoadJoinedRooms(s.userID)
 	if err != nil {
@@ -88,10 +87,6 @@ func (s *ConnState) HandleIncomingRequest(ctx context.Context, cid ConnID, req *
 		s.load(req)
 	}
 	return s.onIncomingRequest(ctx, req)
-}
-
-func (s *ConnState) OnNewEvent(event *EventData) {
-	s.PushNewEvent(event)
 }
 
 // PushNewEvent is a callback which fires when the server gets a new event and determines this connection MAY be

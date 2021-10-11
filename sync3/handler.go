@@ -50,7 +50,7 @@ func NewSync3Handler(v2Client sync2.Client, postgresDBURI string) (*SyncLiveHand
 	}
 	globalCache := NewGlobalCache(sh.Storage)
 	sh.PollerMap = sync2.NewPollerMap(v2Client, sh)
-	sh.ConnMap = NewConnMap(sh.Storage)
+	sh.ConnMap = NewConnMap(globalCache)
 	sh.globalCache = globalCache
 
 	if err := PopulateGlobalCache(sh.Storage, sh.globalCache); err != nil {
@@ -274,7 +274,6 @@ func (h *SyncLiveHandler) Accumulate(roomID string, timeline []json.RawMessage) 
 	newEvents := timeline[len(timeline)-numNew:]
 
 	// we have new events, let the connection map handle them
-	h.ConnMap.OnNewEvents(roomID, newEvents, latestPos)
 	h.globalCache.OnNewEvents(roomID, newEvents, latestPos)
 	return err
 }
@@ -291,7 +290,6 @@ func (h *SyncLiveHandler) Initialise(roomID string, state []json.RawMessage) err
 	}
 	// we have new events, let the connection map handle them
 	h.globalCache.OnNewEvents(roomID, state, 0)
-	h.ConnMap.OnNewEvents(roomID, state, 0)
 	return err
 }
 

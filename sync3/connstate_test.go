@@ -12,6 +12,16 @@ import (
 	"github.com/matrix-org/sync-v3/testutils"
 )
 
+type mockGlobalCacheListener struct {
+	cs *ConnState
+}
+
+// normally the connmap checks to see if this conn is interested in this event; we are always interested
+// for testing purposes so always push them
+func (l *mockGlobalCacheListener) OnNewEvent(event *EventData) {
+	l.cs.PushNewEvent(event)
+}
+
 func newSortableRoom(roomID string, lastMsgTimestamp int64) SortableRoom {
 	return SortableRoom{
 		RoomID:               roomID,
@@ -46,6 +56,7 @@ func TestConnStateInitial(t *testing.T) {
 		}, nil
 	}
 	cs := NewConnState(userID, NewUserCache(userID), globalCache)
+	globalCache.Subsribe(&mockGlobalCacheListener{cs})
 	if userID != cs.UserID() {
 		t.Fatalf("UserID returned wrong value, got %v want %v", cs.UserID(), userID)
 	}
@@ -174,6 +185,7 @@ func TestConnStateMultipleRanges(t *testing.T) {
 		return 1, rooms, nil
 	}
 	cs := NewConnState(userID, NewUserCache(userID), globalCache)
+	globalCache.Subsribe(&mockGlobalCacheListener{cs})
 
 	// request first page
 	res, err := cs.HandleIncomingRequest(context.Background(), connID, &Request{
@@ -332,6 +344,7 @@ func TestBumpToOutsideRange(t *testing.T) {
 		}, nil
 	}
 	cs := NewConnState(userID, NewUserCache(userID), globalCache)
+	globalCache.Subsribe(&mockGlobalCacheListener{cs})
 	// Ask for A,B
 	res, err := cs.HandleIncomingRequest(context.Background(), connID, &Request{
 		Sort: []string{SortByRecency},
@@ -406,6 +419,7 @@ func TestConnStateRoomSubscriptions(t *testing.T) {
 		}, nil
 	}
 	cs := NewConnState(userID, NewUserCache(userID), globalCache)
+	globalCache.Subsribe(&mockGlobalCacheListener{cs})
 	// subscribe to room D
 	res, err := cs.HandleIncomingRequest(context.Background(), connID, &Request{
 		Sort: []string{SortByRecency},
