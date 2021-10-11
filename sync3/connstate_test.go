@@ -27,10 +27,6 @@ type connStateStoreMock struct {
 	userIDToPosition    map[string]int64
 }
 
-func (s *connStateStoreMock) LoadRoom(roomID string) *SortableRoom {
-	sr := s.roomIDToRoom[roomID]
-	return &sr
-}
 func (s *connStateStoreMock) Load(userID string) (joinedRoomIDs []string, initialLoadPosition int64, err error) {
 	joinedRoomIDs = s.userIDToJoinedRooms[userID]
 	initialLoadPosition = s.userIDToPosition[userID]
@@ -65,6 +61,10 @@ func TestConnStateInitial(t *testing.T) {
 	roomA := newSortableRoom("!a:localhost", timestampNow-8000)
 	roomB := newSortableRoom("!b:localhost", timestampNow)
 	roomC := newSortableRoom("!c:localhost", timestampNow-4000)
+	globalCache := NewGlobalCache()
+	globalCache.AssignRoom(roomA)
+	globalCache.AssignRoom(roomB)
+	globalCache.AssignRoom(roomC)
 
 	// initial sort order B, C, A
 	csm := &connStateStoreMock{
@@ -77,7 +77,7 @@ func TestConnStateInitial(t *testing.T) {
 			roomC.RoomID: roomC,
 		},
 	}
-	cs := NewConnState(userID, NewUserCache(userID), csm)
+	cs := NewConnState(userID, NewUserCache(userID), globalCache, csm)
 	if userID != cs.UserID() {
 		t.Fatalf("UserID returned wrong value, got %v want %v", cs.UserID(), userID)
 	}
@@ -192,6 +192,7 @@ func TestConnStateMultipleRanges(t *testing.T) {
 	timestampNow := int64(1632131678061)
 	var rooms []SortableRoom
 	var roomIDs []string
+	globalCache := NewGlobalCache()
 	roomIDToRoom := make(map[string]SortableRoom)
 	for i := 0; i < 10; i++ {
 		roomID := fmt.Sprintf("!%d:localhost", i)
@@ -205,6 +206,7 @@ func TestConnStateMultipleRanges(t *testing.T) {
 		rooms = append(rooms, room)
 		roomIDs = append(roomIDs, roomID)
 		roomIDToRoom[roomID] = room
+		globalCache.AssignRoom(room)
 	}
 
 	// initial sort order B, C, A
@@ -214,7 +216,7 @@ func TestConnStateMultipleRanges(t *testing.T) {
 		},
 		roomIDToRoom: roomIDToRoom,
 	}
-	cs := NewConnState(userID, NewUserCache(userID), csm)
+	cs := NewConnState(userID, NewUserCache(userID), globalCache, csm)
 
 	// request first page
 	res, err := cs.HandleIncomingRequest(context.Background(), connID, &Request{
@@ -368,6 +370,11 @@ func TestBumpToOutsideRange(t *testing.T) {
 	roomB := newSortableRoom("!b:localhost", timestampNow-1000)
 	roomC := newSortableRoom("!c:localhost", timestampNow-2000)
 	roomD := newSortableRoom("!d:localhost", timestampNow-3000)
+	globalCache := NewGlobalCache()
+	globalCache.AssignRoom(roomA)
+	globalCache.AssignRoom(roomB)
+	globalCache.AssignRoom(roomC)
+	globalCache.AssignRoom(roomD)
 
 	// initial sort order A,B,C,D
 	csm := &connStateStoreMock{
@@ -381,7 +388,7 @@ func TestBumpToOutsideRange(t *testing.T) {
 			roomD.RoomID: roomD,
 		},
 	}
-	cs := NewConnState(userID, NewUserCache(userID), csm)
+	cs := NewConnState(userID, NewUserCache(userID), globalCache, csm)
 	// Ask for A,B
 	res, err := cs.HandleIncomingRequest(context.Background(), connID, &Request{
 		Sort: []string{SortByRecency},
@@ -448,6 +455,11 @@ func TestConnStateRoomSubscriptions(t *testing.T) {
 	roomC := newSortableRoom("!c:localhost", timestampNow-2000)
 	roomD := newSortableRoom("!d:localhost", timestampNow-3000)
 	roomIDs := []string{roomA.RoomID, roomB.RoomID, roomC.RoomID, roomD.RoomID}
+	globalCache := NewGlobalCache()
+	globalCache.AssignRoom(roomA)
+	globalCache.AssignRoom(roomB)
+	globalCache.AssignRoom(roomC)
+	globalCache.AssignRoom(roomD)
 
 	// initial sort order A,B,C,D
 	csm := &connStateStoreMock{
@@ -461,7 +473,7 @@ func TestConnStateRoomSubscriptions(t *testing.T) {
 			roomD.RoomID: roomD,
 		},
 	}
-	cs := NewConnState(userID, NewUserCache(userID), csm)
+	cs := NewConnState(userID, NewUserCache(userID), globalCache, csm)
 	// subscribe to room D
 	res, err := cs.HandleIncomingRequest(context.Background(), connID, &Request{
 		Sort: []string{SortByRecency},

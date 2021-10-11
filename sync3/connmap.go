@@ -2,7 +2,6 @@ package sync3
 
 import (
 	"encoding/json"
-	"fmt"
 	"sync"
 	"time"
 
@@ -40,25 +39,19 @@ type ConnMap struct {
 	// BEFORE v2 poll loops are started, else it could race with live updates.
 	jrt *JoinedRoomsTracker
 
-	// TODO: this can be pulled out of here and invoked from handler?
-	// inserts are done by v2 poll loops, selects are done by v3 request threads
-	// there are lots of overlapping keys as many users (threads) can be joined to the same room (key)
-	// hence you must lock this with `mu` before r/w
-	globalRoomInfo map[string]*SortableRoom
-	mu             *sync.Mutex
+	mu *sync.Mutex
 
 	store *state.Storage
 }
 
 func NewConnMap(store *state.Storage) *ConnMap {
 	cm := &ConnMap{
-		userIDToConn:   make(map[string][]*Conn),
-		connIDToConn:   make(map[string]*Conn),
-		cache:          ttlcache.NewCache(),
-		mu:             &sync.Mutex{},
-		jrt:            NewJoinedRoomsTracker(),
-		store:          store,
-		globalRoomInfo: make(map[string]*SortableRoom),
+		userIDToConn: make(map[string][]*Conn),
+		connIDToConn: make(map[string]*Conn),
+		cache:        ttlcache.NewCache(),
+		mu:           &sync.Mutex{},
+		jrt:          NewJoinedRoomsTracker(),
+		store:        store,
 	}
 	cm.cache.SetTTL(30 * time.Minute) // TODO: customisable
 	cm.cache.SetExpirationCallback(cm.closeConn)
@@ -75,7 +68,7 @@ func (m *ConnMap) Conn(cid ConnID) *Conn {
 }
 
 // Atomically gets or creates a connection with this connection ID.
-func (m *ConnMap) GetOrCreateConn(cid ConnID, userID string, userCache *UserCache) (*Conn, bool) {
+func (m *ConnMap) GetOrCreateConn(cid ConnID, globalCache *GlobalCache, userID string, userCache *UserCache) (*Conn, bool) {
 	// atomically check if a conn exists already and return that if so
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -83,7 +76,7 @@ func (m *ConnMap) GetOrCreateConn(cid ConnID, userID string, userCache *UserCach
 	if conn != nil {
 		return conn, false
 	}
-	state := NewConnState(userID, userCache, m)
+	state := NewConnState(userID, userCache, globalCache, m)
 	conn = NewConn(cid, state, state.HandleIncomingRequest)
 	m.cache.Set(cid.String(), conn)
 	m.connIDToConn[cid.String()] = conn
@@ -100,56 +93,13 @@ func (m *ConnMap) GetOrCreateConn(cid ConnID, userID string, userCache *UserCach
 //   - join event is processed twice.
 // TODO: Move to cache struct
 func (m *ConnMap) LoadBaseline(roomIDToUserIDs map[string][]string) error {
-	// TODO: load last N events as a sliding window?
-	latestEvents, err := m.store.SelectLatestEventInAllRooms()
-	if err != nil {
-		return fmt.Errorf("failed to load latest event for all rooms: %s", err)
-	}
-	// every room will be present here
-	for _, ev := range latestEvents {
-		room := &SortableRoom{
-			RoomID: ev.RoomID,
-		}
-		room.LastEventJSON = ev.JSON
-		room.LastMessageTimestamp = gjson.ParseBytes(ev.JSON).Get("origin_server_ts").Int()
-		m.globalRoomInfo[room.RoomID] = room
-	}
-	// load state events we care about for sync v3
-	roomIDToStateEvents, err := m.store.CurrentStateEventsInAllRooms([]string{
-		"m.room.name", "m.room.canonical_alias",
-	})
-	if err != nil {
-		return fmt.Errorf("failed to load state events for all rooms: %s", err)
-	}
-	for roomID, stateEvents := range roomIDToStateEvents {
-		room := m.globalRoomInfo[roomID]
-		if room == nil {
-			return fmt.Errorf("room %s has no latest event but does have state; this should be impossible", roomID)
-		}
-		for _, ev := range stateEvents {
-			if ev.Type == "m.room.name" && ev.StateKey == "" {
-				room.Name = gjson.ParseBytes(ev.JSON).Get("content.name").Str
-			} else if ev.Type == "m.room.canonical_alias" && ev.StateKey == "" && room.Name == "" {
-				room.Name = gjson.ParseBytes(ev.JSON).Get("content.alias").Str
-			}
-		}
-		m.globalRoomInfo[roomID] = room
-		fmt.Printf("Room: %s - %s - %s \n", room.RoomID, room.Name, time.Unix(room.LastMessageTimestamp/1000, 0))
-	}
-	// now loop all joined rooms, some of which may not be present in globalRoomInfo if they have no state
+	// loop all joined rooms, some of which may not be present in globalRoomInfo if they have no state
 	for roomID, userIDs := range roomIDToUserIDs {
 		for _, userID := range userIDs {
 			m.jrt.UserJoinedRoom(userID, roomID)
 		}
 	}
 	return nil
-}
-
-// TODO: Move to cache struct
-func (m *ConnMap) LoadRoom(roomID string) *SortableRoom {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	return m.globalRoomInfo[roomID]
 }
 
 func (m *ConnMap) LoadState(roomID string, loadPosition int64, requiredState [][2]string) []json.RawMessage {
@@ -263,24 +213,7 @@ func (m *ConnMap) onNewEvent(
 			m.jrt.UserLeftRoom(targetUser, roomID)
 		}
 	}
-	// update global state
-	m.mu.Lock()
-	globalRoom := m.globalRoomInfo[roomID]
-	if globalRoom == nil {
-		globalRoom = &SortableRoom{
-			RoomID: roomID,
-		}
-	}
-	if eventType == "m.room.name" && stateKey != nil && *stateKey == "" {
-		globalRoom.Name = ev.Get("content.name").Str
-	} else if eventType == "m.room.canonical_alias" && stateKey != nil && *stateKey == "" && globalRoom.Name == "" {
-		globalRoom.Name = ev.Get("content.alias").Str
-	}
 	eventTimestamp := ev.Get("origin_server_ts").Int()
-	globalRoom.LastMessageTimestamp = eventTimestamp
-	globalRoom.LastEventJSON = event
-	m.globalRoomInfo[globalRoom.RoomID] = globalRoom
-	m.mu.Unlock()
 
 	ed := &EventData{
 		event:     event,

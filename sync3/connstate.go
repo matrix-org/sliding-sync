@@ -16,7 +16,6 @@ var (
 )
 
 type ConnStateStore interface {
-	LoadRoom(roomID string) *SortableRoom
 	LoadState(roomID string, loadPosition int64, requiredState [][2]string) []json.RawMessage
 	Load(userID string) (joinedRoomIDs []string, initialLoadPosition int64, err error)
 }
@@ -36,12 +35,14 @@ type ConnState struct {
 	// saying the client is ded and cleaning up the conn.
 	updateEvents chan *EventData
 
-	userCache *UserCache
+	globalCache *GlobalCache
+	userCache   *UserCache
 }
 
-func NewConnState(userID string, userCache *UserCache, store ConnStateStore) *ConnState {
+func NewConnState(userID string, userCache *UserCache, globalCache *GlobalCache, store ConnStateStore) *ConnState {
 	return &ConnState{
 		store:                      store,
+		globalCache:                globalCache,
 		userCache:                  userCache,
 		userID:                     userID,
 		roomSubscriptions:          make(map[string]RoomSubscription),
@@ -71,7 +72,7 @@ func (s *ConnState) load(req *Request) error {
 	s.sortedJoinedRooms = make([]SortableRoom, len(joinedRoomIDs))
 	for i, roomID := range joinedRoomIDs {
 		// load global room info
-		sr := s.store.LoadRoom(roomID)
+		sr := s.globalCache.LoadRoom(roomID)
 		s.sortedJoinedRooms[i] = *sr
 		s.sortedJoinedRoomsPositions[sr.RoomID] = i
 	}
@@ -225,7 +226,7 @@ func (s *ConnState) onIncomingRequest(ctx context.Context, req *Request) (*Respo
 				if !ok {
 					// the user may have just joined the room hence not have an entry in this list yet.
 					fromIndex = len(s.sortedJoinedRooms)
-					newRoom := s.store.LoadRoom(updateEvent.roomID)
+					newRoom := s.globalCache.LoadRoom(updateEvent.roomID)
 					newRoom.LastMessageTimestamp = updateEvent.timestamp
 					s.sortedJoinedRooms = append(s.sortedJoinedRooms, *newRoom)
 					targetRoom = *newRoom
@@ -329,7 +330,7 @@ func (s *ConnState) getDeltaRoomData(updateEvent *EventData) *Room {
 }
 
 func (s *ConnState) getInitialRoomData(roomID string) *Room {
-	r := s.store.LoadRoom(roomID)
+	r := s.globalCache.LoadRoom(roomID)
 	userRoomData := s.userCache.loadRoomData(roomID)
 	return &Room{
 		RoomID:            roomID,
@@ -403,7 +404,7 @@ func (s *ConnState) OnUnreadCountsChanged(userID, roomID string, urd UserRoomDat
 	if !hasCountDecreased {
 		return
 	}
-	room := s.store.LoadRoom(roomID)
+	room := s.globalCache.LoadRoom(roomID)
 	s.PushNewEvent(&EventData{
 		roomID:       roomID,
 		userRoomData: &urd,

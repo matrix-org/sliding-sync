@@ -37,17 +37,24 @@ type SyncLiveHandler struct {
 	// but the v3 requests touch non-overlapping keys, which is a good use case for sync.Map
 	// > (2) when multiple goroutines read, write, and overwrite entries for disjoint sets of keys.
 	userCaches *sync.Map // map[user_id]*UserCache
+
+	globalCache *GlobalCache
 }
 
 func NewSync3Handler(v2Client sync2.Client, postgresDBURI string) (*SyncLiveHandler, error) {
 	sh := &SyncLiveHandler{
-		V2:         v2Client,
-		Storage:    state.NewStorage(postgresDBURI),
-		V2Store:    sync2.NewStore(postgresDBURI),
-		userCaches: &sync.Map{},
+		V2:          v2Client,
+		Storage:     state.NewStorage(postgresDBURI),
+		V2Store:     sync2.NewStore(postgresDBURI),
+		userCaches:  &sync.Map{},
+		globalCache: NewGlobalCache(),
 	}
 	sh.PollerMap = sync2.NewPollerMap(v2Client, sh)
 	sh.ConnMap = NewConnMap(sh.Storage)
+
+	if err := PopulateGlobalCache(sh.Storage, sh.globalCache); err != nil {
+		return nil, fmt.Errorf("failed to populate global cache: %s", err)
+	}
 
 	roomToJoinedUsers, err := sh.Storage.AllJoinedMembers()
 	if err != nil {
@@ -222,7 +229,7 @@ func (h *SyncLiveHandler) setupConnection(req *http.Request, syncReq *Request, c
 	conn, created := h.ConnMap.GetOrCreateConn(ConnID{
 		SessionID: syncReq.SessionID,
 		DeviceID:  deviceID,
-	}, v2device.UserID, userCache)
+	}, h.globalCache, v2device.UserID, userCache)
 	if created {
 		log.Info().Str("conn_id", conn.ConnID.String()).Msg("created new connection")
 	} else {
@@ -267,6 +274,7 @@ func (h *SyncLiveHandler) Accumulate(roomID string, timeline []json.RawMessage) 
 
 	// we have new events, let the connection map handle them
 	h.ConnMap.OnNewEvents(roomID, newEvents, latestPos)
+	h.globalCache.OnNewEvents(roomID, newEvents, latestPos)
 	return err
 }
 
@@ -281,6 +289,7 @@ func (h *SyncLiveHandler) Initialise(roomID string, state []json.RawMessage) err
 		return nil
 	}
 	// we have new events, let the connection map handle them
+	h.globalCache.OnNewEvents(roomID, state, 0)
 	h.ConnMap.OnNewEvents(roomID, state, 0)
 	return err
 }
