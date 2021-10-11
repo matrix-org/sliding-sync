@@ -43,14 +43,15 @@ type SyncLiveHandler struct {
 
 func NewSync3Handler(v2Client sync2.Client, postgresDBURI string) (*SyncLiveHandler, error) {
 	sh := &SyncLiveHandler{
-		V2:          v2Client,
-		Storage:     state.NewStorage(postgresDBURI),
-		V2Store:     sync2.NewStore(postgresDBURI),
-		userCaches:  &sync.Map{},
-		globalCache: NewGlobalCache(),
+		V2:         v2Client,
+		Storage:    state.NewStorage(postgresDBURI),
+		V2Store:    sync2.NewStore(postgresDBURI),
+		userCaches: &sync.Map{},
 	}
+	globalCache := NewGlobalCache(sh.Storage)
 	sh.PollerMap = sync2.NewPollerMap(v2Client, sh)
 	sh.ConnMap = NewConnMap(sh.Storage)
+	sh.globalCache = globalCache
 
 	if err := PopulateGlobalCache(sh.Storage, sh.globalCache); err != nil {
 		return nil, fmt.Errorf("failed to populate global cache: %s", err)

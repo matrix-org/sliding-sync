@@ -61,7 +61,7 @@ func TestConnStateInitial(t *testing.T) {
 	roomA := newSortableRoom("!a:localhost", timestampNow-8000)
 	roomB := newSortableRoom("!b:localhost", timestampNow)
 	roomC := newSortableRoom("!c:localhost", timestampNow-4000)
-	globalCache := NewGlobalCache()
+	globalCache := NewGlobalCache(nil)
 	globalCache.AssignRoom(roomA)
 	globalCache.AssignRoom(roomB)
 	globalCache.AssignRoom(roomC)
@@ -192,7 +192,7 @@ func TestConnStateMultipleRanges(t *testing.T) {
 	timestampNow := int64(1632131678061)
 	var rooms []SortableRoom
 	var roomIDs []string
-	globalCache := NewGlobalCache()
+	globalCache := NewGlobalCache(nil)
 	roomIDToRoom := make(map[string]SortableRoom)
 	for i := 0; i < 10; i++ {
 		roomID := fmt.Sprintf("!%d:localhost", i)
@@ -370,7 +370,7 @@ func TestBumpToOutsideRange(t *testing.T) {
 	roomB := newSortableRoom("!b:localhost", timestampNow-1000)
 	roomC := newSortableRoom("!c:localhost", timestampNow-2000)
 	roomD := newSortableRoom("!d:localhost", timestampNow-3000)
-	globalCache := NewGlobalCache()
+	globalCache := NewGlobalCache(nil)
 	globalCache.AssignRoom(roomA)
 	globalCache.AssignRoom(roomB)
 	globalCache.AssignRoom(roomC)
@@ -455,7 +455,7 @@ func TestConnStateRoomSubscriptions(t *testing.T) {
 	roomC := newSortableRoom("!c:localhost", timestampNow-2000)
 	roomD := newSortableRoom("!d:localhost", timestampNow-3000)
 	roomIDs := []string{roomA.RoomID, roomB.RoomID, roomC.RoomID, roomD.RoomID}
-	globalCache := NewGlobalCache()
+	globalCache := NewGlobalCache(nil)
 	globalCache.AssignRoom(roomA)
 	globalCache.AssignRoom(roomB)
 	globalCache.AssignRoom(roomC)

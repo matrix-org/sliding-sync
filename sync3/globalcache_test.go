@@ -9,7 +9,7 @@ import (
 	"github.com/matrix-org/sync-v3/testutils"
 )
 
-func TestConnMapLoadState(t *testing.T) {
+func TestGlobalCacheLoadState(t *testing.T) {
 	store := state.NewStorage(postgresConnectionString)
 	roomID := "!TestConnMapLoadState:localhost"
 	alice := "@alice:localhost"
@@ -28,7 +28,7 @@ func TestConnMapLoadState(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Accumulate: %s", err)
 	}
-	cm := NewConnMap(store)
+	globalCache := NewGlobalCache(store)
 	testCases := []struct {
 		requiredState [][2]string
 		wantEvents    []json.RawMessage
@@ -83,7 +83,7 @@ func TestConnMapLoadState(t *testing.T) {
 		},
 	}
 	for _, tc := range testCases {
-		got := cm.LoadState(roomID, latest, tc.requiredState)
+		got := globalCache.LoadRoomState(roomID, latest, tc.requiredState)
 		if len(got) != len(tc.wantEvents) {
 			t.Errorf("LoadState for input %v got %d events want %d", tc.requiredState, len(got), len(tc.wantEvents))
 			continue

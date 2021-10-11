@@ -16,7 +16,6 @@ var (
 )
 
 type ConnStateStore interface {
-	LoadState(roomID string, loadPosition int64, requiredState [][2]string) []json.RawMessage
 	Load(userID string) (joinedRoomIDs []string, initialLoadPosition int64, err error)
 }
 
@@ -330,7 +329,7 @@ func (s *ConnState) getDeltaRoomData(updateEvent *EventData) *Room {
 }
 
 func (s *ConnState) getInitialRoomData(roomID string) *Room {
-	r := s.globalCache.LoadRoom(roomID)
+	r := s.globalCache.LoadRoom(roomID) // TODO: does this race?
 	userRoomData := s.userCache.loadRoomData(roomID)
 	return &Room{
 		RoomID:            roomID,
@@ -341,7 +340,7 @@ func (s *ConnState) getInitialRoomData(roomID string) *Room {
 		Timeline: []json.RawMessage{
 			r.LastEventJSON,
 		},
-		RequiredState: s.store.LoadState(roomID, s.loadPosition, s.muxedReq.GetRequiredState(roomID)),
+		RequiredState: s.globalCache.LoadRoomState(roomID, s.loadPosition, s.muxedReq.GetRequiredState(roomID)),
 	}
 }
 

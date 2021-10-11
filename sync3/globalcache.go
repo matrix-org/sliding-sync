@@ -21,17 +21,21 @@ type GlobalCache struct {
 	globalRoomInfo   map[string]*SortableRoom
 	globalRoomInfoMu *sync.RWMutex
 
+	// for loading room state not held in-memory
+	store *state.Storage
+
 	listeners   map[int]GlobalCacheListener
 	listenersMu *sync.Mutex
 	id          int
 }
 
-func NewGlobalCache() *GlobalCache {
+func NewGlobalCache(store *state.Storage) *GlobalCache {
 	return &GlobalCache{
 		globalRoomInfo:   make(map[string]*SortableRoom),
 		globalRoomInfoMu: &sync.RWMutex{},
 		listeners:        make(map[int]GlobalCacheListener),
 		listenersMu:      &sync.Mutex{},
+		store:            store,
 	}
 }
 
@@ -65,6 +69,53 @@ func (c *GlobalCache) AssignRoom(r SortableRoom) {
 	c.globalRoomInfoMu.Lock()
 	defer c.globalRoomInfoMu.Unlock()
 	c.globalRoomInfo[r.RoomID] = &r
+}
+
+func (c *GlobalCache) LoadRoomState(roomID string, loadPosition int64, requiredState [][2]string) []json.RawMessage {
+	if len(requiredState) == 0 {
+		return nil
+	}
+	if c.store == nil {
+		return nil
+	}
+	// pull out unique event types and convert the required state into a map
+	eventTypeSet := make(map[string]bool)
+	requiredStateMap := make(map[string][]string) // event_type -> []state_key
+	for _, rs := range requiredState {
+		eventTypeSet[rs[0]] = true
+		requiredStateMap[rs[0]] = append(requiredStateMap[rs[0]], rs[1])
+	}
+	eventTypes := make([]string, len(eventTypeSet))
+	i := 0
+	for et := range eventTypeSet {
+		eventTypes[i] = et
+		i++
+	}
+	stateEvents, err := c.store.RoomStateAfterEventPosition(roomID, loadPosition, eventTypes...)
+	if err != nil {
+		logger.Err(err).Str("room", roomID).Int64("pos", loadPosition).Msg("failed to load room state")
+		return nil
+	}
+	var result []json.RawMessage
+	for _, ev := range stateEvents {
+		stateKeys := requiredStateMap[ev.Type]
+		include := false
+		for _, sk := range stateKeys {
+			if sk == "*" { // wildcard
+				include = true
+				break
+			}
+			if sk == ev.StateKey {
+				include = true
+				break
+			}
+		}
+		if include {
+			result = append(result, ev.JSON)
+		}
+	}
+	// TODO: cache?
+	return result
 }
 
 // =================================================
