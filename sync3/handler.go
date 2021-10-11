@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"os"
 	"strconv"
+	"sync"
 
 	"github.com/matrix-org/gomatrixserverlib"
 	"github.com/matrix-org/sync-v3/internal"
@@ -31,13 +32,19 @@ type SyncLiveHandler struct {
 	V2Store   *sync2.Storage
 	PollerMap *sync2.PollerMap
 	ConnMap   *ConnMap
+
+	// inserts are done by v2 poll loops, selects are done by v3 request threads
+	// but the v3 requests touch non-overlapping keys, which is a good use case for sync.Map
+	// > (2) when multiple goroutines read, write, and overwrite entries for disjoint sets of keys.
+	userCaches *sync.Map // map[user_id]*UserCache
 }
 
 func NewSync3Handler(v2Client sync2.Client, postgresDBURI string) (*SyncLiveHandler, error) {
 	sh := &SyncLiveHandler{
-		V2:      v2Client,
-		Storage: state.NewStorage(postgresDBURI),
-		V2Store: sync2.NewStore(postgresDBURI),
+		V2:         v2Client,
+		Storage:    state.NewStorage(postgresDBURI),
+		V2Store:    sync2.NewStore(postgresDBURI),
+		userCaches: &sync.Map{},
 	}
 	sh.PollerMap = sync2.NewPollerMap(v2Client, sh)
 	sh.ConnMap = NewConnMap(sh.Storage)
@@ -198,6 +205,15 @@ func (h *SyncLiveHandler) setupConnection(req *http.Request, syncReq *Request, c
 		hlog.FromRequest(req).With().Str("user_id", v2device.UserID).Logger(),
 	)
 
+	userCache, err := h.userCache(v2device.UserID)
+	if err != nil {
+		log.Warn().Err(err).Str("user_id", v2device.UserID).Msg("failed to load user cache")
+		return nil, &internal.HandlerError{
+			StatusCode: 500,
+			Err:        err,
+		}
+	}
+
 	// Now the v2 side of things are running, we can make a v3 live sync conn
 	// NB: this isn't inherently racey (we did the check for an existing conn before EnsurePolling)
 	// because we *either* do the existing check *or* make a new conn. It's important for CreateConn
@@ -206,13 +222,30 @@ func (h *SyncLiveHandler) setupConnection(req *http.Request, syncReq *Request, c
 	conn, created := h.ConnMap.GetOrCreateConn(ConnID{
 		SessionID: syncReq.SessionID,
 		DeviceID:  deviceID,
-	}, v2device.UserID)
+	}, v2device.UserID, userCache)
 	if created {
 		log.Info().Str("conn_id", conn.ConnID.String()).Msg("created new connection")
 	} else {
 		log.Info().Str("conn_id", conn.ConnID.String()).Msg("using existing connection")
 	}
 	return conn, nil
+}
+
+func (h *SyncLiveHandler) userCache(userID string) (*UserCache, error) {
+	c, ok := h.userCaches.Load(userID)
+	if ok {
+		return c.(*UserCache), nil
+	}
+	uc := NewUserCache(userID)
+	// select all non-zero highlight or notif counts and set them, as this is less costly than looping every room/user pair
+	err := h.Storage.UnreadTable.SelectAllNonZeroCountsForUser(userID, func(roomID string, highlightCount, notificationCount int) {
+		uc.OnUnreadCounts(roomID, &highlightCount, &notificationCount)
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to load unread counts: %s", err)
+	}
+	h.userCaches.Store(userID, uc)
+	return uc, nil
 }
 
 // Called from the v2 poller, implements V2DataReceiver
@@ -270,5 +303,9 @@ func (h *SyncLiveHandler) UpdateUnreadCounts(roomID, userID string, highlightCou
 	if err != nil {
 		logger.Err(err).Str("user", userID).Str("room", roomID).Msg("failed to update unread counters")
 	}
-	h.ConnMap.OnUnreadCounts(roomID, userID, highlightCount, notifCount)
+	userCache, ok := h.userCaches.Load(userID)
+	if !ok {
+		return
+	}
+	userCache.(*UserCache).OnUnreadCounts(roomID, highlightCount, notifCount)
 }

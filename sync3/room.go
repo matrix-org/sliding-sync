@@ -30,8 +30,3 @@ func (s SortableRooms) Len() int64 {
 func (s SortableRooms) Subslice(i, j int64) Subslicer {
 	return s[i:j]
 }
-
-type userRoomData struct {
-	notificationCount int
-	highlightCount    int
-}

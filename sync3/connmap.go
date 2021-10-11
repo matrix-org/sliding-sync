@@ -18,11 +18,12 @@ type EventData struct {
 	stateKey  *string
 	content   gjson.Result
 	timestamp int64
+
+	// TODO: remove or factor out
+	userRoomData *UserRoomData
 	// the absolute latest position for this event data. The NID for this event is guaranteed to
 	// be <= this value.
 	latestPos int64
-
-	userRoomData *userRoomData
 }
 
 // ConnMap stores a collection of Conns along with other global server-wide state e.g the in-memory
@@ -46,24 +47,18 @@ type ConnMap struct {
 	globalRoomInfo map[string]*SortableRoom
 	mu             *sync.Mutex
 
-	// inserts are done by v2 poll loops, selects are done by v3 request threads
-	// but the v3 requests touch non-overlapping keys, which is a good use case for sync.Map
-	// > (2) when multiple goroutines read, write, and overwrite entries for disjoint sets of keys.
-	perUserPerRoomData *sync.Map // map[string]userRoomData
-
 	store *state.Storage
 }
 
 func NewConnMap(store *state.Storage) *ConnMap {
 	cm := &ConnMap{
-		userIDToConn:       make(map[string][]*Conn),
-		connIDToConn:       make(map[string]*Conn),
-		cache:              ttlcache.NewCache(),
-		mu:                 &sync.Mutex{},
-		jrt:                NewJoinedRoomsTracker(),
-		store:              store,
-		globalRoomInfo:     make(map[string]*SortableRoom),
-		perUserPerRoomData: &sync.Map{},
+		userIDToConn:   make(map[string][]*Conn),
+		connIDToConn:   make(map[string]*Conn),
+		cache:          ttlcache.NewCache(),
+		mu:             &sync.Mutex{},
+		jrt:            NewJoinedRoomsTracker(),
+		store:          store,
+		globalRoomInfo: make(map[string]*SortableRoom),
 	}
 	cm.cache.SetTTL(30 * time.Minute) // TODO: customisable
 	cm.cache.SetExpirationCallback(cm.closeConn)
@@ -80,7 +75,7 @@ func (m *ConnMap) Conn(cid ConnID) *Conn {
 }
 
 // Atomically gets or creates a connection with this connection ID.
-func (m *ConnMap) GetOrCreateConn(cid ConnID, userID string) (*Conn, bool) {
+func (m *ConnMap) GetOrCreateConn(cid ConnID, userID string, userCache *UserCache) (*Conn, bool) {
 	// atomically check if a conn exists already and return that if so
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -88,7 +83,7 @@ func (m *ConnMap) GetOrCreateConn(cid ConnID, userID string) (*Conn, bool) {
 	if conn != nil {
 		return conn, false
 	}
-	state := NewConnState(userID, m)
+	state := NewConnState(userID, userCache, m)
 	conn = NewConn(cid, state, state.HandleIncomingRequest)
 	m.cache.Set(cid.String(), conn)
 	m.connIDToConn[cid.String()] = conn
@@ -146,13 +141,6 @@ func (m *ConnMap) LoadBaseline(roomIDToUserIDs map[string][]string) error {
 		for _, userID := range userIDs {
 			m.jrt.UserJoinedRoom(userID, roomID)
 		}
-	}
-	// select all non-zero highlight or notif counts and set them, as this is less costly than looping every room/user pair
-	err = m.store.UnreadTable.SelectAllNonZeroCounts(func(roomID, userID string, highlightCount, notificationCount int) {
-		m.OnUnreadCounts(roomID, userID, &highlightCount, &notificationCount)
-	})
-	if err != nil {
-		return fmt.Errorf("failed to load unread counts: %s", err)
 	}
 	return nil
 }
@@ -234,48 +222,6 @@ func (m *ConnMap) closeConn(connID string, value interface{}) {
 			}
 		}
 		m.userIDToConn[state.UserID()] = conns
-	}
-}
-
-func (m *ConnMap) LoadUserRoomData(roomID, userID string) userRoomData {
-	key := userID + " " + roomID
-	data, ok := m.perUserPerRoomData.Load(key)
-	if !ok {
-		return userRoomData{}
-	}
-	return data.(userRoomData)
-}
-
-// TODO: Move to cache struct
-func (m *ConnMap) OnUnreadCounts(roomID, userID string, highlightCount, notifCount *int) {
-	data := m.LoadUserRoomData(roomID, userID)
-	hasCountDecreased := false
-	if highlightCount != nil {
-		hasCountDecreased = *highlightCount < data.highlightCount
-		data.highlightCount = *highlightCount
-	}
-	if notifCount != nil {
-		if !hasCountDecreased {
-			hasCountDecreased = *notifCount < data.notificationCount
-		}
-		data.notificationCount = *notifCount
-	}
-	key := userID + " " + roomID
-	m.perUserPerRoomData.Store(key, data)
-	if hasCountDecreased {
-		// we will notify the connection for count decreases so the client can update their badge counter.
-		// we don't do this on increases as this should always be associated with an actual event which
-		// we will notify the connection for (and unread counts are processed prior to this). By doing
-		// this we ensure atomic style updates of badge counts and events, rather than getting the badge
-		// count update without a message.
-		m.mu.Lock()
-		conns := m.userIDToConn[userID]
-		m.mu.Unlock()
-		room := m.LoadRoom(roomID)
-		// TODO: don't indirect via conn :S this is dumb
-		for _, conn := range conns {
-			conn.PushUserRoomData(userID, roomID, data, room.LastMessageTimestamp)
-		}
 	}
 }
 

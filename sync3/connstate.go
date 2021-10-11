@@ -17,7 +17,6 @@ var (
 
 type ConnStateStore interface {
 	LoadRoom(roomID string) *SortableRoom
-	LoadUserRoomData(roomID, userID string) userRoomData
 	LoadState(roomID string, loadPosition int64, requiredState [][2]string) []json.RawMessage
 	Load(userID string) (joinedRoomIDs []string, initialLoadPosition int64, err error)
 }
@@ -36,11 +35,14 @@ type ConnState struct {
 	// Consumed when the conn is read. There is a limit to how many updates we will store before
 	// saying the client is ded and cleaning up the conn.
 	updateEvents chan *EventData
+
+	userCache *UserCache
 }
 
-func NewConnState(userID string, store ConnStateStore) *ConnState {
+func NewConnState(userID string, userCache *UserCache, store ConnStateStore) *ConnState {
 	return &ConnState{
 		store:                      store,
+		userCache:                  userCache,
 		userID:                     userID,
 		roomSubscriptions:          make(map[string]RoomSubscription),
 		sortedJoinedRoomsPositions: make(map[string]int),
@@ -60,6 +62,7 @@ func NewConnState(userID string, store ConnStateStore) *ConnState {
 //   - load() bases its current state based on the latest position, which includes processing of these N events.
 //   - post load() we read N events, processing them a 2nd time.
 func (s *ConnState) load(req *Request) error {
+	s.userCache.Subsribe(s)
 	joinedRoomIDs, initialLoadPosition, err := s.store.Load(s.userID)
 	if err != nil {
 		return err
@@ -311,11 +314,11 @@ func (s *ConnState) updateRoomSubscriptions(subs, unsubs []string) map[string]Ro
 }
 
 func (s *ConnState) getDeltaRoomData(updateEvent *EventData) *Room {
-	userRoomData := s.store.LoadUserRoomData(updateEvent.roomID, s.userID)
+	userRoomData := s.userCache.loadRoomData(updateEvent.roomID)
 	room := &Room{
 		RoomID:            updateEvent.roomID,
-		NotificationCount: int64(userRoomData.notificationCount),
-		HighlightCount:    int64(userRoomData.highlightCount),
+		NotificationCount: int64(userRoomData.NotificationCount),
+		HighlightCount:    int64(userRoomData.HighlightCount),
 	}
 	if updateEvent.event != nil {
 		room.Timeline = []json.RawMessage{
@@ -327,12 +330,12 @@ func (s *ConnState) getDeltaRoomData(updateEvent *EventData) *Room {
 
 func (s *ConnState) getInitialRoomData(roomID string) *Room {
 	r := s.store.LoadRoom(roomID)
-	userRoomData := s.store.LoadUserRoomData(roomID, s.userID)
+	userRoomData := s.userCache.loadRoomData(roomID)
 	return &Room{
 		RoomID:            roomID,
 		Name:              r.Name,
-		NotificationCount: int64(userRoomData.notificationCount),
-		HighlightCount:    int64(userRoomData.highlightCount),
+		NotificationCount: int64(userRoomData.NotificationCount),
+		HighlightCount:    int64(userRoomData.HighlightCount),
 		// TODO: timeline limits
 		Timeline: []json.RawMessage{
 			r.LastEventJSON,
@@ -394,4 +397,16 @@ func (s *ConnState) moveRoom(updateEvent *EventData, fromIndex, toIndex int, ran
 		},
 	}
 
+}
+
+func (s *ConnState) OnUnreadCountsChanged(userID, roomID string, urd UserRoomData, hasCountDecreased bool) {
+	if !hasCountDecreased {
+		return
+	}
+	room := s.store.LoadRoom(roomID)
+	s.PushNewEvent(&EventData{
+		roomID:       roomID,
+		userRoomData: &urd,
+		timestamp:    room.LastMessageTimestamp,
+	})
 }

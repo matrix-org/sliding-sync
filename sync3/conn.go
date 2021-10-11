@@ -55,14 +55,6 @@ func (c *Conn) PushNewEvent(eventData *EventData) {
 	c.connState.PushNewEvent(eventData)
 }
 
-func (c *Conn) PushUserRoomData(userID, roomID string, data userRoomData, timestamp int64) {
-	c.connState.PushNewEvent(&EventData{
-		roomID:       roomID,
-		userRoomData: &data,
-		timestamp:    timestamp,
-	})
-}
-
 // OnIncomingRequest advances the clients position in the stream, returning the response position and data.
 func (c *Conn) OnIncomingRequest(ctx context.Context, req *Request) (resp *Response, herr *internal.HandlerError) {
 	c.mu.Lock()

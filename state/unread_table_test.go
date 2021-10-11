@@ -44,26 +44,23 @@ func TestUnreadTable(t *testing.T) {
 		roomA: 1,
 		roomB: 2,
 	}
-	assertNoError(t, table.SelectAllNonZeroCounts(func(gotRoomID string, gotUserID string, gotHighlight int, gotNotif int) {
-		if userID != gotUserID {
-			t.Errorf("SelectAllNonZeroCounts: got user %v want %v", gotUserID, userID)
-		}
+	assertNoError(t, table.SelectAllNonZeroCountsForUser(userID, func(gotRoomID string, gotHighlight int, gotNotif int) {
 		wantHighlight := wantHighlights[gotRoomID]
 		if wantHighlight != gotHighlight {
-			t.Errorf("SelectAllNonZeroCounts for %v got %d highlights, want %d", gotRoomID, gotHighlight, wantHighlight)
+			t.Errorf("SelectAllNonZeroCountsForUser for %v got %d highlights, want %d", gotRoomID, gotHighlight, wantHighlight)
 		}
 		wantNotif := wantNotifs[gotRoomID]
 		if wantNotif != gotNotif {
-			t.Errorf("SelectAllNonZeroCounts for %v got %d notifs, want %d", gotRoomID, gotNotif, wantNotif)
+			t.Errorf("SelectAllNonZeroCountsForUser for %v got %d notifs, want %d", gotRoomID, gotNotif, wantNotif)
 		}
 		delete(wantHighlights, gotRoomID)
 		delete(wantNotifs, gotRoomID)
 	}))
 	if len(wantHighlights) != 0 {
-		t.Errorf("SelectAllNonZeroCounts missed highlight rooms: %+v", wantHighlights)
+		t.Errorf("SelectAllNonZeroCountsForUser missed highlight rooms: %+v", wantHighlights)
 	}
 	if len(wantNotifs) != 0 {
-		t.Errorf("SelectAllNonZeroCounts missed notif rooms: %+v", wantNotifs)
+		t.Errorf("SelectAllNonZeroCountsForUser missed notif rooms: %+v", wantNotifs)
 	}
 }
 

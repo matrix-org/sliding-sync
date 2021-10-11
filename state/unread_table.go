@@ -23,9 +23,10 @@ func NewUnreadTable(db *sqlx.DB) *UnreadTable {
 	return &UnreadTable{db}
 }
 
-func (t *UnreadTable) SelectAllNonZeroCounts(callback func(roomID, userID string, highlightCount, notificationCount int)) error {
+func (t *UnreadTable) SelectAllNonZeroCountsForUser(userID string, callback func(roomID string, highlightCount, notificationCount int)) error {
 	rows, err := t.db.Query(
-		`SELECT user_id, room_id, notification_count, highlight_count FROM syncv3_unread WHERE notification_count > 0 OR highlight_count > 0`,
+		`SELECT room_id, notification_count, highlight_count FROM syncv3_unread WHERE user_id=$1 AND (notification_count > 0 OR highlight_count > 0)`,
+		userID,
 	)
 	if err != nil {
 		return err
@@ -33,13 +34,12 @@ func (t *UnreadTable) SelectAllNonZeroCounts(callback func(roomID, userID string
 	defer rows.Close()
 	for rows.Next() {
 		var roomID string
-		var userID string
 		var highlightCount int
 		var notifCount int
-		if err := rows.Scan(&userID, &roomID, &notifCount, &highlightCount); err != nil {
+		if err := rows.Scan(&roomID, &notifCount, &highlightCount); err != nil {
 			return err
 		}
-		callback(roomID, userID, highlightCount, notifCount)
+		callback(roomID, highlightCount, notifCount)
 	}
 	return nil
 }

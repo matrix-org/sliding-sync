@@ -42,9 +42,6 @@ func (s *connStateStoreMock) Load(userID string) (joinedRoomIDs []string, initia
 func (s *connStateStoreMock) LoadState(roomID string, loadPosition int64, requiredState [][2]string) []json.RawMessage {
 	return nil
 }
-func (s *connStateStoreMock) LoadUserRoomData(roomID, userID string) userRoomData {
-	return userRoomData{}
-}
 func (s *connStateStoreMock) PushNewEvent(cs *ConnState, ed *EventData) {
 	room := s.roomIDToRoom[ed.roomID]
 	room.LastEventJSON = ed.event
@@ -80,7 +77,7 @@ func TestConnStateInitial(t *testing.T) {
 			roomC.RoomID: roomC,
 		},
 	}
-	cs := NewConnState(userID, csm)
+	cs := NewConnState(userID, NewUserCache(userID), csm)
 	if userID != cs.UserID() {
 		t.Fatalf("UserID returned wrong value, got %v want %v", cs.UserID(), userID)
 	}
@@ -217,7 +214,7 @@ func TestConnStateMultipleRanges(t *testing.T) {
 		},
 		roomIDToRoom: roomIDToRoom,
 	}
-	cs := NewConnState(userID, csm)
+	cs := NewConnState(userID, NewUserCache(userID), csm)
 
 	// request first page
 	res, err := cs.HandleIncomingRequest(context.Background(), connID, &Request{
@@ -384,7 +381,7 @@ func TestBumpToOutsideRange(t *testing.T) {
 			roomD.RoomID: roomD,
 		},
 	}
-	cs := NewConnState(userID, csm)
+	cs := NewConnState(userID, NewUserCache(userID), csm)
 	// Ask for A,B
 	res, err := cs.HandleIncomingRequest(context.Background(), connID, &Request{
 		Sort: []string{SortByRecency},
@@ -464,7 +461,7 @@ func TestConnStateRoomSubscriptions(t *testing.T) {
 			roomD.RoomID: roomD,
 		},
 	}
-	cs := NewConnState(userID, csm)
+	cs := NewConnState(userID, NewUserCache(userID), csm)
 	// subscribe to room D
 	res, err := cs.HandleIncomingRequest(context.Background(), connID, &Request{
 		Sort: []string{SortByRecency},
