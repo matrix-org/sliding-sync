@@ -8,6 +8,8 @@ import (
 	"reflect"
 	"testing"
 	"time"
+
+	"github.com/matrix-org/sync-v3/testutils"
 )
 
 func newSortableRoom(roomID string, lastMsgTimestamp int64) SortableRoom {
@@ -21,34 +23,6 @@ func newSortableRoom(roomID string, lastMsgTimestamp int64) SortableRoom {
 	}
 }
 
-type connStateStoreMock struct {
-	roomIDToRoom        map[string]SortableRoom
-	userIDToJoinedRooms map[string][]string
-	userIDToPosition    map[string]int64
-}
-
-func (s *connStateStoreMock) Load(userID string) (joinedRoomIDs []string, initialLoadPosition int64, err error) {
-	joinedRoomIDs = s.userIDToJoinedRooms[userID]
-	initialLoadPosition = s.userIDToPosition[userID]
-	if initialLoadPosition == 0 {
-		initialLoadPosition = 1 // so we don't continually load the same rooms
-	}
-	return
-}
-func (s *connStateStoreMock) LoadState(roomID string, loadPosition int64, requiredState [][2]string) []json.RawMessage {
-	return nil
-}
-func (s *connStateStoreMock) PushNewEvent(cs *ConnState, ed *EventData) {
-	room := s.roomIDToRoom[ed.roomID]
-	room.LastEventJSON = ed.event
-	room.LastMessageTimestamp = ed.timestamp
-	if ed.eventType == "m.room.name" {
-		room.Name = ed.content.Get("name").Str
-	}
-	s.roomIDToRoom[ed.roomID] = room
-	cs.PushNewEvent(ed)
-}
-
 // Sync an account with 3 rooms and check that we can grab all rooms and they are sorted correctly initially. Checks
 // that basic UPDATE and DELETE/INSERT works when tracking all rooms.
 func TestConnStateInitial(t *testing.T) {
@@ -58,6 +32,7 @@ func TestConnStateInitial(t *testing.T) {
 	}
 	userID := "@alice:localhost"
 	timestampNow := int64(1632131678061)
+	// initial sort order B, C, A
 	roomA := newSortableRoom("!a:localhost", timestampNow-8000)
 	roomB := newSortableRoom("!b:localhost", timestampNow)
 	roomC := newSortableRoom("!c:localhost", timestampNow-4000)
@@ -65,19 +40,12 @@ func TestConnStateInitial(t *testing.T) {
 	globalCache.AssignRoom(roomA)
 	globalCache.AssignRoom(roomB)
 	globalCache.AssignRoom(roomC)
-
-	// initial sort order B, C, A
-	csm := &connStateStoreMock{
-		userIDToJoinedRooms: map[string][]string{
-			userID: {roomA.RoomID, roomB.RoomID, roomC.RoomID},
-		},
-		roomIDToRoom: map[string]SortableRoom{
-			roomA.RoomID: roomA,
-			roomB.RoomID: roomB,
-			roomC.RoomID: roomC,
-		},
+	globalCache.LoadJoinedRoomsOverride = func(userID string) (pos int64, joinedRooms []SortableRoom, err error) {
+		return 1, []SortableRoom{
+			roomA, roomB, roomC,
+		}, nil
 	}
-	cs := NewConnState(userID, NewUserCache(userID), globalCache, csm)
+	cs := NewConnState(userID, NewUserCache(userID), globalCache)
 	if userID != cs.UserID() {
 		t.Fatalf("UserID returned wrong value, got %v want %v", cs.UserID(), userID)
 	}
@@ -118,12 +86,9 @@ func TestConnStateInitial(t *testing.T) {
 	})
 
 	// bump A to the top
-	csm.PushNewEvent(cs, &EventData{
-		event:     json.RawMessage(`{}`),
-		roomID:    roomA.RoomID,
-		eventType: "unimportant",
-		timestamp: timestampNow + 1000,
-	})
+	globalCache.OnNewEvents(roomA.RoomID, []json.RawMessage{
+		testutils.NewEvent(t, "unimportant", "me", struct{}{}, timestampNow+1000),
+	}, 1)
 
 	// request again for the diff
 	res, err = cs.HandleIncomingRequest(context.Background(), connID, &Request{
@@ -153,12 +118,9 @@ func TestConnStateInitial(t *testing.T) {
 	})
 
 	// another message should just update
-	csm.PushNewEvent(cs, &EventData{
-		event:     json.RawMessage(`{}`),
-		roomID:    roomA.RoomID,
-		eventType: "still unimportant",
-		timestamp: timestampNow + 2000,
-	})
+	globalCache.OnNewEvents(roomA.RoomID, []json.RawMessage{
+		testutils.NewEvent(t, "unimportant", "me", struct{}{}, timestampNow+2000),
+	}, 1)
 	res, err = cs.HandleIncomingRequest(context.Background(), connID, &Request{
 		Sort: []string{SortByRecency},
 		Rooms: SliceRanges([][2]int64{
@@ -208,15 +170,10 @@ func TestConnStateMultipleRanges(t *testing.T) {
 		roomIDToRoom[roomID] = room
 		globalCache.AssignRoom(room)
 	}
-
-	// initial sort order B, C, A
-	csm := &connStateStoreMock{
-		userIDToJoinedRooms: map[string][]string{
-			userID: roomIDs,
-		},
-		roomIDToRoom: roomIDToRoom,
+	globalCache.LoadJoinedRoomsOverride = func(userID string) (pos int64, joinedRooms []SortableRoom, err error) {
+		return 1, rooms, nil
 	}
-	cs := NewConnState(userID, NewUserCache(userID), globalCache, csm)
+	cs := NewConnState(userID, NewUserCache(userID), globalCache)
 
 	// request first page
 	res, err := cs.HandleIncomingRequest(context.Background(), connID, &Request{
@@ -285,12 +242,9 @@ func TestConnStateMultipleRanges(t *testing.T) {
 	// `    `  `    `
 	// 8,0,1,2,3,4,5,6,7,9
 	//
-	csm.PushNewEvent(cs, &EventData{
-		event:     json.RawMessage(`{}`),
-		roomID:    roomIDs[8],
-		eventType: "unimportant",
-		timestamp: timestampNow + 2000,
-	})
+	globalCache.OnNewEvents(roomIDs[8], []json.RawMessage{
+		testutils.NewEvent(t, "unimportant", "me", struct{}{}, timestampNow+2000),
+	}, 1)
 
 	res, err = cs.HandleIncomingRequest(context.Background(), connID, &Request{
 		Sort: []string{SortByRecency},
@@ -325,12 +279,9 @@ func TestConnStateMultipleRanges(t *testing.T) {
 	// `    `  `    `
 	// 8,0,1,9,2,3,4,5,6,7 room
 	middleTimestamp := int64((roomIDToRoom[roomIDs[1]].LastMessageTimestamp + roomIDToRoom[roomIDs[2]].LastMessageTimestamp) / 2)
-	csm.PushNewEvent(cs, &EventData{
-		event:     json.RawMessage(`{}`),
-		roomID:    roomIDs[9],
-		eventType: "unimportant",
-		timestamp: middleTimestamp,
-	})
+	globalCache.OnNewEvents(roomIDs[9], []json.RawMessage{
+		testutils.NewEvent(t, "unimportant", "me", struct{}{}, middleTimestamp),
+	}, 1)
 	res, err = cs.HandleIncomingRequest(context.Background(), connID, &Request{
 		Sort: []string{SortByRecency},
 		Rooms: SliceRanges([][2]int64{
@@ -375,20 +326,12 @@ func TestBumpToOutsideRange(t *testing.T) {
 	globalCache.AssignRoom(roomB)
 	globalCache.AssignRoom(roomC)
 	globalCache.AssignRoom(roomD)
-
-	// initial sort order A,B,C,D
-	csm := &connStateStoreMock{
-		userIDToJoinedRooms: map[string][]string{
-			userID: {roomA.RoomID, roomB.RoomID, roomC.RoomID, roomD.RoomID},
-		},
-		roomIDToRoom: map[string]SortableRoom{
-			roomA.RoomID: roomA,
-			roomB.RoomID: roomB,
-			roomC.RoomID: roomC,
-			roomD.RoomID: roomD,
-		},
+	globalCache.LoadJoinedRoomsOverride = func(userID string) (pos int64, joinedRooms []SortableRoom, err error) {
+		return 1, []SortableRoom{
+			roomA, roomB, roomC, roomD,
+		}, nil
 	}
-	cs := NewConnState(userID, NewUserCache(userID), globalCache, csm)
+	cs := NewConnState(userID, NewUserCache(userID), globalCache)
 	// Ask for A,B
 	res, err := cs.HandleIncomingRequest(context.Background(), connID, &Request{
 		Sort: []string{SortByRecency},
@@ -400,7 +343,7 @@ func TestBumpToOutsideRange(t *testing.T) {
 		t.Fatalf("HandleIncomingRequest returned error : %s", err)
 	}
 	checkResponse(t, true, res, &Response{
-		Count: int64(len(csm.userIDToJoinedRooms[userID])),
+		Count: int64(4),
 		Ops: []ResponseOp{
 			&ResponseOpRange{
 				Operation: "SYNC",
@@ -418,12 +361,9 @@ func TestBumpToOutsideRange(t *testing.T) {
 	})
 
 	// D gets bumped to C's position but it's still outside the range so nothing should happen
-	csm.PushNewEvent(cs, &EventData{
-		event:     json.RawMessage(`{}`),
-		roomID:    roomD.RoomID,
-		eventType: "unimportant",
-		timestamp: roomC.LastMessageTimestamp + 2,
-	})
+	globalCache.OnNewEvents(roomD.RoomID, []json.RawMessage{
+		testutils.NewEvent(t, "unimportant", "me", struct{}{}, roomC.LastMessageTimestamp+2),
+	}, 1)
 
 	// expire the context after 10ms so we don't wait forevar
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Millisecond)
@@ -460,20 +400,12 @@ func TestConnStateRoomSubscriptions(t *testing.T) {
 	globalCache.AssignRoom(roomB)
 	globalCache.AssignRoom(roomC)
 	globalCache.AssignRoom(roomD)
-
-	// initial sort order A,B,C,D
-	csm := &connStateStoreMock{
-		userIDToJoinedRooms: map[string][]string{
-			userID: roomIDs,
-		},
-		roomIDToRoom: map[string]SortableRoom{
-			roomA.RoomID: roomA,
-			roomB.RoomID: roomB,
-			roomC.RoomID: roomC,
-			roomD.RoomID: roomD,
-		},
+	globalCache.LoadJoinedRoomsOverride = func(userID string) (pos int64, joinedRooms []SortableRoom, err error) {
+		return 1, []SortableRoom{
+			roomA, roomB, roomC, roomD,
+		}, nil
 	}
-	cs := NewConnState(userID, NewUserCache(userID), globalCache, csm)
+	cs := NewConnState(userID, NewUserCache(userID), globalCache)
 	// subscribe to room D
 	res, err := cs.HandleIncomingRequest(context.Background(), connID, &Request{
 		Sort: []string{SortByRecency},
@@ -506,17 +438,17 @@ func TestConnStateRoomSubscriptions(t *testing.T) {
 				Range:     []int64{0, 1},
 				Rooms: []Room{
 					{
-						RoomID: roomIDs[0],
-						Name:   csm.roomIDToRoom[roomIDs[0]].Name,
+						RoomID: roomA.RoomID,
+						Name:   roomA.Name,
 						Timeline: []json.RawMessage{
-							csm.roomIDToRoom[roomIDs[0]].LastEventJSON,
+							roomA.LastEventJSON,
 						},
 					},
 					{
-						RoomID: roomIDs[1],
-						Name:   csm.roomIDToRoom[roomIDs[1]].Name,
+						RoomID: roomB.RoomID,
+						Name:   roomB.Name,
 						Timeline: []json.RawMessage{
-							csm.roomIDToRoom[roomIDs[1]].LastEventJSON,
+							roomB.LastEventJSON,
 						},
 					},
 				},
@@ -524,12 +456,10 @@ func TestConnStateRoomSubscriptions(t *testing.T) {
 		},
 	})
 	// room D gets a new event
-	csm.PushNewEvent(cs, &EventData{
-		event:     json.RawMessage(`{}`),
-		roomID:    roomD.RoomID,
-		eventType: "unimportant",
-		timestamp: timestampNow + 2000,
-	})
+	newEvent := testutils.NewEvent(t, "unimportant", "me", struct{}{}, timestampNow+2000)
+	globalCache.OnNewEvents(roomD.RoomID, []json.RawMessage{
+		newEvent,
+	}, 1)
 	// we should get this message even though it's not in the range because we are subscribed to this room.
 	res, err = cs.HandleIncomingRequest(context.Background(), connID, &Request{
 		Sort: []string{SortByRecency},
@@ -546,7 +476,7 @@ func TestConnStateRoomSubscriptions(t *testing.T) {
 			roomD.RoomID: {
 				RoomID: roomD.RoomID,
 				Timeline: []json.RawMessage{
-					json.RawMessage(`{}`),
+					newEvent,
 				},
 			},
 		},

@@ -15,14 +15,9 @@ var (
 	MaxPendingEventUpdates = 200
 )
 
-type ConnStateStore interface {
-	Load(userID string) (joinedRoomIDs []string, initialLoadPosition int64, err error)
-}
-
 // ConnState tracks all high-level connection state for this connection, like the combined request
 // and the underlying sorted room list. It doesn't track session IDs or positions of the connection.
 type ConnState struct {
-	store                      ConnStateStore
 	muxedReq                   *Request
 	userID                     string
 	sortedJoinedRooms          SortableRooms
@@ -38,9 +33,8 @@ type ConnState struct {
 	userCache   *UserCache
 }
 
-func NewConnState(userID string, userCache *UserCache, globalCache *GlobalCache, store ConnStateStore) *ConnState {
+func NewConnState(userID string, userCache *UserCache, globalCache *GlobalCache) *ConnState {
 	return &ConnState{
-		store:                      store,
 		globalCache:                globalCache,
 		userCache:                  userCache,
 		userID:                     userID,
@@ -63,18 +57,15 @@ func NewConnState(userID string, userCache *UserCache, globalCache *GlobalCache,
 //   - post load() we read N events, processing them a 2nd time.
 func (s *ConnState) load(req *Request) error {
 	s.userCache.Subsribe(s)
-	joinedRoomIDs, initialLoadPosition, err := s.store.Load(s.userID)
+	s.globalCache.Subsribe(s)
+
+	initialLoadPosition, joinedRooms, err := s.globalCache.LoadJoinedRooms(s.userID)
 	if err != nil {
 		return err
 	}
+
 	s.loadPosition = initialLoadPosition
-	s.sortedJoinedRooms = make([]SortableRoom, len(joinedRoomIDs))
-	for i, roomID := range joinedRoomIDs {
-		// load global room info
-		sr := s.globalCache.LoadRoom(roomID)
-		s.sortedJoinedRooms[i] = *sr
-		s.sortedJoinedRoomsPositions[sr.RoomID] = i
-	}
+	s.sortedJoinedRooms = joinedRooms
 	s.sort(req.Sort)
 
 	return nil
@@ -91,11 +82,16 @@ func (s *ConnState) sort(sortBy []string) {
 	//logger.Info().Interface("pos", c.sortedJoinedRoomsPositions).Msg("sorted")
 }
 
+// HandleIncomingRequest is guaranteed to be called sequentially (it's protected by a mutex in conn.go)
 func (s *ConnState) HandleIncomingRequest(ctx context.Context, cid ConnID, req *Request) (*Response, error) {
 	if s.loadPosition == 0 {
 		s.load(req)
 	}
 	return s.onIncomingRequest(ctx, req)
+}
+
+func (s *ConnState) OnNewEvent(event *EventData) {
+	s.PushNewEvent(event)
 }
 
 // PushNewEvent is a callback which fires when the server gets a new event and determines this connection MAY be

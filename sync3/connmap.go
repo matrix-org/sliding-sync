@@ -76,7 +76,7 @@ func (m *ConnMap) GetOrCreateConn(cid ConnID, globalCache *GlobalCache, userID s
 	if conn != nil {
 		return conn, false
 	}
-	state := NewConnState(userID, userCache, globalCache, m)
+	state := NewConnState(userID, userCache, globalCache)
 	conn = NewConn(cid, state, state.HandleIncomingRequest)
 	m.cache.Set(cid.String(), conn)
 	m.connIDToConn[cid.String()] = conn
@@ -100,15 +100,6 @@ func (m *ConnMap) LoadBaseline(roomIDToUserIDs map[string][]string) error {
 		}
 	}
 	return nil
-}
-
-func (m *ConnMap) Load(userID string) (joinedRoomIDs []string, initialLoadPosition int64, err error) {
-	initialLoadPosition, err = m.store.LatestEventNID()
-	if err != nil {
-		return
-	}
-	joinedRoomIDs, err = m.store.JoinedRoomsAfterPosition(userID, initialLoadPosition)
-	return
 }
 
 func (m *ConnMap) closeConn(connID string, value interface{}) {

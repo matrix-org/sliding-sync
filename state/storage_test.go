@@ -236,30 +236,30 @@ func TestVisibleEventNIDsBetween(t *testing.T) {
 			RoomID: roomA,
 			Events: []json.RawMessage{
 				testutils.NewStateEvent(t, "m.room.member", alice, alice, map[string]interface{}{"membership": "join"}),
-				testutils.NewEvent(t, "m.room.message", bob, map[string]interface{}{}),
-				testutils.NewEvent(t, "m.room.message", bob, map[string]interface{}{}),
+				testutils.NewEvent(t, "m.room.message", bob, map[string]interface{}{}, 1632131678061),
+				testutils.NewEvent(t, "m.room.message", bob, map[string]interface{}{}, 1632131678061),
 			},
 		},
 		{
 			RoomID: roomB,
 			Events: []json.RawMessage{
-				testutils.NewEvent(t, "m.room.message", bob, map[string]interface{}{}),
+				testutils.NewEvent(t, "m.room.message", bob, map[string]interface{}{}, 1632131678061),
 				testutils.NewStateEvent(t, "m.room.member", alice, alice, map[string]interface{}{"membership": "join"}),
-				testutils.NewEvent(t, "m.room.message", bob, map[string]interface{}{}),
+				testutils.NewEvent(t, "m.room.message", bob, map[string]interface{}{}, 1632131678061),
 			},
 		},
 		{
 			RoomID: roomA,
 			Events: []json.RawMessage{
-				testutils.NewEvent(t, "m.room.message", bob, map[string]interface{}{}),
+				testutils.NewEvent(t, "m.room.message", bob, map[string]interface{}{}, 1632131678061),
 			},
 		},
 		{
 			RoomID: roomC,
 			Events: []json.RawMessage{
-				testutils.NewEvent(t, "m.room.message", bob, map[string]interface{}{}),
+				testutils.NewEvent(t, "m.room.message", bob, map[string]interface{}{}, 1632131678061),
 				testutils.NewStateEvent(t, "m.room.member", alice, alice, map[string]interface{}{"membership": "leave"}),
-				testutils.NewEvent(t, "m.room.message", bob, map[string]interface{}{}),
+				testutils.NewEvent(t, "m.room.message", bob, map[string]interface{}{}, 1632131678061),
 			},
 		},
 	}
@@ -326,30 +326,30 @@ func TestVisibleEventNIDsBetween(t *testing.T) {
 		{
 			RoomID: roomE,
 			Events: []json.RawMessage{
-				testutils.NewEvent(t, "m.room.message", bob, map[string]interface{}{}),
+				testutils.NewEvent(t, "m.room.message", bob, map[string]interface{}{}, 1632131678061),
 				testutils.NewStateEvent(t, "m.room.member", alice, bob, map[string]interface{}{"membership": "invite"}),
-				testutils.NewEvent(t, "m.room.message", bob, map[string]interface{}{}),
+				testutils.NewEvent(t, "m.room.message", bob, map[string]interface{}{}, 1632131678061),
 			},
 		},
 		{
 			RoomID: roomD,
 			Events: []json.RawMessage{
-				testutils.NewEvent(t, "m.room.message", bob, map[string]interface{}{}),
+				testutils.NewEvent(t, "m.room.message", bob, map[string]interface{}{}, 1632131678061),
 				testutils.NewStateEvent(t, "m.room.member", alice, alice, map[string]interface{}{"membership": "leave"}),
-				testutils.NewEvent(t, "m.room.message", bob, map[string]interface{}{}),
+				testutils.NewEvent(t, "m.room.message", bob, map[string]interface{}{}, 1632131678061),
 				testutils.NewStateEvent(t, "m.room.member", alice, alice, map[string]interface{}{"membership": "join"}),
-				testutils.NewEvent(t, "m.room.message", bob, map[string]interface{}{}),
+				testutils.NewEvent(t, "m.room.message", bob, map[string]interface{}{}, 1632131678061),
 				testutils.NewStateEvent(t, "m.room.member", alice, alice, map[string]interface{}{"membership": "leave"}),
-				testutils.NewEvent(t, "m.room.message", bob, map[string]interface{}{}),
+				testutils.NewEvent(t, "m.room.message", bob, map[string]interface{}{}, 1632131678061),
 			},
 		},
 		{
 			RoomID: roomE,
 			Events: []json.RawMessage{
-				testutils.NewEvent(t, "m.room.message", bob, map[string]interface{}{}),
+				testutils.NewEvent(t, "m.room.message", bob, map[string]interface{}{}, 1632131678061),
 				testutils.NewStateEvent(t, "m.room.member", alice, alice, map[string]interface{}{"membership": "join"}),
-				testutils.NewEvent(t, "m.room.message", bob, map[string]interface{}{}),
-				testutils.NewEvent(t, "m.room.message", bob, map[string]interface{}{}),
+				testutils.NewEvent(t, "m.room.message", bob, map[string]interface{}{}, 1632131678061),
+				testutils.NewEvent(t, "m.room.message", bob, map[string]interface{}{}, 1632131678061),
 			},
 		},
 	}

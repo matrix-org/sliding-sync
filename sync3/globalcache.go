@@ -15,6 +15,8 @@ type GlobalCacheListener interface {
 }
 
 type GlobalCache struct {
+	LoadJoinedRoomsOverride func(userID string) (pos int64, joinedRooms []SortableRoom, err error)
+
 	// inserts are done by v2 poll loops, selects are done by v3 request threads
 	// there are lots of overlapping keys as many users (threads) can be joined to the same room (key)
 	// hence you must lock this with `mu` before r/w
@@ -69,6 +71,25 @@ func (c *GlobalCache) AssignRoom(r SortableRoom) {
 	c.globalRoomInfoMu.Lock()
 	defer c.globalRoomInfoMu.Unlock()
 	c.globalRoomInfo[r.RoomID] = &r
+}
+
+func (c *GlobalCache) LoadJoinedRooms(userID string) (pos int64, joinedRooms []SortableRoom, err error) {
+	if c.LoadJoinedRoomsOverride != nil {
+		return c.LoadJoinedRoomsOverride(userID)
+	}
+	initialLoadPosition, err := c.store.LatestEventNID()
+	if err != nil {
+		return 0, nil, err
+	}
+	joinedRoomIDs, err := c.store.JoinedRoomsAfterPosition(userID, initialLoadPosition)
+	if err != nil {
+		return 0, nil, err
+	}
+	rooms := make([]SortableRoom, len(joinedRoomIDs))
+	for i, roomID := range joinedRoomIDs {
+		rooms[i] = *c.LoadRoom(roomID)
+	}
+	return initialLoadPosition, rooms, nil
 }
 
 func (c *GlobalCache) LoadRoomState(roomID string, loadPosition int64, requiredState [][2]string) []json.RawMessage {
