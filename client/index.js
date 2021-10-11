@@ -435,6 +435,9 @@ const doSyncLoop = async(accessToken, sessionId) => {
                 const startIndex = op.range[0];
                 for (let i = startIndex; i <= op.range[1]; i++) {
                     const r = op.rooms[i - startIndex];
+                    if (!r) {
+                        break; // we are at the end of list
+                    }
                     rooms.roomIndexToRoomId[i] = r.room_id;
                     accumulateRoomData(r);
                 }
