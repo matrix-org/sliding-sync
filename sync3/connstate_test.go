@@ -18,7 +18,7 @@ type mockGlobalCacheListener struct {
 
 // normally the connmap checks to see if this conn is interested in this event; we are always interested
 // for testing purposes so always push them
-func (l *mockGlobalCacheListener) OnNewEvent(event *EventData) {
+func (l *mockGlobalCacheListener) OnNewEvent(joinedUserIDs []string, event *EventData) {
 	l.cs.PushNewEvent(event)
 }
 

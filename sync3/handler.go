@@ -15,6 +15,7 @@ import (
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/hlog"
 	"github.com/rs/zerolog/log"
+	"github.com/tidwall/gjson"
 )
 
 const DefaultSessionID = "default"
@@ -23,6 +24,21 @@ var logger = zerolog.New(os.Stdout).With().Timestamp().Logger().Output(zerolog.C
 	Out:        os.Stderr,
 	TimeFormat: "15:04:05",
 })
+
+type EventData struct {
+	event     json.RawMessage
+	roomID    string
+	eventType string
+	stateKey  *string
+	content   gjson.Result
+	timestamp int64
+
+	// TODO: remove or factor out
+	userRoomData *UserRoomData
+	// the absolute latest position for this event data. The NID for this event is guaranteed to
+	// be <= this value.
+	latestPos int64
+}
 
 // This is a net.http Handler for sync v3. It is responsible for pairing requests to Conns and to
 // ensure that the sync v2 poller is running for this client.
@@ -55,15 +71,6 @@ func NewSync3Handler(v2Client sync2.Client, postgresDBURI string) (*SyncLiveHand
 
 	if err := PopulateGlobalCache(sh.Storage, sh.globalCache); err != nil {
 		return nil, fmt.Errorf("failed to populate global cache: %s", err)
-	}
-
-	roomToJoinedUsers, err := sh.Storage.AllJoinedMembers()
-	if err != nil {
-		return nil, err
-	}
-	err = sh.ConnMap.LoadBaseline(roomToJoinedUsers)
-	if err != nil {
-		return nil, err
 	}
 
 	return sh, nil

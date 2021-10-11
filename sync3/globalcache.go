@@ -11,7 +11,7 @@ import (
 )
 
 type GlobalCacheListener interface {
-	OnNewEvent(event *EventData)
+	OnNewEvent(joinedUsers []string, event *EventData)
 }
 
 type GlobalCache struct {
@@ -26,6 +26,8 @@ type GlobalCache struct {
 	// for loading room state not held in-memory
 	store *state.Storage
 
+	jrt *JoinedRoomsTracker
+
 	listeners   map[int]GlobalCacheListener
 	listenersMu *sync.Mutex
 	id          int
@@ -38,6 +40,7 @@ func NewGlobalCache(store *state.Storage) *GlobalCache {
 		listeners:        make(map[int]GlobalCacheListener),
 		listenersMu:      &sync.Mutex{},
 		store:            store,
+		jrt:              NewJoinedRoomsTracker(),
 	}
 }
 
@@ -191,9 +194,32 @@ func (c *GlobalCache) onNewEvent(
 		timestamp: eventTimestamp,
 	}
 
+	// update the tracker
+	targetUser := ""
+	if ed.eventType == "m.room.member" && ed.stateKey != nil {
+		targetUser = *ed.stateKey
+		// TODO: de-dupe joins in jrt else profile changes will results in 2x room IDs
+		membership := ed.content.Get("membership").Str
+		switch membership {
+		case "join":
+			c.jrt.UserJoinedRoom(targetUser, ed.roomID)
+		case "ban":
+			fallthrough
+		case "leave":
+			c.jrt.UserLeftRoom(targetUser, ed.roomID)
+		}
+	}
+
+	c.notifyRelevantUsers(ed)
+}
+
+func (c *GlobalCache) notifyRelevantUsers(event *EventData) {
+	// notify all people in this room
+	userIDs := c.jrt.JoinedUsersForRoom(event.roomID)
+
 	// invoke listeners
 	for _, l := range c.listeners {
-		l.OnNewEvent(ed)
+		l.OnNewEvent(userIDs, event)
 	}
 }
 
@@ -241,5 +267,17 @@ func PopulateGlobalCache(store *state.Storage, cache *GlobalCache) error {
 		cache.AssignRoom(*room)
 		fmt.Printf("Room: %s - %s - %s \n", room.RoomID, room.Name, time.Unix(room.LastMessageTimestamp/1000, 0))
 	}
+
+	// populate joined rooms tracker
+	roomToJoinedUsers, err := store.AllJoinedMembers()
+	if err != nil {
+		return err
+	}
+	for roomID, userIDs := range roomToJoinedUsers {
+		for _, userID := range userIDs {
+			cache.jrt.UserJoinedRoom(userID, roomID)
+		}
+	}
+
 	return nil
 }

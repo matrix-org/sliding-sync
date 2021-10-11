@@ -1,28 +1,11 @@
 package sync3
 
 import (
-	"encoding/json"
 	"sync"
 	"time"
 
 	"github.com/ReneKroon/ttlcache/v2"
-	"github.com/tidwall/gjson"
 )
-
-type EventData struct {
-	event     json.RawMessage
-	roomID    string
-	eventType string
-	stateKey  *string
-	content   gjson.Result
-	timestamp int64
-
-	// TODO: remove or factor out
-	userRoomData *UserRoomData
-	// the absolute latest position for this event data. The NID for this event is guaranteed to
-	// be <= this value.
-	latestPos int64
-}
 
 // ConnMap stores a collection of Conns along with other global server-wide state e.g the in-memory
 // map of which users are joined to which rooms.
@@ -32,11 +15,6 @@ type ConnMap struct {
 	// map of user_id to active connections. Inspect the ConnID to find the device ID.
 	userIDToConn map[string][]*Conn
 	connIDToConn map[string]*Conn
-
-	// global room trackers (not connection or user specific)
-	// The joined room tracker must be loaded with the current joined room state for all users
-	// BEFORE v2 poll loops are started, else it could race with live updates.
-	jrt *JoinedRoomsTracker
 
 	mu *sync.Mutex
 
@@ -49,7 +27,6 @@ func NewConnMap(globalCache *GlobalCache) *ConnMap {
 		connIDToConn: make(map[string]*Conn),
 		cache:        ttlcache.NewCache(),
 		mu:           &sync.Mutex{},
-		jrt:          NewJoinedRoomsTracker(),
 		globalCache:  globalCache,
 	}
 	globalCache.Subsribe(cm)
@@ -84,24 +61,6 @@ func (m *ConnMap) GetOrCreateConn(cid ConnID, globalCache *GlobalCache, userID s
 	return conn, true
 }
 
-// LoadBaseline must be called before any v2 poll loops are made. Failure to do so can result in
-// duplicate event processing which could corrupt state. Consider:
-//   - V2 poll loop started early
-//   - Join event arrives, NID=50
-//   - LoadBaseline loads the latest NID=50 due to LatestEventNID, processes this join event in the process
-//   - OnNewEvents is called with the join event
-//   - join event is processed twice.
-// TODO: Move to cache struct
-func (m *ConnMap) LoadBaseline(roomIDToUserIDs map[string][]string) error {
-	// loop all joined rooms, some of which may not be present in globalRoomInfo if they have no state
-	for roomID, userIDs := range roomIDToUserIDs {
-		for _, userID := range userIDs {
-			m.jrt.UserJoinedRoom(userID, roomID)
-		}
-	}
-	return nil
-}
-
 func (m *ConnMap) closeConn(connID string, value interface{}) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -122,27 +81,14 @@ func (m *ConnMap) closeConn(connID string, value interface{}) {
 	}
 }
 
-func (m *ConnMap) OnNewEvent(event *EventData) {
-	// update the tracker
+func (m *ConnMap) OnNewEvent(joinedUserIDs []string, event *EventData) {
 	targetUser := ""
 	if event.eventType == "m.room.member" && event.stateKey != nil {
 		targetUser = *event.stateKey
-		// TODO: de-dupe joins in jrt else profile changes will results in 2x room IDs
-		membership := event.content.Get("membership").Str
-		switch membership {
-		case "join":
-			m.jrt.UserJoinedRoom(targetUser, event.roomID)
-		case "ban":
-			fallthrough
-		case "leave":
-			m.jrt.UserLeftRoom(targetUser, event.roomID)
-		}
 	}
-
 	// notify all people in this room
 	notifiedTargetUser := false
-	userIDs := m.jrt.JoinedUsersForRoom(event.roomID)
-	for _, userID := range userIDs {
+	for _, userID := range joinedUserIDs {
 		m.mu.Lock()
 		conns := m.userIDToConn[userID]
 		m.mu.Unlock()
