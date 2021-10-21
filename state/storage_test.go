@@ -288,6 +288,15 @@ func TestVisibleEventNIDsBetween(t *testing.T) {
 		t.Errorf("VisibleEventNIDsBetween: wrong number of rooms, want 3 got %+v", roomIDToVisibleRanges)
 	}
 
+	// check that we can query subsets too
+	roomIDToVisibleRangesSubset, err := store.VisibleEventNIDsBetweenForRooms(alice, []string{roomA, roomB}, startPos, latestPos)
+	if err != nil {
+		t.Fatalf("VisibleEventNIDsBetweenForRooms to %d: %s", latestPos, err)
+	}
+	if len(roomIDToVisibleRangesSubset) != 2 {
+		t.Errorf("VisibleEventNIDsBetweenForRooms: wrong number of rooms, want 2 got %+v", roomIDToVisibleRanges)
+	}
+
 	// For Room A: from=1, to=10, returns { RoomA: [ [1,10] ]}  (tests events in joined room)
 	verifyRange(t, roomIDToVisibleRanges, roomA, [][2]int64{
 		{1 + startPos, 10 + startPos},
