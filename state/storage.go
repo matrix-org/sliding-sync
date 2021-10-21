@@ -205,9 +205,14 @@ func (s *Storage) RoomStateBeforeEventPosition(roomID string, pos int64) (events
 
 func (s *Storage) VisibleEventNIDsBetweenForRooms(userID string, roomIDs []string, from, to int64) (map[string][][2]int64, error) {
 	// load *THESE* joined rooms for this user at from (inclusive)
-	membershipEvents, err := s.accumulator.eventsTable.SelectEventsWithTypeStateKeyInRooms(roomIDs, "m.room.member", userID, 0, from)
-	if err != nil {
-		return nil, fmt.Errorf("VisibleEventNIDsBetweenForRooms.SelectEventsWithTypeStateKeyInRooms: %s", err)
+	var membershipEvents []Event
+	var err error
+	if from != 0 {
+		// if from==0 then this query will return nothing, so optimise it out
+		membershipEvents, err = s.accumulator.eventsTable.SelectEventsWithTypeStateKeyInRooms(roomIDs, "m.room.member", userID, 0, from)
+		if err != nil {
+			return nil, fmt.Errorf("VisibleEventNIDsBetweenForRooms.SelectEventsWithTypeStateKeyInRooms: %s", err)
+		}
 	}
 	joinedRoomIDs, err := s.joinedRoomsAfterPositionWithEvents(membershipEvents, userID, from)
 	if err != nil {
