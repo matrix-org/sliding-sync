@@ -458,8 +458,8 @@ const doSyncLoop = async(accessToken, sessionId) => {
         // check for duplicates which should never happen but can if there's a bug
         let roomIdToPositions = {};
         let dupeRoomIds = new Set();
-        Object.keys(roomIndexToRoomId).forEach((i) => {
-            let rid = roomIndexToRoomId[i];
+        Object.keys(rooms.roomIndexToRoomId).forEach((i) => {
+            let rid = rooms.roomIndexToRoomId[i];
             let positions = roomIdToPositions[rid] || [];
             positions.push(i);
             roomIdToPositions[rid] = positions;
