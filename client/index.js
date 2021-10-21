@@ -142,18 +142,7 @@ const renderMessage = (container, ev) => {
     msgCell.setAttribute("id", eventIdKey);
     msgCell.getElementsByClassName("msgsender")[0].textContent = ev.sender;
     msgCell.getElementsByClassName("msgtimestamp")[0].textContent = formatTimestamp(ev.origin_server_ts);
-    let body = "";
-    switch (ev.type) {
-        case "m.room.message":
-            body = ev.content.body;
-            break;
-        case "m.room.member":
-            body = membershipChangeText(ev);
-            break;
-        default:
-            body = ev.type + " event";
-            break;
-    }
+    let body = textForEvent(ev);
     msgCell.getElementsByClassName("msgcontent")[0].textContent = body;
     container.appendChild(msgCell);
 };
@@ -293,13 +282,12 @@ const render = (container) => {
             roomSenderSpan.textContent = mostRecentEvent.sender;
             roomTimestampSpan.textContent = formatTimestamp(mostRecentEvent.origin_server_ts);
 
-            if (mostRecentEvent.type === "m.room.message") {
-                roomContentSpan.textContent = mostRecentEvent.content.body;
-            } else if (mostRecentEvent.type === "m.room.member") {
+            const body = textForEvent(mostRecentEvent);
+            if (mostRecentEvent.type === "m.room.member") {
                 roomContentSpan.textContent = "";
-                roomSenderSpan.textContent = membershipChangeText(mostRecentEvent);
-            } else if (mostRecentEvent.type) {
-                roomContentSpan.textContent = mostRecentEvent.type + " event";
+                roomSenderSpan.textContent = body;
+            } else {
+                roomContentSpan.textContent = body;
             }
         } else {
             roomContentSpan.textContent = "";
@@ -497,6 +485,25 @@ const doSyncRequest = async (accessToken, pos, reqBody) => {
     }
     lastError = null;
     return respBody;
+}
+
+const textForEvent = (ev) => {
+    let body = "";
+    switch (ev.type) {
+        case "m.room.message":
+            body = ev.content.body;
+            break;
+        case "m.room.member":
+            body = membershipChangeText(ev);
+            break;
+        case "m.reaction":
+            body = "reacted with " + (ev.content["m.relates_to"] || {}).key;
+            break;
+        default:
+            body = ev.type + " event";
+            break;
+    }
+    return body;
 }
 
 const membershipChangeText = (ev) => {

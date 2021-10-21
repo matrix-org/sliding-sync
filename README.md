@@ -21,6 +21,10 @@ INF Poller: v2 poll loop started ip=::1 since= user_id=@kegan:matrix.org
 ```
 Wait for the first initial v2 sync to be processed (this can take minutes!) and then v3 APIs will be responsive.
 
+### How can I help?
+
+At present, the best way to help would be to run a local v3 server pointed at a busy account and just leave it and a client running in the background. Look at it occasionally and submit any issues you notice. You can save console logs by right-clicking -> Save As.
+
 ## API
 
 API is under active development and is not stable.
