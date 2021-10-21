@@ -387,11 +387,11 @@ const doSyncLoop = async(accessToken, sessionId) => {
         let gapIndex = -1;
         resp.ops.forEach((op) => {
             if (op.op === "DELETE") {
-                console.log("DELETE", op.index);
+                console.log("DELETE", op.index, " calc room: ", rooms.roomIndexToRoomId[op.index]);
                 delete rooms.roomIndexToRoomId[op.index];
                 gapIndex = op.index;
             } else if (op.op === "INSERT") {
-                console.log("INSERT", op.index);
+                console.log("INSERT", op.index, " ", op.room.room_id);
                 if (rooms.roomIndexToRoomId[op.index]) {
                     // something is in this space, shift items out of the way
                     if (gapIndex < 0) {
@@ -427,11 +427,11 @@ const doSyncLoop = async(accessToken, sessionId) => {
                 rooms.roomIndexToRoomId[op.index] = op.room.room_id;
                 renderRoomContent(op.room.room_id);
             } else if (op.op === "UPDATE") {
-                console.log("UPDATE", op.index);
+                console.log("UPDATE", op.index, " ", op.room.room_id);
                 accumulateRoomData(op.room, true);
                 renderRoomContent(op.room.room_id);
             } else if (op.op === "SYNC") {
-                console.log("SYNC", JSON.stringify(op.range));
+                let syncRooms = [];
                 const startIndex = op.range[0];
                 for (let i = startIndex; i <= op.range[1]; i++) {
                     const r = op.rooms[i - startIndex];
@@ -439,17 +439,37 @@ const doSyncLoop = async(accessToken, sessionId) => {
                         break; // we are at the end of list
                     }
                     rooms.roomIndexToRoomId[i] = r.room_id;
+                    syncRooms.push(r.room_id);
                     accumulateRoomData(r);
                 }
+                console.log("SYNC", JSON.stringify(op.range), " ", syncRooms.join(" "));
             } else if (op.op === "INVALIDATE") {
-                console.log("INVALIDATE", JSON.stringify(op.range));
+                let invalidRooms = [];
                 const startIndex = op.range[0];
                 for (let i = startIndex; i <= op.range[1]; i++) {
+                    invalidRooms.push(rooms.roomIndexToRoomId[i]);
                     delete rooms.roomIndexToRoomId[i];
                 }
+                console.log("INVALIDATE", JSON.stringify(op.range), " calc: ", invalidRooms.join(" "));
             }
         });
         render(document.getElementById("listContainer"));
+
+        // check for duplicates which should never happen but can if there's a bug
+        let roomIdToPositions = {};
+        let dupeRoomIds = new Set();
+        Object.keys(roomIndexToRoomId).forEach((i) => {
+            let rid = roomIndexToRoomId[i];
+            let positions = roomIdToPositions[rid] || [];
+            positions.push(i);
+            roomIdToPositions[rid] = positions;
+            if (positions.length > 1) {
+                dupeRoomIds.add(rid);
+            }
+        });
+        dupeRoomIds.forEach((rid) => {
+            console.error(rid, " has duplicate indexes: ", roomIdToPositions[rid]);
+        });
     }
     console.log("active session: ", activeSessionId, " this session: ", sessionId, " terminating.");
 }
