@@ -6,6 +6,7 @@ import (
 
 	"github.com/jmoiron/sqlx"
 	"github.com/matrix-org/sync-v3/sqlutil"
+	"github.com/matrix-org/sync-v3/testutils"
 )
 
 func TestEventTable(t *testing.T) {
@@ -494,5 +495,103 @@ func TestChunkify(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestEventTableSelectEventsWithTypeStateKey(t *testing.T) {
+	db, err := sqlx.Open("postgres", postgresConnectionString)
+	if err != nil {
+		t.Fatalf("failed to open SQL db: %s", err)
+	}
+	txn, err := db.Beginx()
+	if err != nil {
+		t.Fatalf("failed to start txn: %s", err)
+	}
+	userID := "@alice:localhost"
+	roomA := "!TestEventTableSelectEventsWithTypeStateKey_A:localhost"
+	roomB := "!TestEventTableSelectEventsWithTypeStateKey_B:localhost"
+	roomC := "!TestEventTableSelectEventsWithTypeStateKey_C:localhost"
+	roomD := "!TestEventTableSelectEventsWithTypeStateKey_D:localhost"
+	table := NewEventTable(db)
+	_, err = table.Insert(txn, []Event{
+		{
+			RoomID: roomA,
+			JSON:   testutils.NewStateEvent(t, "m.room.create", "", userID, map[string]interface{}{}),
+		},
+		{
+			RoomID: roomB,
+			JSON:   testutils.NewStateEvent(t, "m.room.create", "", userID, map[string]interface{}{}),
+		},
+		{
+			RoomID: roomC,
+			JSON:   testutils.NewStateEvent(t, "m.room.create", "", userID, map[string]interface{}{}),
+		},
+		{
+			RoomID: roomA,
+			JSON:   testutils.NewStateEvent(t, "m.room.member", userID, userID, map[string]interface{}{"membership": "join"}),
+		},
+		{
+			RoomID: roomB,
+			JSON:   testutils.NewStateEvent(t, "m.room.member", userID, userID, map[string]interface{}{"membership": "join"}),
+		},
+		{
+			RoomID: roomC,
+			JSON:   testutils.NewStateEvent(t, "m.room.member", userID, userID, map[string]interface{}{"membership": "join"}),
+		},
+		{
+			RoomID: roomD,
+			JSON:   testutils.NewStateEvent(t, "m.room.member", "@bob:localhost", userID, map[string]interface{}{"membership": "join"}),
+		},
+	})
+	txn.Commit()
+	if err != nil {
+		t.Fatalf("failed to insert events: %s", err)
+	}
+	latest, err := table.SelectHighestNID()
+	if err != nil {
+		t.Fatalf("failed to select highest nid: %s", err)
+	}
+
+	gotEvents, err := table.SelectEventsWithTypeStateKey("m.room.member", userID, 0, latest)
+	if err != nil {
+		t.Fatalf("SelectEventsWithTypeStateKey: %s", err)
+	}
+	if len(gotEvents) != 3 {
+		t.Fatalf("SelectEventsWithTypeStateKey returned %d events, want 3", len(gotEvents))
+	}
+	wantRooms := map[string]bool{
+		roomA: true,
+		roomB: true,
+		roomC: true,
+	}
+	for _, ev := range gotEvents {
+		if !wantRooms[ev.RoomID] {
+			t.Errorf("SelectEventsWithTypeStateKey returned unexpected event: %+v", ev)
+		}
+		delete(wantRooms, ev.RoomID)
+	}
+	if len(wantRooms) > 0 {
+		t.Fatalf("SelectEventsWithTypeStateKey missed rooms: %v", wantRooms)
+	}
+
+	gotEvents, err = table.SelectEventsWithTypeStateKeyInRooms([]string{roomA, roomB, roomD}, "m.room.member", userID, 0, latest)
+	if err != nil {
+		t.Fatalf("SelectEventsWithTypeStateKeyInRooms: %s", err)
+	}
+	if len(gotEvents) != 2 {
+		t.Fatalf("SelectEventsWithTypeStateKeyInRooms returned %d events, want 2", len(gotEvents))
+	}
+	wantRooms = map[string]bool{
+		roomA: true,
+		roomB: true,
+	}
+	for _, ev := range gotEvents {
+		if !wantRooms[ev.RoomID] {
+			t.Errorf("SelectEventsWithTypeStateKeyInRooms returned unexpected event: %+v", ev)
+		}
+		delete(wantRooms, ev.RoomID)
+	}
+	if len(wantRooms) > 0 {
+		t.Fatalf("SelectEventsWithTypeStateKeyInRooms missed rooms: %v", wantRooms)
 	}
 }

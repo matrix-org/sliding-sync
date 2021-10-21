@@ -281,6 +281,25 @@ func (t *EventTable) SelectEventsWithTypeStateKey(eventType, stateKey string, lo
 	return events, err
 }
 
+// Select all events between the bounds matching the type, state_key given, in the rooms specified only.
+// Used to work out which rooms the user was joined to at a given point in time.
+func (t *EventTable) SelectEventsWithTypeStateKeyInRooms(roomIDs []string, eventType, stateKey string, lowerExclusive, upperInclusive int64) ([]Event, error) {
+	var events []Event
+	query, args, err := sqlx.In(
+		`SELECT event_nid, room_id, event FROM syncv3_events
+		WHERE event_nid > ? AND event_nid <= ? AND event_type = ? AND state_key = ? AND room_id IN (?)
+		ORDER BY event_nid ASC`, lowerExclusive, upperInclusive, eventType, stateKey, roomIDs,
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	err = t.db.Select(&events,
+		t.db.Rebind(query), args...,
+	)
+	return events, err
+}
+
 // Select all events matching the given event type in a room. Used to implement the room member stream (paginated room lists)
 func (t *EventTable) SelectEventNIDsWithTypeInRoom(txn *sqlx.Tx, eventType string, limit int, targetRoom string, lowerExclusive, upperInclusive int64) (eventNIDs []int64, err error) {
 	err = txn.Select(

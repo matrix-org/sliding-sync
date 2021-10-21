@@ -12,6 +12,7 @@ import (
 
 type Storage struct {
 	accumulator   *Accumulator
+	EventsTable   *EventTable
 	TypingTable   *TypingTable
 	ToDeviceTable *ToDeviceTable
 	UnreadTable   *UnreadTable
@@ -34,6 +35,7 @@ func NewStorage(postgresURI string) *Storage {
 		TypingTable:   NewTypingTable(db),
 		ToDeviceTable: NewToDeviceTable(db),
 		UnreadTable:   NewUnreadTable(db),
+		EventsTable:   acc.eventsTable,
 	}
 }
 
@@ -201,6 +203,10 @@ func (s *Storage) RoomStateBeforeEventPosition(roomID string, pos int64) (events
 	return
 }
 
+func (s *Storage) VisibleEventNIDsBetweenForRooms(userID, roomIDs []string, from, to int64) ([][2]int64, error) {
+	return nil, nil
+}
+
 // Work out the NID ranges to pull events from for this user. Given a from and to event nid stream position,
 // this function returns a map of room ID to a slice of 2-element from|to positions. These positions are
 // all INCLUSIVE, and the client should be informed of these events at some point. For example:
@@ -247,71 +253,71 @@ func (s *Storage) VisibleEventNIDsBetween(userID string, from, to int64) (map[st
 	if err != nil {
 		return nil, fmt.Errorf("failed to work out joined rooms for %s at pos %d: %s", userID, from, err)
 	}
-	fmt.Printf("JoinedRoomsAfterPosition from=%d -> %v\n", from, joinedRoomIDs)
 
 	// Performs the algorithm
-	calculateVisibleEventNIDs := func(isJoined bool, fromIncl, toIncl int64, logs []membershipEvent) [][2]int64 {
-		// short circuit when there are no membership deltas
-		if len(logs) == 0 {
-			return [][2]int64{
-				{
-					fromIncl, toIncl,
-				},
-			}
-		}
-		var result [][2]int64
-		var startIndex int64 = -1
-		if isJoined {
-			startIndex = fromIncl
-		}
-		for _, memEvent := range logs {
-			// check for a valid transition (join->leave|ban or leave|invite->join) - we won't always get valid transitions
-			// e.g logs will be there for things like leave->ban which we don't care about
-			isValidTransition := false
-			if isJoined && (memEvent.Membership == "leave" || memEvent.Membership == "ban") {
-				isValidTransition = true
-			} else if !isJoined && memEvent.Membership == "join" {
-				isValidTransition = true
-			} else if !isJoined && memEvent.Membership == "invite" {
-				// short-circuit: invites are sent on their own and don't affect ranges
-				result = append(result, [2]int64{memEvent.NID, memEvent.NID})
-				continue
-			}
-			if !isValidTransition {
-				continue
-			}
-			if isJoined {
-				// transitioning to leave, we get all events up to and including the leave event
-				result = append(result, [2]int64{startIndex, memEvent.NID})
-				isJoined = false
-			} else {
-				// transitioning to joined, we will get the join and some more events in a bit
-				startIndex = memEvent.NID
-				isJoined = true
-			}
-		}
-		// if we are still joined to the room at this point, grab all events up to toIncl
-		if isJoined {
-			result = append(result, [2]int64{startIndex, toIncl})
-		}
-		return result
-	}
 
 	// For each joined room, perform the algorithm and delete the logs afterwards
 	result := make(map[string][][2]int64)
 	for _, joinedRoomID := range joinedRoomIDs {
-		roomResult := calculateVisibleEventNIDs(true, from, to, roomIDToLogs[joinedRoomID])
+		roomResult := s.calculateVisibleEventNIDs(true, from, to, roomIDToLogs[joinedRoomID])
 		result[joinedRoomID] = roomResult
 		delete(roomIDToLogs, joinedRoomID)
 	}
 
 	// Handle rooms which we are not joined to but have logs for
 	for roomID, logs := range roomIDToLogs {
-		roomResult := calculateVisibleEventNIDs(false, from, to, logs)
+		roomResult := s.calculateVisibleEventNIDs(false, from, to, logs)
 		result[roomID] = roomResult
 	}
 
 	return result, nil
+}
+
+func (s *Storage) calculateVisibleEventNIDs(isJoined bool, fromIncl, toIncl int64, logs []membershipEvent) [][2]int64 {
+	// short circuit when there are no membership deltas
+	if len(logs) == 0 {
+		return [][2]int64{
+			{
+				fromIncl, toIncl,
+			},
+		}
+	}
+	var result [][2]int64
+	var startIndex int64 = -1
+	if isJoined {
+		startIndex = fromIncl
+	}
+	for _, memEvent := range logs {
+		// check for a valid transition (join->leave|ban or leave|invite->join) - we won't always get valid transitions
+		// e.g logs will be there for things like leave->ban which we don't care about
+		isValidTransition := false
+		if isJoined && (memEvent.Membership == "leave" || memEvent.Membership == "ban") {
+			isValidTransition = true
+		} else if !isJoined && memEvent.Membership == "join" {
+			isValidTransition = true
+		} else if !isJoined && memEvent.Membership == "invite" {
+			// short-circuit: invites are sent on their own and don't affect ranges
+			result = append(result, [2]int64{memEvent.NID, memEvent.NID})
+			continue
+		}
+		if !isValidTransition {
+			continue
+		}
+		if isJoined {
+			// transitioning to leave, we get all events up to and including the leave event
+			result = append(result, [2]int64{startIndex, memEvent.NID})
+			isJoined = false
+		} else {
+			// transitioning to joined, we will get the join and some more events in a bit
+			startIndex = memEvent.NID
+			isJoined = true
+		}
+	}
+	// if we are still joined to the room at this point, grab all events up to toIncl
+	if isJoined {
+		result = append(result, [2]int64{startIndex, toIncl})
+	}
+	return result
 }
 
 func (s *Storage) RoomMembershipDelta(roomID string, from, to int64, limit int) (eventJSON []json.RawMessage, upTo int64, err error) {
