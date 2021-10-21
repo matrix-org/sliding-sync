@@ -507,7 +507,7 @@ func TestEventTableSelectEventsWithTypeStateKey(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to start txn: %s", err)
 	}
-	userID := "@alice:localhost"
+	userID := "@TestEventTableSelectEventsWithTypeStateKey_alice:localhost"
 	roomA := "!TestEventTableSelectEventsWithTypeStateKey_A:localhost"
 	roomB := "!TestEventTableSelectEventsWithTypeStateKey_B:localhost"
 	roomC := "!TestEventTableSelectEventsWithTypeStateKey_C:localhost"
@@ -557,7 +557,7 @@ func TestEventTableSelectEventsWithTypeStateKey(t *testing.T) {
 		t.Fatalf("SelectEventsWithTypeStateKey: %s", err)
 	}
 	if len(gotEvents) != 3 {
-		t.Fatalf("SelectEventsWithTypeStateKey returned %d events, want 3", len(gotEvents))
+		t.Fatalf("SelectEventsWithTypeStateKey returned %d events, want 3\n%+v", len(gotEvents), gotEvents)
 	}
 	wantRooms := map[string]bool{
 		roomA: true,
