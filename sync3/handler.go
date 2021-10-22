@@ -62,11 +62,11 @@ func NewSync3Handler(v2Client sync2.Client, postgresDBURI string) (*SyncLiveHand
 		V2:         v2Client,
 		Storage:    state.NewStorage(postgresDBURI),
 		V2Store:    sync2.NewStore(postgresDBURI),
+		ConnMap:    NewConnMap(),
 		userCaches: &sync.Map{},
 	}
 	globalCache := NewGlobalCache(sh.Storage)
 	sh.PollerMap = sync2.NewPollerMap(v2Client, sh)
-	sh.ConnMap = NewConnMap(globalCache)
 	sh.globalCache = globalCache
 
 	if err := PopulateGlobalCache(sh.Storage, sh.globalCache); err != nil {

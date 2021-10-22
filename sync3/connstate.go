@@ -3,6 +3,7 @@ package sync3
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"reflect"
 	"sort"
 	"time"
@@ -29,12 +30,14 @@ type ConnState struct {
 	// saying the client is ded and cleaning up the conn.
 	updateEvents chan *EventData
 
-	globalCache *GlobalCache
-	userCache   *UserCache
+	globalCache   *GlobalCache
+	globalCacheID int
+	userCache     *UserCache
+	userCacheID   int
 }
 
 func NewConnState(userID string, userCache *UserCache, globalCache *GlobalCache) *ConnState {
-	return &ConnState{
+	cs := &ConnState{
 		globalCache:                globalCache,
 		userCache:                  userCache,
 		userID:                     userID,
@@ -42,6 +45,9 @@ func NewConnState(userID string, userCache *UserCache, globalCache *GlobalCache)
 		sortedJoinedRoomsPositions: make(map[string]int),
 		updateEvents:               make(chan *EventData, MaxPendingEventUpdates), // TODO: customisable
 	}
+	cs.globalCacheID = globalCache.Subsribe(cs)
+	cs.userCacheID = cs.userCache.Subsribe(cs)
+	return cs
 }
 
 // load the initial joined room list, unfiltered and unsorted, and cache up the fields we care about
@@ -56,8 +62,6 @@ func NewConnState(userID string, userCache *UserCache, globalCache *GlobalCache)
 //   - load() bases its current state based on the latest position, which includes processing of these N events.
 //   - post load() we read N events, processing them a 2nd time.
 func (s *ConnState) load(req *Request) error {
-	s.userCache.Subsribe(s)
-
 	initialLoadPosition, joinedRooms, err := s.globalCache.LoadJoinedRooms(s.userID)
 	if err != nil {
 		return err
@@ -87,27 +91,6 @@ func (s *ConnState) HandleIncomingRequest(ctx context.Context, cid ConnID, req *
 		s.load(req)
 	}
 	return s.onIncomingRequest(ctx, req)
-}
-
-// PushNewEvent is a callback which fires when the server gets a new event and determines this connection MAY be
-// interested in it (e.g the client is joined to the room or it's an invite, etc). Each callback can fire
-// from different v2 poll loops, and there is no locking in order to prevent a slow ConnState from wedging the poll loop.
-// We need to move this data onto a channel for onIncomingRequest to consume later.
-func (s *ConnState) PushNewEvent(eventData *EventData) {
-	// TODO: remove 0 check when Initialise state returns sensible positions
-	if eventData.latestPos != 0 && eventData.latestPos < s.loadPosition {
-		// do not push this event down the stream as we have already processed it when we loaded
-		// the room list initially.
-		return
-	}
-	select {
-	case s.updateEvents <- eventData:
-	case <-time.After(5 * time.Second):
-		// TODO: kill the connection
-		logger.Warn().Interface("event", *eventData).Str("user", s.userID).Msg(
-			"cannot send event to connection, buffer exceeded",
-		)
-	}
 }
 
 // onIncomingRequest is a callback which fires when the client makes a request to the server. Whilst each request may
@@ -335,6 +318,53 @@ func (s *ConnState) getInitialRoomData(roomID string) *Room {
 	}
 }
 
+// Called when the global cache has a new event. This callback fires when the server gets a new event and determines this connection MAY be
+// interested in it (e.g the client is joined to the room or it's an invite, etc). Each callback can fire
+// from different v2 poll loops, and there is no locking in order to prevent a slow ConnState from wedging the poll loop.
+// We need to move this data onto a channel for onIncomingRequest to consume later.
+func (s *ConnState) OnNewEvent(joinedUserIDs []string, eventData *EventData) {
+	fmt.Println("procccc")
+	targetUser := ""
+	if eventData.eventType == "m.room.member" && eventData.stateKey != nil {
+		targetUser = *eventData.stateKey
+	}
+	isInterested := targetUser == s.userID // e.g invites
+	for _, userID := range joinedUserIDs {
+		if s.userID == userID {
+			isInterested = true
+			break
+		}
+	}
+	if !isInterested {
+		return
+	}
+
+	s.pushData(eventData)
+}
+
+func (s *ConnState) pushData(eventData *EventData) {
+	// TODO: remove 0 check when Initialise state returns sensible positions
+	if eventData.latestPos != 0 && eventData.latestPos < s.loadPosition {
+		// do not push this event down the stream as we have already processed it when we loaded
+		// the room list initially.
+		return
+	}
+	select {
+	case s.updateEvents <- eventData:
+	case <-time.After(5 * time.Second):
+		// TODO: kill the connection
+		logger.Warn().Interface("event", *eventData).Str("user", s.userID).Msg(
+			"cannot send event to connection, buffer exceeded",
+		)
+	}
+}
+
+// Called when the connection is torn down
+func (s *ConnState) Destroy() {
+	s.globalCache.Unsubscribe(s.globalCacheID)
+	s.userCache.Unsubscribe(s.userCacheID)
+}
+
 func (s *ConnState) UserID() string {
 	return s.userID
 }
@@ -390,12 +420,13 @@ func (s *ConnState) moveRoom(updateEvent *EventData, fromIndex, toIndex int, ran
 
 }
 
+// Called by the user cache when unread counts have changed
 func (s *ConnState) OnUnreadCountsChanged(userID, roomID string, urd UserRoomData, hasCountDecreased bool) {
 	if !hasCountDecreased {
 		return
 	}
 	room := s.globalCache.LoadRoom(roomID)
-	s.PushNewEvent(&EventData{
+	s.pushData(&EventData{
 		roomID:       roomID,
 		userRoomData: &urd,
 		timestamp:    room.LastMessageTimestamp,

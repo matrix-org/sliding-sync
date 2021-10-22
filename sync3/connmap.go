@@ -17,19 +17,15 @@ type ConnMap struct {
 	connIDToConn map[string]*Conn
 
 	mu *sync.Mutex
-
-	globalCache *GlobalCache
 }
 
-func NewConnMap(globalCache *GlobalCache) *ConnMap {
+func NewConnMap() *ConnMap {
 	cm := &ConnMap{
 		userIDToConn: make(map[string][]*Conn),
 		connIDToConn: make(map[string]*Conn),
 		cache:        ttlcache.NewCache(),
 		mu:           &sync.Mutex{},
-		globalCache:  globalCache,
 	}
-	globalCache.Subsribe(cm)
 	cm.cache.SetTTL(30 * time.Minute) // TODO: customisable
 	cm.cache.SetExpirationCallback(cm.closeConn)
 	return cm
@@ -78,33 +74,6 @@ func (m *ConnMap) closeConn(connID string, value interface{}) {
 			}
 		}
 		m.userIDToConn[state.UserID()] = conns
-	}
-}
-
-func (m *ConnMap) OnNewEvent(joinedUserIDs []string, event *EventData) {
-	targetUser := ""
-	if event.eventType == "m.room.member" && event.stateKey != nil {
-		targetUser = *event.stateKey
-	}
-	// notify all people in this room
-	notifiedTargetUser := false
-	for _, userID := range joinedUserIDs {
-		m.mu.Lock()
-		conns := m.userIDToConn[userID]
-		m.mu.Unlock()
-		for _, conn := range conns {
-			conn.PushNewEvent(event)
-			if userID == targetUser {
-				notifiedTargetUser = true
-			}
-		}
-	}
-	if !notifiedTargetUser {
-		m.mu.Lock()
-		conns := m.userIDToConn[targetUser]
-		m.mu.Unlock()
-		for _, conn := range conns {
-			conn.PushNewEvent(event)
-		}
+		state.Destroy()
 	}
 }

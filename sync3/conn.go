@@ -51,10 +51,6 @@ func NewConn(connID ConnID, connState *ConnState, fn HandlerIncomingReqFunc) *Co
 	}
 }
 
-func (c *Conn) PushNewEvent(eventData *EventData) {
-	c.connState.PushNewEvent(eventData)
-}
-
 // OnIncomingRequest advances the clients position in the stream, returning the response position and data.
 func (c *Conn) OnIncomingRequest(ctx context.Context, req *Request) (resp *Response, herr *internal.HandlerError) {
 	c.mu.Lock()

@@ -12,16 +12,6 @@ import (
 	"github.com/matrix-org/sync-v3/testutils"
 )
 
-type mockGlobalCacheListener struct {
-	cs *ConnState
-}
-
-// normally the connmap checks to see if this conn is interested in this event; we are always interested
-// for testing purposes so always push them
-func (l *mockGlobalCacheListener) OnNewEvent(joinedUserIDs []string, event *EventData) {
-	l.cs.PushNewEvent(event)
-}
-
 func newSortableRoom(roomID string, lastMsgTimestamp int64) SortableRoom {
 	return SortableRoom{
 		RoomID:               roomID,
@@ -40,7 +30,7 @@ func TestConnStateInitial(t *testing.T) {
 		SessionID: "s",
 		DeviceID:  "d",
 	}
-	userID := "@alice:localhost"
+	userID := "@TestConnStateInitial_alice:localhost"
 	timestampNow := int64(1632131678061)
 	// initial sort order B, C, A
 	roomA := newSortableRoom("!a:localhost", timestampNow-8000)
@@ -50,13 +40,15 @@ func TestConnStateInitial(t *testing.T) {
 	globalCache.AssignRoom(roomA)
 	globalCache.AssignRoom(roomB)
 	globalCache.AssignRoom(roomC)
+	globalCache.jrt.UserJoinedRoom(userID, roomA.RoomID)
+	globalCache.jrt.UserJoinedRoom(userID, roomB.RoomID)
+	globalCache.jrt.UserJoinedRoom(userID, roomC.RoomID)
 	globalCache.LoadJoinedRoomsOverride = func(userID string) (pos int64, joinedRooms []SortableRoom, err error) {
 		return 1, []SortableRoom{
 			roomA, roomB, roomC,
 		}, nil
 	}
 	cs := NewConnState(userID, NewUserCache(userID), globalCache)
-	globalCache.Subsribe(&mockGlobalCacheListener{cs})
 	if userID != cs.UserID() {
 		t.Fatalf("UserID returned wrong value, got %v want %v", cs.UserID(), userID)
 	}
@@ -161,7 +153,7 @@ func TestConnStateMultipleRanges(t *testing.T) {
 		SessionID: "s",
 		DeviceID:  "d",
 	}
-	userID := "@alice:localhost"
+	userID := "@TestConnStateMultipleRanges_alice:localhost"
 	timestampNow := int64(1632131678061)
 	var rooms []SortableRoom
 	var roomIDs []string
@@ -180,12 +172,12 @@ func TestConnStateMultipleRanges(t *testing.T) {
 		roomIDs = append(roomIDs, roomID)
 		roomIDToRoom[roomID] = room
 		globalCache.AssignRoom(room)
+		globalCache.jrt.UserJoinedRoom(userID, roomID)
 	}
 	globalCache.LoadJoinedRoomsOverride = func(userID string) (pos int64, joinedRooms []SortableRoom, err error) {
 		return 1, rooms, nil
 	}
 	cs := NewConnState(userID, NewUserCache(userID), globalCache)
-	globalCache.Subsribe(&mockGlobalCacheListener{cs})
 
 	// request first page
 	res, err := cs.HandleIncomingRequest(context.Background(), connID, &Request{
@@ -327,7 +319,7 @@ func TestBumpToOutsideRange(t *testing.T) {
 		SessionID: "s",
 		DeviceID:  "d",
 	}
-	userID := "@alice:localhost"
+	userID := "@TestBumpToOutsideRange_alice:localhost"
 	timestampNow := int64(1632131678061)
 	roomA := newSortableRoom("!a:localhost", timestampNow)
 	roomB := newSortableRoom("!b:localhost", timestampNow-1000)
@@ -338,13 +330,16 @@ func TestBumpToOutsideRange(t *testing.T) {
 	globalCache.AssignRoom(roomB)
 	globalCache.AssignRoom(roomC)
 	globalCache.AssignRoom(roomD)
+	globalCache.jrt.UserJoinedRoom(userID, roomA.RoomID)
+	globalCache.jrt.UserJoinedRoom(userID, roomB.RoomID)
+	globalCache.jrt.UserJoinedRoom(userID, roomC.RoomID)
+	globalCache.jrt.UserJoinedRoom(userID, roomD.RoomID)
 	globalCache.LoadJoinedRoomsOverride = func(userID string) (pos int64, joinedRooms []SortableRoom, err error) {
 		return 1, []SortableRoom{
 			roomA, roomB, roomC, roomD,
 		}, nil
 	}
 	cs := NewConnState(userID, NewUserCache(userID), globalCache)
-	globalCache.Subsribe(&mockGlobalCacheListener{cs})
 	// Ask for A,B
 	res, err := cs.HandleIncomingRequest(context.Background(), connID, &Request{
 		Sort: []string{SortByRecency},
@@ -401,7 +396,7 @@ func TestConnStateRoomSubscriptions(t *testing.T) {
 		SessionID: "s",
 		DeviceID:  "d",
 	}
-	userID := "@alice:localhost"
+	userID := "@TestConnStateRoomSubscriptions_alice:localhost"
 	timestampNow := int64(1632131678061)
 	roomA := newSortableRoom("!a:localhost", timestampNow)
 	roomB := newSortableRoom("!b:localhost", timestampNow-1000)
@@ -413,13 +408,16 @@ func TestConnStateRoomSubscriptions(t *testing.T) {
 	globalCache.AssignRoom(roomB)
 	globalCache.AssignRoom(roomC)
 	globalCache.AssignRoom(roomD)
+	globalCache.jrt.UserJoinedRoom(userID, roomA.RoomID)
+	globalCache.jrt.UserJoinedRoom(userID, roomB.RoomID)
+	globalCache.jrt.UserJoinedRoom(userID, roomC.RoomID)
+	globalCache.jrt.UserJoinedRoom(userID, roomD.RoomID)
 	globalCache.LoadJoinedRoomsOverride = func(userID string) (pos int64, joinedRooms []SortableRoom, err error) {
 		return 1, []SortableRoom{
 			roomA, roomB, roomC, roomD,
 		}, nil
 	}
 	cs := NewConnState(userID, NewUserCache(userID), globalCache)
-	globalCache.Subsribe(&mockGlobalCacheListener{cs})
 	// subscribe to room D
 	res, err := cs.HandleIncomingRequest(context.Background(), connID, &Request{
 		Sort: []string{SortByRecency},
