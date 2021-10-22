@@ -354,7 +354,6 @@ const doSyncLoop = async(accessToken, sessionId) => {
                 console.error("/sync failed:",err);
                 console.log("current", currentError, "last", lastError);
                 if (currentError != lastError) {
-                    console.log("set!");
                     document.getElementById("errorMsg").textContent = lastError ? lastError : "";
                 }
                 currentError = lastError;
@@ -395,7 +394,8 @@ const doSyncLoop = async(accessToken, sessionId) => {
                     // gapIndex=3, op.index=0
                     if (gapIndex > op.index) {
                         // the gap is further down the list, shift every element to the right
-                        // starting at the gap so we can just shift each element in turn
+                        // starting at the gap so we can just shift each element in turn:
+                        // [A,B,C,_] gapIndex=3, op.index=0
                         // [A,B,C,C] i=3
                         // [A,B,B,C] i=2
                         // [A,A,B,C] i=1
@@ -443,26 +443,42 @@ const doSyncLoop = async(accessToken, sessionId) => {
         });
         render(document.getElementById("listContainer"));
 
-        // check for duplicates which should never happen but can if there's a bug
+        // check for duplicates and rooms outside tracked ranges which should never happen but can if there's a bug
         let roomIdToPositions = {};
         let dupeRoomIds = new Set();
+        let indexesOutsideRanges = new Set();
         Object.keys(rooms.roomIndexToRoomId).forEach((i) => {
             let rid = rooms.roomIndexToRoomId[i];
+            if (!rid) {
+                return;
+            }
             let positions = roomIdToPositions[rid] || [];
             positions.push(i);
             roomIdToPositions[rid] = positions;
             if (positions.length > 1) {
                 dupeRoomIds.add(rid);
             }
+            let isInsideRange = false;
+            activeRanges.forEach((r) => {
+                if (i >= r[0] && i <= r[1]) {
+                    isInsideRange = true;
+                }
+            });
+            if (!isInsideRange) {
+                indexesOutsideRanges.add(i);
+            }
         });
         dupeRoomIds.forEach((rid) => {
-            console.error(rid, " has duplicate indexes: ", roomIdToPositions[rid]);
+            console.log(rid, "has duplicate indexes:", roomIdToPositions[rid]);
         });
+        if (indexesOutsideRanges.size > 0) {
+            console.log("tracking indexes outside of tracked ranges:", JSON.stringify([...indexesOutsideRanges]));
+        }
     }
     console.log("active session: ", activeSessionId, " this session: ", sessionId, " terminating.");
 }
 // accessToken = string, pos = int, ranges = [2]int e.g [0,99]
-const doSyncRequest = async (accessToken, pos, reqBody) => {
+let doSyncRequest = async (accessToken, pos, reqBody) => {
     activeAbortController = new AbortController();
     let resp = await fetch("/_matrix/client/v3/sync" + (pos ? "?pos=" + pos : ""), {
         signal: activeAbortController.signal,
@@ -580,5 +596,132 @@ window.addEventListener('load', (event) => {
         window.localStorage.setItem("accessToken", accessToken);
         activeSessionId = new Date().getTime() + "";
         doSyncLoop(accessToken, activeSessionId);
-    }
+    };
+    document.getElementById("debugButton").onclick = () => {
+        const debugBox = document.getElementById("debugCmd");
+        debugBox.style = "";
+        alert(
+            "Type sync operations and press ENTER to execute locally. Examples:\n" +
+            "SYNC 0 5 a b c d e f\n" +
+            "DELETE 0; INSERT 1 f\n" +
+            "UPDATE 0 a\n"
+        );
+
+        awaitingPromises = {};
+        window.responseQueue = [];
+        // monkey patch the sync request command to read from us and not do network requests
+        doSyncRequest = async (accessToken, pos, reqBody) => {
+            if (!pos) {
+                pos = 0;
+            }
+            let r = window.responseQueue[pos];
+            if (r) {
+                r.pos = pos+1; // client should request next pos next
+                console.log(r);
+                return r;
+            }
+            // else wait until we have a response at this position
+            const responsePromise = new Promise((resolve) => {
+                awaitingPromises[pos] = resolve;
+            });
+            console.log("DEBUG: waiting for position ", pos);
+            r = await responsePromise;
+            console.log(r);
+            return r;
+        };
+        const fakeRoom = (s) => {
+            return {
+                highlight_count: 0,
+                notification_count: 0,
+                room_id: s,
+                name: s,
+                timeline: [{
+                    type: "m.room.message",
+                    sender: "DEBUG",
+                    content: {
+                        body: "Debug message",
+                    },
+                    origin_server_ts: new Date().getTime(),
+                }],
+            };
+        }
+        let started = false;
+        debugBox.onkeypress = (ev) => {
+            if (ev.key !== "Enter") {
+                return;
+            }
+            if (!started) {
+                started = true;
+                activeSessionId = "debug";
+                doSyncLoop("none", "debug");
+            }
+            const debugInput = debugBox.value;
+            debugBox.value = "";
+            const cmds = debugInput.split(";");
+            let ops = [];
+            cmds.forEach((cmd) => {
+                cmd = cmd.trim();
+                if (cmd.length == 0) {
+                    return;
+                }
+                const args = cmd.split(" ");
+                console.log(args);
+                switch (args[0].toUpperCase()) {
+                    case "SYNC": // SYNC 0 5 a b c d e f
+                        const rooms = args.slice(3);
+                        if (rooms.length != (1 + Number(args[2]) - Number(args[1]))) {
+                            console.error("Bad SYNC: got ", rooms.length, " rooms for range (indexes are inclusive), ignoring.");
+                            return;
+                        }
+                        ops.push({
+                            range: [Number(args[1]), Number(args[2])],
+                            op: "SYNC",
+                            rooms: rooms.map((s) => {
+                                return fakeRoom(s);
+                            }),
+                        });
+                        break;
+                    case "INVALIDATE": // INVALIDATE 0 5
+                        ops.push({
+                            range: [Number(args[1]), Number(args[2])],
+                            op: "INVALIDATE",
+                        });
+                        break;
+                    case "INSERT": // INSERT 5 a
+                        ops.push({
+                            index: Number(args[1]),
+                            room: fakeRoom(args[2]),
+                            op: "INSERT",
+                        });
+                        break;
+                    case "UPDATE": // UPDATE 3 b
+                        ops.push({
+                            index: Number(args[1]),
+                            room: fakeRoom(args[2]),
+                            op: "UPDATE",
+                        });
+                        break;
+                    case "DELETE": // DELETE 2
+                        ops.push({
+                            index: Number(args[1]),
+                            op: "DELETE",
+                        });
+                        break;
+                }
+            });
+            
+            responseQueue.push({
+                count: 256,
+                ops: ops,
+                room_subscriptions: {},
+            });
+            // check if there are waiting requests and wake them up
+            const thisPos = responseQueue.length - 1;
+            const resolve = awaitingPromises[thisPos];
+            if (resolve) {
+                console.log("DEBUG: waking up for position ", thisPos);
+                resolve(responseQueue[thisPos]);
+            }
+        };
+    };
 });
