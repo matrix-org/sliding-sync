@@ -305,6 +305,21 @@ const formatTimestamp = (originServerTs) => {
     );
 }
 
+// SYNC 0 2 a b c; SYNC 6 8 d e f; DELETE 7; INSERT 0 e;
+// 0 1 2 3 4 5 6 7 8
+// a b c       d e f
+// a b c       d _ f
+// e a b c       d f  <--- c=3 is wrong as we are not tracking it, ergo we need to see if `i` is in range else drop it
+const indexInRange = (i) => {
+    let isInRange = false;
+    activeRanges.forEach((r) => {
+        if (r[0] <= i && i <= r[1]) {
+            isInRange = true;
+        }
+    });
+    return isInRange;
+}
+
 const doSyncLoop = async(accessToken, sessionId) => {
     console.log("Starting sync loop. Active: ", activeSessionId, " this:", sessionId);
     let currentPos;
@@ -401,13 +416,17 @@ const doSyncLoop = async(accessToken, sessionId) => {
                         // [A,A,B,C] i=1
                         // Terminate. We'll assign into op.index next.
                         for (let i = gapIndex; i > op.index; i--) {
-                            rooms.roomIndexToRoomId[i] = rooms.roomIndexToRoomId[i-1];
+                            if (indexInRange(i)) {
+                                rooms.roomIndexToRoomId[i] = rooms.roomIndexToRoomId[i-1];
+                            }
                         }
                     } else if (gapIndex < op.index) {
                         // the gap is further up the list, shift every element to the left
                         // starting at the gap so we can just shift each element in turn
                         for (let i = gapIndex; i < op.index; i++) {
-                            rooms.roomIndexToRoomId[i] = rooms.roomIndexToRoomId[i+1];
+                            if (indexInRange(i)) {
+                                rooms.roomIndexToRoomId[i] = rooms.roomIndexToRoomId[i+1];
+                            }
                         }
                     }
                 }
