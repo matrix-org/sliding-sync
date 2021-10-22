@@ -203,7 +203,42 @@ func (s *Storage) RoomStateBeforeEventPosition(roomID string, pos int64) (events
 	return
 }
 
-func (s *Storage) VisibleEventNIDsBetweenForRooms(userID string, roomIDs []string, from, to int64) (map[string][][2]int64, error) {
+func (s *Storage) LatestEventsInRooms(userID string, roomIDs []string, to int64, limit int) (map[string][]json.RawMessage, error) {
+	roomIDToRanges, err := s.visibleEventNIDsBetweenForRooms(userID, roomIDs, 0, to)
+	if err != nil {
+		return nil, err
+	}
+	result := make(map[string][]json.RawMessage)
+	err = sqlutil.WithTransaction(s.accumulator.db, func(txn *sqlx.Tx) error {
+		for roomID, ranges := range roomIDToRanges {
+			var roomEvents []json.RawMessage
+			// start at the most recent range as we want to return the most recent `limit` events
+			for i := len(ranges) - 1; i >= 0; i-- {
+				if len(roomEvents) >= limit {
+					break
+				}
+				r := ranges[i]
+				// the most recent event will be first
+				events, err := s.EventsTable.SelectLatestEventsBetween(txn, roomID, r[0]-1, r[1], limit)
+				if err != nil {
+					return fmt.Errorf("room %s failed to SelectEventsBetween: %s", roomID, err)
+				}
+				// keep pushing to the front so we end up with A,B,C
+				for _, ev := range events {
+					roomEvents = append([]json.RawMessage{ev.JSON}, roomEvents...)
+					if len(roomEvents) >= limit {
+						break
+					}
+				}
+			}
+			result[roomID] = roomEvents
+		}
+		return nil
+	})
+	return result, err
+}
+
+func (s *Storage) visibleEventNIDsBetweenForRooms(userID string, roomIDs []string, from, to int64) (map[string][][2]int64, error) {
 	// load *THESE* joined rooms for this user at from (inclusive)
 	var membershipEvents []Event
 	var err error

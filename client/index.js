@@ -336,6 +336,7 @@ const doSyncLoop = async(accessToken, sessionId) => {
             // if this is the first request on this session, send sticky request data which never changes
             if (!currentPos) {
                 reqBody.required_state = requiredStateEventsInList;
+                reqBody.timeline_limit = 20;
             }
             // check if we are (un)subscribing to a room and modify request this one time for it
             let subscribingToRoom;

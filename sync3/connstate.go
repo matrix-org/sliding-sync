@@ -3,7 +3,6 @@ package sync3
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"reflect"
 	"sort"
 	"time"
@@ -162,15 +161,15 @@ func (s *ConnState) onIncomingRequest(ctx context.Context, req *Request) (*Respo
 		sr := SliceRanges([][2]int64{r})
 		subslice := sr.SliceInto(s.sortedJoinedRooms)
 		rooms := subslice[0].(SortableRooms)
-		roomsResponse := make([]Room, len(rooms))
+		roomIDs := make([]string, len(rooms))
 		for i := range rooms {
-			roomData := s.getInitialRoomData(rooms[i].RoomID)
-			roomsResponse[i] = *roomData
+			roomIDs[i] = rooms[i].RoomID
 		}
+
 		responseOperations = append(responseOperations, &ResponseOpRange{
 			Operation: "SYNC",
 			Range:     r[:],
-			Rooms:     roomsResponse,
+			Rooms:     s.getInitialRoomData(roomIDs...),
 		})
 	}
 	// do live tracking if we haven't changed the range and we have nothing to tell the client yet
@@ -278,8 +277,8 @@ func (s *ConnState) updateRoomSubscriptions(subs, unsubs []string) map[string]Ro
 		}
 		s.roomSubscriptions[roomID] = sub
 		// send initial room information
-		room := s.getInitialRoomData(roomID)
-		result[roomID] = *room
+		rooms := s.getInitialRoomData(roomID)
+		result[roomID] = rooms[0]
 	}
 	for _, roomID := range unsubs {
 		delete(s.roomSubscriptions, roomID)
@@ -302,20 +301,26 @@ func (s *ConnState) getDeltaRoomData(updateEvent *EventData) *Room {
 	return room
 }
 
-func (s *ConnState) getInitialRoomData(roomID string) *Room {
-	r := s.globalCache.LoadRoom(roomID) // TODO: does this race?
-	userRoomData := s.userCache.loadRoomData(roomID)
-	return &Room{
-		RoomID:            roomID,
-		Name:              r.Name,
-		NotificationCount: int64(userRoomData.NotificationCount),
-		HighlightCount:    int64(userRoomData.HighlightCount),
-		// TODO: timeline limits
-		Timeline: []json.RawMessage{
-			r.LastEventJSON,
-		},
-		RequiredState: s.globalCache.LoadRoomState(roomID, s.loadPosition, s.muxedReq.GetRequiredState(roomID)),
+func (s *ConnState) getInitialRoomData(roomIDs ...string) []Room {
+	sortableRooms := make([]SortableRoom, len(roomIDs))
+	for i := range roomIDs {
+		// TODO: the timestamp here can race with loading the timeline events (timeline may be newer), is this a problem?
+		sortableRooms[i] = *s.globalCache.LoadRoom(roomIDs[i])
 	}
+	roomIDToUserRoomData := s.userCache.lazilyLoadRoomDatas(s.loadPosition, roomIDs, int(s.muxedReq.TimelineLimit)) // TODO: per-room timeline limit
+	rooms := make([]Room, len(roomIDs))
+	for i, sr := range sortableRooms {
+		userRoomData := roomIDToUserRoomData[sr.RoomID]
+		rooms[i] = Room{
+			RoomID:            sr.RoomID,
+			Name:              sr.Name,
+			NotificationCount: int64(userRoomData.NotificationCount),
+			HighlightCount:    int64(userRoomData.HighlightCount),
+			Timeline:          userRoomData.Timeline,
+			RequiredState:     s.globalCache.LoadRoomState(sr.RoomID, s.loadPosition, s.muxedReq.GetRequiredState(sr.RoomID)),
+		}
+	}
+	return rooms
 }
 
 // Called when the global cache has a new event. This callback fires when the server gets a new event and determines this connection MAY be
@@ -323,7 +328,6 @@ func (s *ConnState) getInitialRoomData(roomID string) *Room {
 // from different v2 poll loops, and there is no locking in order to prevent a slow ConnState from wedging the poll loop.
 // We need to move this data onto a channel for onIncomingRequest to consume later.
 func (s *ConnState) OnNewEvent(joinedUserIDs []string, eventData *EventData) {
-	fmt.Println("procccc")
 	targetUser := ""
 	if eventData.eventType == "m.room.member" && eventData.stateKey != nil {
 		targetUser = *eventData.stateKey
@@ -404,7 +408,8 @@ func (s *ConnState) moveRoom(updateEvent *EventData, fromIndex, toIndex int, ran
 		RoomID: updateEvent.roomID,
 	}
 	if !onlySendRoomID {
-		room = s.getInitialRoomData(updateEvent.roomID)
+		rooms := s.getInitialRoomData(updateEvent.roomID)
+		room = &rooms[0]
 	}
 	return []ResponseOp{
 		&ResponseOpSingle{

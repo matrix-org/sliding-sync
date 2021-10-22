@@ -240,6 +240,14 @@ func (t *EventTable) SelectEventsBetween(txn *sqlx.Tx, roomID string, lowerExclu
 	return events, err
 }
 
+func (t *EventTable) SelectLatestEventsBetween(txn *sqlx.Tx, roomID string, lowerExclusive, upperInclusive int64, limit int) ([]Event, error) {
+	var events []Event
+	err := txn.Select(&events, `SELECT event_nid, event FROM syncv3_events WHERE event_nid > $1 AND event_nid <= $2 AND room_id = $3 ORDER BY event_nid DESC LIMIT $4`,
+		lowerExclusive, upperInclusive, roomID, limit,
+	)
+	return events, err
+}
+
 func (t *EventTable) SelectLatestEventInRoom(txn *sqlx.Tx, roomID string, upperInclusive int64) (*Event, error) {
 	var event Event
 	err := txn.Get(&event, `SELECT event_nid, event, event_type, state_key, event_id, room_id FROM syncv3_events 

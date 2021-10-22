@@ -23,6 +23,18 @@ func newSortableRoom(roomID string, lastMsgTimestamp int64) SortableRoom {
 	}
 }
 
+func mockLazyRoomOverride(loadPos int64, roomIDs []string, maxTimelineEvents int) map[string]UserRoomData {
+	result := make(map[string]UserRoomData)
+	for _, roomID := range roomIDs {
+		result[roomID] = UserRoomData{
+			Timeline: []json.RawMessage{
+				[]byte(`{}`),
+			},
+		}
+	}
+	return result
+}
+
 // Sync an account with 3 rooms and check that we can grab all rooms and they are sorted correctly initially. Checks
 // that basic UPDATE and DELETE/INSERT works when tracking all rooms.
 func TestConnStateInitial(t *testing.T) {
@@ -48,7 +60,19 @@ func TestConnStateInitial(t *testing.T) {
 			roomA, roomB, roomC,
 		}, nil
 	}
-	cs := NewConnState(userID, NewUserCache(userID), globalCache)
+	userCache := NewUserCache(userID, nil)
+	userCache.LazyRoomDataOverride = func(loadPos int64, roomIDs []string, maxTimelineEvents int) map[string]UserRoomData {
+		result := make(map[string]UserRoomData)
+		for _, roomID := range roomIDs {
+			result[roomID] = UserRoomData{
+				Timeline: []json.RawMessage{
+					globalCache.LoadRoom(roomID).LastEventJSON,
+				},
+			}
+		}
+		return result
+	}
+	cs := NewConnState(userID, userCache, globalCache)
 	if userID != cs.UserID() {
 		t.Fatalf("UserID returned wrong value, got %v want %v", cs.UserID(), userID)
 	}
@@ -177,7 +201,9 @@ func TestConnStateMultipleRanges(t *testing.T) {
 	globalCache.LoadJoinedRoomsOverride = func(userID string) (pos int64, joinedRooms []SortableRoom, err error) {
 		return 1, rooms, nil
 	}
-	cs := NewConnState(userID, NewUserCache(userID), globalCache)
+	userCache := NewUserCache(userID, nil)
+	userCache.LazyRoomDataOverride = mockLazyRoomOverride
+	cs := NewConnState(userID, userCache, globalCache)
 
 	// request first page
 	res, err := cs.HandleIncomingRequest(context.Background(), connID, &Request{
@@ -339,7 +365,9 @@ func TestBumpToOutsideRange(t *testing.T) {
 			roomA, roomB, roomC, roomD,
 		}, nil
 	}
-	cs := NewConnState(userID, NewUserCache(userID), globalCache)
+	userCache := NewUserCache(userID, nil)
+	userCache.LazyRoomDataOverride = mockLazyRoomOverride
+	cs := NewConnState(userID, userCache, globalCache)
 	// Ask for A,B
 	res, err := cs.HandleIncomingRequest(context.Background(), connID, &Request{
 		Sort: []string{SortByRecency},
@@ -417,7 +445,19 @@ func TestConnStateRoomSubscriptions(t *testing.T) {
 			roomA, roomB, roomC, roomD,
 		}, nil
 	}
-	cs := NewConnState(userID, NewUserCache(userID), globalCache)
+	userCache := NewUserCache(userID, nil)
+	userCache.LazyRoomDataOverride = func(loadPos int64, roomIDs []string, maxTimelineEvents int) map[string]UserRoomData {
+		result := make(map[string]UserRoomData)
+		for _, roomID := range roomIDs {
+			result[roomID] = UserRoomData{
+				Timeline: []json.RawMessage{
+					globalCache.LoadRoom(roomID).LastEventJSON,
+				},
+			}
+		}
+		return result
+	}
+	cs := NewConnState(userID, userCache, globalCache)
 	// subscribe to room D
 	res, err := cs.HandleIncomingRequest(context.Background(), connID, &Request{
 		Sort: []string{SortByRecency},
