@@ -593,6 +593,10 @@ window.addEventListener('load', (event) => {
     }
     document.getElementById("syncButton").onclick = () => {
         const accessToken = document.getElementById("accessToken").value;
+        if (accessToken === "debug") {
+            document.getElementById("debugButton").style = "";
+            return;
+        }
         window.localStorage.setItem("accessToken", accessToken);
         activeSessionId = new Date().getTime() + "";
         doSyncLoop(accessToken, activeSessionId);
