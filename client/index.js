@@ -389,11 +389,11 @@ const doSyncLoop = async(accessToken, sessionId) => {
         let gapIndex = -1;
         resp.ops.forEach((op) => {
             if (op.op === "DELETE") {
-                console.log("DELETE", op.index, " calc room: ", rooms.roomIndexToRoomId[op.index]);
+                console.log("DELETE", op.index, ";");
                 delete rooms.roomIndexToRoomId[op.index];
                 gapIndex = op.index;
             } else if (op.op === "INSERT") {
-                console.log("INSERT", op.index, " ", op.room.room_id);
+                console.log("INSERT", op.index, op.room.room_id, ";");
                 if (rooms.roomIndexToRoomId[op.index]) {
                     // something is in this space, shift items out of the way
                     if (gapIndex < 0) {
@@ -434,7 +434,7 @@ const doSyncLoop = async(accessToken, sessionId) => {
                 rooms.roomIndexToRoomId[op.index] = op.room.room_id;
                 renderRoomContent(op.room.room_id);
             } else if (op.op === "UPDATE") {
-                console.log("UPDATE", op.index, " ", op.room.room_id);
+                console.log("UPDATE", op.index, op.room.room_id, ";");
                 accumulateRoomData(op.room, true);
                 renderRoomContent(op.room.room_id);
             } else if (op.op === "SYNC") {
@@ -449,7 +449,7 @@ const doSyncLoop = async(accessToken, sessionId) => {
                     syncRooms.push(r.room_id);
                     accumulateRoomData(r);
                 }
-                console.log("SYNC", JSON.stringify(op.range), " ", syncRooms.join(" "));
+                console.log("SYNC", op.range[0], op.range[1], syncRooms.join(" "), ";");
             } else if (op.op === "INVALIDATE") {
                 let invalidRooms = [];
                 const startIndex = op.range[0];
@@ -457,7 +457,7 @@ const doSyncLoop = async(accessToken, sessionId) => {
                     invalidRooms.push(rooms.roomIndexToRoomId[i]);
                     delete rooms.roomIndexToRoomId[i];
                 }
-                console.log("INVALIDATE", JSON.stringify(op.range), " calc: ", invalidRooms.join(" "));
+                console.log("INVALIDATE", op.range[0], op.range[1], ";");
             }
         });
         render(document.getElementById("listContainer"));
