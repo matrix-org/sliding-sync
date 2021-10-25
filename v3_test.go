@@ -15,7 +15,6 @@ import (
 	"time"
 
 	"github.com/gorilla/mux"
-	"github.com/matrix-org/gomatrixserverlib"
 	"github.com/matrix-org/sync-v3/sync2"
 	"github.com/matrix-org/sync-v3/sync3"
 	"github.com/matrix-org/sync-v3/testutils"
@@ -194,54 +193,50 @@ func runTestServer(t *testing.T, v2Server *testV2Server) *testV3Server {
 	}
 }
 
-func TestInteg(t *testing.T) {
-	v2 := runTestV2Server(t)
-	v3 := runTestServer(t, v2)
-	defer v2.close()
-	defer v3.close()
-	alice := "@alice:localhost"
-	aliceToken := "ALICE_BEARER_TOKEN"
-	roomA := "!a:localhost"
-	v2.addAccount(alice, aliceToken)
-	v2.queueResponse(alice, sync2.SyncResponse{
-		Rooms: sync2.SyncRoomsResponse{
-			Join: map[string]sync2.SyncV2JoinResponse{
-				roomA: {
-					Timeline: sync2.TimelineResponse{
-						Events: []json.RawMessage{
-							testutils.NewStateEvent(t, "m.room.create", "", alice, map[string]interface{}{"creator": alice}),
-							testutils.NewStateEvent(t, "m.room.member", alice, alice, map[string]interface{}{"membership": "join"}),
-							testutils.NewStateEvent(t, "m.room.join_rules", "", alice, map[string]interface{}{"join_rule": "public"}),
-							testutils.NewEvent(t, "m.room.message", alice, map[string]interface{}{"body": "hello world"}, int64(gomatrixserverlib.AsTimestamp(time.Now()))),
-						},
-					},
-				},
-			},
-		},
-	})
+type respMatcher func(res *sync3.Response) error
+type opMatcher func(op sync3.ResponseOp) error
 
-	res := v3.mustDoV3Request(t, aliceToken, sync3.Request{
-		Rooms: sync3.SliceRanges{
-			[2]int64{0, 9}, // first 10 rooms
-		},
-	})
-	if res.Count != 1 {
-		t.Fatalf("want count=1, got count=%d", res.Count)
+func MatchV3Count(wantCount int) respMatcher {
+	return func(res *sync3.Response) error {
+		if res.Count != int64(wantCount) {
+			return fmt.Errorf("count: got %d want %d", res.Count, wantCount)
+		}
+		return nil
 	}
-	if len(res.Ops) != 1 {
-		t.Fatalf("want 1 op, got %d", len(res.Ops))
-	}
-	op := res.Ops[0]
-	if op.Op() != sync3.OpSync {
-		t.Fatalf("want op %s got %s", sync3.OpSync, op.Op())
-	}
-	opRange := op.(*sync3.ResponseOpRange)
-	if len(opRange.Rooms) != 1 {
-		t.Fatalf("want 1 room, got %d", len(opRange.Rooms))
-	}
-	room := opRange.Rooms[0]
-	if room.RoomID != roomA {
-		t.Fatalf("want room id %s got %s", roomA, room.RoomID)
-	}
+}
 
+func MatchV3SyncOp(fn func(op *sync3.ResponseOpRange) error) opMatcher {
+	return func(op sync3.ResponseOp) error {
+		if op.Op() != sync3.OpSync {
+			return fmt.Errorf("op: %s != %s", op.Op(), sync3.OpSync)
+		}
+		oper := op.(*sync3.ResponseOpRange)
+		return fn(oper)
+	}
+}
+
+func MatchV3Ops(matchOps ...opMatcher) respMatcher {
+	return func(res *sync3.Response) error {
+		if len(matchOps) != len(res.Ops) {
+			return fmt.Errorf("ops: got %d ops want %d", len(res.Ops), len(matchOps))
+		}
+		for i := range res.Ops {
+			op := res.Ops[i]
+			if err := matchOps[i](op); err != nil {
+				return fmt.Errorf("op[%d](%s) - %s", i, op.Op(), err)
+			}
+		}
+		return nil
+	}
+}
+
+func MatchResponse(t *testing.T, res *sync3.Response, matchers ...respMatcher) {
+	t.Helper()
+	for _, m := range matchers {
+		err := m(res)
+		if err != nil {
+			b, _ := json.Marshal(res)
+			t.Errorf("MatchResponse: %s\n%+v", err, string(b))
+		}
+	}
 }
