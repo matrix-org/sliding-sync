@@ -83,11 +83,7 @@ type SyncResponse struct {
 	Presence struct {
 		Events []gomatrixserverlib.ClientEvent `json:"events,omitempty"`
 	} `json:"presence"`
-	Rooms struct {
-		Join   map[string]SyncV2JoinResponse   `json:"join"`
-		Invite map[string]SyncV2InviteResponse `json:"invite"`
-		Leave  map[string]SyncV2LeaveResponse  `json:"leave"`
-	} `json:"rooms"`
+	Rooms    SyncRoomsResponse `json:"rooms"`
 	ToDevice struct {
 		Events []gomatrixserverlib.SendToDeviceEvent `json:"events"`
 	} `json:"to_device"`
@@ -98,26 +94,32 @@ type SyncResponse struct {
 	DeviceListsOTKCount map[string]int `json:"device_one_time_keys_count,omitempty"`
 }
 
+type SyncRoomsResponse struct {
+	Join   map[string]SyncV2JoinResponse   `json:"join"`
+	Invite map[string]SyncV2InviteResponse `json:"invite"`
+	Leave  map[string]SyncV2LeaveResponse  `json:"leave"`
+}
+
 // JoinResponse represents a /sync response for a room which is under the 'join' or 'peek' key.
 type SyncV2JoinResponse struct {
-	State struct {
-		Events []json.RawMessage `json:"events"`
-	} `json:"state"`
-	Timeline struct {
-		Events    []json.RawMessage `json:"events"`
-		Limited   bool              `json:"limited"`
-		PrevBatch string            `json:"prev_batch,omitempty"`
-	} `json:"timeline"`
-	Ephemeral struct {
-		Events []json.RawMessage `json:"events"`
-	} `json:"ephemeral"`
-	AccountData struct {
-		Events []json.RawMessage `json:"events"`
-	} `json:"account_data"`
+	State               EventsResponse   `json:"state"`
+	Timeline            TimelineResponse `json:"timeline"`
+	Ephemeral           EventsResponse   `json:"ephemeral"`
+	AccountData         EventsResponse   `json:"account_data"`
 	UnreadNotifications struct {
 		HighlightCount    *int `json:"highlight_count,omitempty"`
 		NotificationCount *int `json:"notification_count,omitempty"`
 	} `json:"unread_notifications"`
+}
+
+type TimelineResponse struct {
+	Events    []json.RawMessage `json:"events"`
+	Limited   bool              `json:"limited"`
+	PrevBatch string            `json:"prev_batch,omitempty"`
+}
+
+type EventsResponse struct {
+	Events []json.RawMessage `json:"events"`
 }
 
 // InviteResponse represents a /sync response for a room which is under the 'invite' key.

@@ -1,5 +1,19 @@
 package sync3
 
+import (
+	"encoding/json"
+
+	"github.com/tidwall/gjson"
+)
+
+const (
+	OpSync       = "SYNC"
+	OpInvalidate = "INVALIDATE"
+	OpInsert     = "INSERT"
+	OpDelete     = "DELETE"
+	OpUpdate     = "UPDATE"
+)
+
 type Response struct {
 	Ops []ResponseOp `json:"ops"`
 
@@ -8,6 +22,44 @@ type Response struct {
 
 	Pos     int64  `json:"pos"`
 	Session string `json:"session_id,omitempty"`
+}
+
+// Custom unmarshal so we can dynamically create the right ResponseOp for Ops
+func (r *Response) UnmarshalJSON(b []byte) error {
+	temporary := struct {
+		Ops []json.RawMessage `json:"ops"`
+
+		RoomSubscriptions map[string]Room `json:"room_subscriptions"`
+		Count             int64           `json:"count"`
+
+		Pos     int64  `json:"pos"`
+		Session string `json:"session_id,omitempty"`
+	}{}
+	if err := json.Unmarshal(b, &temporary); err != nil {
+		return err
+	}
+	r.RoomSubscriptions = temporary.RoomSubscriptions
+	r.Count = temporary.Count
+	r.Pos = temporary.Pos
+	r.Session = temporary.Session
+
+	for _, op := range temporary.Ops {
+		if gjson.GetBytes(op, "range").Exists() {
+			var oper ResponseOpRange
+			if err := json.Unmarshal(op, &oper); err != nil {
+				return err
+			}
+			r.Ops = append(r.Ops, &oper)
+		} else {
+			var oper ResponseOpSingle
+			if err := json.Unmarshal(op, &oper); err != nil {
+				return err
+			}
+			r.Ops = append(r.Ops, &oper)
+		}
+	}
+
+	return nil
 }
 
 type ResponseOp interface {
