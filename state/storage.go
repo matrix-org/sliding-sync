@@ -158,7 +158,7 @@ func (s *Storage) RoomStateAfterEventPosition(roomID string, pos int64, eventTyp
 				`SELECT syncv3_events.event_nid, syncv3_events.event_type, syncv3_events.state_key, syncv3_events.event FROM syncv3_events
 				WHERE syncv3_events.event_type IN (?) AND syncv3_events.event_nid IN (
 					SELECT unnest(events) FROM syncv3_snapshots WHERE syncv3_snapshots.snapshot_id = ?
-				)`,
+				) ORDER BY syncv3_events.event_nid ASC`,
 				eventTypes, snapID,
 			)
 			if err != nil {
