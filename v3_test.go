@@ -26,6 +26,7 @@ type testV2Server struct {
 	mu          *sync.Mutex
 	tokenToUser map[string]string
 	queues      map[string]chan sync2.SyncResponse
+	waiting     map[string]*sync.Cond // broadcasts when the server is about to read a blocking input
 	srv         *httptest.Server
 }
 
@@ -53,30 +54,39 @@ func (s *testV2Server) queueResponse(userID string, resp sync2.SyncResponse) {
 	log.Printf("testV2Server: enqueued v2 response for %s", userID)
 }
 
+// blocks until nextResponse is called with an empty channel (that is, the server has caught up with v2 responses)
 func (s *testV2Server) waitUntilEmpty(t *testing.T, userID string) {
 	t.Helper()
 	s.mu.Lock()
-	ch := s.queues[userID]
+	cond := s.waiting[userID]
 	s.mu.Unlock()
-	if ch == nil {
+	if cond == nil {
 		return
 	}
-	attempts := 0
-	for len(ch) > 0 {
-		time.Sleep(1 * time.Millisecond)
-		attempts++
-		if attempts > 1000 {
-			t.Fatalf("waitUntilEmpty: response channel still not empty (size=%d)", len(ch))
-		}
-	}
+	cond.L.Lock()
+	cond.Wait()
+	cond.L.Unlock()
 }
 
 func (s *testV2Server) nextResponse(userID string) *sync2.SyncResponse {
 	s.mu.Lock()
 	ch := s.queues[userID]
+	cond := s.waiting[userID]
+	if cond == nil {
+		cond = &sync.Cond{
+			L: &sync.Mutex{},
+		}
+		s.waiting[userID] = cond
+	}
 	s.mu.Unlock()
 	if ch == nil {
 		log.Fatalf("testV2Server: nextResponse called with %s but there is no chan for this user", userID)
+	}
+	if len(ch) == 0 {
+		// broadcast to tests (waitUntilEmpty) that we're going to block for new data.
+		// We need to do it like this so we can make sure that the server has fully processed
+		// the previous responses
+		cond.Broadcast()
 	}
 	select {
 	case data := <-ch:
@@ -103,6 +113,7 @@ func runTestV2Server(t *testing.T) *testV2Server {
 	server := &testV2Server{
 		tokenToUser: make(map[string]string),
 		queues:      make(map[string]chan sync2.SyncResponse),
+		waiting:     make(map[string]*sync.Cond),
 		mu:          &sync.Mutex{},
 	}
 	r := mux.NewRouter()
