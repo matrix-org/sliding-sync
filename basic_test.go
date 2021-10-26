@@ -17,8 +17,8 @@ func TestInteg(t *testing.T) {
 	defer v2.close()
 	defer v3.close()
 	alice := "@TestInteg_alice:localhost"
-	aliceToken := "ALICE_BEARER_TOKEN"
-	roomA := "!a:localhost"
+	aliceToken := "ALICE_BEARER_TOKEN_TestInteg"
+	roomA := "!a_TestInteg:localhost"
 	v2.addAccount(alice, aliceToken)
 	v2.queueResponse(alice, sync2.SyncResponse{
 		Rooms: sync2.SyncRoomsResponse{

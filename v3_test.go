@@ -53,6 +53,24 @@ func (s *testV2Server) queueResponse(userID string, resp sync2.SyncResponse) {
 	log.Printf("testV2Server: enqueued v2 response for %s", userID)
 }
 
+func (s *testV2Server) waitUntilEmpty(t *testing.T, userID string) {
+	t.Helper()
+	s.mu.Lock()
+	ch := s.queues[userID]
+	s.mu.Unlock()
+	if ch == nil {
+		return
+	}
+	attempts := 0
+	for len(ch) > 0 {
+		time.Sleep(1 * time.Millisecond)
+		attempts++
+		if attempts > 1000 {
+			t.Fatalf("waitUntilEmpty: response channel still not empty (size=%d)", len(ch))
+		}
+	}
+}
+
 func (s *testV2Server) nextResponse(userID string) *sync2.SyncResponse {
 	s.mu.Lock()
 	ch := s.queues[userID]
@@ -136,15 +154,19 @@ func (s *testV3Server) restart(t *testing.T, v2 *testV2Server, pq string) {
 }
 
 func (s *testV3Server) mustDoV3Request(t *testing.T, token string, reqBody interface{}) (respBody *sync3.Response) {
+	return s.mustDoV3RequestWithPos(t, token, 0, reqBody)
+}
+
+func (s *testV3Server) mustDoV3RequestWithPos(t *testing.T, token string, pos int64, reqBody interface{}) (respBody *sync3.Response) {
 	t.Helper()
-	resp, code := s.doV3Request(t, token, reqBody)
+	resp, code := s.doV3Request(t, token, pos, reqBody)
 	if code != 200 {
 		t.Fatalf("mustDoV3Request returned code %d", code)
 	}
 	return resp
 }
 
-func (s *testV3Server) doV3Request(t *testing.T, token string, reqBody interface{}) (respBody *sync3.Response, statusCode int) {
+func (s *testV3Server) doV3Request(t *testing.T, token string, pos int64, reqBody interface{}) (respBody *sync3.Response, statusCode int) {
 	t.Helper()
 	var body io.Reader
 	switch v := reqBody.(type) {
@@ -161,7 +183,11 @@ func (s *testV3Server) doV3Request(t *testing.T, token string, reqBody interface
 		}
 		body = bytes.NewBuffer(j)
 	}
-	req, err := http.NewRequest("POST", s.srv.URL+"/_matrix/client/v3/sync", body)
+	qps := ""
+	if pos > 0 {
+		qps = fmt.Sprintf("?pos=%d", pos)
+	}
+	req, err := http.NewRequest("POST", s.srv.URL+"/_matrix/client/v3/sync"+qps, body)
 	if err != nil {
 		t.Fatalf("failed to make NewRequest: %s", err)
 	}
@@ -218,6 +244,9 @@ type roomMatcher func(r sync3.Room) error
 
 func MatchRoomName(name string) roomMatcher {
 	return func(r sync3.Room) error {
+		if name == "" {
+			return nil
+		}
 		if r.Name != name {
 			return fmt.Errorf("name mismatch, got %s want %s", r.Name, name)
 		}
