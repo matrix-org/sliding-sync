@@ -6,6 +6,7 @@ import (
 	"sync"
 
 	"github.com/matrix-org/gomatrixserverlib"
+	"github.com/matrix-org/sync-v3/internal"
 	"github.com/matrix-org/sync-v3/state"
 	"github.com/tidwall/gjson"
 )
@@ -22,6 +23,9 @@ type GlobalCache struct {
 	// hence you must lock this with `mu` before r/w
 	globalRoomInfo   map[string]*SortableRoom
 	globalRoomInfoMu *sync.RWMutex
+
+	// TODO: keep this updated with live events
+	roomIDToHeroInfo map[string]internal.HeroInfo
 
 	// for loading room state not held in-memory
 	store *state.Storage
@@ -41,6 +45,7 @@ func NewGlobalCache(store *state.Storage) *GlobalCache {
 		listenersMu:      &sync.Mutex{},
 		store:            store,
 		jrt:              NewJoinedRoomsTracker(),
+		roomIDToHeroInfo: make(map[string]internal.HeroInfo),
 	}
 }
 
@@ -231,7 +236,6 @@ func (c *GlobalCache) notifyRelevantUsers(event *EventData) {
 //   - OnNewEvents is called with the join event
 //   - join event is processed twice.
 func PopulateGlobalCache(store *state.Storage, cache *GlobalCache) error {
-	// TODO: load last N events as a sliding window?
 	latestEvents, err := store.SelectLatestEventInAllRooms()
 	if err != nil {
 		return fmt.Errorf("failed to load latest event for all rooms: %s", err)
@@ -245,6 +249,7 @@ func PopulateGlobalCache(store *state.Storage, cache *GlobalCache) error {
 		room.LastMessageTimestamp = gjson.ParseBytes(ev.JSON).Get("origin_server_ts").Uint()
 		cache.AssignRoom(*room)
 	}
+	//roomIDToHeroInfo, err := store.HeroInfoForAllRooms()
 	// load state events we care about for sync v3
 	roomIDToStateEvents, err := store.CurrentStateEventsInAllRooms([]string{
 		"m.room.name", "m.room.canonical_alias",

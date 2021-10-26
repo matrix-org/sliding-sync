@@ -5,12 +5,18 @@ import (
 	"strings"
 )
 
+type HeroInfo struct {
+	Heroes      []Hero
+	JoinCount   int
+	InviteCount int
+}
+
 type Hero struct {
 	ID   string
 	Name string
 }
 
-func CalculateRoomName(roomName, canonicalAlias string, maxNumNamesPerRoom int, heroes []Hero, joinedCount, invitedCount int) string {
+func CalculateRoomName(roomName, canonicalAlias string, maxNumNamesPerRoom int, heroInfo HeroInfo) string {
 	// If the room has an m.room.name state event with a non-empty name field, use the name given by that field.
 	if roomName != "" {
 		return roomName
@@ -20,21 +26,21 @@ func CalculateRoomName(roomName, canonicalAlias string, maxNumNamesPerRoom int, 
 		return canonicalAlias
 	}
 	// If none of the above conditions are met, a name should be composed based on the members of the room.
-	disambiguatedNames := disambiguate(heroes)
-	totalNumOtherUsers := (joinedCount + invitedCount - 1)
+	disambiguatedNames := disambiguate(heroInfo.Heroes)
+	totalNumOtherUsers := int(heroInfo.JoinCount + heroInfo.InviteCount - 1)
 	isAlone := totalNumOtherUsers <= 0
 
 	// If m.joined_member_count + m.invited_member_count is less than or equal to 1 (indicating the member is alone),
 	// the client should use the rules BELOW to indicate that the room was empty. For example, "Empty Room (was Alice)",
 	// "Empty Room (was Alice and 1234 others)", or "Empty Room" if there are no heroes.
-	if len(heroes) == 0 && isAlone {
+	if len(heroInfo.Heroes) == 0 && isAlone {
 		return "Empty Room"
 	}
 
 	// If the number of m.heroes for the room are greater or equal to m.joined_member_count + m.invited_member_count - 1,
 	// then use the membership events for the heroes to calculate display names for the users (disambiguating them if required)
 	// and concatenating them.
-	if len(heroes) >= totalNumOtherUsers {
+	if len(heroInfo.Heroes) >= totalNumOtherUsers {
 		if len(disambiguatedNames) == 1 {
 			return disambiguatedNames[0]
 		}
@@ -57,7 +63,7 @@ func CalculateRoomName(roomName, canonicalAlias string, maxNumNamesPerRoom int, 
 	// If there are fewer heroes than m.joined_member_count + m.invited_member_count - 1,
 	// and m.joined_member_count + m.invited_member_count is greater than 1, the client should use the heroes to calculate
 	// display names for the users (disambiguating them if required) and concatenating them alongside a count of the remaining users.
-	if (joinedCount + invitedCount) > 1 {
+	if (heroInfo.JoinCount + heroInfo.InviteCount) > 1 {
 		return calculatedRoomName
 	}
 

@@ -6,6 +6,7 @@ import (
 
 	"github.com/jmoiron/sqlx"
 	"github.com/matrix-org/gomatrixserverlib"
+	"github.com/matrix-org/sync-v3/internal"
 	"github.com/matrix-org/sync-v3/sqlutil"
 	"github.com/tidwall/gjson"
 )
@@ -49,6 +50,10 @@ func (s *Storage) LatestTypingID() (int64, error) {
 
 func (s *Storage) SelectLatestEventInAllRooms() ([]Event, error) {
 	return s.accumulator.eventsTable.SelectLatestEventInAllRooms()
+}
+
+func (s *Storage) HeroInfoForAllRooms() (map[string]internal.HeroInfo, error) {
+	return nil, nil
 }
 
 // Returns all current state events matching the event types given in all rooms. Returns a map of
