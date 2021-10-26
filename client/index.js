@@ -202,6 +202,7 @@ const renderRoomContent = (roomId, refresh) => {
     (room.timeline || []).forEach((ev) => {
         renderMessage(container, ev);
     });
+    container.lastChild.scrollIntoView();
 }
 
 const render = (container) => {
