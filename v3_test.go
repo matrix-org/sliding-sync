@@ -285,6 +285,11 @@ func MatchRoomRequiredState(events []json.RawMessage) roomMatcher {
 		return nil
 	}
 }
+
+func MatchRoomTimelineMostRecent(n int, events []json.RawMessage) roomMatcher {
+	subset := events[len(events)-n:]
+	return MatchRoomTimeline(subset)
+}
 func MatchRoomTimeline(events []json.RawMessage) roomMatcher {
 	return func(r sync3.Room) error {
 		if len(r.Timeline) != len(events) {
@@ -364,6 +369,61 @@ func MatchV3SyncOp(fn func(op *sync3.ResponseOpRange) error) opMatcher {
 		}
 		oper := op.(*sync3.ResponseOpRange)
 		return fn(oper)
+	}
+}
+
+func MatchV3InsertOp(index int, roomID string, matchers ...roomMatcher) opMatcher {
+	return func(op sync3.ResponseOp) error {
+		if op.Op() != sync3.OpInsert {
+			return fmt.Errorf("op: %s != %s", op.Op(), sync3.OpInsert)
+		}
+		oper := op.(*sync3.ResponseOpSingle)
+		if *oper.Index != index {
+			return fmt.Errorf("%s: got %d want %d", sync3.OpInsert, oper.Index, index)
+		}
+		if oper.Room.RoomID != roomID {
+			return fmt.Errorf("%s: got %s want %s", sync3.OpInsert, oper.Room.RoomID, roomID)
+		}
+		for _, m := range matchers {
+			if err := m(*oper.Room); err != nil {
+				return err
+			}
+		}
+		return nil
+	}
+}
+
+func MatchV3UpdateOp(index int, roomID string, matchers ...roomMatcher) opMatcher {
+	return func(op sync3.ResponseOp) error {
+		if op.Op() != sync3.OpUpdate {
+			return fmt.Errorf("op: %s != %s", op.Op(), sync3.OpUpdate)
+		}
+		oper := op.(*sync3.ResponseOpSingle)
+		if *oper.Index != index {
+			return fmt.Errorf("%s: got %d want %d", sync3.OpUpdate, oper.Index, index)
+		}
+		if oper.Room.RoomID != roomID {
+			return fmt.Errorf("%s: got %s want %s", sync3.OpUpdate, oper.Room.RoomID, roomID)
+		}
+		for _, m := range matchers {
+			if err := m(*oper.Room); err != nil {
+				return err
+			}
+		}
+		return nil
+	}
+}
+
+func MatchV3DeleteOp(index int) opMatcher {
+	return func(op sync3.ResponseOp) error {
+		if op.Op() != sync3.OpDelete {
+			return fmt.Errorf("op: %s != %s", op.Op(), sync3.OpDelete)
+		}
+		oper := op.(*sync3.ResponseOpSingle)
+		if *oper.Index != index {
+			return fmt.Errorf("%s: got %d want %d", sync3.OpDelete, oper.Index, index)
+		}
+		return nil
 	}
 }
 
