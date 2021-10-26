@@ -428,6 +428,47 @@ func TestEventTableSelectEventsBetween(t *testing.T) {
 	})
 }
 
+func TestEventTableMembershipDetection(t *testing.T) {
+	db, err := sqlx.Open("postgres", postgresConnectionString)
+	if err != nil {
+		t.Fatalf("failed to open SQL db: %s", err)
+	}
+	txn, err := db.Beginx()
+	if err != nil {
+		t.Fatalf("failed to start txn: %s", err)
+	}
+	defer txn.Commit()
+	roomID := "!TestEventTableMembershipDetection:localhost"
+	alice := "@TestEventTableMembershipDetection_alice:localhost"
+	bob := "@TestEventTableMembershipDetection_bob:localhost"
+	table := NewEventTable(db)
+	_, err = table.Insert(txn, []Event{
+		{
+			RoomID: roomID,
+			JSON:   testutils.NewStateEvent(t, "m.room.member", alice, alice, map[string]interface{}{"membership": "join"}),
+		},
+		{
+			RoomID: roomID,
+			JSON:   testutils.NewStateEvent(t, "m.room.member", bob, alice, map[string]interface{}{"membership": "invite"}),
+		},
+		{
+			RoomID: roomID,
+			JSON: testutils.NewStateEvent(
+				t, "m.room.member", alice, alice, map[string]interface{}{"membership": "join"},
+				testutils.WithUnsigned(map[string]interface{}{
+					"prev_content": map[string]interface{}{
+						"membership": "join",
+					},
+				}),
+			),
+		},
+	})
+	if err != nil {
+		t.Fatalf("failed to insert: %s", err)
+	}
+	// TODO: assertions?
+}
+
 func TestChunkify(t *testing.T) {
 	// Make 100 dummy events
 	events := make([]Event, 100)

@@ -34,7 +34,7 @@ func TestTimelines(t *testing.T) {
 			roomID: fmt.Sprintf("!TestTimelines_%d:localhost", i),
 			name:   roomName,
 			events: append(createRoomState(t, alice, ts), []json.RawMessage{
-				testutils.NewStateEvent(t, "m.room.name", "", alice, map[string]interface{}{"name": roomName}, ts.Add(3*time.Second)),
+				testutils.NewStateEvent(t, "m.room.name", "", alice, map[string]interface{}{"name": roomName}, testutils.WithTimestamp(ts.Add(3*time.Second))),
 				testutils.NewEvent(t, "m.room.message", alice, map[string]interface{}{"body": "A"}, ts.Add(4*time.Second)),
 				testutils.NewEvent(t, "m.room.message", alice, map[string]interface{}{"body": "B"}, ts.Add(5*time.Second)),
 				testutils.NewEvent(t, "m.room.message", alice, map[string]interface{}{"body": "C"}, ts.Add(6*time.Second)),
@@ -117,7 +117,7 @@ func TestTimelinesLiveStream(t *testing.T) {
 			roomID: fmt.Sprintf("!TestTimelinesLiveStream_%d:localhost", i),
 			name:   roomName,
 			events: append(createRoomState(t, alice, ts), []json.RawMessage{
-				testutils.NewStateEvent(t, "m.room.name", "", alice, map[string]interface{}{"name": roomName}, ts.Add(3*time.Second)),
+				testutils.NewStateEvent(t, "m.room.name", "", alice, map[string]interface{}{"name": roomName}, testutils.WithTimestamp(ts.Add(3*time.Second))),
 				testutils.NewEvent(t, "m.room.message", alice, map[string]interface{}{"body": "A"}, ts.Add(4*time.Second)),
 				testutils.NewEvent(t, "m.room.message", alice, map[string]interface{}{"body": "B"}, ts.Add(5*time.Second)),
 				testutils.NewEvent(t, "m.room.message", alice, map[string]interface{}{"body": "C"}, ts.Add(6*time.Second)),

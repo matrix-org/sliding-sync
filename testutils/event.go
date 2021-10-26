@@ -15,6 +15,16 @@ var (
 	eventIDMu      sync.Mutex
 )
 
+type eventMock struct {
+	Type           string      `json:"type"`
+	StateKey       string      `json:"state_key"`
+	Sender         string      `json:"sender"`
+	Content        interface{} `json:"content"`
+	EventID        string      `json:"event_id"`
+	OriginServerTS int64       `json:"origin_server_ts"`
+	Unsigned       interface{} `json:"unsigned,omitempty"`
+}
+
 func generateEventID(t *testing.T) string {
 	eventIDMu.Lock()
 	defer eventIDMu.Unlock()
@@ -24,26 +34,32 @@ func generateEventID(t *testing.T) string {
 	return fmt.Sprintf("$event_%d_%s", eventIDCounter, t.Name())
 }
 
-func NewStateEvent(t *testing.T, evType, stateKey, sender string, content interface{}, ts ...time.Time) json.RawMessage {
-	t.Helper()
-	e := struct {
-		Type           string      `json:"type"`
-		StateKey       string      `json:"state_key"`
-		Sender         string      `json:"sender"`
-		Content        interface{} `json:"content"`
-		EventID        string      `json:"event_id"`
-		OriginServerTS int64       `json:"origin_server_ts"`
-	}{
-		Type:     evType,
-		StateKey: stateKey,
-		Sender:   sender,
-		Content:  content,
-		EventID:  generateEventID(t),
+type eventMockModifier func(e *eventMock)
+
+func WithTimestamp(ts time.Time) eventMockModifier {
+	return func(e *eventMock) {
+		e.OriginServerTS = int64(gomatrixserverlib.AsTimestamp(ts))
 	}
-	if len(ts) == 0 {
-		e.OriginServerTS = int64(gomatrixserverlib.AsTimestamp(time.Now()))
-	} else {
-		e.OriginServerTS = int64(gomatrixserverlib.AsTimestamp(ts[0]))
+}
+
+func WithUnsigned(unsigned interface{}) eventMockModifier {
+	return func(e *eventMock) {
+		e.Unsigned = unsigned
+	}
+}
+
+func NewStateEvent(t *testing.T, evType, stateKey, sender string, content interface{}, modifiers ...eventMockModifier) json.RawMessage {
+	t.Helper()
+	e := &eventMock{
+		Type:           evType,
+		StateKey:       stateKey,
+		Sender:         sender,
+		Content:        content,
+		EventID:        generateEventID(t),
+		OriginServerTS: int64(gomatrixserverlib.AsTimestamp(time.Now())),
+	}
+	for _, m := range modifiers {
+		m(e)
 	}
 	j, err := json.Marshal(&e)
 	if err != nil {

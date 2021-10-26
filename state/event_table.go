@@ -16,9 +16,10 @@ const (
 )
 
 type Event struct {
-	NID      int64  `db:"event_nid"`
-	Type     string `db:"event_type"`
-	StateKey string `db:"state_key"`
+	NID        int64  `db:"event_nid"`
+	Type       string `db:"event_type"`
+	StateKey   string `db:"state_key"`
+	Membership string `db:"membership"`
 	// This is a snapshot ID which corresponds to some room state BEFORE this event has been applied.
 	BeforeStateSnapshotID int    `db:"before_state_snapshot_id"`
 	ID                    string `db:"event_id"`
@@ -61,6 +62,7 @@ func NewEventTable(db *sqlx.DB) *EventTable {
 		room_id TEXT NOT NULL,
 		event_type TEXT NOT NULL,
 		state_key TEXT NOT NULL,
+		membership TEXT,
 		event BYTEA NOT NULL
 	);
 	-- index for querying all joined rooms for a given user
@@ -114,6 +116,16 @@ func (t *EventTable) Insert(txn *sqlx.Tx, events []Event) (int, error) {
 			// valid for this to be "" on message events
 			ev.StateKey = evJSON.Get("state_key").Str
 		}
+		if ev.StateKey != "" && ev.Type == "m.room.member" {
+			membershipResult := evJSON.Get("content.membership")
+			if !membershipResult.Exists() || membershipResult.Str == "" {
+				return 0, fmt.Errorf("membership event missing membership key")
+			}
+			// we only set this if it is a genuine change e.g not a profile change
+			if isMembershipChange(evJSON) {
+				ev.Membership = membershipResult.Str
+			}
+		}
 
 		events[i] = ev
 	}
@@ -121,8 +133,8 @@ func (t *EventTable) Insert(txn *sqlx.Tx, events []Event) (int, error) {
 	var rowsAffected int64
 	for _, chunk := range chunks {
 		result, err := txn.NamedExec(`
-		INSERT INTO syncv3_events (event_id, event, event_type, state_key, room_id)
-        VALUES (:event_id, :event, :event_type, :state_key, :room_id) ON CONFLICT (event_id) DO NOTHING`, chunk)
+		INSERT INTO syncv3_events (event_id, event, event_type, state_key, room_id, membership)
+        VALUES (:event_id, :event, :event_type, :state_key, :room_id, :membership) ON CONFLICT (event_id) DO NOTHING`, chunk)
 		if err != nil {
 			return 0, err
 		}
@@ -324,4 +336,20 @@ func (c EventChunker) Len() int {
 }
 func (c EventChunker) Subslice(i, j int) sqlutil.Chunker {
 	return c[i:j]
+}
+
+func isMembershipChange(eventJSON gjson.Result) bool {
+	// membership event possibly, make sure the membership has changed else
+	// things like display name changes will count as membership events :(
+	prevMembership := "leave"
+	pm := eventJSON.Get("unsigned.prev_content.membership")
+	if pm.Exists() && pm.Str != "" {
+		prevMembership = pm.Str
+	}
+	currMembership := "leave"
+	cm := eventJSON.Get("content.membership")
+	if cm.Exists() && cm.Str != "" {
+		currMembership = cm.Str
+	}
+	return prevMembership != currMembership // membership was changed
 }
