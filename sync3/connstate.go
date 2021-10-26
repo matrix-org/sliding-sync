@@ -29,10 +29,9 @@ type ConnState struct {
 	// saying the client is ded and cleaning up the conn.
 	updateEvents chan *EventData
 
-	globalCache   *GlobalCache
-	globalCacheID int
-	userCache     *UserCache
-	userCacheID   int
+	globalCache *GlobalCache
+	userCache   *UserCache
+	userCacheID int
 }
 
 func NewConnState(userID string, userCache *UserCache, globalCache *GlobalCache) *ConnState {
@@ -44,7 +43,6 @@ func NewConnState(userID string, userCache *UserCache, globalCache *GlobalCache)
 		sortedJoinedRoomsPositions: make(map[string]int),
 		updateEvents:               make(chan *EventData, MaxPendingEventUpdates), // TODO: customisable
 	}
-	cs.globalCacheID = globalCache.Subsribe(cs)
 	cs.userCacheID = cs.userCache.Subsribe(cs)
 	return cs
 }
@@ -323,30 +321,11 @@ func (s *ConnState) getInitialRoomData(roomIDs ...string) []Room {
 	return rooms
 }
 
-// Called when the global cache has a new event. This callback fires when the server gets a new event and determines this connection MAY be
+// Called when the user cache has a new event for us. This callback fires when the server gets a new event and determines this connection MAY be
 // interested in it (e.g the client is joined to the room or it's an invite, etc). Each callback can fire
 // from different v2 poll loops, and there is no locking in order to prevent a slow ConnState from wedging the poll loop.
 // We need to move this data onto a channel for onIncomingRequest to consume later.
-func (s *ConnState) OnNewEvent(joinedUserIDs []string, eventData *EventData) {
-	targetUser := ""
-	if eventData.eventType == "m.room.member" && eventData.stateKey != nil {
-		targetUser = *eventData.stateKey
-	}
-	isInterested := targetUser == s.userID // e.g invites
-	for _, userID := range joinedUserIDs {
-		if s.userID == userID {
-			isInterested = true
-			break
-		}
-	}
-	if !isInterested {
-		return
-	}
-
-	s.pushData(eventData)
-}
-
-func (s *ConnState) pushData(eventData *EventData) {
+func (s *ConnState) OnNewEvent(eventData *EventData) {
 	// TODO: remove 0 check when Initialise state returns sensible positions
 	if eventData.latestPos != 0 && eventData.latestPos < s.loadPosition {
 		// do not push this event down the stream as we have already processed it when we loaded
@@ -365,7 +344,6 @@ func (s *ConnState) pushData(eventData *EventData) {
 
 // Called when the connection is torn down
 func (s *ConnState) Destroy() {
-	s.globalCache.Unsubscribe(s.globalCacheID)
 	s.userCache.Unsubscribe(s.userCacheID)
 }
 
@@ -431,7 +409,7 @@ func (s *ConnState) OnUnreadCountsChanged(userID, roomID string, urd UserRoomDat
 		return
 	}
 	room := s.globalCache.LoadRoom(roomID)
-	s.pushData(&EventData{
+	s.OnNewEvent(&EventData{
 		roomID:       roomID,
 		userRoomData: &urd,
 		timestamp:    room.LastMessageTimestamp,

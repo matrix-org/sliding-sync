@@ -251,7 +251,7 @@ func (h *SyncLiveHandler) userCache(userID string) (*UserCache, error) {
 	if ok {
 		return c.(*UserCache), nil
 	}
-	uc := NewUserCache(userID, h.Storage)
+	uc := NewUserCache(userID, h.globalCache, h.Storage)
 	// select all non-zero highlight or notif counts and set them, as this is less costly than looping every room/user pair
 	err := h.Storage.UnreadTable.SelectAllNonZeroCountsForUser(userID, func(roomID string, highlightCount, notificationCount int) {
 		uc.OnUnreadCounts(roomID, &highlightCount, &notificationCount)

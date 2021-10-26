@@ -61,7 +61,7 @@ func TestConnStateInitial(t *testing.T) {
 			roomA, roomB, roomC,
 		}, nil
 	}
-	userCache := NewUserCache(userID, nil)
+	userCache := NewUserCache(userID, globalCache, nil)
 	userCache.LazyRoomDataOverride = func(loadPos int64, roomIDs []string, maxTimelineEvents int) map[string]UserRoomData {
 		result := make(map[string]UserRoomData)
 		for _, roomID := range roomIDs {
@@ -202,7 +202,7 @@ func TestConnStateMultipleRanges(t *testing.T) {
 	globalCache.LoadJoinedRoomsOverride = func(userID string) (pos int64, joinedRooms []SortableRoom, err error) {
 		return 1, rooms, nil
 	}
-	userCache := NewUserCache(userID, nil)
+	userCache := NewUserCache(userID, globalCache, nil)
 	userCache.LazyRoomDataOverride = mockLazyRoomOverride
 	cs := NewConnState(userID, userCache, globalCache)
 
@@ -366,7 +366,7 @@ func TestBumpToOutsideRange(t *testing.T) {
 			roomA, roomB, roomC, roomD,
 		}, nil
 	}
-	userCache := NewUserCache(userID, nil)
+	userCache := NewUserCache(userID, globalCache, nil)
 	userCache.LazyRoomDataOverride = mockLazyRoomOverride
 	cs := NewConnState(userID, userCache, globalCache)
 	// Ask for A,B
@@ -446,7 +446,7 @@ func TestConnStateRoomSubscriptions(t *testing.T) {
 			roomA, roomB, roomC, roomD,
 		}, nil
 	}
-	userCache := NewUserCache(userID, nil)
+	userCache := NewUserCache(userID, globalCache, nil)
 	userCache.LazyRoomDataOverride = func(loadPos int64, roomIDs []string, maxTimelineEvents int) map[string]UserRoomData {
 		result := make(map[string]UserRoomData)
 		for _, roomID := range roomIDs {

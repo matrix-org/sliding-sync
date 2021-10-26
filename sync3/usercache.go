@@ -14,6 +14,7 @@ type UserRoomData struct {
 }
 
 type UserCacheListener interface {
+	OnNewEvent(event *EventData)
 	OnUnreadCountsChanged(userID, roomID string, urd UserRoomData, hasCountDecreased bool)
 }
 
@@ -26,17 +27,22 @@ type UserCache struct {
 	listenersMu          *sync.Mutex
 	id                   int
 	store                *state.Storage
+	globalCache          *GlobalCache
+	globalCacheID        int
 }
 
-func NewUserCache(userID string, store *state.Storage) *UserCache {
-	return &UserCache{
+func NewUserCache(userID string, globalCache *GlobalCache, store *state.Storage) *UserCache {
+	uc := &UserCache{
 		userID:       userID,
 		roomToDataMu: &sync.RWMutex{},
 		roomToData:   make(map[string]UserRoomData),
 		listeners:    make(map[int]UserCacheListener),
 		listenersMu:  &sync.Mutex{},
 		store:        store,
+		globalCache:  globalCache,
 	}
+	uc.globalCacheID = globalCache.Subsribe(uc)
+	return uc
 }
 
 func (c *UserCache) Subsribe(ucl UserCacheListener) (id int) {
@@ -63,8 +69,16 @@ func (c *UserCache) lazilyLoadRoomDatas(loadPos int64, roomIDs []string, maxTime
 	for _, roomID := range roomIDs {
 		urd := c.loadRoomData(roomID)
 		if len(urd.Timeline) > 0 {
+			timeline := urd.Timeline
+			if len(timeline) > maxTimelineEvents {
+				timeline = timeline[len(timeline)-maxTimelineEvents:]
+			}
 			// we already have data, use it
-			result[roomID] = urd
+			result[roomID] = UserRoomData{
+				NotificationCount: urd.NotificationCount,
+				HighlightCount:    urd.HighlightCount,
+				Timeline:          timeline,
+			}
 		} else {
 			lazyRoomIDs = append(lazyRoomIDs, roomID)
 		}
@@ -121,5 +135,35 @@ func (c *UserCache) OnUnreadCounts(roomID string, highlightCount, notifCount *in
 	c.roomToDataMu.Unlock()
 	for _, l := range c.listeners {
 		l.OnUnreadCountsChanged(c.userID, roomID, data, hasCountDecreased)
+	}
+}
+
+func (c *UserCache) OnNewEvent(joinedUsers []string, eventData *EventData) {
+	targetUser := ""
+	if eventData.eventType == "m.room.member" && eventData.stateKey != nil {
+		targetUser = *eventData.stateKey
+	}
+	isInterested := targetUser == c.userID // e.g invites
+	for _, userID := range joinedUsers {
+		if c.userID == userID {
+			isInterested = true
+			break
+		}
+	}
+	if !isInterested {
+		return
+	}
+	// add this to our tracked timelines if we have one
+	urd := c.loadRoomData(eventData.roomID)
+	if len(urd.Timeline) > 0 {
+		// we're tracking timelines, add this message too
+		urd.Timeline = append(urd.Timeline, eventData.event)
+	}
+	c.roomToDataMu.Lock()
+	c.roomToData[eventData.roomID] = urd
+	c.roomToDataMu.Unlock()
+
+	for _, l := range c.listeners {
+		l.OnNewEvent(eventData)
 	}
 }

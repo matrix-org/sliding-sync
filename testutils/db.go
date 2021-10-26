@@ -10,7 +10,10 @@ import (
 func createLocalDB(dbName string) string {
 	fmt.Println("Note: tests require a postgres install accessible to the current user")
 	exec.Command("dropdb", dbName).Run()
-	if err := exec.Command("createdb", dbName).Run(); err != nil {
+	createDB := exec.Command("createdb", dbName)
+	createDB.Stdout = os.Stdout
+	createDB.Stderr = os.Stderr
+	if err := createDB.Run(); err != nil {
 		fmt.Println("createdb failed: ", err)
 		os.Exit(2)
 	}
