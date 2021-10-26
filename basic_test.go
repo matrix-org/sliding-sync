@@ -16,7 +16,7 @@ func TestInteg(t *testing.T) {
 	v3 := runTestServer(t, v2, "")
 	defer v2.close()
 	defer v3.close()
-	alice := "@alice:localhost"
+	alice := "@TestInteg_alice:localhost"
 	aliceToken := "ALICE_BEARER_TOKEN"
 	roomA := "!a:localhost"
 	v2.addAccount(alice, aliceToken)

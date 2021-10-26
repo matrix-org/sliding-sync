@@ -20,7 +20,7 @@ func TestTimelinesOverRestarts(t *testing.T) {
 	v3 := runTestServer(t, v2, pqString)
 	defer v2.close()
 	defer v3.close()
-	alice := "@alice:localhost"
+	alice := "@TestTimelinesOverRestarts_alice:localhost"
 	aliceToken := "ALICE_BEARER_TOKEN"
 	// make 20 rooms, last room is most recent, and send A,B,C into each room
 	allRooms := make([]roomEvents, 20)
