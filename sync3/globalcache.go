@@ -4,8 +4,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"sync"
-	"time"
 
+	"github.com/matrix-org/gomatrixserverlib"
 	"github.com/matrix-org/sync-v3/state"
 	"github.com/tidwall/gjson"
 )
@@ -178,7 +178,7 @@ func (c *GlobalCache) onNewEvent(
 	} else if eventType == "m.room.canonical_alias" && stateKey != nil && *stateKey == "" && globalRoom.Name == "" {
 		globalRoom.Name = ev.Get("content.alias").Str
 	}
-	eventTimestamp := ev.Get("origin_server_ts").Int()
+	eventTimestamp := ev.Get("origin_server_ts").Uint()
 	globalRoom.LastMessageTimestamp = eventTimestamp
 	globalRoom.LastEventJSON = event
 	c.globalRoomInfo[globalRoom.RoomID] = globalRoom
@@ -242,7 +242,7 @@ func PopulateGlobalCache(store *state.Storage, cache *GlobalCache) error {
 			RoomID: ev.RoomID,
 		}
 		room.LastEventJSON = ev.JSON
-		room.LastMessageTimestamp = gjson.ParseBytes(ev.JSON).Get("origin_server_ts").Int()
+		room.LastMessageTimestamp = gjson.ParseBytes(ev.JSON).Get("origin_server_ts").Uint()
 		cache.AssignRoom(*room)
 	}
 	// load state events we care about for sync v3
@@ -265,7 +265,7 @@ func PopulateGlobalCache(store *state.Storage, cache *GlobalCache) error {
 			}
 		}
 		cache.AssignRoom(*room)
-		fmt.Printf("Room: %s - %s - %s \n", room.RoomID, room.Name, time.Unix(room.LastMessageTimestamp/1000, 0))
+		fmt.Printf("Room: %s - %s - %s \n", room.RoomID, room.Name, gomatrixserverlib.Timestamp(room.LastMessageTimestamp).Time())
 	}
 
 	// populate joined rooms tracker

@@ -31,7 +31,7 @@ type EventData struct {
 	eventType string
 	stateKey  *string
 	content   gjson.Result
-	timestamp int64
+	timestamp uint64
 
 	// TODO: remove or factor out
 	userRoomData *UserRoomData

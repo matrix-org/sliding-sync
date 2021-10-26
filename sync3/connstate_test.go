@@ -9,14 +9,15 @@ import (
 	"testing"
 	"time"
 
+	"github.com/matrix-org/gomatrixserverlib"
 	"github.com/matrix-org/sync-v3/testutils"
 )
 
-func newSortableRoom(roomID string, lastMsgTimestamp int64) SortableRoom {
+func newSortableRoom(roomID string, lastMsgTimestamp gomatrixserverlib.Timestamp) SortableRoom {
 	return SortableRoom{
 		RoomID:               roomID,
 		Name:                 "Room " + roomID,
-		LastMessageTimestamp: lastMsgTimestamp,
+		LastMessageTimestamp: uint64(lastMsgTimestamp),
 		LastEventJSON: json.RawMessage(
 			fmt.Sprintf(`{"type":"m.room.message","content":{"body":"hello"},"origin_server_ts":%d}`, lastMsgTimestamp),
 		),
@@ -43,11 +44,11 @@ func TestConnStateInitial(t *testing.T) {
 		DeviceID:  "d",
 	}
 	userID := "@TestConnStateInitial_alice:localhost"
-	timestampNow := int64(1632131678061)
+	timestampNow := gomatrixserverlib.Timestamp(1632131678061).Time()
 	// initial sort order B, C, A
-	roomA := newSortableRoom("!a:localhost", timestampNow-8000)
-	roomB := newSortableRoom("!b:localhost", timestampNow)
-	roomC := newSortableRoom("!c:localhost", timestampNow-4000)
+	roomA := newSortableRoom("!a:localhost", gomatrixserverlib.AsTimestamp(timestampNow.Add(-8*time.Second)))
+	roomB := newSortableRoom("!b:localhost", gomatrixserverlib.AsTimestamp(timestampNow))
+	roomC := newSortableRoom("!c:localhost", gomatrixserverlib.AsTimestamp(timestampNow.Add(-4*time.Second)))
 	globalCache := NewGlobalCache(nil)
 	globalCache.AssignRoom(roomA)
 	globalCache.AssignRoom(roomB)
@@ -114,7 +115,7 @@ func TestConnStateInitial(t *testing.T) {
 
 	// bump A to the top
 	globalCache.OnNewEvents(roomA.RoomID, []json.RawMessage{
-		testutils.NewEvent(t, "unimportant", "me", struct{}{}, timestampNow+1000),
+		testutils.NewEvent(t, "unimportant", "me", struct{}{}, gomatrixserverlib.AsTimestamp(timestampNow.Add(1*time.Second)).Time()),
 	}, 1)
 
 	// request again for the diff
@@ -146,7 +147,7 @@ func TestConnStateInitial(t *testing.T) {
 
 	// another message should just update
 	globalCache.OnNewEvents(roomA.RoomID, []json.RawMessage{
-		testutils.NewEvent(t, "unimportant", "me", struct{}{}, timestampNow+2000),
+		testutils.NewEvent(t, "unimportant", "me", struct{}{}, gomatrixserverlib.AsTimestamp(timestampNow.Add(2*time.Second)).Time()),
 	}, 1)
 	res, err = cs.HandleIncomingRequest(context.Background(), connID, &Request{
 		Sort: []string{SortByRecency},
@@ -178,18 +179,18 @@ func TestConnStateMultipleRanges(t *testing.T) {
 		DeviceID:  "d",
 	}
 	userID := "@TestConnStateMultipleRanges_alice:localhost"
-	timestampNow := int64(1632131678061)
+	timestampNow := gomatrixserverlib.Timestamp(1632131678061)
 	var rooms []SortableRoom
 	var roomIDs []string
 	globalCache := NewGlobalCache(nil)
 	roomIDToRoom := make(map[string]SortableRoom)
-	for i := 0; i < 10; i++ {
+	for i := int64(0); i < 10; i++ {
 		roomID := fmt.Sprintf("!%d:localhost", i)
 		room := SortableRoom{
 			RoomID: roomID,
 			Name:   fmt.Sprintf("Room %d", i),
 			// room 1 is most recent, 10 is least recent
-			LastMessageTimestamp: timestampNow - int64(i*1000),
+			LastMessageTimestamp: uint64(uint64(timestampNow) - uint64(i*1000)),
 			LastEventJSON:        []byte(`{}`),
 		}
 		rooms = append(rooms, room)
@@ -273,7 +274,7 @@ func TestConnStateMultipleRanges(t *testing.T) {
 	// 8,0,1,2,3,4,5,6,7,9
 	//
 	globalCache.OnNewEvents(roomIDs[8], []json.RawMessage{
-		testutils.NewEvent(t, "unimportant", "me", struct{}{}, timestampNow+2000),
+		testutils.NewEvent(t, "unimportant", "me", struct{}{}, timestampNow.Time().Add(2*time.Second)),
 	}, 1)
 
 	res, err = cs.HandleIncomingRequest(context.Background(), connID, &Request{
@@ -310,7 +311,7 @@ func TestConnStateMultipleRanges(t *testing.T) {
 	// 8,0,1,9,2,3,4,5,6,7 room
 	middleTimestamp := int64((roomIDToRoom[roomIDs[1]].LastMessageTimestamp + roomIDToRoom[roomIDs[2]].LastMessageTimestamp) / 2)
 	globalCache.OnNewEvents(roomIDs[9], []json.RawMessage{
-		testutils.NewEvent(t, "unimportant", "me", struct{}{}, middleTimestamp),
+		testutils.NewEvent(t, "unimportant", "me", struct{}{}, gomatrixserverlib.Timestamp(middleTimestamp).Time()),
 	}, 1)
 	res, err = cs.HandleIncomingRequest(context.Background(), connID, &Request{
 		Sort: []string{SortByRecency},
@@ -346,7 +347,7 @@ func TestBumpToOutsideRange(t *testing.T) {
 		DeviceID:  "d",
 	}
 	userID := "@TestBumpToOutsideRange_alice:localhost"
-	timestampNow := int64(1632131678061)
+	timestampNow := gomatrixserverlib.Timestamp(1632131678061)
 	roomA := newSortableRoom("!a:localhost", timestampNow)
 	roomB := newSortableRoom("!b:localhost", timestampNow-1000)
 	roomC := newSortableRoom("!c:localhost", timestampNow-2000)
@@ -398,7 +399,7 @@ func TestBumpToOutsideRange(t *testing.T) {
 
 	// D gets bumped to C's position but it's still outside the range so nothing should happen
 	globalCache.OnNewEvents(roomD.RoomID, []json.RawMessage{
-		testutils.NewEvent(t, "unimportant", "me", struct{}{}, roomC.LastMessageTimestamp+2),
+		testutils.NewEvent(t, "unimportant", "me", struct{}{}, gomatrixserverlib.Timestamp(roomC.LastMessageTimestamp+2).Time()),
 	}, 1)
 
 	// expire the context after 10ms so we don't wait forevar
@@ -425,11 +426,11 @@ func TestConnStateRoomSubscriptions(t *testing.T) {
 		DeviceID:  "d",
 	}
 	userID := "@TestConnStateRoomSubscriptions_alice:localhost"
-	timestampNow := int64(1632131678061)
+	timestampNow := gomatrixserverlib.Timestamp(1632131678061)
 	roomA := newSortableRoom("!a:localhost", timestampNow)
-	roomB := newSortableRoom("!b:localhost", timestampNow-1000)
-	roomC := newSortableRoom("!c:localhost", timestampNow-2000)
-	roomD := newSortableRoom("!d:localhost", timestampNow-3000)
+	roomB := newSortableRoom("!b:localhost", gomatrixserverlib.Timestamp(timestampNow-1000))
+	roomC := newSortableRoom("!c:localhost", gomatrixserverlib.Timestamp(timestampNow-2000))
+	roomD := newSortableRoom("!d:localhost", gomatrixserverlib.Timestamp(timestampNow-3000))
 	roomIDs := []string{roomA.RoomID, roomB.RoomID, roomC.RoomID, roomD.RoomID}
 	globalCache := NewGlobalCache(nil)
 	globalCache.AssignRoom(roomA)
@@ -508,7 +509,7 @@ func TestConnStateRoomSubscriptions(t *testing.T) {
 		},
 	})
 	// room D gets a new event
-	newEvent := testutils.NewEvent(t, "unimportant", "me", struct{}{}, timestampNow+2000)
+	newEvent := testutils.NewEvent(t, "unimportant", "me", struct{}{}, gomatrixserverlib.Timestamp(timestampNow+2000).Time())
 	globalCache.OnNewEvents(roomD.RoomID, []json.RawMessage{
 		newEvent,
 	}, 1)

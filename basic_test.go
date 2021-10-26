@@ -6,7 +6,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/matrix-org/gomatrixserverlib"
 	"github.com/matrix-org/sync-v3/sync2"
 	"github.com/matrix-org/sync-v3/sync3"
 	"github.com/matrix-org/sync-v3/testutils"
@@ -14,7 +13,7 @@ import (
 
 func TestInteg(t *testing.T) {
 	v2 := runTestV2Server(t)
-	v3 := runTestServer(t, v2)
+	v3 := runTestServer(t, v2, "")
 	defer v2.close()
 	defer v3.close()
 	alice := "@alice:localhost"
@@ -30,7 +29,7 @@ func TestInteg(t *testing.T) {
 							testutils.NewStateEvent(t, "m.room.create", "", alice, map[string]interface{}{"creator": alice}),
 							testutils.NewStateEvent(t, "m.room.member", alice, alice, map[string]interface{}{"membership": "join"}),
 							testutils.NewStateEvent(t, "m.room.join_rules", "", alice, map[string]interface{}{"join_rule": "public"}),
-							testutils.NewEvent(t, "m.room.message", alice, map[string]interface{}{"body": "hello world"}, int64(gomatrixserverlib.AsTimestamp(time.Now()))),
+							testutils.NewEvent(t, "m.room.message", alice, map[string]interface{}{"body": "hello world"}, time.Now()),
 						},
 					},
 				},

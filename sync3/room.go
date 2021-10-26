@@ -18,7 +18,7 @@ type Room struct {
 type SortableRoom struct {
 	RoomID               string
 	Name                 string // by_name
-	LastMessageTimestamp int64  // by_recency
+	LastMessageTimestamp uint64 // by_recency
 	LastEventJSON        json.RawMessage
 }
 

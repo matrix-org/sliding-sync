@@ -126,6 +126,15 @@ func (s *testV3Server) close() {
 	s.srv.Close()
 }
 
+func (s *testV3Server) restart(t *testing.T, v2 *testV2Server, pq string) {
+	t.Helper()
+	log.Printf("restarting server")
+	s.close()
+	ss := runTestServer(t, v2, pq)
+	s.srv = ss.srv
+	v2.srv.CloseClientConnections() // kick-over v2 conns
+}
+
 func (s *testV3Server) mustDoV3Request(t *testing.T, token string, reqBody interface{}) (respBody *sync3.Response) {
 	t.Helper()
 	resp, code := s.doV3Request(t, token, reqBody)
@@ -173,9 +182,11 @@ func (s *testV3Server) doV3Request(t *testing.T, token string, reqBody interface
 	return &r, resp.StatusCode
 }
 
-func runTestServer(t *testing.T, v2Server *testV2Server) *testV3Server {
+func runTestServer(t *testing.T, v2Server *testV2Server, postgresConnectionString string) *testV3Server {
 	t.Helper()
-	postgresConnectionString := testutils.PrepareDBConnectionString("syncv3_test_sync3_integration")
+	if postgresConnectionString == "" {
+		postgresConnectionString = testutils.PrepareDBConnectionString("syncv3_test_sync3_integration")
+	}
 	h, err := sync3.NewSync3Handler(&sync2.HTTPClient{
 		Client: &http.Client{
 			Timeout: 5 * time.Minute,
