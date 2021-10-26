@@ -204,6 +204,107 @@ func runTestServer(t *testing.T, v2Server *testV2Server, postgresConnectionStrin
 	}
 }
 
+func createRoomState(t *testing.T, creator string, baseTimestamp time.Time) []json.RawMessage {
+	t.Helper()
+	// all with the same timestamp as they get made atomically
+	return []json.RawMessage{
+		testutils.NewStateEvent(t, "m.room.create", "", creator, map[string]interface{}{"creator": creator}, baseTimestamp),
+		testutils.NewStateEvent(t, "m.room.member", creator, creator, map[string]interface{}{"membership": "join"}, baseTimestamp),
+		testutils.NewStateEvent(t, "m.room.join_rules", "", creator, map[string]interface{}{"join_rule": "public"}, baseTimestamp),
+	}
+}
+
+type roomMatcher func(r sync3.Room) error
+
+func MatchRoomName(name string) roomMatcher {
+	return func(r sync3.Room) error {
+		if r.Name != name {
+			return fmt.Errorf("name mismatch, got %s want %s", r.Name, name)
+		}
+		return nil
+	}
+}
+func MatchRoomRequiredState(events []json.RawMessage) roomMatcher {
+	return func(r sync3.Room) error {
+		if len(r.RequiredState) != len(events) {
+			return fmt.Errorf("required state length mismatchm got %d want %d", len(r.RequiredState), len(events))
+		}
+		// allow any ordering for required state
+		for _, want := range events {
+			found := false
+			for _, got := range r.RequiredState {
+				if bytes.Equal(got, want) {
+					found = true
+					break
+				}
+			}
+			if !found {
+				return fmt.Errorf("required state want event %v but it does not exist", string(want))
+			}
+		}
+		return nil
+	}
+}
+func MatchRoomTimeline(events []json.RawMessage) roomMatcher {
+	return func(r sync3.Room) error {
+		if len(r.Timeline) != len(events) {
+			return fmt.Errorf("timeline length mismatchm got %d want %d", len(r.Timeline), len(events))
+		}
+		for i := range r.Timeline {
+			if !bytes.Equal(r.Timeline[i], events[i]) {
+				return fmt.Errorf("timeline[%d]\ngot  %v \nwant %v", i, string(r.Timeline[i]), string(events[i]))
+			}
+		}
+		return nil
+	}
+}
+func MatchRoomHighlightCount(count int64) roomMatcher {
+	return func(r sync3.Room) error {
+		if r.HighlightCount != count {
+			return fmt.Errorf("highlight count mismatch, got %d want %d", r.HighlightCount, count)
+		}
+		return nil
+	}
+}
+func MatchRoomNotificationCount(count int64) roomMatcher {
+	return func(r sync3.Room) error {
+		if r.NotificationCount != count {
+			return fmt.Errorf("notification count mismatch, got %d want %d", r.NotificationCount, count)
+		}
+		return nil
+	}
+}
+
+type roomEvents struct {
+	roomID string
+	name   string
+	events []json.RawMessage
+}
+
+func (re *roomEvents) MatchRoom(r sync3.Room, matchers ...roomMatcher) error {
+	if re.roomID != r.RoomID {
+		return fmt.Errorf("MatchRoom room id: got %s want %s", r.RoomID, re.roomID)
+	}
+	for _, m := range matchers {
+		if err := m(r); err != nil {
+			return fmt.Errorf("MatchRoom %s : %s", r.RoomID, err)
+		}
+	}
+	return nil
+}
+
+func v2JoinTimeline(joinEvents ...roomEvents) map[string]sync2.SyncV2JoinResponse {
+	result := make(map[string]sync2.SyncV2JoinResponse)
+	for _, re := range joinEvents {
+		var data sync2.SyncV2JoinResponse
+		data.Timeline = sync2.TimelineResponse{
+			Events: re.events,
+		}
+		result[re.roomID] = data
+	}
+	return result
+}
+
 type respMatcher func(res *sync3.Response) error
 type opMatcher func(op sync3.ResponseOp) error
 
