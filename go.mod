@@ -6,7 +6,6 @@ require (
 	github.com/ReneKroon/ttlcache/v2 v2.8.1
 	github.com/gorilla/mux v1.8.0
 	github.com/jmoiron/sqlx v1.3.3
-	github.com/konsorten/go-windows-terminal-sequences v1.0.3 // indirect
 	github.com/lib/pq v1.10.1
 	github.com/matrix-org/gomatrix v0.0.0-20210324163249-be2af5ef2e16 // indirect
 	github.com/matrix-org/gomatrixserverlib v0.0.0-20211026114500-ddecab880266
