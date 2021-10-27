@@ -272,7 +272,7 @@ func (t *EventTable) SelectLatestEventInRoom(txn *sqlx.Tx, roomID string, upperI
 	return &event, err
 }
 
-func (t *EventTable) SelectLatestEventInAllRooms() ([]Event, error) {
+func (t *EventTable) selectLatestEventInAllRooms() ([]Event, error) {
 	result := []Event{}
 	rows, err := t.db.Query(
 		`SELECT room_id, event FROM syncv3_events WHERE event_nid in (SELECT MAX(event_nid) FROM syncv3_events GROUP BY room_id)`,

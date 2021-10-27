@@ -157,8 +157,8 @@ func TestStorageJoinedRoomsAfterPosition(t *testing.T) {
 		t.Fatalf("JoinedRoomsAfterPosition for %s got %v rooms want %v", bob, len(bobJoinedRooms), 3)
 	}
 
-	// also test CurrentStateEventsInAllRooms
-	roomIDToCreateEvents, err := store.CurrentStateEventsInAllRooms([]string{"m.room.create"})
+	// also test currentStateEventsInAllRooms
+	roomIDToCreateEvents, err := store.currentStateEventsInAllRooms([]string{"m.room.create"})
 	if err != nil {
 		t.Fatalf("CurrentStateEventsInAllRooms returned error: %s", err)
 	}

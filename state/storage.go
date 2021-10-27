@@ -95,7 +95,7 @@ func (s *Storage) MetadataForAllRooms() (map[string]internal.RoomMetadata, error
 	}
 
 	// work out latest timestamps
-	events, err := s.accumulator.eventsTable.SelectLatestEventInAllRooms()
+	events, err := s.accumulator.eventsTable.selectLatestEventInAllRooms()
 	if err != nil {
 		return nil, err
 	}
@@ -106,7 +106,7 @@ func (s *Storage) MetadataForAllRooms() (map[string]internal.RoomMetadata, error
 	}
 
 	// Select the name / canonical alias for all rooms
-	roomIDToStateEvents, err := s.CurrentStateEventsInAllRooms([]string{
+	roomIDToStateEvents, err := s.currentStateEventsInAllRooms([]string{
 		"m.room.name", "m.room.canonical_alias",
 	})
 	if err != nil {
@@ -124,14 +124,17 @@ func (s *Storage) MetadataForAllRooms() (map[string]internal.RoomMetadata, error
 		result[roomID] = metadata
 	}
 
-	// Select the most recent senders for each room to serve as Heroes
+	// Select the most recent members for each room to serve as Heroes. The spec is ambiguous here:
+	// "This should be the first 5 members of the room, ordered by stream ordering, which are joined or invited."
+	// Unclear if this is the first 5 *most recent* (backwards) or forwards. For now we'll use the most recent
+	// ones.
 
 	return result, nil
 }
 
 // Returns all current state events matching the event types given in all rooms. Returns a map of
 // room ID to events in that room.
-func (s *Storage) CurrentStateEventsInAllRooms(eventTypes []string) (map[string][]Event, error) {
+func (s *Storage) currentStateEventsInAllRooms(eventTypes []string) (map[string][]Event, error) {
 	query, args, err := sqlx.In(
 		`SELECT syncv3_events.room_id, syncv3_events.event_type, syncv3_events.state_key, syncv3_events.event FROM syncv3_events
 		WHERE syncv3_events.event_type IN (?)
