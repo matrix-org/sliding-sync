@@ -8,6 +8,8 @@ import (
 	"github.com/tidwall/gjson"
 )
 
+const DispatcherAllUsers = "-"
+
 type EventData struct {
 	event     json.RawMessage
 	roomID    string
@@ -125,6 +127,14 @@ func (d *Dispatcher) onNewEvent(
 	// invoke listeners
 	d.userToReceiverMu.RLock()
 	defer d.userToReceiverMu.RUnlock()
+
+	// global listeners (invoke before per-user listeners so caches can update)
+	listener := d.userToReceiver[DispatcherAllUsers]
+	if listener != nil {
+		listener.OnNewEvent(ed)
+	}
+
+	// per-user listeners
 	notifiedTarget := false
 	for _, userID := range userIDs {
 		l := d.userToReceiver[userID]

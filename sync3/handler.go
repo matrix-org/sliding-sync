@@ -43,21 +43,22 @@ type SyncLiveHandler struct {
 }
 
 func NewSync3Handler(v2Client sync2.Client, postgresDBURI string) (*SyncLiveHandler, error) {
+	store := state.NewStorage(postgresDBURI)
 	sh := &SyncLiveHandler{
-		V2:         v2Client,
-		Storage:    state.NewStorage(postgresDBURI),
-		V2Store:    sync2.NewStore(postgresDBURI),
-		ConnMap:    NewConnMap(),
-		userCaches: &sync.Map{},
-		dispatcher: NewDispatcher(),
+		V2:          v2Client,
+		Storage:     store,
+		V2Store:     sync2.NewStore(postgresDBURI),
+		ConnMap:     NewConnMap(),
+		userCaches:  &sync.Map{},
+		dispatcher:  NewDispatcher(),
+		globalCache: NewGlobalCache(store),
 	}
-	globalCache := NewGlobalCache(sh.Storage)
 	sh.PollerMap = sync2.NewPollerMap(v2Client, sh)
-	sh.globalCache = globalCache
 
 	if err := sh.dispatcher.Load(sh.Storage); err != nil {
 		return nil, fmt.Errorf("failed to load dispatcher: %s", err)
 	}
+	sh.dispatcher.Register(DispatcherAllUsers, sh.globalCache)
 
 	if err := PopulateGlobalCache(sh.Storage, sh.globalCache); err != nil {
 		return nil, fmt.Errorf("failed to populate global cache: %s", err)
@@ -272,7 +273,6 @@ func (h *SyncLiveHandler) Accumulate(roomID string, timeline []json.RawMessage) 
 	newEvents := timeline[len(timeline)-numNew:]
 
 	// we have new events, notify active connections
-	h.globalCache.OnNewEvents(roomID, newEvents, latestPos)
 	h.dispatcher.OnNewEvents(roomID, newEvents, latestPos)
 	return err
 }
@@ -288,7 +288,6 @@ func (h *SyncLiveHandler) Initialise(roomID string, state []json.RawMessage) err
 		return nil
 	}
 	// we have new events, notify active connections
-	h.globalCache.OnNewEvents(roomID, state, 0)
 	h.dispatcher.OnNewEvents(roomID, state, 0)
 	return err
 }

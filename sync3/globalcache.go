@@ -11,10 +11,6 @@ import (
 	"github.com/tidwall/gjson"
 )
 
-type GlobalCacheListener interface {
-	OnNewEvent(joinedUsers []string, event *EventData)
-}
-
 type GlobalCache struct {
 	LoadJoinedRoomsOverride func(userID string) (pos int64, joinedRooms []SortableRoom, err error)
 
@@ -30,35 +26,16 @@ type GlobalCache struct {
 	// for loading room state not held in-memory
 	store *state.Storage
 
-	listeners   map[int]GlobalCacheListener
-	listenersMu *sync.Mutex
-	id          int
+	id int
 }
 
 func NewGlobalCache(store *state.Storage) *GlobalCache {
 	return &GlobalCache{
 		globalRoomInfo:   make(map[string]*SortableRoom),
 		globalRoomInfoMu: &sync.RWMutex{},
-		listeners:        make(map[int]GlobalCacheListener),
-		listenersMu:      &sync.Mutex{},
 		store:            store,
 		roomIDToHeroInfo: make(map[string]internal.HeroInfo),
 	}
-}
-
-func (c *GlobalCache) Subsribe(gcl GlobalCacheListener) (id int) {
-	c.listenersMu.Lock()
-	defer c.listenersMu.Unlock()
-	id = c.id
-	c.id += 1
-	c.listeners[id] = gcl
-	return
-}
-
-func (c *GlobalCache) Unsubscribe(id int) {
-	c.listenersMu.Lock()
-	defer c.listenersMu.Unlock()
-	delete(c.listeners, id)
 }
 
 func (c *GlobalCache) LoadRoom(roomID string) *SortableRoom {
@@ -145,45 +122,28 @@ func (c *GlobalCache) LoadRoomState(roomID string, loadPosition int64, requiredS
 }
 
 // =================================================
-// Listener functions called by v2 pollers are below
+// Listener function called dispatcher below
 // =================================================
 
-func (c *GlobalCache) OnNewEvents(
-	roomID string, events []json.RawMessage, latestPos int64,
+func (c *GlobalCache) OnNewEvent(
+	ed *EventData,
 ) {
-	for _, event := range events {
-		c.onNewEvent(roomID, event, latestPos)
-	}
-}
-
-func (c *GlobalCache) onNewEvent(
-	roomID string, event json.RawMessage, latestPos int64,
-) {
-	// parse the event to pull out fields we care about
-	var stateKey *string
-	ev := gjson.ParseBytes(event)
-	if sk := ev.Get("state_key"); sk.Exists() {
-		stateKey = &sk.Str
-	}
-	eventType := ev.Get("type").Str
-
 	// update global state
 	c.globalRoomInfoMu.Lock()
-	globalRoom := c.globalRoomInfo[roomID]
+	defer c.globalRoomInfoMu.Unlock()
+	globalRoom := c.globalRoomInfo[ed.roomID]
 	if globalRoom == nil {
 		globalRoom = &SortableRoom{
-			RoomID: roomID,
+			RoomID: ed.roomID,
 		}
 	}
-	if eventType == "m.room.name" && stateKey != nil && *stateKey == "" {
-		globalRoom.Name = ev.Get("content.name").Str
-	} else if eventType == "m.room.canonical_alias" && stateKey != nil && *stateKey == "" && globalRoom.Name == "" {
-		globalRoom.Name = ev.Get("content.alias").Str
+	if ed.eventType == "m.room.name" && ed.stateKey != nil && *ed.stateKey == "" {
+		globalRoom.Name = ed.content.Get("name").Str
+	} else if ed.eventType == "m.room.canonical_alias" && ed.stateKey != nil && *ed.stateKey == "" && globalRoom.Name == "" {
+		globalRoom.Name = ed.content.Get("alias").Str
 	}
-	eventTimestamp := ev.Get("origin_server_ts").Uint()
-	globalRoom.LastMessageTimestamp = eventTimestamp
+	globalRoom.LastMessageTimestamp = ed.timestamp
 	c.globalRoomInfo[globalRoom.RoomID] = globalRoom
-	c.globalRoomInfoMu.Unlock()
 }
 
 // PopulateGlobalCache reads the database and sets data into the cache.
