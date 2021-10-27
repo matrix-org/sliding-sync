@@ -309,6 +309,16 @@ func (s *ConnState) getInitialRoomData(roomIDs ...string) []Room {
 	for i, roomID := range roomIDs {
 		userRoomData := roomIDToUserRoomData[roomID]
 		metadata := s.globalCache.LoadRoom(roomID)
+		// remove our own hero if it exists
+		var heroes []internal.Hero
+		for _, h := range metadata.Heroes {
+			if h.ID == s.userID {
+				continue
+			}
+			heroes = append(heroes, h)
+		}
+		metadata.Heroes = heroes
+
 		rooms[i] = Room{
 			RoomID:            roomID,
 			Name:              internal.CalculateRoomName(metadata, 5), // TODO: customisable?

@@ -127,7 +127,34 @@ func (s *Storage) MetadataForAllRooms() (map[string]internal.RoomMetadata, error
 	// Select the most recent members for each room to serve as Heroes. The spec is ambiguous here:
 	// "This should be the first 5 members of the room, ordered by stream ordering, which are joined or invited."
 	// Unclear if this is the first 5 *most recent* (backwards) or forwards. For now we'll use the most recent
-	// ones.
+	// ones, and select 6 of them so we can always use 5 no matter who is requesting the room name.
+	rows, err = s.accumulator.db.Query(`
+	SELECT rf.* FROM (
+		SELECT room_id, event, rank() OVER (
+			PARTITION BY room_id ORDER BY event_nid DESC
+		) FROM syncv3_events WHERE (
+			membership='join' OR (membership='_join' AND before_state_snapshot_id=0)
+		) AND event_type='m.room.member'
+	) rf WHERE rank <= 6`)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query heroes: %s", err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var roomID string
+		var event json.RawMessage
+		var rank int
+		if err := rows.Scan(&roomID, &event, &rank); err != nil {
+			return nil, err
+		}
+		ev := gjson.ParseBytes(event)
+		metadata := result[roomID]
+		metadata.Heroes = append(metadata.Heroes, internal.Hero{
+			ID:   ev.Get("state_key").Str,
+			Name: ev.Get("content.displayname").Str,
+		})
+		result[roomID] = metadata
+	}
 
 	return result, nil
 }
