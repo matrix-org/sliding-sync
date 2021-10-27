@@ -200,9 +200,6 @@ func TestStorageJoinedRoomsAfterPosition(t *testing.T) {
 			JoinCount: 2,
 		},
 	}
-	if len(roomIDToHeroInfo) != len(wantHeroInfos) {
-		t.Errorf("got %d hero infos, want %d", len(roomIDToHeroInfo), len(wantHeroInfos))
-	}
 	for roomID, wantHI := range wantHeroInfos {
 		gotHI := roomIDToHeroInfo[roomID]
 		if gotHI.InviteCount != wantHI.InviteCount {
