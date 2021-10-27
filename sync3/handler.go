@@ -55,12 +55,11 @@ func NewSync3Handler(v2Client sync2.Client, postgresDBURI string) (*SyncLiveHand
 	}
 	sh.PollerMap = sync2.NewPollerMap(v2Client, sh)
 
-	if err := sh.dispatcher.Load(sh.Storage); err != nil {
+	if err := sh.dispatcher.Startup(sh.Storage); err != nil {
 		return nil, fmt.Errorf("failed to load dispatcher: %s", err)
 	}
 	sh.dispatcher.Register(DispatcherAllUsers, sh.globalCache)
-
-	if err := PopulateGlobalCache(sh.Storage, sh.globalCache); err != nil {
+	if err := sh.globalCache.Startup(sh.Storage); err != nil {
 		return nil, fmt.Errorf("failed to populate global cache: %s", err)
 	}
 

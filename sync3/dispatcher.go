@@ -46,7 +46,7 @@ func NewDispatcher() *Dispatcher {
 
 // Load joined members into the dispatcher.
 // MUST BE CALLED BEFORE V2 POLL LOOPS START.
-func (d *Dispatcher) Load(store *state.Storage) error {
+func (d *Dispatcher) Startup(store *state.Storage) error {
 	// populate joined rooms tracker
 	roomToJoinedUsers, err := store.AllJoinedMembers()
 	if err != nil {

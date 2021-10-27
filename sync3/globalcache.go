@@ -121,6 +121,53 @@ func (c *GlobalCache) LoadRoomState(roomID string, loadPosition int64, requiredS
 	return result
 }
 
+// Startup will populate the cache by reading the database.
+// Must be called prior to starting any v2 pollers else this operation can race. Consider:
+//   - V2 poll loop started early
+//   - Join event arrives, NID=50
+//   - PopulateGlobalCache loads the latest NID=50, processes this join event in the process
+//   - OnNewEvents is called with the join event
+//   - join event is processed twice.
+func (c *GlobalCache) Startup(store *state.Storage) error {
+	latestEvents, err := store.SelectLatestEventInAllRooms()
+	if err != nil {
+		return fmt.Errorf("failed to load latest event for all rooms: %s", err)
+	}
+	// every room will be present here
+	for _, ev := range latestEvents {
+		room := &SortableRoom{
+			RoomID: ev.RoomID,
+		}
+		room.LastMessageTimestamp = gjson.ParseBytes(ev.JSON).Get("origin_server_ts").Uint()
+		c.AssignRoom(*room)
+	}
+	//roomIDToHeroInfo, err := store.HeroInfoForAllRooms()
+	// load state events we care about for sync v3
+	roomIDToStateEvents, err := store.CurrentStateEventsInAllRooms([]string{
+		"m.room.name", "m.room.canonical_alias",
+	})
+	if err != nil {
+		return fmt.Errorf("failed to load state events for all rooms: %s", err)
+	}
+	for roomID, stateEvents := range roomIDToStateEvents {
+		room := c.LoadRoom(roomID)
+		if room == nil {
+			return fmt.Errorf("room %s has no latest event but does have state; this should be impossible", roomID)
+		}
+		for _, ev := range stateEvents {
+			if ev.Type == "m.room.name" && ev.StateKey == "" {
+				room.Name = gjson.ParseBytes(ev.JSON).Get("content.name").Str
+			} else if ev.Type == "m.room.canonical_alias" && ev.StateKey == "" && room.Name == "" {
+				room.Name = gjson.ParseBytes(ev.JSON).Get("content.alias").Str
+			}
+		}
+		c.AssignRoom(*room)
+		fmt.Printf("Room: %s - %s - %s \n", room.RoomID, room.Name, gomatrixserverlib.Timestamp(room.LastMessageTimestamp).Time())
+	}
+
+	return nil
+}
+
 // =================================================
 // Listener function called dispatcher below
 // =================================================
@@ -144,51 +191,4 @@ func (c *GlobalCache) OnNewEvent(
 	}
 	globalRoom.LastMessageTimestamp = ed.timestamp
 	c.globalRoomInfo[globalRoom.RoomID] = globalRoom
-}
-
-// PopulateGlobalCache reads the database and sets data into the cache.
-// Must be called prior to starting any v2 pollers else this operation can race. Consider:
-//   - V2 poll loop started early
-//   - Join event arrives, NID=50
-//   - PopulateGlobalCache loads the latest NID=50, processes this join event in the process
-//   - OnNewEvents is called with the join event
-//   - join event is processed twice.
-func PopulateGlobalCache(store *state.Storage, cache *GlobalCache) error {
-	latestEvents, err := store.SelectLatestEventInAllRooms()
-	if err != nil {
-		return fmt.Errorf("failed to load latest event for all rooms: %s", err)
-	}
-	// every room will be present here
-	for _, ev := range latestEvents {
-		room := &SortableRoom{
-			RoomID: ev.RoomID,
-		}
-		room.LastMessageTimestamp = gjson.ParseBytes(ev.JSON).Get("origin_server_ts").Uint()
-		cache.AssignRoom(*room)
-	}
-	//roomIDToHeroInfo, err := store.HeroInfoForAllRooms()
-	// load state events we care about for sync v3
-	roomIDToStateEvents, err := store.CurrentStateEventsInAllRooms([]string{
-		"m.room.name", "m.room.canonical_alias",
-	})
-	if err != nil {
-		return fmt.Errorf("failed to load state events for all rooms: %s", err)
-	}
-	for roomID, stateEvents := range roomIDToStateEvents {
-		room := cache.LoadRoom(roomID)
-		if room == nil {
-			return fmt.Errorf("room %s has no latest event but does have state; this should be impossible", roomID)
-		}
-		for _, ev := range stateEvents {
-			if ev.Type == "m.room.name" && ev.StateKey == "" {
-				room.Name = gjson.ParseBytes(ev.JSON).Get("content.name").Str
-			} else if ev.Type == "m.room.canonical_alias" && ev.StateKey == "" && room.Name == "" {
-				room.Name = gjson.ParseBytes(ev.JSON).Get("content.alias").Str
-			}
-		}
-		cache.AssignRoom(*room)
-		fmt.Printf("Room: %s - %s - %s \n", room.RoomID, room.Name, gomatrixserverlib.Timestamp(room.LastMessageTimestamp).Time())
-	}
-
-	return nil
 }
