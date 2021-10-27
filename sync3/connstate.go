@@ -203,7 +203,6 @@ func (s *ConnState) onIncomingRequest(ctx context.Context, req *Request) (*Respo
 				} else {
 					targetRoom = s.sortedJoinedRooms[fromIndex]
 					lastTimestamp = targetRoom.LastMessageTimestamp
-					targetRoom.LastEventJSON = updateEvent.event
 					targetRoom.LastMessageTimestamp = updateEvent.timestamp
 					s.sortedJoinedRooms[fromIndex] = targetRoom
 				}
@@ -240,12 +239,15 @@ func (s *ConnState) onIncomingRequest(ctx context.Context, req *Request) (*Respo
 					}
 					// TODO inject last event if never seen before, else just room ID updateEvent = s.sortedJoinedRooms[toIndex].LastEvent
 					toRoom := s.sortedJoinedRooms[toIndex]
+
 					// fake an update event for this room.
 					// We do this because we are introducing a new room in the list because of this situation:
 					// tracking [10,20] and room 24 jumps to position 0, so now we are tracking [9,19] as all rooms
 					// have been shifted to the right
+					rooms := s.userCache.lazilyLoadRoomDatas(s.loadPosition, []string{toRoom.RoomID}, int(s.muxedReq.TimelineLimit)) // TODO: per-room timeline limit
+					urd := rooms[toRoom.RoomID]
 					updateEvent = &EventData{
-						event:  toRoom.LastEventJSON,
+						event:  urd.Timeline[len(urd.Timeline)-1],
 						roomID: toRoom.RoomID,
 					}
 				}

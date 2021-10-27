@@ -18,9 +18,6 @@ func newSortableRoom(roomID string, lastMsgTimestamp gomatrixserverlib.Timestamp
 		RoomID:               roomID,
 		Name:                 "Room " + roomID,
 		LastMessageTimestamp: uint64(lastMsgTimestamp),
-		LastEventJSON: json.RawMessage(
-			fmt.Sprintf(`{"type":"m.room.message","content":{"body":"hello"},"origin_server_ts":%d}`, lastMsgTimestamp),
-		),
 	}
 }
 
@@ -49,6 +46,11 @@ func TestConnStateInitial(t *testing.T) {
 	roomA := newSortableRoom("!a:localhost", gomatrixserverlib.AsTimestamp(timestampNow.Add(-8*time.Second)))
 	roomB := newSortableRoom("!b:localhost", gomatrixserverlib.AsTimestamp(timestampNow))
 	roomC := newSortableRoom("!c:localhost", gomatrixserverlib.AsTimestamp(timestampNow.Add(-4*time.Second)))
+	timeline := map[string]json.RawMessage{
+		roomA.RoomID: testutils.NewEvent(t, "m.room.message", userID, map[string]interface{}{"body": "a"}, time.Now()),
+		roomB.RoomID: testutils.NewEvent(t, "m.room.message", userID, map[string]interface{}{"body": "b"}, time.Now()),
+		roomC.RoomID: testutils.NewEvent(t, "m.room.message", userID, map[string]interface{}{"body": "c"}, time.Now()),
+	}
 	globalCache := NewGlobalCache(nil)
 	globalCache.AssignRoom(roomA)
 	globalCache.AssignRoom(roomB)
@@ -66,9 +68,7 @@ func TestConnStateInitial(t *testing.T) {
 		result := make(map[string]UserRoomData)
 		for _, roomID := range roomIDs {
 			result[roomID] = UserRoomData{
-				Timeline: []json.RawMessage{
-					globalCache.LoadRoom(roomID).LastEventJSON,
-				},
+				Timeline: []json.RawMessage{timeline[roomID]},
 			}
 		}
 		return result
@@ -96,17 +96,17 @@ func TestConnStateInitial(t *testing.T) {
 					{
 						RoomID:   roomB.RoomID,
 						Name:     roomB.Name,
-						Timeline: []json.RawMessage{roomB.LastEventJSON},
+						Timeline: []json.RawMessage{timeline[roomB.RoomID]},
 					},
 					{
 						RoomID:   roomC.RoomID,
 						Name:     roomC.Name,
-						Timeline: []json.RawMessage{roomC.LastEventJSON},
+						Timeline: []json.RawMessage{timeline[roomC.RoomID]},
 					},
 					{
 						RoomID:   roomA.RoomID,
 						Name:     roomA.Name,
-						Timeline: []json.RawMessage{roomA.LastEventJSON},
+						Timeline: []json.RawMessage{timeline[roomA.RoomID]},
 					},
 				},
 			},
@@ -191,7 +191,6 @@ func TestConnStateMultipleRanges(t *testing.T) {
 			Name:   fmt.Sprintf("Room %d", i),
 			// room 1 is most recent, 10 is least recent
 			LastMessageTimestamp: uint64(uint64(timestampNow) - uint64(i*1000)),
-			LastEventJSON:        []byte(`{}`),
 		}
 		rooms = append(rooms, room)
 		roomIDs = append(roomIDs, roomID)
@@ -441,6 +440,12 @@ func TestConnStateRoomSubscriptions(t *testing.T) {
 	globalCache.jrt.UserJoinedRoom(userID, roomB.RoomID)
 	globalCache.jrt.UserJoinedRoom(userID, roomC.RoomID)
 	globalCache.jrt.UserJoinedRoom(userID, roomD.RoomID)
+	timeline := map[string]json.RawMessage{
+		roomA.RoomID: testutils.NewEvent(t, "m.room.message", userID, map[string]interface{}{"body": "a"}, time.Now()),
+		roomB.RoomID: testutils.NewEvent(t, "m.room.message", userID, map[string]interface{}{"body": "b"}, time.Now()),
+		roomC.RoomID: testutils.NewEvent(t, "m.room.message", userID, map[string]interface{}{"body": "c"}, time.Now()),
+		roomD.RoomID: testutils.NewEvent(t, "m.room.message", userID, map[string]interface{}{"body": "d"}, time.Now()),
+	}
 	globalCache.LoadJoinedRoomsOverride = func(userID string) (pos int64, joinedRooms []SortableRoom, err error) {
 		return 1, []SortableRoom{
 			roomA, roomB, roomC, roomD,
@@ -452,7 +457,7 @@ func TestConnStateRoomSubscriptions(t *testing.T) {
 		for _, roomID := range roomIDs {
 			result[roomID] = UserRoomData{
 				Timeline: []json.RawMessage{
-					globalCache.LoadRoom(roomID).LastEventJSON,
+					timeline[roomID],
 				},
 			}
 		}
@@ -481,7 +486,7 @@ func TestConnStateRoomSubscriptions(t *testing.T) {
 				RoomID: roomD.RoomID,
 				Name:   roomD.Name,
 				Timeline: []json.RawMessage{
-					roomD.LastEventJSON,
+					timeline[roomD.RoomID],
 				},
 			},
 		},
@@ -494,14 +499,14 @@ func TestConnStateRoomSubscriptions(t *testing.T) {
 						RoomID: roomA.RoomID,
 						Name:   roomA.Name,
 						Timeline: []json.RawMessage{
-							roomA.LastEventJSON,
+							timeline[roomA.RoomID],
 						},
 					},
 					{
 						RoomID: roomB.RoomID,
 						Name:   roomB.Name,
 						Timeline: []json.RawMessage{
-							roomB.LastEventJSON,
+							timeline[roomB.RoomID],
 						},
 					},
 				},
@@ -559,7 +564,7 @@ func TestConnStateRoomSubscriptions(t *testing.T) {
 				RoomID: roomC.RoomID,
 				Name:   roomC.Name,
 				Timeline: []json.RawMessage{
-					roomC.LastEventJSON,
+					timeline[roomC.RoomID],
 				},
 			},
 		},

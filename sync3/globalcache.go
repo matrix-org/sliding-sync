@@ -185,7 +185,6 @@ func (c *GlobalCache) onNewEvent(
 	}
 	eventTimestamp := ev.Get("origin_server_ts").Uint()
 	globalRoom.LastMessageTimestamp = eventTimestamp
-	globalRoom.LastEventJSON = event
 	c.globalRoomInfo[globalRoom.RoomID] = globalRoom
 	c.globalRoomInfoMu.Unlock()
 
@@ -245,7 +244,6 @@ func PopulateGlobalCache(store *state.Storage, cache *GlobalCache) error {
 		room := &SortableRoom{
 			RoomID: ev.RoomID,
 		}
-		room.LastEventJSON = ev.JSON
 		room.LastMessageTimestamp = gjson.ParseBytes(ev.JSON).Get("origin_server_ts").Uint()
 		cache.AssignRoom(*room)
 	}
