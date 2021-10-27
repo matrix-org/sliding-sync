@@ -121,7 +121,9 @@ func (t *EventTable) Insert(txn *sqlx.Tx, events []Event) (int, error) {
 			if !membershipResult.Exists() || membershipResult.Str == "" {
 				return 0, fmt.Errorf("membership event missing membership key")
 			}
-			// we only set this if it is a genuine change e.g not a profile change
+			// we only set this if it is a genuine change e.g not a profile change. This will NOT
+			// catch cases where the first state event we get for this user is a profile change
+			// so we need to make sure any membership queries also check the before snapshot ID.
 			if isMembershipChange(evJSON) {
 				ev.Membership = membershipResult.Str
 			}
@@ -180,7 +182,7 @@ func (t *EventTable) SelectByNIDs(txn *sqlx.Tx, verifyAll bool, nids []int64) (e
 		wanted = len(nids)
 	}
 	return t.selectIn(txn, wanted, `
-	SELECT event_nid, event_id, event, event_type, state_key, room_id, before_state_snapshot_id FROM syncv3_events
+	SELECT event_nid, event_id, event, event_type, state_key, room_id, before_state_snapshot_id, membership FROM syncv3_events
 	WHERE event_nid IN (?) ORDER BY event_nid ASC;`, nids)
 }
 
@@ -190,7 +192,7 @@ func (t *EventTable) SelectByIDs(txn *sqlx.Tx, verifyAll bool, ids []string) (ev
 		wanted = len(ids)
 	}
 	return t.selectIn(txn, wanted, `
-	SELECT event_nid, event_id, event, event_type, state_key, room_id, before_state_snapshot_id FROM syncv3_events
+	SELECT event_nid, event_id, event, event_type, state_key, room_id, before_state_snapshot_id, membership FROM syncv3_events
 	WHERE event_id IN (?) ORDER BY event_nid ASC;`, ids)
 }
 

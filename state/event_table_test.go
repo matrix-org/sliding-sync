@@ -442,7 +442,7 @@ func TestEventTableMembershipDetection(t *testing.T) {
 	alice := "@TestEventTableMembershipDetection_alice:localhost"
 	bob := "@TestEventTableMembershipDetection_bob:localhost"
 	table := NewEventTable(db)
-	_, err = table.Insert(txn, []Event{
+	events := []Event{
 		{
 			RoomID: roomID,
 			JSON:   testutils.NewStateEvent(t, "m.room.member", alice, alice, map[string]interface{}{"membership": "join"}),
@@ -462,11 +462,25 @@ func TestEventTableMembershipDetection(t *testing.T) {
 				}),
 			),
 		},
-	})
+	}
+	_, err = table.Insert(txn, events)
 	if err != nil {
 		t.Fatalf("failed to insert: %s", err)
 	}
-	// TODO: assertions?
+	eventIDs := make([]string, len(events))
+	for i := range events {
+		eventIDs[i] = events[i].ID
+	}
+	gotEvents, err := table.SelectByIDs(txn, true, eventIDs)
+	if err != nil {
+		t.Fatalf("failed to select: %s", err)
+	}
+	wantMemberships := []string{"join", "invite", ""}
+	for i := range wantMemberships {
+		if gotEvents[i].Membership != wantMemberships[i] {
+			t.Errorf("event: got membership '%s' want '%s'", gotEvents[i].Membership, wantMemberships[i])
+		}
+	}
 }
 
 func TestChunkify(t *testing.T) {
