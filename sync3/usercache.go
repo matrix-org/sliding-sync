@@ -28,7 +28,6 @@ type UserCache struct {
 	id                   int
 	store                *state.Storage
 	globalCache          *GlobalCache
-	globalCacheID        int
 }
 
 func NewUserCache(userID string, globalCache *GlobalCache, store *state.Storage) *UserCache {
@@ -41,7 +40,6 @@ func NewUserCache(userID string, globalCache *GlobalCache, store *state.Storage)
 		store:        store,
 		globalCache:  globalCache,
 	}
-	uc.globalCacheID = globalCache.Subsribe(uc)
 	return uc
 }
 
@@ -138,21 +136,7 @@ func (c *UserCache) OnUnreadCounts(roomID string, highlightCount, notifCount *in
 	}
 }
 
-func (c *UserCache) OnNewEvent(joinedUsers []string, eventData *EventData) {
-	targetUser := ""
-	if eventData.eventType == "m.room.member" && eventData.stateKey != nil {
-		targetUser = *eventData.stateKey
-	}
-	isInterested := targetUser == c.userID // e.g invites
-	for _, userID := range joinedUsers {
-		if c.userID == userID {
-			isInterested = true
-			break
-		}
-	}
-	if !isInterested {
-		return
-	}
+func (c *UserCache) OnNewEvent(eventData *EventData) {
 	// add this to our tracked timelines if we have one
 	urd := c.loadRoomData(eventData.roomID)
 	if len(urd.Timeline) > 0 {

@@ -55,15 +55,17 @@ func TestConnStateInitial(t *testing.T) {
 	globalCache.AssignRoom(roomA)
 	globalCache.AssignRoom(roomB)
 	globalCache.AssignRoom(roomC)
-	globalCache.jrt.UserJoinedRoom(userID, roomA.RoomID)
-	globalCache.jrt.UserJoinedRoom(userID, roomB.RoomID)
-	globalCache.jrt.UserJoinedRoom(userID, roomC.RoomID)
+	dispatcher := NewDispatcher()
+	dispatcher.jrt.UserJoinedRoom(userID, roomA.RoomID)
+	dispatcher.jrt.UserJoinedRoom(userID, roomB.RoomID)
+	dispatcher.jrt.UserJoinedRoom(userID, roomC.RoomID)
 	globalCache.LoadJoinedRoomsOverride = func(userID string) (pos int64, joinedRooms []SortableRoom, err error) {
 		return 1, []SortableRoom{
 			roomA, roomB, roomC,
 		}, nil
 	}
 	userCache := NewUserCache(userID, globalCache, nil)
+	dispatcher.Register(userCache.userID, userCache)
 	userCache.LazyRoomDataOverride = func(loadPos int64, roomIDs []string, maxTimelineEvents int) map[string]UserRoomData {
 		result := make(map[string]UserRoomData)
 		for _, roomID := range roomIDs {
@@ -114,8 +116,12 @@ func TestConnStateInitial(t *testing.T) {
 	})
 
 	// bump A to the top
+	newEvent := testutils.NewEvent(t, "unimportant", "me", struct{}{}, gomatrixserverlib.AsTimestamp(timestampNow.Add(1*time.Second)).Time())
 	globalCache.OnNewEvents(roomA.RoomID, []json.RawMessage{
-		testutils.NewEvent(t, "unimportant", "me", struct{}{}, gomatrixserverlib.AsTimestamp(timestampNow.Add(1*time.Second)).Time()),
+		newEvent,
+	}, 1)
+	dispatcher.OnNewEvents(roomA.RoomID, []json.RawMessage{
+		newEvent,
 	}, 1)
 
 	// request again for the diff
@@ -146,8 +152,12 @@ func TestConnStateInitial(t *testing.T) {
 	})
 
 	// another message should just update
+	newEvent = testutils.NewEvent(t, "unimportant", "me", struct{}{}, gomatrixserverlib.AsTimestamp(timestampNow.Add(2*time.Second)).Time())
 	globalCache.OnNewEvents(roomA.RoomID, []json.RawMessage{
-		testutils.NewEvent(t, "unimportant", "me", struct{}{}, gomatrixserverlib.AsTimestamp(timestampNow.Add(2*time.Second)).Time()),
+		newEvent,
+	}, 1)
+	dispatcher.OnNewEvents(roomA.RoomID, []json.RawMessage{
+		newEvent,
 	}, 1)
 	res, err = cs.HandleIncomingRequest(context.Background(), connID, &Request{
 		Sort: []string{SortByRecency},
@@ -183,6 +193,7 @@ func TestConnStateMultipleRanges(t *testing.T) {
 	var rooms []SortableRoom
 	var roomIDs []string
 	globalCache := NewGlobalCache(nil)
+	dispatcher := NewDispatcher()
 	roomIDToRoom := make(map[string]SortableRoom)
 	for i := int64(0); i < 10; i++ {
 		roomID := fmt.Sprintf("!%d:localhost", i)
@@ -196,13 +207,14 @@ func TestConnStateMultipleRanges(t *testing.T) {
 		roomIDs = append(roomIDs, roomID)
 		roomIDToRoom[roomID] = room
 		globalCache.AssignRoom(room)
-		globalCache.jrt.UserJoinedRoom(userID, roomID)
+		dispatcher.jrt.UserJoinedRoom(userID, roomID)
 	}
 	globalCache.LoadJoinedRoomsOverride = func(userID string) (pos int64, joinedRooms []SortableRoom, err error) {
 		return 1, rooms, nil
 	}
 	userCache := NewUserCache(userID, globalCache, nil)
 	userCache.LazyRoomDataOverride = mockLazyRoomOverride
+	dispatcher.Register(userCache.userID, userCache)
 	cs := NewConnState(userID, userCache, globalCache)
 
 	// request first page
@@ -272,8 +284,12 @@ func TestConnStateMultipleRanges(t *testing.T) {
 	// `    `  `    `
 	// 8,0,1,2,3,4,5,6,7,9
 	//
+	newEvent := testutils.NewEvent(t, "unimportant", "me", struct{}{}, timestampNow.Time().Add(2*time.Second))
 	globalCache.OnNewEvents(roomIDs[8], []json.RawMessage{
-		testutils.NewEvent(t, "unimportant", "me", struct{}{}, timestampNow.Time().Add(2*time.Second)),
+		newEvent,
+	}, 1)
+	dispatcher.OnNewEvents(roomIDs[8], []json.RawMessage{
+		newEvent,
 	}, 1)
 
 	res, err = cs.HandleIncomingRequest(context.Background(), connID, &Request{
@@ -309,8 +325,12 @@ func TestConnStateMultipleRanges(t *testing.T) {
 	// `    `  `    `
 	// 8,0,1,9,2,3,4,5,6,7 room
 	middleTimestamp := int64((roomIDToRoom[roomIDs[1]].LastMessageTimestamp + roomIDToRoom[roomIDs[2]].LastMessageTimestamp) / 2)
+	newEvent = testutils.NewEvent(t, "unimportant", "me", struct{}{}, gomatrixserverlib.Timestamp(middleTimestamp).Time())
 	globalCache.OnNewEvents(roomIDs[9], []json.RawMessage{
-		testutils.NewEvent(t, "unimportant", "me", struct{}{}, gomatrixserverlib.Timestamp(middleTimestamp).Time()),
+		newEvent,
+	}, 1)
+	dispatcher.OnNewEvents(roomIDs[9], []json.RawMessage{
+		newEvent,
 	}, 1)
 	res, err = cs.HandleIncomingRequest(context.Background(), connID, &Request{
 		Sort: []string{SortByRecency},
@@ -356,10 +376,11 @@ func TestBumpToOutsideRange(t *testing.T) {
 	globalCache.AssignRoom(roomB)
 	globalCache.AssignRoom(roomC)
 	globalCache.AssignRoom(roomD)
-	globalCache.jrt.UserJoinedRoom(userID, roomA.RoomID)
-	globalCache.jrt.UserJoinedRoom(userID, roomB.RoomID)
-	globalCache.jrt.UserJoinedRoom(userID, roomC.RoomID)
-	globalCache.jrt.UserJoinedRoom(userID, roomD.RoomID)
+	dispatcher := NewDispatcher()
+	dispatcher.jrt.UserJoinedRoom(userID, roomA.RoomID)
+	dispatcher.jrt.UserJoinedRoom(userID, roomB.RoomID)
+	dispatcher.jrt.UserJoinedRoom(userID, roomC.RoomID)
+	dispatcher.jrt.UserJoinedRoom(userID, roomD.RoomID)
 	globalCache.LoadJoinedRoomsOverride = func(userID string) (pos int64, joinedRooms []SortableRoom, err error) {
 		return 1, []SortableRoom{
 			roomA, roomB, roomC, roomD,
@@ -367,6 +388,7 @@ func TestBumpToOutsideRange(t *testing.T) {
 	}
 	userCache := NewUserCache(userID, globalCache, nil)
 	userCache.LazyRoomDataOverride = mockLazyRoomOverride
+	dispatcher.Register(userCache.userID, userCache)
 	cs := NewConnState(userID, userCache, globalCache)
 	// Ask for A,B
 	res, err := cs.HandleIncomingRequest(context.Background(), connID, &Request{
@@ -397,8 +419,12 @@ func TestBumpToOutsideRange(t *testing.T) {
 	})
 
 	// D gets bumped to C's position but it's still outside the range so nothing should happen
+	newEvent := testutils.NewEvent(t, "unimportant", "me", struct{}{}, gomatrixserverlib.Timestamp(roomC.LastMessageTimestamp+2).Time())
 	globalCache.OnNewEvents(roomD.RoomID, []json.RawMessage{
-		testutils.NewEvent(t, "unimportant", "me", struct{}{}, gomatrixserverlib.Timestamp(roomC.LastMessageTimestamp+2).Time()),
+		newEvent,
+	}, 1)
+	dispatcher.OnNewEvents(roomD.RoomID, []json.RawMessage{
+		newEvent,
 	}, 1)
 
 	// expire the context after 10ms so we don't wait forevar
@@ -436,10 +462,11 @@ func TestConnStateRoomSubscriptions(t *testing.T) {
 	globalCache.AssignRoom(roomB)
 	globalCache.AssignRoom(roomC)
 	globalCache.AssignRoom(roomD)
-	globalCache.jrt.UserJoinedRoom(userID, roomA.RoomID)
-	globalCache.jrt.UserJoinedRoom(userID, roomB.RoomID)
-	globalCache.jrt.UserJoinedRoom(userID, roomC.RoomID)
-	globalCache.jrt.UserJoinedRoom(userID, roomD.RoomID)
+	dispatcher := NewDispatcher()
+	dispatcher.jrt.UserJoinedRoom(userID, roomA.RoomID)
+	dispatcher.jrt.UserJoinedRoom(userID, roomB.RoomID)
+	dispatcher.jrt.UserJoinedRoom(userID, roomC.RoomID)
+	dispatcher.jrt.UserJoinedRoom(userID, roomD.RoomID)
 	timeline := map[string]json.RawMessage{
 		roomA.RoomID: testutils.NewEvent(t, "m.room.message", userID, map[string]interface{}{"body": "a"}, time.Now()),
 		roomB.RoomID: testutils.NewEvent(t, "m.room.message", userID, map[string]interface{}{"body": "b"}, time.Now()),
@@ -463,6 +490,7 @@ func TestConnStateRoomSubscriptions(t *testing.T) {
 		}
 		return result
 	}
+	dispatcher.Register(userCache.userID, userCache)
 	cs := NewConnState(userID, userCache, globalCache)
 	// subscribe to room D
 	res, err := cs.HandleIncomingRequest(context.Background(), connID, &Request{
@@ -516,6 +544,9 @@ func TestConnStateRoomSubscriptions(t *testing.T) {
 	// room D gets a new event
 	newEvent := testutils.NewEvent(t, "unimportant", "me", struct{}{}, gomatrixserverlib.Timestamp(timestampNow+2000).Time())
 	globalCache.OnNewEvents(roomD.RoomID, []json.RawMessage{
+		newEvent,
+	}, 1)
+	dispatcher.OnNewEvents(roomD.RoomID, []json.RawMessage{
 		newEvent,
 	}, 1)
 	// we should get this message even though it's not in the range because we are subscribed to this room.

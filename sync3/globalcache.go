@@ -30,8 +30,6 @@ type GlobalCache struct {
 	// for loading room state not held in-memory
 	store *state.Storage
 
-	jrt *JoinedRoomsTracker
-
 	listeners   map[int]GlobalCacheListener
 	listenersMu *sync.Mutex
 	id          int
@@ -44,7 +42,6 @@ func NewGlobalCache(store *state.Storage) *GlobalCache {
 		listeners:        make(map[int]GlobalCacheListener),
 		listenersMu:      &sync.Mutex{},
 		store:            store,
-		jrt:              NewJoinedRoomsTracker(),
 		roomIDToHeroInfo: make(map[string]internal.HeroInfo),
 	}
 }
@@ -187,44 +184,6 @@ func (c *GlobalCache) onNewEvent(
 	globalRoom.LastMessageTimestamp = eventTimestamp
 	c.globalRoomInfo[globalRoom.RoomID] = globalRoom
 	c.globalRoomInfoMu.Unlock()
-
-	ed := &EventData{
-		event:     event,
-		roomID:    roomID,
-		eventType: eventType,
-		stateKey:  stateKey,
-		content:   ev.Get("content"),
-		latestPos: latestPos,
-		timestamp: eventTimestamp,
-	}
-
-	// update the tracker
-	targetUser := ""
-	if ed.eventType == "m.room.member" && ed.stateKey != nil {
-		targetUser = *ed.stateKey
-		// TODO: de-dupe joins in jrt else profile changes will results in 2x room IDs
-		membership := ed.content.Get("membership").Str
-		switch membership {
-		case "join":
-			c.jrt.UserJoinedRoom(targetUser, ed.roomID)
-		case "ban":
-			fallthrough
-		case "leave":
-			c.jrt.UserLeftRoom(targetUser, ed.roomID)
-		}
-	}
-
-	c.notifyRelevantUsers(ed)
-}
-
-func (c *GlobalCache) notifyRelevantUsers(event *EventData) {
-	// notify all people in this room
-	userIDs := c.jrt.JoinedUsersForRoom(event.roomID)
-
-	// invoke listeners
-	for _, l := range c.listeners {
-		l.OnNewEvent(userIDs, event)
-	}
 }
 
 // PopulateGlobalCache reads the database and sets data into the cache.
@@ -269,17 +228,6 @@ func PopulateGlobalCache(store *state.Storage, cache *GlobalCache) error {
 		}
 		cache.AssignRoom(*room)
 		fmt.Printf("Room: %s - %s - %s \n", room.RoomID, room.Name, gomatrixserverlib.Timestamp(room.LastMessageTimestamp).Time())
-	}
-
-	// populate joined rooms tracker
-	roomToJoinedUsers, err := store.AllJoinedMembers()
-	if err != nil {
-		return err
-	}
-	for roomID, userIDs := range roomToJoinedUsers {
-		for _, userID := range userIDs {
-			cache.jrt.UserJoinedRoom(userID, roomID)
-		}
 	}
 
 	return nil
