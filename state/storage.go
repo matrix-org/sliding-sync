@@ -52,8 +52,55 @@ func (s *Storage) SelectLatestEventInAllRooms() ([]Event, error) {
 	return s.accumulator.eventsTable.SelectLatestEventInAllRooms()
 }
 
+// Extract hero info for all rooms. MUST BE CALLED AT STARTUP ONLY AS THIS WILL RACE WITH LIVE TRAFFIC.
 func (s *Storage) HeroInfoForAllRooms() (map[string]internal.HeroInfo, error) {
-	return nil, nil
+	// Select the joined member counts
+	// sub-select all current state, filter on m.room.member and then join membership
+	rows, err := s.accumulator.db.Query(`
+	SELECT room_id, count(state_key) FROM syncv3_events
+		WHERE (membership='_join' OR membership = 'join') AND event_type='m.room.member' AND event_nid IN (
+			SELECT unnest(events) FROM syncv3_snapshots WHERE syncv3_snapshots.snapshot_id IN (
+				SELECT current_snapshot_id FROM syncv3_rooms
+			)
+		) GROUP BY room_id`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	result := make(map[string]internal.HeroInfo)
+	for rows.Next() {
+		var roomID string
+		var hi internal.HeroInfo
+		if err := rows.Scan(&roomID, &hi.JoinCount); err != nil {
+			return nil, err
+		}
+		result[roomID] = hi
+	}
+	// Select the invited member counts using the same style of query
+	rows, err = s.accumulator.db.Query(`
+	SELECT room_id, count(state_key) FROM syncv3_events
+		WHERE (membership='_invite' OR membership = 'invite') AND event_type='m.room.member' AND event_nid IN (
+			SELECT unnest(events) FROM syncv3_snapshots WHERE syncv3_snapshots.snapshot_id IN (
+				SELECT current_snapshot_id FROM syncv3_rooms
+			)
+		) GROUP BY room_id`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var roomID string
+		var inviteCount int
+		if err := rows.Scan(&roomID, &inviteCount); err != nil {
+			return nil, err
+		}
+		hi := result[roomID]
+		hi.InviteCount = inviteCount
+		result[roomID] = hi
+	}
+	// TODO: Select the most recent senders for each room to serve as Heroes
+
+	return result, nil
 }
 
 // Returns all current state events matching the event types given in all rooms. Returns a map of

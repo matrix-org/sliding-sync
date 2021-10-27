@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/matrix-org/gomatrixserverlib"
+	"github.com/matrix-org/sync-v3/internal"
 	"github.com/matrix-org/sync-v3/testutils"
 )
 
@@ -105,6 +106,7 @@ func TestStorageJoinedRoomsAfterPosition(t *testing.T) {
 	bobJoinedRoomID := "!bobjoined:bar"
 	alice := "@aliceTestStorageJoinedRoomsAfterPosition:localhost"
 	bob := "@bobTestStorageJoinedRoomsAfterPosition:localhost"
+	charlie := "@charlieTestStorageJoinedRoomsAfterPosition:localhost"
 	roomIDToEventMap := map[string][]json.RawMessage{
 		joinedRoomID: {
 			testutils.NewStateEvent(t, "m.room.create", "", alice, map[string]interface{}{"creator": alice}),
@@ -129,6 +131,7 @@ func TestStorageJoinedRoomsAfterPosition(t *testing.T) {
 		bobJoinedRoomID: {
 			testutils.NewStateEvent(t, "m.room.create", "", bob, map[string]interface{}{"creator": bob}),
 			testutils.NewStateEvent(t, "m.room.member", bob, bob, map[string]interface{}{"membership": "join"}),
+			testutils.NewStateEvent(t, "m.room.member", charlie, charlie, map[string]interface{}{"membership": "join"}),
 		},
 	}
 	var latestPos int64
@@ -174,6 +177,39 @@ func TestStorageJoinedRoomsAfterPosition(t *testing.T) {
 		}
 		if len(createEvents[0].JSON) < 20 { // make sure there's something here
 			t.Errorf("CurrentStateEventsInAllRooms: got wrong json for event, got %s", string(createEvents[0].JSON))
+		}
+	}
+
+	// also test HeroInfoForAllRooms
+	roomIDToHeroInfo, err := store.HeroInfoForAllRooms()
+	if err != nil {
+		t.Fatalf("HeroInfoForAllRooms: %s", err)
+	}
+	wantHeroInfos := map[string]internal.HeroInfo{
+		joinedRoomID: {
+			JoinCount: 1,
+		},
+		invitedRoomID: {
+			JoinCount:   1,
+			InviteCount: 1,
+		},
+		banRoomID: {
+			JoinCount: 1,
+		},
+		bobJoinedRoomID: {
+			JoinCount: 2,
+		},
+	}
+	if len(roomIDToHeroInfo) != len(wantHeroInfos) {
+		t.Errorf("got %d hero infos, want %d", len(roomIDToHeroInfo), len(wantHeroInfos))
+	}
+	for roomID, wantHI := range wantHeroInfos {
+		gotHI := roomIDToHeroInfo[roomID]
+		if gotHI.InviteCount != wantHI.InviteCount {
+			t.Errorf("hero info for %s got %d invited users, want %d", roomID, gotHI.InviteCount, wantHI.InviteCount)
+		}
+		if gotHI.JoinCount != wantHI.JoinCount {
+			t.Errorf("hero info for %s got %d joined users, want %d", roomID, gotHI.JoinCount, wantHI.JoinCount)
 		}
 	}
 }

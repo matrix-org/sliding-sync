@@ -121,11 +121,12 @@ func (t *EventTable) Insert(txn *sqlx.Tx, events []Event) (int, error) {
 			if !membershipResult.Exists() || membershipResult.Str == "" {
 				return 0, fmt.Errorf("membership event missing membership key")
 			}
-			// we only set this if it is a genuine change e.g not a profile change. This will NOT
-			// catch cases where the first state event we get for this user is a profile change
-			// so we need to make sure any membership queries also check the before snapshot ID.
+			// genuine changes mark the membership event
 			if isMembershipChange(evJSON) {
 				ev.Membership = membershipResult.Str
+			} else {
+				// profile changes have _ prefix.
+				ev.Membership = "_" + membershipResult.Str
 			}
 		}
 

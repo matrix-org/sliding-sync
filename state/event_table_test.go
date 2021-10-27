@@ -475,7 +475,7 @@ func TestEventTableMembershipDetection(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to select: %s", err)
 	}
-	wantMemberships := []string{"join", "invite", ""}
+	wantMemberships := []string{"join", "invite", "_join"}
 	for i := range wantMemberships {
 		if gotEvents[i].Membership != wantMemberships[i] {
 			t.Errorf("event: got membership '%s' want '%s'", gotEvents[i].Membership, wantMemberships[i])
