@@ -5,10 +5,15 @@ import (
 	"strings"
 )
 
-type HeroInfo struct {
-	Heroes      []Hero
-	JoinCount   int
-	InviteCount int
+// Metadata about a room that is consistent between all users in the room.
+type RoomMetadata struct {
+	RoomID               string
+	Heroes               []Hero
+	NameEvent            string // the content of m.room.name, NOT the calculated name
+	CanonicalAlias       string
+	JoinCount            int
+	InviteCount          int
+	LastMessageTimestamp uint64
 }
 
 type Hero struct {
@@ -16,14 +21,14 @@ type Hero struct {
 	Name string
 }
 
-func CalculateRoomName(roomName, canonicalAlias string, maxNumNamesPerRoom int, heroInfo HeroInfo) string {
+func CalculateRoomName(heroInfo *RoomMetadata, maxNumNamesPerRoom int) string {
 	// If the room has an m.room.name state event with a non-empty name field, use the name given by that field.
-	if roomName != "" {
-		return roomName
+	if heroInfo.NameEvent != "" {
+		return heroInfo.NameEvent
 	}
 	// If the room has an m.room.canonical_alias state event with a valid alias field, use the alias given by that field as the name.
-	if canonicalAlias != "" {
-		return canonicalAlias
+	if heroInfo.CanonicalAlias != "" {
+		return heroInfo.CanonicalAlias
 	}
 	// If none of the above conditions are met, a name should be composed based on the members of the room.
 	disambiguatedNames := disambiguate(heroInfo.Heroes)

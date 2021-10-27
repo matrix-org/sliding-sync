@@ -188,11 +188,13 @@ func TestCalculateRoomName(t *testing.T) {
 	}
 
 	for _, tc := range testCases {
-		gotName := CalculateRoomName(tc.roomName, tc.canonicalAlias, tc.maxNumNamesPerRoom, HeroInfo{
-			Heroes:      tc.heroes,
-			JoinCount:   tc.joinedCount,
-			InviteCount: tc.invitedCount,
-		})
+		gotName := CalculateRoomName(&RoomMetadata{
+			NameEvent:      tc.roomName,
+			CanonicalAlias: tc.canonicalAlias,
+			Heroes:         tc.heroes,
+			JoinCount:      tc.joinedCount,
+			InviteCount:    tc.invitedCount,
+		}, tc.maxNumNamesPerRoom)
 		if gotName != tc.wantRoomName {
 			t.Errorf("got %s want %s for test case: %+v", gotName, tc.wantRoomName, tc)
 		}

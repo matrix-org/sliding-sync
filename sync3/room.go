@@ -2,6 +2,8 @@ package sync3
 
 import (
 	"encoding/json"
+
+	"github.com/matrix-org/sync-v3/internal"
 )
 
 type Room struct {
@@ -13,15 +15,7 @@ type Room struct {
 	HighlightCount    int64             `json:"highlight_count"`
 }
 
-// SortableRoom is a room with all globally sortable fields included
-// Does not include notif counts as that is user-specific.
-type SortableRoom struct {
-	RoomID               string
-	Name                 string // by_name
-	LastMessageTimestamp uint64 // by_recency
-}
-
-type SortableRooms []SortableRoom
+type SortableRooms []internal.RoomMetadata
 
 func (s SortableRooms) Len() int64 {
 	return int64(len(s))

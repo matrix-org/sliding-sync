@@ -6,6 +6,8 @@ import (
 	"reflect"
 	"sort"
 	"time"
+
+	"github.com/matrix-org/sync-v3/internal"
 )
 
 var (
@@ -190,7 +192,7 @@ func (s *ConnState) onIncomingRequest(ctx context.Context, req *Request) (*Respo
 				// TODO: Implement sorting by something other than recency. With recency sorting,
 				// most operations are DELETE/INSERT to bump rooms to the top of the list. We only
 				// do an UPDATE if the most recent room gets a 2nd event.
-				var targetRoom SortableRoom
+				var targetRoom internal.RoomMetadata
 				fromIndex, ok := s.sortedJoinedRoomsPositions[updateEvent.roomID]
 				var lastTimestamp uint64
 				if !ok {
@@ -302,22 +304,18 @@ func (s *ConnState) getDeltaRoomData(updateEvent *EventData) *Room {
 }
 
 func (s *ConnState) getInitialRoomData(roomIDs ...string) []Room {
-	sortableRooms := make([]SortableRoom, len(roomIDs))
-	for i := range roomIDs {
-		// TODO: the timestamp here can race with loading the timeline events (timeline may be newer), is this a problem?
-		sortableRooms[i] = *s.globalCache.LoadRoom(roomIDs[i])
-	}
 	roomIDToUserRoomData := s.userCache.lazilyLoadRoomDatas(s.loadPosition, roomIDs, int(s.muxedReq.TimelineLimit)) // TODO: per-room timeline limit
 	rooms := make([]Room, len(roomIDs))
-	for i, sr := range sortableRooms {
-		userRoomData := roomIDToUserRoomData[sr.RoomID]
+	for i, roomID := range roomIDs {
+		userRoomData := roomIDToUserRoomData[roomID]
+		metadata := s.globalCache.LoadRoom(roomID)
 		rooms[i] = Room{
-			RoomID:            sr.RoomID,
-			Name:              sr.Name,
+			RoomID:            roomID,
+			Name:              internal.CalculateRoomName(metadata, 5), // TODO: customisable?
 			NotificationCount: int64(userRoomData.NotificationCount),
 			HighlightCount:    int64(userRoomData.HighlightCount),
 			Timeline:          userRoomData.Timeline,
-			RequiredState:     s.globalCache.LoadRoomState(sr.RoomID, s.loadPosition, s.muxedReq.GetRequiredState(sr.RoomID)),
+			RequiredState:     s.globalCache.LoadRoomState(roomID, s.loadPosition, s.muxedReq.GetRequiredState(roomID)),
 		}
 	}
 	return rooms

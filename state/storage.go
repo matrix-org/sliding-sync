@@ -48,12 +48,8 @@ func (s *Storage) LatestTypingID() (int64, error) {
 	return s.TypingTable.SelectHighestID()
 }
 
-func (s *Storage) SelectLatestEventInAllRooms() ([]Event, error) {
-	return s.accumulator.eventsTable.SelectLatestEventInAllRooms()
-}
-
 // Extract hero info for all rooms. MUST BE CALLED AT STARTUP ONLY AS THIS WILL RACE WITH LIVE TRAFFIC.
-func (s *Storage) HeroInfoForAllRooms() (map[string]internal.HeroInfo, error) {
+func (s *Storage) MetadataForAllRooms() (map[string]internal.RoomMetadata, error) {
 	// Select the joined member counts
 	// sub-select all current state, filter on m.room.member and then join membership
 	rows, err := s.accumulator.db.Query(`
@@ -67,14 +63,13 @@ func (s *Storage) HeroInfoForAllRooms() (map[string]internal.HeroInfo, error) {
 		return nil, err
 	}
 	defer rows.Close()
-	result := make(map[string]internal.HeroInfo)
+	result := make(map[string]internal.RoomMetadata)
 	for rows.Next() {
-		var roomID string
-		var hi internal.HeroInfo
-		if err := rows.Scan(&roomID, &hi.JoinCount); err != nil {
+		var hi internal.RoomMetadata
+		if err := rows.Scan(&hi.RoomID, &hi.JoinCount); err != nil {
 			return nil, err
 		}
-		result[roomID] = hi
+		result[hi.RoomID] = hi
 	}
 	// Select the invited member counts using the same style of query
 	rows, err = s.accumulator.db.Query(`
@@ -98,7 +93,38 @@ func (s *Storage) HeroInfoForAllRooms() (map[string]internal.HeroInfo, error) {
 		hi.InviteCount = inviteCount
 		result[roomID] = hi
 	}
-	// TODO: Select the most recent senders for each room to serve as Heroes
+
+	// work out latest timestamps
+	events, err := s.accumulator.eventsTable.SelectLatestEventInAllRooms()
+	if err != nil {
+		return nil, err
+	}
+	for _, ev := range events {
+		metadata := result[ev.RoomID]
+		metadata.LastMessageTimestamp = gjson.ParseBytes(ev.JSON).Get("origin_server_ts").Uint()
+		result[ev.RoomID] = metadata
+	}
+
+	// Select the name / canonical alias for all rooms
+	roomIDToStateEvents, err := s.CurrentStateEventsInAllRooms([]string{
+		"m.room.name", "m.room.canonical_alias",
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to load state events for all rooms: %s", err)
+	}
+	for roomID, stateEvents := range roomIDToStateEvents {
+		metadata := result[roomID]
+		for _, ev := range stateEvents {
+			if ev.Type == "m.room.name" && ev.StateKey == "" {
+				metadata.NameEvent = gjson.ParseBytes(ev.JSON).Get("content.name").Str
+			} else if ev.Type == "m.room.canonical_alias" && ev.StateKey == "" {
+				metadata.CanonicalAlias = gjson.ParseBytes(ev.JSON).Get("content.alias").Str
+			}
+		}
+		result[roomID] = metadata
+	}
+
+	// Select the most recent senders for each room to serve as Heroes
 
 	return result, nil
 }

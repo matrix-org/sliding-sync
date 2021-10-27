@@ -180,12 +180,12 @@ func TestStorageJoinedRoomsAfterPosition(t *testing.T) {
 		}
 	}
 
-	// also test HeroInfoForAllRooms
-	roomIDToHeroInfo, err := store.HeroInfoForAllRooms()
+	// also test MetadataForAllRooms
+	roomIDToMetadata, err := store.MetadataForAllRooms()
 	if err != nil {
 		t.Fatalf("HeroInfoForAllRooms: %s", err)
 	}
-	wantHeroInfos := map[string]internal.HeroInfo{
+	wantHeroInfos := map[string]internal.RoomMetadata{
 		joinedRoomID: {
 			JoinCount: 1,
 		},
@@ -201,7 +201,7 @@ func TestStorageJoinedRoomsAfterPosition(t *testing.T) {
 		},
 	}
 	for roomID, wantHI := range wantHeroInfos {
-		gotHI := roomIDToHeroInfo[roomID]
+		gotHI := roomIDToMetadata[roomID]
 		if gotHI.InviteCount != wantHI.InviteCount {
 			t.Errorf("hero info for %s got %d invited users, want %d", roomID, gotHI.InviteCount, wantHI.InviteCount)
 		}

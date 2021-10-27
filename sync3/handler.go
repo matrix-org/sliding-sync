@@ -59,7 +59,13 @@ func NewSync3Handler(v2Client sync2.Client, postgresDBURI string) (*SyncLiveHand
 		return nil, fmt.Errorf("failed to load dispatcher: %s", err)
 	}
 	sh.dispatcher.Register(DispatcherAllUsers, sh.globalCache)
-	if err := sh.globalCache.Startup(sh.Storage); err != nil {
+
+	// every room will be present here
+	roomIDToMetadata, err := store.MetadataForAllRooms()
+	if err != nil {
+		return nil, fmt.Errorf("could not get metadata for all rooms: %s", err)
+	}
+	if err := sh.globalCache.Startup(roomIDToMetadata); err != nil {
 		return nil, fmt.Errorf("failed to populate global cache: %s", err)
 	}
 

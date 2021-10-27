@@ -10,13 +10,14 @@ import (
 	"time"
 
 	"github.com/matrix-org/gomatrixserverlib"
+	"github.com/matrix-org/sync-v3/internal"
 	"github.com/matrix-org/sync-v3/testutils"
 )
 
-func newSortableRoom(roomID string, lastMsgTimestamp gomatrixserverlib.Timestamp) SortableRoom {
-	return SortableRoom{
+func newRoomMetadata(roomID string, lastMsgTimestamp gomatrixserverlib.Timestamp) internal.RoomMetadata {
+	return internal.RoomMetadata{
 		RoomID:               roomID,
-		Name:                 "Room " + roomID,
+		NameEvent:            "Room " + roomID,
 		LastMessageTimestamp: uint64(lastMsgTimestamp),
 	}
 }
@@ -43,9 +44,9 @@ func TestConnStateInitial(t *testing.T) {
 	userID := "@TestConnStateInitial_alice:localhost"
 	timestampNow := gomatrixserverlib.Timestamp(1632131678061).Time()
 	// initial sort order B, C, A
-	roomA := newSortableRoom("!a:localhost", gomatrixserverlib.AsTimestamp(timestampNow.Add(-8*time.Second)))
-	roomB := newSortableRoom("!b:localhost", gomatrixserverlib.AsTimestamp(timestampNow))
-	roomC := newSortableRoom("!c:localhost", gomatrixserverlib.AsTimestamp(timestampNow.Add(-4*time.Second)))
+	roomA := newRoomMetadata("!a:localhost", gomatrixserverlib.AsTimestamp(timestampNow.Add(-8*time.Second)))
+	roomB := newRoomMetadata("!b:localhost", gomatrixserverlib.AsTimestamp(timestampNow))
+	roomC := newRoomMetadata("!c:localhost", gomatrixserverlib.AsTimestamp(timestampNow.Add(-4*time.Second)))
 	timeline := map[string]json.RawMessage{
 		roomA.RoomID: testutils.NewEvent(t, "m.room.message", userID, map[string]interface{}{"body": "a"}, time.Now()),
 		roomB.RoomID: testutils.NewEvent(t, "m.room.message", userID, map[string]interface{}{"body": "b"}, time.Now()),
@@ -59,8 +60,8 @@ func TestConnStateInitial(t *testing.T) {
 	dispatcher.jrt.UserJoinedRoom(userID, roomA.RoomID)
 	dispatcher.jrt.UserJoinedRoom(userID, roomB.RoomID)
 	dispatcher.jrt.UserJoinedRoom(userID, roomC.RoomID)
-	globalCache.LoadJoinedRoomsOverride = func(userID string) (pos int64, joinedRooms []SortableRoom, err error) {
-		return 1, []SortableRoom{
+	globalCache.LoadJoinedRoomsOverride = func(userID string) (pos int64, joinedRooms []internal.RoomMetadata, err error) {
+		return 1, []internal.RoomMetadata{
 			roomA, roomB, roomC,
 		}, nil
 	}
@@ -98,17 +99,17 @@ func TestConnStateInitial(t *testing.T) {
 				Rooms: []Room{
 					{
 						RoomID:   roomB.RoomID,
-						Name:     roomB.Name,
+						Name:     roomB.NameEvent,
 						Timeline: []json.RawMessage{timeline[roomB.RoomID]},
 					},
 					{
 						RoomID:   roomC.RoomID,
-						Name:     roomC.Name,
+						Name:     roomC.NameEvent,
 						Timeline: []json.RawMessage{timeline[roomC.RoomID]},
 					},
 					{
 						RoomID:   roomA.RoomID,
-						Name:     roomA.Name,
+						Name:     roomA.NameEvent,
 						Timeline: []json.RawMessage{timeline[roomA.RoomID]},
 					},
 				},
@@ -185,16 +186,16 @@ func TestConnStateMultipleRanges(t *testing.T) {
 	}
 	userID := "@TestConnStateMultipleRanges_alice:localhost"
 	timestampNow := gomatrixserverlib.Timestamp(1632131678061)
-	var rooms []SortableRoom
+	var rooms []internal.RoomMetadata
 	var roomIDs []string
 	globalCache := NewGlobalCache(nil)
 	dispatcher := NewDispatcher()
-	roomIDToRoom := make(map[string]SortableRoom)
+	roomIDToRoom := make(map[string]internal.RoomMetadata)
 	for i := int64(0); i < 10; i++ {
 		roomID := fmt.Sprintf("!%d:localhost", i)
-		room := SortableRoom{
-			RoomID: roomID,
-			Name:   fmt.Sprintf("Room %d", i),
+		room := internal.RoomMetadata{
+			RoomID:    roomID,
+			NameEvent: fmt.Sprintf("Room %d", i),
 			// room 1 is most recent, 10 is least recent
 			LastMessageTimestamp: uint64(uint64(timestampNow) - uint64(i*1000)),
 		}
@@ -204,7 +205,7 @@ func TestConnStateMultipleRanges(t *testing.T) {
 		globalCache.AssignRoom(room)
 		dispatcher.jrt.UserJoinedRoom(userID, roomID)
 	}
-	globalCache.LoadJoinedRoomsOverride = func(userID string) (pos int64, joinedRooms []SortableRoom, err error) {
+	globalCache.LoadJoinedRoomsOverride = func(userID string) (pos int64, joinedRooms []internal.RoomMetadata, err error) {
 		return 1, rooms, nil
 	}
 	userCache := NewUserCache(userID, globalCache, nil)
@@ -357,10 +358,10 @@ func TestBumpToOutsideRange(t *testing.T) {
 	}
 	userID := "@TestBumpToOutsideRange_alice:localhost"
 	timestampNow := gomatrixserverlib.Timestamp(1632131678061)
-	roomA := newSortableRoom("!a:localhost", timestampNow)
-	roomB := newSortableRoom("!b:localhost", timestampNow-1000)
-	roomC := newSortableRoom("!c:localhost", timestampNow-2000)
-	roomD := newSortableRoom("!d:localhost", timestampNow-3000)
+	roomA := newRoomMetadata("!a:localhost", timestampNow)
+	roomB := newRoomMetadata("!b:localhost", timestampNow-1000)
+	roomC := newRoomMetadata("!c:localhost", timestampNow-2000)
+	roomD := newRoomMetadata("!d:localhost", timestampNow-3000)
 	globalCache := NewGlobalCache(nil)
 	globalCache.AssignRoom(roomA)
 	globalCache.AssignRoom(roomB)
@@ -371,8 +372,8 @@ func TestBumpToOutsideRange(t *testing.T) {
 	dispatcher.jrt.UserJoinedRoom(userID, roomB.RoomID)
 	dispatcher.jrt.UserJoinedRoom(userID, roomC.RoomID)
 	dispatcher.jrt.UserJoinedRoom(userID, roomD.RoomID)
-	globalCache.LoadJoinedRoomsOverride = func(userID string) (pos int64, joinedRooms []SortableRoom, err error) {
-		return 1, []SortableRoom{
+	globalCache.LoadJoinedRoomsOverride = func(userID string) (pos int64, joinedRooms []internal.RoomMetadata, err error) {
+		return 1, []internal.RoomMetadata{
 			roomA, roomB, roomC, roomD,
 		}, nil
 	}
@@ -440,10 +441,10 @@ func TestConnStateRoomSubscriptions(t *testing.T) {
 	}
 	userID := "@TestConnStateRoomSubscriptions_alice:localhost"
 	timestampNow := gomatrixserverlib.Timestamp(1632131678061)
-	roomA := newSortableRoom("!a:localhost", timestampNow)
-	roomB := newSortableRoom("!b:localhost", gomatrixserverlib.Timestamp(timestampNow-1000))
-	roomC := newSortableRoom("!c:localhost", gomatrixserverlib.Timestamp(timestampNow-2000))
-	roomD := newSortableRoom("!d:localhost", gomatrixserverlib.Timestamp(timestampNow-3000))
+	roomA := newRoomMetadata("!a:localhost", timestampNow)
+	roomB := newRoomMetadata("!b:localhost", gomatrixserverlib.Timestamp(timestampNow-1000))
+	roomC := newRoomMetadata("!c:localhost", gomatrixserverlib.Timestamp(timestampNow-2000))
+	roomD := newRoomMetadata("!d:localhost", gomatrixserverlib.Timestamp(timestampNow-3000))
 	roomIDs := []string{roomA.RoomID, roomB.RoomID, roomC.RoomID, roomD.RoomID}
 	globalCache := NewGlobalCache(nil)
 	globalCache.AssignRoom(roomA)
@@ -461,8 +462,8 @@ func TestConnStateRoomSubscriptions(t *testing.T) {
 		roomC.RoomID: testutils.NewEvent(t, "m.room.message", userID, map[string]interface{}{"body": "c"}, time.Now()),
 		roomD.RoomID: testutils.NewEvent(t, "m.room.message", userID, map[string]interface{}{"body": "d"}, time.Now()),
 	}
-	globalCache.LoadJoinedRoomsOverride = func(userID string) (pos int64, joinedRooms []SortableRoom, err error) {
-		return 1, []SortableRoom{
+	globalCache.LoadJoinedRoomsOverride = func(userID string) (pos int64, joinedRooms []internal.RoomMetadata, err error) {
+		return 1, []internal.RoomMetadata{
 			roomA, roomB, roomC, roomD,
 		}, nil
 	}
@@ -501,7 +502,7 @@ func TestConnStateRoomSubscriptions(t *testing.T) {
 		RoomSubscriptions: map[string]Room{
 			roomD.RoomID: {
 				RoomID: roomD.RoomID,
-				Name:   roomD.Name,
+				Name:   roomD.NameEvent,
 				Timeline: []json.RawMessage{
 					timeline[roomD.RoomID],
 				},
@@ -514,14 +515,14 @@ func TestConnStateRoomSubscriptions(t *testing.T) {
 				Rooms: []Room{
 					{
 						RoomID: roomA.RoomID,
-						Name:   roomA.Name,
+						Name:   roomA.NameEvent,
 						Timeline: []json.RawMessage{
 							timeline[roomA.RoomID],
 						},
 					},
 					{
 						RoomID: roomB.RoomID,
-						Name:   roomB.Name,
+						Name:   roomB.NameEvent,
 						Timeline: []json.RawMessage{
 							timeline[roomB.RoomID],
 						},
@@ -579,7 +580,7 @@ func TestConnStateRoomSubscriptions(t *testing.T) {
 		RoomSubscriptions: map[string]Room{
 			roomC.RoomID: {
 				RoomID: roomC.RoomID,
-				Name:   roomC.Name,
+				Name:   roomC.NameEvent,
 				Timeline: []json.RawMessage{
 					timeline[roomC.RoomID],
 				},

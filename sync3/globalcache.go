@@ -8,20 +8,16 @@ import (
 	"github.com/matrix-org/gomatrixserverlib"
 	"github.com/matrix-org/sync-v3/internal"
 	"github.com/matrix-org/sync-v3/state"
-	"github.com/tidwall/gjson"
 )
 
 type GlobalCache struct {
-	LoadJoinedRoomsOverride func(userID string) (pos int64, joinedRooms []SortableRoom, err error)
+	LoadJoinedRoomsOverride func(userID string) (pos int64, joinedRooms []internal.RoomMetadata, err error)
 
 	// inserts are done by v2 poll loops, selects are done by v3 request threads
 	// there are lots of overlapping keys as many users (threads) can be joined to the same room (key)
 	// hence you must lock this with `mu` before r/w
-	globalRoomInfo   map[string]*SortableRoom
-	globalRoomInfoMu *sync.RWMutex
-
-	// TODO: keep this updated with live events
-	roomIDToHeroInfo map[string]internal.HeroInfo
+	roomIDToMetadata   map[string]*internal.RoomMetadata
+	roomIDToMetadataMu *sync.RWMutex
 
 	// for loading room state not held in-memory
 	store *state.Storage
@@ -31,31 +27,31 @@ type GlobalCache struct {
 
 func NewGlobalCache(store *state.Storage) *GlobalCache {
 	return &GlobalCache{
-		globalRoomInfo:   make(map[string]*SortableRoom),
-		globalRoomInfoMu: &sync.RWMutex{},
-		store:            store,
-		roomIDToHeroInfo: make(map[string]internal.HeroInfo),
+		roomIDToMetadataMu: &sync.RWMutex{},
+		store:              store,
+		roomIDToMetadata:   make(map[string]*internal.RoomMetadata),
 	}
 }
 
-func (c *GlobalCache) LoadRoom(roomID string) *SortableRoom {
-	c.globalRoomInfoMu.RLock()
-	defer c.globalRoomInfoMu.RUnlock()
-	sr := c.globalRoomInfo[roomID]
+func (c *GlobalCache) LoadRoom(roomID string) *internal.RoomMetadata {
+	c.roomIDToMetadataMu.RLock()
+	defer c.roomIDToMetadataMu.RUnlock()
+	sr := c.roomIDToMetadata[roomID]
 	if sr == nil {
+		logger.Error().Str("room", roomID).Msg("GlobalCache.LoadRoom: no metadata for this room")
 		return nil
 	}
 	srCopy := *sr
 	return &srCopy
 }
 
-func (c *GlobalCache) AssignRoom(r SortableRoom) {
-	c.globalRoomInfoMu.Lock()
-	defer c.globalRoomInfoMu.Unlock()
-	c.globalRoomInfo[r.RoomID] = &r
+func (c *GlobalCache) AssignRoom(r internal.RoomMetadata) {
+	c.roomIDToMetadataMu.Lock()
+	defer c.roomIDToMetadataMu.Unlock()
+	c.roomIDToMetadata[r.RoomID] = &r
 }
 
-func (c *GlobalCache) LoadJoinedRooms(userID string) (pos int64, joinedRooms []SortableRoom, err error) {
+func (c *GlobalCache) LoadJoinedRooms(userID string) (pos int64, joinedRooms []internal.RoomMetadata, err error) {
 	if c.LoadJoinedRoomsOverride != nil {
 		return c.LoadJoinedRoomsOverride(userID)
 	}
@@ -67,7 +63,7 @@ func (c *GlobalCache) LoadJoinedRooms(userID string) (pos int64, joinedRooms []S
 	if err != nil {
 		return 0, nil, err
 	}
-	rooms := make([]SortableRoom, len(joinedRoomIDs))
+	rooms := make([]internal.RoomMetadata, len(joinedRoomIDs))
 	for i, roomID := range joinedRoomIDs {
 		rooms[i] = *c.LoadRoom(roomID)
 	}
@@ -121,74 +117,43 @@ func (c *GlobalCache) LoadRoomState(roomID string, loadPosition int64, requiredS
 	return result
 }
 
-// Startup will populate the cache by reading the database.
+// Startup will populate the cache with the provided metadata.
 // Must be called prior to starting any v2 pollers else this operation can race. Consider:
 //   - V2 poll loop started early
 //   - Join event arrives, NID=50
 //   - PopulateGlobalCache loads the latest NID=50, processes this join event in the process
 //   - OnNewEvents is called with the join event
 //   - join event is processed twice.
-func (c *GlobalCache) Startup(store *state.Storage) error {
-	latestEvents, err := store.SelectLatestEventInAllRooms()
-	if err != nil {
-		return fmt.Errorf("failed to load latest event for all rooms: %s", err)
+func (c *GlobalCache) Startup(roomIDToMetadata map[string]internal.RoomMetadata) error {
+	for roomID, metadata := range roomIDToMetadata {
+		fmt.Printf("Room: %s - %s - %s \n", roomID, metadata.NameEvent, gomatrixserverlib.Timestamp(metadata.LastMessageTimestamp).Time())
+		c.AssignRoom(metadata)
 	}
-	// every room will be present here
-	for _, ev := range latestEvents {
-		room := &SortableRoom{
-			RoomID: ev.RoomID,
-		}
-		room.LastMessageTimestamp = gjson.ParseBytes(ev.JSON).Get("origin_server_ts").Uint()
-		c.AssignRoom(*room)
-	}
-	//roomIDToHeroInfo, err := store.HeroInfoForAllRooms()
-	// load state events we care about for sync v3
-	roomIDToStateEvents, err := store.CurrentStateEventsInAllRooms([]string{
-		"m.room.name", "m.room.canonical_alias",
-	})
-	if err != nil {
-		return fmt.Errorf("failed to load state events for all rooms: %s", err)
-	}
-	for roomID, stateEvents := range roomIDToStateEvents {
-		room := c.LoadRoom(roomID)
-		if room == nil {
-			return fmt.Errorf("room %s has no latest event but does have state; this should be impossible", roomID)
-		}
-		for _, ev := range stateEvents {
-			if ev.Type == "m.room.name" && ev.StateKey == "" {
-				room.Name = gjson.ParseBytes(ev.JSON).Get("content.name").Str
-			} else if ev.Type == "m.room.canonical_alias" && ev.StateKey == "" && room.Name == "" {
-				room.Name = gjson.ParseBytes(ev.JSON).Get("content.alias").Str
-			}
-		}
-		c.AssignRoom(*room)
-		fmt.Printf("Room: %s - %s - %s \n", room.RoomID, room.Name, gomatrixserverlib.Timestamp(room.LastMessageTimestamp).Time())
-	}
-
 	return nil
 }
 
 // =================================================
-// Listener function called dispatcher below
+// Listener function called by dispatcher below
 // =================================================
 
 func (c *GlobalCache) OnNewEvent(
 	ed *EventData,
 ) {
 	// update global state
-	c.globalRoomInfoMu.Lock()
-	defer c.globalRoomInfoMu.Unlock()
-	globalRoom := c.globalRoomInfo[ed.roomID]
-	if globalRoom == nil {
-		globalRoom = &SortableRoom{
+	c.roomIDToMetadataMu.Lock()
+	defer c.roomIDToMetadataMu.Unlock()
+	metadata := c.roomIDToMetadata[ed.roomID]
+	if metadata == nil {
+		metadata = &internal.RoomMetadata{
 			RoomID: ed.roomID,
 		}
 	}
 	if ed.eventType == "m.room.name" && ed.stateKey != nil && *ed.stateKey == "" {
-		globalRoom.Name = ed.content.Get("name").Str
-	} else if ed.eventType == "m.room.canonical_alias" && ed.stateKey != nil && *ed.stateKey == "" && globalRoom.Name == "" {
-		globalRoom.Name = ed.content.Get("alias").Str
+		metadata.NameEvent = ed.content.Get("name").Str
+	} else if ed.eventType == "m.room.canonical_alias" && ed.stateKey != nil && *ed.stateKey == "" {
+		metadata.CanonicalAlias = ed.content.Get("alias").Str
 	}
-	globalRoom.LastMessageTimestamp = ed.timestamp
-	c.globalRoomInfo[globalRoom.RoomID] = globalRoom
+	metadata.LastMessageTimestamp = ed.timestamp
+	// TODO: heroes; invite, join count
+	c.roomIDToMetadata[ed.roomID] = metadata
 }
