@@ -261,53 +261,61 @@ func (h *SyncLiveHandler) userCache(userID string) (*UserCache, error) {
 }
 
 // Called from the v2 poller, implements V2DataReceiver
-func (h *SyncLiveHandler) UpdateDeviceSince(deviceID, since string) error {
-	return h.V2Store.UpdateDeviceSince(deviceID, since)
+func (h *SyncLiveHandler) UpdateDeviceSince(deviceID, since string) {
+	err := h.V2Store.UpdateDeviceSince(deviceID, since)
+	if err != nil {
+		logger.Err(err).Str("device", deviceID).Str("since", since).Msg("V2: failed to persist since token")
+	}
 }
 
 // Called from the v2 poller, implements V2DataReceiver
-func (h *SyncLiveHandler) Accumulate(roomID string, timeline []json.RawMessage) error {
+func (h *SyncLiveHandler) Accumulate(roomID string, timeline []json.RawMessage) {
 	numNew, latestPos, err := h.Storage.Accumulate(roomID, timeline)
 	if err != nil {
-		return err
+		logger.Err(err).Int("timeline", len(timeline)).Str("room", roomID).Msg("V2: failed to accumulate room")
+		return
 	}
 	if numNew == 0 {
 		// no new events
-		return nil
+		return
 	}
 	newEvents := timeline[len(timeline)-numNew:]
 
 	// we have new events, notify active connections
 	h.dispatcher.OnNewEvents(roomID, newEvents, latestPos)
-	return err
 }
 
 // Called from the v2 poller, implements V2DataReceiver
-func (h *SyncLiveHandler) Initialise(roomID string, state []json.RawMessage) error {
+func (h *SyncLiveHandler) Initialise(roomID string, state []json.RawMessage) {
 	added, err := h.Storage.Initialise(roomID, state)
 	if err != nil {
-		return err
+		logger.Err(err).Int("state", len(state)).Str("room", roomID).Msg("V2: failed to initialise room")
+		return
 	}
 	if !added {
 		// no new events
-		return nil
+		return
 	}
 	// we have new events, notify active connections
 	h.dispatcher.OnNewEvents(roomID, state, 0)
-	return err
 }
 
 // Called from the v2 poller, implements V2DataReceiver
-func (h *SyncLiveHandler) SetTyping(roomID string, userIDs []string) (int64, error) {
-	return h.Storage.TypingTable.SetTyping(roomID, userIDs)
+func (h *SyncLiveHandler) SetTyping(roomID string, userIDs []string) {
+	_, err := h.Storage.TypingTable.SetTyping(roomID, userIDs)
+	if err != nil {
+		logger.Err(err).Strs("users", userIDs).Str("room", roomID).Msg("V2: failed to store typing")
+	}
 }
 
 // Called from the v2 poller, implements V2DataReceiver
 // Add messages for this device. If an error is returned, the poll loop is terminated as continuing
 // would implicitly acknowledge these messages.
-func (h *SyncLiveHandler) AddToDeviceMessages(userID, deviceID string, msgs []gomatrixserverlib.SendToDeviceEvent) error {
+func (h *SyncLiveHandler) AddToDeviceMessages(userID, deviceID string, msgs []gomatrixserverlib.SendToDeviceEvent) {
 	_, err := h.Storage.ToDeviceTable.InsertMessages(deviceID, msgs)
-	return err
+	if err != nil {
+		logger.Err(err).Str("user", userID).Str("device", deviceID).Int("msgs", len(msgs)).Msg("V2: failed to store to-device messages")
+	}
 }
 
 func (h *SyncLiveHandler) UpdateUnreadCounts(roomID, userID string, highlightCount, notifCount *int) {

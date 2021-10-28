@@ -225,23 +225,18 @@ type mockDataReceiver struct {
 	deviceIDToSince map[string]string
 }
 
-func (a *mockDataReceiver) Accumulate(roomID string, timeline []json.RawMessage) error {
+func (a *mockDataReceiver) Accumulate(roomID string, timeline []json.RawMessage) {
 	a.timelines[roomID] = append(a.timelines[roomID], timeline...)
-	return nil
 }
-func (a *mockDataReceiver) Initialise(roomID string, state []json.RawMessage) error {
+func (a *mockDataReceiver) Initialise(roomID string, state []json.RawMessage) {
 	a.states[roomID] = state
-	return nil
 }
-func (a *mockDataReceiver) SetTyping(roomID string, userIDs []string) (int64, error) {
-	return 0, nil
+func (a *mockDataReceiver) SetTyping(roomID string, userIDs []string) {
 }
-func (s *mockDataReceiver) UpdateDeviceSince(deviceID, since string) error {
+func (s *mockDataReceiver) UpdateDeviceSince(deviceID, since string) {
 	s.deviceIDToSince[deviceID] = since
-	return nil
 }
-func (s *mockDataReceiver) AddToDeviceMessages(userID, deviceID string, msgs []gomatrixserverlib.SendToDeviceEvent) error {
-	return nil
+func (s *mockDataReceiver) AddToDeviceMessages(userID, deviceID string, msgs []gomatrixserverlib.SendToDeviceEvent) {
 }
 
 func (s *mockDataReceiver) UpdateUnreadCounts(roomID, userID string, highlightCount, notifCount *int) {

@@ -323,6 +323,7 @@ const indexInRange = (i) => {
 
 const doSyncLoop = async(accessToken, sessionId) => {
     console.log("Starting sync loop. Active: ", activeSessionId, " this:", sessionId);
+
     let currentPos;
     let currentError = null;
     let currentSub = "";

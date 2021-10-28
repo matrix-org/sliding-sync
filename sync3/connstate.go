@@ -182,7 +182,7 @@ func (s *ConnState) onIncomingRequest(ctx context.Context, req *Request) (*Respo
 				break blockloop
 			case <-time.After(10 * time.Second): // TODO configurable
 				break blockloop
-			case updateEvent := <-s.updateEvents:
+			case updateEvent := <-s.updateEvents: // TODO: keep reading until it is empty before responding.
 				if updateEvent.latestPos > s.loadPosition {
 					s.loadPosition = updateEvent.latestPos
 				}
