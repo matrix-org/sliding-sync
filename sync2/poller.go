@@ -106,19 +106,31 @@ func (h *PollerMap) UpdateDeviceSince(deviceID, since string) {
 	h.callbacks.UpdateDeviceSince(deviceID, since)
 }
 func (h *PollerMap) Accumulate(roomID string, timeline []json.RawMessage) {
+	var wg sync.WaitGroup
+	wg.Add(1)
 	h.executor <- func() {
 		h.callbacks.Accumulate(roomID, timeline)
+		wg.Done()
 	}
+	wg.Wait()
 }
 func (h *PollerMap) Initialise(roomID string, state []json.RawMessage) {
+	var wg sync.WaitGroup
+	wg.Add(1)
 	h.executor <- func() {
 		h.callbacks.Initialise(roomID, state)
+		wg.Done()
 	}
+	wg.Wait()
 }
 func (h *PollerMap) SetTyping(roomID string, userIDs []string) {
+	var wg sync.WaitGroup
+	wg.Add(1)
 	h.executor <- func() {
 		h.callbacks.SetTyping(roomID, userIDs)
+		wg.Done()
 	}
+	wg.Wait()
 }
 
 // Add messages for this device. If an error is returned, the poll loop is terminated as continuing
@@ -128,9 +140,13 @@ func (h *PollerMap) AddToDeviceMessages(userID, deviceID string, msgs []gomatrix
 }
 
 func (h *PollerMap) UpdateUnreadCounts(roomID, userID string, highlightCount, notifCount *int) {
+	var wg sync.WaitGroup
+	wg.Add(1)
 	h.executor <- func() {
 		h.callbacks.UpdateUnreadCounts(roomID, userID, highlightCount, notifCount)
+		wg.Done()
 	}
+	wg.Wait()
 }
 
 // Poller can automatically poll the sync v2 endpoint and accumulate the responses in storage
