@@ -8,6 +8,7 @@ import (
 	"github.com/matrix-org/gomatrixserverlib"
 	"github.com/matrix-org/sync-v3/internal"
 	"github.com/matrix-org/sync-v3/state"
+	"github.com/tidwall/gjson"
 )
 
 type GlobalCache struct {
@@ -148,12 +149,31 @@ func (c *GlobalCache) OnNewEvent(
 			RoomID: ed.roomID,
 		}
 	}
-	if ed.eventType == "m.room.name" && ed.stateKey != nil && *ed.stateKey == "" {
-		metadata.NameEvent = ed.content.Get("name").Str
-	} else if ed.eventType == "m.room.canonical_alias" && ed.stateKey != nil && *ed.stateKey == "" {
-		metadata.CanonicalAlias = ed.content.Get("alias").Str
+	switch ed.eventType {
+	case "m.room.name":
+		if ed.stateKey != nil && *ed.stateKey == "" {
+			metadata.NameEvent = ed.content.Get("name").Str
+		}
+	case "m.room.canonical_alias":
+		if ed.stateKey != nil && *ed.stateKey == "" {
+			metadata.CanonicalAlias = ed.content.Get("alias").Str
+		}
+	case "m.room.member":
+		if ed.stateKey != nil {
+			membership := ed.content.Get("membership").Str
+			if membership == "invite" {
+				metadata.InviteCount += 1
+			} else if membership == "join" {
+				metadata.JoinCount += 1
+			} else if membership == "leave" || membership == "ban" {
+				metadata.JoinCount -= 1
+			}
+			if gjson.ParseBytes(ed.event).Get("unsigned.prev_content.membership").Str == "invite" {
+				metadata.InviteCount -= 1
+			}
+		}
 	}
 	metadata.LastMessageTimestamp = ed.timestamp
-	// TODO: heroes; invite, join count
+	// TODO: heroes
 	c.roomIDToMetadata[ed.roomID] = metadata
 }
