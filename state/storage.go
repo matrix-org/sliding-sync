@@ -197,16 +197,6 @@ func (s *Storage) Initialise(roomID string, state []json.RawMessage) (bool, erro
 	return s.accumulator.Initialise(roomID, state)
 }
 
-func (s *Storage) LatestEventInRoom(roomID string, pos int64) (*Event, error) {
-	var err error
-	var ev *Event
-	err = sqlutil.WithTransaction(s.accumulator.db, func(txn *sqlx.Tx) error {
-		ev, err = s.accumulator.eventsTable.SelectLatestEventInRoom(txn, roomID, pos)
-		return err
-	})
-	return ev, err
-}
-
 func (s *Storage) RoomStateAfterEventPosition(roomID string, pos int64, eventTypes ...string) (events []Event, err error) {
 	err = sqlutil.WithTransaction(s.accumulator.db, func(txn *sqlx.Tx) error {
 		lastEventNID, replacesNID, snapID, err := s.accumulator.eventsTable.BeforeStateSnapshotIDForEventNID(txn, roomID, pos)
