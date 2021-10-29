@@ -133,13 +133,14 @@ func (s *Storage) MetadataForAllRooms() (map[string]internal.RoomMetadata, error
 		SELECT room_id, event, rank() OVER (
 			PARTITION BY room_id ORDER BY event_nid DESC
 		) FROM syncv3_events WHERE (
-			membership='join' OR (membership='_join' AND before_state_snapshot_id=0)
+			membership='join' OR membership='invite' OR (membership='_join' AND before_state_snapshot_id=0)
 		) AND event_type='m.room.member'
 	) rf WHERE rank <= 6`)
 	if err != nil {
 		return nil, fmt.Errorf("failed to query heroes: %s", err)
 	}
 	defer rows.Close()
+	seen := map[string]bool{}
 	for rows.Next() {
 		var roomID string
 		var event json.RawMessage
@@ -148,9 +149,15 @@ func (s *Storage) MetadataForAllRooms() (map[string]internal.RoomMetadata, error
 			return nil, err
 		}
 		ev := gjson.ParseBytes(event)
+		targetUser := ev.Get("state_key").Str
+		key := roomID + " " + targetUser
+		if seen[key] {
+			continue
+		}
+		seen[key] = true
 		metadata := result[roomID]
 		metadata.Heroes = append(metadata.Heroes, internal.Hero{
-			ID:   ev.Get("state_key").Str,
+			ID:   targetUser,
 			Name: ev.Get("content.displayname").Str,
 		})
 		result[roomID] = metadata
