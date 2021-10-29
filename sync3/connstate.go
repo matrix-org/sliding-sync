@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"reflect"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/matrix-org/sync-v3/internal"
@@ -16,6 +17,21 @@ var (
 	// will trip the connection knifing.
 	MaxPendingEventUpdates = 200
 )
+
+type RoomConnMetadata struct {
+	internal.RoomMetadata
+
+	CanonicalisedName string // stripped leading symbols like #, all in lower case
+}
+
+type SortableRooms []RoomConnMetadata
+
+func (s SortableRooms) Len() int64 {
+	return int64(len(s))
+}
+func (s SortableRooms) Subslice(i, j int64) Subslicer {
+	return s[i:j]
+}
 
 // ConnState tracks all high-level connection state for this connection, like the combined request
 // and the underlying sorted room list. It doesn't track session IDs or positions of the connection.
@@ -65,19 +81,36 @@ func (s *ConnState) load(req *Request) error {
 	if err != nil {
 		return err
 	}
+	rooms := make([]RoomConnMetadata, len(joinedRooms))
+	for i := range joinedRooms {
+		metadata := joinedRooms[i]
+		metadata.RemoveHero(s.userID)
+		rooms[i] = RoomConnMetadata{
+			RoomMetadata: metadata,
+			CanonicalisedName: strings.ToLower(
+				strings.Trim(internal.CalculateRoomName(&metadata, 5), "#!()):_"),
+			),
+		}
+	}
 
 	s.loadPosition = initialLoadPosition
-	s.sortedJoinedRooms = joinedRooms
+	s.sortedJoinedRooms = rooms
 	s.sort(req.Sort)
 
 	return nil
 }
 
 func (s *ConnState) sort(sortBy []string) {
-	// TODO: read sortBy, for now we always sort by most recent timestamp
-	sort.SliceStable(s.sortedJoinedRooms, func(i, j int) bool {
-		return s.sortedJoinedRooms[i].LastMessageTimestamp > s.sortedJoinedRooms[j].LastMessageTimestamp
-	})
+	if len(sortBy) == 1 && sortBy[0] == SortByName {
+		sort.SliceStable(s.sortedJoinedRooms, func(i, j int) bool {
+			return s.sortedJoinedRooms[i].CanonicalisedName < s.sortedJoinedRooms[j].CanonicalisedName
+		})
+	} else {
+		// sort by most recent timestamp
+		sort.SliceStable(s.sortedJoinedRooms, func(i, j int) bool {
+			return s.sortedJoinedRooms[i].LastMessageTimestamp > s.sortedJoinedRooms[j].LastMessageTimestamp
+		})
+	}
 	for i := range s.sortedJoinedRooms {
 		s.sortedJoinedRoomsPositions[s.sortedJoinedRooms[i].RoomID] = i
 	}
@@ -192,7 +225,7 @@ func (s *ConnState) onIncomingRequest(ctx context.Context, req *Request) (*Respo
 				// TODO: Implement sorting by something other than recency. With recency sorting,
 				// most operations are DELETE/INSERT to bump rooms to the top of the list. We only
 				// do an UPDATE if the most recent room gets a 2nd event.
-				var targetRoom internal.RoomMetadata
+				var targetRoom RoomConnMetadata
 				fromIndex, ok := s.sortedJoinedRoomsPositions[updateEvent.roomID]
 				var lastTimestamp uint64
 				if !ok {
@@ -200,8 +233,15 @@ func (s *ConnState) onIncomingRequest(ctx context.Context, req *Request) (*Respo
 					fromIndex = len(s.sortedJoinedRooms)
 					newRoom := s.globalCache.LoadRoom(updateEvent.roomID)
 					newRoom.LastMessageTimestamp = updateEvent.timestamp
-					s.sortedJoinedRooms = append(s.sortedJoinedRooms, *newRoom)
-					targetRoom = *newRoom
+					newRoom.RemoveHero(s.userID)
+					newRoomConn := RoomConnMetadata{
+						RoomMetadata: *newRoom,
+						CanonicalisedName: strings.ToLower(
+							strings.Trim(internal.CalculateRoomName(newRoom, 5), "#!()):_"),
+						),
+					}
+					s.sortedJoinedRooms = append(s.sortedJoinedRooms, newRoomConn)
+					targetRoom = newRoomConn
 				} else {
 					targetRoom = s.sortedJoinedRooms[fromIndex]
 					lastTimestamp = targetRoom.LastMessageTimestamp
@@ -209,7 +249,7 @@ func (s *ConnState) onIncomingRequest(ctx context.Context, req *Request) (*Respo
 					s.sortedJoinedRooms[fromIndex] = targetRoom
 				}
 				// re-sort
-				s.sort(nil)
+				s.sort(s.muxedReq.Sort)
 
 				isSubscribedToRoom := false
 				if _, ok := s.roomSubscriptions[updateEvent.roomID]; ok {
@@ -309,15 +349,7 @@ func (s *ConnState) getInitialRoomData(roomIDs ...string) []Room {
 	for i, roomID := range roomIDs {
 		userRoomData := roomIDToUserRoomData[roomID]
 		metadata := s.globalCache.LoadRoom(roomID)
-		// remove our own hero if it exists
-		var heroes []internal.Hero
-		for _, h := range metadata.Heroes {
-			if h.ID == s.userID {
-				continue
-			}
-			heroes = append(heroes, h)
-		}
-		metadata.Heroes = heroes
+		metadata.RemoveHero(s.userID)
 
 		rooms[i] = Room{
 			RoomID:            roomID,

@@ -16,6 +16,15 @@ type RoomMetadata struct {
 	LastMessageTimestamp uint64
 }
 
+func (m *RoomMetadata) RemoveHero(userID string) {
+	for i, h := range m.Heroes {
+		if h.ID == userID {
+			m.Heroes = append(m.Heroes[0:i], m.Heroes[i+1:]...)
+			return
+		}
+	}
+}
+
 type Hero struct {
 	ID   string
 	Name string
