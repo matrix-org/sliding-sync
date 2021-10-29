@@ -212,7 +212,7 @@ type mockClient struct {
 	fn func(authHeader, since string) (*SyncResponse, int, error)
 }
 
-func (c *mockClient) DoSyncV2(authHeader, since string) (*SyncResponse, int, error) {
+func (c *mockClient) DoSyncV2(authHeader, since string, isFirst bool) (*SyncResponse, int, error) {
 	return c.fn(authHeader, since)
 }
 func (c *mockClient) WhoAmI(authHeader string) (string, error) {

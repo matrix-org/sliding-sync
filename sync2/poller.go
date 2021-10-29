@@ -187,7 +187,7 @@ func (p *Poller) Poll(since string, callback func()) {
 			p.logger.Warn().Str("duration", waitTime.String()).Msg("Poller: waiting before next poll")
 			timeSleep(waitTime)
 		}
-		resp, statusCode, err := p.client.DoSyncV2(p.authorizationHeader, since)
+		resp, statusCode, err := p.client.DoSyncV2(p.authorizationHeader, since, firstTime)
 		if err != nil {
 			// check if temporary
 			if statusCode != 401 {

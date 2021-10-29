@@ -12,7 +12,7 @@ import (
 
 type Client interface {
 	WhoAmI(authHeader string) (string, error)
-	DoSyncV2(authHeader, since string) (*SyncResponse, int, error)
+	DoSyncV2(authHeader, since string, isFirst bool) (*SyncResponse, int, error)
 }
 
 // HTTPClient represents a Sync v2 Client.
@@ -45,9 +45,14 @@ func (v *HTTPClient) WhoAmI(authHeader string) (string, error) {
 }
 
 // DoSyncV2 performs a sync v2 request. Returns the sync response and the response status code
-// or an error
-func (v *HTTPClient) DoSyncV2(authHeader, since string) (*SyncResponse, int, error) {
-	qps := "?timeout=30000"
+// or an error. Set isFirst=true on the first sync to force a timeout=0 sync to ensure snapiness.
+func (v *HTTPClient) DoSyncV2(authHeader, since string, isFirst bool) (*SyncResponse, int, error) {
+	qps := "?"
+	if isFirst {
+		qps += "timeout=0"
+	} else {
+		qps += "timeout=30000"
+	}
 	if since != "" {
 		qps += "&since=" + since
 	}
