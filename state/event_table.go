@@ -69,6 +69,8 @@ func NewEventTable(db *sqlx.DB) *EventTable {
 	CREATE INDEX IF NOT EXISTS syncv3_events_type_sk_idx ON syncv3_events(event_type, state_key);
 	-- index for querying membership deltas in particular rooms
 	CREATE INDEX IF NOT EXISTS syncv3_events_type_room_nid_idx ON syncv3_events(event_type, room_id, event_nid);
+	-- index for querying events in a given room
+	CREATE INDEX IF NOT EXISTS syncv3_nid_room_idx ON syncv3_events(event_nid, room_id);
 	`)
 	return &EventTable{db}
 }
