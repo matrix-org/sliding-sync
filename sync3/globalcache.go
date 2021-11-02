@@ -172,13 +172,20 @@ func (c *GlobalCache) OnNewEvent(
 				metadata.JoinCount += 1
 			} else if membership == "leave" || membership == "ban" {
 				metadata.JoinCount -= 1
+				// remove this user as a hero
+				metadata.RemoveHero(*ed.stateKey)
 			}
 			if gjson.ParseBytes(ed.event).Get("unsigned.prev_content.membership").Str == "invite" {
 				metadata.InviteCount -= 1
 			}
+			if len(metadata.Heroes) < 6 && (membership == "join" || membership == "invite") {
+				metadata.Heroes = append(metadata.Heroes, internal.Hero{
+					ID:   *ed.stateKey,
+					Name: ed.content.Get("displayname").Str,
+				})
+			}
 		}
 	}
 	metadata.LastMessageTimestamp = ed.timestamp
-	// TODO: heroes
 	c.roomIDToMetadata[ed.roomID] = metadata
 }
