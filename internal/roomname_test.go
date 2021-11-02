@@ -118,6 +118,37 @@ func TestCalculateRoomName(t *testing.T) {
 			},
 			wantRoomName: "Alice and Bob",
 		},
+		// 3-way room, one person invited with no display name
+		{
+			joinedCount:        2,
+			invitedCount:       1,
+			maxNumNamesPerRoom: 3,
+			heroes: []Hero{
+				{
+					ID:   "@alice:localhost",
+					Name: "Alice",
+				},
+				{
+					ID: "@bob:localhost",
+				},
+			},
+			wantRoomName: "Alice and @bob:localhost",
+		},
+		// 3-way room, no display names
+		{
+			joinedCount:        2,
+			invitedCount:       1,
+			maxNumNamesPerRoom: 3,
+			heroes: []Hero{
+				{
+					ID: "@alice:localhost",
+				},
+				{
+					ID: "@bob:localhost",
+				},
+			},
+			wantRoomName: "@alice:localhost and @bob:localhost",
+		},
 		// disambiguation all
 		{
 			joinedCount:        10,
@@ -159,6 +190,22 @@ func TestCalculateRoomName(t *testing.T) {
 				},
 			},
 			wantRoomName: "Alice (@alice:localhost), Bob, Alice (@charlie:localhost) and 6 others",
+		},
+		// disambiguation, faking user IDs as display names
+		{
+			joinedCount:        3,
+			invitedCount:       0,
+			maxNumNamesPerRoom: 3,
+			heroes: []Hero{
+				{
+					ID:   "@evil:localhost",
+					Name: "@alice:localhost",
+				},
+				{
+					ID: "@alice:localhost",
+				},
+			},
+			wantRoomName: "@alice:localhost (@evil:localhost) and @alice:localhost (@alice:localhost)",
 		},
 		// left room
 		{

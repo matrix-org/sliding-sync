@@ -90,18 +90,26 @@ func CalculateRoomName(heroInfo *RoomMetadata, maxNumNamesPerRoom int) string {
 func disambiguate(heroes []Hero) []string {
 	displayNames := make(map[string][]int)
 	for i, h := range heroes {
-		displayNames[h.Name] = append(displayNames[h.Name], i)
+		name := h.Name
+		if name == "" {
+			name = h.ID
+		}
+		displayNames[name] = append(displayNames[name], i)
 	}
 	disambiguatedNames := make([]string, len(heroes))
-	for _, indexes := range displayNames {
+	for name, indexes := range displayNames {
 		if len(indexes) == 1 {
-			disambiguatedNames[indexes[0]] = heroes[indexes[0]].Name
+			disambiguatedNames[indexes[0]] = name
 			continue
 		}
 		// disambiguate all these heroes
 		for _, i := range indexes {
 			h := heroes[i]
-			disambiguatedNames[i] = fmt.Sprintf("%s (%s)", h.Name, h.ID)
+			name := h.Name
+			if name == "" {
+				name = h.ID
+			}
+			disambiguatedNames[i] = fmt.Sprintf("%s (%s)", name, h.ID)
 		}
 	}
 	return disambiguatedNames
