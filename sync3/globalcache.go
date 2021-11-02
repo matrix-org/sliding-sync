@@ -43,6 +43,11 @@ func (c *GlobalCache) LoadRoom(roomID string) *internal.RoomMetadata {
 		return nil
 	}
 	srCopy := *sr
+	// copy the heroes or else we may modify the same slice which would be bad :(
+	srCopy.Heroes = make([]internal.Hero, len(sr.Heroes))
+	for i := range sr.Heroes {
+		srCopy.Heroes[i] = sr.Heroes[i]
+	}
 	return &srCopy
 }
 
