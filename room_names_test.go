@@ -42,7 +42,23 @@ func TestRoomNames(t *testing.T) {
 		{
 			roomID: "!TestRoomNames_empty:localhost",
 			name:   "Empty Room",
-			events: createRoomState(t, alice, latestTimestamp),
+			events: createRoomState(t, alice, latestTimestamp.Add(time.Second)),
+		},
+		{
+			roomID: "!TestRoomNames_dm_name_set_after_join:localhost",
+			name:   "Bob",
+			state: append(createRoomState(t, alice, latestTimestamp), []json.RawMessage{
+				testutils.NewStateEvent(t, "m.room.member", bob, bob, map[string]interface{}{"membership": "join"}, testutils.WithTimestamp(latestTimestamp)),
+			}...),
+			events: []json.RawMessage{
+				testutils.NewStateEvent(
+					t, "m.room.member", bob, bob, map[string]interface{}{"membership": "join", "displayname": "Bob"}, testutils.WithTimestamp(latestTimestamp),
+					testutils.WithUnsigned(map[string]interface{}{
+						"prev_content": map[string]interface{}{
+							"membership": "join",
+						},
+					})),
+			},
 		},
 	}
 	v2.addAccount(alice, aliceToken)
@@ -53,6 +69,7 @@ func TestRoomNames(t *testing.T) {
 	})
 
 	checkRoomNames := func(sessionID string) {
+		t.Helper()
 		// do a sync, make sure room names are sensible
 		res := v3.mustDoV3Request(t, aliceToken, sync3.Request{
 			Rooms: sync3.SliceRanges{

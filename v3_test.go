@@ -323,6 +323,7 @@ func MatchRoomNotificationCount(count int64) roomMatcher {
 type roomEvents struct {
 	roomID string
 	name   string
+	state  []json.RawMessage
 	events []json.RawMessage
 }
 
@@ -344,6 +345,11 @@ func v2JoinTimeline(joinEvents ...roomEvents) map[string]sync2.SyncV2JoinRespons
 		var data sync2.SyncV2JoinResponse
 		data.Timeline = sync2.TimelineResponse{
 			Events: re.events,
+		}
+		if re.state != nil {
+			data.State = sync2.EventsResponse{
+				Events: re.state,
+			}
 		}
 		result[re.roomID] = data
 	}

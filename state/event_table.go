@@ -6,6 +6,7 @@ import (
 	"math"
 
 	"github.com/jmoiron/sqlx"
+	"github.com/matrix-org/sync-v3/internal"
 	"github.com/matrix-org/sync-v3/sqlutil"
 	"github.com/tidwall/gjson"
 )
@@ -124,7 +125,7 @@ func (t *EventTable) Insert(txn *sqlx.Tx, events []Event) (int, error) {
 				return 0, fmt.Errorf("membership event missing membership key")
 			}
 			// genuine changes mark the membership event
-			if isMembershipChange(evJSON) {
+			if internal.IsMembershipChange(evJSON) {
 				ev.Membership = membershipResult.Str
 			} else {
 				// profile changes have _ prefix.
@@ -332,20 +333,4 @@ func (c EventChunker) Len() int {
 }
 func (c EventChunker) Subslice(i, j int) sqlutil.Chunker {
 	return c[i:j]
-}
-
-func isMembershipChange(eventJSON gjson.Result) bool {
-	// membership event possibly, make sure the membership has changed else
-	// things like display name changes will count as membership events :(
-	prevMembership := "leave"
-	pm := eventJSON.Get("unsigned.prev_content.membership")
-	if pm.Exists() && pm.Str != "" {
-		prevMembership = pm.Str
-	}
-	currMembership := "leave"
-	cm := eventJSON.Get("content.membership")
-	if cm.Exists() && cm.Str != "" {
-		currMembership = cm.Str
-	}
-	return prevMembership != currMembership // membership was changed
 }

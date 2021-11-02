@@ -133,8 +133,12 @@ func (s *Storage) MetadataForAllRooms() (map[string]internal.RoomMetadata, error
 		SELECT room_id, event, rank() OVER (
 			PARTITION BY room_id ORDER BY event_nid DESC
 		) FROM syncv3_events WHERE (
-			membership='join' OR membership='invite' OR (membership='_join' AND before_state_snapshot_id=0)
-		) AND event_type='m.room.member'
+			membership='join' OR membership='invite' OR membership='_join'
+		) AND event_type='m.room.member' AND event_nid IN (
+			SELECT unnest(events) FROM syncv3_snapshots WHERE syncv3_snapshots.snapshot_id IN (
+				SELECT current_snapshot_id FROM syncv3_rooms
+			)
+		)
 	) rf WHERE rank <= 6`)
 	if err != nil {
 		return nil, fmt.Errorf("failed to query heroes: %s", err)
