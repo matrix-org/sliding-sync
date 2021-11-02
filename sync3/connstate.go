@@ -93,11 +93,13 @@ func (s *ConnState) load(req *Request) error {
 }
 
 func (s *ConnState) sort(sortBy []string) {
+	if sortBy == nil {
+		sortBy = []string{SortByRecency}
+	}
 	s.sortedJoinedRooms.Sort(sortBy)
 	for i := range s.sortedJoinedRooms {
 		s.sortedJoinedRoomsPositions[s.sortedJoinedRooms[i].RoomID] = i
 	}
-	//logger.Info().Interface("pos", c.sortedJoinedRoomsPositions).Msg("sorted")
 }
 
 // HandleIncomingRequest is guaranteed to be called sequentially (it's protected by a mutex in conn.go)
