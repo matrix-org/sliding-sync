@@ -87,7 +87,7 @@ func (s *ConnState) load(req *Request) error {
 		rooms[i] = RoomConnMetadata{
 			RoomMetadata: metadata,
 			CanonicalisedName: strings.ToLower(
-				strings.Trim(internal.CalculateRoomName(&metadata, 5), "#!()):_"),
+				strings.Trim(internal.CalculateRoomName(&metadata, 5), "#!()):_@"),
 			),
 			HighlightCount:    urd.HighlightCount,
 			NotificationCount: urd.NotificationCount,
@@ -270,7 +270,7 @@ func (s *ConnState) processIncomingEvent(updateEvent *EventData) ([]Room, []Resp
 		newRoomConn := RoomConnMetadata{
 			RoomMetadata: *newRoom,
 			CanonicalisedName: strings.ToLower(
-				strings.Trim(internal.CalculateRoomName(newRoom, 5), "#!()):_"),
+				strings.Trim(internal.CalculateRoomName(newRoom, 5), "#!()):_@"),
 			),
 		}
 		s.sortedJoinedRooms = append(s.sortedJoinedRooms, newRoomConn)
