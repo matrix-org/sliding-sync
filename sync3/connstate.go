@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"reflect"
-	"sort"
 	"strings"
 	"time"
 
@@ -22,15 +21,8 @@ type RoomConnMetadata struct {
 	internal.RoomMetadata
 
 	CanonicalisedName string // stripped leading symbols like #, all in lower case
-}
-
-type SortableRooms []RoomConnMetadata
-
-func (s SortableRooms) Len() int64 {
-	return int64(len(s))
-}
-func (s SortableRooms) Subslice(i, j int64) Subslicer {
-	return s[i:j]
+	HighlightCount    int
+	NotificationCount int
 }
 
 // ConnState tracks all high-level connection state for this connection, like the combined request
@@ -101,16 +93,7 @@ func (s *ConnState) load(req *Request) error {
 }
 
 func (s *ConnState) sort(sortBy []string) {
-	if len(sortBy) == 1 && sortBy[0] == SortByName {
-		sort.SliceStable(s.sortedJoinedRooms, func(i, j int) bool {
-			return s.sortedJoinedRooms[i].CanonicalisedName < s.sortedJoinedRooms[j].CanonicalisedName
-		})
-	} else {
-		// sort by most recent timestamp
-		sort.SliceStable(s.sortedJoinedRooms, func(i, j int) bool {
-			return s.sortedJoinedRooms[i].LastMessageTimestamp > s.sortedJoinedRooms[j].LastMessageTimestamp
-		})
-	}
+	s.sortedJoinedRooms.Sort(sortBy)
 	for i := range s.sortedJoinedRooms {
 		s.sortedJoinedRoomsPositions[s.sortedJoinedRooms[i].RoomID] = i
 	}
