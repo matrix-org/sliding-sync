@@ -18,8 +18,6 @@ type EventData struct {
 	content   gjson.Result
 	timestamp uint64
 
-	// TODO: remove or factor out
-	userRoomData *UserRoomData
 	// the absolute latest position for this event data. The NID for this event is guaranteed to
 	// be <= this value.
 	latestPos int64

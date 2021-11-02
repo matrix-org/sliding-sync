@@ -323,6 +323,7 @@ func TestConnStateMultipleRanges(t *testing.T) {
 	dispatcher.OnNewEvents(roomIDs[9], []json.RawMessage{
 		newEvent,
 	}, 1)
+	t.Logf("new event %s : %s", roomIDs[9], string(newEvent))
 	res, err = cs.HandleIncomingRequest(context.Background(), connID, &Request{
 		Sort: []string{SortByRecency},
 		Rooms: SliceRanges([][2]int64{

@@ -58,7 +58,7 @@ func (c *UserCache) Unsubscribe(id int) {
 	delete(c.listeners, id)
 }
 
-func (c *UserCache) lazilyLoadRoomDatas(loadPos int64, roomIDs []string, maxTimelineEvents int) map[string]UserRoomData {
+func (c *UserCache) lazyLoadTimelines(loadPos int64, roomIDs []string, maxTimelineEvents int) map[string]UserRoomData {
 	if c.LazyRoomDataOverride != nil {
 		return c.LazyRoomDataOverride(loadPos, roomIDs, maxTimelineEvents)
 	}

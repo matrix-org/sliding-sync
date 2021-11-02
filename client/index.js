@@ -339,6 +339,7 @@ const doSyncLoop = async(accessToken, sessionId) => {
             if (!currentPos) {
                 reqBody.required_state = requiredStateEventsInList;
                 reqBody.timeline_limit = 20;
+                reqBody.sort = ["by_highlight_count", "by_notification_count", "by_recency"];
             }
             // check if we are (un)subscribing to a room and modify request this one time for it
             let subscribingToRoom;
