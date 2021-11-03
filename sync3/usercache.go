@@ -91,9 +91,12 @@ func (c *UserCache) lazyLoadTimelines(loadPos int64, roomIDs []string, maxTimeli
 	}
 	c.roomToDataMu.Lock()
 	for roomID, events := range roomIDToEvents {
-		urd := UserRoomData{
-			Timeline: events,
+		urd, ok := c.roomToData[roomID]
+		if !ok {
+			urd = UserRoomData{}
 		}
+		urd.Timeline = events
+
 		result[roomID] = urd
 		c.roomToData[roomID] = urd
 	}

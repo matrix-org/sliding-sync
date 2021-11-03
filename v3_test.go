@@ -288,14 +288,29 @@ func MatchRoomRequiredState(events []json.RawMessage) roomMatcher {
 	}
 }
 
+// Similar to MatchRoomTimeline but takes the last n events of `events` and only checks with the last
+// n events of the timeline.
 func MatchRoomTimelineMostRecent(n int, events []json.RawMessage) roomMatcher {
 	subset := events[len(events)-n:]
-	return MatchRoomTimeline(subset)
+	return func(r sync3.Room) error {
+		if len(r.Timeline) < len(subset) {
+			return fmt.Errorf("timeline length mismatch: got %d want at least %d", len(r.Timeline), len(subset))
+		}
+		gotSubset := r.Timeline[len(r.Timeline)-n:]
+		for i := range gotSubset {
+			if !bytes.Equal(gotSubset[i], subset[i]) {
+				return fmt.Errorf("timeline[%d]\ngot  %v \nwant %v", i, string(r.Timeline[i]), string(events[i]))
+			}
+		}
+		return nil
+	}
 }
+
+// Match the timeline with exactly these events in exactly this order
 func MatchRoomTimeline(events []json.RawMessage) roomMatcher {
 	return func(r sync3.Room) error {
 		if len(r.Timeline) != len(events) {
-			return fmt.Errorf("timeline length mismatchm got %d want %d", len(r.Timeline), len(events))
+			return fmt.Errorf("timeline length mismatch: got %d want %d", len(r.Timeline), len(events))
 		}
 		for i := range r.Timeline {
 			if !bytes.Equal(r.Timeline[i], events[i]) {
