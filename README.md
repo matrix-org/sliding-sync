@@ -7,6 +7,8 @@ v3 sync is a strict subset of v2 sync.
 
 ## Usage
 
+Requires Postgres 13+.
+
 ```bash
 $ createdb syncv3
 $ go build ./cmd/syncv3
