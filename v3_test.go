@@ -20,6 +20,8 @@ import (
 	"github.com/matrix-org/sync-v3/testutils"
 )
 
+const postgresTestDatabaseName = "syncv3_test_sync3_integration"
+
 // Integration tests for the sync-v3 server
 
 type testV2Server struct {
@@ -222,7 +224,7 @@ func (s *testV3Server) doV3Request(t *testing.T, token string, pos int64, reqBod
 func runTestServer(t *testing.T, v2Server *testV2Server, postgresConnectionString string) *testV3Server {
 	t.Helper()
 	if postgresConnectionString == "" {
-		postgresConnectionString = testutils.PrepareDBConnectionString("syncv3_test_sync3_integration")
+		postgresConnectionString = testutils.PrepareDBConnectionString(postgresTestDatabaseName)
 	}
 	h, err := sync3.NewSync3Handler(&sync2.HTTPClient{
 		Client: &http.Client{

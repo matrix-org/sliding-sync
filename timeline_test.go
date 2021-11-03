@@ -17,7 +17,7 @@ import (
 // and make sure the initial scrollback includes these new live events.
 func TestTimelines(t *testing.T) {
 	// setup code
-	pqString := testutils.PrepareDBConnectionString("syncv3_test_sync3_integration_timeline")
+	pqString := testutils.PrepareDBConnectionString(postgresTestDatabaseName)
 	v2 := runTestV2Server(t)
 	v3 := runTestServer(t, v2, pqString)
 	defer v2.close()
