@@ -460,3 +460,7 @@ func MatchResponse(t *testing.T, res *sync3.Response, matchers ...respMatcher) {
 		}
 	}
 }
+
+func ptr(i int) *int {
+	return &i
+}

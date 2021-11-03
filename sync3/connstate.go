@@ -28,21 +28,26 @@ type RoomConnMetadata struct {
 type ConnEvent struct {
 	roomID  string
 	msg     *EventData
-	userMsg *UserRoomData
+	userMsg struct {
+		msg               *UserRoomData
+		hasCountDecreased bool
+	}
 }
 
 // ConnState tracks all high-level connection state for this connection, like the combined request
 // and the underlying sorted room list. It doesn't track session IDs or positions of the connection.
 type ConnState struct {
+	userID string
+	// the only thing that can touch these data structures is the conn goroutine
 	muxedReq                   *Request
-	userID                     string
 	sortedJoinedRooms          SortableRooms
 	sortedJoinedRoomsPositions map[string]int // room_id -> index in sortedJoinedRooms
 	roomSubscriptions          map[string]RoomSubscription
 	loadPosition               int64
-	// A channel which the dispatcher uses to send updates to.
+
+	// A channel which the dispatcher uses to send updates to the conn goroutine
 	// Consumed when the conn is read. There is a limit to how many updates we will store before
-	// saying the client is ded and cleaning up the conn.
+	// saying the client is dead and clean up the conn.
 	updateEvents chan *ConnEvent
 
 	globalCache *GlobalCache
@@ -203,10 +208,10 @@ func (s *ConnState) onIncomingRequest(ctx context.Context, req *Request) (*Respo
 		})
 	}
 	// do live tracking if we haven't changed the range and we have nothing to tell the client yet
-	if same != nil && len(responseOperations) == 0 && len(response.RoomSubscriptions) == 0 {
+	if same != nil {
 		// block until we get a new event, with appropriate timeout
 	blockloop:
-		for {
+		for len(responseOperations) == 0 && len(response.RoomSubscriptions) == 0 {
 			select {
 			case <-ctx.Done(): // client has given up
 				break blockloop
@@ -220,15 +225,13 @@ func (s *ConnState) onIncomingRequest(ctx context.Context, req *Request) (*Respo
 						response.RoomSubscriptions[sub.RoomID] = sub
 					}
 				}
-				if connEvent.userMsg != nil {
-					subs, ops := s.processIncomingUserEvent(connEvent.roomID, connEvent.userMsg)
+				if connEvent.userMsg.msg != nil {
+					subs, ops := s.processIncomingUserEvent(connEvent.roomID, connEvent.userMsg.msg, connEvent.userMsg.hasCountDecreased)
 					responseOperations = append(responseOperations, ops...)
 					for _, sub := range subs {
 						response.RoomSubscriptions[sub.RoomID] = sub
 					}
 				}
-
-				break blockloop
 			}
 		}
 	}
@@ -238,7 +241,7 @@ func (s *ConnState) onIncomingRequest(ctx context.Context, req *Request) (*Respo
 	return response, nil
 }
 
-func (s *ConnState) processIncomingUserEvent(roomID string, userEvent *UserRoomData) ([]Room, []ResponseOp) {
+func (s *ConnState) processIncomingUserEvent(roomID string, userEvent *UserRoomData, hasCountDecreased bool) ([]Room, []ResponseOp) {
 	// modify notification counts
 	fromIndex, ok := s.sortedJoinedRoomsPositions[roomID]
 	if !ok {
@@ -248,6 +251,12 @@ func (s *ConnState) processIncomingUserEvent(roomID string, userEvent *UserRoomD
 	targetRoom.HighlightCount = userEvent.HighlightCount
 	targetRoom.NotificationCount = userEvent.NotificationCount
 	s.sortedJoinedRooms[fromIndex] = targetRoom
+
+	if !hasCountDecreased {
+		// if the count increases then we'll notify the user for the event which increases the count, hence
+		// do nothing. We only care to notify the user when the counts decrease.
+		return nil, nil
+	}
 
 	return s.resort(roomID, fromIndex, nil)
 }
@@ -481,13 +490,9 @@ func (s *ConnState) OnNewEvent(event *EventData) {
 
 // Called by the user cache when unread counts have changed
 func (s *ConnState) OnUnreadCountsChanged(userID, roomID string, urd UserRoomData, hasCountDecreased bool) {
-	if !hasCountDecreased {
-		// if the count increases then we'll notify the user for the event which increases the count, hence
-		// do nothing. We only care to notify the user when the counts decrease.
-		return
-	}
-	s.onNewConnectionEvent(&ConnEvent{
-		roomID:  roomID,
-		userMsg: &urd,
-	})
+	var ce ConnEvent
+	ce.roomID = roomID
+	ce.userMsg.hasCountDecreased = hasCountDecreased
+	ce.userMsg.msg = &urd
+	s.onNewConnectionEvent(&ce)
 }

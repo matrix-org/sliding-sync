@@ -107,14 +107,16 @@ type SyncRoomsResponse struct {
 
 // JoinResponse represents a /sync response for a room which is under the 'join' or 'peek' key.
 type SyncV2JoinResponse struct {
-	State               EventsResponse   `json:"state"`
-	Timeline            TimelineResponse `json:"timeline"`
-	Ephemeral           EventsResponse   `json:"ephemeral"`
-	AccountData         EventsResponse   `json:"account_data"`
-	UnreadNotifications struct {
-		HighlightCount    *int `json:"highlight_count,omitempty"`
-		NotificationCount *int `json:"notification_count,omitempty"`
-	} `json:"unread_notifications"`
+	State               EventsResponse      `json:"state"`
+	Timeline            TimelineResponse    `json:"timeline"`
+	Ephemeral           EventsResponse      `json:"ephemeral"`
+	AccountData         EventsResponse      `json:"account_data"`
+	UnreadNotifications UnreadNotifications `json:"unread_notifications"`
+}
+
+type UnreadNotifications struct {
+	HighlightCount    *int `json:"highlight_count,omitempty"`
+	NotificationCount *int `json:"notification_count,omitempty"`
 }
 
 type TimelineResponse struct {
