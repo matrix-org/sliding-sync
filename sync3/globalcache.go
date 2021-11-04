@@ -11,8 +11,13 @@ import (
 	"github.com/tidwall/gjson"
 )
 
+// The purpose of global cache is to store global-level information about all rooms the server is aware of.
+// Global-level information is represented as internal.RoomMetadata and includes things like Heroes, join/invite
+// counts, if the room is encrypted, etc. Basically anything that is the same for all users of the system. This
+// information is populated at startup from the database and then kept up-to-date by hooking into the
+// Dispatcher for new events.
 type GlobalCache struct {
-	LoadJoinedRoomsOverride func(userID string) (pos int64, joinedRooms []internal.RoomMetadata, err error)
+	LoadJoinedRoomsOverride func(userID string) (pos int64, joinedRooms []*internal.RoomMetadata, err error)
 
 	// inserts are done by v2 poll loops, selects are done by v3 request threads
 	// there are lots of overlapping keys as many users (threads) can be joined to the same room (key)
@@ -34,24 +39,34 @@ func NewGlobalCache(store *state.Storage) *GlobalCache {
 	}
 }
 
-func (c *GlobalCache) LoadRoom(roomID string) *internal.RoomMetadata {
+// Load the current room metadata for the given room IDs. Races unless you call this in a dispatcher loop.
+// Always returns copies of the room metadata so ownership can be passed to other threads.
+// Keeps the ordering of the room IDs given.
+func (c *GlobalCache) LoadRooms(roomIDs ...string) []*internal.RoomMetadata {
 	c.roomIDToMetadataMu.RLock()
 	defer c.roomIDToMetadataMu.RUnlock()
-	sr := c.roomIDToMetadata[roomID]
-	if sr == nil {
-		logger.Error().Str("room", roomID).Msg("GlobalCache.LoadRoom: no metadata for this room")
-		return nil
+	result := make([]*internal.RoomMetadata, len(roomIDs))
+	for i := range result {
+		roomID := roomIDs[i]
+		sr := c.roomIDToMetadata[roomID]
+		if sr == nil {
+			logger.Error().Str("room", roomID).Msg("GlobalCache.LoadRoom: no metadata for this room")
+			return nil
+		}
+		srCopy := *sr
+		// copy the heroes or else we may modify the same slice which would be bad :(
+		srCopy.Heroes = make([]internal.Hero, len(sr.Heroes))
+		for i := range sr.Heroes {
+			srCopy.Heroes[i] = sr.Heroes[i]
+		}
+		result[i] = &srCopy
 	}
-	srCopy := *sr
-	// copy the heroes or else we may modify the same slice which would be bad :(
-	srCopy.Heroes = make([]internal.Hero, len(sr.Heroes))
-	for i := range sr.Heroes {
-		srCopy.Heroes[i] = sr.Heroes[i]
-	}
-	return &srCopy
+	return result
 }
 
-func (c *GlobalCache) LoadJoinedRooms(userID string) (pos int64, joinedRooms []internal.RoomMetadata, err error) {
+// Load all current joined room metadata for the user given. Returns the absolute database position along
+// with the results. TODO: remove with LoadRoomState?
+func (c *GlobalCache) LoadJoinedRooms(userID string) (pos int64, joinedRooms []*internal.RoomMetadata, err error) {
 	if c.LoadJoinedRoomsOverride != nil {
 		return c.LoadJoinedRoomsOverride(userID)
 	}
@@ -63,13 +78,13 @@ func (c *GlobalCache) LoadJoinedRooms(userID string) (pos int64, joinedRooms []i
 	if err != nil {
 		return 0, nil, err
 	}
-	rooms := make([]internal.RoomMetadata, len(joinedRoomIDs))
-	for i, roomID := range joinedRoomIDs {
-		rooms[i] = *c.LoadRoom(roomID)
-	}
+	// TODO: no guarantee that this state is the sam as latest unless called in a dispatcher loop
+	rooms := c.LoadRooms(joinedRoomIDs...)
+
 	return initialLoadPosition, rooms, nil
 }
 
+// TODO: remove? Doesn't touch global cache fields
 func (c *GlobalCache) LoadRoomState(roomID string, loadPosition int64, requiredState [][2]string) []json.RawMessage {
 	if len(requiredState) == 0 {
 		return nil

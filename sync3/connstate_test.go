@@ -62,9 +62,9 @@ func TestConnStateInitial(t *testing.T) {
 	dispatcher.jrt.UserJoinedRoom(userID, roomA.RoomID)
 	dispatcher.jrt.UserJoinedRoom(userID, roomB.RoomID)
 	dispatcher.jrt.UserJoinedRoom(userID, roomC.RoomID)
-	globalCache.LoadJoinedRoomsOverride = func(userID string) (pos int64, joinedRooms []internal.RoomMetadata, err error) {
-		return 1, []internal.RoomMetadata{
-			roomA, roomB, roomC,
+	globalCache.LoadJoinedRoomsOverride = func(userID string) (pos int64, joinedRooms []*internal.RoomMetadata, err error) {
+		return 1, []*internal.RoomMetadata{
+			&roomA, &roomB, &roomC,
 		}, nil
 	}
 	userCache := NewUserCache(userID, globalCache, nil)
@@ -188,7 +188,7 @@ func TestConnStateMultipleRanges(t *testing.T) {
 	}
 	userID := "@TestConnStateMultipleRanges_alice:localhost"
 	timestampNow := gomatrixserverlib.Timestamp(1632131678061)
-	var rooms []internal.RoomMetadata
+	var rooms []*internal.RoomMetadata
 	var roomIDs []string
 	globalCache := NewGlobalCache(nil)
 	dispatcher := NewDispatcher()
@@ -201,7 +201,7 @@ func TestConnStateMultipleRanges(t *testing.T) {
 			// room 1 is most recent, 10 is least recent
 			LastMessageTimestamp: uint64(uint64(timestampNow) - uint64(i*1000)),
 		}
-		rooms = append(rooms, room)
+		rooms = append(rooms, &room)
 		roomIDs = append(roomIDs, roomID)
 		roomIDToRoom[roomID] = room
 		globalCache.Startup(map[string]internal.RoomMetadata{
@@ -209,7 +209,7 @@ func TestConnStateMultipleRanges(t *testing.T) {
 		})
 		dispatcher.jrt.UserJoinedRoom(userID, roomID)
 	}
-	globalCache.LoadJoinedRoomsOverride = func(userID string) (pos int64, joinedRooms []internal.RoomMetadata, err error) {
+	globalCache.LoadJoinedRoomsOverride = func(userID string) (pos int64, joinedRooms []*internal.RoomMetadata, err error) {
 		return 1, rooms, nil
 	}
 	userCache := NewUserCache(userID, globalCache, nil)
@@ -379,9 +379,9 @@ func TestBumpToOutsideRange(t *testing.T) {
 	dispatcher.jrt.UserJoinedRoom(userID, roomB.RoomID)
 	dispatcher.jrt.UserJoinedRoom(userID, roomC.RoomID)
 	dispatcher.jrt.UserJoinedRoom(userID, roomD.RoomID)
-	globalCache.LoadJoinedRoomsOverride = func(userID string) (pos int64, joinedRooms []internal.RoomMetadata, err error) {
-		return 1, []internal.RoomMetadata{
-			roomA, roomB, roomC, roomD,
+	globalCache.LoadJoinedRoomsOverride = func(userID string) (pos int64, joinedRooms []*internal.RoomMetadata, err error) {
+		return 1, []*internal.RoomMetadata{
+			&roomA, &roomB, &roomC, &roomD,
 		}, nil
 	}
 	userCache := NewUserCache(userID, globalCache, nil)
@@ -471,9 +471,9 @@ func TestConnStateRoomSubscriptions(t *testing.T) {
 		roomC.RoomID: testutils.NewEvent(t, "m.room.message", userID, map[string]interface{}{"body": "c"}, time.Now()),
 		roomD.RoomID: testutils.NewEvent(t, "m.room.message", userID, map[string]interface{}{"body": "d"}, time.Now()),
 	}
-	globalCache.LoadJoinedRoomsOverride = func(userID string) (pos int64, joinedRooms []internal.RoomMetadata, err error) {
-		return 1, []internal.RoomMetadata{
-			roomA, roomB, roomC, roomD,
+	globalCache.LoadJoinedRoomsOverride = func(userID string) (pos int64, joinedRooms []*internal.RoomMetadata, err error) {
+		return 1, []*internal.RoomMetadata{
+			&roomA, &roomB, &roomC, &roomD,
 		}, nil
 	}
 	userCache := NewUserCache(userID, globalCache, nil)

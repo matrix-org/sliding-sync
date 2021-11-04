@@ -91,9 +91,9 @@ func (s *ConnState) load(req *Request) error {
 		metadata.RemoveHero(s.userID)
 		urd := s.userCache.loadRoomData(metadata.RoomID)
 		rooms[i] = RoomConnMetadata{
-			RoomMetadata: metadata,
+			RoomMetadata: *metadata,
 			CanonicalisedName: strings.ToLower(
-				strings.Trim(internal.CalculateRoomName(&metadata, 5), "#!()):_@"),
+				strings.Trim(internal.CalculateRoomName(metadata, 5), "#!()):_@"),
 			),
 			HighlightCount:    urd.HighlightCount,
 			NotificationCount: urd.NotificationCount,
@@ -281,13 +281,13 @@ func (s *ConnState) processIncomingEvent(updateEvent *EventData) ([]Room, []Resp
 	if !ok {
 		// the user may have just joined the room hence not have an entry in this list yet.
 		fromIndex = len(s.sortedJoinedRooms)
-		newRoom := s.globalCache.LoadRoom(updateEvent.roomID)
-		newRoom.LastMessageTimestamp = updateEvent.timestamp
-		newRoom.RemoveHero(s.userID)
+		roomMetadatas := s.globalCache.LoadRooms(updateEvent.roomID)
+		roomMetadata := roomMetadatas[0]
+		roomMetadata.RemoveHero(s.userID)
 		newRoomConn := RoomConnMetadata{
-			RoomMetadata: *newRoom,
+			RoomMetadata: *roomMetadata,
 			CanonicalisedName: strings.ToLower(
-				strings.Trim(internal.CalculateRoomName(newRoom, 5), "#!()):_@"),
+				strings.Trim(internal.CalculateRoomName(roomMetadata, 5), "#!()):_@"),
 			),
 		}
 		s.sortedJoinedRooms = append(s.sortedJoinedRooms, newRoomConn)
@@ -388,9 +388,10 @@ func (s *ConnState) getDeltaRoomData(roomID string, event json.RawMessage) *Room
 func (s *ConnState) getInitialRoomData(roomIDs ...string) []Room {
 	roomIDToUserRoomData := s.userCache.lazyLoadTimelines(s.loadPosition, roomIDs, int(s.muxedReq.TimelineLimit)) // TODO: per-room timeline limit
 	rooms := make([]Room, len(roomIDs))
+	roomMetadatas := s.globalCache.LoadRooms(roomIDs...)
 	for i, roomID := range roomIDs {
 		userRoomData := roomIDToUserRoomData[roomID]
-		metadata := s.globalCache.LoadRoom(roomID)
+		metadata := roomMetadatas[i]
 		metadata.RemoveHero(s.userID)
 
 		rooms[i] = Room{
@@ -494,9 +495,9 @@ func (s *ConnState) OnNewEvent(event *EventData) {
 	// as the v2 poll loops all rely on a single poller thread to poke the dispatcher which pokes
 	// the caches (incl. user caches) so there cannot be any concurrent updates. We always get back
 	// a copy of the metadata from LoadRoom so we can pass pointers around freely.
-	meta := s.globalCache.LoadRoom(event.roomID)
+	meta := s.globalCache.LoadRooms(event.roomID)
 	s.onNewConnectionEvent(&ConnEvent{
-		roomMetadata: meta,
+		roomMetadata: meta[0],
 		roomID:       event.roomID,
 		msg:          event,
 	})
