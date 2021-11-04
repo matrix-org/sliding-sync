@@ -6,6 +6,8 @@ import (
 )
 
 func TestRequestApplyDeltas(t *testing.T) {
+	boolTrue := true
+	boolFalse := false
 	testCases := []struct {
 		input Request
 		tests []struct {
@@ -96,6 +98,35 @@ func TestRequestApplyDeltas(t *testing.T) {
 						ensureEmpty(t, subs, unsubs)
 						if len(r.RoomSubscriptions) != 1 {
 							t.Errorf("Expected 1 subs, got %+v", r.RoomSubscriptions)
+						}
+					},
+				},
+				// check configuring excluded encrypted rooms
+				{
+					next: Request{
+						ExcludeEncryptedRoomsFlag: &boolFalse,
+					},
+					check: func(t *testing.T, r Request, subs, unsubs []string) {
+						if r.ExcludeEncryptedRooms() {
+							t.Errorf("ExcludeEncryptedRooms set when it should not be")
+						}
+					},
+				},
+				{
+					next: Request{
+						ExcludeEncryptedRoomsFlag: &boolTrue,
+					},
+					check: func(t *testing.T, r Request, subs, unsubs []string) {
+						if !r.ExcludeEncryptedRooms() {
+							t.Errorf("ExcludeEncryptedRooms not set when it should be")
+						}
+					},
+				},
+				{
+					next: Request{},
+					check: func(t *testing.T, r Request, subs, unsubs []string) {
+						if r.ExcludeEncryptedRooms() {
+							t.Errorf("ExcludeEncryptedRooms set when it should not be by default")
 						}
 					},
 				},

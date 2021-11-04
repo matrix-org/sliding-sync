@@ -16,13 +16,14 @@ var (
 )
 
 type Request struct {
-	Rooms             SliceRanges                 `json:"rooms"`
-	Sort              []string                    `json:"sort"`
-	RequiredState     [][2]string                 `json:"required_state"`
-	TimelineLimit     int64                       `json:"timeline_limit"`
-	RoomSubscriptions map[string]RoomSubscription `json:"room_subscriptions"`
-	UnsubscribeRooms  []string                    `json:"unsubscribe_rooms"`
-	Filters           *RequestFilters             `json:"filters"`
+	Rooms                     SliceRanges                 `json:"rooms"`
+	Sort                      []string                    `json:"sort"`
+	RequiredState             [][2]string                 `json:"required_state"`
+	TimelineLimit             int64                       `json:"timeline_limit"`
+	RoomSubscriptions         map[string]RoomSubscription `json:"room_subscriptions"`
+	UnsubscribeRooms          []string                    `json:"unsubscribe_rooms"`
+	ExcludeEncryptedRoomsFlag *bool                       `json:"exclude_encrypted_rooms"`
+	Filters                   *RequestFilters             `json:"filters"`
 	// set via query params or inferred
 	pos         int64
 	timeoutSecs int
@@ -70,13 +71,18 @@ func (r *Request) ApplyDelta(next *Request) (result *Request, subs, unsubs []str
 	if filters == nil {
 		filters = r.Filters
 	}
+	excludeEncryptedRooms := next.ExcludeEncryptedRoomsFlag
+	if excludeEncryptedRooms == nil {
+		excludeEncryptedRooms = r.ExcludeEncryptedRoomsFlag
+	}
 	result = &Request{
-		SessionID:     sessionID,
-		Rooms:         rooms,
-		Sort:          sort,
-		RequiredState: globalReqState,
-		TimelineLimit: timelineLimit,
-		Filters:       filters,
+		SessionID:                 sessionID,
+		Rooms:                     rooms,
+		Sort:                      sort,
+		RequiredState:             globalReqState,
+		TimelineLimit:             timelineLimit,
+		Filters:                   filters,
+		ExcludeEncryptedRoomsFlag: excludeEncryptedRooms,
 	}
 	// Work out subscriptions. The operations are applied as:
 	// old.subs -> apply old.unsubs (should be empty) -> apply new.subs -> apply new.unsubs
@@ -142,6 +148,14 @@ func (r *Request) GetRequiredState(roomID string) [][2]string {
 		}
 	}
 	return rs
+}
+
+func (r *Request) ExcludeEncryptedRooms() bool {
+	if r.ExcludeEncryptedRoomsFlag == nil {
+		// unset -> false
+		return false
+	}
+	return *r.ExcludeEncryptedRoomsFlag
 }
 
 type RequestFilters struct {
