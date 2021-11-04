@@ -53,9 +53,11 @@ func TestConnStateInitial(t *testing.T) {
 		roomC.RoomID: testutils.NewEvent(t, "m.room.message", userID, map[string]interface{}{"body": "c"}, time.Now()),
 	}
 	globalCache := NewGlobalCache(nil)
-	globalCache.AssignRoom(roomA)
-	globalCache.AssignRoom(roomB)
-	globalCache.AssignRoom(roomC)
+	globalCache.Startup(map[string]internal.RoomMetadata{
+		roomA.RoomID: roomA,
+		roomB.RoomID: roomB,
+		roomC.RoomID: roomC,
+	})
 	dispatcher := NewDispatcher()
 	dispatcher.jrt.UserJoinedRoom(userID, roomA.RoomID)
 	dispatcher.jrt.UserJoinedRoom(userID, roomB.RoomID)
@@ -202,7 +204,9 @@ func TestConnStateMultipleRanges(t *testing.T) {
 		rooms = append(rooms, room)
 		roomIDs = append(roomIDs, roomID)
 		roomIDToRoom[roomID] = room
-		globalCache.AssignRoom(room)
+		globalCache.Startup(map[string]internal.RoomMetadata{
+			room.RoomID: room,
+		})
 		dispatcher.jrt.UserJoinedRoom(userID, roomID)
 	}
 	globalCache.LoadJoinedRoomsOverride = func(userID string) (pos int64, joinedRooms []internal.RoomMetadata, err error) {
@@ -364,10 +368,12 @@ func TestBumpToOutsideRange(t *testing.T) {
 	roomC := newRoomMetadata("!c:localhost", timestampNow-2000)
 	roomD := newRoomMetadata("!d:localhost", timestampNow-3000)
 	globalCache := NewGlobalCache(nil)
-	globalCache.AssignRoom(roomA)
-	globalCache.AssignRoom(roomB)
-	globalCache.AssignRoom(roomC)
-	globalCache.AssignRoom(roomD)
+	globalCache.Startup(map[string]internal.RoomMetadata{
+		roomA.RoomID: roomA,
+		roomB.RoomID: roomB,
+		roomC.RoomID: roomC,
+		roomD.RoomID: roomD,
+	})
 	dispatcher := NewDispatcher()
 	dispatcher.jrt.UserJoinedRoom(userID, roomA.RoomID)
 	dispatcher.jrt.UserJoinedRoom(userID, roomB.RoomID)
@@ -448,10 +454,12 @@ func TestConnStateRoomSubscriptions(t *testing.T) {
 	roomD := newRoomMetadata("!d:localhost", gomatrixserverlib.Timestamp(timestampNow-3000))
 	roomIDs := []string{roomA.RoomID, roomB.RoomID, roomC.RoomID, roomD.RoomID}
 	globalCache := NewGlobalCache(nil)
-	globalCache.AssignRoom(roomA)
-	globalCache.AssignRoom(roomB)
-	globalCache.AssignRoom(roomC)
-	globalCache.AssignRoom(roomD)
+	globalCache.Startup(map[string]internal.RoomMetadata{
+		roomA.RoomID: roomA,
+		roomB.RoomID: roomB,
+		roomC.RoomID: roomC,
+		roomD.RoomID: roomD,
+	})
 	dispatcher := NewDispatcher()
 	dispatcher.jrt.UserJoinedRoom(userID, roomA.RoomID)
 	dispatcher.jrt.UserJoinedRoom(userID, roomB.RoomID)

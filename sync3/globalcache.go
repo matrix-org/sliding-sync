@@ -51,12 +51,6 @@ func (c *GlobalCache) LoadRoom(roomID string) *internal.RoomMetadata {
 	return &srCopy
 }
 
-func (c *GlobalCache) AssignRoom(r internal.RoomMetadata) {
-	c.roomIDToMetadataMu.Lock()
-	defer c.roomIDToMetadataMu.Unlock()
-	c.roomIDToMetadata[r.RoomID] = &r
-}
-
 func (c *GlobalCache) LoadJoinedRooms(userID string) (pos int64, joinedRooms []internal.RoomMetadata, err error) {
 	if c.LoadJoinedRoomsOverride != nil {
 		return c.LoadJoinedRoomsOverride(userID)
@@ -131,9 +125,12 @@ func (c *GlobalCache) LoadRoomState(roomID string, loadPosition int64, requiredS
 //   - OnNewEvents is called with the join event
 //   - join event is processed twice.
 func (c *GlobalCache) Startup(roomIDToMetadata map[string]internal.RoomMetadata) error {
-	for roomID, metadata := range roomIDToMetadata {
+	c.roomIDToMetadataMu.Lock()
+	defer c.roomIDToMetadataMu.Unlock()
+	for roomID := range roomIDToMetadata {
+		metadata := roomIDToMetadata[roomID]
 		fmt.Printf("Room: %s - %s - %s \n", roomID, metadata.NameEvent, gomatrixserverlib.Timestamp(metadata.LastMessageTimestamp).Time())
-		c.AssignRoom(metadata)
+		c.roomIDToMetadata[roomID] = &metadata
 	}
 	return nil
 }
