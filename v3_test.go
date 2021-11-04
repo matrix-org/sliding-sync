@@ -196,9 +196,9 @@ func (s *testV3Server) doV3Request(t *testing.T, token string, pos int64, reqBod
 		}
 		body = bytes.NewBuffer(j)
 	}
-	qps := ""
+	qps := "?timeout=1"
 	if pos > 0 {
-		qps = fmt.Sprintf("?pos=%d", pos)
+		qps += fmt.Sprintf("&pos=%d", pos)
 	}
 	req, err := http.NewRequest("POST", s.srv.URL+"/_matrix/client/v3/sync"+qps, body)
 	if err != nil {

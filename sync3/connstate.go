@@ -215,7 +215,7 @@ func (s *ConnState) onIncomingRequest(ctx context.Context, req *Request) (*Respo
 			select {
 			case <-ctx.Done(): // client has given up
 				break blockloop
-			case <-time.After(10 * time.Second): // TODO configurable
+			case <-time.After(time.Duration(req.timeoutSecs) * time.Second):
 				break blockloop
 			case connEvent := <-s.updateEvents: // TODO: keep reading until it is empty before responding.
 				if connEvent.msg != nil {

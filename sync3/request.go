@@ -12,6 +12,7 @@ var (
 	SortByHighlightCount    = "by_highlight_count"
 	SortBy                  = []string{SortByHighlightCount, SortByName, SortByNotificationCount, SortByRecency}
 	DefaultTimelineLimit    = int64(20)
+	DefaultTimeoutSecs      = 10
 )
 
 type Request struct {
@@ -23,8 +24,9 @@ type Request struct {
 	UnsubscribeRooms  []string                    `json:"unsubscribe_rooms"`
 	Filters           *RequestFilters             `json:"filters"`
 	// set via query params or inferred
-	pos       int64
-	SessionID string `json:"session_id"`
+	pos         int64
+	timeoutSecs int
+	SessionID   string `json:"session_id"`
 }
 
 func (r *Request) Same(other *Request) bool {

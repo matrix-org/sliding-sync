@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"net/url"
 	"os"
 	"strconv"
 	"sync"
@@ -114,20 +115,25 @@ func (h *SyncLiveHandler) serve(w http.ResponseWriter, req *http.Request) error 
 		return err
 	}
 	log := hlog.FromRequest(req).With().Str("conn_id", conn.ConnID.String()).Logger()
-	// set pos if specified
-	var cpos int64
-	queryPos := req.URL.Query().Get("pos")
-	if queryPos != "" {
-		cpos, err = strconv.ParseInt(queryPos, 10, 64)
-		if err != nil {
-			log.Err(err).Msg("failed to get ?pos=")
-			return &internal.HandlerError{
-				StatusCode: 400,
-				Err:        fmt.Errorf("invalid position: %s", queryPos),
-			}
-		}
+	// set pos and timeout if specified
+	cpos, herr := parseIntFromQuery(req.URL, "pos")
+	if herr != nil {
+		return herr
 	}
 	requestBody.pos = cpos
+
+	var timeout int
+	if req.URL.Query().Get("timeout") == "" {
+		timeout = DefaultTimeoutSecs
+	} else {
+		timeout64, herr := parseIntFromQuery(req.URL, "timeout")
+		if herr != nil {
+			return herr
+		}
+		timeout = int(timeout64)
+	}
+
+	requestBody.timeoutSecs = timeout
 
 	resp, herr := conn.OnIncomingRequest(req.Context(), &requestBody)
 	if herr != nil {
@@ -328,4 +334,19 @@ func (h *SyncLiveHandler) UpdateUnreadCounts(roomID, userID string, highlightCou
 		return
 	}
 	userCache.(*UserCache).OnUnreadCounts(roomID, highlightCount, notifCount)
+}
+
+func parseIntFromQuery(u *url.URL, param string) (result int64, err *internal.HandlerError) {
+	queryPos := u.Query().Get(param)
+	if queryPos != "" {
+		var err error
+		result, err = strconv.ParseInt(queryPos, 10, 64)
+		if err != nil {
+			return 0, &internal.HandlerError{
+				StatusCode: 400,
+				Err:        fmt.Errorf("invalid %s: %s", param, queryPos),
+			}
+		}
+	}
+	return
 }
