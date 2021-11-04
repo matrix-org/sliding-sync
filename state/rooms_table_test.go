@@ -6,9 +6,11 @@ import (
 	"testing"
 
 	"github.com/jmoiron/sqlx"
+	"github.com/matrix-org/sync-v3/testutils"
 )
 
 func TestRoomsTable(t *testing.T) {
+	postgresConnectionString := testutils.PrepareDBConnectionString("syncv3_test_state")
 	db, err := sqlx.Open("postgres", postgresConnectionString)
 	if err != nil {
 		t.Fatalf("failed to open SQL db: %s", err)

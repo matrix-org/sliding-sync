@@ -162,12 +162,20 @@ func (a *Accumulator) Initialise(roomID string, state []json.RawMessage) (bool, 
 		}
 		addedEvents = true
 
+		// check for an encryption event
+		isEncrypted := false
+		for _, ev := range events {
+			if ev.Type == "m.room.encryption" && ev.StateKey == "" {
+				isEncrypted = true
+			}
+		}
+
 		// these events do not have a state snapshot ID associated with them as we don't know what
 		// order the state events came down in, it's only a snapshot. This means only timeline events
 		// will have an associated state snapshot ID on the event.
 
 		// Set the snapshot ID as the current state
-		return a.roomsTable.UpdateCurrentAfterSnapshotID(txn, roomID, snapshot.SnapshotID, false)
+		return a.roomsTable.UpdateCurrentAfterSnapshotID(txn, roomID, snapshot.SnapshotID, isEncrypted)
 	})
 	return addedEvents, err
 }
@@ -246,6 +254,9 @@ func (a *Accumulator) Accumulate(roomID string, timeline []json.RawMessage) (num
 			}
 		}
 
+		// check if these new events enable encryption in the room
+		isEncrypted := false
+
 		// Given a timeline of [E1, E2, S3, E4, S5, S6, E7] (E=message event, S=state event)
 		// And a prior state snapshot of SNAP0 then the BEFORE snapshot IDs are grouped as:
 		// E1,E2,S3 => SNAP0
@@ -274,13 +285,14 @@ func (a *Accumulator) Accumulate(roomID string, timeline []json.RawMessage) (num
 						return fmt.Errorf("failed to load stripped state events for snapshot %d: %s", snapID, err)
 					}
 				}
-				newStripped, replacedNID := a.calculateNewSnapshot(oldStripped, Event{
+				newStateEvent := Event{
 					NID:      ev.NID,
 					Type:     ev.JSON.Get("type").Str,
 					StateKey: ev.JSON.Get("state_key").Str,
 					ID:       ev.JSON.Get("event_id").Str,
 					RoomID:   roomID,
-				})
+				}
+				newStripped, replacedNID := a.calculateNewSnapshot(oldStripped, newStateEvent)
 				if err != nil {
 					return err
 				}
@@ -293,6 +305,9 @@ func (a *Accumulator) Accumulate(roomID string, timeline []json.RawMessage) (num
 					return fmt.Errorf("failed to insert new snapshot: %w", err)
 				}
 				snapID = newSnapshot.SnapshotID
+				if newStateEvent.Type == "m.room.encryption" && newStateEvent.StateKey == "" {
+					isEncrypted = true
+				}
 			}
 			if err := a.eventsTable.UpdateBeforeSnapshotID(txn, ev.NID, beforeSnapID, replacesNID); err != nil {
 				return err
@@ -300,7 +315,7 @@ func (a *Accumulator) Accumulate(roomID string, timeline []json.RawMessage) (num
 		}
 
 		// the last fetched snapshot ID is the current one
-		if err = a.roomsTable.UpdateCurrentAfterSnapshotID(txn, roomID, snapID, false); err != nil {
+		if err = a.roomsTable.UpdateCurrentAfterSnapshotID(txn, roomID, snapID, isEncrypted); err != nil {
 			return fmt.Errorf("failed to UpdateCurrentSnapshotID to %d: %w", snapID, err)
 		}
 		return nil
