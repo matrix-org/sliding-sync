@@ -167,7 +167,7 @@ func (a *Accumulator) Initialise(roomID string, state []json.RawMessage) (bool, 
 		// will have an associated state snapshot ID on the event.
 
 		// Set the snapshot ID as the current state
-		return a.roomsTable.UpdateCurrentAfterSnapshotID(txn, roomID, snapshot.SnapshotID)
+		return a.roomsTable.UpdateCurrentAfterSnapshotID(txn, roomID, snapshot.SnapshotID, false)
 	})
 	return addedEvents, err
 }
@@ -300,7 +300,7 @@ func (a *Accumulator) Accumulate(roomID string, timeline []json.RawMessage) (num
 		}
 
 		// the last fetched snapshot ID is the current one
-		if err = a.roomsTable.UpdateCurrentAfterSnapshotID(txn, roomID, snapID); err != nil {
+		if err = a.roomsTable.UpdateCurrentAfterSnapshotID(txn, roomID, snapID, false); err != nil {
 			return fmt.Errorf("failed to UpdateCurrentSnapshotID to %d: %w", snapID, err)
 		}
 		return nil
