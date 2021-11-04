@@ -25,7 +25,7 @@ type GlobalCache struct {
 	roomIDToMetadata   map[string]*internal.RoomMetadata
 	roomIDToMetadataMu *sync.RWMutex
 
-	// for loading room state not held in-memory
+	// for loading room state not held in-memory TODO: remove to another struct along with associated functions
 	store *state.Storage
 
 	id int
@@ -78,7 +78,7 @@ func (c *GlobalCache) LoadJoinedRooms(userID string) (pos int64, joinedRooms []*
 	if err != nil {
 		return 0, nil, err
 	}
-	// TODO: no guarantee that this state is the sam as latest unless called in a dispatcher loop
+	// TODO: no guarantee that this state is the same as latest unless called in a dispatcher loop
 	rooms := c.LoadRooms(joinedRoomIDs...)
 
 	return initialLoadPosition, rooms, nil

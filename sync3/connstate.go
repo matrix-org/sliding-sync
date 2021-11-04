@@ -40,11 +40,10 @@ type ConnEvent struct {
 type ConnState struct {
 	userID string
 	// the only thing that can touch these data structures is the conn goroutine
-	muxedReq                   *Request
-	sortedJoinedRooms          SortableRooms
-	sortedJoinedRoomsPositions map[string]int // room_id -> index in sortedJoinedRooms
-	roomSubscriptions          map[string]RoomSubscription
-	loadPosition               int64
+	muxedReq          *Request
+	sortedJoinedRooms *SortableRooms
+	roomSubscriptions map[string]RoomSubscription
+	loadPosition      int64
 
 	// A channel which the dispatcher uses to send updates to the conn goroutine
 	// Consumed when the conn is read. There is a limit to how many updates we will store before
@@ -58,12 +57,11 @@ type ConnState struct {
 
 func NewConnState(userID string, userCache *UserCache, globalCache *GlobalCache) *ConnState {
 	cs := &ConnState{
-		globalCache:                globalCache,
-		userCache:                  userCache,
-		userID:                     userID,
-		roomSubscriptions:          make(map[string]RoomSubscription),
-		sortedJoinedRoomsPositions: make(map[string]int),
-		updateEvents:               make(chan *ConnEvent, MaxPendingEventUpdates), // TODO: customisable
+		globalCache:       globalCache,
+		userCache:         userCache,
+		userID:            userID,
+		roomSubscriptions: make(map[string]RoomSubscription),
+		updateEvents:      make(chan *ConnEvent, MaxPendingEventUpdates), // TODO: customisable
 	}
 	cs.userCacheID = cs.userCache.Subsribe(cs)
 	return cs
@@ -101,7 +99,7 @@ func (s *ConnState) load(req *Request) error {
 	}
 
 	s.loadPosition = initialLoadPosition
-	s.sortedJoinedRooms = rooms
+	s.sortedJoinedRooms = NewSortableRooms(rooms)
 	s.sort(req.Sort)
 
 	return nil
@@ -112,9 +110,6 @@ func (s *ConnState) sort(sortBy []string) {
 		sortBy = []string{SortByRecency}
 	}
 	err := s.sortedJoinedRooms.Sort(sortBy)
-	for i := range s.sortedJoinedRooms {
-		s.sortedJoinedRoomsPositions[s.sortedJoinedRooms[i].RoomID] = i
-	}
 	if err != nil {
 		logger.Warn().Err(err).Strs("sort", sortBy).Msg("failed to sort")
 	}
@@ -155,7 +150,7 @@ func (s *ConnState) onIncomingRequest(ctx context.Context, req *Request) (*Respo
 	// start forming the response
 	response := &Response{
 		RoomSubscriptions: s.updateRoomSubscriptions(newSubs, newUnsubs),
-		Count:             int64(len(s.sortedJoinedRooms)),
+		Count:             int64(s.sortedJoinedRooms.Len()),
 	}
 
 	// TODO: calculate the M values for N < M calcs
@@ -196,10 +191,10 @@ func (s *ConnState) onIncomingRequest(ctx context.Context, req *Request) (*Respo
 	for _, r := range added {
 		sr := SliceRanges([][2]int64{r})
 		subslice := sr.SliceInto(s.sortedJoinedRooms)
-		rooms := subslice[0].(SortableRooms)
-		roomIDs := make([]string, len(rooms))
-		for i := range rooms {
-			roomIDs[i] = rooms[i].RoomID
+		sortableRooms := subslice[0].(*SortableRooms)
+		roomIDs := make([]string, sortableRooms.Len())
+		for i := range sortableRooms.rooms {
+			roomIDs[i] = sortableRooms.rooms[i].RoomID
 		}
 
 		responseOperations = append(responseOperations, &ResponseOpRange{
@@ -221,10 +216,7 @@ func (s *ConnState) onIncomingRequest(ctx context.Context, req *Request) (*Respo
 			case connEvent := <-s.updateEvents: // TODO: keep reading until it is empty before responding.
 				if connEvent.roomMetadata != nil {
 					// always update our view of the world
-					pos := s.sortedJoinedRoomsPositions[connEvent.roomID]
-					meta := s.sortedJoinedRooms[pos]
-					meta.RoomMetadata = *connEvent.roomMetadata
-					s.sortedJoinedRooms[pos] = meta
+					s.sortedJoinedRooms.UpdateGlobalRoomMetadata(connEvent.roomMetadata)
 				}
 				if connEvent.msg != nil {
 					subs, ops := s.processIncomingEvent(connEvent.msg)
@@ -251,14 +243,7 @@ func (s *ConnState) onIncomingRequest(ctx context.Context, req *Request) (*Respo
 
 func (s *ConnState) processIncomingUserEvent(roomID string, userEvent *UserRoomData, hasCountDecreased bool) ([]Room, []ResponseOp) {
 	// modify notification counts
-	fromIndex, ok := s.sortedJoinedRoomsPositions[roomID]
-	if !ok {
-		return nil, nil
-	}
-	targetRoom := s.sortedJoinedRooms[fromIndex]
-	targetRoom.HighlightCount = userEvent.HighlightCount
-	targetRoom.NotificationCount = userEvent.NotificationCount
-	s.sortedJoinedRooms[fromIndex] = targetRoom
+	s.sortedJoinedRooms.UpdateUserRoomMetadata(roomID, userEvent, hasCountDecreased)
 
 	if !hasCountDecreased {
 		// if the count increases then we'll notify the user for the event which increases the count, hence
@@ -266,6 +251,10 @@ func (s *ConnState) processIncomingUserEvent(roomID string, userEvent *UserRoomD
 		return nil, nil
 	}
 
+	fromIndex, ok := s.sortedJoinedRooms.IndexOf(roomID)
+	if !ok {
+		return nil, nil
+	}
 	return s.resort(roomID, fromIndex, nil)
 }
 
@@ -277,10 +266,10 @@ func (s *ConnState) processIncomingEvent(updateEvent *EventData) ([]Room, []Resp
 	// this is why this select is in a while loop as not all update event will wake up the stream
 
 	var targetRoom RoomConnMetadata
-	fromIndex, ok := s.sortedJoinedRoomsPositions[updateEvent.roomID]
+	fromIndex, ok := s.sortedJoinedRooms.IndexOf(updateEvent.roomID)
 	if !ok {
 		// the user may have just joined the room hence not have an entry in this list yet.
-		fromIndex = len(s.sortedJoinedRooms)
+		fromIndex = int(s.sortedJoinedRooms.Len())
 		roomMetadatas := s.globalCache.LoadRooms(updateEvent.roomID)
 		roomMetadata := roomMetadatas[0]
 		roomMetadata.RemoveHero(s.userID)
@@ -290,12 +279,13 @@ func (s *ConnState) processIncomingEvent(updateEvent *EventData) ([]Room, []Resp
 				strings.Trim(internal.CalculateRoomName(roomMetadata, 5), "#!()):_@"),
 			),
 		}
-		s.sortedJoinedRooms = append(s.sortedJoinedRooms, newRoomConn)
+		// TODO: don't gut wrench
+		s.sortedJoinedRooms.rooms = append(s.sortedJoinedRooms.rooms, newRoomConn)
 		targetRoom = newRoomConn
 	} else {
-		targetRoom = s.sortedJoinedRooms[fromIndex]
+		targetRoom = s.sortedJoinedRooms.rooms[fromIndex]
 		targetRoom.LastMessageTimestamp = updateEvent.timestamp
-		s.sortedJoinedRooms[fromIndex] = targetRoom
+		s.sortedJoinedRooms.rooms[fromIndex] = targetRoom
 	}
 	return s.resort(updateEvent.roomID, fromIndex, updateEvent.event)
 }
@@ -311,7 +301,7 @@ func (s *ConnState) resort(roomID string, fromIndex int, newEvent json.RawMessag
 		subs = append(subs, *s.getDeltaRoomData(roomID, newEvent))
 		isSubscribedToRoom = true
 	}
-	toIndex := s.sortedJoinedRoomsPositions[roomID]
+	toIndex, _ := s.sortedJoinedRooms.IndexOf(roomID)
 	logger = logger.With().Str("room", roomID).Int("from", fromIndex).Int("to", toIndex).Logger()
 	logger.Info().Msg("moved!")
 	// the toIndex may not be inside a tracked range. If it isn't, we actually need to notify about a
@@ -319,9 +309,10 @@ func (s *ConnState) resort(roomID string, fromIndex int, newEvent json.RawMessag
 	if !s.muxedReq.Rooms.Inside(int64(toIndex)) {
 		logger.Info().Msg("room isn't inside tracked range")
 		toIndex = int(s.muxedReq.Rooms.UpperClamp(int64(toIndex)))
-		if toIndex >= len(s.sortedJoinedRooms) {
+		count := int(s.sortedJoinedRooms.Len())
+		if toIndex >= count {
 			// no room exists
-			logger.Warn().Int("to", toIndex).Int("size", len(s.sortedJoinedRooms)).Msg(
+			logger.Warn().Int("to", toIndex).Int("size", count).Msg(
 				"cannot move to index, it's greater than the list of sorted rooms",
 			)
 			return subs, nil
@@ -332,7 +323,7 @@ func (s *ConnState) resort(roomID string, fromIndex int, newEvent json.RawMessag
 			)
 			return subs, nil
 		}
-		toRoom := s.sortedJoinedRooms[toIndex]
+		toRoom := s.sortedJoinedRooms.rooms[toIndex]
 
 		// fake an update event for this room.
 		// We do this because we are introducing a new room in the list because of this situation:

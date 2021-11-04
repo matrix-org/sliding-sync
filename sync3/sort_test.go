@@ -59,12 +59,12 @@ func TestSortBySingleOperation(t *testing.T) {
 		SortByHighlightCount:    {room1, room3, room4, room2},
 		SortByNotificationCount: {room1, room3, room2, room4},
 	}
-	sr := SortableRooms(rooms)
+	sr := NewSortableRooms(rooms)
 	for sortBy, wantOrder := range wantMap {
 		sr.Sort([]string{sortBy})
 		var gotRoomIDs []string
-		for i := range sr {
-			gotRoomIDs = append(gotRoomIDs, sr[i].RoomID)
+		for i := range sr.rooms {
+			gotRoomIDs = append(gotRoomIDs, sr.rooms[i].RoomID)
 		}
 		for i := range wantOrder {
 			if wantOrder[i] != gotRoomIDs[i] {
@@ -130,12 +130,12 @@ func TestSortByMultipleOperations(t *testing.T) {
 			WantRooms: []string{room1, room2, room4, room3},
 		},
 	}
-	sr := SortableRooms(rooms)
+	sr := NewSortableRooms(rooms)
 	for _, tc := range testCases {
 		sr.Sort(tc.SortBy)
 		var gotRoomIDs []string
-		for i := range sr {
-			gotRoomIDs = append(gotRoomIDs, sr[i].RoomID)
+		for i := range sr.rooms {
+			gotRoomIDs = append(gotRoomIDs, sr.rooms[i].RoomID)
 		}
 		for i := range tc.WantRooms {
 			if tc.WantRooms[i] != gotRoomIDs[i] {
