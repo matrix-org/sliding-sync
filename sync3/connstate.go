@@ -26,9 +26,10 @@ type RoomConnMetadata struct {
 }
 
 type ConnEvent struct {
-	roomID  string
-	msg     *EventData
-	userMsg struct {
+	roomMetadata *internal.RoomMetadata
+	roomID       string
+	msg          *EventData
+	userMsg      struct {
 		msg               *UserRoomData
 		hasCountDecreased bool
 	}
@@ -218,6 +219,13 @@ func (s *ConnState) onIncomingRequest(ctx context.Context, req *Request) (*Respo
 			case <-time.After(time.Duration(req.timeoutSecs) * time.Second):
 				break blockloop
 			case connEvent := <-s.updateEvents: // TODO: keep reading until it is empty before responding.
+				if connEvent.roomMetadata != nil {
+					// always update our view of the world
+					pos := s.sortedJoinedRoomsPositions[connEvent.roomID]
+					meta := s.sortedJoinedRooms[pos]
+					meta.RoomMetadata = *connEvent.roomMetadata
+					s.sortedJoinedRooms[pos] = meta
+				}
 				if connEvent.msg != nil {
 					subs, ops := s.processIncomingEvent(connEvent.msg)
 					responseOperations = append(responseOperations, ops...)
@@ -482,9 +490,15 @@ func (s *ConnState) moveRoom(roomID string, event json.RawMessage, fromIndex, to
 
 // Called by the user cache when events arrive
 func (s *ConnState) OnNewEvent(event *EventData) {
+	// pull the current room metadata from the global cache. This is safe to do without locking
+	// as the v2 poll loops all rely on a single poller thread to poke the dispatcher which pokes
+	// the caches (incl. user caches) so there cannot be any concurrent updates. We always get back
+	// a copy of the metadata from LoadRoom so we can pass pointers around freely.
+	meta := s.globalCache.LoadRoom(event.roomID)
 	s.onNewConnectionEvent(&ConnEvent{
-		roomID: event.roomID,
-		msg:    event,
+		roomMetadata: meta,
+		roomID:       event.roomID,
+		msg:          event,
 	})
 }
 
