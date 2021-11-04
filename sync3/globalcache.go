@@ -159,6 +159,10 @@ func (c *GlobalCache) OnNewEvent(
 		if ed.stateKey != nil && *ed.stateKey == "" {
 			metadata.NameEvent = ed.content.Get("name").Str
 		}
+	case "m.room.encryption":
+		if ed.stateKey != nil && *ed.stateKey == "" {
+			metadata.Encrypted = true
+		}
 	case "m.room.canonical_alias":
 		if ed.stateKey != nil && *ed.stateKey == "" {
 			metadata.CanonicalAlias = ed.content.Get("alias").Str

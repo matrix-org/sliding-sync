@@ -14,6 +14,7 @@ type RoomMetadata struct {
 	JoinCount            int
 	InviteCount          int
 	LastMessageTimestamp uint64
+	Encrypted            bool
 }
 
 func (m *RoomMetadata) RemoveHero(userID string) {
