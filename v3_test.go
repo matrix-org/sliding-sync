@@ -197,7 +197,7 @@ func (s *testV3Server) doV3Request(t *testing.T, token string, pos int64, reqBod
 		}
 		body = bytes.NewBuffer(j)
 	}
-	qps := "?timeout=1"
+	qps := "?timeout=2"
 	if pos > 0 {
 		qps += fmt.Sprintf("&pos=%d", pos)
 	}
