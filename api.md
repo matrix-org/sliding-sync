@@ -47,26 +47,86 @@ The overarching model here is to imagine `/sync` as a pubsub system, where you a
   // least one active session on the device.
   // If this id is missing, it is set to 'default'.
   "session_id": "arbitrary-client-chosen-string",
-  
-  // first 100 rooms
-  "rooms": [ [0,99] ],
-  
-  // how `rooms` gets sorted. Note "by_name" means servers need to
-  // implement the room name calculation algorithm. We may be able to
-  // add a "locale" key for sorting rooms which are composed of user
-  // names more sensibly according to i18n.
-  "sort": [ "by_notification_count", "by_recency", "by_name" ],
-  
-  "required_state": [
-    ["m.room.join_rules", ""],
-    ["m.room.history_visibility", ""],
-    ["m.space.child", "*"] // wildcard
+
+  // A list of sliding window request params.
+  // At least 1 list must be present for the sync API to return data.
+  // From a UI perspective, a 'list' is any independently scrolling
+  // room list.
+  "lists": [
+    {
+      // first 100 rooms
+      "rooms": [ [0,99] ],
+      
+      // how `rooms` gets sorted. Note "by_name" means servers need to
+      // implement the room name calculation algorithm. We may be able to
+      // add a "locale" key for sorting rooms which are composed of user
+      // names more sensibly according to i18n.
+      "sort": [ "by_notification_count", "by_recency", "by_name" ],
+      
+      "required_state": [
+        ["m.room.join_rules", ""],
+        ["m.room.history_visibility", ""],
+        ["m.space.child", "*"] // wildcard
+      ],
+      
+      // the initial timeline limit to send for a new room, live stream
+      // data can exceed this limit
+      "timeline_limit": 10,
+
+      "filters": {
+        // only returns rooms in these spaces (ignores subspaces)
+        "spaces": ["!space1:example.com", "!space2:example.com"],
+        // options to control which events should be live-streamed e.g not_types, types from sync v2
+      }
+    },
+    {
+      // first 100 rooms
+      "rooms": [ [0,99] ],
+
+      // additional lists will use the request parameters from lists[0]
+      // by default, unless overridden.
+      "filters": {
+        // only rooms present in m.direct in account data will appear in this list
+        "is_dm": true
+      },
+      // When a room matches multiple rooms, it will appear ONLY in
+      // the room with the highest priority. If more than one list
+      // has joint highest priority, it will appear in both. A lack
+      // of a priority key indicates priority: 0.
+      "priority": 1
+    },
+    {
+      // first 100 rooms
+      "rooms": [ [0,99] ],
+
+      // additional lists will use the request parameters from lists[0]
+      // by default, unless overridden. Note that overrides REPLACE the
+      // entire top-level key, they do not mix together fields.
+      "filters": {
+        // only rooms present in m.favourite in account data will appear in this list
+        "is_favourite": true
+      },
+      "priority": 2
+    },
+    {
+      // first 100 rooms
+      "rooms": [ [0,99] ],
+
+      "filters": {
+        // only rooms the user has been invited to will appear in this list.
+        // These rooms will have no timeline other than the invite event,
+        // but may have additional Stripped State Events as per the spec
+        // which can be retrieved as `required_state`.
+        "is_invite": true
+      },
+      "priority": 3
+    }
   ],
-  
-  // the initial timeline limit to send for a new room, live stream
-  // data can exceed this limit
-  "timeline_limit": 10,
-  
+
+
+  // Room subscriptions are intended to be used for rooms the
+  // client is actively viewing, which may not be visible on
+  // the room list and may have different data requirements.
   "room_subscriptions": {
       "!sub1:bar": { // the client may be actively viewing this room
           "required_state": [ ["*","*"] ], // all state events
@@ -78,12 +138,6 @@ The overarching model here is to imagine `/sync` as a pubsub system, where you a
   // if the client was already subscribed to this room, this is how you unsub
   // unsubbing twice is a no-op
   "unsubscribe_rooms": [ "!sub3:bar" ]
-  
-  "filters": {
-    // only returns rooms in these spaces (ignores subspaces)
-    "spaces": ["!space1:example.com", "!space2:example.com"],
-    // options to control which events should be live-streamed e.g not_types, types from sync v2
-  }
 }
 ```
 Returns:
@@ -91,6 +145,7 @@ Returns:
 {
   "ops": [
     {
+      "list": 0, // the index in 'lists' which this operation applies to
       "range": [0,99],
       "op": "SYNC",
       "rooms": [
@@ -154,8 +209,10 @@ Returns:
         }
   }
   // the total number of rooms the user is joined to, used to pre-allocate
-  // placeholder rooms for smooth scrolling
-  "count": 1337, 
+  // placeholder rooms for smooth scrolling. The index positions here match
+  // the lists provided in the request so this means:
+  // 1337 rooms in the main list, 30 DMs, 5 favourite rooms, 0 invites.
+  "counts": [1337,30,5,0], 
   "notifications": { .... } // see later section
 }
 ```
@@ -164,6 +221,7 @@ Subsequent updates are just live-streamed to the client as and when they happen.
 {
   "ops": [
     {
+      "list": 0,
       "index": 3,
       "op": "UPDATE",
       "room": {
@@ -174,7 +232,7 @@ Subsequent updates are just live-streamed to the client as and when they happen.
       }
     }
   ],
-  "count": 1337 // the total number of rooms the user is joined to
+  "counts": [1337,30,5] // the total number of rooms the user is joined to
 }
 ```
 UPDATEs do exactly that, update fields without removing existing fields. The above response means "append to the timeline". Clients need to know that state events in the timeline ALSO mean to update the current state of the room. Updates which affect [calculating the room name](https://matrix.org/docs/spec/client_server/latest#calculating-the-display-name-for-a-room) will also update the `name` field for that room, in addition to returning the event which modifies the room name. This means clients don't need to implement the room name calculation algorithm at all. If an update occurs in a room which is both in the sorted list and an explicit room subscription, only the room subscription will receive the information: there will be no explicit UPDATE operation:
@@ -196,6 +254,7 @@ If the user leaves the 9th room, we need to bump everything up and add an entry 
 {
   "ops": [
     {
+      "list": 0,
       "index": 8,
       "op": "UPDATE",
       "room": {
@@ -205,10 +264,12 @@ If the user leaves the 9th room, we need to bump everything up and add an entry 
       }
     }
     {
+      "list": 0,
       "op": "DELETE",
       "index": 8
     },
     {
+      "list": 0,
       "op": "INSERT",
       "index": 99,
       "room": {
@@ -232,24 +293,26 @@ If the user leaves the 9th room, we need to bump everything up and add an entry 
       },
     }
   ],
-  // the count is AFTER the ops have been applied so decremented by 1
-  "count": 1336
+  // the count is AFTER the ops have been applied so decremented by 1 e.g 1337-1=1336
+  "count": [1336,30,5]
 }
 ```
 It is up to the client to decide what to do here. We could have configurable options for:
- - Leaving a room removes from the list.
- - Getting banned in a room does NOT remove from the list (so the user can see they were banned).
- - Forgetting a room (e.g a banned room) then removes it from the list.
+ - Leaving a room removes from the list: `filters: { include_left_rooms: false }`
+ - Getting banned in a room does NOT remove from the list (so the user can see they were banned): `filters: { include_banned_rooms: true }`
+ - Forgetting a room (e.g a banned room) then removes it from the list: `filters: { include_forgotten_rooms: false }`
 
 If a user joins a room in the 35th position we need to get rid of the 100th entry:
 ```json=
 {
   "ops": [
     {
+      "list": 0,
       "op": "DELETE",
       "index": 99
     },
     {
+      "list": 0,
       "op": "INSERT",
       "index": 34,
       "room": {
@@ -273,7 +336,7 @@ If a user joins a room in the 35th position we need to get rid of the 100th entr
       },
     }
   ],
-  "count": 1337 // the count is AFTER the ops so incremented by 1
+  "count": [1337,30,5] // the count is AFTER the ops so incremented by 1
 }
 ```
 Invites would be handled outside the core `rooms` array as they often appear in their own prominent section. If a room is tracked via an explicit subscription and it enters or leaves the sorted list, only the INSERT/DELETE operations will be present, and the INSERT operation will only have the `room_id` field.
@@ -283,7 +346,18 @@ If the user scrolls down, we need to request and subscribe to the next 100 rooms
 `POST /v3/sync`:
 ```json=
 {
-  "rooms": [ [0,99], [100,199] ],  // first 200 rooms
+  "lists": [
+    {
+      "rooms": [ [0,99], [100,199] ] // first 200 rooms
+    },
+    // Need to specify empty objects to let the server know that
+    // the client is still interested in DMs, Favourites and
+    // Invites lists. Sticky params mean they can be empty which
+    // means 'no change'.
+    {},
+    {},
+    {}
+  ]
   // request parameters are sticky and don't need to be specified again
   // a notable exception to this is 'unsubscribe_rooms' which merely alters
   // the 'room_subscriptions' map when it is received and then gets cleared.
@@ -294,6 +368,7 @@ The server sees the client wanting to subscribe to 0-99 but there is already an 
 {
   "ops": [
     {
+      "list": 0,
       "range": [100,199],
       "op": "SYNC",
       "rooms": [
@@ -315,6 +390,7 @@ The server sees 100-199 is missing and issues an invalidation to tell the client
 {
   "ops": [
     {
+      "list": 0,
       "op": "INVALIDATE",
       "range": [100,199]
     }
@@ -353,6 +429,7 @@ An example of what this looks like in the response:
 {
   "ops": [
     {
+      "list": 0,
       "range": [100,117],
       "op": "SYNC",
       "rooms": [
@@ -360,6 +437,7 @@ An example of what this looks like in the response:
       ]
     },
     {
+        "list": 0,
         "range": [118,124],
         "op": "UPDATE",
         "rooms": [
@@ -371,6 +449,7 @@ An example of what this looks like in the response:
         ]
     },
     {
+        "list": 0,
         "range": [125,177],
         "op": "SYNC",
         "rooms": [
@@ -417,19 +496,22 @@ Clients need to "subscribe" to this room to track this room and pull in any othe
 The server cannot calculate the `highlight_count` in E2EE rooms as it cannot read the message content. This is a problem when clients want to sort by `highlight_count`. In comparison, the server can calculate the name, `unread_count`, and work out the most recent timestamp when sorting by those fields. What should the server do when the client wants to sort by `highlight_count` (which is pretty typical!)? It can:
  - Assume `highlight_count == 1` whenever `unread_count > 0`. This ensures that E2EE rooms are always bumped above unreads in the list, but doesn't allow sorting within the list of highlighted rooms.
  - Assume `highlight_count == 0` always. This will always sort E2EE rooms below the highlight list, even if the E2EE room has a @mention.
- - Sort E2EE rooms in their own dedicated list.
+ - Sort E2EE rooms in their own dedicated list: `{"filters": { "is_encrypted": true }}`
 
 In all cases, the client needs to do additional work to calculate the `highlight_count`. When the client is streaming this work is very small as it just concerns a single event. However, when the client has been offline for a while there could be hundreds or thousands of missed events. There are 3 options here:
  - Do no work and immediately red-highlight the room. Risk of false positives.
  - Grab the last N messages and see if any of them are highlights. **Current implementations using sync v2 do this.**
  - Grab all the missed messages and see if any of them are highlights. Denial of service risk if there are thousands of messages.
 
-Once the highlight count has been adequately *estimated* (it's only truly calculated if you grab all messages), this may affect the sort order for this room - it may diverge from that of the server. More specifically, it may bump the room up or down the list, depending on what the sort implementation is for E2EE rooms (top of list or below rooms with highlights). How this interacts with this API has not yet been fully determined.
+Once the highlight count has been adequately *estimated* (it's only truly calculated if you grab all messages), this may affect the sort order for this room - it may diverge from that of the server. More specifically, it may bump the room up or down the list, depending on what the sort implementation is for E2EE rooms (top of list or below rooms with highlights).
+
+Client have two main choices here:
+ - **Lite**: Keep E2EE rooms in the main list. This means the sort order won't always be strictly accurate for them but is fast to do. If you are sorting by highlight count then unread count (which is fairly typical) then E2EE rooms will always be bumped above all the unread count rooms if the resolution algorithm is set to "Assume `highlight_count == 1` whenever `unread_count > 0`".
+ - **Heavy**: Sort E2EE rooms into a separate list (higher priority than the main list to de-duplicate them). Manually mix together the E2EE list and the main list depending on highlight counts. This means the sort order will be more accurate but is slower and more complex to perform.
 
 
 ### Missing bits
 
-- Room invites. This can be in a separate section of the response, outside the sorted `rooms` array.
 - Typing notifs, read receipts, room tag data, and any other room-scoped data. This can be added as request params to state whether you want these or not.
 - Account data. Again, this can be added as request params and we can do similar pubsub for updates to types the client is interested in.
 - To-device messages. It would be nice to have a queue per event type / sender / room so clients can rapidly get at room keys without having to wade through lots of key share requests. Need to check with the crypto team whether the ordering on to-device messages cross-event-type is important or not.
