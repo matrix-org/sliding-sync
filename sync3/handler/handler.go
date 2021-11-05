@@ -1,4 +1,4 @@
-package sync3
+package handler
 
 import (
 	"encoding/json"
@@ -13,6 +13,7 @@ import (
 	"github.com/matrix-org/sync-v3/internal"
 	"github.com/matrix-org/sync-v3/state"
 	"github.com/matrix-org/sync-v3/sync2"
+	"github.com/matrix-org/sync-v3/sync3"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/hlog"
 	"github.com/rs/zerolog/log"
@@ -32,15 +33,15 @@ type SyncLiveHandler struct {
 	Storage   *state.Storage
 	V2Store   *sync2.Storage
 	PollerMap *sync2.PollerMap
-	ConnMap   *ConnMap
+	ConnMap   *sync3.ConnMap
 
 	// inserts are done by v2 poll loops, selects are done by v3 request threads
 	// but the v3 requests touch non-overlapping keys, which is a good use case for sync.Map
 	// > (2) when multiple goroutines read, write, and overwrite entries for disjoint sets of keys.
 	userCaches *sync.Map // map[user_id]*UserCache
-	dispatcher *Dispatcher
+	Dispatcher *sync3.Dispatcher
 
-	globalCache *GlobalCache
+	GlobalCache *sync3.GlobalCache
 }
 
 func NewSync3Handler(v2Client sync2.Client, postgresDBURI string) (*SyncLiveHandler, error) {
@@ -49,24 +50,28 @@ func NewSync3Handler(v2Client sync2.Client, postgresDBURI string) (*SyncLiveHand
 		V2:          v2Client,
 		Storage:     store,
 		V2Store:     sync2.NewStore(postgresDBURI),
-		ConnMap:     NewConnMap(),
+		ConnMap:     sync3.NewConnMap(),
 		userCaches:  &sync.Map{},
-		dispatcher:  NewDispatcher(),
-		globalCache: NewGlobalCache(store),
+		Dispatcher:  sync3.NewDispatcher(),
+		GlobalCache: sync3.NewGlobalCache(store),
 	}
 	sh.PollerMap = sync2.NewPollerMap(v2Client, sh)
-
-	if err := sh.dispatcher.Startup(sh.Storage); err != nil {
-		return nil, fmt.Errorf("failed to load dispatcher: %s", err)
+	roomToJoinedUsers, err := store.AllJoinedMembers()
+	if err != nil {
+		return nil, err
 	}
-	sh.dispatcher.Register(DispatcherAllUsers, sh.globalCache)
+
+	if err := sh.Dispatcher.Startup(roomToJoinedUsers); err != nil {
+		return nil, fmt.Errorf("failed to load sync3.Dispatcher: %s", err)
+	}
+	sh.Dispatcher.Register(sync3.DispatcherAllUsers, sh.GlobalCache)
 
 	// every room will be present here
 	roomIDToMetadata, err := store.MetadataForAllRooms()
 	if err != nil {
 		return nil, fmt.Errorf("could not get metadata for all rooms: %s", err)
 	}
-	if err := sh.globalCache.Startup(roomIDToMetadata); err != nil {
+	if err := sh.GlobalCache.Startup(roomIDToMetadata); err != nil {
 		return nil, fmt.Errorf("failed to populate global cache: %s", err)
 	}
 
@@ -94,7 +99,7 @@ func (h *SyncLiveHandler) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 
 // Entry point for sync v3
 func (h *SyncLiveHandler) serve(w http.ResponseWriter, req *http.Request) error {
-	var requestBody Request
+	var requestBody sync3.Request
 	if req.Body != nil {
 		defer req.Body.Close()
 		if err := json.NewDecoder(req.Body).Decode(&requestBody); err != nil {
@@ -120,11 +125,11 @@ func (h *SyncLiveHandler) serve(w http.ResponseWriter, req *http.Request) error 
 	if herr != nil {
 		return herr
 	}
-	requestBody.pos = cpos
+	requestBody.SetPos(cpos)
 
 	var timeout int
 	if req.URL.Query().Get("timeout") == "" {
-		timeout = DefaultTimeoutSecs
+		timeout = sync3.DefaultTimeoutSecs
 	} else {
 		timeout64, herr := parseIntFromQuery(req.URL, "timeout")
 		if herr != nil {
@@ -133,7 +138,7 @@ func (h *SyncLiveHandler) serve(w http.ResponseWriter, req *http.Request) error 
 		timeout = int(timeout64)
 	}
 
-	requestBody.timeoutSecs = timeout
+	requestBody.SetTimeoutSecs(timeout)
 
 	resp, herr := conn.OnIncomingRequest(req.Context(), &requestBody)
 	if herr != nil {
@@ -154,9 +159,9 @@ func (h *SyncLiveHandler) serve(w http.ResponseWriter, req *http.Request) error 
 // setupConnection associates this request with an existing connection or makes a new connection.
 // It also sets a v2 sync poll loop going if one didn't exist already for this user.
 // When this function returns, the connection is alive and active.
-func (h *SyncLiveHandler) setupConnection(req *http.Request, syncReq *Request, containsPos bool) (*Conn, error) {
+func (h *SyncLiveHandler) setupConnection(req *http.Request, syncReq *sync3.Request, containsPos bool) (*sync3.Conn, error) {
 	log := hlog.FromRequest(req)
-	var conn *Conn
+	var conn *sync3.Conn
 
 	// Identify the device
 	deviceID, err := internal.DeviceIDFromRequest(req)
@@ -172,7 +177,7 @@ func (h *SyncLiveHandler) setupConnection(req *http.Request, syncReq *Request, c
 	if containsPos {
 		// Lookup the connection
 		// we need to map based on both as the session ID isn't crypto secure but the device ID is (Auth header)
-		conn = h.ConnMap.Conn(ConnID{
+		conn = h.ConnMap.Conn(sync3.ConnID{
 			SessionID: syncReq.SessionID,
 			DeviceID:  deviceID,
 		})
@@ -236,10 +241,12 @@ func (h *SyncLiveHandler) setupConnection(req *http.Request, syncReq *Request, c
 	// because we *either* do the existing check *or* make a new conn. It's important for CreateConn
 	// to check for an existing connection though, as it's possible for the client to call /sync
 	// twice for a new connection and get the same session ID.
-	conn, created := h.ConnMap.GetOrCreateConn(ConnID{
+	conn, created := h.ConnMap.GetOrCreateConn(sync3.ConnID{
 		SessionID: syncReq.SessionID,
 		DeviceID:  deviceID,
-	}, h.globalCache, v2device.UserID, userCache)
+	}, func() sync3.ConnHandler {
+		return NewConnState(v2device.UserID, userCache, h.GlobalCache)
+	})
 	if created {
 		log.Info().Str("conn_id", conn.ConnID.String()).Msg("created new connection")
 	} else {
@@ -248,12 +255,12 @@ func (h *SyncLiveHandler) setupConnection(req *http.Request, syncReq *Request, c
 	return conn, nil
 }
 
-func (h *SyncLiveHandler) userCache(userID string) (*UserCache, error) {
+func (h *SyncLiveHandler) userCache(userID string) (*sync3.UserCache, error) {
 	c, ok := h.userCaches.Load(userID)
 	if ok {
-		return c.(*UserCache), nil
+		return c.(*sync3.UserCache), nil
 	}
-	uc := NewUserCache(userID, h.globalCache, h.Storage)
+	uc := sync3.NewUserCache(userID, h.GlobalCache, h.Storage)
 	// select all non-zero highlight or notif counts and set them, as this is less costly than looping every room/user pair
 	err := h.Storage.UnreadTable.SelectAllNonZeroCountsForUser(userID, func(roomID string, highlightCount, notificationCount int) {
 		uc.OnUnreadCounts(roomID, &highlightCount, &notificationCount)
@@ -261,7 +268,7 @@ func (h *SyncLiveHandler) userCache(userID string) (*UserCache, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to load unread counts: %s", err)
 	}
-	h.dispatcher.Register(userID, uc)
+	h.Dispatcher.Register(userID, uc)
 	h.userCaches.Store(userID, uc)
 	return uc, nil
 }
@@ -288,7 +295,7 @@ func (h *SyncLiveHandler) Accumulate(roomID string, timeline []json.RawMessage) 
 	newEvents := timeline[len(timeline)-numNew:]
 
 	// we have new events, notify active connections
-	h.dispatcher.OnNewEvents(roomID, newEvents, latestPos)
+	h.Dispatcher.OnNewEvents(roomID, newEvents, latestPos)
 }
 
 // Called from the v2 poller, implements V2DataReceiver
@@ -303,7 +310,7 @@ func (h *SyncLiveHandler) Initialise(roomID string, state []json.RawMessage) {
 		return
 	}
 	// we have new events, notify active connections
-	h.dispatcher.OnNewEvents(roomID, state, 0)
+	h.Dispatcher.OnNewEvents(roomID, state, 0)
 }
 
 // Called from the v2 poller, implements V2DataReceiver
@@ -333,7 +340,7 @@ func (h *SyncLiveHandler) UpdateUnreadCounts(roomID, userID string, highlightCou
 	if !ok {
 		return
 	}
-	userCache.(*UserCache).OnUnreadCounts(roomID, highlightCount, notifCount)
+	userCache.(*sync3.UserCache).OnUnreadCounts(roomID, highlightCount, notifCount)
 }
 
 func parseIntFromQuery(u *url.URL, param string) (result int64, err *internal.HandlerError) {

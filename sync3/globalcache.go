@@ -3,13 +3,20 @@ package sync3
 import (
 	"encoding/json"
 	"fmt"
+	"os"
 	"sync"
 
 	"github.com/matrix-org/gomatrixserverlib"
 	"github.com/matrix-org/sync-v3/internal"
 	"github.com/matrix-org/sync-v3/state"
+	"github.com/rs/zerolog"
 	"github.com/tidwall/gjson"
 )
+
+var logger = zerolog.New(os.Stdout).With().Timestamp().Logger().Output(zerolog.ConsoleWriter{
+	Out:        os.Stderr,
+	TimeFormat: "15:04:05",
+})
 
 // The purpose of global cache is to store global-level information about all rooms the server is aware of.
 // Global-level information is represented as internal.RoomMetadata and includes things like Heroes, join/invite
@@ -160,29 +167,29 @@ func (c *GlobalCache) OnNewEvent(
 	// update global state
 	c.roomIDToMetadataMu.Lock()
 	defer c.roomIDToMetadataMu.Unlock()
-	metadata := c.roomIDToMetadata[ed.roomID]
+	metadata := c.roomIDToMetadata[ed.RoomID]
 	if metadata == nil {
 		metadata = &internal.RoomMetadata{
-			RoomID: ed.roomID,
+			RoomID: ed.RoomID,
 		}
 	}
-	switch ed.eventType {
+	switch ed.EventType {
 	case "m.room.name":
-		if ed.stateKey != nil && *ed.stateKey == "" {
-			metadata.NameEvent = ed.content.Get("name").Str
+		if ed.StateKey != nil && *ed.StateKey == "" {
+			metadata.NameEvent = ed.Content.Get("name").Str
 		}
 	case "m.room.encryption":
-		if ed.stateKey != nil && *ed.stateKey == "" {
+		if ed.StateKey != nil && *ed.StateKey == "" {
 			metadata.Encrypted = true
 		}
 	case "m.room.canonical_alias":
-		if ed.stateKey != nil && *ed.stateKey == "" {
-			metadata.CanonicalAlias = ed.content.Get("alias").Str
+		if ed.StateKey != nil && *ed.StateKey == "" {
+			metadata.CanonicalAlias = ed.Content.Get("alias").Str
 		}
 	case "m.room.member":
-		if ed.stateKey != nil {
-			membership := ed.content.Get("membership").Str
-			eventJSON := gjson.ParseBytes(ed.event)
+		if ed.StateKey != nil {
+			membership := ed.Content.Get("membership").Str
+			eventJSON := gjson.ParseBytes(ed.Event)
 			if internal.IsMembershipChange(eventJSON) {
 				if membership == "invite" {
 					metadata.InviteCount += 1
@@ -191,7 +198,7 @@ func (c *GlobalCache) OnNewEvent(
 				} else if membership == "leave" || membership == "ban" {
 					metadata.JoinCount -= 1
 					// remove this user as a hero
-					metadata.RemoveHero(*ed.stateKey)
+					metadata.RemoveHero(*ed.StateKey)
 				}
 
 				if eventJSON.Get("unsigned.prev_content.membership").Str == "invite" {
@@ -202,21 +209,21 @@ func (c *GlobalCache) OnNewEvent(
 				// try to find the existing hero e.g they changed their display name
 				found := false
 				for i := range metadata.Heroes {
-					if metadata.Heroes[i].ID == *ed.stateKey {
-						metadata.Heroes[i].Name = ed.content.Get("displayname").Str
+					if metadata.Heroes[i].ID == *ed.StateKey {
+						metadata.Heroes[i].Name = ed.Content.Get("displayname").Str
 						found = true
 						break
 					}
 				}
 				if !found {
 					metadata.Heroes = append(metadata.Heroes, internal.Hero{
-						ID:   *ed.stateKey,
-						Name: ed.content.Get("displayname").Str,
+						ID:   *ed.StateKey,
+						Name: ed.Content.Get("displayname").Str,
 					})
 				}
 			}
 		}
 	}
-	metadata.LastMessageTimestamp = ed.timestamp
-	c.roomIDToMetadata[ed.roomID] = metadata
+	metadata.LastMessageTimestamp = ed.Timestamp
+	c.roomIDToMetadata[ed.RoomID] = metadata
 }

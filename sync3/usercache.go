@@ -20,7 +20,7 @@ type UserCacheListener interface {
 
 type UserCache struct {
 	LazyRoomDataOverride func(loadPos int64, roomIDs []string, maxTimelineEvents int) map[string]UserRoomData
-	userID               string
+	UserID               string
 	roomToData           map[string]UserRoomData
 	roomToDataMu         *sync.RWMutex
 	listeners            map[int]UserCacheListener
@@ -32,7 +32,7 @@ type UserCache struct {
 
 func NewUserCache(userID string, globalCache *GlobalCache, store *state.Storage) *UserCache {
 	uc := &UserCache{
-		userID:       userID,
+		UserID:       userID,
 		roomToDataMu: &sync.RWMutex{},
 		roomToData:   make(map[string]UserRoomData),
 		listeners:    make(map[int]UserCacheListener),
@@ -58,14 +58,14 @@ func (c *UserCache) Unsubscribe(id int) {
 	delete(c.listeners, id)
 }
 
-func (c *UserCache) lazyLoadTimelines(loadPos int64, roomIDs []string, maxTimelineEvents int) map[string]UserRoomData {
+func (c *UserCache) LazyLoadTimelines(loadPos int64, roomIDs []string, maxTimelineEvents int) map[string]UserRoomData {
 	if c.LazyRoomDataOverride != nil {
 		return c.LazyRoomDataOverride(loadPos, roomIDs, maxTimelineEvents)
 	}
 	result := make(map[string]UserRoomData)
 	var lazyRoomIDs []string
 	for _, roomID := range roomIDs {
-		urd := c.loadRoomData(roomID)
+		urd := c.LoadRoomData(roomID)
 		if len(urd.Timeline) > 0 {
 			timeline := urd.Timeline
 			if len(timeline) > maxTimelineEvents {
@@ -84,7 +84,7 @@ func (c *UserCache) lazyLoadTimelines(loadPos int64, roomIDs []string, maxTimeli
 	if len(lazyRoomIDs) == 0 {
 		return result
 	}
-	roomIDToEvents, err := c.store.LatestEventsInRooms(c.userID, lazyRoomIDs, loadPos, maxTimelineEvents)
+	roomIDToEvents, err := c.store.LatestEventsInRooms(c.UserID, lazyRoomIDs, loadPos, maxTimelineEvents)
 	if err != nil {
 		logger.Err(err).Strs("rooms", lazyRoomIDs).Msg("failed to get LatestEventsInRooms")
 		return nil
@@ -104,7 +104,7 @@ func (c *UserCache) lazyLoadTimelines(loadPos int64, roomIDs []string, maxTimeli
 	return result
 }
 
-func (c *UserCache) loadRoomData(roomID string) UserRoomData {
+func (c *UserCache) LoadRoomData(roomID string) UserRoomData {
 	c.roomToDataMu.RLock()
 	defer c.roomToDataMu.RUnlock()
 	data, ok := c.roomToData[roomID]
@@ -119,7 +119,7 @@ func (c *UserCache) loadRoomData(roomID string) UserRoomData {
 // =================================================
 
 func (c *UserCache) OnUnreadCounts(roomID string, highlightCount, notifCount *int) {
-	data := c.loadRoomData(roomID)
+	data := c.LoadRoomData(roomID)
 	hasCountDecreased := false
 	if highlightCount != nil {
 		hasCountDecreased = *highlightCount < data.HighlightCount
@@ -135,19 +135,19 @@ func (c *UserCache) OnUnreadCounts(roomID string, highlightCount, notifCount *in
 	c.roomToData[roomID] = data
 	c.roomToDataMu.Unlock()
 	for _, l := range c.listeners {
-		l.OnUnreadCountsChanged(c.userID, roomID, data, hasCountDecreased)
+		l.OnUnreadCountsChanged(c.UserID, roomID, data, hasCountDecreased)
 	}
 }
 
 func (c *UserCache) OnNewEvent(eventData *EventData) {
 	// add this to our tracked timelines if we have one
-	urd := c.loadRoomData(eventData.roomID)
+	urd := c.LoadRoomData(eventData.RoomID)
 	if len(urd.Timeline) > 0 {
 		// we're tracking timelines, add this message too
-		urd.Timeline = append(urd.Timeline, eventData.event)
+		urd.Timeline = append(urd.Timeline, eventData.Event)
 	}
 	c.roomToDataMu.Lock()
-	c.roomToData[eventData.roomID] = urd
+	c.roomToData[eventData.RoomID] = urd
 	c.roomToDataMu.Unlock()
 
 	for _, l := range c.listeners {

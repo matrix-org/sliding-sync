@@ -4,23 +4,22 @@ import (
 	"encoding/json"
 	"sync"
 
-	"github.com/matrix-org/sync-v3/state"
 	"github.com/tidwall/gjson"
 )
 
 const DispatcherAllUsers = "-"
 
 type EventData struct {
-	event     json.RawMessage
-	roomID    string
-	eventType string
-	stateKey  *string
-	content   gjson.Result
-	timestamp uint64
+	Event     json.RawMessage
+	RoomID    string
+	EventType string
+	StateKey  *string
+	Content   gjson.Result
+	Timestamp uint64
 
 	// the absolute latest position for this event data. The NID for this event is guaranteed to
 	// be <= this value.
-	latestPos int64
+	LatestPos int64
 }
 
 type Receiver interface {
@@ -44,12 +43,8 @@ func NewDispatcher() *Dispatcher {
 
 // Load joined members into the dispatcher.
 // MUST BE CALLED BEFORE V2 POLL LOOPS START.
-func (d *Dispatcher) Startup(store *state.Storage) error {
+func (d *Dispatcher) Startup(roomToJoinedUsers map[string][]string) error {
 	// populate joined rooms tracker
-	roomToJoinedUsers, err := store.AllJoinedMembers()
-	if err != nil {
-		return err
-	}
 	for roomID, userIDs := range roomToJoinedUsers {
 		for _, userID := range userIDs {
 			d.jrt.UserJoinedRoom(userID, roomID)
@@ -94,33 +89,33 @@ func (d *Dispatcher) onNewEvent(
 	eventType := ev.Get("type").Str
 
 	ed := &EventData{
-		event:     event,
-		roomID:    roomID,
-		eventType: eventType,
-		stateKey:  stateKey,
-		content:   ev.Get("content"),
-		latestPos: latestPos,
-		timestamp: ev.Get("origin_server_ts").Uint(),
+		Event:     event,
+		RoomID:    roomID,
+		EventType: eventType,
+		StateKey:  stateKey,
+		Content:   ev.Get("content"),
+		LatestPos: latestPos,
+		Timestamp: ev.Get("origin_server_ts").Uint(),
 	}
 
 	// update the tracker
 	targetUser := ""
-	if ed.eventType == "m.room.member" && ed.stateKey != nil {
-		targetUser = *ed.stateKey
+	if ed.EventType == "m.room.member" && ed.StateKey != nil {
+		targetUser = *ed.StateKey
 		// TODO: de-dupe joins in jrt else profile changes will results in 2x room IDs
-		membership := ed.content.Get("membership").Str
+		membership := ed.Content.Get("membership").Str
 		switch membership {
 		case "join":
-			d.jrt.UserJoinedRoom(targetUser, ed.roomID)
+			d.jrt.UserJoinedRoom(targetUser, ed.RoomID)
 		case "ban":
 			fallthrough
 		case "leave":
-			d.jrt.UserLeftRoom(targetUser, ed.roomID)
+			d.jrt.UserLeftRoom(targetUser, ed.RoomID)
 		}
 	}
 
 	// notify all people in this room
-	userIDs := d.jrt.JoinedUsersForRoom(ed.roomID)
+	userIDs := d.jrt.JoinedUsersForRoom(ed.RoomID)
 
 	// invoke listeners
 	d.userToReceiverMu.RLock()

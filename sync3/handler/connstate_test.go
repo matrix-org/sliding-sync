@@ -1,4 +1,4 @@
-package sync3
+package handler
 
 import (
 	"bytes"
@@ -11,6 +11,7 @@ import (
 
 	"github.com/matrix-org/gomatrixserverlib"
 	"github.com/matrix-org/sync-v3/internal"
+	"github.com/matrix-org/sync-v3/sync3"
 	"github.com/matrix-org/sync-v3/testutils"
 )
 
@@ -22,10 +23,10 @@ func newRoomMetadata(roomID string, lastMsgTimestamp gomatrixserverlib.Timestamp
 	}
 }
 
-func mockLazyRoomOverride(loadPos int64, roomIDs []string, maxTimelineEvents int) map[string]UserRoomData {
-	result := make(map[string]UserRoomData)
+func mockLazyRoomOverride(loadPos int64, roomIDs []string, maxTimelineEvents int) map[string]sync3.UserRoomData {
+	result := make(map[string]sync3.UserRoomData)
 	for _, roomID := range roomIDs {
-		result[roomID] = UserRoomData{
+		result[roomID] = sync3.UserRoomData{
 			Timeline: []json.RawMessage{
 				[]byte(`{}`),
 			},
@@ -37,7 +38,7 @@ func mockLazyRoomOverride(loadPos int64, roomIDs []string, maxTimelineEvents int
 // Sync an account with 3 rooms and check that we can grab all rooms and they are sorted correctly initially. Checks
 // that basic UPDATE and DELETE/INSERT works when tracking all rooms.
 func TestConnStateInitial(t *testing.T) {
-	connID := ConnID{
+	ConnID := sync3.ConnID{
 		SessionID: "s",
 		DeviceID:  "d",
 	}
@@ -52,28 +53,30 @@ func TestConnStateInitial(t *testing.T) {
 		roomB.RoomID: testutils.NewEvent(t, "m.room.message", userID, map[string]interface{}{"body": "b"}, time.Now()),
 		roomC.RoomID: testutils.NewEvent(t, "m.room.message", userID, map[string]interface{}{"body": "c"}, time.Now()),
 	}
-	globalCache := NewGlobalCache(nil)
+	globalCache := sync3.NewGlobalCache(nil)
 	globalCache.Startup(map[string]internal.RoomMetadata{
 		roomA.RoomID: roomA,
 		roomB.RoomID: roomB,
 		roomC.RoomID: roomC,
 	})
-	dispatcher := NewDispatcher()
-	dispatcher.jrt.UserJoinedRoom(userID, roomA.RoomID)
-	dispatcher.jrt.UserJoinedRoom(userID, roomB.RoomID)
-	dispatcher.jrt.UserJoinedRoom(userID, roomC.RoomID)
+	dispatcher := sync3.NewDispatcher()
+	dispatcher.Startup(map[string][]string{
+		roomA.RoomID: {userID},
+		roomB.RoomID: {userID},
+		roomC.RoomID: {userID},
+	})
 	globalCache.LoadJoinedRoomsOverride = func(userID string) (pos int64, joinedRooms []*internal.RoomMetadata, err error) {
 		return 1, []*internal.RoomMetadata{
 			&roomA, &roomB, &roomC,
 		}, nil
 	}
-	userCache := NewUserCache(userID, globalCache, nil)
-	dispatcher.Register(userCache.userID, userCache)
-	dispatcher.Register(DispatcherAllUsers, globalCache)
-	userCache.LazyRoomDataOverride = func(loadPos int64, roomIDs []string, maxTimelineEvents int) map[string]UserRoomData {
-		result := make(map[string]UserRoomData)
+	userCache := sync3.NewUserCache(userID, globalCache, nil)
+	dispatcher.Register(userCache.UserID, userCache)
+	dispatcher.Register(sync3.DispatcherAllUsers, globalCache)
+	userCache.LazyRoomDataOverride = func(loadPos int64, roomIDs []string, maxTimelineEvents int) map[string]sync3.UserRoomData {
+		result := make(map[string]sync3.UserRoomData)
 		for _, roomID := range roomIDs {
-			result[roomID] = UserRoomData{
+			result[roomID] = sync3.UserRoomData{
 				Timeline: []json.RawMessage{timeline[roomID]},
 			}
 		}
@@ -83,22 +86,22 @@ func TestConnStateInitial(t *testing.T) {
 	if userID != cs.UserID() {
 		t.Fatalf("UserID returned wrong value, got %v want %v", cs.UserID(), userID)
 	}
-	res, err := cs.HandleIncomingRequest(context.Background(), connID, &Request{
-		Sort: []string{SortByRecency},
-		Rooms: SliceRanges([][2]int64{
+	res, err := cs.OnIncomingRequest(context.Background(), ConnID, &sync3.Request{
+		Sort: []string{sync3.SortByRecency},
+		Rooms: sync3.SliceRanges([][2]int64{
 			{0, 9},
 		}),
 	})
 	if err != nil {
-		t.Fatalf("HandleIncomingRequest returned error : %s", err)
+		t.Fatalf("OnIncomingRequest returned error : %s", err)
 	}
-	checkResponse(t, false, res, &Response{
+	checkResponse(t, false, res, &sync3.Response{
 		Count: 3,
-		Ops: []ResponseOp{
-			&ResponseOpRange{
+		Ops: []sync3.ResponseOp{
+			&sync3.ResponseOpRange{
 				Operation: "SYNC",
 				Range:     []int64{0, 9},
-				Rooms: []Room{
+				Rooms: []sync3.Room{
 					{
 						RoomID:   roomB.RoomID,
 						Name:     roomB.NameEvent,
@@ -126,26 +129,26 @@ func TestConnStateInitial(t *testing.T) {
 	}, 1)
 
 	// request again for the diff
-	res, err = cs.HandleIncomingRequest(context.Background(), connID, &Request{
-		Sort: []string{SortByRecency},
-		Rooms: SliceRanges([][2]int64{
+	res, err = cs.OnIncomingRequest(context.Background(), ConnID, &sync3.Request{
+		Sort: []string{sync3.SortByRecency},
+		Rooms: sync3.SliceRanges([][2]int64{
 			{0, 9},
 		}),
 	})
 	if err != nil {
-		t.Fatalf("HandleIncomingRequest returned error : %s", err)
+		t.Fatalf("OnIncomingRequest returned error : %s", err)
 	}
-	checkResponse(t, true, res, &Response{
+	checkResponse(t, true, res, &sync3.Response{
 		Count: 3,
-		Ops: []ResponseOp{
-			&ResponseOpSingle{
+		Ops: []sync3.ResponseOp{
+			&sync3.ResponseOpSingle{
 				Operation: "DELETE",
 				Index:     intPtr(2),
 			},
-			&ResponseOpSingle{
+			&sync3.ResponseOpSingle{
 				Operation: "INSERT",
 				Index:     intPtr(0),
-				Room: &Room{
+				Room: &sync3.Room{
 					RoomID: roomA.RoomID,
 				},
 			},
@@ -157,22 +160,22 @@ func TestConnStateInitial(t *testing.T) {
 	dispatcher.OnNewEvents(roomA.RoomID, []json.RawMessage{
 		newEvent,
 	}, 1)
-	res, err = cs.HandleIncomingRequest(context.Background(), connID, &Request{
-		Sort: []string{SortByRecency},
-		Rooms: SliceRanges([][2]int64{
+	res, err = cs.OnIncomingRequest(context.Background(), ConnID, &sync3.Request{
+		Sort: []string{sync3.SortByRecency},
+		Rooms: sync3.SliceRanges([][2]int64{
 			{0, 9},
 		}),
 	})
 	if err != nil {
-		t.Fatalf("HandleIncomingRequest returned error : %s", err)
+		t.Fatalf("OnIncomingRequest returned error : %s", err)
 	}
-	checkResponse(t, true, res, &Response{
+	checkResponse(t, true, res, &sync3.Response{
 		Count: 3,
-		Ops: []ResponseOp{
-			&ResponseOpSingle{
+		Ops: []sync3.ResponseOp{
+			&sync3.ResponseOpSingle{
 				Operation: "UPDATE",
 				Index:     intPtr(0),
-				Room: &Room{
+				Room: &sync3.Room{
 					RoomID: roomA.RoomID,
 				},
 			},
@@ -182,7 +185,7 @@ func TestConnStateInitial(t *testing.T) {
 
 // Test that multiple ranges can be tracked in a single request
 func TestConnStateMultipleRanges(t *testing.T) {
-	connID := ConnID{
+	ConnID := sync3.ConnID{
 		SessionID: "s",
 		DeviceID:  "d",
 	}
@@ -190,8 +193,8 @@ func TestConnStateMultipleRanges(t *testing.T) {
 	timestampNow := gomatrixserverlib.Timestamp(1632131678061)
 	var rooms []*internal.RoomMetadata
 	var roomIDs []string
-	globalCache := NewGlobalCache(nil)
-	dispatcher := NewDispatcher()
+	globalCache := sync3.NewGlobalCache(nil)
+	dispatcher := sync3.NewDispatcher()
 	roomIDToRoom := make(map[string]internal.RoomMetadata)
 	for i := int64(0); i < 10; i++ {
 		roomID := fmt.Sprintf("!%d:localhost", i)
@@ -207,34 +210,36 @@ func TestConnStateMultipleRanges(t *testing.T) {
 		globalCache.Startup(map[string]internal.RoomMetadata{
 			room.RoomID: room,
 		})
-		dispatcher.jrt.UserJoinedRoom(userID, roomID)
+		dispatcher.Startup(map[string][]string{
+			roomID: {userID},
+		})
 	}
 	globalCache.LoadJoinedRoomsOverride = func(userID string) (pos int64, joinedRooms []*internal.RoomMetadata, err error) {
 		return 1, rooms, nil
 	}
-	userCache := NewUserCache(userID, globalCache, nil)
+	userCache := sync3.NewUserCache(userID, globalCache, nil)
 	userCache.LazyRoomDataOverride = mockLazyRoomOverride
-	dispatcher.Register(userCache.userID, userCache)
-	dispatcher.Register(DispatcherAllUsers, globalCache)
+	dispatcher.Register(userCache.UserID, userCache)
+	dispatcher.Register(sync3.DispatcherAllUsers, globalCache)
 	cs := NewConnState(userID, userCache, globalCache)
 
 	// request first page
-	res, err := cs.HandleIncomingRequest(context.Background(), connID, &Request{
-		Sort: []string{SortByRecency},
-		Rooms: SliceRanges([][2]int64{
+	res, err := cs.OnIncomingRequest(context.Background(), ConnID, &sync3.Request{
+		Sort: []string{sync3.SortByRecency},
+		Rooms: sync3.SliceRanges([][2]int64{
 			{0, 2},
 		}),
 	})
 	if err != nil {
-		t.Fatalf("HandleIncomingRequest returned error : %s", err)
+		t.Fatalf("OnIncomingRequest returned error : %s", err)
 	}
-	checkResponse(t, true, res, &Response{
+	checkResponse(t, true, res, &sync3.Response{
 		Count: int64(len(rooms)),
-		Ops: []ResponseOp{
-			&ResponseOpRange{
+		Ops: []sync3.ResponseOp{
+			&sync3.ResponseOpRange{
 				Operation: "SYNC",
 				Range:     []int64{0, 2},
-				Rooms: []Room{
+				Rooms: []sync3.Room{
 					{
 						RoomID: roomIDs[0],
 					},
@@ -249,22 +254,22 @@ func TestConnStateMultipleRanges(t *testing.T) {
 		},
 	})
 	// add on a different non-overlapping range
-	res, err = cs.HandleIncomingRequest(context.Background(), connID, &Request{
-		Sort: []string{SortByRecency},
-		Rooms: SliceRanges([][2]int64{
+	res, err = cs.OnIncomingRequest(context.Background(), ConnID, &sync3.Request{
+		Sort: []string{sync3.SortByRecency},
+		Rooms: sync3.SliceRanges([][2]int64{
 			{0, 2}, {4, 6},
 		}),
 	})
 	if err != nil {
-		t.Fatalf("HandleIncomingRequest returned error : %s", err)
+		t.Fatalf("OnIncomingRequest returned error : %s", err)
 	}
-	checkResponse(t, true, res, &Response{
+	checkResponse(t, true, res, &sync3.Response{
 		Count: int64(len(rooms)),
-		Ops: []ResponseOp{
-			&ResponseOpRange{
+		Ops: []sync3.ResponseOp{
+			&sync3.ResponseOpRange{
 				Operation: "SYNC",
 				Range:     []int64{4, 6},
-				Rooms: []Room{
+				Rooms: []sync3.Room{
 					{
 						RoomID: roomIDs[4],
 					},
@@ -290,26 +295,26 @@ func TestConnStateMultipleRanges(t *testing.T) {
 		newEvent,
 	}, 1)
 
-	res, err = cs.HandleIncomingRequest(context.Background(), connID, &Request{
-		Sort: []string{SortByRecency},
-		Rooms: SliceRanges([][2]int64{
+	res, err = cs.OnIncomingRequest(context.Background(), ConnID, &sync3.Request{
+		Sort: []string{sync3.SortByRecency},
+		Rooms: sync3.SliceRanges([][2]int64{
 			{0, 2}, {4, 6},
 		}),
 	})
 	if err != nil {
-		t.Fatalf("HandleIncomingRequest returned error : %s", err)
+		t.Fatalf("OnIncomingRequest returned error : %s", err)
 	}
-	checkResponse(t, true, res, &Response{
+	checkResponse(t, true, res, &sync3.Response{
 		Count: int64(len(rooms)),
-		Ops: []ResponseOp{
-			&ResponseOpSingle{
+		Ops: []sync3.ResponseOp{
+			&sync3.ResponseOpSingle{
 				Operation: "DELETE",
 				Index:     intPtr(6),
 			},
-			&ResponseOpSingle{
+			&sync3.ResponseOpSingle{
 				Operation: "INSERT",
 				Index:     intPtr(0),
-				Room: &Room{
+				Room: &sync3.Room{
 					RoomID: roomIDs[8],
 				},
 			},
@@ -328,26 +333,26 @@ func TestConnStateMultipleRanges(t *testing.T) {
 		newEvent,
 	}, 1)
 	t.Logf("new event %s : %s", roomIDs[9], string(newEvent))
-	res, err = cs.HandleIncomingRequest(context.Background(), connID, &Request{
-		Sort: []string{SortByRecency},
-		Rooms: SliceRanges([][2]int64{
+	res, err = cs.OnIncomingRequest(context.Background(), ConnID, &sync3.Request{
+		Sort: []string{sync3.SortByRecency},
+		Rooms: sync3.SliceRanges([][2]int64{
 			{0, 2}, {4, 6},
 		}),
 	})
 	if err != nil {
-		t.Fatalf("HandleIncomingRequest returned error : %s", err)
+		t.Fatalf("OnIncomingRequest returned error : %s", err)
 	}
-	checkResponse(t, true, res, &Response{
+	checkResponse(t, true, res, &sync3.Response{
 		Count: int64(len(rooms)),
-		Ops: []ResponseOp{
-			&ResponseOpSingle{
+		Ops: []sync3.ResponseOp{
+			&sync3.ResponseOpSingle{
 				Operation: "DELETE",
 				Index:     intPtr(6),
 			},
-			&ResponseOpSingle{
+			&sync3.ResponseOpSingle{
 				Operation: "INSERT",
 				Index:     intPtr(4),
-				Room: &Room{
+				Room: &sync3.Room{
 					RoomID: roomIDs[2],
 				},
 			},
@@ -357,7 +362,7 @@ func TestConnStateMultipleRanges(t *testing.T) {
 
 // Regression test for https://github.com/matrix-org/sync-v3/commit/732ea46f1ccde2b6a382e0f849bbd166b80900ed
 func TestBumpToOutsideRange(t *testing.T) {
-	connID := ConnID{
+	ConnID := sync3.ConnID{
 		SessionID: "s",
 		DeviceID:  "d",
 	}
@@ -367,45 +372,47 @@ func TestBumpToOutsideRange(t *testing.T) {
 	roomB := newRoomMetadata("!b:localhost", timestampNow-1000)
 	roomC := newRoomMetadata("!c:localhost", timestampNow-2000)
 	roomD := newRoomMetadata("!d:localhost", timestampNow-3000)
-	globalCache := NewGlobalCache(nil)
+	globalCache := sync3.NewGlobalCache(nil)
 	globalCache.Startup(map[string]internal.RoomMetadata{
 		roomA.RoomID: roomA,
 		roomB.RoomID: roomB,
 		roomC.RoomID: roomC,
 		roomD.RoomID: roomD,
 	})
-	dispatcher := NewDispatcher()
-	dispatcher.jrt.UserJoinedRoom(userID, roomA.RoomID)
-	dispatcher.jrt.UserJoinedRoom(userID, roomB.RoomID)
-	dispatcher.jrt.UserJoinedRoom(userID, roomC.RoomID)
-	dispatcher.jrt.UserJoinedRoom(userID, roomD.RoomID)
+	dispatcher := sync3.NewDispatcher()
+	dispatcher.Startup(map[string][]string{
+		roomA.RoomID: {userID},
+		roomB.RoomID: {userID},
+		roomC.RoomID: {userID},
+		roomD.RoomID: {userID},
+	})
 	globalCache.LoadJoinedRoomsOverride = func(userID string) (pos int64, joinedRooms []*internal.RoomMetadata, err error) {
 		return 1, []*internal.RoomMetadata{
 			&roomA, &roomB, &roomC, &roomD,
 		}, nil
 	}
-	userCache := NewUserCache(userID, globalCache, nil)
+	userCache := sync3.NewUserCache(userID, globalCache, nil)
 	userCache.LazyRoomDataOverride = mockLazyRoomOverride
-	dispatcher.Register(userCache.userID, userCache)
-	dispatcher.Register(DispatcherAllUsers, globalCache)
+	dispatcher.Register(userCache.UserID, userCache)
+	dispatcher.Register(sync3.DispatcherAllUsers, globalCache)
 	cs := NewConnState(userID, userCache, globalCache)
 	// Ask for A,B
-	res, err := cs.HandleIncomingRequest(context.Background(), connID, &Request{
-		Sort: []string{SortByRecency},
-		Rooms: SliceRanges([][2]int64{
+	res, err := cs.OnIncomingRequest(context.Background(), ConnID, &sync3.Request{
+		Sort: []string{sync3.SortByRecency},
+		Rooms: sync3.SliceRanges([][2]int64{
 			{0, 1},
 		}),
 	})
 	if err != nil {
-		t.Fatalf("HandleIncomingRequest returned error : %s", err)
+		t.Fatalf("OnIncomingRequest returned error : %s", err)
 	}
-	checkResponse(t, true, res, &Response{
+	checkResponse(t, true, res, &sync3.Response{
 		Count: int64(4),
-		Ops: []ResponseOp{
-			&ResponseOpRange{
+		Ops: []sync3.ResponseOp{
+			&sync3.ResponseOpRange{
 				Operation: "SYNC",
 				Range:     []int64{0, 1},
-				Rooms: []Room{
+				Rooms: []sync3.Room{
 					{
 						RoomID: roomA.RoomID,
 					},
@@ -426,14 +433,14 @@ func TestBumpToOutsideRange(t *testing.T) {
 	// expire the context after 10ms so we don't wait forevar
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Millisecond)
 	defer cancel()
-	res, err = cs.HandleIncomingRequest(ctx, connID, &Request{
-		Sort: []string{SortByRecency},
-		Rooms: SliceRanges([][2]int64{
+	res, err = cs.OnIncomingRequest(ctx, ConnID, &sync3.Request{
+		Sort: []string{sync3.SortByRecency},
+		Rooms: sync3.SliceRanges([][2]int64{
 			{0, 1},
 		}),
 	})
 	if err != nil {
-		t.Fatalf("HandleIncomingRequest returned error : %s", err)
+		t.Fatalf("OnIncomingRequest returned error : %s", err)
 	}
 	if len(res.Ops) > 0 {
 		t.Errorf("response returned ops, expected none")
@@ -442,7 +449,7 @@ func TestBumpToOutsideRange(t *testing.T) {
 
 // Test that room subscriptions can be made and that events are pushed for them.
 func TestConnStateRoomSubscriptions(t *testing.T) {
-	connID := ConnID{
+	ConnID := sync3.ConnID{
 		SessionID: "s",
 		DeviceID:  "d",
 	}
@@ -453,18 +460,20 @@ func TestConnStateRoomSubscriptions(t *testing.T) {
 	roomC := newRoomMetadata("!c:localhost", gomatrixserverlib.Timestamp(timestampNow-2000))
 	roomD := newRoomMetadata("!d:localhost", gomatrixserverlib.Timestamp(timestampNow-3000))
 	roomIDs := []string{roomA.RoomID, roomB.RoomID, roomC.RoomID, roomD.RoomID}
-	globalCache := NewGlobalCache(nil)
+	globalCache := sync3.NewGlobalCache(nil)
 	globalCache.Startup(map[string]internal.RoomMetadata{
 		roomA.RoomID: roomA,
 		roomB.RoomID: roomB,
 		roomC.RoomID: roomC,
 		roomD.RoomID: roomD,
 	})
-	dispatcher := NewDispatcher()
-	dispatcher.jrt.UserJoinedRoom(userID, roomA.RoomID)
-	dispatcher.jrt.UserJoinedRoom(userID, roomB.RoomID)
-	dispatcher.jrt.UserJoinedRoom(userID, roomC.RoomID)
-	dispatcher.jrt.UserJoinedRoom(userID, roomD.RoomID)
+	dispatcher := sync3.NewDispatcher()
+	dispatcher.Startup(map[string][]string{
+		roomA.RoomID: {userID},
+		roomB.RoomID: {userID},
+		roomC.RoomID: {userID},
+		roomD.RoomID: {userID},
+	})
 	timeline := map[string]json.RawMessage{
 		roomA.RoomID: testutils.NewEvent(t, "m.room.message", userID, map[string]interface{}{"body": "a"}, time.Now()),
 		roomB.RoomID: testutils.NewEvent(t, "m.room.message", userID, map[string]interface{}{"body": "b"}, time.Now()),
@@ -476,11 +485,11 @@ func TestConnStateRoomSubscriptions(t *testing.T) {
 			&roomA, &roomB, &roomC, &roomD,
 		}, nil
 	}
-	userCache := NewUserCache(userID, globalCache, nil)
-	userCache.LazyRoomDataOverride = func(loadPos int64, roomIDs []string, maxTimelineEvents int) map[string]UserRoomData {
-		result := make(map[string]UserRoomData)
+	userCache := sync3.NewUserCache(userID, globalCache, nil)
+	userCache.LazyRoomDataOverride = func(loadPos int64, roomIDs []string, maxTimelineEvents int) map[string]sync3.UserRoomData {
+		result := make(map[string]sync3.UserRoomData)
 		for _, roomID := range roomIDs {
-			result[roomID] = UserRoomData{
+			result[roomID] = sync3.UserRoomData{
 				Timeline: []json.RawMessage{
 					timeline[roomID],
 				},
@@ -488,27 +497,27 @@ func TestConnStateRoomSubscriptions(t *testing.T) {
 		}
 		return result
 	}
-	dispatcher.Register(userCache.userID, userCache)
-	dispatcher.Register(DispatcherAllUsers, globalCache)
+	dispatcher.Register(userCache.UserID, userCache)
+	dispatcher.Register(sync3.DispatcherAllUsers, globalCache)
 	cs := NewConnState(userID, userCache, globalCache)
 	// subscribe to room D
-	res, err := cs.HandleIncomingRequest(context.Background(), connID, &Request{
-		Sort: []string{SortByRecency},
-		RoomSubscriptions: map[string]RoomSubscription{
+	res, err := cs.OnIncomingRequest(context.Background(), ConnID, &sync3.Request{
+		Sort: []string{sync3.SortByRecency},
+		RoomSubscriptions: map[string]sync3.RoomSubscription{
 			roomD.RoomID: {
 				TimelineLimit: 20,
 			},
 		},
-		Rooms: SliceRanges([][2]int64{
+		Rooms: sync3.SliceRanges([][2]int64{
 			{0, 1},
 		}),
 	})
 	if err != nil {
-		t.Fatalf("HandleIncomingRequest returned error : %s", err)
+		t.Fatalf("OnIncomingRequest returned error : %s", err)
 	}
-	checkResponse(t, false, res, &Response{
+	checkResponse(t, false, res, &sync3.Response{
 		Count: int64(len(roomIDs)),
-		RoomSubscriptions: map[string]Room{
+		RoomSubscriptions: map[string]sync3.Room{
 			roomD.RoomID: {
 				RoomID: roomD.RoomID,
 				Name:   roomD.NameEvent,
@@ -517,11 +526,11 @@ func TestConnStateRoomSubscriptions(t *testing.T) {
 				},
 			},
 		},
-		Ops: []ResponseOp{
-			&ResponseOpRange{
+		Ops: []sync3.ResponseOp{
+			&sync3.ResponseOpRange{
 				Operation: "SYNC",
 				Range:     []int64{0, 1},
-				Rooms: []Room{
+				Rooms: []sync3.Room{
 					{
 						RoomID: roomA.RoomID,
 						Name:   roomA.NameEvent,
@@ -546,18 +555,18 @@ func TestConnStateRoomSubscriptions(t *testing.T) {
 		newEvent,
 	}, 1)
 	// we should get this message even though it's not in the range because we are subscribed to this room.
-	res, err = cs.HandleIncomingRequest(context.Background(), connID, &Request{
-		Sort: []string{SortByRecency},
-		Rooms: SliceRanges([][2]int64{
+	res, err = cs.OnIncomingRequest(context.Background(), ConnID, &sync3.Request{
+		Sort: []string{sync3.SortByRecency},
+		Rooms: sync3.SliceRanges([][2]int64{
 			{0, 1},
 		}),
 	})
 	if err != nil {
-		t.Fatalf("HandleIncomingRequest returned error : %s", err)
+		t.Fatalf("OnIncomingRequest returned error : %s", err)
 	}
-	checkResponse(t, false, res, &Response{
+	checkResponse(t, false, res, &sync3.Response{
 		Count: int64(len(roomIDs)),
-		RoomSubscriptions: map[string]Room{
+		RoomSubscriptions: map[string]sync3.Room{
 			roomD.RoomID: {
 				RoomID: roomD.RoomID,
 				Timeline: []json.RawMessage{
@@ -569,24 +578,24 @@ func TestConnStateRoomSubscriptions(t *testing.T) {
 	})
 
 	// now swap to room C
-	res, err = cs.HandleIncomingRequest(context.Background(), connID, &Request{
-		Sort: []string{SortByRecency},
-		RoomSubscriptions: map[string]RoomSubscription{
+	res, err = cs.OnIncomingRequest(context.Background(), ConnID, &sync3.Request{
+		Sort: []string{sync3.SortByRecency},
+		RoomSubscriptions: map[string]sync3.RoomSubscription{
 			roomC.RoomID: {
 				TimelineLimit: 20,
 			},
 		},
 		UnsubscribeRooms: []string{roomD.RoomID},
-		Rooms: SliceRanges([][2]int64{
+		Rooms: sync3.SliceRanges([][2]int64{
 			{0, 1},
 		}),
 	})
 	if err != nil {
-		t.Fatalf("HandleIncomingRequest returned error : %s", err)
+		t.Fatalf("OnIncomingRequest returned error : %s", err)
 	}
-	checkResponse(t, false, res, &Response{
+	checkResponse(t, false, res, &sync3.Response{
 		Count: int64(len(roomIDs)),
-		RoomSubscriptions: map[string]Room{
+		RoomSubscriptions: map[string]sync3.Room{
 			roomC.RoomID: {
 				RoomID: roomC.RoomID,
 				Name:   roomC.NameEvent,
@@ -598,7 +607,7 @@ func TestConnStateRoomSubscriptions(t *testing.T) {
 	})
 }
 
-func checkResponse(t *testing.T, checkRoomIDsOnly bool, got, want *Response) {
+func checkResponse(t *testing.T, checkRoomIDsOnly bool, got, want *sync3.Response) {
 	t.Helper()
 	if want.Count > 0 {
 		if got.Count != want.Count {
@@ -623,8 +632,8 @@ func checkResponse(t *testing.T, checkRoomIDsOnly bool, got, want *Response) {
 				t.Errorf("operation i=%d got '%s' want '%s'", i, gotOp.Op(), wantOpVal.Op())
 			}
 			switch wantOp := wantOpVal.(type) {
-			case *ResponseOpRange:
-				gotOpRange, ok := gotOp.(*ResponseOpRange)
+			case *sync3.ResponseOpRange:
+				gotOpRange, ok := gotOp.(*sync3.ResponseOpRange)
 				if !ok {
 					t.Fatalf("operation i=%d (%s) want type ResponseOpRange but it isn't", i, gotOp.Op())
 				}
@@ -637,8 +646,8 @@ func checkResponse(t *testing.T, checkRoomIDsOnly bool, got, want *Response) {
 				for j := range wantOp.Rooms {
 					checkRoomsEqual(t, checkRoomIDsOnly, &gotOpRange.Rooms[j], &wantOp.Rooms[j])
 				}
-			case *ResponseOpSingle:
-				gotOpSingle, ok := gotOp.(*ResponseOpSingle)
+			case *sync3.ResponseOpSingle:
+				gotOpSingle, ok := gotOp.(*sync3.ResponseOpSingle)
 				if !ok {
 					t.Fatalf("operation i=%d (%s) want type ResponseOpSingle but it isn't", i, gotOp.Op())
 				}
@@ -664,7 +673,7 @@ func checkResponse(t *testing.T, checkRoomIDsOnly bool, got, want *Response) {
 	}
 }
 
-func checkRoomsEqual(t *testing.T, checkRoomIDsOnly bool, got, want *Room) {
+func checkRoomsEqual(t *testing.T, checkRoomIDsOnly bool, got, want *sync3.Room) {
 	t.Helper()
 	if got == nil && want == nil {
 		return // e.g DELETE ops

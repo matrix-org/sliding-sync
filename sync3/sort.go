@@ -7,6 +7,8 @@ import (
 	"github.com/matrix-org/sync-v3/internal"
 )
 
+// SortableRooms represents a list of rooms which can be sorted and updated. Maintains mappings of
+// room IDs to current index positions after sorting.
 type SortableRooms struct {
 	rooms         []RoomConnMetadata
 	roomIDToIndex map[string]int // room_id -> index in rooms
@@ -43,6 +45,23 @@ func (s *SortableRooms) UpdateUserRoomMetadata(roomID string, userEvent *UserRoo
 func (s *SortableRooms) IndexOf(roomID string) (int, bool) {
 	index, ok := s.roomIDToIndex[roomID]
 	return index, ok
+}
+
+func (s *SortableRooms) RoomIDs() []string {
+	roomIDs := make([]string, len(s.rooms))
+	for i := range s.rooms {
+		roomIDs[i] = s.rooms[i].RoomID
+	}
+	return roomIDs
+}
+
+func (s *SortableRooms) Add(r RoomConnMetadata) {
+	s.rooms = append(s.rooms, r)
+	s.roomIDToIndex[r.RoomID] = len(s.rooms) - 1
+}
+
+func (s *SortableRooms) Get(index int) RoomConnMetadata {
+	return s.rooms[index]
 }
 
 func (s *SortableRooms) Len() int64 {

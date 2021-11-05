@@ -9,7 +9,7 @@ import (
 
 	syncv3 "github.com/matrix-org/sync-v3"
 	"github.com/matrix-org/sync-v3/sync2"
-	"github.com/matrix-org/sync-v3/sync3"
+	"github.com/matrix-org/sync-v3/sync3/handler"
 )
 
 var (
@@ -30,7 +30,7 @@ func main() {
 			panic(err)
 		}
 	}()
-	h, err := sync3.NewSync3Handler(&sync2.HTTPClient{
+	h, err := handler.NewSync3Handler(&sync2.HTTPClient{
 		Client: &http.Client{
 			Timeout: 5 * time.Minute,
 		},

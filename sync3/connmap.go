@@ -40,8 +40,8 @@ func (m *ConnMap) Conn(cid ConnID) *Conn {
 	return cint.(*Conn)
 }
 
-// Atomically gets or creates a connection with this connection ID.
-func (m *ConnMap) GetOrCreateConn(cid ConnID, globalCache *GlobalCache, userID string, userCache *UserCache) (*Conn, bool) {
+// Atomically gets or creates a connection with this connection ID. Calls newConn if a new connection is required.
+func (m *ConnMap) GetOrCreateConn(cid ConnID, newConnHandler func() ConnHandler) (*Conn, bool) {
 	// atomically check if a conn exists already and return that if so
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -49,11 +49,11 @@ func (m *ConnMap) GetOrCreateConn(cid ConnID, globalCache *GlobalCache, userID s
 	if conn != nil {
 		return conn, false
 	}
-	state := NewConnState(userID, userCache, globalCache)
-	conn = NewConn(cid, state, state.HandleIncomingRequest)
+	h := newConnHandler()
+	conn = NewConn(cid, h)
 	m.cache.Set(cid.String(), conn)
 	m.connIDToConn[cid.String()] = conn
-	m.userIDToConn[userID] = append(m.userIDToConn[userID], conn)
+	m.userIDToConn[h.UserID()] = append(m.userIDToConn[h.UserID()], conn)
 	return conn, true
 }
 
@@ -63,17 +63,15 @@ func (m *ConnMap) closeConn(connID string, value interface{}) {
 	// remove conn from all the maps
 	conn := value.(*Conn)
 	delete(m.connIDToConn, connID)
-	state := conn.connState
-	if state != nil {
-		conns := m.userIDToConn[state.UserID()]
-		for i := 0; i < len(conns); i++ {
-			if conns[i].ConnID.String() == connID {
-				// delete without preserving order
-				conns[i] = conns[len(conns)-1]
-				conns = conns[:len(conns)-1]
-			}
+	h := conn.handler
+	conns := m.userIDToConn[h.UserID()]
+	for i := 0; i < len(conns); i++ {
+		if conns[i].ConnID.String() == connID {
+			// delete without preserving order
+			conns[i] = conns[len(conns)-1]
+			conns = conns[:len(conns)-1]
 		}
-		m.userIDToConn[state.UserID()] = conns
-		state.Destroy()
 	}
+	m.userIDToConn[h.UserID()] = conns
+	h.Destroy()
 }

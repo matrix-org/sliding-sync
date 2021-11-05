@@ -17,17 +17,22 @@ func (c *ConnID) String() string {
 	return c.SessionID + "-" + c.DeviceID
 }
 
-type HandlerIncomingReqFunc func(ctx context.Context, cid ConnID, req *Request) (*Response, error)
+type ConnHandler interface {
+	// Callback which is allowed to block as long as the context is active. Return the response
+	// to send back or an error. Errors of type *internal.HandlerError are inspected for the correct
+	// status code to send back.
+	OnIncomingRequest(ctx context.Context, cid ConnID, req *Request) (*Response, error)
+	UserID() string
+	Destroy()
+}
 
 // Conn is an abstraction of a long-poll connection. It automatically handles the position values
 // of the /sync request, including sending cached data in the event of retries. It does not handle
 // the contents of the data at all.
 type Conn struct {
 	ConnID ConnID
-	// Callback which is allowed to block as long as the context is active. Return the response
-	// to send back or an error. Errors of type *internal.HandlerError are inspected for the correct
-	// status code to send back.
-	HandleIncomingRequest HandlerIncomingReqFunc
+
+	handler ConnHandler
 
 	// The position/data in the stream last sent by the client
 	lastClientRequest Request
@@ -38,16 +43,13 @@ type Conn struct {
 
 	// ensure only 1 incoming request is handled per connection
 	mu *sync.Mutex
-
-	connState *ConnState
 }
 
-func NewConn(connID ConnID, connState *ConnState, fn HandlerIncomingReqFunc) *Conn {
+func NewConn(connID ConnID, h ConnHandler) *Conn {
 	return &Conn{
-		ConnID:                connID,
-		HandleIncomingRequest: fn,
-		mu:                    &sync.Mutex{},
-		connState:             connState,
+		ConnID:  connID,
+		handler: h,
+		mu:      &sync.Mutex{},
 	}
 }
 
@@ -78,7 +80,7 @@ func (c *Conn) OnIncomingRequest(ctx context.Context, req *Request) (resp *Respo
 	}
 	c.lastClientRequest = *req
 
-	resp, err := c.HandleIncomingRequest(ctx, c.ConnID, req)
+	resp, err := c.handler.OnIncomingRequest(ctx, c.ConnID, req)
 	if err != nil {
 		herr, ok := err.(*internal.HandlerError)
 		if !ok {

@@ -30,6 +30,19 @@ type Request struct {
 	SessionID   string `json:"session_id"`
 }
 
+func (r *Request) Pos() int64 {
+	return r.pos
+}
+func (r *Request) SetPos(pos int64) {
+	r.pos = pos
+}
+func (r *Request) TimeoutSecs() int {
+	return r.timeoutSecs
+}
+func (r *Request) SetTimeoutSecs(timeout int) {
+	r.timeoutSecs = timeout
+}
+
 func (r *Request) Same(other *Request) bool {
 	serialised, err := json.Marshal(r)
 	if err != nil {

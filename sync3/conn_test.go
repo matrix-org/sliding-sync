@@ -10,6 +10,18 @@ import (
 	"github.com/matrix-org/sync-v3/internal"
 )
 
+type connHandlerMock struct {
+	fn func(ctx context.Context, cid ConnID, req *Request) (*Response, error)
+}
+
+func (c *connHandlerMock) OnIncomingRequest(ctx context.Context, cid ConnID, req *Request) (*Response, error) {
+	return c.fn(ctx, cid, req)
+}
+func (c *connHandlerMock) UserID() string {
+	return "dummy"
+}
+func (c *connHandlerMock) Destroy() {}
+
 // Test that Conn can send and receive requests based on positions
 func TestConn(t *testing.T) {
 	ctx := context.Background()
@@ -18,12 +30,12 @@ func TestConn(t *testing.T) {
 		SessionID: "s",
 	}
 	count := int64(100)
-	c := NewConn(connID, nil, func(ctx context.Context, cid ConnID, req *Request) (*Response, error) {
+	c := NewConn(connID, &connHandlerMock{func(ctx context.Context, cid ConnID, req *Request) (*Response, error) {
 		count += 1
 		return &Response{
 			Count: count,
 		}, nil
-	})
+	}})
 
 	// initial request
 	resp, err := c.OnIncomingRequest(ctx, &Request{
@@ -62,13 +74,13 @@ func TestConnBlocking(t *testing.T) {
 		SessionID: "s",
 	}
 	ch := make(chan string)
-	c := NewConn(connID, nil, func(ctx context.Context, cid ConnID, req *Request) (*Response, error) {
+	c := NewConn(connID, &connHandlerMock{func(ctx context.Context, cid ConnID, req *Request) (*Response, error) {
 		if req.Sort[0] == "hi" {
 			time.Sleep(10 * time.Millisecond)
 		}
 		ch <- req.Sort[0]
 		return &Response{}, nil
-	})
+	}})
 
 	// two connection call the incoming request function at the same time, they should get queued up
 	// and processed in series.
@@ -109,10 +121,10 @@ func TestConnRetries(t *testing.T) {
 		SessionID: "s",
 	}
 	callCount := int64(0)
-	c := NewConn(connID, nil, func(ctx context.Context, cid ConnID, req *Request) (*Response, error) {
+	c := NewConn(connID, &connHandlerMock{func(ctx context.Context, cid ConnID, req *Request) (*Response, error) {
 		callCount += 1
 		return &Response{Count: 20}, nil
-	})
+	}})
 	resp, err := c.OnIncomingRequest(ctx, &Request{})
 	assertInt(t, resp.Pos, 1)
 	assertInt(t, resp.Count, 20)
@@ -144,9 +156,9 @@ func TestConnErrors(t *testing.T) {
 		SessionID: "s",
 	}
 	errCh := make(chan error, 1)
-	c := NewConn(connID, nil, func(ctx context.Context, cid ConnID, req *Request) (*Response, error) {
+	c := NewConn(connID, &connHandlerMock{func(ctx context.Context, cid ConnID, req *Request) (*Response, error) {
 		return nil, <-errCh
-	})
+	}})
 
 	// random errors = 500
 	errCh <- errors.New("oops")
@@ -172,14 +184,14 @@ func TestConnErrorsNoCache(t *testing.T) {
 		SessionID: "s",
 	}
 	errCh := make(chan error, 1)
-	c := NewConn(connID, nil, func(ctx context.Context, cid ConnID, req *Request) (*Response, error) {
+	c := NewConn(connID, &connHandlerMock{func(ctx context.Context, cid ConnID, req *Request) (*Response, error) {
 		select {
 		case e := <-errCh:
 			return nil, e
 		default:
 			return &Response{}, nil
 		}
-	})
+	}})
 	// errors should not be cached
 	resp, herr := c.OnIncomingRequest(ctx, &Request{})
 	if herr != nil {
