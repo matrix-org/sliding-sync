@@ -34,7 +34,7 @@ For every event received by a homeserver, an immutable position is assigned to i
 The overarching model here is to imagine `/sync` as a pubsub system, where you are "subscribing" to *ranges* of a sorted room list array. In addition, you can also "subscribe" to explicit room IDs whenever you want e.g. when you are viewing the room or receiving a permalink for a room, and data is de-duplicated between these two subscriptions if the room is both explicitly subscribed to and in the subslice.
 
 `POST /v3/sync`:
-```json=
+```js
 {
   // Identifies the session for the purposes of remembering request
   // parameters. This allows a single device to have multiple sync
@@ -141,7 +141,7 @@ The overarching model here is to imagine `/sync` as a pubsub system, where you a
 }
 ```
 Returns:
-```json=
+```js
 {
   "ops": [
     {
@@ -217,7 +217,7 @@ Returns:
 }
 ```
 Subsequent updates are just live-streamed to the client as and when they happen. For a topic change in the 4th room:
-```json=
+```js
 {
   "ops": [
     {
@@ -236,7 +236,7 @@ Subsequent updates are just live-streamed to the client as and when they happen.
 }
 ```
 UPDATEs do exactly that, update fields without removing existing fields. The above response means "append to the timeline". Clients need to know that state events in the timeline ALSO mean to update the current state of the room. Updates which affect [calculating the room name](https://matrix.org/docs/spec/client_server/latest#calculating-the-display-name-for-a-room) will also update the `name` field for that room, in addition to returning the event which modifies the room name. This means clients don't need to implement the room name calculation algorithm at all. If an update occurs in a room which is both in the sorted list and an explicit room subscription, only the room subscription will receive the information: there will be no explicit UPDATE operation:
-```json=
+```js
 {
   "room_subscriptions": {
     "!sub1:bar": {
@@ -250,7 +250,7 @@ UPDATEs do exactly that, update fields without removing existing fields. The abo
 ```
 
 If the user leaves the 9th room, we need to bump everything up and add an entry at the 100th position:
-```json=
+```js
 {
   "ops": [
     {
@@ -303,7 +303,7 @@ It is up to the client to decide what to do here. We could have configurable opt
  - Forgetting a room (e.g a banned room) then removes it from the list: `filters: { include_forgotten_rooms: false }`
 
 If a user joins a room in the 35th position we need to get rid of the 100th entry:
-```json=
+```js
 {
   "ops": [
     {
@@ -344,7 +344,7 @@ Invites would be handled outside the core `rooms` array as they often appear in 
 If the user scrolls down, we need to request and subscribe to the next 100 rooms:
 
 `POST /v3/sync`:
-```json=
+```js
 {
   "lists": [
     {
@@ -364,7 +364,7 @@ If the user scrolls down, we need to request and subscribe to the next 100 rooms
 }
 ```
 The server sees the client wanting to subscribe to 0-99 but there is already an active subscription so it's a no-op. It is required though because the _absence_ of the range would unsubscribe the client from 0-99. The server sees a new range 100-199 so returns:
-```json=
+```js
 {
   "ops": [
     {
@@ -380,13 +380,13 @@ The server sees the client wanting to subscribe to 0-99 but there is already an 
 ```
 Updates happen in the first 200 rooms now. When the client scrolls even more, the client just requests 0-99 and 200-299 (effectively the 1st and 3rd pages):
 `POST /v3/sync`:
-```json=
+```js
 {
   "rooms": [ [0,99], [200,299] ]
 }
 ```
 The server sees 100-199 is missing and issues an invalidation to tell the client that they will be working on stale data for this range. When the user scrolls back up they will need to re-subscribe to this range:
-```json=
+```js
 {
   "ops": [
     {
@@ -425,7 +425,7 @@ This imposes more restrictions on the server implementation:
  - Servers need to remember the last sent event ID for each session for each room. If rooms share a single monotonically increasing stream, then this is a single integer per session (akin to today's sync tokens for PDU events). Servers need to remember _which rooms_ have been sent to the client, along with the stream position when that was sent. So it's basically a `map[string]int64`.
 
 An example of what this looks like in the response:
-```json=
+```js
 {
   "ops": [
     {
@@ -470,7 +470,7 @@ For cases where the state resolution algorithm has deleted state, we can force a
 
 If you are tracking the top 5 rooms and an event arrives in the 6th room, you will be notified about the event ONLY IF the sort order means the room bumps into the top 5. If for example you sorted `by_name` then you won't be notified about the event in the 6th room, unless it's an `m.room.name` event which moves the room into the top 5. In most "recent" sort orders a new event *will result* in the 6th room bumping to the top of the list. A notable exception is when the rooms are sorted in *alphabetical order* (`by_name`), which is what some other chat clients do for example. In this case, you don't care about the event unless the event is a "highlightable" event (e.g direct @mention). If you are explicitly "highlighted" in a room (according to push rules), a new section appears **at the top-level**:
 
-```json=
+```js
 {
     "notifications": [
         {
