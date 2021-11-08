@@ -183,6 +183,9 @@ func (s *ConnState) onIncomingRequest(ctx context.Context, req *sync3.Request) (
 	for _, r := range added {
 		sr := sync3.SliceRanges([][2]int64{r})
 		subslice := sr.SliceInto(s.sortedJoinedRooms)
+		if len(subslice) == 0 {
+			continue
+		}
 		sortableRooms := subslice[0].(*sync3.SortableRooms)
 		roomIDs := sortableRooms.RoomIDs()
 
@@ -213,6 +216,8 @@ func (s *ConnState) onIncomingRequest(ctx context.Context, req *sync3.Request) (
 					for _, sub := range subs {
 						response.RoomSubscriptions[sub.RoomID] = sub
 					}
+					// this may be a join or leave, which should update the count
+					response.Count = int64(s.sortedJoinedRooms.Len())
 				}
 				if connEvent.userMsg.msg != nil {
 					subs, ops := s.processIncomingUserEvent(connEvent.roomID, connEvent.userMsg.msg, connEvent.userMsg.hasCountDecreased)
