@@ -49,3 +49,4 @@ jobs:
         POSTGRES_USER: postgres
         POSTGRES_PASSWORD: postgres
         POSTGRES_DB: syncv3
+        SYNCV3_DEBUG: "1"

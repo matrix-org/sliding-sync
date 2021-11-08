@@ -61,6 +61,7 @@ func (s *SortableRooms) Add(r RoomConnMetadata) {
 }
 
 func (s *SortableRooms) Get(index int) RoomConnMetadata {
+	internal.Assert("index is within len(rooms)", index < len(s.rooms))
 	return s.rooms[index]
 }
 
@@ -68,6 +69,7 @@ func (s *SortableRooms) Len() int64 {
 	return int64(len(s.rooms))
 }
 func (s *SortableRooms) Subslice(i, j int64) Subslicer {
+	internal.Assert("i < j and are within len(rooms)", i < j && i < int64(len(s.rooms)) && j <= int64(len(s.rooms)))
 	return &SortableRooms{
 		rooms:         s.rooms[i:j],
 		roomIDToIndex: s.roomIDToIndex,
@@ -75,6 +77,7 @@ func (s *SortableRooms) Subslice(i, j int64) Subslicer {
 }
 
 func (s *SortableRooms) Sort(sortBy []string) error {
+	internal.Assert("sortBy is not empty", len(sortBy) != 0)
 	comparators := []func(i, j int) int{}
 	for _, sort := range sortBy {
 		switch sort {

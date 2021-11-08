@@ -94,6 +94,10 @@ func (r SliceRanges) SliceInto(slice Subslicer) []Subslicer {
 		// apply range caps
 		// the range are always index positions hence -1
 		sliceLen := slice.Len()
+		if sliceLen == 0 {
+			// empty slices subslice into themselves
+			continue
+		}
 		if sr[0] >= sliceLen {
 			sr[0] = sliceLen - 1
 		}
