@@ -332,14 +332,16 @@ const doSyncLoop = async(accessToken, sessionId) => {
         try {
             // these fields are always required
             let reqBody = {
-                rooms: activeRanges,
+                lists: [{
+                    rooms: activeRanges,
+                }],
                 session_id: (sessionId ? sessionId : undefined),
             };
             // if this is the first request on this session, send sticky request data which never changes
             if (!currentPos) {
-                reqBody.required_state = requiredStateEventsInList;
-                reqBody.timeline_limit = 20;
-                reqBody.sort = ["by_highlight_count", "by_notification_count", "by_recency"];
+                reqBody.lists[0].required_state = requiredStateEventsInList;
+                reqBody.lists[0].timeline_limit = 20;
+                reqBody.lists[0].sort = ["by_highlight_count", "by_notification_count", "by_recency"];
             }
             // check if we are (un)subscribing to a room and modify request this one time for it
             let subscribingToRoom;
