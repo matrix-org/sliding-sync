@@ -55,14 +55,30 @@ func (s *SortableRooms) RoomIDs() []string {
 	return roomIDs
 }
 
-func (s *SortableRooms) Add(r RoomConnMetadata) {
+// Add a room to the list. Returns true if the room was added.
+func (s *SortableRooms) Add(r RoomConnMetadata) bool {
+	_, exists := s.roomIDToIndex[r.RoomID]
+	if exists {
+		return false
+	}
 	s.rooms = append(s.rooms, r)
 	s.roomIDToIndex[r.RoomID] = len(s.rooms) - 1
+	return true
 }
 
 func (s *SortableRooms) Get(index int) RoomConnMetadata {
 	internal.Assert("index is within len(rooms)", index < len(s.rooms))
 	return s.rooms[index]
+}
+
+func (s *SortableRooms) Remove(roomID string) {
+	index, ok := s.roomIDToIndex[roomID]
+	if !ok {
+		return
+	}
+	delete(s.roomIDToIndex, roomID)
+	// splice out index
+	s.rooms = append(s.rooms[:index], s.rooms[index+1:]...)
 }
 
 func (s *SortableRooms) Len() int64 {
@@ -154,4 +170,40 @@ func (s *SortableRooms) comparatorSortByNotificationCount(i, j int) int {
 		return 1
 	}
 	return -1
+}
+
+type FilteredSortableRooms struct {
+	*SortableRooms
+	filter *RequestFilters
+}
+
+func NewFilteredSortableRooms(rooms []RoomConnMetadata, filter *RequestFilters) *FilteredSortableRooms {
+	var filteredRooms []RoomConnMetadata
+	if filter == nil {
+		filter = &RequestFilters{}
+	}
+	for _, r := range rooms {
+		if filter.Include(&r.RoomMetadata) {
+			filteredRooms = append(filteredRooms, r)
+		}
+	}
+	return &FilteredSortableRooms{
+		SortableRooms: NewSortableRooms(filteredRooms),
+		filter:        filter,
+	}
+}
+
+func (f *FilteredSortableRooms) Add(r RoomConnMetadata) bool {
+	if !f.filter.Include(&r.RoomMetadata) {
+		return false
+	}
+	return f.SortableRooms.Add(r)
+}
+
+func (f *FilteredSortableRooms) UpdateGlobalRoomMetadata(r *internal.RoomMetadata) {
+	if !f.filter.Include(r) {
+		f.Remove(r.RoomID)
+		return
+	}
+	f.SortableRooms.UpdateGlobalRoomMetadata(r)
 }

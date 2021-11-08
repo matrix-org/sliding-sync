@@ -34,7 +34,7 @@ type ConnState struct {
 	userID string
 	// the only thing that can touch these data structures is the conn goroutine
 	muxedReq          *sync3.Request
-	sortedJoinedRooms *sync3.SortableRooms
+	sortedJoinedRooms *sync3.FilteredSortableRooms
 	roomSubscriptions map[string]sync3.RoomSubscription
 	loadPosition      int64
 
@@ -90,9 +90,8 @@ func (s *ConnState) load(req *sync3.Request) error {
 			NotificationCount: urd.NotificationCount,
 		}
 	}
-
 	s.loadPosition = initialLoadPosition
-	s.sortedJoinedRooms = sync3.NewSortableRooms(rooms)
+	s.sortedJoinedRooms = sync3.NewFilteredSortableRooms(rooms, req.Lists[0].Filters)
 	s.sort(req.Lists[0].Sort)
 
 	return nil
@@ -249,11 +248,10 @@ func (s *ConnState) processIncomingUserEvent(roomID string, userEvent *sync3.Use
 }
 
 func (s *ConnState) processIncomingEvent(updateEvent *sync3.EventData) ([]sync3.Room, []sync3.ResponseOp) {
+	// keep track of the latest stream position
 	if updateEvent.LatestPos > s.loadPosition {
 		s.loadPosition = updateEvent.LatestPos
 	}
-	// TODO: Add filters to check if this event should cause a response or should be dropped (e.g filtering out messages)
-	// this is why this select is in a while loop as not all update event will wake up the stream
 
 	fromIndex, ok := s.sortedJoinedRooms.IndexOf(updateEvent.RoomID)
 	if !ok {
@@ -268,7 +266,10 @@ func (s *ConnState) processIncomingEvent(updateEvent *sync3.EventData) ([]sync3.
 				strings.Trim(internal.CalculateRoomName(roomMetadata, 5), "#!()):_@"),
 			),
 		}
-		s.sortedJoinedRooms.Add(newRoomConn)
+		if !s.sortedJoinedRooms.Add(newRoomConn) {
+			// we didn't add this room to the list so we don't need to resort
+			return nil, nil
+		}
 	}
 	return s.resort(updateEvent.RoomID, fromIndex, updateEvent.Event)
 }

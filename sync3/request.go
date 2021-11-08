@@ -3,6 +3,8 @@ package sync3
 import (
 	"bytes"
 	"encoding/json"
+
+	"github.com/matrix-org/sync-v3/internal"
 )
 
 var (
@@ -11,8 +13,9 @@ var (
 	SortByNotificationCount = "by_notification_count"
 	SortByHighlightCount    = "by_highlight_count"
 	SortBy                  = []string{SortByHighlightCount, SortByName, SortByNotificationCount, SortByRecency}
-	DefaultTimelineLimit    = int64(20)
-	DefaultTimeoutSecs      = 10
+
+	DefaultTimelineLimit = int64(20)
+	DefaultTimeoutSecs   = 10
 )
 
 type Request struct {
@@ -172,8 +175,18 @@ func (r *Request) GetRequiredState(listIndex int, roomID string) [][2]string {
 }
 
 type RequestFilters struct {
-	Spaces []string `json:"spaces"`
+	Spaces      []string `json:"spaces"`
+	IsDM        *bool    `json:"is_dm"`
+	IsEncrypted *bool    `json:"is_encrypted"`
+	IsInvite    *bool    `json:"is_invite"`
 	// TODO options to control which events should be live-streamed e.g not_types, types from sync v2
+}
+
+func (rf *RequestFilters) Include(r *internal.RoomMetadata) bool {
+	if rf.IsEncrypted != nil && *rf.IsEncrypted != r.Encrypted {
+		return false
+	}
+	return true
 }
 
 type RoomSubscription struct {

@@ -27,6 +27,8 @@ Wait for the first initial v2 sync to be processed (this can take minutes!) and 
 
 At present, the best way to help would be to run a local v3 server pointed at a busy account and just leave it and a client running in the background. Look at it occasionally and submit any issues you notice. You can save console logs by right-clicking -> Save As.
 
+Please run the server with `SYNCV3_DEBUG=1` set. This will force the server to panic when assertions fail rather than just log them.
+
 ## API
 
 API is under active development and is not stable.
