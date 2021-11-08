@@ -55,12 +55,14 @@ func TestNotificationsOnTop(t *testing.T) {
 
 	// connect and make sure we get nobing, bing
 	syncRequestBody := sync3.Request{
-		Rooms: sync3.SliceRanges{
-			[2]int64{0, int64(len(allRooms) - 1)}, // all rooms
-		},
-		TimelineLimit: int64(100),
-		// prefer highlight count first, THEN eventually recency
-		Sort:      []string{sync3.SortByHighlightCount, sync3.SortByNotificationCount, sync3.SortByRecency},
+		Lists: []sync3.RequestList{{
+			Rooms: sync3.SliceRanges{
+				[2]int64{0, int64(len(allRooms) - 1)}, // all rooms
+			},
+			TimelineLimit: int64(100),
+			// prefer highlight count first, THEN eventually recency
+			Sort: []string{sync3.SortByHighlightCount, sync3.SortByNotificationCount, sync3.SortByRecency},
+		}},
 		SessionID: t.Name(),
 	}
 	res := v3.mustDoV3Request(t, aliceToken, syncRequestBody)
@@ -130,12 +132,14 @@ func TestNotificationsOnTop(t *testing.T) {
 	// restart the server and sync from fresh again, it should still have the bing room on top
 	v3.restart(t, v2, pqString)
 	res = v3.mustDoV3Request(t, aliceToken, sync3.Request{
-		Rooms: sync3.SliceRanges{
-			[2]int64{0, int64(len(allRooms) - 1)}, // all rooms
-		},
-		TimelineLimit: int64(100),
-		// prefer highlight count first, THEN eventually recency
-		Sort:      []string{sync3.SortByHighlightCount, sync3.SortByNotificationCount, sync3.SortByRecency},
+		Lists: []sync3.RequestList{{
+			Rooms: sync3.SliceRanges{
+				[2]int64{0, int64(len(allRooms) - 1)}, // all rooms
+			},
+			TimelineLimit: int64(100),
+			// prefer highlight count first, THEN eventually recency
+			Sort: []string{sync3.SortByHighlightCount, sync3.SortByNotificationCount, sync3.SortByRecency},
+		}},
 		SessionID: t.Name(),
 	})
 	MatchResponse(t, res, MatchV3Count(len(allRooms)), MatchV3Ops(

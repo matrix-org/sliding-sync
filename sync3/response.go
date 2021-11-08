@@ -68,6 +68,7 @@ type ResponseOp interface {
 
 type ResponseOpRange struct {
 	Operation string  `json:"op"`
+	List      int     `json:"list"`
 	Range     []int64 `json:"range,omitempty"`
 	Rooms     []Room  `json:"rooms,omitempty"`
 }
@@ -78,6 +79,7 @@ func (r *ResponseOpRange) Op() string {
 
 type ResponseOpSingle struct {
 	Operation string `json:"op"`
+	List      int    `json:"list"`
 	Index     *int   `json:"index,omitempty"` // 0 is a valid value, hence *int
 	Room      *Room  `json:"room,omitempty"`
 }

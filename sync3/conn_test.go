@@ -75,10 +75,10 @@ func TestConnBlocking(t *testing.T) {
 	}
 	ch := make(chan string)
 	c := NewConn(connID, &connHandlerMock{func(ctx context.Context, cid ConnID, req *Request) (*Response, error) {
-		if req.Sort[0] == "hi" {
+		if req.Lists[0].Sort[0] == "hi" {
 			time.Sleep(10 * time.Millisecond)
 		}
-		ch <- req.Sort[0]
+		ch <- req.Lists[0].Sort[0]
 		return &Response{}, nil
 	}})
 
@@ -90,14 +90,22 @@ func TestConnBlocking(t *testing.T) {
 	go func() {
 		defer wg.Done()
 		c.OnIncomingRequest(ctx, &Request{
-			Sort: []string{"hi"},
+			Lists: []RequestList{
+				{
+					Sort: []string{"hi"},
+				},
+			},
 		})
 	}()
 	go func() {
 		defer wg.Done()
 		time.Sleep(1 * time.Millisecond) // this req happens 2nd
 		c.OnIncomingRequest(ctx, &Request{
-			Sort: []string{"hi2"},
+			Lists: []RequestList{
+				{
+					Sort: []string{"hi2"},
+				},
+			},
 		})
 	}()
 	go func() {
@@ -142,7 +150,12 @@ func TestConnRetries(t *testing.T) {
 	assertInt(t, callCount, 2) // this doesn't increment
 	assertNoError(t, err)
 	// retry! but with modified request body, so should invoke handler again
-	resp, err = c.OnIncomingRequest(ctx, &Request{pos: 1, Sort: []string{"by_name"}})
+	resp, err = c.OnIncomingRequest(ctx, &Request{
+		pos: 1, Lists: []RequestList{
+			{
+				Sort: []string{SortByName},
+			},
+		}})
 	assertInt(t, resp.Pos, 3)
 	assertInt(t, resp.Count, 20)
 	assertInt(t, callCount, 3)

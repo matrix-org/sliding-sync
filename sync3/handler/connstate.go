@@ -93,7 +93,7 @@ func (s *ConnState) load(req *sync3.Request) error {
 
 	s.loadPosition = initialLoadPosition
 	s.sortedJoinedRooms = sync3.NewSortableRooms(rooms)
-	s.sort(req.Sort)
+	s.sort(req.Lists[0].Sort)
 
 	return nil
 }
@@ -123,8 +123,8 @@ func (s *ConnState) onIncomingRequest(ctx context.Context, req *sync3.Request) (
 	var prevRange sync3.SliceRanges
 	var prevSort []string
 	if s.muxedReq != nil {
-		prevRange = s.muxedReq.Rooms
-		prevSort = s.muxedReq.Sort
+		prevRange = s.muxedReq.Lists[0].Rooms
+		prevSort = s.muxedReq.Lists[0].Sort
 	}
 	var newSubs []string
 	var newUnsubs []string
@@ -152,23 +152,23 @@ func (s *ConnState) onIncomingRequest(ctx context.Context, req *sync3.Request) (
 
 	var added, removed, same sync3.SliceRanges
 	if prevRange != nil {
-		added, removed, same = prevRange.Delta(s.muxedReq.Rooms)
+		added, removed, same = prevRange.Delta(s.muxedReq.Lists[0].Rooms)
 	} else {
-		added = s.muxedReq.Rooms
+		added = s.muxedReq.Lists[0].Rooms
 	}
 
-	if !reflect.DeepEqual(prevSort, s.muxedReq.Sort) {
+	if !reflect.DeepEqual(prevSort, s.muxedReq.Lists[0].Sort) {
 		// the sort operations have changed, invalidate everything (if there were previous syncs), re-sort and re-SYNC
 		if prevSort != nil {
-			for _, r := range s.muxedReq.Rooms {
+			for _, r := range s.muxedReq.Lists[0].Rooms {
 				responseOperations = append(responseOperations, &sync3.ResponseOpRange{
 					Operation: "INVALIDATE",
 					Range:     r[:],
 				})
 			}
 		}
-		s.sort(s.muxedReq.Sort)
-		added = s.muxedReq.Rooms
+		s.sort(s.muxedReq.Lists[0].Sort)
+		added = s.muxedReq.Lists[0].Rooms
 		removed = nil
 		same = nil
 	}
@@ -275,7 +275,7 @@ func (s *ConnState) processIncomingEvent(updateEvent *sync3.EventData) ([]sync3.
 
 // Resort should be called after a specific room has been modified in `sortedJoinedRooms`.
 func (s *ConnState) resort(roomID string, fromIndex int, newEvent json.RawMessage) ([]sync3.Room, []sync3.ResponseOp) {
-	s.sort(s.muxedReq.Sort)
+	s.sort(s.muxedReq.Lists[0].Sort)
 	var subs []sync3.Room
 
 	isSubscribedToRoom := false
@@ -289,9 +289,9 @@ func (s *ConnState) resort(roomID string, fromIndex int, newEvent json.RawMessag
 	logger.Info().Msg("moved!")
 	// the toIndex may not be inside a tracked range. If it isn't, we actually need to notify about a
 	// different room
-	if !s.muxedReq.Rooms.Inside(int64(toIndex)) {
+	if !s.muxedReq.Lists[0].Rooms.Inside(int64(toIndex)) {
 		logger.Info().Msg("room isn't inside tracked range")
-		toIndex = int(s.muxedReq.Rooms.UpperClamp(int64(toIndex)))
+		toIndex = int(s.muxedReq.Lists[0].Rooms.UpperClamp(int64(toIndex)))
 		count := int(s.sortedJoinedRooms.Len())
 		if toIndex >= count {
 			// no room exists
@@ -301,7 +301,7 @@ func (s *ConnState) resort(roomID string, fromIndex int, newEvent json.RawMessag
 			return subs, nil
 		}
 		if toIndex == -1 {
-			logger.Warn().Int("from", fromIndex).Int("to", toIndex).Interface("ranges", s.muxedReq.Rooms).Msg(
+			logger.Warn().Int("from", fromIndex).Int("to", toIndex).Interface("ranges", s.muxedReq.Lists[0].Rooms).Msg(
 				"room moved but not in tracked ranges, ignoring",
 			)
 			return subs, nil
@@ -312,7 +312,7 @@ func (s *ConnState) resort(roomID string, fromIndex int, newEvent json.RawMessag
 		// We do this because we are introducing a new room in the list because of this situation:
 		// tracking [10,20] and room 24 jumps to position 0, so now we are tracking [9,19] as all rooms
 		// have been shifted to the right
-		rooms := s.userCache.LazyLoadTimelines(s.loadPosition, []string{toRoom.RoomID}, int(s.muxedReq.TimelineLimit)) // TODO: per-room timeline limit
+		rooms := s.userCache.LazyLoadTimelines(s.loadPosition, []string{toRoom.RoomID}, int(s.muxedReq.Lists[0].TimelineLimit)) // TODO: per-room timeline limit
 		urd := rooms[toRoom.RoomID]
 
 		// clobber before falling through
@@ -320,7 +320,7 @@ func (s *ConnState) resort(roomID string, fromIndex int, newEvent json.RawMessag
 		newEvent = urd.Timeline[len(urd.Timeline)-1]
 	}
 
-	return subs, s.moveRoom(roomID, newEvent, fromIndex, toIndex, s.muxedReq.Rooms, isSubscribedToRoom)
+	return subs, s.moveRoom(roomID, newEvent, fromIndex, toIndex, s.muxedReq.Lists[0].Rooms, isSubscribedToRoom)
 }
 
 func (s *ConnState) updateRoomSubscriptions(subs, unsubs []string) map[string]sync3.Room {
@@ -360,7 +360,7 @@ func (s *ConnState) getDeltaRoomData(roomID string, event json.RawMessage) *sync
 }
 
 func (s *ConnState) getInitialRoomData(roomIDs ...string) []sync3.Room {
-	roomIDToUserRoomData := s.userCache.LazyLoadTimelines(s.loadPosition, roomIDs, int(s.muxedReq.TimelineLimit)) // TODO: per-room timeline limit
+	roomIDToUserRoomData := s.userCache.LazyLoadTimelines(s.loadPosition, roomIDs, int(s.muxedReq.Lists[0].TimelineLimit)) // TODO: per-room timeline limit
 	rooms := make([]sync3.Room, len(roomIDs))
 	roomMetadatas := s.globalCache.LoadRooms(roomIDs...)
 	for i, roomID := range roomIDs {
@@ -374,7 +374,7 @@ func (s *ConnState) getInitialRoomData(roomIDs ...string) []sync3.Room {
 			NotificationCount: int64(userRoomData.NotificationCount),
 			HighlightCount:    int64(userRoomData.HighlightCount),
 			Timeline:          userRoomData.Timeline,
-			RequiredState:     s.globalCache.LoadRoomState(roomID, s.loadPosition, s.muxedReq.GetRequiredState(roomID)),
+			RequiredState:     s.globalCache.LoadRoomState(roomID, s.loadPosition, s.muxedReq.GetRequiredState(0, roomID)),
 		}
 	}
 	return rooms

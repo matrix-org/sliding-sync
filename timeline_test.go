@@ -161,10 +161,12 @@ func TestTimelinesLiveStream(t *testing.T) {
 
 	// first request => rooms 19,18,17,16
 	res := v3.mustDoV3Request(t, aliceToken, sync3.Request{
-		Rooms: sync3.SliceRanges{
-			[2]int64{0, int64(len(wantRooms) - 1)}, // first N rooms
-		},
-		TimelineLimit: int64(numTimelineEventsPerRoom),
+		Lists: []sync3.RequestList{{
+			Rooms: sync3.SliceRanges{
+				[2]int64{0, int64(len(wantRooms) - 1)}, // first N rooms
+			},
+			TimelineLimit: int64(numTimelineEventsPerRoom),
+		}},
 	})
 	MatchResponse(t, res, MatchV3Count(len(allRooms)), MatchV3Ops(
 		MatchV3SyncOp(func(op *sync3.ResponseOpRange) error {
@@ -189,10 +191,12 @@ func TestTimelinesLiveStream(t *testing.T) {
 
 	// next request, DELETE 3; INSERT 0 7;
 	res = v3.mustDoV3RequestWithPos(t, aliceToken, res.Pos, sync3.Request{
-		Rooms: sync3.SliceRanges{
-			[2]int64{0, int64(len(wantRooms) - 1)}, // first N rooms
-		},
-		// sticky remember the timeline_limit
+		Lists: []sync3.RequestList{{
+			Rooms: sync3.SliceRanges{
+				[2]int64{0, int64(len(wantRooms) - 1)}, // first N rooms
+			},
+			// sticky remember the timeline_limit
+		}},
 	})
 	MatchResponse(t, res, MatchV3Count(len(allRooms)), MatchV3Ops(
 		MatchV3DeleteOp(3),
@@ -207,9 +211,11 @@ func TestTimelinesLiveStream(t *testing.T) {
 
 	// next request, UPDATE 0 7;
 	res = v3.mustDoV3RequestWithPos(t, aliceToken, res.Pos, sync3.Request{
-		Rooms: sync3.SliceRanges{
-			[2]int64{0, int64(len(wantRooms) - 1)}, // first N rooms
-		},
+		Lists: []sync3.RequestList{{
+			Rooms: sync3.SliceRanges{
+				[2]int64{0, int64(len(wantRooms) - 1)}, // first N rooms
+			},
+		}},
 	})
 	MatchResponse(t, res, MatchV3Count(len(allRooms)), MatchV3Ops(
 		MatchV3UpdateOp(0, allRooms[7].roomID),
@@ -219,9 +225,11 @@ func TestTimelinesLiveStream(t *testing.T) {
 
 	// next request, DELETE 2; INSERT 0 18;
 	res = v3.mustDoV3RequestWithPos(t, aliceToken, res.Pos, sync3.Request{
-		Rooms: sync3.SliceRanges{
-			[2]int64{0, int64(len(wantRooms) - 1)}, // first N rooms
-		},
+		Lists: []sync3.RequestList{{
+			Rooms: sync3.SliceRanges{
+				[2]int64{0, int64(len(wantRooms) - 1)}, // first N rooms
+			},
+		}},
 	})
 	MatchResponse(t, res, MatchV3Count(len(allRooms)), MatchV3Ops(
 		MatchV3DeleteOp(2),
@@ -238,11 +246,13 @@ func TestTimelinesLiveStream(t *testing.T) {
 func testTimelineLoadInitialEvents(v3 *testV3Server, token string, count int, wantRooms []roomEvents, numTimelineEventsPerRoom int) func(t *testing.T) {
 	return func(t *testing.T) {
 		res := v3.mustDoV3Request(t, token, sync3.Request{
-			Rooms: sync3.SliceRanges{
-				[2]int64{0, int64(len(wantRooms) - 1)}, // first N rooms
-			},
-			TimelineLimit: int64(numTimelineEventsPerRoom),
-			SessionID:     t.Name(),
+			Lists: []sync3.RequestList{{
+				Rooms: sync3.SliceRanges{
+					[2]int64{0, int64(len(wantRooms) - 1)}, // first N rooms
+				},
+				TimelineLimit: int64(numTimelineEventsPerRoom),
+			}},
+			SessionID: t.Name(),
 		})
 
 		MatchResponse(t, res, MatchV3Count(count), MatchV3Ops(

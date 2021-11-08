@@ -87,10 +87,12 @@ func TestConnStateInitial(t *testing.T) {
 		t.Fatalf("UserID returned wrong value, got %v want %v", cs.UserID(), userID)
 	}
 	res, err := cs.OnIncomingRequest(context.Background(), ConnID, &sync3.Request{
-		Sort: []string{sync3.SortByRecency},
-		Rooms: sync3.SliceRanges([][2]int64{
-			{0, 9},
-		}),
+		Lists: []sync3.RequestList{{
+			Sort: []string{sync3.SortByRecency},
+			Rooms: sync3.SliceRanges([][2]int64{
+				{0, 9},
+			}),
+		}},
 	})
 	if err != nil {
 		t.Fatalf("OnIncomingRequest returned error : %s", err)
@@ -130,10 +132,12 @@ func TestConnStateInitial(t *testing.T) {
 
 	// request again for the diff
 	res, err = cs.OnIncomingRequest(context.Background(), ConnID, &sync3.Request{
-		Sort: []string{sync3.SortByRecency},
-		Rooms: sync3.SliceRanges([][2]int64{
-			{0, 9},
-		}),
+		Lists: []sync3.RequestList{{
+			Sort: []string{sync3.SortByRecency},
+			Rooms: sync3.SliceRanges([][2]int64{
+				{0, 9},
+			}),
+		}},
 	})
 	if err != nil {
 		t.Fatalf("OnIncomingRequest returned error : %s", err)
@@ -161,10 +165,12 @@ func TestConnStateInitial(t *testing.T) {
 		newEvent,
 	}, 1)
 	res, err = cs.OnIncomingRequest(context.Background(), ConnID, &sync3.Request{
-		Sort: []string{sync3.SortByRecency},
-		Rooms: sync3.SliceRanges([][2]int64{
-			{0, 9},
-		}),
+		Lists: []sync3.RequestList{{
+			Sort: []string{sync3.SortByRecency},
+			Rooms: sync3.SliceRanges([][2]int64{
+				{0, 9},
+			}),
+		}},
 	})
 	if err != nil {
 		t.Fatalf("OnIncomingRequest returned error : %s", err)
@@ -225,10 +231,12 @@ func TestConnStateMultipleRanges(t *testing.T) {
 
 	// request first page
 	res, err := cs.OnIncomingRequest(context.Background(), ConnID, &sync3.Request{
-		Sort: []string{sync3.SortByRecency},
-		Rooms: sync3.SliceRanges([][2]int64{
-			{0, 2},
-		}),
+		Lists: []sync3.RequestList{{
+			Sort: []string{sync3.SortByRecency},
+			Rooms: sync3.SliceRanges([][2]int64{
+				{0, 2},
+			}),
+		}},
 	})
 	if err != nil {
 		t.Fatalf("OnIncomingRequest returned error : %s", err)
@@ -255,10 +263,12 @@ func TestConnStateMultipleRanges(t *testing.T) {
 	})
 	// add on a different non-overlapping range
 	res, err = cs.OnIncomingRequest(context.Background(), ConnID, &sync3.Request{
-		Sort: []string{sync3.SortByRecency},
-		Rooms: sync3.SliceRanges([][2]int64{
-			{0, 2}, {4, 6},
-		}),
+		Lists: []sync3.RequestList{{
+			Sort: []string{sync3.SortByRecency},
+			Rooms: sync3.SliceRanges([][2]int64{
+				{0, 2}, {4, 6},
+			}),
+		}},
 	})
 	if err != nil {
 		t.Fatalf("OnIncomingRequest returned error : %s", err)
@@ -296,10 +306,12 @@ func TestConnStateMultipleRanges(t *testing.T) {
 	}, 1)
 
 	res, err = cs.OnIncomingRequest(context.Background(), ConnID, &sync3.Request{
-		Sort: []string{sync3.SortByRecency},
-		Rooms: sync3.SliceRanges([][2]int64{
-			{0, 2}, {4, 6},
-		}),
+		Lists: []sync3.RequestList{{
+			Sort: []string{sync3.SortByRecency},
+			Rooms: sync3.SliceRanges([][2]int64{
+				{0, 2}, {4, 6},
+			}),
+		}},
 	})
 	if err != nil {
 		t.Fatalf("OnIncomingRequest returned error : %s", err)
@@ -334,10 +346,12 @@ func TestConnStateMultipleRanges(t *testing.T) {
 	}, 1)
 	t.Logf("new event %s : %s", roomIDs[9], string(newEvent))
 	res, err = cs.OnIncomingRequest(context.Background(), ConnID, &sync3.Request{
-		Sort: []string{sync3.SortByRecency},
-		Rooms: sync3.SliceRanges([][2]int64{
-			{0, 2}, {4, 6},
-		}),
+		Lists: []sync3.RequestList{{
+			Sort: []string{sync3.SortByRecency},
+			Rooms: sync3.SliceRanges([][2]int64{
+				{0, 2}, {4, 6},
+			}),
+		}},
 	})
 	if err != nil {
 		t.Fatalf("OnIncomingRequest returned error : %s", err)
@@ -398,10 +412,12 @@ func TestBumpToOutsideRange(t *testing.T) {
 	cs := NewConnState(userID, userCache, globalCache)
 	// Ask for A,B
 	res, err := cs.OnIncomingRequest(context.Background(), ConnID, &sync3.Request{
-		Sort: []string{sync3.SortByRecency},
-		Rooms: sync3.SliceRanges([][2]int64{
-			{0, 1},
-		}),
+		Lists: []sync3.RequestList{{
+			Sort: []string{sync3.SortByRecency},
+			Rooms: sync3.SliceRanges([][2]int64{
+				{0, 1},
+			}),
+		}},
 	})
 	if err != nil {
 		t.Fatalf("OnIncomingRequest returned error : %s", err)
@@ -434,10 +450,12 @@ func TestBumpToOutsideRange(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Millisecond)
 	defer cancel()
 	res, err = cs.OnIncomingRequest(ctx, ConnID, &sync3.Request{
-		Sort: []string{sync3.SortByRecency},
-		Rooms: sync3.SliceRanges([][2]int64{
-			{0, 1},
-		}),
+		Lists: []sync3.RequestList{{
+			Sort: []string{sync3.SortByRecency},
+			Rooms: sync3.SliceRanges([][2]int64{
+				{0, 1},
+			}),
+		}},
 	})
 	if err != nil {
 		t.Fatalf("OnIncomingRequest returned error : %s", err)
@@ -502,15 +520,17 @@ func TestConnStateRoomSubscriptions(t *testing.T) {
 	cs := NewConnState(userID, userCache, globalCache)
 	// subscribe to room D
 	res, err := cs.OnIncomingRequest(context.Background(), ConnID, &sync3.Request{
-		Sort: []string{sync3.SortByRecency},
 		RoomSubscriptions: map[string]sync3.RoomSubscription{
 			roomD.RoomID: {
 				TimelineLimit: 20,
 			},
 		},
-		Rooms: sync3.SliceRanges([][2]int64{
-			{0, 1},
-		}),
+		Lists: []sync3.RequestList{{
+			Sort: []string{sync3.SortByRecency},
+			Rooms: sync3.SliceRanges([][2]int64{
+				{0, 1},
+			}),
+		}},
 	})
 	if err != nil {
 		t.Fatalf("OnIncomingRequest returned error : %s", err)
@@ -556,10 +576,12 @@ func TestConnStateRoomSubscriptions(t *testing.T) {
 	}, 1)
 	// we should get this message even though it's not in the range because we are subscribed to this room.
 	res, err = cs.OnIncomingRequest(context.Background(), ConnID, &sync3.Request{
-		Sort: []string{sync3.SortByRecency},
-		Rooms: sync3.SliceRanges([][2]int64{
-			{0, 1},
-		}),
+		Lists: []sync3.RequestList{{
+			Sort: []string{sync3.SortByRecency},
+			Rooms: sync3.SliceRanges([][2]int64{
+				{0, 1},
+			}),
+		}},
 	})
 	if err != nil {
 		t.Fatalf("OnIncomingRequest returned error : %s", err)
@@ -579,16 +601,18 @@ func TestConnStateRoomSubscriptions(t *testing.T) {
 
 	// now swap to room C
 	res, err = cs.OnIncomingRequest(context.Background(), ConnID, &sync3.Request{
-		Sort: []string{sync3.SortByRecency},
 		RoomSubscriptions: map[string]sync3.RoomSubscription{
 			roomC.RoomID: {
 				TimelineLimit: 20,
 			},
 		},
 		UnsubscribeRooms: []string{roomD.RoomID},
-		Rooms: sync3.SliceRanges([][2]int64{
-			{0, 1},
-		}),
+		Lists: []sync3.RequestList{{
+			Sort: []string{sync3.SortByRecency},
+			Rooms: sync3.SliceRanges([][2]int64{
+				{0, 1},
+			}),
+		}},
 	})
 	if err != nil {
 		t.Fatalf("OnIncomingRequest returned error : %s", err)

@@ -72,11 +72,13 @@ func TestRoomNames(t *testing.T) {
 		t.Helper()
 		// do a sync, make sure room names are sensible
 		res := v3.mustDoV3Request(t, aliceToken, sync3.Request{
-			Rooms: sync3.SliceRanges{
-				[2]int64{0, int64(len(allRooms) - 1)}, // all rooms
-			},
-			TimelineLimit: int64(100),
-			SessionID:     sessionID,
+			Lists: []sync3.RequestList{{
+				Rooms: sync3.SliceRanges{
+					[2]int64{0, int64(len(allRooms) - 1)}, // all rooms
+				},
+				TimelineLimit: int64(100),
+			}},
+			SessionID: sessionID,
 		})
 		MatchResponse(t, res, MatchV3Count(len(allRooms)), MatchV3Ops(
 			MatchV3SyncOp(func(op *sync3.ResponseOpRange) error {

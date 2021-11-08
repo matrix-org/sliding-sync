@@ -6,8 +6,6 @@ import (
 )
 
 func TestRequestApplyDeltas(t *testing.T) {
-	boolTrue := true
-	boolFalse := false
 	testCases := []struct {
 		input Request
 		tests []struct {
@@ -17,9 +15,13 @@ func TestRequestApplyDeltas(t *testing.T) {
 	}{
 		{
 			input: Request{
-				SessionID:     "a",
-				Sort:          []string{"by_name"},
-				TimelineLimit: 5,
+				SessionID: "a",
+				Lists: []RequestList{
+					{
+						Sort:          []string{SortByName},
+						TimelineLimit: 5,
+					},
+				},
 				RoomSubscriptions: map[string]RoomSubscription{
 					"!foo:bar": {
 						TimelineLimit: 10,
@@ -33,7 +35,11 @@ func TestRequestApplyDeltas(t *testing.T) {
 				// check overwriting of sort and updating subs without adding new ones
 				{
 					next: Request{
-						Sort: []string{"by_recency"},
+						Lists: []RequestList{
+							{
+								Sort: []string{SortByRecency},
+							},
+						},
 						RoomSubscriptions: map[string]RoomSubscription{
 							"!foo:bar": {
 								TimelineLimit: 100,
@@ -50,7 +56,11 @@ func TestRequestApplyDeltas(t *testing.T) {
 				// check adding a subs
 				{
 					next: Request{
-						Sort: []string{"by_recency"},
+						Lists: []RequestList{
+							{
+								Sort: []string{SortByRecency},
+							},
+						},
 						RoomSubscriptions: map[string]RoomSubscription{
 							"!bar:baz": {
 								TimelineLimit: 42,
@@ -70,7 +80,11 @@ func TestRequestApplyDeltas(t *testing.T) {
 				// check unsubscribing
 				{
 					next: Request{
-						Sort:             []string{"by_recency"},
+						Lists: []RequestList{
+							{
+								Sort: []string{SortByRecency},
+							},
+						},
 						UnsubscribeRooms: []string{"!foo:bar"},
 					},
 					check: func(t *testing.T, r Request, subs, unsubs []string) {
@@ -86,7 +100,11 @@ func TestRequestApplyDeltas(t *testing.T) {
 				// check subscribing and unsubscribing = no change
 				{
 					next: Request{
-						Sort: []string{"by_recency"},
+						Lists: []RequestList{
+							{
+								Sort: []string{SortByRecency},
+							},
+						},
 						RoomSubscriptions: map[string]RoomSubscription{
 							"!bar:baz": {
 								TimelineLimit: 42,
@@ -98,35 +116,6 @@ func TestRequestApplyDeltas(t *testing.T) {
 						ensureEmpty(t, subs, unsubs)
 						if len(r.RoomSubscriptions) != 1 {
 							t.Errorf("Expected 1 subs, got %+v", r.RoomSubscriptions)
-						}
-					},
-				},
-				// check configuring excluded encrypted rooms
-				{
-					next: Request{
-						ExcludeEncryptedRoomsFlag: &boolFalse,
-					},
-					check: func(t *testing.T, r Request, subs, unsubs []string) {
-						if r.ExcludeEncryptedRooms() {
-							t.Errorf("ExcludeEncryptedRooms set when it should not be")
-						}
-					},
-				},
-				{
-					next: Request{
-						ExcludeEncryptedRoomsFlag: &boolTrue,
-					},
-					check: func(t *testing.T, r Request, subs, unsubs []string) {
-						if !r.ExcludeEncryptedRooms() {
-							t.Errorf("ExcludeEncryptedRooms not set when it should be")
-						}
-					},
-				},
-				{
-					next: Request{},
-					check: func(t *testing.T, r Request, subs, unsubs []string) {
-						if r.ExcludeEncryptedRooms() {
-							t.Errorf("ExcludeEncryptedRooms set when it should not be by default")
 						}
 					},
 				},
