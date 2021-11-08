@@ -162,7 +162,19 @@ func TestFilters(t *testing.T) {
 		}),
 	))
 
-	// TODO: requesting the unencrypted stream DELETEs the room without a corresponding INSERT
+	// requesting the unencrypted stream DELETEs the room without a corresponding INSERT
+	unencryptedRes = v3.mustDoV3RequestWithPos(t, aliceToken, unencryptedRes.Pos, sync3.Request{
+		Lists: []sync3.RequestList{{
+			Rooms: sync3.SliceRanges{
+				[2]int64{0, int64(len(allRooms) - 1)}, // all rooms
+			},
+			// sticky; should remember filters
+		}},
+		SessionID: unencryptedSessionID,
+	})
+	MatchResponse(t, unencryptedRes, MatchV3Count(0), MatchV3Ops(
+		MatchV3DeleteOp(0),
+	))
 
 	// requesting the unencrypted stream from scratch returns 0 rooms
 	unencryptedRes = v3.mustDoV3Request(t, aliceToken, sync3.Request{

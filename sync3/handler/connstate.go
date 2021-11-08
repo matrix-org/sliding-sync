@@ -208,7 +208,15 @@ func (s *ConnState) onIncomingRequest(ctx context.Context, req *sync3.Request) (
 			case connEvent := <-s.updateEvents: // TODO: keep reading until it is empty before responding.
 				if connEvent.roomMetadata != nil {
 					// always update our view of the world
-					s.sortedJoinedRooms.UpdateGlobalRoomMetadata(connEvent.roomMetadata)
+
+					// TODO: yuck that the index is here
+					deletedIndex := s.sortedJoinedRooms.UpdateGlobalRoomMetadata(connEvent.roomMetadata)
+					if deletedIndex >= 0 {
+						responseOperations = append(responseOperations, &sync3.ResponseOpSingle{
+							Operation: sync3.OpDelete,
+							Index:     &deletedIndex,
+						})
+					}
 				}
 				if connEvent.msg != nil {
 					subs, ops := s.processIncomingEvent(connEvent.msg)

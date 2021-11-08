@@ -21,14 +21,15 @@ func NewSortableRooms(rooms []RoomConnMetadata) *SortableRooms {
 	}
 }
 
-func (s *SortableRooms) UpdateGlobalRoomMetadata(roomMeta *internal.RoomMetadata) {
+func (s *SortableRooms) UpdateGlobalRoomMetadata(roomMeta *internal.RoomMetadata) int {
 	pos, ok := s.roomIDToIndex[roomMeta.RoomID]
 	if !ok {
-		return
+		return -1
 	}
 	meta := s.rooms[pos]
 	meta.RoomMetadata = *roomMeta
 	s.rooms[pos] = meta
+	return -1
 }
 
 func (s *SortableRooms) UpdateUserRoomMetadata(roomID string, userEvent *UserRoomData, hasCountDecreased bool) {
@@ -71,14 +72,15 @@ func (s *SortableRooms) Get(index int) RoomConnMetadata {
 	return s.rooms[index]
 }
 
-func (s *SortableRooms) Remove(roomID string) {
+func (s *SortableRooms) Remove(roomID string) int {
 	index, ok := s.roomIDToIndex[roomID]
 	if !ok {
-		return
+		return -1
 	}
 	delete(s.roomIDToIndex, roomID)
 	// splice out index
 	s.rooms = append(s.rooms[:index], s.rooms[index+1:]...)
+	return index
 }
 
 func (s *SortableRooms) Len() int64 {
@@ -200,10 +202,9 @@ func (f *FilteredSortableRooms) Add(r RoomConnMetadata) bool {
 	return f.SortableRooms.Add(r)
 }
 
-func (f *FilteredSortableRooms) UpdateGlobalRoomMetadata(r *internal.RoomMetadata) {
+func (f *FilteredSortableRooms) UpdateGlobalRoomMetadata(r *internal.RoomMetadata) int {
 	if !f.filter.Include(r) {
-		f.Remove(r.RoomID)
-		return
+		return f.Remove(r.RoomID)
 	}
-	f.SortableRooms.UpdateGlobalRoomMetadata(r)
+	return f.SortableRooms.UpdateGlobalRoomMetadata(r)
 }
