@@ -3,8 +3,6 @@ package sync3
 import (
 	"bytes"
 	"encoding/json"
-
-	"github.com/matrix-org/sync-v3/internal"
 )
 
 var (
@@ -182,8 +180,14 @@ type RequestFilters struct {
 	// TODO options to control which events should be live-streamed e.g not_types, types from sync v2
 }
 
-func (rf *RequestFilters) Include(r *internal.RoomMetadata) bool {
+func (rf *RequestFilters) Include(r *RoomConnMetadata) bool {
 	if rf.IsEncrypted != nil && *rf.IsEncrypted != r.Encrypted {
+		return false
+	}
+	if rf.IsDM != nil && *rf.IsDM != r.IsDM {
+		return false
+	}
+	if rf.IsInvite != nil && *rf.IsInvite != r.IsInvite {
 		return false
 	}
 	return true

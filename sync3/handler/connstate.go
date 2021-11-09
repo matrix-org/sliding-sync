@@ -83,11 +83,10 @@ func (s *ConnState) load(req *sync3.Request) error {
 		urd := s.userCache.LoadRoomData(metadata.RoomID)
 		rooms[i] = sync3.RoomConnMetadata{
 			RoomMetadata: *metadata,
+			UserRoomData: urd,
 			CanonicalisedName: strings.ToLower(
 				strings.Trim(internal.CalculateRoomName(metadata, 5), "#!()):_@"),
 			),
-			HighlightCount:    urd.HighlightCount,
-			NotificationCount: urd.NotificationCount,
 		}
 	}
 	s.loadPosition = initialLoadPosition
@@ -245,7 +244,14 @@ func (s *ConnState) onIncomingRequest(ctx context.Context, req *sync3.Request) (
 
 func (s *ConnState) processIncomingUserEvent(roomID string, userEvent *sync3.UserRoomData, hasCountDecreased bool) ([]sync3.Room, []sync3.ResponseOp) {
 	// modify notification counts
-	s.sortedJoinedRooms.UpdateUserRoomMetadata(roomID, userEvent, hasCountDecreased)
+	var responseOperations []sync3.ResponseOp
+	deletedIndex := s.sortedJoinedRooms.UpdateUserRoomMetadata(roomID, userEvent, hasCountDecreased)
+	if deletedIndex >= 0 {
+		responseOperations = append(responseOperations, &sync3.ResponseOpSingle{
+			Operation: sync3.OpDelete,
+			Index:     &deletedIndex,
+		})
+	}
 
 	if !hasCountDecreased {
 		// if the count increases then we'll notify the user for the event which increases the count, hence
@@ -257,7 +263,8 @@ func (s *ConnState) processIncomingUserEvent(roomID string, userEvent *sync3.Use
 	if !ok {
 		return nil, nil
 	}
-	return s.resort(roomID, fromIndex, nil)
+	rooms, ops := s.resort(roomID, fromIndex, nil)
+	return rooms, append(responseOperations, ops...)
 }
 
 func (s *ConnState) processIncomingEvent(updateEvent *sync3.EventData) ([]sync3.Room, []sync3.ResponseOp) {

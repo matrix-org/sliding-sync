@@ -32,15 +32,15 @@ func (s *SortableRooms) UpdateGlobalRoomMetadata(roomMeta *internal.RoomMetadata
 	return -1
 }
 
-func (s *SortableRooms) UpdateUserRoomMetadata(roomID string, userEvent *UserRoomData, hasCountDecreased bool) {
+func (s *SortableRooms) UpdateUserRoomMetadata(roomID string, userEvent *UserRoomData, hasCountDecreased bool) int {
 	index, ok := s.roomIDToIndex[roomID]
 	if !ok {
-		return
+		return -1
 	}
-	targetRoom := s.rooms[index]
-	targetRoom.HighlightCount = userEvent.HighlightCount
-	targetRoom.NotificationCount = userEvent.NotificationCount
-	s.rooms[index] = targetRoom
+	meta := s.rooms[index]
+	meta.UserRoomData = *userEvent
+	s.rooms[index] = meta
+	return -1
 }
 
 func (s *SortableRooms) IndexOf(roomID string) (int, bool) {
@@ -185,7 +185,7 @@ func NewFilteredSortableRooms(rooms []RoomConnMetadata, filter *RequestFilters) 
 		filter = &RequestFilters{}
 	}
 	for _, r := range rooms {
-		if filter.Include(&r.RoomMetadata) {
+		if filter.Include(&r) {
 			filteredRooms = append(filteredRooms, r)
 		}
 	}
@@ -196,15 +196,36 @@ func NewFilteredSortableRooms(rooms []RoomConnMetadata, filter *RequestFilters) 
 }
 
 func (f *FilteredSortableRooms) Add(r RoomConnMetadata) bool {
-	if !f.filter.Include(&r.RoomMetadata) {
+	if !f.filter.Include(&r) {
 		return false
 	}
 	return f.SortableRooms.Add(r)
 }
 
 func (f *FilteredSortableRooms) UpdateGlobalRoomMetadata(r *internal.RoomMetadata) int {
-	if !f.filter.Include(r) {
+	index, ok := f.SortableRooms.IndexOf(r.RoomID)
+	if !ok {
+		return -1
+	}
+	// Get must return a copy as we are modifying it eagerly to pass to the filter
+	room := f.SortableRooms.Get(index)
+	room.RoomMetadata = *r
+	if !f.filter.Include(&room) {
 		return f.Remove(r.RoomID)
 	}
 	return f.SortableRooms.UpdateGlobalRoomMetadata(r)
+}
+
+func (f *FilteredSortableRooms) UpdateUserRoomMetadata(roomID string, userEvent *UserRoomData, hasCountDecreased bool) int {
+	index, ok := f.SortableRooms.IndexOf(roomID)
+	if !ok {
+		return -1
+	}
+	// Get must return a copy as we are modifying it eagerly to pass to the filter
+	room := f.SortableRooms.Get(index)
+	room.UserRoomData = *userEvent
+	if !f.filter.Include(&room) {
+		return f.Remove(roomID)
+	}
+	return f.SortableRooms.UpdateUserRoomMetadata(roomID, userEvent, hasCountDecreased)
 }

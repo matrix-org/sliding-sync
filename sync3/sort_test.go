@@ -17,36 +17,44 @@ func TestSortBySingleOperation(t *testing.T) {
 				RoomID:               room1,
 				LastMessageTimestamp: 600,
 			},
+			UserRoomData: UserRoomData{
+				HighlightCount:    3,
+				NotificationCount: 12,
+			},
 			CanonicalisedName: "foo",
-			HighlightCount:    3,
-			NotificationCount: 12,
 		},
 		{
 			RoomMetadata: internal.RoomMetadata{
 				RoomID:               room2,
 				LastMessageTimestamp: 700,
 			},
+			UserRoomData: UserRoomData{
+				HighlightCount:    0,
+				NotificationCount: 3,
+			},
 			CanonicalisedName: "koo",
-			HighlightCount:    0,
-			NotificationCount: 3,
 		},
 		{
 			RoomMetadata: internal.RoomMetadata{
 				RoomID:               room3,
 				LastMessageTimestamp: 900,
 			},
+			UserRoomData: UserRoomData{
+				HighlightCount:    2,
+				NotificationCount: 7,
+			},
 			CanonicalisedName: "yoo",
-			HighlightCount:    2,
-			NotificationCount: 7,
 		},
 		{
 			RoomMetadata: internal.RoomMetadata{
 				RoomID:               room4,
 				LastMessageTimestamp: 800,
 			},
+			UserRoomData: UserRoomData{
+				HighlightCount:    1,
+				NotificationCount: 1,
+			},
 			CanonicalisedName: "boo",
-			HighlightCount:    1,
-			NotificationCount: 1,
 		},
 	}
 	// name: 4,1,2,3
@@ -85,36 +93,44 @@ func TestSortByMultipleOperations(t *testing.T) {
 				RoomID:               room1,
 				LastMessageTimestamp: 600,
 			},
+			UserRoomData: UserRoomData{
+				HighlightCount:    1,
+				NotificationCount: 1,
+			},
 			CanonicalisedName: "foo",
-			HighlightCount:    1,
-			NotificationCount: 1,
 		},
 		{
 			RoomMetadata: internal.RoomMetadata{
 				RoomID:               room2,
 				LastMessageTimestamp: 700,
 			},
+			UserRoomData: UserRoomData{
+				HighlightCount:    1,
+				NotificationCount: 5,
+			},
 			CanonicalisedName: "koo",
-			HighlightCount:    1,
-			NotificationCount: 5,
 		},
 		{
 			RoomMetadata: internal.RoomMetadata{
 				RoomID:               room3,
 				LastMessageTimestamp: 800,
 			},
+			UserRoomData: UserRoomData{
+				HighlightCount:    0,
+				NotificationCount: 0,
+			},
 			CanonicalisedName: "yoo",
-			HighlightCount:    0,
-			NotificationCount: 0,
 		},
 		{
 			RoomMetadata: internal.RoomMetadata{
 				RoomID:               room4,
 				LastMessageTimestamp: 900,
 			},
+			UserRoomData: UserRoomData{
+				HighlightCount:    0,
+				NotificationCount: 0,
+			},
 			CanonicalisedName: "boo",
-			HighlightCount:    0,
-			NotificationCount: 0,
 		},
 	}
 	testCases := []struct {

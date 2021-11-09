@@ -8,6 +8,8 @@ import (
 )
 
 type UserRoomData struct {
+	IsDM              bool
+	IsInvite          bool
 	NotificationCount int
 	HighlightCount    int
 	Timeline          []json.RawMessage

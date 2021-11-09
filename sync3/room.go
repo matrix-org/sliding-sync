@@ -17,8 +17,7 @@ type Room struct {
 
 type RoomConnMetadata struct {
 	internal.RoomMetadata
+	UserRoomData
 
 	CanonicalisedName string // stripped leading symbols like #, all in lower case
-	HighlightCount    int
-	NotificationCount int
 }
