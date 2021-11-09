@@ -171,14 +171,14 @@ func (s *testV3Server) mustDoV3Request(t *testing.T, token string, reqBody inter
 
 func (s *testV3Server) mustDoV3RequestWithPos(t *testing.T, token string, pos int64, reqBody interface{}) (respBody *sync3.Response) {
 	t.Helper()
-	resp, code := s.doV3Request(t, token, pos, reqBody)
+	resp, respBytes, code := s.doV3Request(t, token, pos, reqBody)
 	if code != 200 {
-		t.Fatalf("mustDoV3Request returned code %d", code)
+		t.Fatalf("mustDoV3Request returned code %d body: %s", code, string(respBytes))
 	}
 	return resp
 }
 
-func (s *testV3Server) doV3Request(t *testing.T, token string, pos int64, reqBody interface{}) (respBody *sync3.Response, statusCode int) {
+func (s *testV3Server) doV3Request(t *testing.T, token string, pos int64, reqBody interface{}) (respBody *sync3.Response, respBytes []byte, statusCode int) {
 	t.Helper()
 	var body io.Reader
 	switch v := reqBody.(type) {
@@ -209,7 +209,7 @@ func (s *testV3Server) doV3Request(t *testing.T, token string, pos int64, reqBod
 		t.Fatalf("failed to Do request: %s", err)
 	}
 	defer resp.Body.Close()
-	respBytes, err := ioutil.ReadAll(resp.Body)
+	respBytes, err = ioutil.ReadAll(resp.Body)
 	if err != nil {
 		t.Fatalf("failed to read response body: %s", err)
 	}
@@ -217,7 +217,7 @@ func (s *testV3Server) doV3Request(t *testing.T, token string, pos int64, reqBod
 	if err := json.Unmarshal(respBytes, &r); err != nil {
 		t.Fatalf("failed to decode v3 response as JSON: %s\nresponse: %s", err, string(respBytes))
 	}
-	return &r, resp.StatusCode
+	return &r, respBytes, resp.StatusCode
 }
 
 func runTestServer(t *testing.T, v2Server *testV2Server, postgresConnectionString string) *testV3Server {

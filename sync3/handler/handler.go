@@ -268,6 +268,14 @@ func (h *SyncLiveHandler) userCache(userID string) (*sync3.UserCache, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to load unread counts: %s", err)
 	}
+	// select the DM account data event and set DM room status
+	directEvent, err := h.Storage.AccountData(userID, sync2.AccountDataGlobalRoom, "m.direct")
+	if err != nil {
+		return nil, fmt.Errorf("failed to load direct message status for rooms: %s", err)
+	}
+	if directEvent != nil {
+		uc.OnAccountData([]state.AccountData{*directEvent})
+	}
 	h.Dispatcher.Register(userID, uc)
 	h.userCaches.Store(userID, uc)
 	return uc, nil
@@ -341,6 +349,19 @@ func (h *SyncLiveHandler) UpdateUnreadCounts(roomID, userID string, highlightCou
 		return
 	}
 	userCache.(*sync3.UserCache).OnUnreadCounts(roomID, highlightCount, notifCount)
+}
+
+func (h *SyncLiveHandler) OnAccountData(userID, roomID string, events []json.RawMessage) {
+	data, err := h.Storage.InsertAccountData(userID, roomID, events)
+	if err != nil {
+		logger.Err(err).Str("user", userID).Str("room", roomID).Msg("failed to update account data")
+		return
+	}
+	userCache, ok := h.userCaches.Load(userID)
+	if !ok {
+		return
+	}
+	userCache.(*sync3.UserCache).OnAccountData(data)
 }
 
 func parseIntFromQuery(u *url.URL, param string) (result int64, err *internal.HandlerError) {

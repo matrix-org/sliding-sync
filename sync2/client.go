@@ -10,6 +10,8 @@ import (
 	"github.com/tidwall/gjson"
 )
 
+const AccountDataGlobalRoom = ""
+
 type Client interface {
 	WhoAmI(authHeader string) (string, error)
 	DoSyncV2(authHeader, since string, isFirst bool) (*SyncResponse, int, error)
@@ -83,7 +85,7 @@ func (v *HTTPClient) DoSyncV2(authHeader, since string, isFirst bool) (*SyncResp
 type SyncResponse struct {
 	NextBatch   string `json:"next_batch"`
 	AccountData struct {
-		Events []gomatrixserverlib.ClientEvent `json:"events,omitempty"`
+		Events []json.RawMessage `json:"events,omitempty"`
 	} `json:"account_data"`
 	Presence struct {
 		Events []gomatrixserverlib.ClientEvent `json:"events,omitempty"`

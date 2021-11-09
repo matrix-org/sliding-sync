@@ -5,6 +5,7 @@ import (
 	"sync"
 
 	"github.com/matrix-org/sync-v3/state"
+	"github.com/tidwall/gjson"
 )
 
 type UserRoomData struct {
@@ -154,5 +155,36 @@ func (c *UserCache) OnNewEvent(eventData *EventData) {
 
 	for _, l := range c.listeners {
 		l.OnNewEvent(eventData)
+	}
+}
+
+func (c *UserCache) OnAccountData(datas []state.AccountData) {
+	for _, d := range datas {
+		if d.Type == "m.direct" {
+			dmRoomSet := make(map[string]struct{})
+			// pull out rooms and mark them as DMs
+			content := gjson.ParseBytes(d.Data).Get("content")
+			content.ForEach(func(_, v gjson.Result) bool {
+				for _, roomIDResult := range v.Array() {
+					dmRoomSet[roomIDResult.Str] = struct{}{}
+				}
+				return true
+			})
+			// this event REPLACES all DM rooms so reset the DM state on all rooms then update
+			c.roomToDataMu.Lock()
+			for roomID, urd := range c.roomToData {
+				_, exists := dmRoomSet[roomID]
+				urd.IsDM = exists
+				c.roomToData[roomID] = urd
+				delete(dmRoomSet, roomID)
+			}
+			// remaining stuff in dmRoomSet are new rooms the cache is unaware of
+			for dmRoomID := range dmRoomSet {
+				c.roomToData[dmRoomID] = UserRoomData{
+					IsDM: true,
+				}
+			}
+			c.roomToDataMu.Unlock()
+		}
 	}
 }

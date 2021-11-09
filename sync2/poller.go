@@ -25,6 +25,8 @@ type V2DataReceiver interface {
 	AddToDeviceMessages(userID, deviceID string, msgs []gomatrixserverlib.SendToDeviceEvent)
 
 	UpdateUnreadCounts(roomID, userID string, highlightCount, notifCount *int)
+
+	OnAccountData(userID, roomID string, events []json.RawMessage)
 }
 
 // PollerMap is a map of device ID to Poller
@@ -149,6 +151,16 @@ func (h *PollerMap) UpdateUnreadCounts(roomID, userID string, highlightCount, no
 	wg.Wait()
 }
 
+func (h *PollerMap) OnAccountData(userID, roomID string, events []json.RawMessage) {
+	var wg sync.WaitGroup
+	wg.Add(1)
+	h.executor <- func() {
+		h.callbacks.OnAccountData(userID, roomID, events)
+		wg.Done()
+	}
+	wg.Wait()
+}
+
 // Poller can automatically poll the sync v2 endpoint and accumulate the responses in storage
 type Poller struct {
 	userID              string
@@ -201,6 +213,7 @@ func (p *Poller) Poll(since string, callback func()) {
 			}
 		}
 		failCount = 0
+		p.parseGlobalAccountData(resp)
 		p.parseRoomsResponse(resp)
 		p.parseToDeviceMessages(resp)
 
@@ -222,6 +235,13 @@ func (p *Poller) parseToDeviceMessages(res *SyncResponse) {
 	p.receiver.AddToDeviceMessages(p.userID, p.deviceID, res.ToDevice.Events)
 }
 
+func (p *Poller) parseGlobalAccountData(res *SyncResponse) {
+	if len(res.AccountData.Events) == 0 {
+		return
+	}
+	p.receiver.OnAccountData(p.userID, AccountDataGlobalRoom, res.AccountData.Events)
+}
+
 func (p *Poller) parseRoomsResponse(res *SyncResponse) {
 	stateCalls := 0
 	timelineCalls := 0
@@ -236,6 +256,10 @@ func (p *Poller) parseRoomsResponse(res *SyncResponse) {
 			p.receiver.UpdateUnreadCounts(
 				roomID, p.userID, roomData.UnreadNotifications.HighlightCount, roomData.UnreadNotifications.NotificationCount,
 			)
+		}
+		// process account data
+		if len(roomData.AccountData.Events) > 0 {
+			p.receiver.OnAccountData(p.userID, roomID, roomData.AccountData.Events)
 		}
 		if len(roomData.Timeline.Events) > 0 {
 			timelineCalls++

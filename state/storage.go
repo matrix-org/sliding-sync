@@ -12,11 +12,12 @@ import (
 )
 
 type Storage struct {
-	accumulator   *Accumulator
-	EventsTable   *EventTable
-	TypingTable   *TypingTable
-	ToDeviceTable *ToDeviceTable
-	UnreadTable   *UnreadTable
+	accumulator      *Accumulator
+	EventsTable      *EventTable
+	TypingTable      *TypingTable
+	ToDeviceTable    *ToDeviceTable
+	UnreadTable      *UnreadTable
+	AccountDataTable *AccountDataTable
 }
 
 func NewStorage(postgresURI string) *Storage {
@@ -32,11 +33,12 @@ func NewStorage(postgresURI string) *Storage {
 		entityName:    "server",
 	}
 	return &Storage{
-		accumulator:   acc,
-		TypingTable:   NewTypingTable(db),
-		ToDeviceTable: NewToDeviceTable(db),
-		UnreadTable:   NewUnreadTable(db),
-		EventsTable:   acc.eventsTable,
+		accumulator:      acc,
+		TypingTable:      NewTypingTable(db),
+		ToDeviceTable:    NewToDeviceTable(db),
+		UnreadTable:      NewUnreadTable(db),
+		EventsTable:      acc.eventsTable,
+		AccountDataTable: NewAccountDataTable(db),
 	}
 }
 
@@ -46,6 +48,31 @@ func (s *Storage) LatestEventNID() (int64, error) {
 
 func (s *Storage) LatestTypingID() (int64, error) {
 	return s.TypingTable.SelectHighestID()
+}
+
+func (s *Storage) AccountData(userID, roomID, eventType string) (data *AccountData, err error) {
+	err = sqlutil.WithTransaction(s.accumulator.db, func(txn *sqlx.Tx) error {
+		data, err = s.AccountDataTable.Select(txn, userID, eventType, roomID)
+		return err
+	})
+	return
+}
+
+func (s *Storage) InsertAccountData(userID, roomID string, events []json.RawMessage) (data []AccountData, err error) {
+	data = make([]AccountData, len(events))
+	for i := range events {
+		data[i] = AccountData{
+			UserID: userID,
+			RoomID: roomID,
+			Data:   events[i],
+			Type:   gjson.ParseBytes(events[i]).Get("type").Str,
+		}
+	}
+	err = sqlutil.WithTransaction(s.accumulator.db, func(txn *sqlx.Tx) error {
+		data, err = s.AccountDataTable.Insert(txn, data)
+		return err
+	})
+	return data, err
 }
 
 // Extract hero info for all rooms. MUST BE CALLED AT STARTUP ONLY AS THIS WILL RACE WITH LIVE TRAFFIC.
