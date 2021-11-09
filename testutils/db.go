@@ -1,6 +1,7 @@
 package testutils
 
 import (
+	"database/sql"
 	"fmt"
 	"os"
 	"os/exec"
@@ -9,17 +10,10 @@ import (
 
 func createLocalDB(dbName string) string {
 	fmt.Println("Note: tests require a postgres install accessible to the current user")
-	dropDB := exec.Command("dropdb", "-f", dbName)
-	dropDB.Stdout = os.Stdout
-	dropDB.Stderr = os.Stderr
-	dropDB.Run()
 	createDB := exec.Command("createdb", dbName)
 	createDB.Stdout = os.Stdout
 	createDB.Stderr = os.Stderr
-	if err := createDB.Run(); err != nil {
-		fmt.Println("createdb failed: ", err)
-		os.Exit(2)
-	}
+	createDB.Run()
 	return dbName
 }
 
@@ -32,7 +26,7 @@ func currentUser() string {
 	return user.Username
 }
 
-func PrepareDBConnectionString(wantDBName string) (connStr string) {
+func PrepareDBConnectionString() (connStr string) {
 	// Required vars: user and db
 	// We'll try to infer from the local env if they are missing
 	user := os.Getenv("POSTGRES_USER")
@@ -41,7 +35,7 @@ func PrepareDBConnectionString(wantDBName string) (connStr string) {
 	}
 	dbName := os.Getenv("POSTGRES_DB")
 	if dbName == "" {
-		dbName = createLocalDB(wantDBName)
+		dbName = createLocalDB("syncv3_test")
 	}
 	connStr = fmt.Sprintf(
 		"user=%s dbname=%s sslmode=disable",
@@ -55,6 +49,17 @@ func PrepareDBConnectionString(wantDBName string) (connStr string) {
 	host := os.Getenv("POSTGRES_HOST")
 	if host != "" {
 		connStr += fmt.Sprintf(" host=%s", host)
+	}
+
+	// Drop all tables on the database to get a fresh instance
+	db, err := sql.Open("postgres", connStr)
+	if err != nil {
+		panic(err)
+	}
+	_, err = db.Exec(`DROP SCHEMA public CASCADE;
+		CREATE SCHEMA public;`)
+	if err != nil {
+		panic(err)
 	}
 	return
 }

@@ -17,7 +17,7 @@ import (
 // and make sure the initial scrollback includes these new live events.
 func TestTimelines(t *testing.T) {
 	// setup code
-	pqString := testutils.PrepareDBConnectionString(postgresTestDatabaseName)
+	pqString := testutils.PrepareDBConnectionString()
 	v2 := runTestV2Server(t)
 	v3 := runTestServer(t, v2, pqString)
 	defer v2.close()

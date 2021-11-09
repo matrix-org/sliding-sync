@@ -10,7 +10,7 @@ import (
 var postgresConnectionString = "user=xxxxx dbname=syncv3_test sslmode=disable"
 
 func TestMain(m *testing.M) {
-	postgresConnectionString = testutils.PrepareDBConnectionString("syncv3_test_sync2")
+	postgresConnectionString = testutils.PrepareDBConnectionString()
 	exitCode := m.Run()
 	os.Exit(exitCode)
 }

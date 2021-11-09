@@ -43,7 +43,7 @@ jobs:
       run: go build ./cmd/syncv3
 
     - name: Test
-      run: go test ./...
+      run: go test -p 1 ./...
       env:
         POSTGRES_HOST: localhost
         POSTGRES_USER: postgres

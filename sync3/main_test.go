@@ -16,7 +16,7 @@ func TestMain(m *testing.M) {
 		TimeFormat: "15:04:05",
 		NoColor:    true,
 	})
-	postgresConnectionString = testutils.PrepareDBConnectionString("syncv3_test_sync3")
+	postgresConnectionString = testutils.PrepareDBConnectionString()
 	exitCode := m.Run()
 	os.Exit(exitCode)
 }

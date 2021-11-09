@@ -15,7 +15,7 @@ import (
 func TestFilters(t *testing.T) {
 	boolTrue := true
 	boolFalse := false
-	pqString := testutils.PrepareDBConnectionString(postgresTestDatabaseName)
+	pqString := testutils.PrepareDBConnectionString()
 	// setup code
 	v2 := runTestV2Server(t)
 	v3 := runTestServer(t, v2, pqString)

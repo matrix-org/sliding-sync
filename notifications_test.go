@@ -13,7 +13,7 @@ import (
 
 // Test that sort operations that favour notif counts always appear at the start of the list.
 func TestNotificationsOnTop(t *testing.T) {
-	pqString := testutils.PrepareDBConnectionString(postgresTestDatabaseName)
+	pqString := testutils.PrepareDBConnectionString()
 	// setup code
 	v2 := runTestV2Server(t)
 	v3 := runTestServer(t, v2, pqString)

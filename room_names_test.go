@@ -13,7 +13,7 @@ import (
 
 // Test that room names come through sanely. Additional testing to ensure we copy hero slices correctly.
 func TestRoomNames(t *testing.T) {
-	pqString := testutils.PrepareDBConnectionString(postgresTestDatabaseName)
+	pqString := testutils.PrepareDBConnectionString()
 	// setup code
 	v2 := runTestV2Server(t)
 	v3 := runTestServer(t, v2, pqString)
