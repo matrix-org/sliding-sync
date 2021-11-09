@@ -98,7 +98,7 @@ func TestConnStateInitial(t *testing.T) {
 		t.Fatalf("OnIncomingRequest returned error : %s", err)
 	}
 	checkResponse(t, false, res, &sync3.Response{
-		Count: 3,
+		Counts: []int{3},
 		Ops: []sync3.ResponseOp{
 			&sync3.ResponseOpRange{
 				Operation: "SYNC",
@@ -143,7 +143,7 @@ func TestConnStateInitial(t *testing.T) {
 		t.Fatalf("OnIncomingRequest returned error : %s", err)
 	}
 	checkResponse(t, true, res, &sync3.Response{
-		Count: 3,
+		Counts: []int{3},
 		Ops: []sync3.ResponseOp{
 			&sync3.ResponseOpSingle{
 				Operation: "DELETE",
@@ -176,7 +176,7 @@ func TestConnStateInitial(t *testing.T) {
 		t.Fatalf("OnIncomingRequest returned error : %s", err)
 	}
 	checkResponse(t, true, res, &sync3.Response{
-		Count: 3,
+		Counts: []int{3},
 		Ops: []sync3.ResponseOp{
 			&sync3.ResponseOpSingle{
 				Operation: "UPDATE",
@@ -242,7 +242,7 @@ func TestConnStateMultipleRanges(t *testing.T) {
 		t.Fatalf("OnIncomingRequest returned error : %s", err)
 	}
 	checkResponse(t, true, res, &sync3.Response{
-		Count: int64(len(rooms)),
+		Counts: []int{(len(rooms))},
 		Ops: []sync3.ResponseOp{
 			&sync3.ResponseOpRange{
 				Operation: "SYNC",
@@ -274,7 +274,7 @@ func TestConnStateMultipleRanges(t *testing.T) {
 		t.Fatalf("OnIncomingRequest returned error : %s", err)
 	}
 	checkResponse(t, true, res, &sync3.Response{
-		Count: int64(len(rooms)),
+		Counts: []int{len(rooms)},
 		Ops: []sync3.ResponseOp{
 			&sync3.ResponseOpRange{
 				Operation: "SYNC",
@@ -317,7 +317,7 @@ func TestConnStateMultipleRanges(t *testing.T) {
 		t.Fatalf("OnIncomingRequest returned error : %s", err)
 	}
 	checkResponse(t, true, res, &sync3.Response{
-		Count: int64(len(rooms)),
+		Counts: []int{len(rooms)},
 		Ops: []sync3.ResponseOp{
 			&sync3.ResponseOpSingle{
 				Operation: "DELETE",
@@ -357,7 +357,7 @@ func TestConnStateMultipleRanges(t *testing.T) {
 		t.Fatalf("OnIncomingRequest returned error : %s", err)
 	}
 	checkResponse(t, true, res, &sync3.Response{
-		Count: int64(len(rooms)),
+		Counts: []int{len(rooms)},
 		Ops: []sync3.ResponseOp{
 			&sync3.ResponseOpSingle{
 				Operation: "DELETE",
@@ -423,7 +423,7 @@ func TestBumpToOutsideRange(t *testing.T) {
 		t.Fatalf("OnIncomingRequest returned error : %s", err)
 	}
 	checkResponse(t, true, res, &sync3.Response{
-		Count: int64(4),
+		Counts: []int{4},
 		Ops: []sync3.ResponseOp{
 			&sync3.ResponseOpRange{
 				Operation: "SYNC",
@@ -536,7 +536,7 @@ func TestConnStateRoomSubscriptions(t *testing.T) {
 		t.Fatalf("OnIncomingRequest returned error : %s", err)
 	}
 	checkResponse(t, false, res, &sync3.Response{
-		Count: int64(len(roomIDs)),
+		Counts: []int{len(roomIDs)},
 		RoomSubscriptions: map[string]sync3.Room{
 			roomD.RoomID: {
 				RoomID: roomD.RoomID,
@@ -587,7 +587,7 @@ func TestConnStateRoomSubscriptions(t *testing.T) {
 		t.Fatalf("OnIncomingRequest returned error : %s", err)
 	}
 	checkResponse(t, false, res, &sync3.Response{
-		Count: int64(len(roomIDs)),
+		Counts: []int{len(roomIDs)},
 		RoomSubscriptions: map[string]sync3.Room{
 			roomD.RoomID: {
 				RoomID: roomD.RoomID,
@@ -618,7 +618,7 @@ func TestConnStateRoomSubscriptions(t *testing.T) {
 		t.Fatalf("OnIncomingRequest returned error : %s", err)
 	}
 	checkResponse(t, false, res, &sync3.Response{
-		Count: int64(len(roomIDs)),
+		Counts: []int{len(roomIDs)},
 		RoomSubscriptions: map[string]sync3.Room{
 			roomC.RoomID: {
 				RoomID: roomC.RoomID,
@@ -633,9 +633,9 @@ func TestConnStateRoomSubscriptions(t *testing.T) {
 
 func checkResponse(t *testing.T, checkRoomIDsOnly bool, got, want *sync3.Response) {
 	t.Helper()
-	if want.Count > 0 {
-		if got.Count != want.Count {
-			t.Errorf("response Count: got %d want %d", got.Count, want.Count)
+	if len(want.Counts) > 0 {
+		if !reflect.DeepEqual(got.Counts, want.Counts) {
+			t.Errorf("response Counts: got %v want %v", got.Counts, want.Counts)
 		}
 	}
 	if len(want.Ops) > 0 {

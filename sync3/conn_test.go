@@ -3,6 +3,7 @@ package sync3
 import (
 	"context"
 	"errors"
+	"reflect"
 	"sync"
 	"testing"
 	"time"
@@ -29,11 +30,11 @@ func TestConn(t *testing.T) {
 		DeviceID:  "d",
 		SessionID: "s",
 	}
-	count := int64(100)
+	count := 100
 	c := NewConn(connID, &connHandlerMock{func(ctx context.Context, cid ConnID, req *Request) (*Response, error) {
 		count += 1
 		return &Response{
-			Count: count,
+			Counts: []int{count},
 		}, nil
 	}})
 
@@ -42,14 +43,14 @@ func TestConn(t *testing.T) {
 		pos: 0,
 	})
 	assertInt(t, resp.Pos, 1)
-	assertInt(t, resp.Count, 101)
+	assertInts(t, resp.Counts, []int{101})
 	assertNoError(t, err)
 	// happy case, pos=1
 	resp, err = c.OnIncomingRequest(ctx, &Request{
 		pos: 1,
 	})
 	assertInt(t, resp.Pos, 2)
-	assertInt(t, resp.Count, 102)
+	assertInts(t, resp.Counts, []int{102})
 	assertNoError(t, err)
 	// bogus position returns a 400
 	_, err = c.OnIncomingRequest(ctx, &Request{
@@ -131,22 +132,22 @@ func TestConnRetries(t *testing.T) {
 	callCount := int64(0)
 	c := NewConn(connID, &connHandlerMock{func(ctx context.Context, cid ConnID, req *Request) (*Response, error) {
 		callCount += 1
-		return &Response{Count: 20}, nil
+		return &Response{Counts: []int{20}}, nil
 	}})
 	resp, err := c.OnIncomingRequest(ctx, &Request{})
 	assertInt(t, resp.Pos, 1)
-	assertInt(t, resp.Count, 20)
+	assertInts(t, resp.Counts, []int{20})
 	assertInt(t, callCount, 1)
 	assertNoError(t, err)
 	resp, err = c.OnIncomingRequest(ctx, &Request{pos: 1})
 	assertInt(t, resp.Pos, 2)
-	assertInt(t, resp.Count, 20)
+	assertInts(t, resp.Counts, []int{20})
 	assertInt(t, callCount, 2)
 	assertNoError(t, err)
 	// retry! Shouldn't invoke handler again
 	resp, err = c.OnIncomingRequest(ctx, &Request{pos: 1})
 	assertInt(t, resp.Pos, 2)
-	assertInt(t, resp.Count, 20)
+	assertInts(t, resp.Counts, []int{20})
 	assertInt(t, callCount, 2) // this doesn't increment
 	assertNoError(t, err)
 	// retry! but with modified request body, so should invoke handler again
@@ -157,7 +158,7 @@ func TestConnRetries(t *testing.T) {
 			},
 		}})
 	assertInt(t, resp.Pos, 3)
-	assertInt(t, resp.Count, 20)
+	assertInts(t, resp.Counts, []int{20})
 	assertInt(t, callCount, 3)
 	assertNoError(t, err)
 }
@@ -230,6 +231,13 @@ func assertInt(t *testing.T, nextPos, wantPos int64) {
 	t.Helper()
 	if nextPos != wantPos {
 		t.Errorf("got %d pos %d", nextPos, wantPos)
+	}
+}
+
+func assertInts(t *testing.T, gots, wants []int) {
+	t.Helper()
+	if !reflect.DeepEqual(gots, wants) {
+		t.Errorf("got %v want %v", gots, wants)
 	}
 }
 

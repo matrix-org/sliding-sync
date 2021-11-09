@@ -9,6 +9,7 @@ import (
 	"log"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"strings"
 	"sync"
 	"testing"
@@ -376,9 +377,12 @@ type respMatcher func(res *sync3.Response) error
 type opMatcher func(op sync3.ResponseOp) error
 
 func MatchV3Count(wantCount int) respMatcher {
+	return MatchV3Counts([]int{wantCount})
+}
+func MatchV3Counts(wantCounts []int) respMatcher {
 	return func(res *sync3.Response) error {
-		if res.Count != int64(wantCount) {
-			return fmt.Errorf("count: got %d want %d", res.Count, wantCount)
+		if !reflect.DeepEqual(res.Counts, wantCounts) {
+			return fmt.Errorf("counts: got %v want %v", res.Counts, wantCounts)
 		}
 		return nil
 	}

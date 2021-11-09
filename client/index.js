@@ -367,8 +367,8 @@ const doSyncLoop = async(accessToken, sessionId) => {
             if (!resp.ops) {
                 resp.ops = [];
             }
-            if (resp.count) {
-                rooms.joinedCount = resp.count;
+            if (resp.counts) {
+                rooms.joinedCount = resp.counts[0];
             }
         } catch (err) {
             if (err.name !== "AbortError") {
