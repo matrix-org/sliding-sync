@@ -1,8 +1,36 @@
 let lastError = null;
 let activeAbortController = new AbortController();
 let activeSessionId;
-let activeRanges = [[0,20]];
 let activeRoomId = ""; // the room currently being viewed
+
+let activeLists = [
+    {
+        name: "Direct Messages",
+        listFilters: {
+            is_dm: true,
+        },
+        activeRanges: [[0,20]],
+        // the constantly changing sliding window ranges. Not an array for performance reasons
+        // E.g tracking ranges 0-99, 500-599, we don't want to have a 600 element array
+        roomIndexToRoomId: {},
+        // the total number of joined rooms according to the server, always >= len(roomIndexToRoomId)
+        joinedCount: 0,
+    },
+    {
+        name: "Group Chats",
+        listFilters: {
+            is_dm: false,
+        },
+        activeRanges: [[0,20]],
+        // the constantly changing sliding window ranges. Not an array for performance reasons
+        // E.g tracking ranges 0-99, 500-599, we don't want to have a 600 element array
+        roomIndexToRoomId: {},
+        // the total number of joined rooms according to the server, always >= len(roomIndexToRoomId)
+        joinedCount: 0,
+    }
+];
+
+
 const requiredStateEventsInList = [
     ["m.room.avatar", ""], ["m.room.tombstone", ""]
 ];
@@ -13,15 +41,11 @@ const requiredStateEventsInRoom = [
 // this is the main data structure the client uses to remember and render rooms. Attach it to
 // the window to allow easy introspection.
 let rooms = {
-    // the total number of joined rooms according to the server, always >= len(roomIndexToRoomId)
-    joinedCount: 0,
     // this map is never deleted and forms the persistent storage of the client
     roomIdToRoom: {},
-    // the constantly changing sliding window ranges. Not an array for performance reasons
-    // E.g tracking ranges 0-99, 500-599, we don't want to have a 600 element array
-    roomIndexToRoomId: {},
 };
 window.rooms = rooms;
+window.activeLists = activeLists;
 const accumulateRoomData = (r, isUpdate) => {
     let room = r;
     if (isUpdate) {
@@ -78,11 +102,11 @@ const accumulateRoomData = (r, isUpdate) => {
 };
 
 let debounceTimeoutId;
-let visibleIndexes = {};
+let visibleIndexes = {}; // e.g "1-44" meaning list 1 index 44
 
 const intersectionObserver = new IntersectionObserver((entries) => {
     entries.forEach((entry) => {
-        let key = entry.target.id.substr("room".length);
+        let key = entry.target.id.substr("room-".length);
         if (entry.isIntersecting) {
             visibleIndexes[key] = true;
         } else {
@@ -94,8 +118,11 @@ const intersectionObserver = new IntersectionObserver((entries) => {
     debounceTimeoutId = setTimeout(() => {
         let startIndex = 0;
         let endIndex = 0;
-        Object.keys(visibleIndexes).forEach((i) => {
+        let listIndex = -1;
+        Object.keys(visibleIndexes).forEach((indexes) => {
+            [listIndex, i] = indexes.split("-"); 
             i = Number(i);
+            listIndex = Number(listIndex);
             startIndex = startIndex || i;
             endIndex = endIndex || i;
             if (i < startIndex) {
@@ -105,11 +132,11 @@ const intersectionObserver = new IntersectionObserver((entries) => {
                 endIndex = i;
             }
         });
-        console.log("start", startIndex, "end", endIndex);
+        console.log("list", listIndex, "start", startIndex, "end", endIndex);
         // buffer range
         const bufferRange = 5;
         startIndex = (startIndex - bufferRange) < 0 ? 0 : (startIndex - bufferRange);
-        endIndex = (endIndex + bufferRange) >= rooms.joinedCount ? rooms.joinedCount-1 : (endIndex + bufferRange);
+        endIndex = (endIndex + bufferRange) >= activeLists[listIndex].joinedCount ? activeLists[listIndex].joinedCount-1 : (endIndex + bufferRange);
 
         // we don't need to request rooms between 0,20 as we always have a filter for this
         if (endIndex <= 20) {
@@ -120,9 +147,9 @@ const intersectionObserver = new IntersectionObserver((entries) => {
             startIndex = 20;
         }
 
-        activeRanges[1] = [startIndex, endIndex];
+        activeLists[listIndex].activeRanges[1] = [startIndex, endIndex];
         activeAbortController.abort();
-        console.log("next: ", startIndex, "-", endIndex);
+        console.log("list", listIndex, "next: ", startIndex, "-", endIndex);
     }, 100);
 }, {
     threshold: [0],
@@ -148,12 +175,15 @@ const renderMessage = (container, ev) => {
 };
 
 const onRoomClick = (e) => {
+    let listIndex = -1;
     let index = -1;
-    // walk up the pointer event path until we find a room## id=
+    // walk up the pointer event path until we find a room-##-## id=
     const path = e.composedPath();
     for (let i = 0; i < path.length; i++) {
-        if (path[i].id && path[i].id.startsWith("room")) {
-            index = Number(path[i].id.substr("room".length));
+        if (path[i].id && path[i].id.startsWith("room-")) {
+            const indexes = path[i].id.substr("room-".length).split("-");
+            listIndex = Number(indexes[0]);
+            index = Number(indexes[1]);
             break;
         }
     }
@@ -162,9 +192,13 @@ const onRoomClick = (e) => {
         return;
     }
     // assign global state
-    activeRoomId = rooms.roomIndexToRoomId[index];
+    activeRoomId = activeLists[listIndex].roomIndexToRoomId[index];
     renderRoomContent(activeRoomId, true);
-    render(document.getElementById("listContainer")); // get the highlight on the room
+    // get the highlight on the room
+    const roomListElements = document.getElementsByClassName("roomlist");
+    for (let i = 0; i < roomListElements.length; i++) {
+        render(roomListElements[i], i);
+    }
     // interrupt the sync to get extra state events
     activeAbortController.abort();
 };
@@ -205,20 +239,29 @@ const renderRoomContent = (roomId, refresh) => {
     container.lastChild.scrollIntoView();
 }
 
-const render = (container) => {
+const roomIdAttr = (listIndex, roomIndex) => {
+    return "room-" + listIndex + "-" + roomIndex;
+}
+
+const render = (container, listIndex) => {
+    const listData = activeLists[listIndex];
+    if (!listData) {
+        console.error("render(): cannot render list at index ", listIndex, " no data associated with this index!");
+        return;
+    }
     let addCount = 0;
     let removeCount = 0;
     // ensure we have the right number of children, remove or add appropriately.
-    while (container.childElementCount > rooms.joinedCount) {
+    while (container.childElementCount > listData.joinedCount) {
         intersectionObserver.unobserve(container.firstChild);
         container.removeChild(container.firstChild);
         removeCount += 1;
     }
-    for (let i = container.childElementCount; i < rooms.joinedCount; i++) {
+    for (let i = container.childElementCount; i < listData.joinedCount; i++) {
         const template = document.getElementById("roomCellTemplate");
         // https://developer.mozilla.org/en-US/docs/Web/HTML/Element/template#avoiding_documentfragment_pitfall
         const roomCell = template.content.firstElementChild.cloneNode(true);
-        roomCell.setAttribute("id", "room"+i);
+        roomCell.setAttribute("id", roomIdAttr(listIndex, i));
         container.appendChild(roomCell);
         intersectionObserver.observe(roomCell);
         roomCell.addEventListener("click", onRoomClick);
@@ -230,7 +273,7 @@ const render = (container) => {
     // loop all elements and modify the contents
     for (let i = 0; i < container.children.length; i++) {
         const roomCell = container.children[i];
-        const roomId = rooms.roomIndexToRoomId[i];
+        const roomId = listData.roomIndexToRoomId[i];
         const r = rooms.roomIdToRoom[roomId];
         const roomNameSpan = roomCell.getElementsByClassName("roomname")[0];
         const roomContentSpan = roomCell.getElementsByClassName("roomcontent")[0];
@@ -311,9 +354,9 @@ const formatTimestamp = (originServerTs) => {
 // a b c       d e f
 // a b c       d _ f
 // e a b c       d f  <--- c=3 is wrong as we are not tracking it, ergo we need to see if `i` is in range else drop it
-const indexInRange = (i) => {
+const indexInRange = (listIndex, i) => {
     let isInRange = false;
-    activeRanges.forEach((r) => {
+    activeLists[listIndex].activeRanges.forEach((r) => {
         if (r[0] <= i && i <= r[1]) {
             isInRange = true;
         }
@@ -332,17 +375,21 @@ const doSyncLoop = async(accessToken, sessionId) => {
         try {
             // these fields are always required
             let reqBody = {
-                lists: [{
-                    rooms: activeRanges,
-                }],
+                lists: activeLists.map((al) => {
+                    let l = {
+                        rooms: al.activeRanges,
+                        filters: al.listFilters,
+                    };
+                    // if this is the first request on this session, send sticky request data which never changes
+                    if (!currentPos) {
+                        l.required_state = requiredStateEventsInList;
+                        l.timeline_limit = 20;
+                        l.sort = ["by_highlight_count", "by_notification_count", "by_recency"];
+                    }
+                    return l;
+                }),
                 session_id: (sessionId ? sessionId : undefined),
             };
-            // if this is the first request on this session, send sticky request data which never changes
-            if (!currentPos) {
-                reqBody.lists[0].required_state = requiredStateEventsInList;
-                reqBody.lists[0].timeline_limit = 20;
-                reqBody.lists[0].sort = ["by_highlight_count", "by_notification_count", "by_recency"];
-            }
             // check if we are (un)subscribing to a room and modify request this one time for it
             let subscribingToRoom;
             if (activeRoomId && currentSub !== activeRoomId) {
@@ -368,7 +415,9 @@ const doSyncLoop = async(accessToken, sessionId) => {
                 resp.ops = [];
             }
             if (resp.counts) {
-                rooms.joinedCount = resp.counts[0];
+                resp.counts.forEach((count, index) => {
+                    activeLists[index].joinedCount = count;
+                });
             }
         } catch (err) {
             if (err.name !== "AbortError") {
@@ -392,15 +441,17 @@ const doSyncLoop = async(accessToken, sessionId) => {
             renderRoomContent(roomId);
         });
 
+        // TODO: clear gapIndex immediately after next op to avoid a genuine DELETE shifting incorrectly e.g leaving a room
+        // TODO: namespace gapIndex per list index 
         let gapIndex = -1;
         resp.ops.forEach((op) => {
             if (op.op === "DELETE") {
-                console.log("DELETE", op.index, ";");
-                delete rooms.roomIndexToRoomId[op.index];
+                console.log("DELETE", op.list, op.index, ";");
+                delete activeLists[op.list].roomIndexToRoomId[op.index];
                 gapIndex = op.index;
             } else if (op.op === "INSERT") {
-                console.log("INSERT", op.index, op.room.room_id, ";");
-                if (rooms.roomIndexToRoomId[op.index]) {
+                console.log("INSERT", op.list, op.index, op.room.room_id, ";");
+                if (activeLists[op.list].roomIndexToRoomId[op.index]) {
                     // something is in this space, shift items out of the way
                     if (gapIndex < 0) {
                         console.log("cannot work out where gap is, INSERT without previous DELETE!");
@@ -422,25 +473,25 @@ const doSyncLoop = async(accessToken, sessionId) => {
                         // [A,A,B,C] i=1
                         // Terminate. We'll assign into op.index next.
                         for (let i = gapIndex; i > op.index; i--) {
-                            if (indexInRange(i)) {
-                                rooms.roomIndexToRoomId[i] = rooms.roomIndexToRoomId[i-1];
+                            if (indexInRange(op.list, i)) {
+                                activeLists[op.list].roomIndexToRoomId[i] = activeLists[op.list].roomIndexToRoomId[i-1];
                             }
                         }
                     } else if (gapIndex < op.index) {
                         // the gap is further up the list, shift every element to the left
                         // starting at the gap so we can just shift each element in turn
                         for (let i = gapIndex; i < op.index; i++) {
-                            if (indexInRange(i)) {
-                                rooms.roomIndexToRoomId[i] = rooms.roomIndexToRoomId[i+1];
+                            if (indexInRange(op.list, i)) {
+                                activeLists[op.list].roomIndexToRoomId[i] = activeLists[op.list].roomIndexToRoomId[i+1];
                             }
                         }
                     }
                 }
                 accumulateRoomData(op.room, rooms.roomIdToRoom[op.room.room_id] !== undefined);
-                rooms.roomIndexToRoomId[op.index] = op.room.room_id;
+                activeLists[op.list].roomIndexToRoomId[op.index] = op.room.room_id;
                 renderRoomContent(op.room.room_id);
             } else if (op.op === "UPDATE") {
-                console.log("UPDATE", op.index, op.room.room_id, ";");
+                console.log("UPDATE", op.list, op.index, op.room.room_id, ";");
                 accumulateRoomData(op.room, true);
                 renderRoomContent(op.room.room_id);
             } else if (op.op === "SYNC") {
@@ -451,54 +502,59 @@ const doSyncLoop = async(accessToken, sessionId) => {
                     if (!r) {
                         break; // we are at the end of list
                     }
-                    rooms.roomIndexToRoomId[i] = r.room_id;
+                    activeLists[op.list].roomIndexToRoomId[i] = r.room_id;
                     syncRooms.push(r.room_id);
                     accumulateRoomData(r);
                 }
-                console.log("SYNC", op.range[0], op.range[1], syncRooms.join(" "), ";");
+                console.log("SYNC", op.list, op.range[0], op.range[1], syncRooms.join(" "), ";");
             } else if (op.op === "INVALIDATE") {
                 let invalidRooms = [];
                 const startIndex = op.range[0];
                 for (let i = startIndex; i <= op.range[1]; i++) {
-                    invalidRooms.push(rooms.roomIndexToRoomId[i]);
-                    delete rooms.roomIndexToRoomId[i];
+                    invalidRooms.push(activeLists[op.list].roomIndexToRoomId[i]);
+                    delete activeLists[op.list].roomIndexToRoomId[i];
                 }
-                console.log("INVALIDATE", op.range[0], op.range[1], ";");
+                console.log("INVALIDATE", op.list, op.range[0], op.range[1], ";");
             }
         });
-        render(document.getElementById("listContainer"));
+        const roomListElements = document.getElementsByClassName("roomlist");
+        for (let i = 0; i < roomListElements.length; i++) {
+            render(roomListElements[i], i);
+        }
 
         // check for duplicates and rooms outside tracked ranges which should never happen but can if there's a bug
-        let roomIdToPositions = {};
-        let dupeRoomIds = new Set();
-        let indexesOutsideRanges = new Set();
-        Object.keys(rooms.roomIndexToRoomId).forEach((i) => {
-            let rid = rooms.roomIndexToRoomId[i];
-            if (!rid) {
-                return;
-            }
-            let positions = roomIdToPositions[rid] || [];
-            positions.push(i);
-            roomIdToPositions[rid] = positions;
-            if (positions.length > 1) {
-                dupeRoomIds.add(rid);
-            }
-            let isInsideRange = false;
-            activeRanges.forEach((r) => {
-                if (i >= r[0] && i <= r[1]) {
-                    isInsideRange = true;
+        activeLists.forEach((list, listIndex) => {
+            let roomIdToPositions = {};
+            let dupeRoomIds = new Set();
+            let indexesOutsideRanges = new Set();
+            Object.keys(list.roomIndexToRoomId).forEach((i) => {
+                let rid = list.roomIndexToRoomId[i];
+                if (!rid) {
+                    return;
+                }
+                let positions = roomIdToPositions[rid] || [];
+                positions.push(i);
+                roomIdToPositions[rid] = positions;
+                if (positions.length > 1) {
+                    dupeRoomIds.add(rid);
+                }
+                let isInsideRange = false;
+                list.activeRanges.forEach((r) => {
+                    if (i >= r[0] && i <= r[1]) {
+                        isInsideRange = true;
+                    }
+                });
+                if (!isInsideRange) {
+                    indexesOutsideRanges.add(i);
                 }
             });
-            if (!isInsideRange) {
-                indexesOutsideRanges.add(i);
+            dupeRoomIds.forEach((rid) => {
+                console.log(rid,"in list", listIndex, "has duplicate indexes:", roomIdToPositions[rid]);
+            });
+            if (indexesOutsideRanges.size > 0) {
+                console.log("list", listIndex, "tracking indexes outside of tracked ranges:", JSON.stringify([...indexesOutsideRanges]));
             }
         });
-        dupeRoomIds.forEach((rid) => {
-            console.log(rid, "has duplicate indexes:", roomIdToPositions[rid]);
-        });
-        if (indexesOutsideRanges.size > 0) {
-            console.log("tracking indexes outside of tracked ranges:", JSON.stringify([...indexesOutsideRanges]));
-        }
     }
     console.log("active session: ", activeSessionId, " this session: ", sessionId, " terminating.");
 }
@@ -612,6 +668,16 @@ const mxcToUrl = (mxc) => {
 }
 
 window.addEventListener('load', (event) => {
+    const container = document.getElementById("roomlistcontainer");
+    activeLists.forEach((list) => {
+        const roomList = document.createElement("div");
+        roomList.className = "roomlist";
+        const roomListHeader = document.createElement("div");
+        roomListHeader.textContent = list.name;
+        roomListHeader.appendChild(roomList);
+        roomListHeader.className = "roomlistheader";
+        container.appendChild(roomListHeader);
+    });
     const storedAccessToken = window.localStorage.getItem("accessToken");
     if (storedAccessToken) {
         document.getElementById("accessToken").value = storedAccessToken;

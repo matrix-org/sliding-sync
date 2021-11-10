@@ -30,6 +30,11 @@ body {
     width: 50%;
 }
 
+#roomlistcontainer{
+    max-height: 100%;
+    display: grid;
+}
+
 #messages {
     overflow: scroll;
 }
@@ -37,7 +42,13 @@ body {
 .roomlist {
     overflow: scroll;
     background: #f7f7f7;
-    border-right: 1px solid #8d99a5;
+    border: 1px solid #8d99a5;
+}
+
+.roomlistheader {
+    overflow: scroll;
+    background: #f7f7f7;
+    border: 1px solid #8d99a5;
 }
 
 

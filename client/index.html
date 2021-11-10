@@ -7,18 +7,20 @@
     <body>
         <div class="page">
             <div class="leftSide">
+                <div>
+                    <input id="debugCmd" type="text" placeholder="INSERT 1 string" style="display: none;" />
+                </div>
+                <div id="roomlistcontainer">
+                
+                </div>
+            </div>
+            <div class="rightSide">
                 <div class="header">
                     <input id="accessToken" type="password" placeholder="matrix.org access token" />
                     <input id="syncButton" type="button" value="Start Sync" />
                     <input id="debugButton" type="button" value="DEBUG" style="display: none;" />
                     <span id="errorMsg"></span>
                 </div>
-                <div>
-                    <input id="debugCmd" type="text" placeholder="INSERT 1 string" style="display: none;" />
-                </div>
-                <div id="listContainer" class="roomlist" ></div>
-            </div>
-            <div class="rightSide">
                 <div class="roomheading">
                     <img class="roomavatar" decoding="async"  id="selectedroomavatar" src="/client/placeholder.svg"/>
                     <span id="selectedroomname">Select a room</span>
