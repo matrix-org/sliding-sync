@@ -166,7 +166,7 @@ blockloop:
 				s.lists.ForEach(func(index int, list *sync3.FilteredSortableRooms) {
 					// TODO: yuck that the index is here
 					deletedIndex := list.UpdateGlobalRoomMetadata(connEvent.roomMetadata)
-					if deletedIndex >= 0 {
+					if deletedIndex >= 0 && s.muxedReq.Lists[index].Rooms.Inside(int64(deletedIndex)) {
 						responseOperations = append(responseOperations, &sync3.ResponseOpSingle{
 							List:      index,
 							Operation: sync3.OpDelete,
@@ -228,7 +228,7 @@ func (s *ConnState) onIncomingListRequest(listIndex int, prevReqList, nextReqLis
 			for _, r := range prevReqList.Rooms {
 				responseOperations = append(responseOperations, &sync3.ResponseOpRange{
 					List:      listIndex,
-					Operation: "INVALIDATE",
+					Operation: sync3.OpInvalidate,
 					Range:     r[:],
 				})
 			}
@@ -244,7 +244,7 @@ func (s *ConnState) onIncomingListRequest(listIndex int, prevReqList, nextReqLis
 	for _, r := range removedRanges {
 		responseOperations = append(responseOperations, &sync3.ResponseOpRange{
 			List:      listIndex,
-			Operation: "INVALIDATE",
+			Operation: sync3.OpInvalidate,
 			Range:     r[:],
 		})
 	}
@@ -260,7 +260,7 @@ func (s *ConnState) onIncomingListRequest(listIndex int, prevReqList, nextReqLis
 
 		responseOperations = append(responseOperations, &sync3.ResponseOpRange{
 			List:      listIndex,
-			Operation: "SYNC",
+			Operation: sync3.OpSync,
 			Range:     r[:],
 			Rooms:     s.getInitialRoomData(int(nextReqList.TimelineLimit), roomIDs...),
 		})
@@ -276,7 +276,8 @@ func (s *ConnState) processIncomingUserEvent(roomID string, userEvent *sync3.Use
 	s.lists.ForEach(func(index int, list *sync3.FilteredSortableRooms) {
 		// modify notification counts
 		deletedIndex := list.UpdateUserRoomMetadata(roomID, userEvent, hasCountDecreased)
-		if deletedIndex >= 0 {
+		// only notify if we are tracking this index
+		if deletedIndex >= 0 && s.muxedReq.Lists[index].Rooms.Inside(int64(deletedIndex)) {
 			responseOperations = append(responseOperations, &sync3.ResponseOpSingle{
 				List:      index,
 				Operation: sync3.OpDelete,
@@ -500,7 +501,7 @@ func (s *ConnState) moveRoom(reqList *sync3.RequestList, listIndex int, roomID s
 		return []sync3.ResponseOp{
 			&sync3.ResponseOpSingle{
 				List:      listIndex,
-				Operation: "UPDATE",
+				Operation: sync3.OpUpdate,
 				Index:     &fromIndex,
 				Room:      room,
 			},
@@ -526,12 +527,12 @@ func (s *ConnState) moveRoom(reqList *sync3.RequestList, listIndex int, roomID s
 	return []sync3.ResponseOp{
 		&sync3.ResponseOpSingle{
 			List:      listIndex,
-			Operation: "DELETE",
+			Operation: sync3.OpDelete,
 			Index:     &deleteIndex,
 		},
 		&sync3.ResponseOpSingle{
 			List:      listIndex,
-			Operation: "INSERT",
+			Operation: sync3.OpInsert,
 			Index:     &toIndex,
 			Room:      room,
 		},

@@ -104,8 +104,8 @@ func TestNotificationsOnTop(t *testing.T) {
 	v2.waitUntilEmpty(t, alice)
 	res = v3.mustDoV3RequestWithPos(t, aliceToken, res.Pos, syncRequestBody)
 	MatchResponse(t, res, MatchV3Count(len(allRooms)), MatchV3Ops(
-		MatchV3DeleteOp(1),
-		MatchV3InsertOp(0, bingRoomID),
+		MatchV3DeleteOp(0, 1),
+		MatchV3InsertOp(0, 0, bingRoomID),
 	))
 
 	// send a message into the nobing room, it's position must not change due to our sort order
@@ -126,7 +126,7 @@ func TestNotificationsOnTop(t *testing.T) {
 	v2.waitUntilEmpty(t, alice)
 	res = v3.mustDoV3RequestWithPos(t, aliceToken, res.Pos, syncRequestBody)
 	MatchResponse(t, res, MatchV3Count(len(allRooms)), MatchV3Ops(
-		MatchV3UpdateOp(1, noBingRoomID),
+		MatchV3UpdateOp(0, 1, noBingRoomID),
 	))
 
 	// restart the server and sync from fresh again, it should still have the bing room on top

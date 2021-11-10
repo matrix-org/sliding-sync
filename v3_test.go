@@ -398,14 +398,17 @@ func MatchV3SyncOp(fn func(op *sync3.ResponseOpRange) error) opMatcher {
 	}
 }
 
-func MatchV3InsertOp(index int, roomID string, matchers ...roomMatcher) opMatcher {
+func MatchV3InsertOp(listIndex, roomIndex int, roomID string, matchers ...roomMatcher) opMatcher {
 	return func(op sync3.ResponseOp) error {
 		if op.Op() != sync3.OpInsert {
 			return fmt.Errorf("op: %s != %s", op.Op(), sync3.OpInsert)
 		}
 		oper := op.(*sync3.ResponseOpSingle)
-		if *oper.Index != index {
-			return fmt.Errorf("%s: got %d want %d", sync3.OpInsert, oper.Index, index)
+		if oper.List != listIndex {
+			return fmt.Errorf("%s: got list index %d want %d", sync3.OpInsert, oper.List, listIndex)
+		}
+		if *oper.Index != roomIndex {
+			return fmt.Errorf("%s: got index %d want %d", sync3.OpInsert, oper.Index, roomIndex)
 		}
 		if oper.Room.RoomID != roomID {
 			return fmt.Errorf("%s: got %s want %s", sync3.OpInsert, oper.Room.RoomID, roomID)
@@ -419,14 +422,17 @@ func MatchV3InsertOp(index int, roomID string, matchers ...roomMatcher) opMatche
 	}
 }
 
-func MatchV3UpdateOp(index int, roomID string, matchers ...roomMatcher) opMatcher {
+func MatchV3UpdateOp(listIndex, roomIndex int, roomID string, matchers ...roomMatcher) opMatcher {
 	return func(op sync3.ResponseOp) error {
 		if op.Op() != sync3.OpUpdate {
 			return fmt.Errorf("op: %s != %s", op.Op(), sync3.OpUpdate)
 		}
 		oper := op.(*sync3.ResponseOpSingle)
-		if *oper.Index != index {
-			return fmt.Errorf("%s: got %d want %d", sync3.OpUpdate, oper.Index, index)
+		if oper.List != listIndex {
+			return fmt.Errorf("%s: got list index %d want %d", sync3.OpUpdate, oper.List, listIndex)
+		}
+		if *oper.Index != roomIndex {
+			return fmt.Errorf("%s: got room index %d want %d", sync3.OpUpdate, oper.Index, roomIndex)
 		}
 		if oper.Room.RoomID != roomID {
 			return fmt.Errorf("%s: got %s want %s", sync3.OpUpdate, oper.Room.RoomID, roomID)
@@ -440,14 +446,17 @@ func MatchV3UpdateOp(index int, roomID string, matchers ...roomMatcher) opMatche
 	}
 }
 
-func MatchV3DeleteOp(index int) opMatcher {
+func MatchV3DeleteOp(listIndex, roomIndex int) opMatcher {
 	return func(op sync3.ResponseOp) error {
 		if op.Op() != sync3.OpDelete {
 			return fmt.Errorf("op: %s != %s", op.Op(), sync3.OpDelete)
 		}
 		oper := op.(*sync3.ResponseOpSingle)
-		if *oper.Index != index {
-			return fmt.Errorf("%s: got %d want %d", sync3.OpDelete, oper.Index, index)
+		if *oper.Index != roomIndex {
+			return fmt.Errorf("%s: got room index %d want %d", sync3.OpDelete, oper.Index, roomIndex)
+		}
+		if oper.List != listIndex {
+			return fmt.Errorf("%s: got list index %d want %d", sync3.OpDelete, oper.List, listIndex)
 		}
 		return nil
 	}

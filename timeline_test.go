@@ -199,9 +199,9 @@ func TestTimelinesLiveStream(t *testing.T) {
 		}},
 	})
 	MatchResponse(t, res, MatchV3Count(len(allRooms)), MatchV3Ops(
-		MatchV3DeleteOp(3),
+		MatchV3DeleteOp(0, 3),
 		MatchV3InsertOp(
-			0, allRooms[7].roomID,
+			0, 0, allRooms[7].roomID,
 			MatchRoomName(allRooms[7].name),
 			MatchRoomTimelineMostRecent(numTimelineEventsPerRoom, allRooms[7].events),
 		),
@@ -218,7 +218,7 @@ func TestTimelinesLiveStream(t *testing.T) {
 		}},
 	})
 	MatchResponse(t, res, MatchV3Count(len(allRooms)), MatchV3Ops(
-		MatchV3UpdateOp(0, allRooms[7].roomID),
+		MatchV3UpdateOp(0, 0, allRooms[7].roomID),
 	))
 
 	bumpRoom(18)
@@ -232,9 +232,9 @@ func TestTimelinesLiveStream(t *testing.T) {
 		}},
 	})
 	MatchResponse(t, res, MatchV3Count(len(allRooms)), MatchV3Ops(
-		MatchV3DeleteOp(2),
+		MatchV3DeleteOp(0, 2),
 		MatchV3InsertOp(
-			0, allRooms[18].roomID,
+			0, 0, allRooms[18].roomID,
 			MatchRoomName(allRooms[18].name),
 			MatchRoomTimelineMostRecent(numTimelineEventsPerRoom, allRooms[18].events),
 		),

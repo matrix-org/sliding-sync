@@ -128,8 +128,8 @@ func TestFilters(t *testing.T) {
 		SessionID: encryptedSessionID,
 	})
 	MatchResponse(t, encryptedRes, MatchV3Count(len(allRooms)), MatchV3Ops(
-		MatchV3DeleteOp(1),
-		MatchV3InsertOp(0, unencryptedRoomID),
+		MatchV3DeleteOp(0, 1),
+		MatchV3InsertOp(0, 0, unencryptedRoomID),
 	))
 
 	// requesting the encrypted list from scratch returns 2 rooms now
@@ -173,7 +173,7 @@ func TestFilters(t *testing.T) {
 		SessionID: unencryptedSessionID,
 	})
 	MatchResponse(t, unencryptedRes, MatchV3Count(0), MatchV3Ops(
-		MatchV3DeleteOp(0),
+		MatchV3DeleteOp(0, 0),
 	))
 
 	// requesting the unencrypted stream from scratch returns 0 rooms

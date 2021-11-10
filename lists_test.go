@@ -116,4 +116,78 @@ func TestMultipleLists(t *testing.T) {
 	if !seen[0] || !seen[1] {
 		t.Fatalf("didn't see both list 0 and 1: %+v", res)
 	}
+
+	// now scroll one of the lists
+
+	res = v3.mustDoV3RequestWithPos(t, aliceToken, res.Pos, sync3.Request{
+		Lists: []sync3.RequestList{
+			{
+				Rooms: sync3.SliceRanges{
+					[2]int64{0, 2}, // first 3 rooms still
+				},
+			},
+			{
+				Rooms: sync3.SliceRanges{
+					[2]int64{0, 2}, // first 3 rooms
+					[2]int64{3, 5}, // next 3 rooms
+				},
+			},
+		},
+	})
+	MatchResponse(t, res, MatchV3Counts([]int{len(encryptedRooms), len(unencryptedRooms)}), MatchV3Ops(
+		MatchV3SyncOp(func(op *sync3.ResponseOpRange) error {
+			if op.List != 1 {
+				return fmt.Errorf("expected unencrypted list to be SYNCed but wasn't, got list %d want %d", op.List, 1)
+			}
+			return checkRoomList(op, unencryptedRooms[3:6])
+		}),
+	))
+
+	// now shift the last/oldest unencrypted room to an encrypted room and make sure both lists update
+	v2.queueResponse(alice, sync2.SyncResponse{
+		Rooms: sync2.SyncRoomsResponse{
+			Join: map[string]sync2.SyncV2JoinResponse{
+				unencryptedRooms[len(unencryptedRooms)-1].roomID: {
+					Timeline: sync2.TimelineResponse{
+						Events: []json.RawMessage{
+							testutils.NewStateEvent(
+								t, "m.room.encryption", "", alice, map[string]interface{}{
+									"algorithm":            "m.megolm.v1.aes-sha2",
+									"rotation_period_ms":   604800000,
+									"rotation_period_msgs": 100,
+								},
+							),
+						},
+					},
+				},
+			},
+		},
+	})
+	v2.waitUntilEmpty(t, alice)
+	// update our source of truth: the last unencrypted room is now the first encrypted room
+	encryptedRooms = append([]roomEvents{unencryptedRooms[len(unencryptedRooms)-1]}, encryptedRooms...)
+	unencryptedRooms = unencryptedRooms[:len(unencryptedRooms)-1]
+
+	res = v3.mustDoV3RequestWithPos(t, aliceToken, res.Pos, sync3.Request{
+		Lists: []sync3.RequestList{
+			{
+				Rooms: sync3.SliceRanges{
+					[2]int64{0, 2}, // first 3 rooms still
+				},
+			},
+			{
+				Rooms: sync3.SliceRanges{
+					[2]int64{0, 2}, // first 3 rooms
+					[2]int64{3, 5}, // next 3 rooms
+				},
+			},
+		},
+	})
+	// We are tracking the first few encrypted rooms so we expect list 0 to update
+	// However we do not track old unencrypted rooms so we expect no change in list 1
+	// TODO: We always assume operations are done sequentially starting at list 0, is this safe?
+	MatchResponse(t, res, MatchV3Counts([]int{len(encryptedRooms), len(unencryptedRooms)}), MatchV3Ops(
+		MatchV3DeleteOp(0, 2),
+		MatchV3InsertOp(0, 0, encryptedRooms[0].roomID),
+	))
 }
