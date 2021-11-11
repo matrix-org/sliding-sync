@@ -314,6 +314,7 @@ func (s *ConnState) processIncomingEvent(updateEvent *sync3.EventData) ([]sync3.
 	}
 
 	s.lists.ForEach(func(index int, list *sync3.FilteredSortableRooms) {
+
 		fromIndex, ok := list.IndexOf(updateEvent.RoomID)
 		if !ok {
 			// the user may have just joined the room hence not have an entry in this list yet.
@@ -323,6 +324,7 @@ func (s *ConnState) processIncomingEvent(updateEvent *sync3.EventData) ([]sync3.
 			roomMetadata.RemoveHero(s.userID)
 			newRoomConn := sync3.RoomConnMetadata{
 				RoomMetadata: *roomMetadata,
+				UserRoomData: s.userCache.LoadRoomData(updateEvent.RoomID),
 				CanonicalisedName: strings.ToLower(
 					strings.Trim(internal.CalculateRoomName(roomMetadata, 5), "#!()):_@"),
 				),

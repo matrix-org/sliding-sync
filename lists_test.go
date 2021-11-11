@@ -83,21 +83,6 @@ func TestMultipleLists(t *testing.T) {
 		},
 	})
 
-	checkRoomList := func(op *sync3.ResponseOpRange, wantRooms []roomEvents) error {
-		if len(op.Rooms) != len(wantRooms) {
-			return fmt.Errorf("want %d rooms, got %d", len(wantRooms), len(op.Rooms))
-		}
-		for i := range wantRooms {
-			err := wantRooms[i].MatchRoom(
-				op.Rooms[i],
-				MatchRoomTimelineMostRecent(1, wantRooms[i].events),
-			)
-			if err != nil {
-				return err
-			}
-		}
-		return nil
-	}
 	seen := map[int]bool{}
 	opMatch := func(op *sync3.ResponseOpRange) error {
 		seen[op.List] = true
@@ -190,4 +175,161 @@ func TestMultipleLists(t *testing.T) {
 		MatchV3DeleteOp(0, 2),
 		MatchV3InsertOp(0, 0, encryptedRooms[0].roomID),
 	))
+}
+
+// Test that highlights / bumps only update a single list and not both. Regression test for when
+// DM rooms get bumped they appeared in the is_dm:false list.
+func TestMultipleListsDMUpdate(t *testing.T) {
+	boolTrue := true
+	boolFalse := false
+	one := 1
+	pqString := testutils.PrepareDBConnectionString()
+	// setup code
+	v2 := runTestV2Server(t)
+	v3 := runTestServer(t, v2, pqString)
+	defer v2.close()
+	defer v3.close()
+	alice := "@TestMultipleListsUpdate_alice:localhost"
+	aliceToken := "ALICE_BEARER_TOKEN_TestMultipleListsUpdate"
+	var allRooms []roomEvents
+	var dmRooms []roomEvents
+	var groupRooms []roomEvents
+	baseTimestamp := time.Now()
+	dmContent := map[string][]string{} // user_id -> [room_id]
+	// make 10 group rooms and make 10 DMs rooms. Room 0 is most recent to ease checks
+	for i := 0; i < 10; i++ {
+		ts := baseTimestamp.Add(time.Duration(-1*i) * time.Second)
+		dmUser := fmt.Sprintf("@dm_%d:localhost", i)
+		dmRoomID := fmt.Sprintf("!dm_%d:localhost", i)
+		dmRoom := roomEvents{
+			roomID: dmRoomID,
+			events: append(createRoomState(t, alice, ts), []json.RawMessage{
+				testutils.NewStateEvent(
+					t, "m.room.member", dmUser, dmUser, map[string]interface{}{
+						"membership": "join",
+					}, testutils.WithTimestamp(ts),
+				),
+			}...),
+		}
+		groupRoom := roomEvents{
+			roomID: fmt.Sprintf("!group_%d:localhost", i),
+			events: createRoomState(t, alice, ts),
+		}
+		allRooms = append(allRooms, []roomEvents{dmRoom, groupRoom}...)
+		dmRooms = append(dmRooms, dmRoom)
+		groupRooms = append(groupRooms, groupRoom)
+		dmContent[dmUser] = []string{dmRoomID}
+	}
+	v2.addAccount(alice, aliceToken)
+	v2.queueResponse(alice, sync2.SyncResponse{
+		AccountData: sync2.EventsResponse{
+			Events: []json.RawMessage{
+				testutils.NewEvent(t, "m.direct", alice, dmContent, time.Now()),
+			},
+		},
+		Rooms: sync2.SyncRoomsResponse{
+			Join: v2JoinTimeline(allRooms...),
+		},
+	})
+
+	// request 2 lists, one set DM, one set no DM
+	res := v3.mustDoV3Request(t, aliceToken, sync3.Request{
+		Lists: []sync3.RequestList{
+			{
+				Sort: []string{sync3.SortByRecency},
+				Rooms: sync3.SliceRanges{
+					[2]int64{0, 2}, // first 3 rooms
+				},
+				TimelineLimit: 1,
+				Filters: &sync3.RequestFilters{
+					IsDM: &boolTrue,
+				},
+			},
+			{
+				Sort: []string{sync3.SortByRecency},
+				Rooms: sync3.SliceRanges{
+					[2]int64{0, 2}, // first 3 rooms
+				},
+				TimelineLimit: 1,
+				Filters: &sync3.RequestFilters{
+					IsDM: &boolFalse,
+				},
+			},
+		},
+	})
+
+	seen := map[int]bool{}
+	opMatch := func(op *sync3.ResponseOpRange) error {
+		seen[op.List] = true
+		if op.List == 0 { // first 3 DM rooms
+			return checkRoomList(op, dmRooms[:3])
+		} else if op.List == 1 { // first 3 group rooms
+			return checkRoomList(op, groupRooms[:3])
+		}
+		return fmt.Errorf("unknown List: %d", op.List)
+	}
+
+	MatchResponse(t, res, MatchV3Counts([]int{len(dmRooms), len(groupRooms)}), MatchV3Ops(
+		MatchV3SyncOp(opMatch), MatchV3SyncOp(opMatch),
+	))
+
+	// now bring the last DM room to the top with a notif
+	pingMessage := testutils.NewEvent(t, "m.room.message", alice, map[string]interface{}{"body": "ping"}, time.Now())
+	v2.queueResponse(alice, sync2.SyncResponse{
+		Rooms: sync2.SyncRoomsResponse{
+			Join: map[string]sync2.SyncV2JoinResponse{
+				dmRooms[len(dmRooms)-1].roomID: {
+					UnreadNotifications: sync2.UnreadNotifications{
+						HighlightCount: &one,
+					},
+					Timeline: sync2.TimelineResponse{
+						Events: []json.RawMessage{
+							pingMessage,
+						},
+					},
+				},
+			},
+		},
+	})
+	v2.waitUntilEmpty(t, alice)
+	// update our source of truth
+	dmRooms = append([]roomEvents{dmRooms[len(dmRooms)-1]}, dmRooms[1:]...)
+	dmRooms[0].events = append(dmRooms[0].events, pingMessage)
+
+	// now get the delta: only the DM room should change
+	res = v3.mustDoV3RequestWithPos(t, aliceToken, res.Pos, sync3.Request{
+		Lists: []sync3.RequestList{
+			{
+				Rooms: sync3.SliceRanges{
+					[2]int64{0, 2}, // first 3 rooms still
+				},
+			},
+			{
+				Rooms: sync3.SliceRanges{
+					[2]int64{0, 2}, // first 3 rooms still
+				},
+			},
+		},
+	})
+	MatchResponse(t, res, MatchV3Counts([]int{len(dmRooms), len(groupRooms)}), MatchV3Ops(
+		MatchV3DeleteOp(0, 2),
+		MatchV3InsertOp(0, 0, dmRooms[0].roomID, MatchRoomHighlightCount(1), MatchRoomTimelineMostRecent(1, dmRooms[0].events)),
+	))
+}
+
+// Check that the range op matches all the wantRooms
+func checkRoomList(op *sync3.ResponseOpRange, wantRooms []roomEvents) error {
+	if len(op.Rooms) != len(wantRooms) {
+		return fmt.Errorf("want %d rooms, got %d", len(wantRooms), len(op.Rooms))
+	}
+	for i := range wantRooms {
+		err := wantRooms[i].MatchRoom(
+			op.Rooms[i],
+			MatchRoomTimelineMostRecent(1, wantRooms[i].events),
+		)
+		if err != nil {
+			return err
+		}
+	}
+	return nil
 }

@@ -83,11 +83,9 @@ func (v *HTTPClient) DoSyncV2(authHeader, since string, isFirst bool) (*SyncResp
 }
 
 type SyncResponse struct {
-	NextBatch   string `json:"next_batch"`
-	AccountData struct {
-		Events []json.RawMessage `json:"events,omitempty"`
-	} `json:"account_data"`
-	Presence struct {
+	NextBatch   string         `json:"next_batch"`
+	AccountData EventsResponse `json:"account_data"`
+	Presence    struct {
 		Events []gomatrixserverlib.ClientEvent `json:"events,omitempty"`
 	} `json:"presence"`
 	Rooms    SyncRoomsResponse `json:"rooms"`
