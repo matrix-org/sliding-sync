@@ -116,40 +116,48 @@ const intersectionObserver = new IntersectionObserver((entries) => {
     // we will process the intersections after a short period of inactivity to not thrash the server
     clearTimeout(debounceTimeoutId);
     debounceTimeoutId = setTimeout(() => {
-        let startIndex = 0;
-        let endIndex = 0;
-        let listIndex = -1;
-        Object.keys(visibleIndexes).forEach((indexes) => {
-            [listIndex, i] = indexes.split("-"); 
-            i = Number(i);
+        let listIndexToStartEnd = {};
+        Object.keys(visibleIndexes).forEach((indexes) => { // e.g "1-44"
+            [listIndex, roomIndex] = indexes.split("-"); 
+            let i = Number(roomIndex);
             listIndex = Number(listIndex);
-            startIndex = startIndex || i;
-            endIndex = endIndex || i;
-            if (i < startIndex) {
-                startIndex = i;
+            if (!listIndexToStartEnd[listIndex]) {
+                listIndexToStartEnd[listIndex] = {
+                    startIndex: -1,
+                    endIndex: -1,
+                }
             }
-            if (i > endIndex) {
-                endIndex = i;
+            let startIndex = listIndexToStartEnd[listIndex].startIndex;
+            let endIndex = listIndexToStartEnd[listIndex].endIndex;
+            if (startIndex === -1 || i < startIndex) {
+                listIndexToStartEnd[listIndex].startIndex = i;
+            }
+            if (endIndex === -1 || i > endIndex) {
+                listIndexToStartEnd[listIndex].endIndex = i;
             }
         });
-        console.log("list", listIndex, "start", startIndex, "end", endIndex);
+        console.log("Intersection indexes:", JSON.stringify(listIndexToStartEnd));
         // buffer range
         const bufferRange = 5;
-        startIndex = (startIndex - bufferRange) < 0 ? 0 : (startIndex - bufferRange);
-        endIndex = (endIndex + bufferRange) >= activeLists[listIndex].joinedCount ? activeLists[listIndex].joinedCount-1 : (endIndex + bufferRange);
 
-        // we don't need to request rooms between 0,20 as we always have a filter for this
-        if (endIndex <= 20) {
-            return;
-        }
-        // ensure we don't overlap with the 0,20 range
-        if (startIndex < 20) {
-            startIndex = 20;
-        }
+        Object.keys(listIndexToStartEnd).forEach((listIndex) => {
+            let startIndex = listIndexToStartEnd[listIndex].startIndex;
+            let endIndex = listIndexToStartEnd[listIndex].endIndex;
+            startIndex = (startIndex - bufferRange) < 0 ? 0 : (startIndex - bufferRange);
+            endIndex = (endIndex + bufferRange) >= activeLists[listIndex].joinedCount ? activeLists[listIndex].joinedCount-1 : (endIndex + bufferRange);
 
-        activeLists[listIndex].activeRanges[1] = [startIndex, endIndex];
+            // we don't need to request rooms between 0,20 as we always have a filter for this
+            if (endIndex <= 20) {
+                return;
+            }
+            // ensure we don't overlap with the 0,20 range
+            if (startIndex < 20) {
+                startIndex = 20;
+            }
+
+            activeLists[listIndex].activeRanges[1] = [startIndex, endIndex];
+        });
         activeAbortController.abort();
-        console.log("list", listIndex, "next: ", startIndex, "-", endIndex);
     }, 100);
 }, {
     threshold: [0],
