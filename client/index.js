@@ -672,11 +672,14 @@ window.addEventListener('load', (event) => {
     activeLists.forEach((list) => {
         const roomList = document.createElement("div");
         roomList.className = "roomlist";
-        const roomListHeader = document.createElement("div");
-        roomListHeader.textContent = list.name;
-        roomListHeader.appendChild(roomList);
-        roomListHeader.className = "roomlistheader";
-        container.appendChild(roomListHeader);
+        const roomListName = document.createElement("div");
+        roomListName.className = "roomlistname";
+        roomListName.textContent = list.name;
+        const roomListWrapper = document.createElement("div");
+        roomListWrapper.className = "roomlistwrapper";
+        roomListWrapper.appendChild(roomListName);
+        roomListWrapper.appendChild(roomList);
+        container.appendChild(roomListWrapper);
     });
     const storedAccessToken = window.localStorage.getItem("accessToken");
     if (storedAccessToken) {

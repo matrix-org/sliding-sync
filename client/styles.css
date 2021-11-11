@@ -42,13 +42,22 @@ body {
 .roomlist {
     overflow: scroll;
     background: #f7f7f7;
-    border: 1px solid #8d99a5;
 }
 
-.roomlistheader {
+.roomlistwrapper {
     overflow: scroll;
     background: #f7f7f7;
-    border: 1px solid #8d99a5;
+    border-left: 1px solid #8d99a5;
+    border-right: 1px solid #8d99a5;
+}
+
+.roomlistname{
+    position: sticky;
+    top: 0;
+    background: #8d99a5;
+    text-align: center;
+    padding: 2px;
+    color: #fff;
 }
 
 
