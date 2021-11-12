@@ -9,7 +9,7 @@ let activeLists = [
         listFilters: {
             is_dm: true,
         },
-        activeRanges: [[0,20]],
+        activeRanges: [[0, 20]],
         // the constantly changing sliding window ranges. Not an array for performance reasons
         // E.g tracking ranges 0-99, 500-599, we don't want to have a 600 element array
         roomIndexToRoomId: {},
@@ -21,21 +21,22 @@ let activeLists = [
         listFilters: {
             is_dm: false,
         },
-        activeRanges: [[0,20]],
+        activeRanges: [[0, 20]],
         // the constantly changing sliding window ranges. Not an array for performance reasons
         // E.g tracking ranges 0-99, 500-599, we don't want to have a 600 element array
         roomIndexToRoomId: {},
         // the total number of joined rooms according to the server, always >= len(roomIndexToRoomId)
         joinedCount: 0,
-    }
+    },
 ];
-
 
 const requiredStateEventsInList = [
-    ["m.room.avatar", ""], ["m.room.tombstone", ""]
+    ["m.room.avatar", ""],
+    ["m.room.tombstone", ""],
 ];
 const requiredStateEventsInRoom = [
-    ["m.room.avatar", ""], ["m.room.topic", ""],
+    ["m.room.avatar", ""],
+    ["m.room.topic", ""],
 ];
 
 // this is the main data structure the client uses to remember and render rooms. Attach it to
@@ -104,64 +105,71 @@ const accumulateRoomData = (r, isUpdate) => {
 let debounceTimeoutId;
 let visibleIndexes = {}; // e.g "1-44" meaning list 1 index 44
 
-const intersectionObserver = new IntersectionObserver((entries) => {
-    entries.forEach((entry) => {
-        let key = entry.target.id.substr("room-".length);
-        if (entry.isIntersecting) {
-            visibleIndexes[key] = true;
-        } else {
-            delete visibleIndexes[key];
-        }
-    });
-    // we will process the intersections after a short period of inactivity to not thrash the server
-    clearTimeout(debounceTimeoutId);
-    debounceTimeoutId = setTimeout(() => {
-        let listIndexToStartEnd = {};
-        Object.keys(visibleIndexes).forEach((indexes) => { // e.g "1-44"
-            [listIndex, roomIndex] = indexes.split("-"); 
-            let i = Number(roomIndex);
-            listIndex = Number(listIndex);
-            if (!listIndexToStartEnd[listIndex]) {
-                listIndexToStartEnd[listIndex] = {
-                    startIndex: -1,
-                    endIndex: -1,
+const intersectionObserver = new IntersectionObserver(
+    (entries) => {
+        entries.forEach((entry) => {
+            let key = entry.target.id.substr("room-".length);
+            if (entry.isIntersecting) {
+                visibleIndexes[key] = true;
+            } else {
+                delete visibleIndexes[key];
+            }
+        });
+        // we will process the intersections after a short period of inactivity to not thrash the server
+        clearTimeout(debounceTimeoutId);
+        debounceTimeoutId = setTimeout(() => {
+            let listIndexToStartEnd = {};
+            Object.keys(visibleIndexes).forEach((indexes) => {
+                // e.g "1-44"
+                [listIndex, roomIndex] = indexes.split("-");
+                let i = Number(roomIndex);
+                listIndex = Number(listIndex);
+                if (!listIndexToStartEnd[listIndex]) {
+                    listIndexToStartEnd[listIndex] = {
+                        startIndex: -1,
+                        endIndex: -1,
+                    };
                 }
-            }
-            let startIndex = listIndexToStartEnd[listIndex].startIndex;
-            let endIndex = listIndexToStartEnd[listIndex].endIndex;
-            if (startIndex === -1 || i < startIndex) {
-                listIndexToStartEnd[listIndex].startIndex = i;
-            }
-            if (endIndex === -1 || i > endIndex) {
-                listIndexToStartEnd[listIndex].endIndex = i;
-            }
-        });
-        console.log("Intersection indexes:", JSON.stringify(listIndexToStartEnd));
-        // buffer range
-        const bufferRange = 5;
+                let startIndex = listIndexToStartEnd[listIndex].startIndex;
+                let endIndex = listIndexToStartEnd[listIndex].endIndex;
+                if (startIndex === -1 || i < startIndex) {
+                    listIndexToStartEnd[listIndex].startIndex = i;
+                }
+                if (endIndex === -1 || i > endIndex) {
+                    listIndexToStartEnd[listIndex].endIndex = i;
+                }
+            });
+            console.log("Intersection indexes:", JSON.stringify(listIndexToStartEnd));
+            // buffer range
+            const bufferRange = 5;
 
-        Object.keys(listIndexToStartEnd).forEach((listIndex) => {
-            let startIndex = listIndexToStartEnd[listIndex].startIndex;
-            let endIndex = listIndexToStartEnd[listIndex].endIndex;
-            startIndex = (startIndex - bufferRange) < 0 ? 0 : (startIndex - bufferRange);
-            endIndex = (endIndex + bufferRange) >= activeLists[listIndex].joinedCount ? activeLists[listIndex].joinedCount-1 : (endIndex + bufferRange);
+            Object.keys(listIndexToStartEnd).forEach((listIndex) => {
+                let startIndex = listIndexToStartEnd[listIndex].startIndex;
+                let endIndex = listIndexToStartEnd[listIndex].endIndex;
+                startIndex = startIndex - bufferRange < 0 ? 0 : startIndex - bufferRange;
+                endIndex =
+                    endIndex + bufferRange >= activeLists[listIndex].joinedCount
+                        ? activeLists[listIndex].joinedCount - 1
+                        : endIndex + bufferRange;
 
-            // we don't need to request rooms between 0,20 as we always have a filter for this
-            if (endIndex <= 20) {
-                return;
-            }
-            // ensure we don't overlap with the 0,20 range
-            if (startIndex < 20) {
-                startIndex = 20;
-            }
+                // we don't need to request rooms between 0,20 as we always have a filter for this
+                if (endIndex <= 20) {
+                    return;
+                }
+                // ensure we don't overlap with the 0,20 range
+                if (startIndex < 20) {
+                    startIndex = 20;
+                }
 
-            activeLists[listIndex].activeRanges[1] = [startIndex, endIndex];
-        });
-        activeAbortController.abort();
-    }, 100);
-}, {
-    threshold: [0],
-});
+                activeLists[listIndex].activeRanges[1] = [startIndex, endIndex];
+            });
+            activeAbortController.abort();
+        }, 100);
+    },
+    {
+        threshold: [0],
+    }
+);
 
 const renderMessage = (container, ev) => {
     const eventIdKey = "msg" + ev.event_id;
@@ -176,7 +184,9 @@ const renderMessage = (container, ev) => {
     const msgCell = template.content.firstElementChild.cloneNode(true);
     msgCell.setAttribute("id", eventIdKey);
     msgCell.getElementsByClassName("msgsender")[0].textContent = ev.sender;
-    msgCell.getElementsByClassName("msgtimestamp")[0].textContent = formatTimestamp(ev.origin_server_ts);
+    msgCell.getElementsByClassName("msgtimestamp")[0].textContent = formatTimestamp(
+        ev.origin_server_ts
+    );
     let body = textForEvent(ev);
     msgCell.getElementsByClassName("msgcontent")[0].textContent = body;
     container.appendChild(msgCell);
@@ -230,7 +240,8 @@ const renderRoomContent = (roomId, refresh) => {
     }
     document.getElementById("selectedroomname").textContent = room.name || room.room_id;
     if (room.avatar) {
-        document.getElementById("selectedroomavatar").src = mxcToUrl(room.avatar) || "/client/placeholder.svg";
+        document.getElementById("selectedroomavatar").src =
+            mxcToUrl(room.avatar) || "/client/placeholder.svg";
     } else {
         document.getElementById("selectedroomavatar").src = "/client/placeholder.svg";
     }
@@ -239,22 +250,28 @@ const renderRoomContent = (roomId, refresh) => {
     } else {
         document.getElementById("selectedroomtopic").textContent = "";
     }
-    
+
     // insert timeline messages
     (room.timeline || []).forEach((ev) => {
         renderMessage(container, ev);
     });
-    container.lastChild.scrollIntoView();
-}
+    if (container.lastChild) {
+        container.lastChild.scrollIntoView();
+    }
+};
 
 const roomIdAttr = (listIndex, roomIndex) => {
     return "room-" + listIndex + "-" + roomIndex;
-}
+};
 
 const render = (container, listIndex) => {
     const listData = activeLists[listIndex];
     if (!listData) {
-        console.error("render(): cannot render list at index ", listIndex, " no data associated with this index!");
+        console.error(
+            "render(): cannot render list at index ",
+            listIndex,
+            " no data associated with this index!"
+        );
         return;
     }
     let addCount = 0;
@@ -308,7 +325,8 @@ const render = (container, listIndex) => {
         roomNameSpan.style = "";
         roomContentSpan.style = "";
         if (r.avatar) {
-            roomCell.getElementsByClassName("roomavatar")[0].src = mxcToUrl(r.avatar) || "/client/placeholder.svg";
+            roomCell.getElementsByClassName("roomavatar")[0].src =
+                mxcToUrl(r.avatar) || "/client/placeholder.svg";
         } else {
             roomCell.getElementsByClassName("roomavatar")[0].src = "/client/placeholder.svg";
         }
@@ -330,7 +348,7 @@ const render = (container, listIndex) => {
             roomContentSpan.textContent = "";
             roomSenderSpan.textContent = r.obsolete;
         } else if (r.timeline && r.timeline.length > 0) {
-            const mostRecentEvent = r.timeline[r.timeline.length-1];
+            const mostRecentEvent = r.timeline[r.timeline.length - 1];
             roomSenderSpan.textContent = mostRecentEvent.sender;
             roomTimestampSpan.textContent = formatTimestamp(mostRecentEvent.origin_server_ts);
 
@@ -345,17 +363,23 @@ const render = (container, listIndex) => {
             roomContentSpan.textContent = "";
         }
     }
-}
+};
 const sleep = (ms) => {
-    return new Promise(resolve => setTimeout(resolve, ms));
-}
+    return new Promise((resolve) => setTimeout(resolve, ms));
+};
 
 const formatTimestamp = (originServerTs) => {
     const d = new Date(originServerTs);
     return (
-        d.toDateString() + " " + zeroPad(d.getHours()) + ":" + zeroPad(d.getMinutes()) + ":" + zeroPad(d.getSeconds())
+        d.toDateString() +
+        " " +
+        zeroPad(d.getHours()) +
+        ":" +
+        zeroPad(d.getMinutes()) +
+        ":" +
+        zeroPad(d.getSeconds())
     );
-}
+};
 
 // SYNC 0 2 a b c; SYNC 6 8 d e f; DELETE 7; INSERT 0 e;
 // 0 1 2 3 4 5 6 7 8
@@ -370,9 +394,9 @@ const indexInRange = (listIndex, i) => {
         }
     });
     return isInRange;
-}
+};
 
-const doSyncLoop = async(accessToken, sessionId) => {
+const doSyncLoop = async (accessToken, sessionId) => {
     console.log("Starting sync loop. Active: ", activeSessionId, " this:", sessionId);
 
     let currentPos;
@@ -396,7 +420,7 @@ const doSyncLoop = async(accessToken, sessionId) => {
                     }
                     return l;
                 }),
-                session_id: (sessionId ? sessionId : undefined),
+                session_id: sessionId ? sessionId : undefined,
             };
             // check if we are (un)subscribing to a room and modify request this one time for it
             let subscribingToRoom;
@@ -408,7 +432,7 @@ const doSyncLoop = async(accessToken, sessionId) => {
                     [activeRoomId]: {
                         required_state: requiredStateEventsInRoom,
                         timeline_limit: 30,
-                    }
+                    },
                 };
                 // hold a ref to the active room ID as it may change by the time we return from doSyncRequest
                 subscribingToRoom = activeRoomId;
@@ -429,7 +453,7 @@ const doSyncLoop = async(accessToken, sessionId) => {
             }
         } catch (err) {
             if (err.name !== "AbortError") {
-                console.error("/sync failed:",err);
+                console.error("/sync failed:", err);
                 console.log("current", currentError, "last", lastError);
                 if (currentError != lastError) {
                     document.getElementById("errorMsg").textContent = lastError ? lastError : "";
@@ -444,13 +468,14 @@ const doSyncLoop = async(accessToken, sessionId) => {
 
         Object.keys(resp.room_subscriptions).forEach((roomId) => {
             accumulateRoomData(
-                resp.room_subscriptions[roomId], rooms.roomIdToRoom[roomId] !== undefined,
+                resp.room_subscriptions[roomId],
+                rooms.roomIdToRoom[roomId] !== undefined
             );
             renderRoomContent(roomId);
         });
 
         // TODO: clear gapIndex immediately after next op to avoid a genuine DELETE shifting incorrectly e.g leaving a room
-        // TODO: namespace gapIndex per list index 
+        // TODO: namespace gapIndex per list index
         let gapIndex = -1;
         resp.ops.forEach((op) => {
             if (op.op === "DELETE") {
@@ -462,7 +487,9 @@ const doSyncLoop = async(accessToken, sessionId) => {
                 if (activeLists[op.list].roomIndexToRoomId[op.index]) {
                     // something is in this space, shift items out of the way
                     if (gapIndex < 0) {
-                        console.log("cannot work out where gap is, INSERT without previous DELETE!");
+                        console.log(
+                            "cannot work out where gap is, INSERT without previous DELETE!"
+                        );
                         return;
                     }
                     //  0,1,2,3  index
@@ -482,7 +509,8 @@ const doSyncLoop = async(accessToken, sessionId) => {
                         // Terminate. We'll assign into op.index next.
                         for (let i = gapIndex; i > op.index; i--) {
                             if (indexInRange(op.list, i)) {
-                                activeLists[op.list].roomIndexToRoomId[i] = activeLists[op.list].roomIndexToRoomId[i-1];
+                                activeLists[op.list].roomIndexToRoomId[i] =
+                                    activeLists[op.list].roomIndexToRoomId[i - 1];
                             }
                         }
                     } else if (gapIndex < op.index) {
@@ -490,7 +518,8 @@ const doSyncLoop = async(accessToken, sessionId) => {
                         // starting at the gap so we can just shift each element in turn
                         for (let i = gapIndex; i < op.index; i++) {
                             if (indexInRange(op.list, i)) {
-                                activeLists[op.list].roomIndexToRoomId[i] = activeLists[op.list].roomIndexToRoomId[i+1];
+                                activeLists[op.list].roomIndexToRoomId[i] =
+                                    activeLists[op.list].roomIndexToRoomId[i + 1];
                             }
                         }
                     }
@@ -557,15 +586,26 @@ const doSyncLoop = async(accessToken, sessionId) => {
                 }
             });
             dupeRoomIds.forEach((rid) => {
-                console.log(rid,"in list", listIndex, "has duplicate indexes:", roomIdToPositions[rid]);
+                console.log(
+                    rid,
+                    "in list",
+                    listIndex,
+                    "has duplicate indexes:",
+                    roomIdToPositions[rid]
+                );
             });
             if (indexesOutsideRanges.size > 0) {
-                console.log("list", listIndex, "tracking indexes outside of tracked ranges:", JSON.stringify([...indexesOutsideRanges]));
+                console.log(
+                    "list",
+                    listIndex,
+                    "tracking indexes outside of tracked ranges:",
+                    JSON.stringify([...indexesOutsideRanges])
+                );
             }
         });
     }
     console.log("active session: ", activeSessionId, " this session: ", sessionId, " terminating.");
-}
+};
 // accessToken = string, pos = int, ranges = [2]int e.g [0,99]
 let doSyncRequest = async (accessToken, pos, reqBody) => {
     activeAbortController = new AbortController();
@@ -573,10 +613,10 @@ let doSyncRequest = async (accessToken, pos, reqBody) => {
         signal: activeAbortController.signal,
         method: "POST",
         headers: {
-            "Authorization": "Bearer " + accessToken,
+            Authorization: "Bearer " + accessToken,
             "Content-Type": "application/json",
         },
-        body: JSON.stringify(reqBody)
+        body: JSON.stringify(reqBody),
     });
     let respBody = await resp.json();
     if (respBody.ops) {
@@ -590,7 +630,7 @@ let doSyncRequest = async (accessToken, pos, reqBody) => {
     }
     lastError = null;
     return respBody;
-}
+};
 
 const textForEvent = (ev) => {
     let body = "";
@@ -609,7 +649,7 @@ const textForEvent = (ev) => {
             break;
     }
     return body;
-}
+};
 
 const membershipChangeText = (ev) => {
     const prevContent = (ev.unsigned || {}).prev_content || {};
@@ -639,15 +679,21 @@ const membershipChangeText = (ev) => {
         }
     }
     return ev.type + " event";
-}
+};
 
 const randomName = (i, long) => {
     if (i % 17 === 0) {
-        return long ? "Ever have that feeling where you’re not sure if you’re awake or dreaming?" : "There is no spoon";
+        return long
+            ? "Ever have that feeling where you’re not sure if you’re awake or dreaming?"
+            : "There is no spoon";
     } else if (i % 13 === 0) {
-        return long ? "Choice is an illusion created between those with power and those without." : "Get Up Trinity";
+        return long
+            ? "Choice is an illusion created between those with power and those without."
+            : "Get Up Trinity";
     } else if (i % 11 === 0) {
-        return long ? "That’s how it is with people. Nobody cares how it works as long as it works.": "I know kung fu";
+        return long
+            ? "That’s how it is with people. Nobody cares how it works as long as it works."
+            : "I know kung fu";
     } else if (i % 7 === 0) {
         return long ? "The body cannot live without the mind." : "Free your mind";
     } else if (i % 5 === 0) {
@@ -657,14 +703,14 @@ const randomName = (i, long) => {
     } else {
         return long ? "Mr. Wizard, get me the hell out of here! " : "Morpheus";
     }
-}
+};
 
 const zeroPad = (n) => {
     if (n < 10) {
         return "0" + n;
     }
     return n;
-}
+};
 
 const mxcToUrl = (mxc) => {
     const path = mxc.substr("mxc://".length);
@@ -673,9 +719,9 @@ const mxcToUrl = (mxc) => {
     }
     // TODO: we should really use the proxy HS not matrix.org
     return `https://matrix-client.matrix.org/_matrix/media/r0/thumbnail/${path}?width=64&height=64&method=crop`;
-}
+};
 
-window.addEventListener('load', (event) => {
+window.addEventListener("load", (event) => {
     const container = document.getElementById("roomlistcontainer");
     activeLists.forEach((list) => {
         const roomList = document.createElement("div");
@@ -708,9 +754,9 @@ window.addEventListener('load', (event) => {
         debugBox.style = "";
         alert(
             "Type sync operations and press ENTER to execute locally. Examples:\n" +
-            "SYNC 0 5 a b c d e f\n" +
-            "DELETE 0; INSERT 1 f\n" +
-            "UPDATE 0 a\n"
+                "SYNC 0 5 a b c d e f\n" +
+                "DELETE 0; INSERT 1 f\n" +
+                "UPDATE 0 a\n"
         );
 
         awaitingPromises = {};
@@ -722,7 +768,7 @@ window.addEventListener('load', (event) => {
             }
             let r = window.responseQueue[pos];
             if (r) {
-                r.pos = pos+1; // client should request next pos next
+                r.pos = pos + 1; // client should request next pos next
                 console.log(r);
                 return r;
             }
@@ -741,16 +787,18 @@ window.addEventListener('load', (event) => {
                 notification_count: 0,
                 room_id: s,
                 name: s,
-                timeline: [{
-                    type: "m.room.message",
-                    sender: "DEBUG",
-                    content: {
-                        body: "Debug message",
+                timeline: [
+                    {
+                        type: "m.room.message",
+                        sender: "DEBUG",
+                        content: {
+                            body: "Debug message",
+                        },
+                        origin_server_ts: new Date().getTime(),
                     },
-                    origin_server_ts: new Date().getTime(),
-                }],
+                ],
             };
-        }
+        };
         let started = false;
         debugBox.onkeypress = (ev) => {
             if (ev.key !== "Enter") {
@@ -775,8 +823,12 @@ window.addEventListener('load', (event) => {
                 switch (args[0].toUpperCase()) {
                     case "SYNC": // SYNC 0 5 a b c d e f
                         const rooms = args.slice(3);
-                        if (rooms.length != (1 + Number(args[2]) - Number(args[1]))) {
-                            console.error("Bad SYNC: got ", rooms.length, " rooms for range (indexes are inclusive), ignoring.");
+                        if (rooms.length != 1 + Number(args[2]) - Number(args[1])) {
+                            console.error(
+                                "Bad SYNC: got ",
+                                rooms.length,
+                                " rooms for range (indexes are inclusive), ignoring."
+                            );
                             return;
                         }
                         ops.push({
@@ -815,7 +867,7 @@ window.addEventListener('load', (event) => {
                         break;
                 }
             });
-            
+
             responseQueue.push({
                 count: 256,
                 ops: ops,
