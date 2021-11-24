@@ -32,10 +32,10 @@ func (s *server) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 
 func allowCORS(next http.Handler) http.HandlerFunc {
 	return func(w http.ResponseWriter, req *http.Request) {
+		w.Header().Set("Access-Control-Allow-Origin", "*")
+		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
+		w.Header().Set("Access-Control-Allow-Headers", "Origin, X-Requested-With, Content-Type, Accept, Authorization")
 		if req.Method == "OPTIONS" {
-			w.Header().Set("Access-Control-Allow-Origin", "*")
-			w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
-			w.Header().Set("Access-Control-Allow-Headers", "Origin, X-Requested-With, Content-Type, Accept, Authorization")
 			w.WriteHeader(200)
 			return
 		}
@@ -47,7 +47,7 @@ func allowCORS(next http.Handler) http.HandlerFunc {
 func RunSyncV3Server(h http.Handler, bindAddr string) {
 	// HTTP path routing
 	r := mux.NewRouter()
-	r.Handle("/_matrix/client/v3/sync", h)
+	r.Handle("/_matrix/client/v3/sync", allowCORS(h))
 	r.PathPrefix("/client/").HandlerFunc(
 		allowCORS(
 			http.StripPrefix("/client/", http.FileServer(http.Dir("./client"))),
