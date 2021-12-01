@@ -46,6 +46,7 @@ type ConnState struct {
 	globalCache *sync3.GlobalCache
 	userCache   *sync3.UserCache
 	userCacheID int
+	bufferFull  bool
 }
 
 func NewConnState(userID string, userCache *sync3.UserCache, globalCache *sync3.GlobalCache) *ConnState {
@@ -461,6 +462,9 @@ func (s *ConnState) getInitialRoomData(timelineLimit int, roomIDs ...string) []s
 // from different v2 poll loops, and there is no locking in order to prevent a slow ConnState from wedging the poll loop.
 // We need to move this data onto a channel for onIncomingRequest to consume later.
 func (s *ConnState) onNewConnectionEvent(connEvent *ConnEvent) {
+	if s.bufferFull {
+		return
+	}
 	eventData := connEvent.msg
 	// TODO: remove 0 check when Initialise state returns sensible positions
 	if eventData != nil && eventData.LatestPos != 0 && eventData.LatestPos < s.loadPosition {
@@ -473,14 +477,20 @@ func (s *ConnState) onNewConnectionEvent(connEvent *ConnEvent) {
 	case <-time.After(5 * time.Second):
 		// TODO: kill the connection
 		logger.Warn().Interface("event", *connEvent).Str("user", s.userID).Msg(
-			"cannot send event to connection, buffer exceeded",
+			"cannot send event to connection, buffer exceeded. Destroying connection.",
 		)
+		s.bufferFull = true
+		s.Destroy()
 	}
 }
 
 // Called when the connection is torn down
 func (s *ConnState) Destroy() {
 	s.userCache.Unsubscribe(s.userCacheID)
+}
+
+func (s *ConnState) Alive() bool {
+	return !s.bufferFull
 }
 
 func (s *ConnState) UserID() string {

@@ -27,7 +27,7 @@ func NewConnMap() *ConnMap {
 		mu:           &sync.Mutex{},
 	}
 	cm.cache.SetTTL(30 * time.Minute) // TODO: customisable
-	cm.cache.SetExpirationCallback(cm.closeConn)
+	cm.cache.SetExpirationCallback(cm.closeConnExpires)
 	return cm
 }
 
@@ -57,11 +57,28 @@ func (m *ConnMap) GetOrCreateConn(cid ConnID, newConnHandler func() ConnHandler)
 	return conn, true
 }
 
-func (m *ConnMap) closeConn(connID string, value interface{}) {
+func (m *ConnMap) CloseConn(connID ConnID) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	// remove conn from all the maps
+	conn := m.Conn(connID)
+	m.closeConn(conn)
+}
+
+func (m *ConnMap) closeConnExpires(connID string, value interface{}) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	conn := value.(*Conn)
+	m.closeConn(conn)
+}
+
+// must hold mu
+func (m *ConnMap) closeConn(conn *Conn) {
+	if conn == nil {
+		return
+	}
+
+	connID := conn.ConnID.String()
+	// remove conn from all the maps
 	delete(m.connIDToConn, connID)
 	h := conn.handler
 	conns := m.userIDToConn[h.UserID()]
@@ -73,5 +90,6 @@ func (m *ConnMap) closeConn(connID string, value interface{}) {
 		}
 	}
 	m.userIDToConn[h.UserID()] = conns
+	// remove user cache listeners etc
 	h.Destroy()
 }

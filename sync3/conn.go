@@ -24,6 +24,7 @@ type ConnHandler interface {
 	OnIncomingRequest(ctx context.Context, cid ConnID, req *Request) (*Response, error)
 	UserID() string
 	Destroy()
+	Alive() bool
 }
 
 // Conn is an abstraction of a long-poll connection. It automatically handles the position values
@@ -51,6 +52,10 @@ func NewConn(connID ConnID, h ConnHandler) *Conn {
 		handler: h,
 		mu:      &sync.Mutex{},
 	}
+}
+
+func (c *Conn) Alive() bool {
+	return c.handler.Alive()
 }
 
 // OnIncomingRequest advances the clients position in the stream, returning the response position and data.

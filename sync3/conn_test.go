@@ -21,7 +21,8 @@ func (c *connHandlerMock) OnIncomingRequest(ctx context.Context, cid ConnID, req
 func (c *connHandlerMock) UserID() string {
 	return "dummy"
 }
-func (c *connHandlerMock) Destroy() {}
+func (c *connHandlerMock) Destroy()    {}
+func (c *connHandlerMock) Alive() bool { return true }
 
 // Test that Conn can send and receive requests based on positions
 func TestConn(t *testing.T) {
