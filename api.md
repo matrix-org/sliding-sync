@@ -138,6 +138,13 @@ The overarching model here is to imagine `/sync` as a pubsub system, where you a
   // if the client was already subscribed to this room, this is how you unsub
   // unsubbing twice is a no-op
   "unsubscribe_rooms": [ "!sub3:bar" ]
+
+  // extensions to sync which are outside the scope of rooms (presence, to_device msgs, etc)
+  "extensions": {
+    "to_device": {
+      "enabled": true,
+    }
+  }
 }
 ```
 Returns:
@@ -214,6 +221,13 @@ Returns:
   // 1337 rooms in the main list, 30 DMs, 5 favourite rooms, 0 invites.
   "counts": [1337,30,5,0], 
   "notifications": { .... } // see later section
+  "extensions": {
+    "to_device": {
+      // It's unfortunate that these aren't room scoped when they concern E2EE for specific rooms which
+      // the client may not know about, hence we can't omit them.
+      "events": [ ToDeviceEvents ]
+    }
+  }
 }
 ```
 Subsequent updates are just live-streamed to the client as and when they happen. For a topic change in the 4th room:
