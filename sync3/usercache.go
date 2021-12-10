@@ -74,11 +74,30 @@ func (c *UserCache) LazyLoadTimelines(loadPos int64, roomIDs []string, maxTimeli
 			if len(timeline) > maxTimelineEvents {
 				timeline = timeline[len(timeline)-maxTimelineEvents:]
 			}
-			// we already have data, use it
-			result[roomID] = UserRoomData{
-				NotificationCount: urd.NotificationCount,
-				HighlightCount:    urd.HighlightCount,
-				Timeline:          timeline,
+			// ensure that if the user initially wants 1 event in this room then bumps up to 50 that
+			// we actually give them 50. This is more than just a length check as the room may not
+			// have 50 events, we can tell this based on the create event
+			createEventExists := false
+			if len(timeline) < maxTimelineEvents {
+				for _, ev := range timeline {
+					if gjson.GetBytes(ev, "type").Str == "m.room.create" && gjson.GetBytes(ev, "state_key").Str == "" {
+						createEventExists = true
+						break
+					}
+				}
+			}
+
+			// either we satisfied their request or we can't get any more events, either way that's good enough
+			if len(timeline) == maxTimelineEvents || createEventExists {
+				// we already have data, use it
+				result[roomID] = UserRoomData{
+					NotificationCount: urd.NotificationCount,
+					HighlightCount:    urd.HighlightCount,
+					Timeline:          timeline,
+				}
+			} else {
+				// refetch from the db
+				lazyRoomIDs = append(lazyRoomIDs, roomID)
 			}
 		} else {
 			lazyRoomIDs = append(lazyRoomIDs, roomID)
