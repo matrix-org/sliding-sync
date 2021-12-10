@@ -70,10 +70,13 @@ func NewPollerMap(v2Client Client, callbacks V2DataReceiver) *PollerMap {
 	}
 }
 
-// EnsurePolling makes sure there is a poller for this device, making one if need be.
+// EnsurePolling makes sure there is a poller for this user, making one if need be.
 // Blocks until at least 1 sync is done if and only if the poller was just created.
 // This ensures that calls to the database will return data.
 // Guarantees only 1 poller will be running per deviceID.
+// Note that we will immediately return if there is a poller for the same user but a different device.
+// We do this to allow for logins on clients to be snappy fast, even though they won't yet have the
+// to-device msgs to decrypt E2EE roms.
 func (h *PollerMap) EnsurePolling(authHeader, userID, deviceID, v2since string, logger zerolog.Logger) {
 	h.pollerMu.Lock()
 	if !h.executorRunning {
@@ -94,8 +97,25 @@ func (h *PollerMap) EnsurePolling(authHeader, userID, deviceID, v2since string, 
 		wg.Done()
 	})
 	h.Pollers[deviceID] = poller
+
+	// check if we need to wait at all: we don't need to if this user is already syncing on a different device
+	// This is O(n) so we may want to map this if we get a lot of users...
+	needToWait := true
+	for pollerDeviceID, poller := range h.Pollers {
+		if deviceID == pollerDeviceID {
+			continue
+		}
+		if poller.userID == userID && !poller.Terminated {
+			needToWait = false
+		}
+	}
+
 	h.pollerMu.Unlock()
-	wg.Wait()
+	if needToWait {
+		wg.Wait()
+	} else {
+		logger.Info().Str("user", userID).Msg("a poller exists for this user; not waiting for this device to do an initial sync")
+	}
 }
 
 func (h *PollerMap) execute() {
@@ -187,7 +207,7 @@ func NewPoller(userID, authHeader, deviceID string, client Client, receiver V2Da
 }
 
 // Poll will block forever, repeatedly calling v2 sync. Do this in a goroutine.
-// Returns if the access token gets invalidated or if there was a fatal error processing v2 resposnes.
+// Returns if the access token gets invalidated or if there was a fatal error processing v2 responses.
 // Invokes the callback on first success.
 func (p *Poller) Poll(since string, callback func()) {
 	p.logger.Info().Str("since", since).Msg("Poller: v2 poll loop started")
