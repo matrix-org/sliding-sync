@@ -31,4 +31,4 @@ Please run the server with `SYNCV3_DEBUG=1` set. This will force the server to p
 
 ## API
 
-API is under active development and is not stable.
+API is under active development and is not stable. See [api.md](/api.md) for the current API.

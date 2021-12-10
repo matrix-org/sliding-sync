@@ -45,6 +45,7 @@ The overarching model here is to imagine `/sync` as a pubsub system, where you a
   // not result in to-device messages being purged if they have never
   // been delivered to any session yet: they must be delivered to at
   // least one active session on the device.
+  // TODO: Should we call this 'connection_id' instead? More clear.
   // If this id is missing, it is set to 'default'.
   "session_id": "arbitrary-client-chosen-string",
 
@@ -55,6 +56,7 @@ The overarching model here is to imagine `/sync` as a pubsub system, where you a
   "lists": [
     {
       // first 100 rooms
+      // TODO: Perhaps 'range' would be better here.
       "rooms": [ [0,99] ],
       
       // how `rooms` gets sorted. Note "by_name" means servers need to
@@ -69,22 +71,21 @@ The overarching model here is to imagine `/sync` as a pubsub system, where you a
         ["m.space.child", "*"] // wildcard
       ],
       
-      // the initial timeline limit to send for a new room, live stream
-      // data can exceed this limit
+      // the timeline limit to send for a new room.
+      // If there are more than this number of events, a gap is created.
       "timeline_limit": 10,
 
       "filters": {
         // only returns rooms in these spaces (ignores subspaces)
         "spaces": ["!space1:example.com", "!space2:example.com"],
-        // options to control which events should be live-streamed e.g not_types, types from sync v2
+        // options to control which events should be live-streamed
+        // e.g not_types, types from sync v2?
       }
     },
     {
       // first 100 rooms
       "rooms": [ [0,99] ],
 
-      // additional lists will use the request parameters from lists[0]
-      // by default, unless overridden.
       "filters": {
         // only rooms present in m.direct in account data will appear in this list
         "is_dm": true
@@ -93,6 +94,7 @@ The overarching model here is to imagine `/sync` as a pubsub system, where you a
       // the room with the highest priority. If more than one list
       // has joint highest priority, it will appear in both. A lack
       // of a priority key indicates priority: 0.
+      // TODO: Is this really needed? Haven't needed it so far. Need better use cases.
       "priority": 1
     },
     {
@@ -133,6 +135,7 @@ The overarching model here is to imagine `/sync` as a pubsub system, where you a
           "timeline_limit": 50
       },
       // empty object will use the same request params as the list subscription
+      // TODO: which in a multi-list API? [0] not particularly clear.
       "!sub2:bar": {}
   },
   // if the client was already subscribed to this room, this is how you unsub
@@ -159,7 +162,11 @@ Returns:
         {
           "room_id": "!foo:bar",
           "name": "The calculated room name",
-          // this is the CURRENT STATE, unlike v2 sync
+          // this is the CURRENT STATE, unlike v2 sync.
+          // This allows servers to optimise state delta checks
+          // whilst forcing clients to look at prev_content
+          // for m.room.member events.
+          // (which let's face it, most clients already do!)
           "required_state": [
             {"sender":"@alice:example.com","type":"m.room.join_rules", "state_key":"", "content":{"join_rule":"invite"}},
             {"sender":"@alice:example.com","type":"m.room.history_visibility", "state_key":"", "content":{"history_visibility":"joined"}},
@@ -168,7 +175,8 @@ Returns:
             {"sender":"@alice:example.com","type":"m.space.child", "state_key":"!baz:example.com", "content":{"via":["example.com"]}}
           ],
           "timeline": [
-            // We can de-dupe events in `required_state` via a top-level event map so only the event IDs are referenced here.
+            // TODO We can de-dupe events in `required_state` via a top-level event map
+            // so only the event IDs are referenced here.
             {"sender":"@alice:example.com","type":"m.room.join_rules", "state_key":"", "content":{"join_rule":"invite"}},
             {"sender":"@alice:example.com","type":"m.room.message", "content":{"body":"A"}},
             {"sender":"@alice:example.com","type":"m.room.message", "content":{"body":"B"}},
@@ -476,7 +484,7 @@ An example of what this looks like in the response:
 
 Some clients don't want to store state and are happy with using more bandwidth. For these clients, sync v2 has `?full_state=`. We can add a similar flag in this API to say "never incrementally catch me up from an earlier connection / invalidated page".
 
-If a client gets a `SYNC` for a room where they previously had timeline events and state for, they MUST drop the state but can keep the timeline events as a disjointed timeline section. They may be able to tie the sections together again via `/messages` requests (backfilling).
+If a client gets a `SYNC` for a room where they previously had timeline events and state for, they MUST drop the state but can keep the timeline events as a disjointed timeline section. They may be able to tie the sections together again via `/messages` requests (backfilling). TODO: This causes problems if the sort orders as mismatched (streaming vs topological)?
 
 For cases where the state resolution algorithm has deleted state, we can force a `SYNC` on that room to re-issue the correct state, with an empty timeline section to inform the client that no new events have been sent, but the current state has changed.
 
@@ -526,7 +534,7 @@ Client have two main choices here:
 
 ### Missing bits
 
-- Typing notifs, read receipts, room tag data, and any other room-scoped data. This can be added as request params to state whether you want these or not.
+- Typing notifs, read receipts, room tag data, and any other room-scoped data. This can be added as request params to state whether you want these or not. Most likely clients will only want this when the room is a `room_subscription`.
 - Account data. Again, this can be added as request params and we can do similar pubsub for updates to types the client is interested in.
 - To-device messages. It would be nice to have a queue per event type / sender / room so clients can rapidly get at room keys without having to wade through lots of key share requests. Need to check with the crypto team whether the ordering on to-device messages cross-event-type is important or not.
 - Presence and member lists in general.
@@ -536,3 +544,4 @@ Client have two main choices here:
 - We may want to add an `initial: true|false` flag to the room response to let clients know if these timeline events are live or not, else it's hard to know if a room genuinely had 20 timeline events immediately or if they came in via a sliding window request. This is important for clients to decide whether or not to show an "unread" indicator (not to be confused with unread notifications).
 - Sync v3 has no `prev_batch` to request earlier messages. It is intended that clients will use the earliest event ID they know in a timeline and pass that into `/messages` to request earlier messages. This should work regardless of the sort order (topological/streaming) as the server tags each event ID with both a topological ordering and a stream ordering (so the `since` token doesn't encode more useful information).
 - We should definitely try to reconcile `/sync` and `/messages` ordering, as it's crazy that it's different today. If we made both streaming, this would allow the server to encode even more useful information in timeline gaps like "here's the latest 20 events, oh and there are 700 events in the gap". The sync v3 server does not remember client state when the connection is closed (e.g after 30min of inactivity) but the client _does_ remember state. It's possible for the client to send a request to the server along the lines of "In room !foo get me 20 events earlier than $foo and tell me how many events until I reach $bar." In this case, `$bar` was received on an earlier now dead connection and `$foo` is the first event in the current connection. Knowing how big the gap is can aid clients in deciding whether to continue backfilling or not.
+- When this is made into an MSC we _really really really_ should devise data flow diagrams for an Appendix section to say things like "given server state X and request Y, the response is Z". This will greatly improve the quality of implementations.
