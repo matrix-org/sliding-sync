@@ -146,6 +146,8 @@ The overarching model here is to imagine `/sync` as a pubsub system, where you a
   "extensions": {
     "to_device": {
       "enabled": true,
+      "since": "aabbcc", // since token to allow explicit ACKs. Naming from https://github.com/matrix-org/matrix-doc/issues/1898
+      "limit": 100 // max number of events per response
     }
   }
 }
@@ -231,8 +233,11 @@ Returns:
   "notifications": { .... } // see later section
   "extensions": {
     "to_device": {
+      "next_batch": "ddeeff", // token for next batch. Naming defined in https://github.com/matrix-org/matrix-doc/issues/1898
       // It's unfortunate that these aren't room scoped when they concern E2EE for specific rooms which
-      // the client may not know about, hence we can't omit them.
+      // the client may not know about, hence we can't omit them. The content of these messages are
+      // encrypted so we can't even bucket/filter on the type. This means clients CANNOT rapidly get at
+      // room keys without having to wade through lots of key share requests.
       "events": [ ToDeviceEvents ]
     }
   }
@@ -536,7 +541,7 @@ Client have two main choices here:
 
 - Typing notifs, read receipts, room tag data, and any other room-scoped data. This can be added as request params to state whether you want these or not. Most likely clients will only want this when the room is a `room_subscription`.
 - Account data. Again, this can be added as request params and we can do similar pubsub for updates to types the client is interested in.
-- To-device messages. It would be nice to have a queue per event type / sender / room so clients can rapidly get at room keys without having to wade through lots of key share requests. Need to check with the crypto team whether the ordering on to-device messages cross-event-type is important or not.
+- To-device messages.
 - Presence and member lists in general.
 - Device lists and OTK counts.
 
