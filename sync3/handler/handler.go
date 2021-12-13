@@ -14,6 +14,7 @@ import (
 	"github.com/matrix-org/sync-v3/state"
 	"github.com/matrix-org/sync-v3/sync2"
 	"github.com/matrix-org/sync-v3/sync3"
+	"github.com/matrix-org/sync-v3/sync3/extensions"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/hlog"
 	"github.com/rs/zerolog/log"
@@ -29,11 +30,12 @@ var logger = zerolog.New(os.Stdout).With().Timestamp().Logger().Output(zerolog.C
 // This is a net.http Handler for sync v3. It is responsible for pairing requests to Conns and to
 // ensure that the sync v2 poller is running for this client.
 type SyncLiveHandler struct {
-	V2        sync2.Client
-	Storage   *state.Storage
-	V2Store   *sync2.Storage
-	PollerMap *sync2.PollerMap
-	ConnMap   *sync3.ConnMap
+	V2         sync2.Client
+	Storage    *state.Storage
+	V2Store    *sync2.Storage
+	PollerMap  *sync2.PollerMap
+	ConnMap    *sync3.ConnMap
+	Extensions *extensions.Handler
 
 	// inserts are done by v2 poll loops, selects are done by v3 request threads
 	// but the v3 requests touch non-overlapping keys, which is a good use case for sync.Map
@@ -54,6 +56,7 @@ func NewSync3Handler(v2Client sync2.Client, postgresDBURI string) (*SyncLiveHand
 		userCaches:  &sync.Map{},
 		Dispatcher:  sync3.NewDispatcher(),
 		GlobalCache: sync3.NewGlobalCache(store),
+		Extensions:  &extensions.Handler{store},
 	}
 	sh.PollerMap = sync2.NewPollerMap(v2Client, sh)
 	roomToJoinedUsers, err := store.AllJoinedMembers()
@@ -245,7 +248,7 @@ func (h *SyncLiveHandler) setupConnection(req *http.Request, syncReq *sync3.Requ
 		SessionID: syncReq.SessionID,
 		DeviceID:  deviceID,
 	}, func() sync3.ConnHandler {
-		return NewConnState(v2device.UserID, userCache, h.GlobalCache)
+		return NewConnState(v2device.UserID, userCache, h.GlobalCache, h.Extensions)
 	})
 	if created {
 		log.Info().Str("conn_id", conn.ConnID.String()).Msg("created new connection")

@@ -3,6 +3,8 @@ package sync3
 import (
 	"bytes"
 	"encoding/json"
+
+	"github.com/matrix-org/sync-v3/sync3/extensions"
 )
 
 var (
@@ -20,7 +22,7 @@ type Request struct {
 	Lists             []RequestList               `json:"lists"`
 	RoomSubscriptions map[string]RoomSubscription `json:"room_subscriptions"`
 	UnsubscribeRooms  []string                    `json:"unsubscribe_rooms"`
-	Extensions        RequestExtensions           `json:"extensions"`
+	Extensions        extensions.Request          `json:"extensions"`
 
 	// set via query params or inferred
 	pos         int64
@@ -34,15 +36,6 @@ type RequestList struct {
 	RequiredState [][2]string     `json:"required_state"`
 	TimelineLimit int64           `json:"timeline_limit"`
 	Filters       *RequestFilters `json:"filters"`
-}
-
-type RequestExtensions struct {
-	ToDevice ToDeviceExtension `json:"to_device"`
-}
-type ToDeviceExtension struct {
-	Enabled bool   `json:"enabled"`
-	Limit   int    `json:"limit"` // max number of to-device messages per response
-	Since   string `json:"since"` // since token
 }
 
 func (r *Request) Pos() int64 {

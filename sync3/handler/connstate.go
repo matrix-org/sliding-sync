@@ -9,6 +9,7 @@ import (
 
 	"github.com/matrix-org/sync-v3/internal"
 	"github.com/matrix-org/sync-v3/sync3"
+	"github.com/matrix-org/sync-v3/sync3/extensions"
 )
 
 var (
@@ -47,9 +48,11 @@ type ConnState struct {
 	userCache   *sync3.UserCache
 	userCacheID int
 	bufferFull  bool
+
+	extensionsHandler extensions.HandlerInterface
 }
 
-func NewConnState(userID string, userCache *sync3.UserCache, globalCache *sync3.GlobalCache) *ConnState {
+func NewConnState(userID string, userCache *sync3.UserCache, globalCache *sync3.GlobalCache, ex extensions.HandlerInterface) *ConnState {
 	cs := &ConnState{
 		globalCache:       globalCache,
 		userCache:         userCache,
@@ -57,6 +60,7 @@ func NewConnState(userID string, userCache *sync3.UserCache, globalCache *sync3.
 		roomSubscriptions: make(map[string]sync3.RoomSubscription),
 		updateEvents:      make(chan *ConnEvent, MaxPendingEventUpdates), // TODO: customisable
 		lists:             &sync3.SortableRoomLists{},
+		extensionsHandler: ex,
 	}
 	cs.userCacheID = cs.userCache.Subsribe(cs)
 	return cs
@@ -139,6 +143,7 @@ func (s *ConnState) onIncomingRequest(ctx context.Context, req *sync3.Request) (
 	// start forming the response, handle subscriptions
 	response := &sync3.Response{
 		RoomSubscriptions: s.updateRoomSubscriptions(int(sync3.DefaultTimelineLimit), newSubs, newUnsubs),
+		Extensions:        s.extensionsHandler.Handle(s.muxedReq.Extensions),
 	}
 	responseOperations := []sync3.ResponseOp{} // empty not nil slice
 
@@ -155,7 +160,7 @@ func (s *ConnState) onIncomingRequest(ctx context.Context, req *sync3.Request) (
 	// do live tracking if we have nothing to tell the client yet
 	// block until we get a new event, with appropriate timeout
 blockloop:
-	for len(responseOperations) == 0 && len(response.RoomSubscriptions) == 0 {
+	for len(responseOperations) == 0 && len(response.RoomSubscriptions) == 0 && !response.Extensions.HasData() {
 		select {
 		case <-ctx.Done(): // client has given up
 			break blockloop

@@ -3,6 +3,7 @@ package sync3
 import (
 	"encoding/json"
 
+	"github.com/matrix-org/sync-v3/sync3/extensions"
 	"github.com/tidwall/gjson"
 )
 
@@ -20,19 +21,10 @@ type Response struct {
 	RoomSubscriptions map[string]Room `json:"room_subscriptions"`
 	Counts            []int           `json:"counts"`
 
-	Extensions ResponseExtensions `json:"extensions"`
+	Extensions extensions.Response `json:"extensions"`
 
 	Pos     int64  `json:"pos"`
 	Session string `json:"session_id,omitempty"`
-}
-
-type ResponseExtensions struct {
-	ToDevice *ToDeviceResponse `json:"to_device,omitempty"`
-}
-
-type ToDeviceResponse struct {
-	NextBatch string            `json:"next_batch"`
-	Events    []json.RawMessage `json:"events"`
 }
 
 // Custom unmarshal so we can dynamically create the right ResponseOp for Ops

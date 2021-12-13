@@ -12,8 +12,15 @@ import (
 	"github.com/matrix-org/gomatrixserverlib"
 	"github.com/matrix-org/sync-v3/internal"
 	"github.com/matrix-org/sync-v3/sync3"
+	"github.com/matrix-org/sync-v3/sync3/extensions"
 	"github.com/matrix-org/sync-v3/testutils"
 )
+
+type NopExtensionHandler struct{}
+
+func (h *NopExtensionHandler) Handle(req extensions.Request) (res extensions.Response) {
+	return
+}
 
 func newRoomMetadata(roomID string, lastMsgTimestamp gomatrixserverlib.Timestamp) internal.RoomMetadata {
 	return internal.RoomMetadata{
@@ -82,7 +89,7 @@ func TestConnStateInitial(t *testing.T) {
 		}
 		return result
 	}
-	cs := NewConnState(userID, userCache, globalCache)
+	cs := NewConnState(userID, userCache, globalCache, &NopExtensionHandler{})
 	if userID != cs.UserID() {
 		t.Fatalf("UserID returned wrong value, got %v want %v", cs.UserID(), userID)
 	}
@@ -227,7 +234,7 @@ func TestConnStateMultipleRanges(t *testing.T) {
 	userCache.LazyRoomDataOverride = mockLazyRoomOverride
 	dispatcher.Register(userCache.UserID, userCache)
 	dispatcher.Register(sync3.DispatcherAllUsers, globalCache)
-	cs := NewConnState(userID, userCache, globalCache)
+	cs := NewConnState(userID, userCache, globalCache, &NopExtensionHandler{})
 
 	// request first page
 	res, err := cs.OnIncomingRequest(context.Background(), ConnID, &sync3.Request{
@@ -409,7 +416,7 @@ func TestBumpToOutsideRange(t *testing.T) {
 	userCache.LazyRoomDataOverride = mockLazyRoomOverride
 	dispatcher.Register(userCache.UserID, userCache)
 	dispatcher.Register(sync3.DispatcherAllUsers, globalCache)
-	cs := NewConnState(userID, userCache, globalCache)
+	cs := NewConnState(userID, userCache, globalCache, &NopExtensionHandler{})
 	// Ask for A,B
 	res, err := cs.OnIncomingRequest(context.Background(), ConnID, &sync3.Request{
 		Lists: []sync3.RequestList{{
@@ -517,7 +524,7 @@ func TestConnStateRoomSubscriptions(t *testing.T) {
 	}
 	dispatcher.Register(userCache.UserID, userCache)
 	dispatcher.Register(sync3.DispatcherAllUsers, globalCache)
-	cs := NewConnState(userID, userCache, globalCache)
+	cs := NewConnState(userID, userCache, globalCache, &NopExtensionHandler{})
 	// subscribe to room D
 	res, err := cs.OnIncomingRequest(context.Background(), ConnID, &sync3.Request{
 		RoomSubscriptions: map[string]sync3.RoomSubscription{
