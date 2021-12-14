@@ -50,6 +50,7 @@ func TestConnStateInitial(t *testing.T) {
 		DeviceID:  "d",
 	}
 	userID := "@TestConnStateInitial_alice:localhost"
+	deviceID := "yep"
 	timestampNow := gomatrixserverlib.Timestamp(1632131678061).Time()
 	// initial sort order B, C, A
 	roomA := newRoomMetadata("!a:localhost", gomatrixserverlib.AsTimestamp(timestampNow.Add(-8*time.Second)))
@@ -89,7 +90,7 @@ func TestConnStateInitial(t *testing.T) {
 		}
 		return result
 	}
-	cs := NewConnState(userID, userCache, globalCache, &NopExtensionHandler{})
+	cs := NewConnState(userID, deviceID, userCache, globalCache, &NopExtensionHandler{})
 	if userID != cs.UserID() {
 		t.Fatalf("UserID returned wrong value, got %v want %v", cs.UserID(), userID)
 	}
@@ -203,6 +204,7 @@ func TestConnStateMultipleRanges(t *testing.T) {
 		DeviceID:  "d",
 	}
 	userID := "@TestConnStateMultipleRanges_alice:localhost"
+	deviceID := "yep"
 	timestampNow := gomatrixserverlib.Timestamp(1632131678061)
 	var rooms []*internal.RoomMetadata
 	var roomIDs []string
@@ -234,7 +236,7 @@ func TestConnStateMultipleRanges(t *testing.T) {
 	userCache.LazyRoomDataOverride = mockLazyRoomOverride
 	dispatcher.Register(userCache.UserID, userCache)
 	dispatcher.Register(sync3.DispatcherAllUsers, globalCache)
-	cs := NewConnState(userID, userCache, globalCache, &NopExtensionHandler{})
+	cs := NewConnState(userID, deviceID, userCache, globalCache, &NopExtensionHandler{})
 
 	// request first page
 	res, err := cs.OnIncomingRequest(context.Background(), ConnID, &sync3.Request{
@@ -388,6 +390,7 @@ func TestBumpToOutsideRange(t *testing.T) {
 		DeviceID:  "d",
 	}
 	userID := "@TestBumpToOutsideRange_alice:localhost"
+	deviceID := "yep"
 	timestampNow := gomatrixserverlib.Timestamp(1632131678061)
 	roomA := newRoomMetadata("!a:localhost", timestampNow)
 	roomB := newRoomMetadata("!b:localhost", timestampNow-1000)
@@ -416,7 +419,7 @@ func TestBumpToOutsideRange(t *testing.T) {
 	userCache.LazyRoomDataOverride = mockLazyRoomOverride
 	dispatcher.Register(userCache.UserID, userCache)
 	dispatcher.Register(sync3.DispatcherAllUsers, globalCache)
-	cs := NewConnState(userID, userCache, globalCache, &NopExtensionHandler{})
+	cs := NewConnState(userID, deviceID, userCache, globalCache, &NopExtensionHandler{})
 	// Ask for A,B
 	res, err := cs.OnIncomingRequest(context.Background(), ConnID, &sync3.Request{
 		Lists: []sync3.RequestList{{
@@ -479,6 +482,7 @@ func TestConnStateRoomSubscriptions(t *testing.T) {
 		DeviceID:  "d",
 	}
 	userID := "@TestConnStateRoomSubscriptions_alice:localhost"
+	deviceID := "yep"
 	timestampNow := gomatrixserverlib.Timestamp(1632131678061)
 	roomA := newRoomMetadata("!a:localhost", timestampNow)
 	roomB := newRoomMetadata("!b:localhost", gomatrixserverlib.Timestamp(timestampNow-1000))
@@ -524,7 +528,7 @@ func TestConnStateRoomSubscriptions(t *testing.T) {
 	}
 	dispatcher.Register(userCache.UserID, userCache)
 	dispatcher.Register(sync3.DispatcherAllUsers, globalCache)
-	cs := NewConnState(userID, userCache, globalCache, &NopExtensionHandler{})
+	cs := NewConnState(userID, deviceID, userCache, globalCache, &NopExtensionHandler{})
 	// subscribe to room D
 	res, err := cs.OnIncomingRequest(context.Background(), ConnID, &sync3.Request{
 		RoomSubscriptions: map[string]sync3.RoomSubscription{

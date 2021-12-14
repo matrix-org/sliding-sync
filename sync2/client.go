@@ -88,10 +88,8 @@ type SyncResponse struct {
 	Presence    struct {
 		Events []gomatrixserverlib.ClientEvent `json:"events,omitempty"`
 	} `json:"presence"`
-	Rooms    SyncRoomsResponse `json:"rooms"`
-	ToDevice struct {
-		Events []gomatrixserverlib.SendToDeviceEvent `json:"events"`
-	} `json:"to_device"`
+	Rooms       SyncRoomsResponse `json:"rooms"`
+	ToDevice    EventsResponse    `json:"to_device"`
 	DeviceLists struct {
 		Changed []string `json:"changed,omitempty"`
 		Left    []string `json:"left,omitempty"`

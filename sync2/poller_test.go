@@ -9,7 +9,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/matrix-org/gomatrixserverlib"
 	"github.com/rs/zerolog"
 )
 
@@ -236,7 +235,7 @@ func (a *mockDataReceiver) SetTyping(roomID string, userIDs []string) {
 func (s *mockDataReceiver) UpdateDeviceSince(deviceID, since string) {
 	s.deviceIDToSince[deviceID] = since
 }
-func (s *mockDataReceiver) AddToDeviceMessages(userID, deviceID string, msgs []gomatrixserverlib.SendToDeviceEvent) {
+func (s *mockDataReceiver) AddToDeviceMessages(userID, deviceID string, msgs []json.RawMessage) {
 }
 
 func (s *mockDataReceiver) UpdateUnreadCounts(roomID, userID string, highlightCount, notifCount *int) {

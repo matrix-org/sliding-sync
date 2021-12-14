@@ -6,7 +6,6 @@ import (
 	"testing"
 
 	"github.com/jmoiron/sqlx"
-	"github.com/matrix-org/gomatrixserverlib"
 )
 
 func TestToDeviceTable(t *testing.T) {
@@ -17,17 +16,9 @@ func TestToDeviceTable(t *testing.T) {
 	table := NewToDeviceTable(db)
 	deviceID := "FOO"
 	var limit int64 = 999
-	msgs := []gomatrixserverlib.SendToDeviceEvent{
-		{
-			Sender:  "alice",
-			Type:    "something",
-			Content: []byte(`{"foo":"bar"}`),
-		},
-		{
-			Sender:  "bob",
-			Type:    "something",
-			Content: []byte(`{"foo":"bar2"}`),
-		},
+	msgs := []json.RawMessage{
+		json.RawMessage(`{"sender":"alice","type":"something","content":{"foo":"bar"}}`),
+		json.RawMessage(`{"sender":"bob","type":"something","content":{"foo":"bar2"}}`),
 	}
 	var lastPos int64
 	if lastPos, err = table.InsertMessages(deviceID, msgs); err != nil {

@@ -9,7 +9,6 @@ import (
 	"strconv"
 	"sync"
 
-	"github.com/matrix-org/gomatrixserverlib"
 	"github.com/matrix-org/sync-v3/internal"
 	"github.com/matrix-org/sync-v3/state"
 	"github.com/matrix-org/sync-v3/sync2"
@@ -248,7 +247,7 @@ func (h *SyncLiveHandler) setupConnection(req *http.Request, syncReq *sync3.Requ
 		SessionID: syncReq.SessionID,
 		DeviceID:  deviceID,
 	}, func() sync3.ConnHandler {
-		return NewConnState(v2device.UserID, userCache, h.GlobalCache, h.Extensions)
+		return NewConnState(v2device.UserID, v2device.DeviceID, userCache, h.GlobalCache, h.Extensions)
 	})
 	if created {
 		log.Info().Str("conn_id", conn.ConnID.String()).Msg("created new connection")
@@ -335,7 +334,7 @@ func (h *SyncLiveHandler) SetTyping(roomID string, userIDs []string) {
 // Called from the v2 poller, implements V2DataReceiver
 // Add messages for this device. If an error is returned, the poll loop is terminated as continuing
 // would implicitly acknowledge these messages.
-func (h *SyncLiveHandler) AddToDeviceMessages(userID, deviceID string, msgs []gomatrixserverlib.SendToDeviceEvent) {
+func (h *SyncLiveHandler) AddToDeviceMessages(userID, deviceID string, msgs []json.RawMessage) {
 	_, err := h.Storage.ToDeviceTable.InsertMessages(deviceID, msgs)
 	if err != nil {
 		logger.Err(err).Str("user", userID).Str("device", deviceID).Int("msgs", len(msgs)).Msg("V2: failed to store to-device messages")

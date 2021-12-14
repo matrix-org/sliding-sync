@@ -32,8 +32,9 @@ func (r *Response) UnmarshalJSON(b []byte) error {
 	temporary := struct {
 		Ops []json.RawMessage `json:"ops"`
 
-		RoomSubscriptions map[string]Room `json:"room_subscriptions"`
-		Counts            []int           `json:"counts"`
+		RoomSubscriptions map[string]Room     `json:"room_subscriptions"`
+		Counts            []int               `json:"counts"`
+		Extensions        extensions.Response `json:"extensions"`
 
 		Pos     int64  `json:"pos"`
 		Session string `json:"session_id,omitempty"`
@@ -45,6 +46,7 @@ func (r *Response) UnmarshalJSON(b []byte) error {
 	r.Counts = temporary.Counts
 	r.Pos = temporary.Pos
 	r.Session = temporary.Session
+	r.Extensions = temporary.Extensions
 
 	for _, op := range temporary.Ops {
 		if gjson.GetBytes(op, "range").Exists() {

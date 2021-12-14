@@ -2,10 +2,8 @@ package state
 
 import (
 	"encoding/json"
-	"fmt"
 
 	"github.com/jmoiron/sqlx"
-	"github.com/matrix-org/gomatrixserverlib"
 	"github.com/matrix-org/sync-v3/sqlutil"
 )
 
@@ -67,18 +65,14 @@ func (t *ToDeviceTable) Messages(deviceID string, from, to, limit int64) (msgs [
 	return
 }
 
-func (t *ToDeviceTable) InsertMessages(deviceID string, msgs []gomatrixserverlib.SendToDeviceEvent) (pos int64, err error) {
+func (t *ToDeviceTable) InsertMessages(deviceID string, msgs []json.RawMessage) (pos int64, err error) {
 	var lastPos int64
 	err = sqlutil.WithTransaction(t.db, func(txn *sqlx.Tx) error {
 		rows := make([]ToDeviceRow, len(msgs))
 		for i := range msgs {
-			msgJSON, err := json.Marshal(msgs[i])
-			if err != nil {
-				return fmt.Errorf("InsertMessages: failed to marshal to_device event: %s", err)
-			}
 			rows[i] = ToDeviceRow{
 				DeviceID: deviceID,
-				Message:  string(msgJSON),
+				Message:  string(msgs[i]),
 			}
 		}
 

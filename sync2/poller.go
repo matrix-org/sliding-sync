@@ -6,7 +6,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/matrix-org/gomatrixserverlib"
 	"github.com/rs/zerolog"
 	"github.com/tidwall/gjson"
 )
@@ -22,7 +21,7 @@ type V2DataReceiver interface {
 	SetTyping(roomID string, userIDs []string)
 	// Add messages for this device. If an error is returned, the poll loop is terminated as continuing
 	// would implicitly acknowledge these messages.
-	AddToDeviceMessages(userID, deviceID string, msgs []gomatrixserverlib.SendToDeviceEvent)
+	AddToDeviceMessages(userID, deviceID string, msgs []json.RawMessage)
 
 	UpdateUnreadCounts(roomID, userID string, highlightCount, notifCount *int)
 
@@ -157,7 +156,7 @@ func (h *PollerMap) SetTyping(roomID string, userIDs []string) {
 
 // Add messages for this device. If an error is returned, the poll loop is terminated as continuing
 // would implicitly acknowledge these messages.
-func (h *PollerMap) AddToDeviceMessages(userID, deviceID string, msgs []gomatrixserverlib.SendToDeviceEvent) {
+func (h *PollerMap) AddToDeviceMessages(userID, deviceID string, msgs []json.RawMessage) {
 	h.callbacks.AddToDeviceMessages(userID, deviceID, msgs)
 }
 

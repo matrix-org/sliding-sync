@@ -32,7 +32,8 @@ type ConnEvent struct {
 // ConnState tracks all high-level connection state for this connection, like the combined request
 // and the underlying sorted room list. It doesn't track session IDs or positions of the connection.
 type ConnState struct {
-	userID string
+	userID   string
+	deviceID string
 	// the only thing that can touch these data structures is the conn goroutine
 	muxedReq          *sync3.Request
 	lists             *sync3.SortableRoomLists
@@ -52,11 +53,12 @@ type ConnState struct {
 	extensionsHandler extensions.HandlerInterface
 }
 
-func NewConnState(userID string, userCache *sync3.UserCache, globalCache *sync3.GlobalCache, ex extensions.HandlerInterface) *ConnState {
+func NewConnState(userID, deviceID string, userCache *sync3.UserCache, globalCache *sync3.GlobalCache, ex extensions.HandlerInterface) *ConnState {
 	cs := &ConnState{
 		globalCache:       globalCache,
 		userCache:         userCache,
 		userID:            userID,
+		deviceID:          deviceID,
 		roomSubscriptions: make(map[string]sync3.RoomSubscription),
 		updateEvents:      make(chan *ConnEvent, MaxPendingEventUpdates), // TODO: customisable
 		lists:             &sync3.SortableRoomLists{},
@@ -140,10 +142,15 @@ func (s *ConnState) onIncomingRequest(ctx context.Context, req *sync3.Request) (
 		newSubs = subs
 		newUnsubs = unsubs
 	}
+	// associate extensions context
+	ex := s.muxedReq.Extensions
+	ex.UserID = s.userID
+	ex.DeviceID = s.deviceID
+
 	// start forming the response, handle subscriptions
 	response := &sync3.Response{
 		RoomSubscriptions: s.updateRoomSubscriptions(int(sync3.DefaultTimelineLimit), newSubs, newUnsubs),
-		Extensions:        s.extensionsHandler.Handle(s.muxedReq.Extensions),
+		Extensions:        s.extensionsHandler.Handle(ex),
 	}
 	responseOperations := []sync3.ResponseOp{} // empty not nil slice
 

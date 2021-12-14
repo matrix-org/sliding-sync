@@ -388,6 +388,23 @@ func MatchV3Counts(wantCounts []int) respMatcher {
 	}
 }
 
+func MatchToDeviceMessages(wantMsgs []json.RawMessage) respMatcher {
+	return func(res *sync3.Response) error {
+		if res.Extensions.ToDevice == nil {
+			return fmt.Errorf("MatchToDeviceMessages: missing to_device extension")
+		}
+		if len(res.Extensions.ToDevice.Events) != len(wantMsgs) {
+			return fmt.Errorf("MatchToDeviceMessages: got %d events, want %d", len(res.Extensions.ToDevice.Events), len(wantMsgs))
+		}
+		for i := 0; i < len(wantMsgs); i++ {
+			if !reflect.DeepEqual(res.Extensions.ToDevice.Events[i], wantMsgs[i]) {
+				return fmt.Errorf("MatchToDeviceMessages[%d]: got %v want %v", i, string(res.Extensions.ToDevice.Events[i]), string(wantMsgs[i]))
+			}
+		}
+		return nil
+	}
+}
+
 func MatchV3SyncOp(fn func(op *sync3.ResponseOpRange) error) opMatcher {
 	return func(op sync3.ResponseOp) error {
 		if op.Op() != sync3.OpSync {

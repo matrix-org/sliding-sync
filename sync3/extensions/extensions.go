@@ -1,8 +1,20 @@
 package extensions
 
-import "github.com/matrix-org/sync-v3/state"
+import (
+	"os"
+
+	"github.com/matrix-org/sync-v3/state"
+	"github.com/rs/zerolog"
+)
+
+var logger = zerolog.New(os.Stdout).With().Timestamp().Logger().Output(zerolog.ConsoleWriter{
+	Out:        os.Stderr,
+	TimeFormat: "15:04:05",
+})
 
 type Request struct {
+	UserID   string
+	DeviceID string
 	ToDevice ToDeviceRequest `json:"to_device"`
 }
 
@@ -23,5 +35,8 @@ type Handler struct {
 }
 
 func (h *Handler) Handle(req Request) (res Response) {
+	if req.ToDevice.Enabled {
+		res.ToDevice = ProcessToDevice(h.Store, req.UserID, req.DeviceID, &req.ToDevice)
+	}
 	return
 }
