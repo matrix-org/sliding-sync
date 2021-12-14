@@ -1,6 +1,7 @@
 package state
 
 import (
+	"database/sql"
 	"encoding/json"
 
 	"github.com/jmoiron/sqlx"
@@ -9,7 +10,8 @@ import (
 
 // ToDeviceTable stores to_device messages for devices.
 type ToDeviceTable struct {
-	db *sqlx.DB
+	db        *sqlx.DB
+	latestPos int64
 }
 
 type ToDeviceRow struct {
@@ -38,7 +40,11 @@ func NewToDeviceTable(db *sqlx.DB) *ToDeviceTable {
 	);
 	CREATE INDEX IF NOT EXISTS syncv3_to_device_messages_device_idx ON syncv3_to_device_messages(device_id);
 	`)
-	return &ToDeviceTable{db}
+	var latestPos int64
+	if err := db.QueryRow(`SELECT coalesce(MAX(position),0) FROM syncv3_to_device_messages`).Scan(&latestPos); err != nil && err != sql.ErrNoRows {
+		panic(err)
+	}
+	return &ToDeviceTable{db, latestPos}
 }
 
 func (t *ToDeviceTable) DeleteMessagesUpToAndIncluding(deviceID string, toIncl int64) error {
@@ -46,7 +52,11 @@ func (t *ToDeviceTable) DeleteMessagesUpToAndIncluding(deviceID string, toIncl i
 	return err
 }
 
+// Query to-device messages for this device, exclusive of from and inclusive of to. If a to value is unknown, use -1.
 func (t *ToDeviceTable) Messages(deviceID string, from, to, limit int64) (msgs []json.RawMessage, upTo int64, err error) {
+	if to == -1 {
+		to = t.latestPos
+	}
 	upTo = to
 	var rows []ToDeviceRow
 	err = t.db.Select(&rows,
@@ -92,5 +102,8 @@ func (t *ToDeviceTable) InsertMessages(deviceID string, msgs []json.RawMessage) 
 		}
 		return nil
 	})
+	if lastPos > t.latestPos {
+		t.latestPos = lastPos
+	}
 	return lastPos, err
 }

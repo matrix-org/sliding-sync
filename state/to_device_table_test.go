@@ -38,11 +38,23 @@ func TestToDeviceTable(t *testing.T) {
 		t.Fatalf("Messages: got %d messages, want %d", len(gotMsgs), len(msgs))
 	}
 	for i := range msgs {
-		want, err := json.Marshal(msgs[i])
-		if err != nil {
-			t.Fatalf("failed to marshal msg: %s", err)
+		if !bytes.Equal(msgs[i], gotMsgs[i]) {
+			t.Fatalf("Messages: got %+v want %+v", gotMsgs[i], msgs[i])
 		}
-		if !bytes.Equal(want, gotMsgs[i]) {
+	}
+	// -1 to value means latest position
+	gotMsgs, upTo, err = table.Messages(deviceID, 0, -1, limit)
+	if err != nil {
+		t.Fatalf("Messages: %s", err)
+	}
+	if upTo != lastPos {
+		t.Errorf("Message: got up to %d want %d", upTo, lastPos)
+	}
+	if len(gotMsgs) != len(msgs) {
+		t.Fatalf("Messages: got %d messages, want %d", len(gotMsgs), len(msgs))
+	}
+	for i := range msgs {
+		if !bytes.Equal(msgs[i], gotMsgs[i]) {
 			t.Fatalf("Messages: got %+v want %+v", gotMsgs[i], msgs[i])
 		}
 	}

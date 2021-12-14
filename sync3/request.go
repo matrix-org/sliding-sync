@@ -73,7 +73,8 @@ func (r *Request) ApplyDelta(nextReq *Request) (result *Request, subs, unsubs []
 		sessionID = r.SessionID
 	}
 	result = &Request{
-		SessionID: sessionID,
+		SessionID:  sessionID,
+		Extensions: nextReq.Extensions, // TODO: make them sticky
 	}
 	lists := make([]RequestList, len(nextReq.Lists))
 	for i := 0; i < len(lists); i++ {

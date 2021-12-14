@@ -50,13 +50,82 @@ func TestExtensionToDevice(t *testing.T) {
 	MatchResponse(t, res, MatchV3Count(0), MatchToDeviceMessages(toDeviceMsgs))
 
 	// repeat request -> get all of them
+	res = v3.mustDoV3Request(t, aliceToken, sync3.Request{
+		Lists: []sync3.RequestList{{
+			Rooms: sync3.SliceRanges{
+				[2]int64{0, 10}, // doesn't matter
+			},
+		}},
+		Extensions: extensions.Request{
+			ToDevice: extensions.ToDeviceRequest{
+				Enabled: true,
+			},
+		},
+		SessionID: sessionID,
+	})
+	MatchResponse(t, res, MatchV3Count(0), MatchToDeviceMessages(toDeviceMsgs))
 
 	// update the since token -> don't get messages again
-
-	// roll back the since token -> don't get messages again as they were deleted
+	res = v3.mustDoV3Request(t, aliceToken, sync3.Request{
+		Lists: []sync3.RequestList{{
+			Rooms: sync3.SliceRanges{
+				[2]int64{0, 10}, // doesn't matter
+			},
+		}},
+		Extensions: extensions.Request{
+			ToDevice: extensions.ToDeviceRequest{
+				Enabled: true,
+				Since:   res.Extensions.ToDevice.NextBatch,
+			},
+		},
+		SessionID: sessionID,
+	})
+	MatchResponse(t, res, MatchV3Count(0), MatchToDeviceMessages([]json.RawMessage{}))
 
 	// add new to-device messages, ensure we get them
+	newToDeviceMsgs := []json.RawMessage{
+		json.RawMessage(`{"sender":"alice","type":"something","content":{"foo":"5"}}`),
+		json.RawMessage(`{"sender":"alice","type":"something","content":{"foo":"6"}}`),
+	}
+	v2.queueResponse(alice, sync2.SyncResponse{
+		ToDevice: sync2.EventsResponse{
+			Events: newToDeviceMsgs,
+		},
+	})
+	res = v3.mustDoV3Request(t, aliceToken, sync3.Request{
+		Lists: []sync3.RequestList{{
+			Rooms: sync3.SliceRanges{
+				[2]int64{0, 10}, // doesn't matter
+			},
+		}},
+		Extensions: extensions.Request{
+			ToDevice: extensions.ToDeviceRequest{
+				Enabled: true,
+				Since:   res.Extensions.ToDevice.NextBatch,
+			},
+		},
+		SessionID: sessionID,
+	})
+	MatchResponse(t, res, MatchV3Count(0), MatchToDeviceMessages(newToDeviceMsgs))
 
 	// update the since token -> don't get new ones again
+	res = v3.mustDoV3Request(t, aliceToken, sync3.Request{
+		Lists: []sync3.RequestList{{
+			Rooms: sync3.SliceRanges{
+				[2]int64{0, 10}, // doesn't matter
+			},
+		}},
+		Extensions: extensions.Request{
+			ToDevice: extensions.ToDeviceRequest{
+				Enabled: true,
+				Since:   res.Extensions.ToDevice.NextBatch,
+			},
+		},
+		SessionID: sessionID,
+	})
+	MatchResponse(t, res, MatchV3Count(0), MatchToDeviceMessages([]json.RawMessage{}))
 
+	// TODO: roll back the since token -> don't get messages again as they were deleted
+	// - do we need sessions at all? Can we delete if the since value is incremented?
+	// - check with ios folks if this level of co-ordination between processes is possible.
 }

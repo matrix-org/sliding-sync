@@ -3,7 +3,6 @@ package extensions
 import (
 	"encoding/json"
 	"fmt"
-	"math"
 	"strconv"
 
 	"github.com/matrix-org/sync-v3/state"
@@ -19,7 +18,7 @@ type ToDeviceRequest struct {
 // Server response
 type ToDeviceResponse struct {
 	NextBatch string            `json:"next_batch"`
-	Events    []json.RawMessage `json:"events"`
+	Events    []json.RawMessage `json:"events,omitempty"`
 }
 
 func ProcessToDevice(store *state.Storage, userID, deviceID string, req *ToDeviceRequest) (res *ToDeviceResponse) {
@@ -37,7 +36,7 @@ func ProcessToDevice(store *state.Storage, userID, deviceID string, req *ToDevic
 		}
 	}
 
-	msgs, upTo, err := store.ToDeviceTable.Messages(deviceID, from, math.MaxInt64-1, int64(req.Limit))
+	msgs, upTo, err := store.ToDeviceTable.Messages(deviceID, from, -1, int64(req.Limit))
 	if err != nil {
 		l.Err(err).Int64("from", from).Msg("cannot query to-device messages")
 		return nil
