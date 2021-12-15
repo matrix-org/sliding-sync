@@ -174,33 +174,10 @@ blockloop:
 		case <-time.After(time.Duration(req.TimeoutSecs()) * time.Second):
 			break blockloop
 		case connEvent := <-s.updateEvents: // TODO: keep reading until it is empty before responding.
-			if connEvent.roomMetadata != nil {
-				// always update our view of the world
-				s.lists.ForEach(func(index int, list *sync3.FilteredSortableRooms) {
-					// TODO: yuck that the index is here
-					deletedIndex := list.UpdateGlobalRoomMetadata(connEvent.roomMetadata)
-					if deletedIndex >= 0 && s.muxedReq.Lists[index].Rooms.Inside(int64(deletedIndex)) {
-						responseOperations = append(responseOperations, &sync3.ResponseOpSingle{
-							List:      index,
-							Operation: sync3.OpDelete,
-							Index:     &deletedIndex,
-						})
-					}
-				})
-			}
-			if connEvent.msg != nil {
-				subs, ops := s.processIncomingEvent(connEvent.msg)
-				responseOperations = append(responseOperations, ops...)
-				for _, sub := range subs {
-					response.RoomSubscriptions[sub.RoomID] = sub
-				}
-			}
-			if connEvent.userMsg.msg != nil {
-				subs, ops := s.processIncomingUserEvent(connEvent.roomID, connEvent.userMsg.msg, connEvent.userMsg.hasCountDecreased)
-				responseOperations = append(responseOperations, ops...)
-				for _, sub := range subs {
-					response.RoomSubscriptions[sub.RoomID] = sub
-				}
+			responseOperations = s.processLiveEvent(connEvent, responseOperations, response)
+			for len(s.updateEvents) > 0 {
+				connEvent = <-s.updateEvents
+				responseOperations = s.processLiveEvent(connEvent, responseOperations, response)
 			}
 		}
 	}
@@ -209,6 +186,38 @@ blockloop:
 	response.Counts = s.lists.Counts() // counts are AFTER events are applied
 
 	return response, nil
+}
+
+func (s *ConnState) processLiveEvent(connEvent *ConnEvent, responseOperations []sync3.ResponseOp, response *sync3.Response) []sync3.ResponseOp {
+	if connEvent.roomMetadata != nil {
+		// always update our view of the world
+		s.lists.ForEach(func(index int, list *sync3.FilteredSortableRooms) {
+			// TODO: yuck that the index is here
+			deletedIndex := list.UpdateGlobalRoomMetadata(connEvent.roomMetadata)
+			if deletedIndex >= 0 && s.muxedReq.Lists[index].Rooms.Inside(int64(deletedIndex)) {
+				responseOperations = append(responseOperations, &sync3.ResponseOpSingle{
+					List:      index,
+					Operation: sync3.OpDelete,
+					Index:     &deletedIndex,
+				})
+			}
+		})
+	}
+	if connEvent.msg != nil {
+		subs, ops := s.processIncomingEvent(connEvent.msg)
+		responseOperations = append(responseOperations, ops...)
+		for _, sub := range subs {
+			response.RoomSubscriptions[sub.RoomID] = sub
+		}
+	}
+	if connEvent.userMsg.msg != nil {
+		subs, ops := s.processIncomingUserEvent(connEvent.roomID, connEvent.userMsg.msg, connEvent.userMsg.hasCountDecreased)
+		responseOperations = append(responseOperations, ops...)
+		for _, sub := range subs {
+			response.RoomSubscriptions[sub.RoomID] = sub
+		}
+	}
+	return responseOperations
 }
 
 func (s *ConnState) onIncomingListRequest(listIndex int, prevReqList, nextReqList *sync3.RequestList) []sync3.ResponseOp {

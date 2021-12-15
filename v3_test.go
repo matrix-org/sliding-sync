@@ -269,7 +269,7 @@ func MatchRoomName(name string) roomMatcher {
 func MatchRoomRequiredState(events []json.RawMessage) roomMatcher {
 	return func(r sync3.Room) error {
 		if len(r.RequiredState) != len(events) {
-			return fmt.Errorf("required state length mismatchm got %d want %d", len(r.RequiredState), len(events))
+			return fmt.Errorf("required state length mismatch, got %d want %d", len(r.RequiredState), len(events))
 		}
 		// allow any ordering for required state
 		for _, want := range events {
