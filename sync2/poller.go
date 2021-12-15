@@ -2,7 +2,6 @@ package sync2
 
 import (
 	"encoding/json"
-	"math"
 	"sync"
 	"time"
 
@@ -214,8 +213,11 @@ func (p *Poller) Poll(since string, callback func()) {
 	firstTime := true
 	for {
 		if failCount > 0 {
-			waitTime := time.Duration(math.Pow(2, float64(failCount))) * time.Second
-			p.logger.Warn().Str("duration", waitTime.String()).Msg("Poller: waiting before next poll")
+			// don't backoff when doing v2 syncs because the response is only in the cache for a short
+			// period of time (on massive accounts on matrix.org) such that if you wait 2,4,8min between
+			// requests it might force the server to do the work all over again :(
+			waitTime := 3 * time.Second
+			p.logger.Warn().Str("duration", waitTime.String()).Int("fail-count", failCount).Msg("Poller: waiting before next poll")
 			timeSleep(waitTime)
 		}
 		resp, statusCode, err := p.client.DoSyncV2(p.authorizationHeader, since, firstTime)

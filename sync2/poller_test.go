@@ -153,22 +153,22 @@ func TestPollerBackoff(t *testing.T) {
 		{
 			code:    0,
 			err:     fmt.Errorf("network error"),
-			backoff: 2 * time.Second,
+			backoff: 3 * time.Second,
 		},
 		{
 			code:    500,
 			err:     fmt.Errorf("internal server error"),
-			backoff: 4 * time.Second,
+			backoff: 3 * time.Second,
 		},
 		{
 			code:    502,
 			err:     fmt.Errorf("bad gateway error"),
-			backoff: 8 * time.Second,
+			backoff: 3 * time.Second,
 		},
 		{
 			code:    404,
 			err:     fmt.Errorf("not found"),
-			backoff: 16 * time.Second,
+			backoff: 3 * time.Second,
 		},
 	}
 	errorResponsesIndex := 0
