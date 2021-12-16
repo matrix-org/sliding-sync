@@ -21,6 +21,10 @@ type ToDeviceResponse struct {
 	Events    []json.RawMessage `json:"events,omitempty"`
 }
 
+func (r *ToDeviceResponse) HasData() bool {
+	return len(r.Events) > 0
+}
+
 func ProcessToDevice(store *state.Storage, userID, deviceID string, req *ToDeviceRequest) (res *ToDeviceResponse) {
 	if req.Limit == 0 {
 		req.Limit = 100 // default to 100
