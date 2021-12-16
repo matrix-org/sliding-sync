@@ -388,6 +388,36 @@ func MatchV3Counts(wantCounts []int) respMatcher {
 	}
 }
 
+func MatchOTKCounts(otkCounts map[string]int) respMatcher {
+	return func(res *sync3.Response) error {
+		if res.Extensions.E2EE == nil {
+			return fmt.Errorf("MatchOTKCounts: no E2EE extension present")
+		}
+		if !reflect.DeepEqual(res.Extensions.E2EE.OTKCounts, otkCounts) {
+			return fmt.Errorf("MatchOTKCounts: got %v want %v", res.Extensions.E2EE.OTKCounts, otkCounts)
+		}
+		return nil
+	}
+}
+
+func MatchDeviceLists(changed, left []string) respMatcher {
+	return func(res *sync3.Response) error {
+		if res.Extensions.E2EE == nil {
+			return fmt.Errorf("MatchDeviceLists: no E2EE extension present")
+		}
+		if res.Extensions.E2EE.DeviceLists == nil {
+			return fmt.Errorf("MatchDeviceLists: no device lists present")
+		}
+		if !reflect.DeepEqual(res.Extensions.E2EE.DeviceLists.Changed, changed) {
+			return fmt.Errorf("MatchDeviceLists: got changed: %v want %v", res.Extensions.E2EE.DeviceLists.Changed, changed)
+		}
+		if !reflect.DeepEqual(res.Extensions.E2EE.DeviceLists.Left, left) {
+			return fmt.Errorf("MatchDeviceLists: got left: %v want %v", res.Extensions.E2EE.DeviceLists.Left, left)
+		}
+		return nil
+	}
+}
+
 func MatchToDeviceMessages(wantMsgs []json.RawMessage) respMatcher {
 	return func(res *sync3.Response) error {
 		if res.Extensions.ToDevice == nil {

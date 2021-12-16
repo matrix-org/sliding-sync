@@ -55,11 +55,12 @@ func NewSync3Handler(v2Client sync2.Client, postgresDBURI string) (*SyncLiveHand
 		userCaches:  &sync.Map{},
 		Dispatcher:  sync3.NewDispatcher(),
 		GlobalCache: sync3.NewGlobalCache(store),
-		Extensions: &extensions.Handler{
-			Store: store,
-		},
 	}
 	sh.PollerMap = sync2.NewPollerMap(v2Client, sh)
+	sh.Extensions = &extensions.Handler{
+		Store:       store,
+		E2EEFetcher: sh.PollerMap,
+	}
 	roomToJoinedUsers, err := store.AllJoinedMembers()
 	if err != nil {
 		return nil, err

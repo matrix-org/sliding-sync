@@ -27,6 +27,11 @@ type V2DataReceiver interface {
 	OnAccountData(userID, roomID string, events []json.RawMessage)
 }
 
+// Fetcher which PollerMap satisfies used by the E2EE extension
+type E2EEFetcher interface {
+	LatestE2EEData(deviceID string) (otkCounts map[string]int, changed, left []string)
+}
+
 // PollerMap is a map of device ID to Poller
 type PollerMap struct {
 	v2Client        Client
@@ -66,6 +71,22 @@ func NewPollerMap(v2Client Client, callbacks V2DataReceiver) *PollerMap {
 		Pollers:   make(map[string]*Poller),
 		executor:  make(chan func(), 0),
 	}
+}
+
+// LatestE2EEData pulls the latest device_lists and device_one_time_keys_count values from the poller.
+// These bits of data are ephemeral and do not need to be persisted.
+func (h *PollerMap) LatestE2EEData(deviceID string) (otkCounts map[string]int, changed, left []string) {
+	h.pollerMu.Lock()
+	poller := h.Pollers[deviceID]
+	h.pollerMu.Unlock()
+	if poller == nil || poller.Terminated {
+		// possible if we have 2 devices for the same user, we just need to
+		// wait a bit for the 2nd device's v2 /sync to return
+		return
+	}
+	otkCounts = poller.OTKCounts()
+	changed, left = poller.DeviceListChanges()
+	return
 }
 
 // EnsurePolling makes sure there is a poller for this user, making one if need be.
@@ -188,6 +209,11 @@ type Poller struct {
 	receiver            V2DataReceiver
 	logger              zerolog.Logger
 
+	// E2EE fields
+	e2eeMu            *sync.Mutex
+	otkCounts         map[string]int
+	deviceListChanges map[string]string // latest user_id -> state e.g "@alice" -> "left"
+
 	// flag set to true when poll() returns due to expired access tokens
 	Terminated bool
 }
@@ -201,6 +227,8 @@ func NewPoller(userID, authHeader, deviceID string, client Client, receiver V2Da
 		receiver:            receiver,
 		Terminated:          false,
 		logger:              logger,
+		e2eeMu:              &sync.Mutex{},
+		deviceListChanges:   make(map[string]string),
 	}
 }
 
@@ -234,6 +262,7 @@ func (p *Poller) Poll(since string, callback func()) {
 			}
 		}
 		failCount = 0
+		p.parseE2EEData(resp)
 		p.parseGlobalAccountData(resp)
 		p.parseRoomsResponse(resp)
 		p.parseToDeviceMessages(resp)
@@ -249,11 +278,51 @@ func (p *Poller) Poll(since string, callback func()) {
 	}
 }
 
+func (p *Poller) OTKCounts() map[string]int {
+	p.e2eeMu.Lock()
+	defer p.e2eeMu.Unlock()
+	return p.otkCounts
+}
+
+func (p *Poller) DeviceListChanges() (changed, left []string) {
+	p.e2eeMu.Lock()
+	defer p.e2eeMu.Unlock()
+	for userID, state := range p.deviceListChanges {
+		switch state {
+		case "changed":
+			changed = append(changed, userID)
+		case "left":
+			left = append(left, userID)
+		default:
+			p.logger.Warn().Str("state", state).Msg("DeviceListChanges: unknown state")
+		}
+	}
+	// forget them so we don't send them more than once to v3 loops
+	p.deviceListChanges = map[string]string{}
+	return
+}
+
 func (p *Poller) parseToDeviceMessages(res *SyncResponse) {
 	if len(res.ToDevice.Events) == 0 {
 		return
 	}
 	p.receiver.AddToDeviceMessages(p.userID, p.deviceID, res.ToDevice.Events)
+}
+
+func (p *Poller) parseE2EEData(res *SyncResponse) {
+	p.e2eeMu.Lock()
+	defer p.e2eeMu.Unlock()
+	// we don't actively push this to v3 loops, we let them lazily fetch it via calls to
+	// Poller.DeviceListChanges() and Poller.OTKCounts()
+	if res.DeviceListsOTKCount != nil {
+		p.otkCounts = res.DeviceListsOTKCount
+	}
+	for _, userID := range res.DeviceLists.Changed {
+		p.deviceListChanges[userID] = "changed"
+	}
+	for _, userID := range res.DeviceLists.Left {
+		p.deviceListChanges[userID] = "left"
+	}
 }
 
 func (p *Poller) parseGlobalAccountData(res *SyncResponse) {
