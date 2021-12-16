@@ -149,6 +149,9 @@ The overarching model here is to imagine `/sync` as a pubsub system, where you a
       "since": "aabbcc", // since token to allow explicit ACKs. Naming from https://github.com/matrix-org/matrix-doc/issues/1898
       "limit": 100 // max number of events per response
     }
+    "e2ee": {
+      "enabled": true
+    }
   }
 }
 ```
@@ -233,12 +236,30 @@ Returns:
   "notifications": { .... } // see later section
   "extensions": {
     "to_device": {
+      // this extension has an explicit token because ACKing these messages deletes them from the server.
       "next_batch": "ddeeff", // token for next batch. Naming defined in https://github.com/matrix-org/matrix-doc/issues/1898
       // It's unfortunate that these aren't room scoped when they concern E2EE for specific rooms which
       // the client may not know about, hence we can't omit them. The content of these messages are
       // encrypted so we can't even bucket/filter on the type. This means clients CANNOT rapidly get at
       // room keys without having to wade through lots of key share requests.
       "events": [ ToDeviceEvents ]
+    },
+    "e2ee": {
+      // always send these? Ideally only once on first conn then only when they change?
+      "device_one_time_keys_count": {
+        "curve25519": 10,
+        "signed_curve25519": 20
+      },
+      // on first connection this is empty, these are only populated with live changes to shared
+      // users device lists.
+      "device_lists": {
+        "changed": [
+          "@alice:example.com",
+        ],
+        "left": [
+          "@bob:example.com",
+        ],
+      },
     }
   }
 }

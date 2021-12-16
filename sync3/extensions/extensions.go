@@ -1,7 +1,6 @@
 package extensions
 
 import (
-	"fmt"
 	"os"
 
 	"github.com/matrix-org/sync-v3/state"
@@ -36,7 +35,6 @@ type Handler struct {
 }
 
 func (h *Handler) Handle(req Request) (res Response) {
-	fmt.Printf("%+v\n", req)
 	if req.ToDevice.Enabled {
 		res.ToDevice = ProcessToDevice(h.Store, req.UserID, req.DeviceID, &req.ToDevice)
 	}
