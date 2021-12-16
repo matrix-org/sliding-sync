@@ -24,7 +24,7 @@ type Response struct {
 }
 
 func (e Response) HasData() bool {
-	return e.ToDevice.HasData()
+	return (e.ToDevice != nil && e.ToDevice.HasData())
 }
 
 type HandlerInterface interface {
