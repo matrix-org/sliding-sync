@@ -242,6 +242,54 @@ func TestTimelinesLiveStream(t *testing.T) {
 
 }
 
+func TestInitialFlag(t *testing.T) {
+	pqString := testutils.PrepareDBConnectionString()
+	// setup code
+	v2 := runTestV2Server(t)
+	v3 := runTestServer(t, v2, pqString)
+	defer v2.close()
+	defer v3.close()
+	alice := "@TestInitialFlag_alice:localhost"
+	aliceToken := "ALICE_BEARER_TOKEN_TestInitialFlag"
+	v2.addAccount(alice, aliceToken)
+	v2.queueResponse(alice, sync2.SyncResponse{
+		Rooms: sync2.SyncRoomsResponse{
+			Join: v2JoinTimeline(roomEvents{
+				roomID: "!a:localhost",
+				state:  createRoomState(t, alice, time.Now()),
+			}),
+		},
+	})
+	res := v3.mustDoV3Request(t, aliceToken, sync3.Request{
+		Lists: []sync3.RequestList{{
+			Rooms: sync3.SliceRanges{
+				[2]int64{0, 10},
+			},
+			TimelineLimit: 10,
+		}},
+	})
+	MatchResponse(t, res, func(res *sync3.Response) error {
+		if !res.Initial {
+			return fmt.Errorf("initial flag was not set")
+		}
+		return nil
+	})
+	res = v3.mustDoV3RequestWithPos(t, aliceToken, res.Pos, sync3.Request{
+		Lists: []sync3.RequestList{{
+			Rooms: sync3.SliceRanges{
+				[2]int64{0, 10},
+			},
+		}},
+	})
+	MatchResponse(t, res, func(res *sync3.Response) error {
+		if res.Initial {
+			return fmt.Errorf("initial flag was set")
+		}
+		return nil
+	})
+
+}
+
 // Executes a sync v3 request without a ?pos and asserts that the count, rooms and timeline events match the inputs given.
 func testTimelineLoadInitialEvents(v3 *testV3Server, token string, count int, wantRooms []roomEvents, numTimelineEventsPerRoom int) func(t *testing.T) {
 	return func(t *testing.T) {

@@ -16,7 +16,8 @@ const (
 )
 
 type Response struct {
-	Ops []ResponseOp `json:"ops"`
+	Ops     []ResponseOp `json:"ops"`
+	Initial bool         `json:"initial,omitempty"`
 
 	RoomSubscriptions map[string]Room `json:"room_subscriptions"`
 	Counts            []int           `json:"counts"`
@@ -37,6 +38,7 @@ func (r *Response) UnmarshalJSON(b []byte) error {
 		Extensions        extensions.Response `json:"extensions"`
 
 		Pos     int64  `json:"pos"`
+		Initial bool   `json:"initial"`
 		Session string `json:"session_id,omitempty"`
 	}{}
 	if err := json.Unmarshal(b, &temporary); err != nil {
@@ -45,6 +47,7 @@ func (r *Response) UnmarshalJSON(b []byte) error {
 	r.RoomSubscriptions = temporary.RoomSubscriptions
 	r.Counts = temporary.Counts
 	r.Pos = temporary.Pos
+	r.Initial = temporary.Initial
 	r.Session = temporary.Session
 	r.Extensions = temporary.Extensions
 
