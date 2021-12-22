@@ -237,6 +237,7 @@ func runTestServer(t *testing.T, v2Server *testV2Server, postgresConnectionStrin
 	}
 	r := mux.NewRouter()
 	r.Handle("/_matrix/client/v3/sync", h)
+	r.Handle("/_matrix/client/org.matrix.msc3575/sync", h)
 	srv := httptest.NewServer(r)
 	return &testV3Server{
 		srv: srv,

@@ -48,6 +48,7 @@ func RunSyncV3Server(h http.Handler, bindAddr string) {
 	// HTTP path routing
 	r := mux.NewRouter()
 	r.Handle("/_matrix/client/v3/sync", allowCORS(h))
+	r.Handle("/_matrix/client/org.matrix.msc3575/sync", allowCORS(h))
 	r.PathPrefix("/client/").HandlerFunc(
 		allowCORS(
 			http.StripPrefix("/client/", http.FileServer(http.Dir("./client"))),
