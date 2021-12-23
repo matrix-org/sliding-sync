@@ -3,7 +3,7 @@
 Run an experimental sync v3 server using an existing Matrix account. This is possible because, for the most part,
 v3 sync is a strict subset of v2 sync.
 
-**UNDER ACTIVE DEVELOPMENT, BREAKING CHANGES ARE FREQUENT.**
+An implementation of [MSC3575](https://github.com/matrix-org/matrix-doc/blob/kegan/sync-v3/proposals/3575-sync.md).
 
 ## Usage
 
