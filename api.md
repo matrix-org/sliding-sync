@@ -1,6 +1,6 @@
 ## Paginated Sync v3
 
-# N.B. this has largely been supersede by [MSC3575](https://github.com/matrix-org/matrix-doc/blob/kegan/sync-v3/proposals/3575-sync.md)
+# N.B. this has largely been superseded by [MSC3575](https://github.com/matrix-org/matrix-doc/blob/kegan/sync-v3/proposals/3575-sync.md)
 
 *Please file an issue on this repository if you wish to make comments on this.*
 
