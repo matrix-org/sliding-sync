@@ -475,20 +475,23 @@ const doSyncLoop = async (accessToken, sessionId) => {
         });
 
         // TODO: clear gapIndex immediately after next op to avoid a genuine DELETE shifting incorrectly e.g leaving a room
-        // TODO: namespace gapIndex per list index
-        let gapIndex = -1;
+        let gapIndexes = {};
+        resp.counts.forEach((count, index) => {
+            gapIndexes[index] = -1;
+        });
         resp.ops.forEach((op) => {
             if (op.op === "DELETE") {
                 console.log("DELETE", op.list, op.index, ";");
                 delete activeLists[op.list].roomIndexToRoomId[op.index];
-                gapIndex = op.index;
+                gapIndexes[op.list] = op.index;
             } else if (op.op === "INSERT") {
                 console.log("INSERT", op.list, op.index, op.room.room_id, ";");
                 if (activeLists[op.list].roomIndexToRoomId[op.index]) {
+                    const gapIndex = gapIndexes[op.list];
                     // something is in this space, shift items out of the way
                     if (gapIndex < 0) {
                         console.log(
-                            "cannot work out where gap is, INSERT without previous DELETE!"
+                            "cannot work out where gap is, INSERT without previous DELETE! List: ", op.list,
                         );
                         return;
                     }
