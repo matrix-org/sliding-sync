@@ -167,10 +167,11 @@ func (s *testV3Server) restart(t *testing.T, v2 *testV2Server, pq string) {
 }
 
 func (s *testV3Server) mustDoV3Request(t *testing.T, token string, reqBody interface{}) (respBody *sync3.Response) {
-	return s.mustDoV3RequestWithPos(t, token, 0, reqBody)
+	t.Helper()
+	return s.mustDoV3RequestWithPos(t, token, "", reqBody)
 }
 
-func (s *testV3Server) mustDoV3RequestWithPos(t *testing.T, token string, pos int64, reqBody interface{}) (respBody *sync3.Response) {
+func (s *testV3Server) mustDoV3RequestWithPos(t *testing.T, token string, pos string, reqBody interface{}) (respBody *sync3.Response) {
 	t.Helper()
 	resp, respBytes, code := s.doV3Request(t, token, pos, reqBody)
 	if code != 200 {
@@ -179,7 +180,7 @@ func (s *testV3Server) mustDoV3RequestWithPos(t *testing.T, token string, pos in
 	return resp
 }
 
-func (s *testV3Server) doV3Request(t *testing.T, token string, pos int64, reqBody interface{}) (respBody *sync3.Response, respBytes []byte, statusCode int) {
+func (s *testV3Server) doV3Request(t *testing.T, token string, pos string, reqBody interface{}) (respBody *sync3.Response, respBytes []byte, statusCode int) {
 	t.Helper()
 	var body io.Reader
 	switch v := reqBody.(type) {
@@ -197,8 +198,8 @@ func (s *testV3Server) doV3Request(t *testing.T, token string, pos int64, reqBod
 		body = bytes.NewBuffer(j)
 	}
 	qps := "?timeout=2"
-	if pos > 0 {
-		qps += fmt.Sprintf("&pos=%d", pos)
+	if pos != "" {
+		qps += fmt.Sprintf("&pos=%s", pos)
 	}
 	req, err := http.NewRequest("POST", s.srv.URL+"/_matrix/client/v3/sync"+qps, body)
 	if err != nil {

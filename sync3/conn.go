@@ -3,6 +3,7 @@ package sync3
 import (
 	"context"
 	"fmt"
+	"strconv"
 	"sync"
 
 	"github.com/matrix-org/sync-v3/internal"
@@ -76,7 +77,7 @@ func (c *Conn) OnIncomingRequest(ctx context.Context, req *Request) (resp *Respo
 	}
 	// if there is a position and it isn't something we've told the client nor a retransmit, they
 	// are playing games
-	if req.pos != 0 && req.pos != c.lastServerResponse.Pos && c.lastClientRequest.pos != req.pos {
+	if req.pos != 0 && req.pos != c.lastServerResponse.PosInt() && c.lastClientRequest.pos != req.pos {
 		// the client made up a position, reject them
 		return nil, &internal.HandlerError{
 			StatusCode: 400,
@@ -96,7 +97,17 @@ func (c *Conn) OnIncomingRequest(ctx context.Context, req *Request) (resp *Respo
 		}
 		return nil, herr
 	}
-	resp.Pos = c.lastServerResponse.Pos + 1
+	var posInt int
+	if c.lastServerResponse.Pos != "" {
+		posInt, err = strconv.Atoi(c.lastServerResponse.Pos)
+		if err != nil {
+			return nil, &internal.HandlerError{
+				StatusCode: 500,
+				Err:        err,
+			}
+		}
+	}
+	resp.Pos = fmt.Sprintf("%d", posInt+1)
 	c.lastServerResponse = *resp
 
 	return resp, nil

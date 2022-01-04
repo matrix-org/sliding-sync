@@ -2,6 +2,7 @@ package sync3
 
 import (
 	"encoding/json"
+	"strconv"
 
 	"github.com/matrix-org/sync-v3/sync3/extensions"
 	"github.com/tidwall/gjson"
@@ -24,8 +25,13 @@ type Response struct {
 
 	Extensions extensions.Response `json:"extensions"`
 
-	Pos     int64  `json:"pos"`
+	Pos     string `json:"pos"`
 	Session string `json:"session_id,omitempty"`
+}
+
+func (r *Response) PosInt() int64 {
+	p, _ := strconv.ParseInt(r.Pos, 10, 64)
+	return p
 }
 
 // Custom unmarshal so we can dynamically create the right ResponseOp for Ops
@@ -37,7 +43,7 @@ func (r *Response) UnmarshalJSON(b []byte) error {
 		Counts            []int               `json:"counts"`
 		Extensions        extensions.Response `json:"extensions"`
 
-		Pos     int64  `json:"pos"`
+		Pos     string `json:"pos"`
 		Initial bool   `json:"initial"`
 		Session string `json:"session_id,omitempty"`
 	}{}

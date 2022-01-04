@@ -38,9 +38,6 @@ type RequestList struct {
 	Filters       *RequestFilters `json:"filters"`
 }
 
-func (r *Request) Pos() int64 {
-	return r.pos
-}
 func (r *Request) SetPos(pos int64) {
 	r.pos = pos
 }

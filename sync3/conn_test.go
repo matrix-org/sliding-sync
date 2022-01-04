@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"reflect"
+	"strconv"
 	"sync"
 	"testing"
 	"time"
@@ -43,14 +44,15 @@ func TestConn(t *testing.T) {
 	resp, err := c.OnIncomingRequest(ctx, &Request{
 		pos: 0,
 	})
-	assertInt(t, resp.Pos, 1)
-	assertInts(t, resp.Counts, []int{101})
 	assertNoError(t, err)
+	assertPos(t, resp.Pos, 1)
+	assertInts(t, resp.Counts, []int{101})
+
 	// happy case, pos=1
 	resp, err = c.OnIncomingRequest(ctx, &Request{
 		pos: 1,
 	})
-	assertInt(t, resp.Pos, 2)
+	assertPos(t, resp.Pos, 2)
 	assertInts(t, resp.Counts, []int{102})
 	assertNoError(t, err)
 	// bogus position returns a 400
@@ -136,18 +138,18 @@ func TestConnRetries(t *testing.T) {
 		return &Response{Counts: []int{20}}, nil
 	}})
 	resp, err := c.OnIncomingRequest(ctx, &Request{})
-	assertInt(t, resp.Pos, 1)
+	assertPos(t, resp.Pos, 1)
 	assertInts(t, resp.Counts, []int{20})
 	assertInt(t, callCount, 1)
 	assertNoError(t, err)
 	resp, err = c.OnIncomingRequest(ctx, &Request{pos: 1})
-	assertInt(t, resp.Pos, 2)
+	assertPos(t, resp.Pos, 2)
 	assertInts(t, resp.Counts, []int{20})
 	assertInt(t, callCount, 2)
 	assertNoError(t, err)
 	// retry! Shouldn't invoke handler again
 	resp, err = c.OnIncomingRequest(ctx, &Request{pos: 1})
-	assertInt(t, resp.Pos, 2)
+	assertPos(t, resp.Pos, 2)
 	assertInts(t, resp.Counts, []int{20})
 	assertInt(t, callCount, 2) // this doesn't increment
 	assertNoError(t, err)
@@ -158,7 +160,7 @@ func TestConnRetries(t *testing.T) {
 				Sort: []string{SortByName},
 			},
 		}})
-	assertInt(t, resp.Pos, 3)
+	assertPos(t, resp.Pos, 3)
 	assertInts(t, resp.Counts, []int{20})
 	assertInt(t, callCount, 3)
 	assertNoError(t, err)
@@ -217,15 +219,25 @@ func TestConnErrorsNoCache(t *testing.T) {
 		StatusCode: 400,
 		Err:        errors.New("no way!"),
 	}
-	_, herr = c.OnIncomingRequest(ctx, &Request{pos: resp.Pos})
+	_, herr = c.OnIncomingRequest(ctx, &Request{pos: resp.PosInt()})
 	if herr.StatusCode != 400 {
 		t.Fatalf("expected status 400, got %d", herr.StatusCode)
 	}
 	// but doing the exact same request should now work
-	_, herr = c.OnIncomingRequest(ctx, &Request{pos: resp.Pos})
+	_, herr = c.OnIncomingRequest(ctx, &Request{pos: resp.PosInt()})
 	if herr != nil {
 		t.Fatalf("expected no error, got %+v", herr)
 	}
+}
+
+func assertPos(t *testing.T, pos string, wantPos int64) {
+	t.Helper()
+	gotPos, err := strconv.Atoi(pos)
+	if err != nil {
+		t.Errorf("pos isn't an int: %s", err)
+		return
+	}
+	assertInt(t, int64(gotPos), wantPos)
 }
 
 func assertInt(t *testing.T, nextPos, wantPos int64) {
