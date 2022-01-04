@@ -195,7 +195,7 @@ func (s *ConnState) processLiveEvent(connEvent *ConnEvent, responseOperations []
 		s.lists.ForEach(func(index int, list *sync3.FilteredSortableRooms) {
 			// TODO: yuck that the index is here
 			deletedIndex := list.UpdateGlobalRoomMetadata(connEvent.roomMetadata)
-			if deletedIndex >= 0 && s.muxedReq.Lists[index].Rooms.Inside(int64(deletedIndex)) {
+			if deletedIndex >= 0 && s.muxedReq.Lists[index].Ranges.Inside(int64(deletedIndex)) {
 				responseOperations = append(responseOperations, &sync3.ResponseOpSingle{
 					List:      index,
 					Operation: sync3.OpDelete,
@@ -230,7 +230,7 @@ func (s *ConnState) onIncomingListRequest(listIndex int, prevReqList, nextReqLis
 	var prevRange sync3.SliceRanges
 	var prevSort []string
 	if prevReqList != nil {
-		prevRange = prevReqList.Rooms
+		prevRange = prevReqList.Ranges
 		prevSort = prevReqList.Sort
 	}
 	if nextReqList.Sort == nil {
@@ -241,14 +241,14 @@ func (s *ConnState) onIncomingListRequest(listIndex int, prevReqList, nextReqLis
 
 	var addedRanges, removedRanges sync3.SliceRanges
 	if prevRange != nil {
-		addedRanges, removedRanges, _ = prevRange.Delta(nextReqList.Rooms)
+		addedRanges, removedRanges, _ = prevRange.Delta(nextReqList.Ranges)
 	} else {
-		addedRanges = nextReqList.Rooms
+		addedRanges = nextReqList.Ranges
 	}
 	if !reflect.DeepEqual(prevSort, nextReqList.Sort) {
 		// the sort operations have changed, invalidate everything (if there were previous syncs), re-sort and re-SYNC
 		if prevSort != nil {
-			for _, r := range prevReqList.Rooms {
+			for _, r := range prevReqList.Ranges {
 				responseOperations = append(responseOperations, &sync3.ResponseOpRange{
 					List:      listIndex,
 					Operation: sync3.OpInvalidate,
@@ -259,7 +259,7 @@ func (s *ConnState) onIncomingListRequest(listIndex int, prevReqList, nextReqLis
 		if err := roomList.Sort(nextReqList.Sort); err != nil {
 			logger.Err(err).Int("index", listIndex).Msg("cannot sort list")
 		}
-		addedRanges = nextReqList.Rooms
+		addedRanges = nextReqList.Ranges
 		removedRanges = nil
 	}
 
@@ -300,7 +300,7 @@ func (s *ConnState) processIncomingUserEvent(roomID string, userEvent *sync3.Use
 		// modify notification counts
 		deletedIndex := list.UpdateUserRoomMetadata(roomID, userEvent, hasCountDecreased)
 		// only notify if we are tracking this index
-		if deletedIndex >= 0 && s.muxedReq.Lists[index].Rooms.Inside(int64(deletedIndex)) {
+		if deletedIndex >= 0 && s.muxedReq.Lists[index].Ranges.Inside(int64(deletedIndex)) {
 			responseOperations = append(responseOperations, &sync3.ResponseOpSingle{
 				List:      index,
 				Operation: sync3.OpDelete,
@@ -385,9 +385,9 @@ func (s *ConnState) resort(listIndex int, reqList *sync3.RequestList, roomList *
 	logger.Info().Msg("moved!")
 	// the toIndex may not be inside a tracked range. If it isn't, we actually need to notify about a
 	// different room
-	if !reqList.Rooms.Inside(int64(toIndex)) {
+	if !reqList.Ranges.Inside(int64(toIndex)) {
 		logger.Info().Msg("room isn't inside tracked range")
-		toIndex = int(reqList.Rooms.UpperClamp(int64(toIndex)))
+		toIndex = int(reqList.Ranges.UpperClamp(int64(toIndex)))
 		count := int(roomList.Len())
 		if toIndex >= count {
 			// no room exists
@@ -397,7 +397,7 @@ func (s *ConnState) resort(listIndex int, reqList *sync3.RequestList, roomList *
 			return subs, nil
 		}
 		if toIndex == -1 {
-			logger.Warn().Int("from", fromIndex).Int("to", toIndex).Interface("ranges", reqList.Rooms).Msg(
+			logger.Warn().Int("from", fromIndex).Int("to", toIndex).Interface("ranges", reqList.Ranges).Msg(
 				"room moved but not in tracked ranges, ignoring",
 			)
 			return subs, nil
@@ -416,7 +416,7 @@ func (s *ConnState) resort(listIndex int, reqList *sync3.RequestList, roomList *
 		newEvent = urd.Timeline[len(urd.Timeline)-1]
 	}
 
-	return subs, s.moveRoom(reqList, listIndex, roomID, newEvent, fromIndex, toIndex, reqList.Rooms, isSubscribedToRoom)
+	return subs, s.moveRoom(reqList, listIndex, roomID, newEvent, fromIndex, toIndex, reqList.Ranges, isSubscribedToRoom)
 }
 
 func (s *ConnState) updateRoomSubscriptions(timelineLimit int, subs, unsubs []string) map[string]sync3.Room {

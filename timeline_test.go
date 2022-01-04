@@ -162,7 +162,7 @@ func TestTimelinesLiveStream(t *testing.T) {
 	// first request => rooms 19,18,17,16
 	res := v3.mustDoV3Request(t, aliceToken, sync3.Request{
 		Lists: []sync3.RequestList{{
-			Rooms: sync3.SliceRanges{
+			Ranges: sync3.SliceRanges{
 				[2]int64{0, int64(len(wantRooms) - 1)}, // first N rooms
 			},
 			TimelineLimit: int64(numTimelineEventsPerRoom),
@@ -192,7 +192,7 @@ func TestTimelinesLiveStream(t *testing.T) {
 	// next request, DELETE 3; INSERT 0 7;
 	res = v3.mustDoV3RequestWithPos(t, aliceToken, res.Pos, sync3.Request{
 		Lists: []sync3.RequestList{{
-			Rooms: sync3.SliceRanges{
+			Ranges: sync3.SliceRanges{
 				[2]int64{0, int64(len(wantRooms) - 1)}, // first N rooms
 			},
 			// sticky remember the timeline_limit
@@ -212,7 +212,7 @@ func TestTimelinesLiveStream(t *testing.T) {
 	// next request, UPDATE 0 7;
 	res = v3.mustDoV3RequestWithPos(t, aliceToken, res.Pos, sync3.Request{
 		Lists: []sync3.RequestList{{
-			Rooms: sync3.SliceRanges{
+			Ranges: sync3.SliceRanges{
 				[2]int64{0, int64(len(wantRooms) - 1)}, // first N rooms
 			},
 		}},
@@ -226,7 +226,7 @@ func TestTimelinesLiveStream(t *testing.T) {
 	// next request, DELETE 2; INSERT 0 18;
 	res = v3.mustDoV3RequestWithPos(t, aliceToken, res.Pos, sync3.Request{
 		Lists: []sync3.RequestList{{
-			Rooms: sync3.SliceRanges{
+			Ranges: sync3.SliceRanges{
 				[2]int64{0, int64(len(wantRooms) - 1)}, // first N rooms
 			},
 		}},
@@ -262,7 +262,7 @@ func TestInitialFlag(t *testing.T) {
 	})
 	res := v3.mustDoV3Request(t, aliceToken, sync3.Request{
 		Lists: []sync3.RequestList{{
-			Rooms: sync3.SliceRanges{
+			Ranges: sync3.SliceRanges{
 				[2]int64{0, 10},
 			},
 			TimelineLimit: 10,
@@ -276,7 +276,7 @@ func TestInitialFlag(t *testing.T) {
 	})
 	res = v3.mustDoV3RequestWithPos(t, aliceToken, res.Pos, sync3.Request{
 		Lists: []sync3.RequestList{{
-			Rooms: sync3.SliceRanges{
+			Ranges: sync3.SliceRanges{
 				[2]int64{0, 10},
 			},
 		}},
@@ -295,7 +295,7 @@ func testTimelineLoadInitialEvents(v3 *testV3Server, token string, count int, wa
 	return func(t *testing.T) {
 		res := v3.mustDoV3Request(t, token, sync3.Request{
 			Lists: []sync3.RequestList{{
-				Rooms: sync3.SliceRanges{
+				Ranges: sync3.SliceRanges{
 					[2]int64{0, int64(len(wantRooms) - 1)}, // first N rooms
 				},
 				TimelineLimit: int64(numTimelineEventsPerRoom),

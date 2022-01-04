@@ -56,7 +56,7 @@ func TestNotificationsOnTop(t *testing.T) {
 	// connect and make sure we get nobing, bing
 	syncRequestBody := sync3.Request{
 		Lists: []sync3.RequestList{{
-			Rooms: sync3.SliceRanges{
+			Ranges: sync3.SliceRanges{
 				[2]int64{0, int64(len(allRooms) - 1)}, // all rooms
 			},
 			TimelineLimit: int64(100),
@@ -133,7 +133,7 @@ func TestNotificationsOnTop(t *testing.T) {
 	v3.restart(t, v2, pqString)
 	res = v3.mustDoV3Request(t, aliceToken, sync3.Request{
 		Lists: []sync3.RequestList{{
-			Rooms: sync3.SliceRanges{
+			Ranges: sync3.SliceRanges{
 				[2]int64{0, int64(len(allRooms) - 1)}, // all rooms
 			},
 			TimelineLimit: int64(100),

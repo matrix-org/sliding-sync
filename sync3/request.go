@@ -31,7 +31,7 @@ type Request struct {
 }
 
 type RequestList struct {
-	Rooms         SliceRanges     `json:"rooms"`
+	Ranges        SliceRanges     `json:"ranges"`
 	Sort          []string        `json:"sort"`
 	RequiredState [][2]string     `json:"required_state"`
 	TimelineLimit int64           `json:"timeline_limit"`
@@ -83,9 +83,9 @@ func (r *Request) ApplyDelta(nextReq *Request) (result *Request, subs, unsubs []
 			existingList = &r.Lists[i]
 		}
 		nextList := nextReq.Lists[i]
-		rooms := nextList.Rooms
+		rooms := nextList.Ranges
 		if rooms == nil {
-			rooms = existingList.Rooms
+			rooms = existingList.Ranges
 		}
 		sort := nextList.Sort
 		if sort == nil {
@@ -104,7 +104,7 @@ func (r *Request) ApplyDelta(nextReq *Request) (result *Request, subs, unsubs []
 			filters = existingList.Filters
 		}
 		lists[i] = RequestList{
-			Rooms:         rooms,
+			Ranges:        rooms,
 			Sort:          sort,
 			RequiredState: reqState,
 			TimelineLimit: timelineLimit,

@@ -35,7 +35,7 @@ func TestExtensionE2EE(t *testing.T) {
 	})
 	res := v3.mustDoV3Request(t, aliceToken, sync3.Request{
 		Lists: []sync3.RequestList{{
-			Rooms: sync3.SliceRanges{
+			Ranges: sync3.SliceRanges{
 				[2]int64{0, 10}, // doesn't matter
 			},
 		}},
@@ -62,7 +62,7 @@ func TestExtensionE2EE(t *testing.T) {
 	})
 	res = v3.mustDoV3RequestWithPos(t, aliceToken, res.Pos, sync3.Request{
 		Lists: []sync3.RequestList{{
-			Rooms: sync3.SliceRanges{
+			Ranges: sync3.SliceRanges{
 				[2]int64{0, 10}, // doesn't matter
 			},
 		}},
@@ -87,7 +87,7 @@ func TestExtensionE2EE(t *testing.T) {
 	v2.waitUntilEmpty(t, alice)
 	res = v3.mustDoV3RequestWithPos(t, aliceToken, res.Pos, sync3.Request{
 		Lists: []sync3.RequestList{{
-			Rooms: sync3.SliceRanges{
+			Ranges: sync3.SliceRanges{
 				[2]int64{0, 10}, // doesn't matter
 			},
 		}},
@@ -117,7 +117,7 @@ func TestExtensionE2EE(t *testing.T) {
 	lastPos := res.Pos
 	res = v3.mustDoV3RequestWithPos(t, aliceToken, res.Pos, sync3.Request{
 		Lists: []sync3.RequestList{{
-			Rooms: sync3.SliceRanges{
+			Ranges: sync3.SliceRanges{
 				[2]int64{0, 10}, // doesn't matter
 			},
 		}},
@@ -134,7 +134,7 @@ func TestExtensionE2EE(t *testing.T) {
 	// check that changed|left persist if requesting with the same v3 position
 	res = v3.mustDoV3RequestWithPos(t, aliceToken, lastPos, sync3.Request{
 		Lists: []sync3.RequestList{{
-			Rooms: sync3.SliceRanges{
+			Ranges: sync3.SliceRanges{
 				[2]int64{0, 10}, // doesn't matter
 			},
 		}},
@@ -161,7 +161,7 @@ func TestExtensionE2EE(t *testing.T) {
 	})
 	res = v3.mustDoV3RequestWithPos(t, aliceToken, res.Pos, sync3.Request{
 		Lists: []sync3.RequestList{{
-			Rooms: sync3.SliceRanges{
+			Ranges: sync3.SliceRanges{
 				[2]int64{0, 10}, // doesn't matter
 			},
 		}},
@@ -208,7 +208,7 @@ func TestExtensionToDevice(t *testing.T) {
 	// query to-device messages -> get all of them
 	res := v3.mustDoV3Request(t, aliceToken, sync3.Request{
 		Lists: []sync3.RequestList{{
-			Rooms: sync3.SliceRanges{
+			Ranges: sync3.SliceRanges{
 				[2]int64{0, 10}, // doesn't matter
 			},
 		}},
@@ -224,7 +224,7 @@ func TestExtensionToDevice(t *testing.T) {
 	// repeat request -> get all of them
 	res = v3.mustDoV3Request(t, aliceToken, sync3.Request{
 		Lists: []sync3.RequestList{{
-			Rooms: sync3.SliceRanges{
+			Ranges: sync3.SliceRanges{
 				[2]int64{0, 10}, // doesn't matter
 			},
 		}},
@@ -240,7 +240,7 @@ func TestExtensionToDevice(t *testing.T) {
 	// update the since token -> don't get messages again
 	res = v3.mustDoV3Request(t, aliceToken, sync3.Request{
 		Lists: []sync3.RequestList{{
-			Rooms: sync3.SliceRanges{
+			Ranges: sync3.SliceRanges{
 				[2]int64{0, 10}, // doesn't matter
 			},
 		}},
@@ -266,7 +266,7 @@ func TestExtensionToDevice(t *testing.T) {
 	})
 	res = v3.mustDoV3Request(t, aliceToken, sync3.Request{
 		Lists: []sync3.RequestList{{
-			Rooms: sync3.SliceRanges{
+			Ranges: sync3.SliceRanges{
 				[2]int64{0, 10}, // doesn't matter
 			},
 		}},
@@ -283,7 +283,7 @@ func TestExtensionToDevice(t *testing.T) {
 	// update the since token -> don't get new ones again
 	res = v3.mustDoV3Request(t, aliceToken, sync3.Request{
 		Lists: []sync3.RequestList{{
-			Rooms: sync3.SliceRanges{
+			Ranges: sync3.SliceRanges{
 				[2]int64{0, 10}, // doesn't matter
 			},
 		}},

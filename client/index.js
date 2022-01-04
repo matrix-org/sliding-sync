@@ -409,7 +409,7 @@ const doSyncLoop = async (accessToken, sessionId) => {
             let reqBody = {
                 lists: activeLists.map((al) => {
                     let l = {
-                        rooms: al.activeRanges,
+                        ranges: al.activeRanges,
                         filters: al.listFilters,
                     };
                     // if this is the first request on this session, send sticky request data which never changes

@@ -62,7 +62,7 @@ func TestMultipleLists(t *testing.T) {
 		Lists: []sync3.RequestList{
 			{
 				Sort: []string{sync3.SortByRecency},
-				Rooms: sync3.SliceRanges{
+				Ranges: sync3.SliceRanges{
 					[2]int64{0, 2}, // first 3 rooms
 				},
 				TimelineLimit: 1,
@@ -72,7 +72,7 @@ func TestMultipleLists(t *testing.T) {
 			},
 			{
 				Sort: []string{sync3.SortByRecency},
-				Rooms: sync3.SliceRanges{
+				Ranges: sync3.SliceRanges{
 					[2]int64{0, 2}, // first 3 rooms
 				},
 				TimelineLimit: 1,
@@ -107,12 +107,12 @@ func TestMultipleLists(t *testing.T) {
 	res = v3.mustDoV3RequestWithPos(t, aliceToken, res.Pos, sync3.Request{
 		Lists: []sync3.RequestList{
 			{
-				Rooms: sync3.SliceRanges{
+				Ranges: sync3.SliceRanges{
 					[2]int64{0, 2}, // first 3 rooms still
 				},
 			},
 			{
-				Rooms: sync3.SliceRanges{
+				Ranges: sync3.SliceRanges{
 					[2]int64{0, 2}, // first 3 rooms
 					[2]int64{3, 5}, // next 3 rooms
 				},
@@ -156,12 +156,12 @@ func TestMultipleLists(t *testing.T) {
 	res = v3.mustDoV3RequestWithPos(t, aliceToken, res.Pos, sync3.Request{
 		Lists: []sync3.RequestList{
 			{
-				Rooms: sync3.SliceRanges{
+				Ranges: sync3.SliceRanges{
 					[2]int64{0, 2}, // first 3 rooms still
 				},
 			},
 			{
-				Rooms: sync3.SliceRanges{
+				Ranges: sync3.SliceRanges{
 					[2]int64{0, 2}, // first 3 rooms
 					[2]int64{3, 5}, // next 3 rooms
 				},
@@ -237,7 +237,7 @@ func TestMultipleListsDMUpdate(t *testing.T) {
 		Lists: []sync3.RequestList{
 			{
 				Sort: []string{sync3.SortByRecency},
-				Rooms: sync3.SliceRanges{
+				Ranges: sync3.SliceRanges{
 					[2]int64{0, 2}, // first 3 rooms
 				},
 				TimelineLimit: 1,
@@ -247,7 +247,7 @@ func TestMultipleListsDMUpdate(t *testing.T) {
 			},
 			{
 				Sort: []string{sync3.SortByRecency},
-				Rooms: sync3.SliceRanges{
+				Ranges: sync3.SliceRanges{
 					[2]int64{0, 2}, // first 3 rooms
 				},
 				TimelineLimit: 1,
@@ -300,12 +300,12 @@ func TestMultipleListsDMUpdate(t *testing.T) {
 	res = v3.mustDoV3RequestWithPos(t, aliceToken, res.Pos, sync3.Request{
 		Lists: []sync3.RequestList{
 			{
-				Rooms: sync3.SliceRanges{
+				Ranges: sync3.SliceRanges{
 					[2]int64{0, 2}, // first 3 rooms still
 				},
 			},
 			{
-				Rooms: sync3.SliceRanges{
+				Ranges: sync3.SliceRanges{
 					[2]int64{0, 2}, // first 3 rooms still
 				},
 			},

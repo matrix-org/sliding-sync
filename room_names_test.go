@@ -73,7 +73,7 @@ func TestRoomNames(t *testing.T) {
 		// do a sync, make sure room names are sensible
 		res := v3.mustDoV3Request(t, aliceToken, sync3.Request{
 			Lists: []sync3.RequestList{{
-				Rooms: sync3.SliceRanges{
+				Ranges: sync3.SliceRanges{
 					[2]int64{0, int64(len(allRooms) - 1)}, // all rooms
 				},
 				TimelineLimit: int64(100),

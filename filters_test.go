@@ -56,7 +56,7 @@ func TestFilters(t *testing.T) {
 	encryptedSessionID := "encrypted_session"
 	encryptedRes := v3.mustDoV3Request(t, aliceToken, sync3.Request{
 		Lists: []sync3.RequestList{{
-			Rooms: sync3.SliceRanges{
+			Ranges: sync3.SliceRanges{
 				[2]int64{0, int64(len(allRooms) - 1)}, // all rooms
 			},
 			Filters: &sync3.RequestFilters{
@@ -77,7 +77,7 @@ func TestFilters(t *testing.T) {
 	unencryptedSessionID := "unencrypted_session"
 	unencryptedRes := v3.mustDoV3Request(t, aliceToken, sync3.Request{
 		Lists: []sync3.RequestList{{
-			Rooms: sync3.SliceRanges{
+			Ranges: sync3.SliceRanges{
 				[2]int64{0, int64(len(allRooms) - 1)}, // all rooms
 			},
 			Filters: &sync3.RequestFilters{
@@ -120,7 +120,7 @@ func TestFilters(t *testing.T) {
 	// now requesting the encrypted list should include it (added)
 	encryptedRes = v3.mustDoV3RequestWithPos(t, aliceToken, encryptedRes.Pos, sync3.Request{
 		Lists: []sync3.RequestList{{
-			Rooms: sync3.SliceRanges{
+			Ranges: sync3.SliceRanges{
 				[2]int64{0, int64(len(allRooms) - 1)}, // all rooms
 			},
 			// sticky; should remember filters
@@ -135,7 +135,7 @@ func TestFilters(t *testing.T) {
 	// requesting the encrypted list from scratch returns 2 rooms now
 	encryptedRes = v3.mustDoV3Request(t, aliceToken, sync3.Request{
 		Lists: []sync3.RequestList{{
-			Rooms: sync3.SliceRanges{
+			Ranges: sync3.SliceRanges{
 				[2]int64{0, int64(len(allRooms) - 1)}, // all rooms
 			},
 			Filters: &sync3.RequestFilters{
@@ -165,7 +165,7 @@ func TestFilters(t *testing.T) {
 	// requesting the unencrypted stream DELETEs the room without a corresponding INSERT
 	unencryptedRes = v3.mustDoV3RequestWithPos(t, aliceToken, unencryptedRes.Pos, sync3.Request{
 		Lists: []sync3.RequestList{{
-			Rooms: sync3.SliceRanges{
+			Ranges: sync3.SliceRanges{
 				[2]int64{0, int64(len(allRooms) - 1)}, // all rooms
 			},
 			// sticky; should remember filters
@@ -179,7 +179,7 @@ func TestFilters(t *testing.T) {
 	// requesting the unencrypted stream from scratch returns 0 rooms
 	unencryptedRes = v3.mustDoV3Request(t, aliceToken, sync3.Request{
 		Lists: []sync3.RequestList{{
-			Rooms: sync3.SliceRanges{
+			Ranges: sync3.SliceRanges{
 				[2]int64{0, int64(len(allRooms) - 1)}, // all rooms
 			},
 			Filters: &sync3.RequestFilters{

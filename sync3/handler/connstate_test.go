@@ -97,7 +97,7 @@ func TestConnStateInitial(t *testing.T) {
 	res, err := cs.OnIncomingRequest(context.Background(), ConnID, &sync3.Request{
 		Lists: []sync3.RequestList{{
 			Sort: []string{sync3.SortByRecency},
-			Rooms: sync3.SliceRanges([][2]int64{
+			Ranges: sync3.SliceRanges([][2]int64{
 				{0, 9},
 			}),
 		}},
@@ -142,7 +142,7 @@ func TestConnStateInitial(t *testing.T) {
 	res, err = cs.OnIncomingRequest(context.Background(), ConnID, &sync3.Request{
 		Lists: []sync3.RequestList{{
 			Sort: []string{sync3.SortByRecency},
-			Rooms: sync3.SliceRanges([][2]int64{
+			Ranges: sync3.SliceRanges([][2]int64{
 				{0, 9},
 			}),
 		}},
@@ -175,7 +175,7 @@ func TestConnStateInitial(t *testing.T) {
 	res, err = cs.OnIncomingRequest(context.Background(), ConnID, &sync3.Request{
 		Lists: []sync3.RequestList{{
 			Sort: []string{sync3.SortByRecency},
-			Rooms: sync3.SliceRanges([][2]int64{
+			Ranges: sync3.SliceRanges([][2]int64{
 				{0, 9},
 			}),
 		}},
@@ -242,7 +242,7 @@ func TestConnStateMultipleRanges(t *testing.T) {
 	res, err := cs.OnIncomingRequest(context.Background(), ConnID, &sync3.Request{
 		Lists: []sync3.RequestList{{
 			Sort: []string{sync3.SortByRecency},
-			Rooms: sync3.SliceRanges([][2]int64{
+			Ranges: sync3.SliceRanges([][2]int64{
 				{0, 2},
 			}),
 		}},
@@ -274,7 +274,7 @@ func TestConnStateMultipleRanges(t *testing.T) {
 	res, err = cs.OnIncomingRequest(context.Background(), ConnID, &sync3.Request{
 		Lists: []sync3.RequestList{{
 			Sort: []string{sync3.SortByRecency},
-			Rooms: sync3.SliceRanges([][2]int64{
+			Ranges: sync3.SliceRanges([][2]int64{
 				{0, 2}, {4, 6},
 			}),
 		}},
@@ -317,7 +317,7 @@ func TestConnStateMultipleRanges(t *testing.T) {
 	res, err = cs.OnIncomingRequest(context.Background(), ConnID, &sync3.Request{
 		Lists: []sync3.RequestList{{
 			Sort: []string{sync3.SortByRecency},
-			Rooms: sync3.SliceRanges([][2]int64{
+			Ranges: sync3.SliceRanges([][2]int64{
 				{0, 2}, {4, 6},
 			}),
 		}},
@@ -357,7 +357,7 @@ func TestConnStateMultipleRanges(t *testing.T) {
 	res, err = cs.OnIncomingRequest(context.Background(), ConnID, &sync3.Request{
 		Lists: []sync3.RequestList{{
 			Sort: []string{sync3.SortByRecency},
-			Rooms: sync3.SliceRanges([][2]int64{
+			Ranges: sync3.SliceRanges([][2]int64{
 				{0, 2}, {4, 6},
 			}),
 		}},
@@ -424,7 +424,7 @@ func TestBumpToOutsideRange(t *testing.T) {
 	res, err := cs.OnIncomingRequest(context.Background(), ConnID, &sync3.Request{
 		Lists: []sync3.RequestList{{
 			Sort: []string{sync3.SortByRecency},
-			Rooms: sync3.SliceRanges([][2]int64{
+			Ranges: sync3.SliceRanges([][2]int64{
 				{0, 1},
 			}),
 		}},
@@ -462,7 +462,7 @@ func TestBumpToOutsideRange(t *testing.T) {
 	res, err = cs.OnIncomingRequest(ctx, ConnID, &sync3.Request{
 		Lists: []sync3.RequestList{{
 			Sort: []string{sync3.SortByRecency},
-			Rooms: sync3.SliceRanges([][2]int64{
+			Ranges: sync3.SliceRanges([][2]int64{
 				{0, 1},
 			}),
 		}},
@@ -538,7 +538,7 @@ func TestConnStateRoomSubscriptions(t *testing.T) {
 		},
 		Lists: []sync3.RequestList{{
 			Sort: []string{sync3.SortByRecency},
-			Rooms: sync3.SliceRanges([][2]int64{
+			Ranges: sync3.SliceRanges([][2]int64{
 				{0, 1},
 			}),
 		}},
@@ -589,7 +589,7 @@ func TestConnStateRoomSubscriptions(t *testing.T) {
 	res, err = cs.OnIncomingRequest(context.Background(), ConnID, &sync3.Request{
 		Lists: []sync3.RequestList{{
 			Sort: []string{sync3.SortByRecency},
-			Rooms: sync3.SliceRanges([][2]int64{
+			Ranges: sync3.SliceRanges([][2]int64{
 				{0, 1},
 			}),
 		}},
@@ -620,7 +620,7 @@ func TestConnStateRoomSubscriptions(t *testing.T) {
 		UnsubscribeRooms: []string{roomD.RoomID},
 		Lists: []sync3.RequestList{{
 			Sort: []string{sync3.SortByRecency},
-			Rooms: sync3.SliceRanges([][2]int64{
+			Ranges: sync3.SliceRanges([][2]int64{
 				{0, 1},
 			}),
 		}},
