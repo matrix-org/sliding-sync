@@ -381,12 +381,12 @@ func (s *ConnState) resort(listIndex int, reqList *sync3.RequestList, roomList *
 		isSubscribedToRoom = true
 	}
 	toIndex, _ := roomList.IndexOf(roomID)
-	logger = logger.With().Str("room", roomID).Int("from", fromIndex).Int("to", toIndex).Logger()
+	isInsideRange := reqList.Ranges.Inside(int64(toIndex))
+	logger = logger.With().Str("room", roomID).Int("from", fromIndex).Int("to", toIndex).Bool("inside_range", isInsideRange).Logger()
 	logger.Info().Msg("moved!")
 	// the toIndex may not be inside a tracked range. If it isn't, we actually need to notify about a
 	// different room
-	if !reqList.Ranges.Inside(int64(toIndex)) {
-		logger.Info().Msg("room isn't inside tracked range")
+	if !isInsideRange {
 		toIndex = int(reqList.Ranges.UpperClamp(int64(toIndex)))
 		count := int(roomList.Len())
 		if toIndex >= count {
@@ -407,14 +407,28 @@ func (s *ConnState) resort(listIndex int, reqList *sync3.RequestList, roomList *
 		// fake an update event for this room.
 		// We do this because we are introducing a new room in the list because of this situation:
 		// tracking [10,20] and room 24 jumps to position 0, so now we are tracking [9,19] as all rooms
-		// have been shifted to the right
-		rooms := s.userCache.LazyLoadTimelines(s.loadPosition, []string{toRoom.RoomID}, int(reqList.TimelineLimit)) // TODO: per-room timeline limit
+		// have been shifted to the right, hence we need to inject a fake event for room 9 (client has 10-19)
+		tempTimelineLimit := int(reqList.TimelineLimit)
+		if tempTimelineLimit == 0 {
+			// We need to make sure that we actually give a valid timeline limit here as we will yank the most
+			// recent timeline event to inject as the fake event, hence min check
+			tempTimelineLimit = 1
+		}
+		rooms := s.userCache.LazyLoadTimelines(s.loadPosition, []string{toRoom.RoomID}, tempTimelineLimit) // TODO: per-room timeline limit
 		urd := rooms[toRoom.RoomID]
 
 		// clobber before falling through
 		roomID = toRoom.RoomID
 		if len(urd.Timeline) > 0 {
 			newEvent = urd.Timeline[len(urd.Timeline)-1]
+		} else {
+			logger.Warn().Str("to_room", toRoom.RoomID).Int("limit", tempTimelineLimit).Msg(
+				"tried to lazy load timeline for room but no timeline entries were returned. " +
+					"This isn't possible under normal operation, please report. " +
+					"Rooms may be duplicated in the list.",
+			)
+			// do nothing and pretend the new event didn't exist...
+			return subs, nil
 		}
 	}
 
