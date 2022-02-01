@@ -413,7 +413,9 @@ func (s *ConnState) resort(listIndex int, reqList *sync3.RequestList, roomList *
 
 		// clobber before falling through
 		roomID = toRoom.RoomID
-		newEvent = urd.Timeline[len(urd.Timeline)-1]
+		if len(urd.Timeline) > 0 {
+			newEvent = urd.Timeline[len(urd.Timeline)-1]
+		}
 	}
 
 	return subs, s.moveRoom(reqList, listIndex, roomID, newEvent, fromIndex, toIndex, reqList.Ranges, isSubscribedToRoom)
