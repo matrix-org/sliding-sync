@@ -287,7 +287,101 @@ func TestInitialFlag(t *testing.T) {
 		}
 		return nil
 	})
+}
 
+// Regression test for https://github.com/matrix-org/sliding-sync/commit/39d6e99f967e55b609f8ef8b4271c04ebb053d37
+// Request a timeline_limit of 0 for the room list. Sometimes when a new event arrives it causes an
+// unrelated room to be sent to the client (e.g tracking rooms [5,10] and room 15 bumps to room 2,
+// causing all the rooms to shift so you're now actually tracking [4,9] - the client knows 5-9 but
+// room 4 is new, so you notify about that room and not the one which had a new event (room 15).
+// Ensure that room 4 is given to the client. In the past, this would panic when timeline limit = 0
+// as the timeline was loaded using the timeline limit of the client, and an unchecked array access
+// into the timeline
+func TestTimelineMiddleWindowZeroTimelineLimit(t *testing.T) {
+	// setup code
+	v2 := runTestV2Server(t)
+	v3 := runTestServer(t, v2, "")
+	defer v2.close()
+	defer v3.close()
+	alice := "@TestTimelineMiddleWindowZeroTimelineLimit_alice:localhost"
+	aliceToken := "ALICE_BEARER_TOKEN_TestTimelineMiddleWindowZeroTimelineLimit"
+	// make 20 rooms, first room is most recent, and send A,B,C into each room
+	allRooms := make([]roomEvents, 20)
+	for i := 0; i < len(allRooms); i++ {
+		ts := time.Now().Add(-1 * time.Duration(i) * time.Minute)
+		roomName := fmt.Sprintf("My Room %d", i)
+		allRooms[i] = roomEvents{
+			roomID: fmt.Sprintf("!TestTimelineMiddleWindowZeroTimelineLimit_%d:localhost", i),
+			name:   roomName,
+			events: append(createRoomState(t, alice, ts), []json.RawMessage{
+				testutils.NewStateEvent(t, "m.room.name", "", alice, map[string]interface{}{"name": roomName}, testutils.WithTimestamp(ts.Add(3*time.Second))),
+				testutils.NewEvent(t, "m.room.message", alice, map[string]interface{}{"body": "A"}, ts.Add(4*time.Second)),
+				testutils.NewEvent(t, "m.room.message", alice, map[string]interface{}{"body": "B"}, ts.Add(5*time.Second)),
+				testutils.NewEvent(t, "m.room.message", alice, map[string]interface{}{"body": "C"}, ts.Add(6*time.Second)),
+			}...),
+		}
+	}
+	v2.addAccount(alice, aliceToken)
+	v2.queueResponse(alice, sync2.SyncResponse{
+		Rooms: sync2.SyncRoomsResponse{
+			Join: v2JoinTimeline(allRooms...),
+		},
+	})
+
+	// Request rooms 5-10 with a 0 timeline limit
+	res := v3.mustDoV3Request(t, aliceToken, sync3.Request{
+		Lists: []sync3.RequestList{{
+			Ranges: sync3.SliceRanges{
+				[2]int64{5, 10},
+			},
+			TimelineLimit: 0,
+		}},
+	})
+	wantRooms := allRooms[5:11]
+	MatchResponse(t, res, MatchV3Count(len(allRooms)), MatchV3Ops(
+		MatchV3SyncOp(func(op *sync3.ResponseOpRange) error {
+			if len(op.Rooms) != len(wantRooms) {
+				return fmt.Errorf("want %d rooms, got %d", len(wantRooms), len(op.Rooms))
+			}
+			for i := range wantRooms {
+				err := wantRooms[i].MatchRoom(
+					op.Rooms[i],
+					MatchRoomName(wantRooms[i].name),
+					MatchRoomTimeline(nil),
+				)
+				if err != nil {
+					return err
+				}
+			}
+			return nil
+		}),
+	))
+
+	// bump room 15 to 2
+	v2.queueResponse(alice, sync2.SyncResponse{
+		Rooms: sync2.SyncRoomsResponse{
+			Join: v2JoinTimeline(roomEvents{
+				roomID: allRooms[15].roomID,
+				events: []json.RawMessage{
+					testutils.NewEvent(t, "m.room.message", alice, map[string]interface{}{"body": "bump"}, time.Now()),
+				},
+			}),
+		},
+	})
+	v2.waitUntilEmpty(t, alice)
+
+	// should see room 4, the server should not panic
+	res = v3.mustDoV3RequestWithPos(t, aliceToken, res.Pos, sync3.Request{
+		Lists: []sync3.RequestList{{
+			Ranges: sync3.SliceRanges{
+				[2]int64{5, 10},
+			},
+		}},
+	})
+	MatchResponse(t, res, MatchV3Count(len(allRooms)), MatchV3Ops(
+		MatchV3DeleteOp(0, 10),
+		MatchV3InsertOp(0, 5, allRooms[4].roomID),
+	))
 }
 
 // Executes a sync v3 request without a ?pos and asserts that the count, rooms and timeline events match the inputs given.
