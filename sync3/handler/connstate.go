@@ -19,6 +19,10 @@ var (
 	MaxPendingEventUpdates = 200
 )
 
+type JoinChecker interface {
+	IsUserJoined(userID, roomID string) bool
+}
+
 type ConnEvent struct {
 	roomMetadata *internal.RoomMetadata
 	roomID       string
@@ -50,10 +54,12 @@ type ConnState struct {
 	userCacheID int
 	bufferFull  bool
 
+	joinChecker JoinChecker
+
 	extensionsHandler extensions.HandlerInterface
 }
 
-func NewConnState(userID, deviceID string, userCache *sync3.UserCache, globalCache *sync3.GlobalCache, ex extensions.HandlerInterface) *ConnState {
+func NewConnState(userID, deviceID string, userCache *sync3.UserCache, globalCache *sync3.GlobalCache, ex extensions.HandlerInterface, joinChecker JoinChecker) *ConnState {
 	cs := &ConnState{
 		globalCache:       globalCache,
 		userCache:         userCache,
@@ -63,6 +69,7 @@ func NewConnState(userID, deviceID string, userCache *sync3.UserCache, globalCac
 		updateEvents:      make(chan *ConnEvent, MaxPendingEventUpdates), // TODO: customisable
 		lists:             &sync3.SortableRoomLists{},
 		extensionsHandler: ex,
+		joinChecker:       joinChecker,
 	}
 	cs.userCacheID = cs.userCache.Subsribe(cs)
 	return cs
@@ -438,6 +445,11 @@ func (s *ConnState) resort(listIndex int, reqList *sync3.RequestList, roomList *
 func (s *ConnState) updateRoomSubscriptions(timelineLimit int, subs, unsubs []string) map[string]sync3.Room {
 	result := make(map[string]sync3.Room)
 	for _, roomID := range subs {
+		// check that the user is allowed to see these rooms as they can set arbitrary room IDs
+		if !s.joinChecker.IsUserJoined(s.userID, roomID) {
+			continue
+		}
+
 		sub, ok := s.muxedReq.RoomSubscriptions[roomID]
 		if !ok {
 			logger.Warn().Str("room_id", roomID).Msg(

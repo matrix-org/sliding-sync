@@ -22,6 +22,12 @@ func (h *NopExtensionHandler) Handle(req extensions.Request) (res extensions.Res
 	return
 }
 
+type NopJoinTracker struct{}
+
+func (t *NopJoinTracker) IsUserJoined(userID, roomID string) bool {
+	return true
+}
+
 func newRoomMetadata(roomID string, lastMsgTimestamp gomatrixserverlib.Timestamp) internal.RoomMetadata {
 	return internal.RoomMetadata{
 		RoomID:               roomID,
@@ -90,7 +96,7 @@ func TestConnStateInitial(t *testing.T) {
 		}
 		return result
 	}
-	cs := NewConnState(userID, deviceID, userCache, globalCache, &NopExtensionHandler{})
+	cs := NewConnState(userID, deviceID, userCache, globalCache, &NopExtensionHandler{}, &NopJoinTracker{})
 	if userID != cs.UserID() {
 		t.Fatalf("UserID returned wrong value, got %v want %v", cs.UserID(), userID)
 	}
@@ -236,7 +242,7 @@ func TestConnStateMultipleRanges(t *testing.T) {
 	userCache.LazyRoomDataOverride = mockLazyRoomOverride
 	dispatcher.Register(userCache.UserID, userCache)
 	dispatcher.Register(sync3.DispatcherAllUsers, globalCache)
-	cs := NewConnState(userID, deviceID, userCache, globalCache, &NopExtensionHandler{})
+	cs := NewConnState(userID, deviceID, userCache, globalCache, &NopExtensionHandler{}, &NopJoinTracker{})
 
 	// request first page
 	res, err := cs.OnIncomingRequest(context.Background(), ConnID, &sync3.Request{
@@ -419,7 +425,7 @@ func TestBumpToOutsideRange(t *testing.T) {
 	userCache.LazyRoomDataOverride = mockLazyRoomOverride
 	dispatcher.Register(userCache.UserID, userCache)
 	dispatcher.Register(sync3.DispatcherAllUsers, globalCache)
-	cs := NewConnState(userID, deviceID, userCache, globalCache, &NopExtensionHandler{})
+	cs := NewConnState(userID, deviceID, userCache, globalCache, &NopExtensionHandler{}, &NopJoinTracker{})
 	// Ask for A,B
 	res, err := cs.OnIncomingRequest(context.Background(), ConnID, &sync3.Request{
 		Lists: []sync3.RequestList{{
@@ -528,7 +534,7 @@ func TestConnStateRoomSubscriptions(t *testing.T) {
 	}
 	dispatcher.Register(userCache.UserID, userCache)
 	dispatcher.Register(sync3.DispatcherAllUsers, globalCache)
-	cs := NewConnState(userID, deviceID, userCache, globalCache, &NopExtensionHandler{})
+	cs := NewConnState(userID, deviceID, userCache, globalCache, &NopExtensionHandler{}, &NopJoinTracker{})
 	// subscribe to room D
 	res, err := cs.OnIncomingRequest(context.Background(), ConnID, &sync3.Request{
 		RoomSubscriptions: map[string]sync3.RoomSubscription{

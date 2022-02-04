@@ -250,7 +250,7 @@ func (h *SyncLiveHandler) setupConnection(req *http.Request, syncReq *sync3.Requ
 		SessionID: syncReq.SessionID,
 		DeviceID:  deviceID,
 	}, func() sync3.ConnHandler {
-		return NewConnState(v2device.UserID, v2device.DeviceID, userCache, h.GlobalCache, h.Extensions)
+		return NewConnState(v2device.UserID, v2device.DeviceID, userCache, h.GlobalCache, h.Extensions, h.Dispatcher)
 	})
 	if created {
 		log.Info().Str("conn_id", conn.ConnID.String()).Msg("created new connection")

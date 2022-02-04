@@ -257,6 +257,18 @@ func createRoomState(t *testing.T, creator string, baseTimestamp time.Time) []js
 
 type roomMatcher func(r sync3.Room) error
 
+func MatchRoomID(id string) roomMatcher {
+	return func(r sync3.Room) error {
+		if id == "" {
+			return nil
+		}
+		if r.RoomID != id {
+			return fmt.Errorf("MatchRoomID: mismatch, got %s want %s", r.RoomID, id)
+		}
+		return nil
+	}
+}
+
 func MatchRoomName(name string) roomMatcher {
 	return func(r sync3.Room) error {
 		if name == "" {
@@ -377,6 +389,7 @@ func v2JoinTimeline(joinEvents ...roomEvents) map[string]sync2.SyncV2JoinRespons
 
 type respMatcher func(res *sync3.Response) error
 type opMatcher func(op sync3.ResponseOp) error
+type rangeMatcher func(op sync3.ResponseOpRange) error
 
 func MatchV3Count(wantCount int) respMatcher {
 	return MatchV3Counts([]int{wantCount})
@@ -385,6 +398,26 @@ func MatchV3Counts(wantCounts []int) respMatcher {
 	return func(res *sync3.Response) error {
 		if !reflect.DeepEqual(res.Counts, wantCounts) {
 			return fmt.Errorf("counts: got %v want %v", res.Counts, wantCounts)
+		}
+		return nil
+	}
+}
+
+func MatchRoomSubscriptions(strictLength bool, wantSubs map[string][]roomMatcher) respMatcher {
+	return func(res *sync3.Response) error {
+		if strictLength && len(res.RoomSubscriptions) != len(wantSubs) {
+			return fmt.Errorf("MatchRoomSubscriptions: strict length on: got %v subs want %v", len(res.RoomSubscriptions), len(wantSubs))
+		}
+		for roomID, matchers := range wantSubs {
+			room, ok := res.RoomSubscriptions[roomID]
+			if !ok {
+				return fmt.Errorf("MatchRoomSubscriptions: want sub for %s but it was missing", roomID)
+			}
+			for _, m := range matchers {
+				if err := m(room); err != nil {
+					return fmt.Errorf("MatchRoomSubscriptions: %s", err)
+				}
+			}
 		}
 		return nil
 	}
@@ -431,6 +464,38 @@ func MatchToDeviceMessages(wantMsgs []json.RawMessage) respMatcher {
 		for i := 0; i < len(wantMsgs); i++ {
 			if !reflect.DeepEqual(res.Extensions.ToDevice.Events[i], wantMsgs[i]) {
 				return fmt.Errorf("MatchToDeviceMessages[%d]: got %v want %v", i, string(res.Extensions.ToDevice.Events[i]), string(wantMsgs[i]))
+			}
+		}
+		return nil
+	}
+}
+
+func MatchRoomRange(rooms ...[]roomMatcher) rangeMatcher {
+	return func(op sync3.ResponseOpRange) error {
+		if len(rooms) != len(op.Rooms) {
+			return fmt.Errorf("MatchRoomRange: length of params must match ordering of rooms in range response. Got %v params want %v", len(rooms), len(op.Rooms))
+		}
+		for i, matchers := range rooms {
+			room := op.Rooms[i]
+			for _, m := range matchers {
+				if err := m(room); err != nil {
+					return err
+				}
+			}
+		}
+		return nil
+	}
+}
+
+func MatchV3SyncOpWithMatchers(matchers ...rangeMatcher) opMatcher {
+	return func(op sync3.ResponseOp) error {
+		if op.Op() != sync3.OpSync {
+			return fmt.Errorf("op: %s != %s", op.Op(), sync3.OpSync)
+		}
+		oper := op.(*sync3.ResponseOpRange)
+		for _, m := range matchers {
+			if err := m(*oper); err != nil {
+				return err
 			}
 		}
 		return nil

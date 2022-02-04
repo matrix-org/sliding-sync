@@ -19,6 +19,18 @@ func NewJoinedRoomsTracker() *JoinedRoomsTracker {
 	}
 }
 
+func (t *JoinedRoomsTracker) IsUserJoined(userID, roomID string) bool {
+	t.mu.RLock()
+	defer t.mu.RUnlock()
+	users := t.roomIDToJoinedUsers[roomID]
+	for _, u := range users {
+		if u == userID {
+			return true
+		}
+	}
+	return false
+}
+
 func (t *JoinedRoomsTracker) UserJoinedRoom(userID, roomID string) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
