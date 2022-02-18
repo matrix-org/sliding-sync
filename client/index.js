@@ -283,8 +283,8 @@ const render = (container, listIndex) => {
     let removeCount = 0;
     // ensure we have the right number of children, remove or add appropriately.
     while (container.childElementCount > listData.joinedCount) {
-        intersectionObserver.unobserve(container.firstChild);
-        container.removeChild(container.firstChild);
+        intersectionObserver.unobserve(container.lastChild);
+        container.removeChild(container.lastChild);
         removeCount += 1;
     }
     for (let i = container.childElementCount; i < listData.joinedCount; i++) {
