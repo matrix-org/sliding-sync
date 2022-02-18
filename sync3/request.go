@@ -194,6 +194,19 @@ func (rf *RequestFilters) Include(r *RoomConnMetadata) bool {
 	return true
 }
 
+func ChangedFilters(prev, next *RequestFilters) bool {
+	// easier to marshal as JSON rather than do a bazillion nil checks
+	pb, err := json.Marshal(prev)
+	if err != nil {
+		panic(err)
+	}
+	nb, err := json.Marshal(next)
+	if err != nil {
+		panic(err)
+	}
+	return !bytes.Equal(pb, nb)
+}
+
 type RoomSubscription struct {
 	RequiredState [][2]string `json:"required_state"`
 	TimelineLimit int64       `json:"timeline_limit"`

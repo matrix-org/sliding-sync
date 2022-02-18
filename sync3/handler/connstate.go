@@ -42,7 +42,9 @@ type ConnState struct {
 	muxedReq          *sync3.Request
 	lists             *sync3.SortableRoomLists
 	roomSubscriptions map[string]sync3.RoomSubscription
-	loadPosition      int64
+
+	allRooms     []sync3.RoomConnMetadata
+	loadPosition int64
 
 	// A channel which the dispatcher uses to send updates to the conn goroutine
 	// Consumed when the conn is read. There is a limit to how many updates we will store before
@@ -104,6 +106,7 @@ func (s *ConnState) load(req *sync3.Request) error {
 			),
 		}
 	}
+	s.allRooms = rooms
 	s.loadPosition = initialLoadPosition
 
 	for i, l := range req.Lists {
@@ -236,9 +239,11 @@ func (s *ConnState) onIncomingListRequest(listIndex int, prevReqList, nextReqLis
 
 	var prevRange sync3.SliceRanges
 	var prevSort []string
+	var prevFilters *sync3.RequestFilters
 	if prevReqList != nil {
 		prevRange = prevReqList.Ranges
 		prevSort = prevReqList.Sort
+		prevFilters = prevReqList.Filters
 	}
 	if nextReqList.Sort == nil {
 		nextReqList.Sort = []string{sync3.SortByRecency}
@@ -252,16 +257,22 @@ func (s *ConnState) onIncomingListRequest(listIndex int, prevReqList, nextReqLis
 	} else {
 		addedRanges = nextReqList.Ranges
 	}
-	if !reflect.DeepEqual(prevSort, nextReqList.Sort) {
-		// the sort operations have changed, invalidate everything (if there were previous syncs), re-sort and re-SYNC
-		if prevSort != nil {
-			for _, r := range prevReqList.Ranges {
+	changedFilters := sync3.ChangedFilters(prevFilters, nextReqList.Filters)
+	if !reflect.DeepEqual(prevSort, nextReqList.Sort) || changedFilters {
+		// the sort/filter operations have changed, invalidate everything (if there were previous syncs), re-sort and re-SYNC
+		if prevSort != nil || changedFilters {
+			for _, r := range prevRange {
 				responseOperations = append(responseOperations, &sync3.ResponseOpRange{
 					List:      listIndex,
 					Operation: sync3.OpInvalidate,
 					Range:     r[:],
 				})
 			}
+		}
+		if changedFilters {
+			// we need to re-create the list as the rooms may have completely changed
+			roomList = sync3.NewFilteredSortableRooms(s.allRooms, nextReqList.Filters)
+			s.lists.Set(listIndex, roomList)
 		}
 		if err := roomList.Sort(nextReqList.Sort); err != nil {
 			logger.Err(err).Int("index", listIndex).Msg("cannot sort list")

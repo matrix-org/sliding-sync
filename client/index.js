@@ -2,14 +2,17 @@ let lastError = null;
 let activeAbortController = new AbortController();
 let activeSessionId;
 let activeRoomId = ""; // the room currently being viewed
+const DEFAULT_RANGES = [[0, 20]];
 
 let activeLists = [
     {
         name: "Direct Messages",
+        listFiltersModified: false,
         listFilters: {
             is_dm: true,
+            room_name_like: undefined,
         },
-        activeRanges: [[0, 20]],
+        activeRanges: DEFAULT_RANGES,
         // the constantly changing sliding window ranges. Not an array for performance reasons
         // E.g tracking ranges 0-99, 500-599, we don't want to have a 600 element array
         roomIndexToRoomId: {},
@@ -18,10 +21,12 @@ let activeLists = [
     },
     {
         name: "Group Chats",
+        listFiltersModified: false,
         listFilters: {
             is_dm: false,
+            room_name_like: undefined,
         },
-        activeRanges: [[0, 20]],
+        activeRanges: DEFAULT_RANGES,
         // the constantly changing sliding window ranges. Not an array for performance reasons
         // E.g tracking ranges 0-99, 500-599, we don't want to have a 600 element array
         roomIndexToRoomId: {},
@@ -412,6 +417,14 @@ const doSyncLoop = async (accessToken, sessionId) => {
                         ranges: al.activeRanges,
                         filters: al.listFilters,
                     };
+                    // if we are viewing a window at 100-120 and then we filter down to 5 total rooms,
+                    // we'll end up showing nothing. Therefore, if the filters change (e.g room name filter)
+                    // reset the range back to 0-20.
+                    if (al.listFiltersModified) {
+                        l.ranges = DEFAULT_RANGES;
+                        al.listFiltersModified = false;
+                        al.roomIndexToRoomId = {};
+                    }
                     // if this is the first request on this session, send sticky request data which never changes
                     if (!currentPos) {
                         l.required_state = requiredStateEventsInList;
@@ -420,7 +433,6 @@ const doSyncLoop = async (accessToken, sessionId) => {
                     }
                     return l;
                 }),
-                session_id: sessionId ? sessionId : undefined,
             };
             // check if we are (un)subscribing to a room and modify request this one time for it
             let subscribingToRoom;
@@ -752,6 +764,17 @@ window.addEventListener("load", (event) => {
         activeSessionId = new Date().getTime() + "";
         doSyncLoop(accessToken, activeSessionId);
     };
+    document.getElementById("roomfilter").addEventListener("input", (ev) => {
+        const roomNameFilter = ev.target.value;
+        for (let i = 0; i < activeLists.length; i++) {
+            activeLists[i].listFilters.room_name_like = roomNameFilter;
+            activeLists[i].listFiltersModified = true;
+        }
+        if (activeAbortController) {
+            // interrupt the sync request to send up new filters
+            activeAbortController.abort();
+        }
+    });
     document.getElementById("debugButton").onclick = () => {
         const debugBox = document.getElementById("debugCmd");
         debugBox.style = "";
