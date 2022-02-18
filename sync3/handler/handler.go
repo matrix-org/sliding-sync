@@ -189,7 +189,6 @@ func (h *SyncLiveHandler) setupConnection(req *http.Request, syncReq *sync3.Requ
 			}
 		}
 		if conn != nil {
-			fmt.Println("returning existing conn", conn.ConnID.String())
 			return conn, nil
 		}
 		// conn doesn't exist, we probably nuked it.

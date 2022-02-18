@@ -1,7 +1,6 @@
 package sync3
 
 import (
-	"fmt"
 	"sync"
 	"time"
 
@@ -56,7 +55,6 @@ func (m *ConnMap) CreateConn(cid ConnID, newConnHandler func() ConnHandler) (*Co
 	m.cache.Set(cid.String(), conn)
 	m.connIDToConn[cid.String()] = conn
 	m.userIDToConn[h.UserID()] = append(m.userIDToConn[h.UserID()], conn)
-	fmt.Println("created connection", cid.String())
 	return conn, true
 }
 
@@ -81,7 +79,6 @@ func (m *ConnMap) closeConn(conn *Conn) {
 	}
 
 	connID := conn.ConnID.String()
-	fmt.Println("tearing down connection", connID)
 	// remove conn from all the maps
 	delete(m.connIDToConn, connID)
 	h := conn.handler
