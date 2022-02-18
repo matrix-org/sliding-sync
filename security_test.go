@@ -65,7 +65,7 @@ func TestSecurityLiveStreamEventLeftLeak(t *testing.T) {
 		aliceToken: "",
 		eveToken:   "",
 	}
-	for token := range tokenToPos {
+	for _, token := range []string{aliceToken, eveToken} {
 		res := v3.mustDoV3Request(t, token, sync3.Request{
 			Lists: []sync3.RequestList{{
 				Ranges: sync3.SliceRanges{

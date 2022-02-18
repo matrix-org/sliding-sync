@@ -69,8 +69,8 @@ func (a *Accumulator) calculateNewSnapshot(old StrippedEvents, new Event) (Strip
 			// ruh roh. This should be impossible, but it can happen if the v2 response sends the same
 			// event in both state and timeline. We need to alert the operator and whine badly as it means
 			// we have lost an event by now.
-			log.Warn().Str("event_id", new.ID).Str("room_id", new.RoomID).Str("type", new.Type).Str("state_key", new.StateKey).Msg(
-				"Detected different events with the same NID when rolling forward state. This has resulted in data loss in this room (1 event). " +
+			log.Warn().Str("new_event_id", new.ID).Str("old_event_id", e.ID).Str("room_id", new.RoomID).Str("type", new.Type).Str("state_key", new.StateKey).Msg(
+				"Detected different event IDs with the same NID when rolling forward state. This has resulted in data loss in this room (1 event). " +
 					"This can happen when the v2 /sync response sends the same event in both state and timeline sections. " +
 					"The event in this log line has been dropped!",
 			)
