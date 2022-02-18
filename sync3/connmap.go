@@ -1,6 +1,7 @@
 package sync3
 
 import (
+	"fmt"
 	"sync"
 	"time"
 
@@ -41,19 +42,21 @@ func (m *ConnMap) Conn(cid ConnID) *Conn {
 }
 
 // Atomically gets or creates a connection with this connection ID. Calls newConn if a new connection is required.
-func (m *ConnMap) GetOrCreateConn(cid ConnID, newConnHandler func() ConnHandler) (*Conn, bool) {
-	// atomically check if a conn exists already and return that if so
+func (m *ConnMap) CreateConn(cid ConnID, newConnHandler func() ConnHandler) (*Conn, bool) {
+	// atomically check if a conn exists already and nuke it if it exists
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	conn := m.Conn(cid)
 	if conn != nil {
-		return conn, false
+		// tear down this connection and fallthrough
+		m.closeConn(conn)
 	}
 	h := newConnHandler()
 	conn = NewConn(cid, h)
 	m.cache.Set(cid.String(), conn)
 	m.connIDToConn[cid.String()] = conn
 	m.userIDToConn[h.UserID()] = append(m.userIDToConn[h.UserID()], conn)
+	fmt.Println("created connection", cid.String())
 	return conn, true
 }
 
@@ -78,6 +81,7 @@ func (m *ConnMap) closeConn(conn *Conn) {
 	}
 
 	connID := conn.ConnID.String()
+	fmt.Println("tearing down connection", connID)
 	// remove conn from all the maps
 	delete(m.connIDToConn, connID)
 	h := conn.handler

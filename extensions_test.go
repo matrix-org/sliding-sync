@@ -22,7 +22,6 @@ func TestExtensionE2EE(t *testing.T) {
 	defer v3.close()
 	alice := "@TestExtensionE2EE_alice:localhost"
 	aliceToken := "ALICE_BEARER_TOKEN_TestExtensionE2EE"
-	sessionID := "sid"
 
 	// check that OTK counts go through
 	otkCounts := map[string]int{
@@ -45,7 +44,6 @@ func TestExtensionE2EE(t *testing.T) {
 				Enabled: true,
 			},
 		},
-		SessionID: sessionID,
 	})
 	MatchResponse(t, res, MatchOTKCounts(otkCounts))
 
@@ -72,7 +70,6 @@ func TestExtensionE2EE(t *testing.T) {
 				Enabled: true,
 			},
 		},
-		SessionID: sessionID,
 	})
 	MatchResponse(t, res, MatchOTKCounts(otkCounts))
 
@@ -97,7 +94,6 @@ func TestExtensionE2EE(t *testing.T) {
 				Enabled: true,
 			},
 		},
-		SessionID: sessionID,
 	})
 	MatchResponse(t, res, MatchOTKCounts(otkCounts))
 
@@ -127,7 +123,6 @@ func TestExtensionE2EE(t *testing.T) {
 				Enabled: true,
 			},
 		},
-		SessionID: sessionID,
 	})
 	MatchResponse(t, res, MatchDeviceLists(wantChanged, wantLeft))
 
@@ -144,7 +139,6 @@ func TestExtensionE2EE(t *testing.T) {
 				Enabled: true,
 			},
 		},
-		SessionID: sessionID,
 	})
 	MatchResponse(t, res, MatchDeviceLists(wantChanged, wantLeft))
 
@@ -171,7 +165,6 @@ func TestExtensionE2EE(t *testing.T) {
 				Enabled: true,
 			},
 		},
-		SessionID: sessionID,
 	})
 	MatchResponse(t, res, func(res *sync3.Response) error {
 		if res.Extensions.E2EE.DeviceLists != nil {
@@ -191,7 +184,6 @@ func TestExtensionToDevice(t *testing.T) {
 	defer v3.close()
 	alice := "@TestExtensionToDevice_alice:localhost"
 	aliceToken := "ALICE_BEARER_TOKEN_TestExtensionToDevice"
-	sessionID := "sid"
 	v2.addAccount(alice, aliceToken)
 	toDeviceMsgs := []json.RawMessage{
 		json.RawMessage(`{"sender":"alice","type":"something","content":{"foo":"1"}}`),
@@ -217,7 +209,6 @@ func TestExtensionToDevice(t *testing.T) {
 				Enabled: true,
 			},
 		},
-		SessionID: sessionID,
 	})
 	MatchResponse(t, res, MatchV3Count(0), MatchToDeviceMessages(toDeviceMsgs))
 
@@ -233,7 +224,6 @@ func TestExtensionToDevice(t *testing.T) {
 				Enabled: true,
 			},
 		},
-		SessionID: sessionID,
 	})
 	MatchResponse(t, res, MatchV3Count(0), MatchToDeviceMessages(toDeviceMsgs))
 
@@ -250,7 +240,6 @@ func TestExtensionToDevice(t *testing.T) {
 				Since:   res.Extensions.ToDevice.NextBatch,
 			},
 		},
-		SessionID: sessionID,
 	})
 	MatchResponse(t, res, MatchV3Count(0), MatchToDeviceMessages([]json.RawMessage{}))
 
@@ -276,7 +265,6 @@ func TestExtensionToDevice(t *testing.T) {
 				Since:   res.Extensions.ToDevice.NextBatch,
 			},
 		},
-		SessionID: sessionID,
 	})
 	MatchResponse(t, res, MatchV3Count(0), MatchToDeviceMessages(newToDeviceMsgs))
 
@@ -293,7 +281,6 @@ func TestExtensionToDevice(t *testing.T) {
 				Since:   res.Extensions.ToDevice.NextBatch,
 			},
 		},
-		SessionID: sessionID,
 	})
 	MatchResponse(t, res, MatchV3Count(0), MatchToDeviceMessages([]json.RawMessage{}))
 

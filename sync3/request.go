@@ -3,7 +3,9 @@ package sync3
 import (
 	"bytes"
 	"encoding/json"
+	"strings"
 
+	"github.com/matrix-org/sync-v3/internal"
 	"github.com/matrix-org/sync-v3/sync3/extensions"
 )
 
@@ -27,7 +29,6 @@ type Request struct {
 	// set via query params or inferred
 	pos         int64
 	timeoutSecs int
-	SessionID   string `json:"session_id"`
 }
 
 type RequestList struct {
@@ -65,12 +66,7 @@ func (r *Request) Same(other *Request) bool {
 func (r *Request) ApplyDelta(nextReq *Request) (result *Request, subs, unsubs []string) {
 	// Use the newer values unless they aren't specified, then use the older ones.
 	// Go is ew in that this can't be represented in a nicer way
-	sessionID := nextReq.SessionID
-	if sessionID == "" {
-		sessionID = r.SessionID
-	}
 	result = &Request{
-		SessionID:  sessionID,
 		Extensions: nextReq.Extensions, // TODO: make them sticky
 	}
 	lists := make([]RequestList, len(nextReq.Lists))
@@ -174,10 +170,11 @@ func (r *Request) GetRequiredState(listIndex int, roomID string) [][2]string {
 }
 
 type RequestFilters struct {
-	Spaces      []string `json:"spaces"`
-	IsDM        *bool    `json:"is_dm"`
-	IsEncrypted *bool    `json:"is_encrypted"`
-	IsInvite    *bool    `json:"is_invite"`
+	Spaces         []string `json:"spaces"`
+	IsDM           *bool    `json:"is_dm"`
+	IsEncrypted    *bool    `json:"is_encrypted"`
+	IsInvite       *bool    `json:"is_invite"`
+	RoomNameFilter string   `json:"room_name_like"`
 	// TODO options to control which events should be live-streamed e.g not_types, types from sync v2
 }
 
@@ -189,6 +186,9 @@ func (rf *RequestFilters) Include(r *RoomConnMetadata) bool {
 		return false
 	}
 	if rf.IsInvite != nil && *rf.IsInvite != r.IsInvite {
+		return false
+	}
+	if rf.RoomNameFilter != "" && !strings.Contains(strings.ToLower(internal.CalculateRoomName(&r.RoomMetadata, 5)), strings.ToLower(rf.RoomNameFilter)) {
 		return false
 	}
 	return true

@@ -15,7 +15,6 @@ func TestRequestApplyDeltas(t *testing.T) {
 	}{
 		{
 			input: Request{
-				SessionID: "a",
 				Lists: []RequestList{
 					{
 						Sort:          []string{SortByName},

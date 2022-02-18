@@ -52,8 +52,7 @@ func mockLazyRoomOverride(loadPos int64, roomIDs []string, maxTimelineEvents int
 // that basic UPDATE and DELETE/INSERT works when tracking all rooms.
 func TestConnStateInitial(t *testing.T) {
 	ConnID := sync3.ConnID{
-		SessionID: "s",
-		DeviceID:  "d",
+		DeviceID: "d",
 	}
 	userID := "@TestConnStateInitial_alice:localhost"
 	deviceID := "yep"
@@ -207,8 +206,7 @@ func TestConnStateInitial(t *testing.T) {
 func TestConnStateMultipleRanges(t *testing.T) {
 	t.Skip("flakey")
 	ConnID := sync3.ConnID{
-		SessionID: "s",
-		DeviceID:  "d",
+		DeviceID: "d",
 	}
 	userID := "@TestConnStateMultipleRanges_alice:localhost"
 	deviceID := "yep"
@@ -393,8 +391,7 @@ func TestConnStateMultipleRanges(t *testing.T) {
 // Regression test for https://github.com/matrix-org/sync-v3/commit/732ea46f1ccde2b6a382e0f849bbd166b80900ed
 func TestBumpToOutsideRange(t *testing.T) {
 	ConnID := sync3.ConnID{
-		SessionID: "s",
-		DeviceID:  "d",
+		DeviceID: "d",
 	}
 	userID := "@TestBumpToOutsideRange_alice:localhost"
 	deviceID := "yep"
@@ -485,8 +482,7 @@ func TestBumpToOutsideRange(t *testing.T) {
 // Test that room subscriptions can be made and that events are pushed for them.
 func TestConnStateRoomSubscriptions(t *testing.T) {
 	ConnID := sync3.ConnID{
-		SessionID: "s",
-		DeviceID:  "d",
+		DeviceID: "d",
 	}
 	userID := "@TestConnStateRoomSubscriptions_alice:localhost"
 	deviceID := "yep"

@@ -63,7 +63,6 @@ func TestNotificationsOnTop(t *testing.T) {
 			// prefer highlight count first, THEN eventually recency
 			Sort: []string{sync3.SortByHighlightCount, sync3.SortByNotificationCount, sync3.SortByRecency},
 		}},
-		SessionID: t.Name(),
 	}
 	res := v3.mustDoV3Request(t, aliceToken, syncRequestBody)
 	MatchResponse(t, res, MatchV3Count(len(allRooms)), MatchV3Ops(
@@ -140,7 +139,6 @@ func TestNotificationsOnTop(t *testing.T) {
 			// prefer highlight count first, THEN eventually recency
 			Sort: []string{sync3.SortByHighlightCount, sync3.SortByNotificationCount, sync3.SortByRecency},
 		}},
-		SessionID: t.Name(),
 	})
 	MatchResponse(t, res, MatchV3Count(len(allRooms)), MatchV3Ops(
 		MatchV3SyncOp(func(op *sync3.ResponseOpRange) error {

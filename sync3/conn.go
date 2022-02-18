@@ -10,12 +10,11 @@ import (
 )
 
 type ConnID struct {
-	SessionID string
-	DeviceID  string
+	DeviceID string
 }
 
 func (c *ConnID) String() string {
-	return c.SessionID + "-" + c.DeviceID
+	return c.DeviceID
 }
 
 type ConnHandler interface {

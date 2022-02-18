@@ -78,7 +78,6 @@ func TestRoomNames(t *testing.T) {
 				},
 				TimelineLimit: int64(100),
 			}},
-			SessionID: sessionID,
 		})
 		MatchResponse(t, res, MatchV3Count(len(allRooms)), MatchV3Ops(
 			MatchV3SyncOp(func(op *sync3.ResponseOpRange) error {
@@ -103,4 +102,36 @@ func TestRoomNames(t *testing.T) {
 	// restart the server and repeat the tests, should still be the same when reading from the database
 	v3.restart(t, v2, pqString)
 	checkRoomNames("b")
+
+	// now check that we can filter the rooms by name
+	checkRoomNameFilter := func(searchTerm string, wantRooms []roomEvents) {
+		t.Helper()
+		// do a sync, make sure room names are sensible
+		res := v3.mustDoV3Request(t, aliceToken, sync3.Request{
+			Lists: []sync3.RequestList{{
+				Ranges: sync3.SliceRanges{
+					[2]int64{0, int64(len(allRooms) - 1)}, // all rooms
+				},
+				Filters: &sync3.RequestFilters{
+					RoomNameFilter: searchTerm,
+				},
+			}},
+		})
+		matchers := make([][]roomMatcher, len(wantRooms))
+		for i := range wantRooms {
+			matchers[i] = []roomMatcher{
+				MatchRoomName(wantRooms[i].name),
+				MatchRoomID(wantRooms[i].roomID),
+			}
+		}
+		MatchResponse(t, res, MatchV3Count(len(wantRooms)), MatchV3Ops(
+			MatchV3SyncOpWithMatchers(MatchRoomRange(matchers...)),
+		))
+	}
+	// case-insensitive matching
+	checkRoomNameFilter("my room name", []roomEvents{allRooms[1]})
+	// partial matching
+	checkRoomNameFilter("room na", []roomEvents{allRooms[1]})
+	// multiple matches
+	checkRoomNameFilter("bob", []roomEvents{allRooms[0], allRooms[3]})
 }

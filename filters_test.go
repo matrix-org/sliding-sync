@@ -53,45 +53,44 @@ func TestFilters(t *testing.T) {
 	})
 
 	// connect and make sure either the encrypted room or not depending on what the filter says
-	encryptedSessionID := "encrypted_session"
-	encryptedRes := v3.mustDoV3Request(t, aliceToken, sync3.Request{
-		Lists: []sync3.RequestList{{
-			Ranges: sync3.SliceRanges{
-				[2]int64{0, int64(len(allRooms) - 1)}, // all rooms
+	res := v3.mustDoV3Request(t, aliceToken, sync3.Request{
+		Lists: []sync3.RequestList{
+			{
+				Ranges: sync3.SliceRanges{
+					[2]int64{0, int64(len(allRooms) - 1)}, // all rooms
+				},
+				Filters: &sync3.RequestFilters{
+					IsEncrypted: &boolTrue,
+				},
 			},
-			Filters: &sync3.RequestFilters{
-				IsEncrypted: &boolTrue,
+			{
+				Ranges: sync3.SliceRanges{
+					[2]int64{0, int64(len(allRooms) - 1)}, // all rooms
+				},
+				Filters: &sync3.RequestFilters{
+					IsEncrypted: &boolFalse,
+				},
 			},
-		}},
-		SessionID: encryptedSessionID,
+		},
 	})
-	MatchResponse(t, encryptedRes, MatchV3Count(1), MatchV3Ops(
+	MatchResponse(t, res, MatchV3Counts([]int{1, 1}), MatchV3Ops(
 		MatchV3SyncOp(func(op *sync3.ResponseOpRange) error {
 			if len(op.Rooms) != 1 {
 				return fmt.Errorf("want %d rooms, got %d", 1, len(op.Rooms))
+			}
+			if op.List != 0 {
+				return fmt.Errorf("unknown list: %d", op.List)
 			}
 			return allRooms[0].MatchRoom(op.Rooms[0]) // encrypted room
 		}),
-	))
-
-	unencryptedSessionID := "unencrypted_session"
-	unencryptedRes := v3.mustDoV3Request(t, aliceToken, sync3.Request{
-		Lists: []sync3.RequestList{{
-			Ranges: sync3.SliceRanges{
-				[2]int64{0, int64(len(allRooms) - 1)}, // all rooms
-			},
-			Filters: &sync3.RequestFilters{
-				IsEncrypted: &boolFalse,
-			},
-		}},
-		SessionID: unencryptedSessionID,
-	})
-	MatchResponse(t, unencryptedRes, MatchV3Count(1), MatchV3Ops(
 		MatchV3SyncOp(func(op *sync3.ResponseOpRange) error {
 			if len(op.Rooms) != 1 {
 				return fmt.Errorf("want %d rooms, got %d", 1, len(op.Rooms))
 			}
-			return allRooms[1].MatchRoom(op.Rooms[0]) // unencrypted room
+			if op.List != 1 {
+				return fmt.Errorf("unknown list: %d", op.List)
+			}
+			return allRooms[1].MatchRoom(op.Rooms[0]) // encrypted room
 		}),
 	))
 
@@ -118,22 +117,30 @@ func TestFilters(t *testing.T) {
 	v2.waitUntilEmpty(t, alice)
 
 	// now requesting the encrypted list should include it (added)
-	encryptedRes = v3.mustDoV3RequestWithPos(t, aliceToken, encryptedRes.Pos, sync3.Request{
-		Lists: []sync3.RequestList{{
-			Ranges: sync3.SliceRanges{
-				[2]int64{0, int64(len(allRooms) - 1)}, // all rooms
+	res = v3.mustDoV3RequestWithPos(t, aliceToken, res.Pos, sync3.Request{
+		Lists: []sync3.RequestList{
+			{
+				Ranges: sync3.SliceRanges{
+					[2]int64{0, int64(len(allRooms) - 1)}, // all rooms
+				},
+				// sticky; should remember filters
 			},
-			// sticky; should remember filters
-		}},
-		SessionID: encryptedSessionID,
+			{
+				Ranges: sync3.SliceRanges{
+					[2]int64{0, int64(len(allRooms) - 1)}, // all rooms
+				},
+				// sticky; should remember filters
+			},
+		},
 	})
-	MatchResponse(t, encryptedRes, MatchV3Count(len(allRooms)), MatchV3Ops(
+	MatchResponse(t, res, MatchV3Counts([]int{len(allRooms), 0}), MatchV3Ops(
+		MatchV3DeleteOp(1, 0),
 		MatchV3DeleteOp(0, 1),
 		MatchV3InsertOp(0, 0, unencryptedRoomID),
 	))
 
 	// requesting the encrypted list from scratch returns 2 rooms now
-	encryptedRes = v3.mustDoV3Request(t, aliceToken, sync3.Request{
+	res = v3.mustDoV3Request(t, aliceToken, sync3.Request{
 		Lists: []sync3.RequestList{{
 			Ranges: sync3.SliceRanges{
 				[2]int64{0, int64(len(allRooms) - 1)}, // all rooms
@@ -142,9 +149,8 @@ func TestFilters(t *testing.T) {
 				IsEncrypted: &boolTrue,
 			},
 		}},
-		SessionID: "new_encrypted_session",
 	})
-	MatchResponse(t, encryptedRes, MatchV3Count(2), MatchV3Ops(
+	MatchResponse(t, res, MatchV3Count(2), MatchV3Ops(
 		MatchV3SyncOp(func(op *sync3.ResponseOpRange) error {
 			if len(op.Rooms) != len(allRooms) {
 				return fmt.Errorf("want %d rooms, got %d", len(allRooms), len(op.Rooms))
@@ -162,22 +168,8 @@ func TestFilters(t *testing.T) {
 		}),
 	))
 
-	// requesting the unencrypted stream DELETEs the room without a corresponding INSERT
-	unencryptedRes = v3.mustDoV3RequestWithPos(t, aliceToken, unencryptedRes.Pos, sync3.Request{
-		Lists: []sync3.RequestList{{
-			Ranges: sync3.SliceRanges{
-				[2]int64{0, int64(len(allRooms) - 1)}, // all rooms
-			},
-			// sticky; should remember filters
-		}},
-		SessionID: unencryptedSessionID,
-	})
-	MatchResponse(t, unencryptedRes, MatchV3Count(0), MatchV3Ops(
-		MatchV3DeleteOp(0, 0),
-	))
-
 	// requesting the unencrypted stream from scratch returns 0 rooms
-	unencryptedRes = v3.mustDoV3Request(t, aliceToken, sync3.Request{
+	res = v3.mustDoV3Request(t, aliceToken, sync3.Request{
 		Lists: []sync3.RequestList{{
 			Ranges: sync3.SliceRanges{
 				[2]int64{0, int64(len(allRooms) - 1)}, // all rooms
@@ -186,7 +178,6 @@ func TestFilters(t *testing.T) {
 				IsEncrypted: &boolFalse,
 			},
 		}},
-		SessionID: "new_unencrypted_session",
 	})
-	MatchResponse(t, unencryptedRes, MatchV3Count(0))
+	MatchResponse(t, res, MatchV3Count(0))
 }

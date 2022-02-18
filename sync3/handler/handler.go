@@ -115,10 +115,7 @@ func (h *SyncLiveHandler) serve(w http.ResponseWriter, req *http.Request) error 
 			}
 		}
 	}
-	if requestBody.SessionID == "" {
-		requestBody.SessionID = DefaultSessionID
-	}
-
+	fmt.Println("incoming sync pos=", req.URL.Query().Get("pos"))
 	conn, err := h.setupConnection(req, &requestBody, req.URL.Query().Get("pos") != "")
 	if err != nil {
 		hlog.FromRequest(req).Err(err).Msg("failed to get or create Conn")
@@ -181,10 +178,8 @@ func (h *SyncLiveHandler) setupConnection(req *http.Request, syncReq *sync3.Requ
 	// client thinks they have a connection
 	if containsPos {
 		// Lookup the connection
-		// we need to map based on both as the session ID isn't crypto secure but the device ID is (Auth header)
 		conn = h.ConnMap.Conn(sync3.ConnID{
-			SessionID: syncReq.SessionID,
-			DeviceID:  deviceID,
+			DeviceID: deviceID,
 		})
 		if err != nil {
 			log.Warn().Err(err).Msg("failed to lookup conn for request")
@@ -194,6 +189,7 @@ func (h *SyncLiveHandler) setupConnection(req *http.Request, syncReq *sync3.Requ
 			}
 		}
 		if conn != nil {
+			fmt.Println("returning existing conn", conn.ConnID.String())
 			return conn, nil
 		}
 		// conn doesn't exist, we probably nuked it.
@@ -245,10 +241,9 @@ func (h *SyncLiveHandler) setupConnection(req *http.Request, syncReq *sync3.Requ
 	// NB: this isn't inherently racey (we did the check for an existing conn before EnsurePolling)
 	// because we *either* do the existing check *or* make a new conn. It's important for CreateConn
 	// to check for an existing connection though, as it's possible for the client to call /sync
-	// twice for a new connection and get the same session ID.
-	conn, created := h.ConnMap.GetOrCreateConn(sync3.ConnID{
-		SessionID: syncReq.SessionID,
-		DeviceID:  deviceID,
+	// twice for a new connection.
+	conn, created := h.ConnMap.CreateConn(sync3.ConnID{
+		DeviceID: deviceID,
 	}, func() sync3.ConnHandler {
 		return NewConnState(v2device.UserID, v2device.DeviceID, userCache, h.GlobalCache, h.Extensions, h.Dispatcher)
 	})

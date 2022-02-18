@@ -394,7 +394,6 @@ func testTimelineLoadInitialEvents(v3 *testV3Server, token string, count int, wa
 				},
 				TimelineLimit: int64(numTimelineEventsPerRoom),
 			}},
-			SessionID: t.Name(),
 		})
 
 		MatchResponse(t, res, MatchV3Count(count), MatchV3Ops(
