@@ -5,6 +5,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/matrix-org/gomatrixserverlib"
 	"github.com/rs/zerolog"
 	"github.com/tidwall/gjson"
 	"github.com/tidwall/sjson"
@@ -388,7 +389,7 @@ func (p *Poller) parseRoomsResponse(res *SyncResponse) {
 		for _, ev := range roomData.InviteState.Events {
 			if gjson.GetBytes(ev, "type").Str == "m.room.member" && gjson.GetBytes(ev, "content.membership").Str == "invite" {
 				ev, _ = sjson.SetBytes(ev, "event_id", "$"+res.NextBatch+"-"+p.deviceID)
-				ev, _ = sjson.SetBytes(ev, "origin_server_ts", time.Now().UnixMilli())
+				ev, _ = sjson.SetBytes(ev, "origin_server_ts", int64(gomatrixserverlib.AsTimestamp(time.Now())))
 				p.receiver.Accumulate(roomID, []json.RawMessage{ev})
 			}
 		}
