@@ -89,7 +89,7 @@ func NewConnState(userID, deviceID string, userCache *sync3.UserCache, globalCac
 //   - load() bases its current state based on the latest position, which includes processing of these N events.
 //   - post load() we read N events, processing them a 2nd time.
 func (s *ConnState) load(req *sync3.Request) error {
-	initialLoadPosition, joinedRooms, err := s.globalCache.LoadJoinedRooms(s.userID)
+	initialLoadPosition, joinedRooms, err := s.globalCache.LoadInvitedJoinedRooms(s.userID)
 	if err != nil {
 		return err
 	}

@@ -73,7 +73,7 @@ func (c *GlobalCache) LoadRooms(roomIDs ...string) []*internal.RoomMetadata {
 
 // Load all current joined room metadata for the user given. Returns the absolute database position along
 // with the results. TODO: remove with LoadRoomState?
-func (c *GlobalCache) LoadJoinedRooms(userID string) (pos int64, joinedRooms []*internal.RoomMetadata, err error) {
+func (c *GlobalCache) LoadInvitedJoinedRooms(userID string) (pos int64, joinedRooms []*internal.RoomMetadata, err error) {
 	if c.LoadJoinedRoomsOverride != nil {
 		return c.LoadJoinedRoomsOverride(userID)
 	}
@@ -81,7 +81,7 @@ func (c *GlobalCache) LoadJoinedRooms(userID string) (pos int64, joinedRooms []*
 	if err != nil {
 		return 0, nil, err
 	}
-	joinedRoomIDs, err := c.store.JoinedRoomsAfterPosition(userID, initialLoadPosition)
+	joinedRoomIDs, err := c.store.JoinedRoomsAfterPosition(userID, initialLoadPosition, true)
 	if err != nil {
 		return 0, nil, err
 	}

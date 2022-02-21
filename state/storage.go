@@ -397,7 +397,7 @@ func (s *Storage) visibleEventNIDsBetweenForRooms(userID string, roomIDs []strin
 			return nil, fmt.Errorf("VisibleEventNIDsBetweenForRooms.SelectEventsWithTypeStateKeyInRooms: %s", err)
 		}
 	}
-	joinedRoomIDs, err := s.joinedRoomsAfterPositionWithEvents(membershipEvents, userID, from)
+	joinedRoomIDs, err := s.joinedRoomsAfterPositionWithEvents(membershipEvents, userID, from, false)
 	if err != nil {
 		return nil, fmt.Errorf("failed to work out joined rooms for %s at pos %d: %s", userID, from, err)
 	}
@@ -438,7 +438,7 @@ func (s *Storage) visibleEventNIDsBetweenForRooms(userID string, roomIDs []strin
 //  - For Room E: from=1, to=15 returns { RoomE: [ [3,3], [13,15] ] } (tests invites)
 func (s *Storage) VisibleEventNIDsBetween(userID string, from, to int64) (map[string][][2]int64, error) {
 	// load *ALL* joined rooms for this user at from (inclusive)
-	joinedRoomIDs, err := s.JoinedRoomsAfterPosition(userID, from)
+	joinedRoomIDs, err := s.JoinedRoomsAfterPosition(userID, from, false)
 	if err != nil {
 		return nil, fmt.Errorf("failed to work out joined rooms for %s at pos %d: %s", userID, from, err)
 	}
@@ -577,22 +577,26 @@ func (s *Storage) AllJoinedMembers() (map[string][]string, error) {
 	return result, nil
 }
 
-func (s *Storage) JoinedRoomsAfterPosition(userID string, pos int64) ([]string, error) {
+func (s *Storage) JoinedRoomsAfterPosition(userID string, pos int64, includeInvite bool) ([]string, error) {
 	// fetch all the membership events up to and including pos
 	membershipEvents, err := s.accumulator.eventsTable.SelectEventsWithTypeStateKey("m.room.member", userID, 0, pos)
 	if err != nil {
 		return nil, fmt.Errorf("JoinedRoomsAfterPosition.SelectEventsWithTypeStateKey: %s", err)
 	}
-	return s.joinedRoomsAfterPositionWithEvents(membershipEvents, userID, pos)
+	return s.joinedRoomsAfterPositionWithEvents(membershipEvents, userID, pos, includeInvite)
 }
 
-func (s *Storage) joinedRoomsAfterPositionWithEvents(membershipEvents []Event, userID string, pos int64) ([]string, error) {
+func (s *Storage) joinedRoomsAfterPositionWithEvents(membershipEvents []Event, userID string, pos int64, includeInvites bool) ([]string, error) {
 	joinedRoomsSet := make(map[string]bool)
 	for _, ev := range membershipEvents {
 		// some of these events will be profile changes but that's ok as we're just interested in the
 		// end result, not the deltas
 		membership := gjson.GetBytes(ev.JSON, "content.membership").Str
 		switch membership {
+		case "invite":
+			if includeInvites {
+				joinedRoomsSet[ev.RoomID] = true
+			}
 		case "join":
 			joinedRoomsSet[ev.RoomID] = true
 		case "ban":

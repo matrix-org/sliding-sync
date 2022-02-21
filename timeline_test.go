@@ -387,6 +387,7 @@ func TestTimelineMiddleWindowZeroTimelineLimit(t *testing.T) {
 // Executes a sync v3 request without a ?pos and asserts that the count, rooms and timeline events match the inputs given.
 func testTimelineLoadInitialEvents(v3 *testV3Server, token string, count int, wantRooms []roomEvents, numTimelineEventsPerRoom int) func(t *testing.T) {
 	return func(t *testing.T) {
+		t.Helper()
 		res := v3.mustDoV3Request(t, token, sync3.Request{
 			Lists: []sync3.RequestList{{
 				Ranges: sync3.SliceRanges{

@@ -7,6 +7,7 @@ import (
 
 	"github.com/rs/zerolog"
 	"github.com/tidwall/gjson"
+	"github.com/tidwall/sjson"
 )
 
 // alias time.Sleep so tests can monkey patch it out
@@ -377,6 +378,19 @@ func (p *Poller) parseRoomsResponse(res *SyncResponse) {
 
 		if len(roomData.Timeline.Events) > 0 {
 			p.receiver.Accumulate(roomID, roomData.Timeline.Events)
+		}
+	}
+	// we can only safely take the m.room.member event itself
+	// as the others may come down other streams, and indeed will come down this users
+	// stream if they join this room. We don't know the event IDs of the stripped state
+	// so we cannot clobber correctly. The only thing we can clobber is the invite event.
+	for roomID, roomData := range res.Rooms.Invite {
+		for _, ev := range roomData.InviteState.Events {
+			if gjson.GetBytes(ev, "type").Str == "m.room.member" && gjson.GetBytes(ev, "content.membership").Str == "invite" {
+				ev, _ = sjson.SetBytes(ev, "event_id", "$"+res.NextBatch+"-"+p.deviceID)
+				ev, _ = sjson.SetBytes(ev, "origin_server_ts", time.Now().UnixMilli())
+				p.receiver.Accumulate(roomID, []json.RawMessage{ev})
+			}
 		}
 	}
 	p.logger.Info().Ints(

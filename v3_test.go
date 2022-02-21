@@ -166,12 +166,12 @@ func (s *testV3Server) restart(t *testing.T, v2 *testV2Server, pq string) {
 	v2.srv.CloseClientConnections() // kick-over v2 conns
 }
 
-func (s *testV3Server) mustDoV3Request(t *testing.T, token string, reqBody interface{}) (respBody *sync3.Response) {
+func (s *testV3Server) mustDoV3Request(t *testing.T, token string, reqBody sync3.Request) (respBody *sync3.Response) {
 	t.Helper()
 	return s.mustDoV3RequestWithPos(t, token, "", reqBody)
 }
 
-func (s *testV3Server) mustDoV3RequestWithPos(t *testing.T, token string, pos string, reqBody interface{}) (respBody *sync3.Response) {
+func (s *testV3Server) mustDoV3RequestWithPos(t *testing.T, token string, pos string, reqBody sync3.Request) (respBody *sync3.Response) {
 	t.Helper()
 	resp, respBytes, code := s.doV3Request(t, token, pos, reqBody)
 	if code != 200 {

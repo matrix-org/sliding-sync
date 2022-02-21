@@ -142,14 +142,14 @@ func TestStorageJoinedRoomsAfterPosition(t *testing.T) {
 			t.Fatalf("Accumulate on %s failed: %s", roomID, err)
 		}
 	}
-	aliceJoinedRooms, err := store.JoinedRoomsAfterPosition(alice, latestPos)
+	aliceJoinedRooms, err := store.JoinedRoomsAfterPosition(alice, latestPos, false)
 	if err != nil {
 		t.Fatalf("failed to JoinedRoomsAfterPosition: %s", err)
 	}
 	if len(aliceJoinedRooms) != 1 || aliceJoinedRooms[0] != joinedRoomID {
 		t.Fatalf("JoinedRoomsAfterPosition at %v for %s got %v want %v", latestPos, alice, aliceJoinedRooms, joinedRoomID)
 	}
-	bobJoinedRooms, err := store.JoinedRoomsAfterPosition(bob, latestPos)
+	bobJoinedRooms, err := store.JoinedRoomsAfterPosition(bob, latestPos, false)
 	if err != nil {
 		t.Fatalf("failed to JoinedRoomsAfterPosition: %s", err)
 	}
