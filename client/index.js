@@ -12,7 +12,7 @@ let activeLists = [
             is_dm: true,
             room_name_like: undefined,
         },
-        activeRanges: DEFAULT_RANGES,
+        activeRanges: JSON.parse(JSON.stringify(DEFAULT_RANGES)),
         // the constantly changing sliding window ranges. Not an array for performance reasons
         // E.g tracking ranges 0-99, 500-599, we don't want to have a 600 element array
         roomIndexToRoomId: {},
@@ -26,7 +26,7 @@ let activeLists = [
             is_dm: false,
             room_name_like: undefined,
         },
-        activeRanges: DEFAULT_RANGES,
+        activeRanges: JSON.parse(JSON.stringify(DEFAULT_RANGES)),
         // the constantly changing sliding window ranges. Not an array for performance reasons
         // E.g tracking ranges 0-99, 500-599, we don't want to have a 600 element array
         roomIndexToRoomId: {},
@@ -421,7 +421,7 @@ const doSyncLoop = async (accessToken, sessionId) => {
                     // we'll end up showing nothing. Therefore, if the filters change (e.g room name filter)
                     // reset the range back to 0-20.
                     if (al.listFiltersModified) {
-                        l.ranges = DEFAULT_RANGES;
+                        l.ranges = JSON.parse(JSON.stringify(DEFAULT_RANGES));
                         al.listFiltersModified = false;
                         al.roomIndexToRoomId = {};
                     }
