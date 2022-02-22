@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/gorilla/mux"
+	"github.com/matrix-org/gomatrixserverlib"
 	"github.com/matrix-org/sync-v3/sync2"
 	"github.com/matrix-org/sync-v3/sync3"
 	"github.com/matrix-org/sync-v3/sync3/handler"
@@ -92,7 +93,10 @@ func (s *testV2Server) nextResponse(userID string) *sync2.SyncResponse {
 	}
 	select {
 	case data := <-ch:
-		log.Printf("testV2Server: nextResponse %s returning data", userID)
+		log.Printf(
+			"testV2Server: nextResponse %s returning data: [invite=%d,join=%d,leave=%d]",
+			userID, len(data.Rooms.Invite), len(data.Rooms.Join), len(data.Rooms.Leave),
+		)
 		return &data
 	case <-time.After(1 * time.Second):
 		log.Printf("testV2Server: nextResponse %s waited >1s for data, returning null", userID)
@@ -247,10 +251,16 @@ func runTestServer(t *testing.T, v2Server *testV2Server, postgresConnectionStrin
 
 func createRoomState(t *testing.T, creator string, baseTimestamp time.Time) []json.RawMessage {
 	t.Helper()
+	var pl gomatrixserverlib.PowerLevelContent
+	pl.Defaults()
+	pl.Users = map[string]int64{
+		creator: 100,
+	}
 	// all with the same timestamp as they get made atomically
 	return []json.RawMessage{
 		testutils.NewStateEvent(t, "m.room.create", "", creator, map[string]interface{}{"creator": creator}, testutils.WithTimestamp(baseTimestamp)),
 		testutils.NewStateEvent(t, "m.room.member", creator, creator, map[string]interface{}{"membership": "join"}, testutils.WithTimestamp(baseTimestamp)),
+		testutils.NewStateEvent(t, "m.room.power_levels", "", creator, pl, testutils.WithTimestamp(baseTimestamp)),
 		testutils.NewStateEvent(t, "m.room.join_rules", "", creator, map[string]interface{}{"join_rule": "public"}, testutils.WithTimestamp(baseTimestamp)),
 	}
 }

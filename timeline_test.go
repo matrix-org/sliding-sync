@@ -26,7 +26,6 @@ func TestTimelines(t *testing.T) {
 	aliceToken := "ALICE_BEARER_TOKEN_TestTimelines"
 	// make 20 rooms, last room is most recent, and send A,B,C into each room
 	allRooms := make([]roomEvents, 20)
-	latestTimestamp := time.Now()
 	for i := 0; i < len(allRooms); i++ {
 		ts := time.Now().Add(time.Duration(i) * time.Minute)
 		roomName := fmt.Sprintf("My Room %d", i)
@@ -40,10 +39,8 @@ func TestTimelines(t *testing.T) {
 				testutils.NewEvent(t, "m.room.message", alice, map[string]interface{}{"body": "C"}, ts.Add(6*time.Second)),
 			}...),
 		}
-		if ts.After(latestTimestamp) {
-			latestTimestamp = ts
-		}
 	}
+	latestTimestamp := time.Now().Add(10 * time.Hour)
 	v2.addAccount(alice, aliceToken)
 	v2.queueResponse(alice, sync2.SyncResponse{
 		Rooms: sync2.SyncRoomsResponse{
