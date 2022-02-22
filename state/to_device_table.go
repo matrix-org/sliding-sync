@@ -94,7 +94,7 @@ func (t *ToDeviceTable) InsertMessages(deviceID string, msgs []json.RawMessage) 
 			}
 		}
 
-		chunks := sqlutil.Chunkify(4, 65535, ToDeviceRowChunker(rows))
+		chunks := sqlutil.Chunkify(4, MaxPostgresParameters, ToDeviceRowChunker(rows))
 		for _, chunk := range chunks {
 			result, err := t.db.NamedQuery(`INSERT INTO syncv3_to_device_messages (device_id, message, event_type, sender)
         VALUES (:device_id, :message, :event_type, :sender) RETURNING position`, chunk)

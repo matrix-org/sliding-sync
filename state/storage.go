@@ -11,6 +11,9 @@ import (
 	"github.com/tidwall/gjson"
 )
 
+// Max number of parameters in a single SQL command
+const MaxPostgresParameters = 65535
+
 type Storage struct {
 	accumulator      *Accumulator
 	EventsTable      *EventTable

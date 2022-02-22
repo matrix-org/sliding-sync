@@ -2,6 +2,7 @@ package state
 
 import (
 	"bytes"
+	"fmt"
 	"testing"
 
 	"github.com/jmoiron/sqlx"
@@ -641,4 +642,54 @@ func TestEventTableSelectEventsWithTypeStateKey(t *testing.T) {
 	if len(wantRooms) > 0 {
 		t.Fatalf("SelectEventsWithTypeStateKeyInRooms missed rooms: %v", wantRooms)
 	}
+}
+
+// Do a massive insert/select for event IDs (greater than postgres limit) and ensure it works.
+func TestTortureEventTable(t *testing.T) {
+	db, err := sqlx.Open("postgres", postgresConnectionString)
+	if err != nil {
+		t.Fatalf("failed to open SQL db: %s", err)
+	}
+	txn, err := db.Beginx()
+	if err != nil {
+		t.Fatalf("failed to start txn: %s", err)
+	}
+	roomID := "!0:localhost"
+	table := NewEventTable(db)
+	// Insert a ton of events
+	events := make([]Event, 10+MaxPostgresParameters)
+	eventIDs := make([]string, len(events))
+	for i := 0; i < len(events); i++ {
+		events[i] = Event{
+			ID:     fmt.Sprintf("$%d", i),
+			Type:   "my_type",
+			RoomID: roomID,
+			JSON:   []byte(fmt.Sprintf(`{"type":"my_type","content":{"data":%d}}`, i)),
+		}
+		eventIDs[i] = events[i].ID
+	}
+	n, err := table.Insert(txn, events)
+	if err != nil {
+		t.Fatalf("failed to insert %d events: %s", len(events), err)
+	}
+	if n != len(events) {
+		t.Fatalf("only inserted %d/%d events", n, len(events))
+	}
+	if err = txn.Commit(); err != nil {
+		t.Fatalf("failed to commit insert")
+	}
+
+	// Now do a massive select
+	txn, err = db.Beginx()
+	if err != nil {
+		t.Fatalf("failed to start txn: %s", err)
+	}
+	nids, err := table.SelectNIDsByIDs(txn, eventIDs)
+	if err != nil {
+		t.Fatalf("SelectNIDsByIDs: %s", err)
+	}
+	if len(nids) != len(eventIDs) {
+		t.Fatalf("failed to retrieve nids for ids, got %d/%d", len(nids), len(eventIDs))
+	}
+
 }

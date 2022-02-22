@@ -6,6 +6,7 @@ import (
 	"math"
 
 	"github.com/jmoiron/sqlx"
+	"github.com/lib/pq"
 	"github.com/matrix-org/sync-v3/internal"
 	"github.com/matrix-org/sync-v3/sqlutil"
 	"github.com/tidwall/gjson"
@@ -135,7 +136,7 @@ func (t *EventTable) Insert(txn *sqlx.Tx, events []Event) (int, error) {
 
 		events[i] = ev
 	}
-	chunks := sqlutil.Chunkify(6, 65535, EventChunker(events))
+	chunks := sqlutil.Chunkify(6, MaxPostgresParameters, EventChunker(events))
 	var rowsAffected int64
 	for _, chunk := range chunks {
 		result, err := txn.NamedExec(`
@@ -155,26 +156,15 @@ func (t *EventTable) Insert(txn *sqlx.Tx, events []Event) (int, error) {
 
 // select events in a list of nids or ids, depending on the query. Provides flexibility to query on NID or ID, as well as
 // the ability to pull stripped events or normal events
-func (t *EventTable) selectIn(txn *sqlx.Tx, numWanted int, queryStr string, args ...interface{}) (events []Event, err error) {
-	query, args, err := sqlx.In(
-		queryStr, args...,
-	)
+func (t *EventTable) selectAny(txn *sqlx.Tx, numWanted int, queryStr string, pqArray interface{}) (events []Event, err error) {
 	if txn != nil {
-		query = txn.Rebind(query)
-		if err != nil {
-			return nil, err
-		}
-		err = txn.Select(&events, query, args...)
+		err = txn.Select(&events, queryStr, pqArray)
 	} else {
-		query = t.db.Rebind(query)
-		if err != nil {
-			return nil, err
-		}
-		err = t.db.Select(&events, query, args...)
+		err = t.db.Select(&events, queryStr, pqArray)
 	}
 	if numWanted > 0 {
 		if numWanted != len(events) {
-			return nil, fmt.Errorf("Events table query %s got %d events wanted %d", queryStr, len(events), numWanted)
+			return nil, fmt.Errorf("Events table query %s got %d events wanted %d. err=%s", queryStr, len(events), numWanted, err)
 		}
 	}
 	return
@@ -185,9 +175,9 @@ func (t *EventTable) SelectByNIDs(txn *sqlx.Tx, verifyAll bool, nids []int64) (e
 	if verifyAll {
 		wanted = len(nids)
 	}
-	return t.selectIn(txn, wanted, `
+	return t.selectAny(txn, wanted, `
 	SELECT event_nid, event_id, event, event_type, state_key, room_id, before_state_snapshot_id, membership FROM syncv3_events
-	WHERE event_nid IN (?) ORDER BY event_nid ASC;`, nids)
+	WHERE event_nid = ANY ($1) ORDER BY event_nid ASC;`, pq.Int64Array(nids))
 }
 
 func (t *EventTable) SelectByIDs(txn *sqlx.Tx, verifyAll bool, ids []string) (events []Event, err error) {
@@ -195,18 +185,15 @@ func (t *EventTable) SelectByIDs(txn *sqlx.Tx, verifyAll bool, ids []string) (ev
 	if verifyAll {
 		wanted = len(ids)
 	}
-	return t.selectIn(txn, wanted, `
+	return t.selectAny(txn, wanted, `
 	SELECT event_nid, event_id, event, event_type, state_key, room_id, before_state_snapshot_id, membership FROM syncv3_events
-	WHERE event_id IN (?) ORDER BY event_nid ASC;`, ids)
+	WHERE event_id = ANY ($1) ORDER BY event_nid ASC;`, pq.StringArray(ids))
 }
 
 func (t *EventTable) SelectNIDsByIDs(txn *sqlx.Tx, ids []string) (nids []int64, err error) {
-	query, args, err := sqlx.In("SELECT event_nid FROM syncv3_events WHERE event_id IN (?) ORDER BY event_nid ASC;", ids)
-	query = txn.Rebind(query)
-	if err != nil {
-		return nil, err
-	}
-	err = txn.Select(&nids, query, args...)
+	// Select NIDs using a single parameter which is a string array
+	// https://stackoverflow.com/questions/52712022/what-is-the-most-performant-way-to-rewrite-a-large-in-clause
+	err = txn.Select(&nids, "SELECT event_nid FROM syncv3_events WHERE event_id = ANY ($1) ORDER BY event_nid ASC;", pq.StringArray(ids))
 	return
 }
 
@@ -216,9 +203,9 @@ func (t *EventTable) SelectStrippedEventsByNIDs(txn *sqlx.Tx, verifyAll bool, ni
 		wanted = len(nids)
 	}
 	// don't include the 'event' column
-	return t.selectIn(txn, wanted, `
+	return t.selectAny(txn, wanted, `
 	SELECT event_nid, event_id, event_type, state_key, room_id, before_state_snapshot_id FROM syncv3_events
-	WHERE event_nid IN (?) ORDER BY event_nid ASC;`, nids)
+	WHERE event_nid = ANY ($1) ORDER BY event_nid ASC;`, pq.Int64Array(nids))
 }
 
 func (t *EventTable) SelectStrippedEventsByIDs(txn *sqlx.Tx, verifyAll bool, ids []string) (StrippedEvents, error) {
@@ -227,9 +214,9 @@ func (t *EventTable) SelectStrippedEventsByIDs(txn *sqlx.Tx, verifyAll bool, ids
 		wanted = len(ids)
 	}
 	// don't include the 'event' column
-	return t.selectIn(txn, wanted, `
+	return t.selectAny(txn, wanted, `
 	SELECT event_nid, event_id, event_type, state_key, room_id, before_state_snapshot_id FROM syncv3_events
-	WHERE event_id IN (?) ORDER BY event_nid ASC;`, ids)
+	WHERE event_id = ANY ($1) ORDER BY event_nid ASC;`, pq.StringArray(ids))
 
 }
 

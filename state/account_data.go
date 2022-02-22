@@ -50,7 +50,7 @@ func (t *AccountDataTable) Insert(txn *sqlx.Tx, accDatas []AccountData) ([]Accou
 	for _, ad := range keys {
 		dedupedAccountData = append(dedupedAccountData, *ad)
 	}
-	chunks := sqlutil.Chunkify(4, 65535, AccountDataChunker(dedupedAccountData))
+	chunks := sqlutil.Chunkify(4, MaxPostgresParameters, AccountDataChunker(dedupedAccountData))
 	for _, chunk := range chunks {
 		_, err := txn.NamedExec(`
 		INSERT INTO syncv3_account_data (user_id, room_id, type, data)
