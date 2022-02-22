@@ -49,28 +49,5 @@ func ProcessToDevice(store *state.Storage, userID, deviceID string, req *ToDevic
 		NextBatch: fmt.Sprintf("%d", upTo),
 		Events:    msgs,
 	}
-
-	// Make H use since tokens correctly
-	// TEST: it probably won't work due to OTK counts / device lists:
-	/*
-			{
-		  "next_batch": "s72595_4483_1934",
-		  "rooms": {"leave": {}, "join": {}, "invite": {}},
-		  "device_lists": {
-		    "changed": [
-		       "@alice:example.com",
-		    ],
-		    "left": [
-		       "@bob:example.com",
-		    ],
-		  },
-		  "device_one_time_keys_count": {
-		    "curve25519": 10,
-		    "signed_curve25519": 20
-		  }
-		}
-	*/
-	// need to persist OTK counts (like unread notifications, clobber)
-	// need to persist device lists (how?)
 	return
 }
