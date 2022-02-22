@@ -13,6 +13,18 @@ body {
     margin: 5px;
 }
 
+.statsheader{
+    position: fixed;
+    top: 0;
+    left: 0;
+    z-index: 1;
+}
+
+#txrx {
+    background-color: black;
+    color: white;
+}
+
 .leftSide {
     display: flex;
     background: #f7f7f7;

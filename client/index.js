@@ -2,6 +2,8 @@ let lastError = null;
 let activeAbortController = new AbortController();
 let activeSessionId;
 let activeRoomId = ""; // the room currently being viewed
+let txBytes = 0;
+let rxBytes = 0;
 const DEFAULT_RANGES = [[0, 20]];
 
 let activeLists = [
@@ -624,6 +626,7 @@ const doSyncLoop = async (accessToken, sessionId) => {
 // accessToken = string, pos = int, ranges = [2]int e.g [0,99]
 let doSyncRequest = async (accessToken, pos, reqBody) => {
     activeAbortController = new AbortController();
+    const jsonBody = JSON.stringify(reqBody);
     let resp = await fetch("/_matrix/client/v3/sync" + (pos ? "?pos=" + pos : ""), {
         signal: activeAbortController.signal,
         method: "POST",
@@ -631,12 +634,18 @@ let doSyncRequest = async (accessToken, pos, reqBody) => {
             Authorization: "Bearer " + accessToken,
             "Content-Type": "application/json",
         },
-        body: JSON.stringify(reqBody),
+        body: jsonBody,
     });
+
     let respBody = await resp.json();
     if (respBody.ops) {
         console.log(respBody);
     }
+    // 0 TX / 0 RX (KB)
+    txBytes += jsonBody.length;
+    rxBytes += JSON.stringify(respBody).length;
+    document.getElementById("txrx").textContent = (txBytes/1024.0).toFixed(2) + " KB Tx / " + (rxBytes/1024.0).toFixed(2) + " KB Rx";
+
     if (resp.status != 200) {
         if (respBody.error) {
             lastError = respBody.error;
