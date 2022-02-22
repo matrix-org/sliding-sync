@@ -430,7 +430,7 @@ const doSyncLoop = async (accessToken, sessionId) => {
                     // if this is the first request on this session, send sticky request data which never changes
                     if (!currentPos) {
                         l.required_state = requiredStateEventsInList;
-                        l.timeline_limit = 20;
+                        l.timeline_limit = 1;
                         l.sort = ["by_highlight_count", "by_notification_count", "by_recency"];
                     }
                     return l;
@@ -620,6 +620,8 @@ const doSyncLoop = async (accessToken, sessionId) => {
                 );
             }
         });
+
+        svgify();
     }
     console.log("active session: ", activeSessionId, " this session: ", sessionId, " terminating.");
 };
@@ -728,6 +730,49 @@ const randomName = (i, long) => {
         return long ? "Mr. Wizard, get me the hell out of here! " : "Morpheus";
     }
 };
+
+const svgify = () => {
+    const horizontalPixelWidth = 10;
+    const listgraph = document.getElementById("listgraph");
+    while (listgraph.firstChild) {
+        listgraph.removeChild(listgraph.firstChild);
+    }
+    const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+    svg.setAttribute("style", "background-color:black;");
+    // column 0 = list[0], column 2 = list[1], etc...
+    // 1 pixel per room so svg is however many rooms the user has
+    svg.setAttribute("width", 2 * activeLists.length * horizontalPixelWidth);
+    let height = 1;
+    activeLists.forEach((al) => {
+        if (al.joinedCount > height) {
+            height = al.joinedCount;
+        }
+    })
+    svg.setAttribute("height", height);
+    const colorInWindow = "#2020f0";
+    const colorPlaceholder = "#404040";
+    activeLists.forEach((al, index) => {
+        const placeholders = document.createElementNS("http://www.w3.org/2000/svg",'rect');
+        placeholders.setAttribute("x", index*2*horizontalPixelWidth);
+        placeholders.setAttribute("y", 0);
+        placeholders.setAttribute("width", horizontalPixelWidth);
+        placeholders.setAttribute("height", al.joinedCount);
+        placeholders.setAttribute('fill', colorPlaceholder);
+        svg.appendChild(placeholders);
+        // [[0, 20], [50,60]];
+        al.activeRanges.forEach((range) => {
+            const rect = document.createElementNS("http://www.w3.org/2000/svg",'rect');
+            rect.setAttribute('x',index*2*horizontalPixelWidth);
+            rect.setAttribute('y',range[0]);
+            rect.setAttribute('width',horizontalPixelWidth);
+            rect.setAttribute('height',range[1]-range[0]);
+            rect.setAttribute('fill',colorInWindow);
+            svg.appendChild(rect);
+        })
+    });
+
+    listgraph.appendChild(svg);
+}
 
 const zeroPad = (n) => {
     if (n < 10) {
