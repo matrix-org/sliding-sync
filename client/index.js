@@ -1,3 +1,5 @@
+// This file contains the entry point for the client, as well as DOM interactions.
+import { SlidingList  } from './sync.js';
 import * as render from './render.js';
 
 let lastError = null;
@@ -6,37 +8,14 @@ let activeSessionId;
 let activeRoomId = ""; // the room currently being viewed
 let txBytes = 0;
 let rxBytes = 0;
-const DEFAULT_RANGES = [[0, 20]];
 
 let activeLists = [
-    {
-        name: "Direct Messages",
-        listFiltersModified: false,
-        listFilters: {
-            is_dm: true,
-            room_name_like: undefined,
-        },
-        activeRanges: JSON.parse(JSON.stringify(DEFAULT_RANGES)),
-        // the constantly changing sliding window ranges. Not an array for performance reasons
-        // E.g tracking ranges 0-99, 500-599, we don't want to have a 600 element array
-        roomIndexToRoomId: {},
-        // the total number of joined rooms according to the server, always >= len(roomIndexToRoomId)
-        joinedCount: 0,
-    },
-    {
-        name: "Group Chats",
-        listFiltersModified: false,
-        listFilters: {
-            is_dm: false,
-            room_name_like: undefined,
-        },
-        activeRanges: JSON.parse(JSON.stringify(DEFAULT_RANGES)),
-        // the constantly changing sliding window ranges. Not an array for performance reasons
-        // E.g tracking ranges 0-99, 500-599, we don't want to have a 600 element array
-        roomIndexToRoomId: {},
-        // the total number of joined rooms according to the server, always >= len(roomIndexToRoomId)
-        joinedCount: 0,
-    },
+    new SlidingList("Direct Messages", {
+        is_dm: true,
+    }),
+    new SlidingList("Group Chats", {
+        is_dm: false,
+    }),
 ];
 
 const requiredStateEventsInList = [
@@ -395,17 +374,9 @@ const doSyncLoop = async (accessToken, sessionId) => {
             // these fields are always required
             let reqBody = {
                 lists: activeLists.map((al) => {
-                    // if we are viewing a window at 100-120 and then we filter down to 5 total rooms,
-                    // we'll end up showing nothing. Therefore, if the filters change (e.g room name filter)
-                    // reset the range back to 0-20.
-                    if (al.listFiltersModified) {
-                        al.listFiltersModified = false;
-                        al.activeRanges = JSON.parse(JSON.stringify(DEFAULT_RANGES));
-                        al.roomIndexToRoomId = {};
-                    }
                     let l = {
                         ranges: al.activeRanges,
-                        filters: al.listFilters,
+                        filters: al.getFilters(),
                     };
                     // if this is the first request on this session, send sticky request data which never changes
                     if (!currentPos) {
@@ -607,7 +578,6 @@ const doSyncLoop = async (accessToken, sessionId) => {
 };
 // accessToken = string, pos = int, ranges = [2]int e.g [0,99]
 let doSyncRequest = async (accessToken, pos, reqBody) => {
-    console.log(reqBody);
     activeAbortController = new AbortController();
     const jsonBody = JSON.stringify(reqBody);
     let resp = await fetch("/_matrix/client/v3/sync" + (pos ? "?pos=" + pos : ""), {
@@ -821,8 +791,9 @@ window.addEventListener("load", (event) => {
     document.getElementById("roomfilter").addEventListener("input", (ev) => {
         const roomNameFilter = ev.target.value;
         for (let i = 0; i < activeLists.length; i++) {
-            activeLists[i].listFilters.room_name_like = roomNameFilter;
-            activeLists[i].listFiltersModified = true;
+            const filters = activeLists[i].getFilters();
+            filters.room_name_like = roomNameFilter;
+            activeLists[i].setFilters(filters);
         }
         // bump to the start of the room list again
         const lists = document.getElementsByClassName("roomlist");
