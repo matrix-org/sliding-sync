@@ -621,7 +621,7 @@ const doSyncLoop = async (accessToken, sessionId) => {
             }
         });
 
-        svgify();
+        svgify(resp);
     }
     console.log("active session: ", activeSessionId, " this session: ", sessionId, " terminating.");
 };
@@ -731,8 +731,12 @@ const randomName = (i, long) => {
     }
 };
 
-const svgify = () => {
+const svgify = (resp) => {
+    if (resp.ops.length === 0) {
+        return;
+    }
     const horizontalPixelWidth = 10;
+    let verticalPixelHeight = 1;
     const listgraph = document.getElementById("listgraph");
     while (listgraph.firstChild) {
         listgraph.removeChild(listgraph.firstChild);
@@ -748,28 +752,81 @@ const svgify = () => {
             height = al.joinedCount;
         }
     })
-    svg.setAttribute("height", height);
+    if (height < (window.innerHeight/2)) { // we can double the vertical pixel height to make it easier to see
+        verticalPixelHeight = 2;
+    }
+    svg.setAttribute("height", height * verticalPixelHeight);
     const colorInWindow = "#2020f0";
     const colorPlaceholder = "#404040";
+    const colorDelete = "#ff0000";
+    const colorInsert = "#00ff00";
+    const colorUpdate = "#00ffff";
+    const colorSync = "#ffff00";
+    const colorInvalidate = "#500000";
     activeLists.forEach((al, index) => {
         const placeholders = document.createElementNS("http://www.w3.org/2000/svg",'rect');
         placeholders.setAttribute("x", index*2*horizontalPixelWidth);
         placeholders.setAttribute("y", 0);
         placeholders.setAttribute("width", horizontalPixelWidth);
-        placeholders.setAttribute("height", al.joinedCount);
+        placeholders.setAttribute("height", al.joinedCount * verticalPixelHeight);
         placeholders.setAttribute('fill', colorPlaceholder);
+
         svg.appendChild(placeholders);
         // [[0, 20], [50,60]];
         al.activeRanges.forEach((range) => {
             const rect = document.createElementNS("http://www.w3.org/2000/svg",'rect');
             rect.setAttribute('x',index*2*horizontalPixelWidth);
-            rect.setAttribute('y',range[0]);
+            rect.setAttribute('y',range[0]*verticalPixelHeight);
             rect.setAttribute('width',horizontalPixelWidth);
-            rect.setAttribute('height',range[1]-range[0]);
+            rect.setAttribute('height',(range[1]-range[0]) * verticalPixelHeight);
             rect.setAttribute('fill',colorInWindow);
             svg.appendChild(rect);
-        })
+        });
     });
+
+    const addLine = (index, y, colour, yLen) => {
+        const bar = document.createElementNS("http://www.w3.org/2000/svg",'rect');
+        bar.setAttribute("x", index*2*horizontalPixelWidth);
+        bar.setAttribute("y", y*verticalPixelHeight);
+        bar.setAttribute('width',horizontalPixelWidth);
+        bar.setAttribute('height',verticalPixelHeight*(yLen?yLen:1));
+        bar.setAttribute('fill', colour);
+        const animation = document.createElementNS("http://www.w3.org/2000/svg","animate");
+        animation.setAttribute("attributeName", "visibility");
+        animation.setAttribute("from", "visible");
+        animation.setAttribute("to", "hidden");
+        animation.setAttribute("dur", "0.5s");
+        animation.setAttribute("repeatCount", "3");
+        bar.appendChild(animation);
+        svg.appendChild(bar);
+    }
+
+    // add insertions, deletions and updates
+    resp.ops.forEach((op) => {
+        if (op.op === "DELETE") {
+            addLine(op.list, op.index, colorDelete);
+        } else if (op.op === "INSERT") {
+            addLine(op.list, op.index, colorInsert);
+        } else if (op.op === "UPDATE") {
+            addLine(op.list, op.index, colorUpdate);
+        } else if (op.op === "SYNC") {
+            addLine(op.list, op.range[0], colorSync, op.range[1]-op.range[0]+1);
+        } else if (op.op === "INVALIDATE") {
+            addLine(op.list, op.range[0], colorInvalidate, op.range[1]-op.range[0]+1);
+        }
+    });
+
+    /*
+    const animation = document.createElementNS("http://www.w3.org/2000/svg","animate");
+    animation.setAttribute("attributeName", "y");
+    animation.setAttribute("from", al.joinedCount);
+    animation.setAttribute("to", 0);
+    animation.setAttribute("dur", "1s");
+    animation.setAttribute("fill", "freeze");
+    deleteBar.appendChild(animation); */
+    
+
+
 
     listgraph.appendChild(svg);
 }
