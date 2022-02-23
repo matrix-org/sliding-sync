@@ -1,13 +1,12 @@
 // This file contains the entry point for the client, as well as DOM interactions.
-import { SlidingList  } from './sync.js';
+import { SlidingList, SlidingSyncConnection  } from './sync.js';
 import * as render from './render.js';
+import * as devtools from './devtools.js';
 
 let lastError = null;
-let activeAbortController = new AbortController();
 let activeSessionId;
 let activeRoomId = ""; // the room currently being viewed
-let txBytes = 0;
-let rxBytes = 0;
+let syncConnection = new SlidingSyncConnection();
 
 let activeLists = [
     new SlidingList("Direct Messages", {
@@ -151,7 +150,8 @@ const intersectionObserver = new IntersectionObserver(
 
                 activeLists[listIndex].activeRanges[1] = [startIndex, endIndex];
             });
-            activeAbortController.abort();
+            // interrupt the sync connection to send up new ranges
+            syncConnection.abort();
         }, 100);
     },
     {
@@ -196,7 +196,7 @@ const onRoomClick = (e) => {
         renderList(roomListElements[i], i);
     }
     // interrupt the sync to get extra state events
-    activeAbortController.abort();
+    syncConnection.abort();
 };
 
 const renderRoomContent = (roomId, refresh) => {
@@ -402,7 +402,7 @@ const doSyncLoop = async (accessToken, sessionId) => {
                 // hold a ref to the active room ID as it may change by the time we return from doSyncRequest
                 subscribingToRoom = activeRoomId;
             }
-            resp = await doSyncRequest(accessToken, currentPos, reqBody);
+            resp = await syncConnection.doSyncRequest(accessToken, currentPos, reqBody);
             currentPos = resp.pos;
             // update what we think we're subscribed to.
             if (subscribingToRoom) {
@@ -572,42 +572,11 @@ const doSyncLoop = async (accessToken, sessionId) => {
             }
         });
 
-        svgify(resp);
+        devtools.svgify(document.getElementById("listgraph"), activeLists, resp);
     }
     console.log("active session: ", activeSessionId, " this session: ", sessionId, " terminating.");
 };
-// accessToken = string, pos = int, ranges = [2]int e.g [0,99]
-let doSyncRequest = async (accessToken, pos, reqBody) => {
-    activeAbortController = new AbortController();
-    const jsonBody = JSON.stringify(reqBody);
-    let resp = await fetch("/_matrix/client/v3/sync" + (pos ? "?pos=" + pos : ""), {
-        signal: activeAbortController.signal,
-        method: "POST",
-        headers: {
-            Authorization: "Bearer " + accessToken,
-            "Content-Type": "application/json",
-        },
-        body: jsonBody,
-    });
 
-    let respBody = await resp.json();
-    if (respBody.ops) {
-        console.log(respBody);
-    }
-    // 0 TX / 0 RX (KB)
-    txBytes += jsonBody.length;
-    rxBytes += JSON.stringify(respBody).length;
-    document.getElementById("txrx").textContent = (txBytes/1024.0).toFixed(2) + " KB Tx / " + (rxBytes/1024.0).toFixed(2) + " KB Rx";
-
-    if (resp.status != 200) {
-        if (respBody.error) {
-            lastError = respBody.error;
-        }
-        throw new Error("/sync returned HTTP " + resp.status + " " + respBody.error);
-    }
-    lastError = null;
-    return respBody;
-};
 
 const randomName = (i, long) => {
     if (i % 17 === 0) {
@@ -632,124 +601,6 @@ const randomName = (i, long) => {
         return long ? "Mr. Wizard, get me the hell out of here! " : "Morpheus";
     }
 };
-
-const svgify = (resp) => {
-    if (resp.ops.length === 0) {
-        return;
-    }
-    const horizontalPixelWidth = 10;
-    let verticalPixelHeight = 1;
-    const listgraph = document.getElementById("listgraph");
-    while (listgraph.firstChild) {
-        listgraph.removeChild(listgraph.firstChild);
-    }
-    const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
-    svg.setAttribute("style", "background-color:black;");
-    // column 0 = list[0], column 2 = list[1], etc...
-    // 1 pixel per room so svg is however many rooms the user has
-    svg.setAttribute("width", 2 * activeLists.length * horizontalPixelWidth);
-    let height = 1;
-    activeLists.forEach((al) => {
-        if (al.joinedCount > height) {
-            height = al.joinedCount;
-        }
-    })
-    if (height < (window.innerHeight/2)) { // we can double the vertical pixel height to make it easier to see
-        verticalPixelHeight = 2;
-    }
-    svg.setAttribute("height", height * verticalPixelHeight);
-    const colorInWindow = "#2020f0";
-    const colorPlaceholder = "#404040";
-    const colorDelete = "#ff0000";
-    const colorInsert = "#00ff00";
-    const colorUpdate = "#00ffff";
-    const colorSync = "#ffff00";
-    const colorInvalidate = "#500000";
-    const colorRoom = "#ffffff";
-    activeLists.forEach((al, index) => {
-        const placeholders = document.createElementNS("http://www.w3.org/2000/svg",'rect');
-        placeholders.setAttribute("x", index*2*horizontalPixelWidth);
-        placeholders.setAttribute("y", 0);
-        placeholders.setAttribute("width", horizontalPixelWidth);
-        placeholders.setAttribute("height", al.joinedCount * verticalPixelHeight);
-        placeholders.setAttribute('fill', colorPlaceholder);
-
-        svg.appendChild(placeholders);
-        // [[0, 20], [50,60]];
-        al.activeRanges.forEach((range) => {
-            const rect = document.createElementNS("http://www.w3.org/2000/svg",'rect');
-            rect.setAttribute('x',index*2*horizontalPixelWidth);
-            rect.setAttribute('y',range[0]*verticalPixelHeight);
-            rect.setAttribute('width',horizontalPixelWidth);
-            rect.setAttribute('height',(range[1]-range[0]) * verticalPixelHeight);
-            rect.setAttribute('fill',colorInWindow);
-            svg.appendChild(rect);
-        });
-    });
-
-    const addLine = (index, y, colour, yLen) => {
-        const bar = document.createElementNS("http://www.w3.org/2000/svg",'rect');
-        bar.setAttribute("x", index*2*horizontalPixelWidth);
-        bar.setAttribute("y", y*verticalPixelHeight);
-        bar.setAttribute('width',horizontalPixelWidth);
-        bar.setAttribute('height',verticalPixelHeight*(yLen?yLen:1));
-        bar.setAttribute('fill', colour);
-        const animation = document.createElementNS("http://www.w3.org/2000/svg","animate");
-        animation.setAttribute("attributeName", "visibility");
-        animation.setAttribute("from", "visible");
-        animation.setAttribute("to", "hidden");
-        animation.setAttribute("dur", "0.5s");
-        animation.setAttribute("repeatCount", "3");
-        bar.appendChild(animation);
-        svg.appendChild(bar);
-    }
-
-    // add insertions, deletions and updates
-    resp.ops.forEach((op) => {
-        if (op.op === "DELETE") {
-            addLine(op.list, op.index, colorDelete);
-        } else if (op.op === "INSERT") {
-            addLine(op.list, op.index, colorInsert);
-        } else if (op.op === "UPDATE") {
-            addLine(op.list, op.index, colorUpdate);
-        } else if (op.op === "SYNC") {
-            addLine(op.list, op.range[0], colorSync, op.range[1]-op.range[0]+1);
-        } else if (op.op === "INVALIDATE") {
-            addLine(op.list, op.range[0], colorInvalidate, op.range[1]-op.range[0]+1);
-        }
-    });
-
-    // this is expensive so only do it on smaller accounts
-    if (height < 500 && false) {
-        const fifth = horizontalPixelWidth/5;
-        // draw white dot for each room which has some kind of data stored
-        activeLists.forEach((al, index) => {
-            for (let roomIndex of Object.keys(al.roomIndexToRoomId)) {
-                const roomPixel = document.createElementNS("http://www.w3.org/2000/svg",'rect');
-                roomPixel.setAttribute("x", index*2*horizontalPixelWidth + fifth);
-                roomPixel.setAttribute("y", roomIndex*verticalPixelHeight);
-                roomPixel.setAttribute('width',fifth);
-                roomPixel.setAttribute('height',verticalPixelHeight);
-                roomPixel.setAttribute('fill', colorRoom);
-                svg.appendChild(roomPixel);
-            }
-        });
-    }
-
-    /*
-    const animation = document.createElementNS("http://www.w3.org/2000/svg","animate");
-    animation.setAttribute("attributeName", "y");
-    animation.setAttribute("from", al.joinedCount);
-    animation.setAttribute("to", 0);
-    animation.setAttribute("dur", "1s");
-    animation.setAttribute("fill", "freeze");
-    deleteBar.appendChild(animation); */
-    
-
-
-
-    listgraph.appendChild(svg);
-}
 
 const mxcToUrl = (mxc) => {
     const path = mxc.substr("mxc://".length);
@@ -780,10 +631,6 @@ window.addEventListener("load", (event) => {
     }
     document.getElementById("syncButton").onclick = () => {
         const accessToken = document.getElementById("accessToken").value;
-        if (accessToken === "debug") {
-            document.getElementById("debugButton").style = "";
-            return;
-        }
         window.localStorage.setItem("accessToken", accessToken);
         activeSessionId = new Date().getTime() + "";
         doSyncLoop(accessToken, activeSessionId);
@@ -802,142 +649,7 @@ window.addEventListener("load", (event) => {
                 lists[i].firstChild.scrollIntoView(true);
             }
         }
-        if (activeAbortController) {
-            // interrupt the sync request to send up new filters
-            activeAbortController.abort();
-        }
+        // interrupt the sync request to send up new filters
+        syncConnection.abort();
     });
-    document.getElementById("debugButton").onclick = () => {
-        const debugBox = document.getElementById("debugCmd");
-        debugBox.style = "";
-        alert(
-            "Type sync operations and press ENTER to execute locally. Examples:\n" +
-                "SYNC 0 5 a b c d e f\n" +
-                "DELETE 0; INSERT 1 f\n" +
-                "UPDATE 0 a\n"
-        );
-
-        awaitingPromises = {};
-        window.responseQueue = [];
-        // monkey patch the sync request command to read from us and not do network requests
-        doSyncRequest = async (accessToken, pos, reqBody) => {
-            if (!pos) {
-                pos = 0;
-            }
-            let r = window.responseQueue[pos];
-            if (r) {
-                r.pos = pos + 1; // client should request next pos next
-                console.log(r);
-                return r;
-            }
-            // else wait until we have a response at this position
-            const responsePromise = new Promise((resolve) => {
-                awaitingPromises[pos] = resolve;
-            });
-            console.log("DEBUG: waiting for position ", pos);
-            r = await responsePromise;
-            console.log(r);
-            return r;
-        };
-        const fakeRoom = (s) => {
-            return {
-                highlight_count: 0,
-                notification_count: 0,
-                room_id: s,
-                name: s,
-                timeline: [
-                    {
-                        type: "m.room.message",
-                        sender: "DEBUG",
-                        content: {
-                            body: "Debug message",
-                        },
-                        origin_server_ts: new Date().getTime(),
-                    },
-                ],
-            };
-        };
-        let started = false;
-        debugBox.onkeypress = (ev) => {
-            if (ev.key !== "Enter") {
-                return;
-            }
-            if (!started) {
-                started = true;
-                activeSessionId = "debug";
-                doSyncLoop("none", "debug");
-            }
-            const debugInput = debugBox.value;
-            debugBox.value = "";
-            const cmds = debugInput.split(";");
-            let ops = [];
-            cmds.forEach((cmd) => {
-                cmd = cmd.trim();
-                if (cmd.length == 0) {
-                    return;
-                }
-                const args = cmd.split(" ");
-                console.log(args);
-                switch (args[0].toUpperCase()) {
-                    case "SYNC": // SYNC 0 5 a b c d e f
-                        const rooms = args.slice(3);
-                        if (rooms.length != 1 + Number(args[2]) - Number(args[1])) {
-                            console.error(
-                                "Bad SYNC: got ",
-                                rooms.length,
-                                " rooms for range (indexes are inclusive), ignoring."
-                            );
-                            return;
-                        }
-                        ops.push({
-                            range: [Number(args[1]), Number(args[2])],
-                            op: "SYNC",
-                            rooms: rooms.map((s) => {
-                                return fakeRoom(s);
-                            }),
-                        });
-                        break;
-                    case "INVALIDATE": // INVALIDATE 0 5
-                        ops.push({
-                            range: [Number(args[1]), Number(args[2])],
-                            op: "INVALIDATE",
-                        });
-                        break;
-                    case "INSERT": // INSERT 5 a
-                        ops.push({
-                            index: Number(args[1]),
-                            room: fakeRoom(args[2]),
-                            op: "INSERT",
-                        });
-                        break;
-                    case "UPDATE": // UPDATE 3 b
-                        ops.push({
-                            index: Number(args[1]),
-                            room: fakeRoom(args[2]),
-                            op: "UPDATE",
-                        });
-                        break;
-                    case "DELETE": // DELETE 2
-                        ops.push({
-                            index: Number(args[1]),
-                            op: "DELETE",
-                        });
-                        break;
-                }
-            });
-
-            responseQueue.push({
-                count: 256,
-                ops: ops,
-                room_subscriptions: {},
-            });
-            // check if there are waiting requests and wake them up
-            const thisPos = responseQueue.length - 1;
-            const resolve = awaitingPromises[thisPos];
-            if (resolve) {
-                console.log("DEBUG: waking up for position ", thisPos);
-                resolve(responseQueue[thisPos]);
-            }
-        };
-    };
 });
