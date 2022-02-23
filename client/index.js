@@ -395,18 +395,18 @@ const doSyncLoop = async (accessToken, sessionId) => {
             // these fields are always required
             let reqBody = {
                 lists: activeLists.map((al) => {
-                    let l = {
-                        ranges: al.activeRanges,
-                        filters: al.listFilters,
-                    };
                     // if we are viewing a window at 100-120 and then we filter down to 5 total rooms,
                     // we'll end up showing nothing. Therefore, if the filters change (e.g room name filter)
                     // reset the range back to 0-20.
                     if (al.listFiltersModified) {
-                        l.ranges = JSON.parse(JSON.stringify(DEFAULT_RANGES));
                         al.listFiltersModified = false;
+                        al.activeRanges = JSON.parse(JSON.stringify(DEFAULT_RANGES));
                         al.roomIndexToRoomId = {};
                     }
+                    let l = {
+                        ranges: al.activeRanges,
+                        filters: al.listFilters,
+                    };
                     // if this is the first request on this session, send sticky request data which never changes
                     if (!currentPos) {
                         l.required_state = requiredStateEventsInList;
@@ -607,6 +607,7 @@ const doSyncLoop = async (accessToken, sessionId) => {
 };
 // accessToken = string, pos = int, ranges = [2]int e.g [0,99]
 let doSyncRequest = async (accessToken, pos, reqBody) => {
+    console.log(reqBody);
     activeAbortController = new AbortController();
     const jsonBody = JSON.stringify(reqBody);
     let resp = await fetch("/_matrix/client/v3/sync" + (pos ? "?pos=" + pos : ""), {
@@ -822,6 +823,13 @@ window.addEventListener("load", (event) => {
         for (let i = 0; i < activeLists.length; i++) {
             activeLists[i].listFilters.room_name_like = roomNameFilter;
             activeLists[i].listFiltersModified = true;
+        }
+        // bump to the start of the room list again
+        const lists = document.getElementsByClassName("roomlist");
+        for (let i = 0; i < lists.length; i++) {
+            if (lists[i].firstChild) {
+                lists[i].firstChild.scrollIntoView(true);
+            }
         }
         if (activeAbortController) {
             // interrupt the sync request to send up new filters
