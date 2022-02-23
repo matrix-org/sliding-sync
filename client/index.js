@@ -1,7 +1,7 @@
 // This file contains the entry point for the client, as well as DOM interactions.
-import { SlidingList, SlidingSyncConnection  } from './sync.js';
-import * as render from './render.js';
-import * as devtools from './devtools.js';
+import { SlidingList, SlidingSyncConnection } from "./sync.js";
+import * as render from "./render.js";
+import * as devtools from "./devtools.js";
 
 let activeSessionId;
 let activeRoomId = ""; // the room currently being viewed
@@ -125,14 +125,18 @@ const intersectionObserver = new IntersectionObserver(
                     listIndexToStartEnd[listIndex].endIndex = i;
                 }
             });
-            console.log("Intersection indexes:", JSON.stringify(listIndexToStartEnd));
+            console.log(
+                "Intersection indexes:",
+                JSON.stringify(listIndexToStartEnd)
+            );
             // buffer range
             const bufferRange = 5;
 
             Object.keys(listIndexToStartEnd).forEach((listIndex) => {
                 let startIndex = listIndexToStartEnd[listIndex].startIndex;
                 let endIndex = listIndexToStartEnd[listIndex].endIndex;
-                startIndex = startIndex - bufferRange < 0 ? 0 : startIndex - bufferRange;
+                startIndex =
+                    startIndex - bufferRange < 0 ? 0 : startIndex - bufferRange;
                 endIndex =
                     endIndex + bufferRange >= activeLists[listIndex].joinedCount
                         ? activeLists[listIndex].joinedCount - 1
@@ -212,15 +216,20 @@ const renderRoomContent = (roomId, refresh) => {
     }
     let room = rooms.roomIdToRoom[activeRoomId];
     if (!room) {
-        console.error("renderRoomContent: unknown active room ID ", activeRoomId);
+        console.error(
+            "renderRoomContent: unknown active room ID ",
+            activeRoomId
+        );
         return;
     }
-    document.getElementById("selectedroomname").textContent = room.name || room.room_id;
+    document.getElementById("selectedroomname").textContent =
+        room.name || room.room_id;
     if (room.avatar) {
         document.getElementById("selectedroomavatar").src =
             mxcToUrl(room.avatar) || "/client/placeholder.svg";
     } else {
-        document.getElementById("selectedroomavatar").src = "/client/placeholder.svg";
+        document.getElementById("selectedroomavatar").src =
+            "/client/placeholder.svg";
     }
     if (room.topic) {
         document.getElementById("selectedroomtopic").textContent = room.topic;
@@ -270,7 +279,13 @@ const renderList = (container, listIndex) => {
         addCount += 1;
     }
     if (addCount > 0 || removeCount > 0) {
-        console.log("render: added ", addCount, "nodes, removed", removeCount, "nodes");
+        console.log(
+            "render: added ",
+            addCount,
+            "nodes, removed",
+            removeCount,
+            "nodes"
+        );
     }
     // loop all elements and modify the contents
     for (let i = 0; i < container.children.length; i++) {
@@ -278,10 +293,13 @@ const renderList = (container, listIndex) => {
         const roomId = listData.roomIndexToRoomId[i];
         const r = rooms.roomIdToRoom[roomId];
         const roomNameSpan = roomCell.getElementsByClassName("roomname")[0];
-        const roomContentSpan = roomCell.getElementsByClassName("roomcontent")[0];
+        const roomContentSpan =
+            roomCell.getElementsByClassName("roomcontent")[0];
         const roomSenderSpan = roomCell.getElementsByClassName("roomsender")[0];
-        const roomTimestampSpan = roomCell.getElementsByClassName("roomtimestamp")[0];
-        const unreadCountSpan = roomCell.getElementsByClassName("unreadcount")[0];
+        const roomTimestampSpan =
+            roomCell.getElementsByClassName("roomtimestamp")[0];
+        const unreadCountSpan =
+            roomCell.getElementsByClassName("unreadcount")[0];
         unreadCountSpan.textContent = "";
         unreadCountSpan.classList.remove("unreadcountnotify");
         unreadCountSpan.classList.remove("unreadcounthighlight");
@@ -293,7 +311,8 @@ const renderList = (container, listIndex) => {
             roomContentSpan.style = "background: #e0e0e0; color: #e0e0e0;";
             roomSenderSpan.textContent = "";
             roomTimestampSpan.textContent = "";
-            roomCell.getElementsByClassName("roomavatar")[0].src = "/client/placeholder.svg";
+            roomCell.getElementsByClassName("roomavatar")[0].src =
+                "/client/placeholder.svg";
             roomCell.style = "";
             continue;
         }
@@ -305,7 +324,8 @@ const renderList = (container, listIndex) => {
             roomCell.getElementsByClassName("roomavatar")[0].src =
                 mxcToUrl(r.avatar) || "/client/placeholder.svg";
         } else {
-            roomCell.getElementsByClassName("roomavatar")[0].src = "/client/placeholder.svg";
+            roomCell.getElementsByClassName("roomavatar")[0].src =
+                "/client/placeholder.svg";
         }
         if (roomId === activeRoomId) {
             roomCell.style = "background: #d7d7f7";
@@ -328,7 +348,9 @@ const renderList = (container, listIndex) => {
             const mostRecentEvent = r.timeline[r.timeline.length - 1];
             roomSenderSpan.textContent = mostRecentEvent.sender;
             // TODO: move to render.js
-            roomTimestampSpan.textContent = render.formatTimestamp(mostRecentEvent.origin_server_ts);
+            roomTimestampSpan.textContent = render.formatTimestamp(
+                mostRecentEvent.origin_server_ts
+            );
 
             const body = render.textForEvent(mostRecentEvent);
             if (mostRecentEvent.type === "m.room.member") {
@@ -362,7 +384,12 @@ const indexInRange = (listIndex, i) => {
 };
 
 const doSyncLoop = async (accessToken, sessionId) => {
-    console.log("Starting sync loop. Active: ", activeSessionId, " this:", sessionId);
+    console.log(
+        "Starting sync loop. Active: ",
+        activeSessionId,
+        " this:",
+        sessionId
+    );
 
     let currentPos;
     let currentSub = "";
@@ -380,7 +407,11 @@ const doSyncLoop = async (accessToken, sessionId) => {
                     if (!currentPos) {
                         l.required_state = requiredStateEventsInList;
                         l.timeline_limit = 1;
-                        l.sort = ["by_highlight_count", "by_notification_count", "by_recency"];
+                        l.sort = [
+                            "by_highlight_count",
+                            "by_notification_count",
+                            "by_recency",
+                        ];
                     }
                     return l;
                 }),
@@ -400,7 +431,11 @@ const doSyncLoop = async (accessToken, sessionId) => {
                 // hold a ref to the active room ID as it may change by the time we return from doSyncRequest
                 subscribingToRoom = activeRoomId;
             }
-            resp = await syncConnection.doSyncRequest(accessToken, currentPos, reqBody);
+            resp = await syncConnection.doSyncRequest(
+                accessToken,
+                currentPos,
+                reqBody
+            );
             currentPos = resp.pos;
             // update what we think we're subscribed to.
             if (subscribingToRoom) {
@@ -452,7 +487,8 @@ const doSyncLoop = async (accessToken, sessionId) => {
                     // something is in this space, shift items out of the way
                     if (gapIndex < 0) {
                         console.log(
-                            "cannot work out where gap is, INSERT without previous DELETE! List: ", op.list,
+                            "cannot work out where gap is, INSERT without previous DELETE! List: ",
+                            op.list
                         );
                         return;
                     }
@@ -474,7 +510,9 @@ const doSyncLoop = async (accessToken, sessionId) => {
                         for (let i = gapIndex; i > op.index; i--) {
                             if (indexInRange(op.list, i)) {
                                 activeLists[op.list].roomIndexToRoomId[i] =
-                                    activeLists[op.list].roomIndexToRoomId[i - 1];
+                                    activeLists[op.list].roomIndexToRoomId[
+                                        i - 1
+                                    ];
                             }
                         }
                     } else if (gapIndex < op.index) {
@@ -483,13 +521,19 @@ const doSyncLoop = async (accessToken, sessionId) => {
                         for (let i = gapIndex; i < op.index; i++) {
                             if (indexInRange(op.list, i)) {
                                 activeLists[op.list].roomIndexToRoomId[i] =
-                                    activeLists[op.list].roomIndexToRoomId[i + 1];
+                                    activeLists[op.list].roomIndexToRoomId[
+                                        i + 1
+                                    ];
                             }
                         }
                     }
                 }
-                accumulateRoomData(op.room, rooms.roomIdToRoom[op.room.room_id] !== undefined);
-                activeLists[op.list].roomIndexToRoomId[op.index] = op.room.room_id;
+                accumulateRoomData(
+                    op.room,
+                    rooms.roomIdToRoom[op.room.room_id] !== undefined
+                );
+                activeLists[op.list].roomIndexToRoomId[op.index] =
+                    op.room.room_id;
                 renderRoomContent(op.room.room_id);
             } else if (op.op === "UPDATE") {
                 console.log("UPDATE", op.list, op.index, op.room.room_id, ";");
@@ -507,15 +551,30 @@ const doSyncLoop = async (accessToken, sessionId) => {
                     syncRooms.push(r.room_id);
                     accumulateRoomData(r);
                 }
-                console.log("SYNC", op.list, op.range[0], op.range[1], syncRooms.join(" "), ";");
+                console.log(
+                    "SYNC",
+                    op.list,
+                    op.range[0],
+                    op.range[1],
+                    syncRooms.join(" "),
+                    ";"
+                );
             } else if (op.op === "INVALIDATE") {
                 let invalidRooms = [];
                 const startIndex = op.range[0];
                 for (let i = startIndex; i <= op.range[1]; i++) {
-                    invalidRooms.push(activeLists[op.list].roomIndexToRoomId[i]);
+                    invalidRooms.push(
+                        activeLists[op.list].roomIndexToRoomId[i]
+                    );
                     delete activeLists[op.list].roomIndexToRoomId[i];
                 }
-                console.log("INVALIDATE", op.list, op.range[0], op.range[1], ";");
+                console.log(
+                    "INVALIDATE",
+                    op.list,
+                    op.range[0],
+                    op.range[1],
+                    ";"
+                );
             }
         });
         const roomListElements = document.getElementsByClassName("roomlist");
@@ -568,11 +627,20 @@ const doSyncLoop = async (accessToken, sessionId) => {
             }
         });
 
-        devtools.svgify(document.getElementById("listgraph"), activeLists, resp);
+        devtools.svgify(
+            document.getElementById("listgraph"),
+            activeLists,
+            resp
+        );
     }
-    console.log("active session: ", activeSessionId, " this session: ", sessionId, " terminating.");
+    console.log(
+        "active session: ",
+        activeSessionId,
+        " this session: ",
+        sessionId,
+        " terminating."
+    );
 };
-
 
 const randomName = (i, long) => {
     if (i % 17 === 0) {
@@ -588,11 +656,17 @@ const randomName = (i, long) => {
             ? "That’s how it is with people. Nobody cares how it works as long as it works."
             : "I know kung fu";
     } else if (i % 7 === 0) {
-        return long ? "The body cannot live without the mind." : "Free your mind";
+        return long
+            ? "The body cannot live without the mind."
+            : "Free your mind";
     } else if (i % 5 === 0) {
-        return long ? "Perhaps we are asking the wrong questions…" : "Agent Smith";
+        return long
+            ? "Perhaps we are asking the wrong questions…"
+            : "Agent Smith";
     } else if (i % 3 === 0) {
-        return long ? "You've been living in a dream world, Neo." : "Mr Anderson";
+        return long
+            ? "You've been living in a dream world, Neo."
+            : "Mr Anderson";
     } else {
         return long ? "Mr. Wizard, get me the hell out of here! " : "Morpheus";
     }

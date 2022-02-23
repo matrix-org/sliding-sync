@@ -1,0 +1,14 @@
+{
+    "name": "sliding-sync",
+    "version": "0.1.0",
+    "private": true,
+    "devDependencies": {
+        "prettier": "^2.1.2"
+    },
+    "prettier": {
+        "trailingComma": "es5",
+        "tabWidth": 4,
+        "semi": true,
+        "singleQuote": false
+    }
+}

@@ -1,12 +1,11 @@
 // This file contains the main sliding sync code.
 
-import * as devtools from './devtools.js';
+import * as devtools from "./devtools.js";
 
 // The default range to /always/ track on a list.
 // When you scroll the list, new windows are added to the first element. E.g [[0,20], [37,45]]
 // TODO: explain why
 const DEFAULT_RANGES = [[0, 20]];
-
 
 /**
  * SlidingSyncConnection is a thin wrapper around fetch() which performs a sliding sync request.
@@ -41,15 +40,18 @@ export class SlidingSyncConnection {
     async doSyncRequest(accessToken, pos, reqBody) {
         this.abortController = new AbortController();
         const jsonBody = JSON.stringify(reqBody);
-        let resp = await fetch("/_matrix/client/v3/sync" + (pos ? "?pos=" + pos : ""), {
-            signal: this.abortController.signal,
-            method: "POST",
-            headers: {
-                Authorization: "Bearer " + accessToken,
-                "Content-Type": "application/json",
-            },
-            body: jsonBody,
-        });
+        let resp = await fetch(
+            "/_matrix/client/v3/sync" + (pos ? "?pos=" + pos : ""),
+            {
+                signal: this.abortController.signal,
+                method: "POST",
+                headers: {
+                    Authorization: "Bearer " + accessToken,
+                    "Content-Type": "application/json",
+                },
+                body: jsonBody,
+            }
+        );
 
         let respBody = await resp.json();
         if (respBody.ops) {
@@ -66,7 +68,9 @@ export class SlidingSyncConnection {
             if (respBody.error) {
                 this.lastError = respBody.error;
             }
-            throw new Error("/sync returned HTTP " + resp.status + " " + respBody.error);
+            throw new Error(
+                "/sync returned HTTP " + resp.status + " " + respBody.error
+            );
         }
         this.lastError = null;
         return respBody;
@@ -80,7 +84,7 @@ export class SlidingSyncConnection {
 export class SlidingList {
     /**
      * Construct a new sliding list.
-     * @param {string} name Human-readable name to display on the UI for this list. 
+     * @param {string} name Human-readable name to display on the UI for this list.
      * @param {object} filters Optional. The sliding sync filters to apply e.g { is_dm: true }.
      */
     constructor(name, filters) {
@@ -119,12 +123,9 @@ export class SlidingList {
 }
 
 class SlidingSync {
-
     /**
-     * 
-     * @param {[]SlidingList} activeLists 
+     *
+     * @param {[]SlidingList} activeLists
      */
-    constructor(activeLists) {
-
-    }
+    constructor(activeLists) {}
 }

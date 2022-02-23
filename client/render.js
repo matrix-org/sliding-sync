@@ -23,7 +23,9 @@ const membershipChangeText = (ev) => {
     if (nowMembership == prevMembership && nowMembership == "join") {
         // display name or avatar change
         if (prevContent.displayname !== ev.content.displayname) {
-            return ev.state_key + " set their name to " + ev.content.displayname;
+            return (
+                ev.state_key + " set their name to " + ev.content.displayname
+            );
         }
         if (prevContent.avatar_url !== ev.content.avatar_url) {
             return ev.state_key + " changed their profile picture";
@@ -79,11 +81,9 @@ export const renderEvent = (eventIdKey, ev) => {
     const msgCell = template.content.firstElementChild.cloneNode(true);
     msgCell.setAttribute("id", eventIdKey);
     msgCell.getElementsByClassName("msgsender")[0].textContent = ev.sender;
-    msgCell.getElementsByClassName("msgtimestamp")[0].textContent = formatTimestamp(
-        ev.origin_server_ts
-    );
+    msgCell.getElementsByClassName("msgtimestamp")[0].textContent =
+        formatTimestamp(ev.origin_server_ts);
     let body = textForEvent(ev);
     msgCell.getElementsByClassName("msgcontent")[0].textContent = body;
     return msgCell;
-}
-
+};
