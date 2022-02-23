@@ -1,3 +1,5 @@
+import * as render from './render.js';
+
 let lastError = null;
 let activeAbortController = new AbortController();
 let activeSessionId;
@@ -128,7 +130,7 @@ const intersectionObserver = new IntersectionObserver(
             let listIndexToStartEnd = {};
             Object.keys(visibleIndexes).forEach((indexes) => {
                 // e.g "1-44"
-                [listIndex, roomIndex] = indexes.split("-");
+                let [listIndex, roomIndex] = indexes.split("-");
                 let i = Number(roomIndex);
                 listIndex = Number(listIndex);
                 if (!listIndexToStartEnd[listIndex]) {
@@ -185,17 +187,7 @@ const renderMessage = (container, ev) => {
     if (existing) {
         return;
     }
-
-    const template = document.getElementById("messagetemplate");
-    // https://developer.mozilla.org/en-US/docs/Web/HTML/Element/template#avoiding_documentfragment_pitfall
-    const msgCell = template.content.firstElementChild.cloneNode(true);
-    msgCell.setAttribute("id", eventIdKey);
-    msgCell.getElementsByClassName("msgsender")[0].textContent = ev.sender;
-    msgCell.getElementsByClassName("msgtimestamp")[0].textContent = formatTimestamp(
-        ev.origin_server_ts
-    );
-    let body = textForEvent(ev);
-    msgCell.getElementsByClassName("msgcontent")[0].textContent = body;
+    const msgCell = render.renderEvent(eventIdKey, ev);
     container.appendChild(msgCell);
 };
 
@@ -222,7 +214,7 @@ const onRoomClick = (e) => {
     // get the highlight on the room
     const roomListElements = document.getElementsByClassName("roomlist");
     for (let i = 0; i < roomListElements.length; i++) {
-        render(roomListElements[i], i);
+        renderList(roomListElements[i], i);
     }
     // interrupt the sync to get extra state events
     activeAbortController.abort();
@@ -271,11 +263,11 @@ const roomIdAttr = (listIndex, roomIndex) => {
     return "room-" + listIndex + "-" + roomIndex;
 };
 
-const render = (container, listIndex) => {
+const renderList = (container, listIndex) => {
     const listData = activeLists[listIndex];
     if (!listData) {
         console.error(
-            "render(): cannot render list at index ",
+            "renderList(): cannot render list at index ",
             listIndex,
             " no data associated with this index!"
         );
@@ -357,9 +349,10 @@ const render = (container, listIndex) => {
         } else if (r.timeline && r.timeline.length > 0) {
             const mostRecentEvent = r.timeline[r.timeline.length - 1];
             roomSenderSpan.textContent = mostRecentEvent.sender;
-            roomTimestampSpan.textContent = formatTimestamp(mostRecentEvent.origin_server_ts);
+            // TODO: move to render.js
+            roomTimestampSpan.textContent = render.formatTimestamp(mostRecentEvent.origin_server_ts);
 
-            const body = textForEvent(mostRecentEvent);
+            const body = render.textForEvent(mostRecentEvent);
             if (mostRecentEvent.type === "m.room.member") {
                 roomContentSpan.textContent = "";
                 roomSenderSpan.textContent = body;
@@ -373,19 +366,6 @@ const render = (container, listIndex) => {
 };
 const sleep = (ms) => {
     return new Promise((resolve) => setTimeout(resolve, ms));
-};
-
-const formatTimestamp = (originServerTs) => {
-    const d = new Date(originServerTs);
-    return (
-        d.toDateString() +
-        " " +
-        zeroPad(d.getHours()) +
-        ":" +
-        zeroPad(d.getMinutes()) +
-        ":" +
-        zeroPad(d.getSeconds())
-    );
 };
 
 // SYNC 0 2 a b c; SYNC 6 8 d e f; DELETE 7; INSERT 0 e;
@@ -573,7 +553,7 @@ const doSyncLoop = async (accessToken, sessionId) => {
         });
         const roomListElements = document.getElementsByClassName("roomlist");
         for (let i = 0; i < roomListElements.length; i++) {
-            render(roomListElements[i], i);
+            renderList(roomListElements[i], i);
         }
 
         // check for duplicates and rooms outside tracked ranges which should never happen but can if there's a bug
@@ -656,55 +636,6 @@ let doSyncRequest = async (accessToken, pos, reqBody) => {
     }
     lastError = null;
     return respBody;
-};
-
-const textForEvent = (ev) => {
-    let body = "";
-    switch (ev.type) {
-        case "m.room.message":
-            body = ev.content.body;
-            break;
-        case "m.room.member":
-            body = membershipChangeText(ev);
-            break;
-        case "m.reaction":
-            body = "reacted with " + (ev.content["m.relates_to"] || {}).key;
-            break;
-        default:
-            body = ev.type + " event";
-            break;
-    }
-    return body;
-};
-
-const membershipChangeText = (ev) => {
-    const prevContent = (ev.unsigned || {}).prev_content || {};
-    const prevMembership = prevContent.membership || "leave";
-    const nowMembership = ev.content.membership;
-    if (nowMembership != prevMembership) {
-        switch (nowMembership) {
-            case "join":
-                return ev.state_key + " joined the room";
-            case "leave":
-                return ev.state_key + " left the room";
-            case "ban":
-                return ev.sender + " banned " + ev.state_key + " from the room";
-            case "invite":
-                return ev.sender + " invited " + ev.state_key + " to the room";
-            case "knock":
-                return ev.state_key + " knocked on the room";
-        }
-    }
-    if (nowMembership == prevMembership && nowMembership == "join") {
-        // display name or avatar change
-        if (prevContent.displayname !== ev.content.displayname) {
-            return ev.state_key + " set their name to " + ev.content.displayname;
-        }
-        if (prevContent.avatar_url !== ev.content.avatar_url) {
-            return ev.state_key + " changed their profile picture";
-        }
-    }
-    return ev.type + " event";
 };
 
 const randomName = (i, long) => {
@@ -848,13 +779,6 @@ const svgify = (resp) => {
 
     listgraph.appendChild(svg);
 }
-
-const zeroPad = (n) => {
-    if (n < 10) {
-        return "0" + n;
-    }
-    return n;
-};
 
 const mxcToUrl = (mxc) => {
     const path = mxc.substr("mxc://".length);
