@@ -13,10 +13,10 @@ export function bandwidth(domNode, conn) {
 
 /**
  * Generate an SVG visualisation of the sliding lists and attaches it as a child to the domNode provided.
+ * Does nothing if there are no resp.ops.
  * @param {Element} domNode The node to insert the SVG into.
  * @param {[]SlidingList} activeLists The lists
  * @param {object} resp The Sliding Sync response JSON
- * @returns {SVGSVGElement}
  */
 export function svgify(domNode, activeLists, resp) {
     if (resp.ops.length === 0) {

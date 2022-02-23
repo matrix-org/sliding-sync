@@ -3,7 +3,6 @@ import { SlidingList, SlidingSyncConnection  } from './sync.js';
 import * as render from './render.js';
 import * as devtools from './devtools.js';
 
-let lastError = null;
 let activeSessionId;
 let activeRoomId = ""; // the room currently being viewed
 let syncConnection = new SlidingSyncConnection();
@@ -366,7 +365,6 @@ const doSyncLoop = async (accessToken, sessionId) => {
     console.log("Starting sync loop. Active: ", activeSessionId, " this:", sessionId);
 
     let currentPos;
-    let currentError = null;
     let currentSub = "";
     while (sessionId === activeSessionId) {
         let resp;
@@ -416,14 +414,12 @@ const doSyncLoop = async (accessToken, sessionId) => {
                     activeLists[index].joinedCount = count;
                 });
             }
+            // reset any error message
+            document.getElementById("errorMsg").textContent = "";
         } catch (err) {
             if (err.name !== "AbortError") {
                 console.error("/sync failed:", err);
-                console.log("current", currentError, "last", lastError);
-                if (currentError != lastError) {
-                    document.getElementById("errorMsg").textContent = lastError ? lastError : "";
-                }
-                currentError = lastError;
+                document.getElementById("errorMsg").textContent = err;
                 await sleep(3000);
             }
         }
