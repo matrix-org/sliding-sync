@@ -763,6 +763,7 @@ const svgify = (resp) => {
     const colorUpdate = "#00ffff";
     const colorSync = "#ffff00";
     const colorInvalidate = "#500000";
+    const colorRoom = "#ffffff";
     activeLists.forEach((al, index) => {
         const placeholders = document.createElementNS("http://www.w3.org/2000/svg",'rect');
         placeholders.setAttribute("x", index*2*horizontalPixelWidth);
@@ -815,6 +816,23 @@ const svgify = (resp) => {
             addLine(op.list, op.range[0], colorInvalidate, op.range[1]-op.range[0]+1);
         }
     });
+
+    // this is expensive so only do it on smaller accounts
+    if (height < 500 && false) {
+        const fifth = horizontalPixelWidth/5;
+        // draw white dot for each room which has some kind of data stored
+        activeLists.forEach((al, index) => {
+            for (let roomIndex of Object.keys(al.roomIndexToRoomId)) {
+                const roomPixel = document.createElementNS("http://www.w3.org/2000/svg",'rect');
+                roomPixel.setAttribute("x", index*2*horizontalPixelWidth + fifth);
+                roomPixel.setAttribute("y", roomIndex*verticalPixelHeight);
+                roomPixel.setAttribute('width',fifth);
+                roomPixel.setAttribute('height',verticalPixelHeight);
+                roomPixel.setAttribute('fill', colorRoom);
+                svg.appendChild(roomPixel);
+            }
+        });
+    }
 
     /*
     const animation = document.createElementNS("http://www.w3.org/2000/svg","animate");
