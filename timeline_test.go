@@ -162,7 +162,9 @@ func TestTimelinesLiveStream(t *testing.T) {
 			Ranges: sync3.SliceRanges{
 				[2]int64{0, int64(len(wantRooms) - 1)}, // first N rooms
 			},
-			TimelineLimit: int64(numTimelineEventsPerRoom),
+			RoomSubscription: sync3.RoomSubscription{
+				TimelineLimit: int64(numTimelineEventsPerRoom),
+			},
 		}},
 	})
 	MatchResponse(t, res, MatchV3Count(len(allRooms)), MatchV3Ops(
@@ -263,7 +265,9 @@ func TestInitialFlag(t *testing.T) {
 			Ranges: sync3.SliceRanges{
 				[2]int64{0, 10},
 			},
-			TimelineLimit: 10,
+			RoomSubscription: sync3.RoomSubscription{
+				TimelineLimit: 10,
+			},
 		}},
 	})
 	MatchResponse(t, res, MatchV3Ops(
@@ -343,7 +347,9 @@ func TestTimelineMiddleWindowZeroTimelineLimit(t *testing.T) {
 			Ranges: sync3.SliceRanges{
 				[2]int64{5, 10},
 			},
-			TimelineLimit: 0,
+			RoomSubscription: sync3.RoomSubscription{
+				TimelineLimit: 0,
+			},
 		}},
 	})
 	wantRooms := allRooms[5:11]
@@ -402,7 +408,9 @@ func testTimelineLoadInitialEvents(v3 *testV3Server, token string, count int, wa
 				Ranges: sync3.SliceRanges{
 					[2]int64{0, int64(len(wantRooms) - 1)}, // first N rooms
 				},
-				TimelineLimit: int64(numTimelineEventsPerRoom),
+				RoomSubscription: sync3.RoomSubscription{
+					TimelineLimit: int64(numTimelineEventsPerRoom),
+				},
 			}},
 		})
 

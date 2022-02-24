@@ -128,8 +128,10 @@ func TestSecurityLiveStreamEventLeftLeak(t *testing.T) {
 			Ranges: sync3.SliceRanges{
 				[2]int64{0, 10}, // doesn't matter
 			},
-			RequiredState: [][2]string{
-				{"m.room.name", ""},
+			RoomSubscription: sync3.RoomSubscription{
+				RequiredState: [][2]string{
+					{"m.room.name", ""},
+				},
 			},
 		}},
 	})
@@ -144,8 +146,10 @@ func TestSecurityLiveStreamEventLeftLeak(t *testing.T) {
 			Ranges: sync3.SliceRanges{
 				[2]int64{0, 10}, // doesn't matter
 			},
-			RequiredState: [][2]string{
-				{"m.room.name", ""},
+			RoomSubscription: sync3.RoomSubscription{
+				RequiredState: [][2]string{
+					{"m.room.name", ""},
+				},
 			},
 		}},
 	})

@@ -17,8 +17,10 @@ func TestRequestApplyDeltas(t *testing.T) {
 			input: Request{
 				Lists: []RequestList{
 					{
-						Sort:          []string{SortByName},
-						TimelineLimit: 5,
+						Sort: []string{SortByName},
+						RoomSubscription: RoomSubscription{
+							TimelineLimit: 5,
+						},
 					},
 				},
 				RoomSubscriptions: map[string]RoomSubscription{

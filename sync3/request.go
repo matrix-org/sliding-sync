@@ -32,11 +32,10 @@ type Request struct {
 }
 
 type RequestList struct {
-	Ranges        SliceRanges     `json:"ranges"`
-	Sort          []string        `json:"sort"`
-	RequiredState [][2]string     `json:"required_state"`
-	TimelineLimit int64           `json:"timeline_limit"`
-	Filters       *RequestFilters `json:"filters"`
+	RoomSubscription
+	Ranges  SliceRanges     `json:"ranges"`
+	Sort    []string        `json:"sort"`
+	Filters *RequestFilters `json:"filters"`
 }
 
 func (r *Request) SetPos(pos int64) {
@@ -97,11 +96,13 @@ func (r *Request) ApplyDelta(nextReq *Request) (result *Request, subs, unsubs []
 			filters = existingList.Filters
 		}
 		lists[i] = RequestList{
-			Ranges:        rooms,
-			Sort:          sort,
-			RequiredState: reqState,
-			TimelineLimit: timelineLimit,
-			Filters:       filters,
+			RoomSubscription: RoomSubscription{
+				RequiredState: reqState,
+				TimelineLimit: timelineLimit,
+			},
+			Ranges:  rooms,
+			Sort:    sort,
+			Filters: filters,
 		}
 	}
 	result.Lists = lists

@@ -76,7 +76,9 @@ func TestRoomNames(t *testing.T) {
 				Ranges: sync3.SliceRanges{
 					[2]int64{0, int64(len(allRooms) - 1)}, // all rooms
 				},
-				TimelineLimit: int64(100),
+				RoomSubscription: sync3.RoomSubscription{
+					TimelineLimit: int64(100),
+				},
 			}},
 		})
 		MatchResponse(t, res, MatchV3Count(len(allRooms)), MatchV3Ops(

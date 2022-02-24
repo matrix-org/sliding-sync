@@ -65,7 +65,9 @@ func TestMultipleLists(t *testing.T) {
 				Ranges: sync3.SliceRanges{
 					[2]int64{0, 2}, // first 3 rooms
 				},
-				TimelineLimit: 1,
+				RoomSubscription: sync3.RoomSubscription{
+					TimelineLimit: 1,
+				},
 				Filters: &sync3.RequestFilters{
 					IsEncrypted: &boolTrue,
 				},
@@ -75,7 +77,9 @@ func TestMultipleLists(t *testing.T) {
 				Ranges: sync3.SliceRanges{
 					[2]int64{0, 2}, // first 3 rooms
 				},
-				TimelineLimit: 1,
+				RoomSubscription: sync3.RoomSubscription{
+					TimelineLimit: 1,
+				},
 				Filters: &sync3.RequestFilters{
 					IsEncrypted: &boolFalse,
 				},
@@ -240,7 +244,9 @@ func TestMultipleListsDMUpdate(t *testing.T) {
 				Ranges: sync3.SliceRanges{
 					[2]int64{0, 2}, // first 3 rooms
 				},
-				TimelineLimit: 1,
+				RoomSubscription: sync3.RoomSubscription{
+					TimelineLimit: 1,
+				},
 				Filters: &sync3.RequestFilters{
 					IsDM: &boolTrue,
 				},
@@ -250,7 +256,9 @@ func TestMultipleListsDMUpdate(t *testing.T) {
 				Ranges: sync3.SliceRanges{
 					[2]int64{0, 2}, // first 3 rooms
 				},
-				TimelineLimit: 1,
+				RoomSubscription: sync3.RoomSubscription{
+					TimelineLimit: 1,
+				},
 				Filters: &sync3.RequestFilters{
 					IsDM: &boolFalse,
 				},

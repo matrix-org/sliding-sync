@@ -59,7 +59,9 @@ func TestNotificationsOnTop(t *testing.T) {
 			Ranges: sync3.SliceRanges{
 				[2]int64{0, int64(len(allRooms) - 1)}, // all rooms
 			},
-			TimelineLimit: int64(100),
+			RoomSubscription: sync3.RoomSubscription{
+				TimelineLimit: int64(100),
+			},
 			// prefer highlight count first, THEN eventually recency
 			Sort: []string{sync3.SortByHighlightCount, sync3.SortByNotificationCount, sync3.SortByRecency},
 		}},
@@ -135,7 +137,9 @@ func TestNotificationsOnTop(t *testing.T) {
 			Ranges: sync3.SliceRanges{
 				[2]int64{0, int64(len(allRooms) - 1)}, // all rooms
 			},
-			TimelineLimit: int64(100),
+			RoomSubscription: sync3.RoomSubscription{
+				TimelineLimit: int64(100),
+			},
 			// prefer highlight count first, THEN eventually recency
 			Sort: []string{sync3.SortByHighlightCount, sync3.SortByNotificationCount, sync3.SortByRecency},
 		}},
