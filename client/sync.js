@@ -12,13 +12,15 @@ import * as devtools from "./devtools.js";
 // TODO: explain why
 const DEFAULT_RANGES = [[0, 20]];
 
+// We'll load these events for every room cell in each list.
+// Note we do not need any room name information as the server calculates all this for us.
 const REQUIRED_STATE_EVENTS_IN_LIST = [
-    ["m.room.avatar", ""],
-    ["m.room.tombstone", ""],
+    ["m.room.avatar", ""], // need the avatar
+    ["m.room.tombstone", ""], // need to know if this room has been replaced
 ];
 const REQUIRED_STATE_EVENTS_IN_ROOM = [
-    ["m.room.avatar", ""],
-    ["m.room.topic", ""],
+    ["m.room.avatar", ""], // need the avatar to display next to the room name
+    ["m.room.topic", ""], // need the topic to display on the right-hand-side
 ];
 
 // Lifecycle state when the /sync response has been fully processed and all room data callbacks
@@ -39,7 +41,6 @@ export class SlidingSyncConnection {
         this.txBytes = 0;
         this.rxBytes = 0;
         this.abortController = new AbortController();
-        this.lastError = null;
     }
 
     /**
@@ -86,14 +87,10 @@ export class SlidingSyncConnection {
         devtools.bandwidth(document.getElementById("txrx"), this);
 
         if (resp.status != 200) {
-            if (respBody.error) {
-                this.lastError = respBody.error;
-            }
             throw new Error(
                 "/sync returned HTTP " + resp.status + " " + respBody.error
             );
         }
-        this.lastError = null;
         return respBody;
     }
 }

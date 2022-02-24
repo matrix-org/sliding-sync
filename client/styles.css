@@ -13,7 +13,7 @@ body {
     margin: 5px;
 }
 
-.statsheader{
+.statsheader {
     position: fixed;
     top: 0;
     left: 0;
@@ -42,7 +42,7 @@ body {
     width: 50%;
 }
 
-#roomlistcontainer{
+#roomlistcontainer {
     max-height: 100%;
     display: grid;
 }
@@ -63,7 +63,7 @@ body {
     border-right: 1px solid #8d99a5;
 }
 
-.roomlistname{
+.roomlistname {
     position: sticky;
     top: 0;
     background: #8d99a5;
@@ -71,7 +71,6 @@ body {
     padding: 2px;
     color: #fff;
 }
-
 
 .roomcell {
     padding: 5px;
@@ -140,4 +139,6 @@ body {
 
 #selectedroomtopic {
     font-size: x-small;
+    border: 1px solid;
+    padding: 5px;
 }

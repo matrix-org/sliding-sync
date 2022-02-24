@@ -177,6 +177,7 @@ const onRoomClick = (e) => {
     let listIndex = -1;
     let index = -1;
     // walk up the pointer event path until we find a room-##-## id=
+    // TODO: move to render.js where these attrs are defined?
     const path = e.composedPath();
     for (let i = 0; i < path.length; i++) {
         if (path[i].id && path[i].id.startsWith("room-")) {
@@ -278,6 +279,7 @@ const doSyncLoop = async (accessToken) => {
         switch (state) {
             // The sync has been processed and we can now re-render the UI.
             case LifecycleSyncComplete:
+                // this list matches the list in activeLists
                 const roomListElements =
                     document.getElementsByClassName("roomlist");
                 for (let i = 0; i < roomListElements.length; i++) {
@@ -361,6 +363,8 @@ const doSyncLoop = async (accessToken) => {
         let room = rooms.roomIdToRoom[slidingSync.roomSubscription];
         renderRoomTimeline(room, false);
     });
+
+    // begin the sliding sync loop
     slidingSync.start(accessToken);
 };
 
