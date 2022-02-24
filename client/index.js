@@ -222,8 +222,10 @@ const renderRoomTimeline = (room, refresh) => {
     document.getElementById("selectedroomname").textContent =
         room.name || room.room_id;
     if (room.avatar) {
+        // TODO move to render.js
         document.getElementById("selectedroomavatar").src =
-            mxcToUrl(room.avatar) || "/client/placeholder.svg";
+            render.mxcToUrl(syncv2ServerUrl, room.avatar) ||
+            "/client/placeholder.svg";
     } else {
         document.getElementById("selectedroomavatar").src =
             "/client/placeholder.svg";
@@ -243,10 +245,6 @@ const renderRoomTimeline = (room, refresh) => {
     }
 };
 
-const roomIdAttr = (listIndex, roomIndex) => {
-    return "room-" + listIndex + "-" + roomIndex;
-};
-
 const renderList = (container, listIndex) => {
     const listData = activeLists[listIndex];
     if (!listData) {
@@ -257,109 +255,16 @@ const renderList = (container, listIndex) => {
         );
         return;
     }
-    let addCount = 0;
-    let removeCount = 0;
-    // ensure we have the right number of children, remove or add appropriately.
-    while (container.childElementCount > listData.joinedCount) {
-        intersectionObserver.unobserve(container.lastChild);
-        container.removeChild(container.lastChild);
-        removeCount += 1;
-    }
-    for (let i = container.childElementCount; i < listData.joinedCount; i++) {
-        const template = document.getElementById("roomCellTemplate");
-        // https://developer.mozilla.org/en-US/docs/Web/HTML/Element/template#avoiding_documentfragment_pitfall
-        const roomCell = template.content.firstElementChild.cloneNode(true);
-        roomCell.setAttribute("id", roomIdAttr(listIndex, i));
-        container.appendChild(roomCell);
-        intersectionObserver.observe(roomCell);
-        roomCell.addEventListener("click", onRoomClick);
-        addCount += 1;
-    }
-    if (addCount > 0 || removeCount > 0) {
-        console.log(
-            "render: added ",
-            addCount,
-            "nodes, removed",
-            removeCount,
-            "nodes"
-        );
-    }
-    // loop all elements and modify the contents
-    for (let i = 0; i < container.children.length; i++) {
-        const roomCell = container.children[i];
-        const roomId = listData.roomIndexToRoomId[i];
-        const r = rooms.roomIdToRoom[roomId];
-        const roomNameSpan = roomCell.getElementsByClassName("roomname")[0];
-        const roomContentSpan =
-            roomCell.getElementsByClassName("roomcontent")[0];
-        const roomSenderSpan = roomCell.getElementsByClassName("roomsender")[0];
-        const roomTimestampSpan =
-            roomCell.getElementsByClassName("roomtimestamp")[0];
-        const unreadCountSpan =
-            roomCell.getElementsByClassName("unreadcount")[0];
-        unreadCountSpan.textContent = "";
-        unreadCountSpan.classList.remove("unreadcountnotify");
-        unreadCountSpan.classList.remove("unreadcounthighlight");
-        if (!r) {
-            // placeholder
-            roomNameSpan.textContent = randomName(i, false);
-            roomNameSpan.style = "background: #e0e0e0; color: #e0e0e0;";
-            roomContentSpan.textContent = randomName(i, true);
-            roomContentSpan.style = "background: #e0e0e0; color: #e0e0e0;";
-            roomSenderSpan.textContent = "";
-            roomTimestampSpan.textContent = "";
-            roomCell.getElementsByClassName("roomavatar")[0].src =
-                "/client/placeholder.svg";
-            roomCell.style = "";
-            continue;
-        }
-        roomCell.style = "";
-        roomNameSpan.textContent = r.name || r.room_id;
-        roomNameSpan.style = "";
-        roomContentSpan.style = "";
-        if (r.avatar) {
-            roomCell.getElementsByClassName("roomavatar")[0].src =
-                mxcToUrl(r.avatar) || "/client/placeholder.svg";
-        } else {
-            roomCell.getElementsByClassName("roomavatar")[0].src =
-                "/client/placeholder.svg";
-        }
-        if (roomId === slidingSync.roomSubscription) {
-            roomCell.style = "background: #d7d7f7";
-        }
-        if (r.highlight_count > 0) {
-            // use the notification count instead to avoid counts dropping down. This matches ele-web
-            unreadCountSpan.textContent = r.notification_count + "";
-            unreadCountSpan.classList.add("unreadcounthighlight");
-        } else if (r.notification_count > 0) {
-            unreadCountSpan.textContent = r.notification_count + "";
-            unreadCountSpan.classList.add("unreadcountnotify");
-        } else {
-            unreadCountSpan.textContent = "";
-        }
-
-        if (r.obsolete) {
-            roomContentSpan.textContent = "";
-            roomSenderSpan.textContent = r.obsolete;
-        } else if (r.timeline && r.timeline.length > 0) {
-            const mostRecentEvent = r.timeline[r.timeline.length - 1];
-            roomSenderSpan.textContent = mostRecentEvent.sender;
-            // TODO: move to render.js
-            roomTimestampSpan.textContent = render.formatTimestamp(
-                mostRecentEvent.origin_server_ts
-            );
-
-            const body = render.textForEvent(mostRecentEvent);
-            if (mostRecentEvent.type === "m.room.member") {
-                roomContentSpan.textContent = "";
-                roomSenderSpan.textContent = body;
-            } else {
-                roomContentSpan.textContent = body;
-            }
-        } else {
-            roomContentSpan.textContent = "";
-        }
-    }
+    render.renderRoomList(
+        container,
+        syncv2ServerUrl,
+        listIndex,
+        listData,
+        slidingSync.roomSubscription,
+        rooms.roomIdToRoom,
+        intersectionObserver,
+        onRoomClick
+    );
 };
 
 const doSyncLoop = async (accessToken) => {
@@ -457,44 +362,6 @@ const doSyncLoop = async (accessToken) => {
         renderRoomTimeline(room, false);
     });
     slidingSync.start(accessToken);
-};
-
-const randomName = (i, long) => {
-    if (i % 17 === 0) {
-        return long
-            ? "Ever have that feeling where you’re not sure if you’re awake or dreaming?"
-            : "There is no spoon";
-    } else if (i % 13 === 0) {
-        return long
-            ? "Choice is an illusion created between those with power and those without."
-            : "Get Up Trinity";
-    } else if (i % 11 === 0) {
-        return long
-            ? "That’s how it is with people. Nobody cares how it works as long as it works."
-            : "I know kung fu";
-    } else if (i % 7 === 0) {
-        return long
-            ? "The body cannot live without the mind."
-            : "Free your mind";
-    } else if (i % 5 === 0) {
-        return long
-            ? "Perhaps we are asking the wrong questions…"
-            : "Agent Smith";
-    } else if (i % 3 === 0) {
-        return long
-            ? "You've been living in a dream world, Neo."
-            : "Mr Anderson";
-    } else {
-        return long ? "Mr. Wizard, get me the hell out of here! " : "Morpheus";
-    }
-};
-
-const mxcToUrl = (mxc) => {
-    const path = mxc.substr("mxc://".length);
-    if (!path) {
-        return;
-    }
-    return `${syncv2ServerUrl}/_matrix/media/r0/thumbnail/${path}?width=64&height=64&method=crop`;
 };
 
 // Main entry point to the client is here
