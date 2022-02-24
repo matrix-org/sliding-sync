@@ -11,3 +11,5 @@ developers who want to implement Sliding Sync into their clients. The client is 
 -   `sync.js` : Sliding Sync code.
 
 To understand sliding sync, you need to read `index.js` and `sync.js`. The rest of it can be ignored.
+
+The client code uses Prettier as a code formatter.
