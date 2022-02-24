@@ -120,16 +120,19 @@ func TestConnStateInitial(t *testing.T) {
 					{
 						RoomID:   roomB.RoomID,
 						Name:     roomB.NameEvent,
+						Initial:  true,
 						Timeline: []json.RawMessage{timeline[roomB.RoomID]},
 					},
 					{
 						RoomID:   roomC.RoomID,
 						Name:     roomC.NameEvent,
+						Initial:  true,
 						Timeline: []json.RawMessage{timeline[roomC.RoomID]},
 					},
 					{
 						RoomID:   roomA.RoomID,
 						Name:     roomA.NameEvent,
+						Initial:  true,
 						Timeline: []json.RawMessage{timeline[roomA.RoomID]},
 					},
 				},
@@ -553,8 +556,9 @@ func TestConnStateRoomSubscriptions(t *testing.T) {
 		Counts: []int{len(roomIDs)},
 		RoomSubscriptions: map[string]sync3.Room{
 			roomD.RoomID: {
-				RoomID: roomD.RoomID,
-				Name:   roomD.NameEvent,
+				RoomID:  roomD.RoomID,
+				Name:    roomD.NameEvent,
+				Initial: true,
 				Timeline: []json.RawMessage{
 					timeline[roomD.RoomID],
 				},
@@ -566,15 +570,17 @@ func TestConnStateRoomSubscriptions(t *testing.T) {
 				Range:     []int64{0, 1},
 				Rooms: []sync3.Room{
 					{
-						RoomID: roomA.RoomID,
-						Name:   roomA.NameEvent,
+						RoomID:  roomA.RoomID,
+						Name:    roomA.NameEvent,
+						Initial: true,
 						Timeline: []json.RawMessage{
 							timeline[roomA.RoomID],
 						},
 					},
 					{
-						RoomID: roomB.RoomID,
-						Name:   roomB.NameEvent,
+						RoomID:  roomB.RoomID,
+						Name:    roomB.NameEvent,
+						Initial: true,
 						Timeline: []json.RawMessage{
 							timeline[roomB.RoomID],
 						},
@@ -635,8 +641,9 @@ func TestConnStateRoomSubscriptions(t *testing.T) {
 		Counts: []int{len(roomIDs)},
 		RoomSubscriptions: map[string]sync3.Room{
 			roomC.RoomID: {
-				RoomID: roomC.RoomID,
-				Name:   roomC.NameEvent,
+				RoomID:  roomC.RoomID,
+				Name:    roomC.NameEvent,
+				Initial: true,
 				Timeline: []json.RawMessage{
 					timeline[roomC.RoomID],
 				},
