@@ -142,3 +142,11 @@ body {
     border: 1px solid;
     padding: 5px;
 }
+
+#roomfooter {
+    margin: 5px;
+}
+
+#sendmessageinput {
+    width: 100%;
+}

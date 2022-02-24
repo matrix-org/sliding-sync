@@ -11,6 +11,7 @@ import {
 } from "./sync.js";
 import * as render from "./render.js";
 import * as devtools from "./devtools.js";
+import * as matrix from "./matrix.js";
 
 let syncv2ServerUrl; // will be populated with the URL of the CS API e.g 'https://matrix-client.matrix.org'
 let slidingSync;
@@ -428,4 +429,27 @@ window.addEventListener("load", async (event) => {
         // interrupt the sync request to send up new filters
         syncConnection.abort();
     });
+
+    // hook up the send message input
+    document
+        .getElementById("sendmessageinput")
+        .addEventListener("keydown", async (ev) => {
+            if (ev.key == "Enter") {
+                ev.target.setAttribute("disabled", "");
+                const msg = ev.target.value;
+                try {
+                    await matrix.sendMessage(
+                        syncv2ServerUrl,
+                        document.getElementById("accessToken").value,
+                        slidingSync.roomSubscription,
+                        msg
+                    );
+                    ev.target.value = "";
+                } catch (err) {
+                    document.getElementById("errorMsg").textContent =
+                        "Error sending message: " + err;
+                }
+                ev.target.removeAttribute("disabled");
+            }
+        });
 });
