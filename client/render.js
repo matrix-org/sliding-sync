@@ -1,6 +1,8 @@
-// This file contains code to map data structures to actual HTML elements.
-// It is mostly functional and boring and it does not include any sliding sync specific data.
-// In other words, if you want to learn about sliding sync, this isn't the file to look at.
+/*
+ * This file contains code to map data structures to actual HTML elements.
+ * It is mostly functional and boring and it does not include any sliding sync specific data.
+ * In other words, if you want to learn about sliding sync, this isn't the file to look at.
+ */
 
 const membershipChangeText = (ev) => {
     const prevContent = (ev.unsigned || {}).prev_content || {};

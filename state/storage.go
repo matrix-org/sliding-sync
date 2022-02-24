@@ -95,11 +95,11 @@ func (s *Storage) MetadataForAllRooms() (map[string]internal.RoomMetadata, error
 	defer rows.Close()
 	result := make(map[string]internal.RoomMetadata)
 	for rows.Next() {
-		var hi internal.RoomMetadata
-		if err := rows.Scan(&hi.RoomID, &hi.JoinCount); err != nil {
+		var metadata internal.RoomMetadata
+		if err := rows.Scan(&metadata.RoomID, &metadata.JoinCount); err != nil {
 			return nil, err
 		}
-		result[hi.RoomID] = hi
+		result[metadata.RoomID] = metadata
 	}
 	// Select the invited member counts using the same style of query
 	rows, err = s.accumulator.db.Query(`
@@ -119,9 +119,9 @@ func (s *Storage) MetadataForAllRooms() (map[string]internal.RoomMetadata, error
 		if err := rows.Scan(&roomID, &inviteCount); err != nil {
 			return nil, err
 		}
-		hi := result[roomID]
-		hi.InviteCount = inviteCount
-		result[roomID] = hi
+		metadata := result[roomID]
+		metadata.InviteCount = inviteCount
+		result[roomID] = metadata
 	}
 
 	// work out latest timestamps
@@ -132,6 +132,9 @@ func (s *Storage) MetadataForAllRooms() (map[string]internal.RoomMetadata, error
 	for _, ev := range events {
 		metadata := result[ev.RoomID]
 		metadata.LastMessageTimestamp = gjson.ParseBytes(ev.JSON).Get("origin_server_ts").Uint()
+		// it's possible the latest event is a brand new room not caught by the first SELECT for joined
+		// rooms e.g when you're invited to a room so we need to make sure to se the metadata again here
+		metadata.RoomID = ev.RoomID
 		result[ev.RoomID] = metadata
 	}
 

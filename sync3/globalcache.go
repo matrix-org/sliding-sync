@@ -152,6 +152,8 @@ func (c *GlobalCache) Startup(roomIDToMetadata map[string]internal.RoomMetadata)
 	for roomID := range roomIDToMetadata {
 		metadata := roomIDToMetadata[roomID]
 		fmt.Printf("Room: %s - %s - %s \n", roomID, metadata.NameEvent, gomatrixserverlib.Timestamp(metadata.LastMessageTimestamp).Time())
+		internal.Assert("room ID is set", metadata.RoomID != "")
+		internal.Assert("last message timestamp exists", metadata.LastMessageTimestamp > 1)
 		c.roomIDToMetadata[roomID] = &metadata
 	}
 	return nil

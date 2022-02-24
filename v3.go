@@ -44,11 +44,20 @@ func allowCORS(next http.Handler) http.HandlerFunc {
 }
 
 // RunSyncV3Server is the main entry point to the server
-func RunSyncV3Server(h http.Handler, bindAddr string) {
+func RunSyncV3Server(h http.Handler, bindAddr, destV2Server string) {
 	// HTTP path routing
 	r := mux.NewRouter()
 	r.Handle("/_matrix/client/v3/sync", allowCORS(h))
 	r.Handle("/_matrix/client/unstable/org.matrix.msc3575/sync", allowCORS(h))
+
+	serverJSON, _ := json.Marshal(struct {
+		Server string `json:"server"`
+	}{destV2Server})
+	r.Handle("/client/server.json", allowCORS(http.HandlerFunc(func(rw http.ResponseWriter, r *http.Request) {
+		rw.Header().Set("Content-Type", "application/json")
+		rw.WriteHeader(200)
+		rw.Write(serverJSON)
+	})))
 	r.PathPrefix("/client/").HandlerFunc(
 		allowCORS(
 			http.StripPrefix("/client/", http.FileServer(http.Dir("./client"))),

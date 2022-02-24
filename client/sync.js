@@ -1,4 +1,9 @@
-// This file contains the main sliding sync code.
+/*
+ * This file contains the main sliding sync code.
+ * It defines the core sliding sync types and contains code for handling list deltas.
+ * It doesn't concern itself with storing room data or updating the UI in any way, deferring
+ * to room/lifecycle callbacks for that.
+ */
 
 import * as devtools from "./devtools.js";
 

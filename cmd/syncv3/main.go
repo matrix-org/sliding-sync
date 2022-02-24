@@ -39,5 +39,5 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
-	syncv3.RunSyncV3Server(h, *flagBindAddr)
+	syncv3.RunSyncV3Server(h, *flagBindAddr, *flagDestinationServer)
 }

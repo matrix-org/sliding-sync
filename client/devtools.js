@@ -1,5 +1,7 @@
-// This file contains code to render the developer tools overlay (bandwidth, list visualisations, etc)
-// You don't need to read this file to understand sliding sync.
+/*
+ * This file contains code to render the developer tools overlay (bandwidth, list visualisations, etc)
+ * You don't need to read this file to understand sliding sync.
+ */
 
 /**
  * Set the bandwidth values on the devtools display.

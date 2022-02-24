@@ -1,4 +1,7 @@
-// This file contains the entry point for the client, as well as DOM interactions.
+/*
+ * This file contains the entry point for the client, as well as DOM interactions.
+ */
+
 import {
     SlidingList,
     SlidingSyncConnection,
@@ -9,6 +12,7 @@ import {
 import * as render from "./render.js";
 import * as devtools from "./devtools.js";
 
+let syncv2ServerUrl;
 let slidingSync;
 let syncConnection = new SlidingSyncConnection();
 let activeLists = [
@@ -202,14 +206,6 @@ const renderRoomContent = (roomId, refresh) => {
     if (roomId !== slidingSync.roomSubscription) {
         return;
     }
-    const container = document.getElementById("messages");
-    if (refresh) {
-        document.getElementById("selectedroomname").textContent = "";
-        // wipe all message entries
-        while (container.hasChildNodes()) {
-            container.removeChild(container.firstChild);
-        }
-    }
     let room = rooms.roomIdToRoom[slidingSync.roomSubscription];
     if (!room) {
         console.error(
@@ -217,6 +213,14 @@ const renderRoomContent = (roomId, refresh) => {
             slidingSync.roomSubscription
         );
         return;
+    }
+    const container = document.getElementById("messages");
+    if (refresh) {
+        document.getElementById("selectedroomname").textContent = "";
+        // wipe all message entries
+        while (container.hasChildNodes()) {
+            container.removeChild(container.firstChild);
+        }
     }
     document.getElementById("selectedroomname").textContent =
         room.name || room.room_id;
@@ -485,11 +489,18 @@ const mxcToUrl = (mxc) => {
     if (!path) {
         return;
     }
-    // TODO: we should really use the proxy HS not matrix.org
-    return `https://matrix-client.matrix.org/_matrix/media/r0/thumbnail/${path}?width=64&height=64&method=crop`;
+    return `${syncv2ServerUrl}/_matrix/media/r0/thumbnail/${path}?width=64&height=64&method=crop`;
 };
 
-window.addEventListener("load", (event) => {
+window.addEventListener("load", async (event) => {
+    const v2ServerResp = await fetch("./server.json");
+    const syncv2ServerJson = await v2ServerResp.json();
+    if (!syncv2ServerJson || !syncv2ServerJson.server) {
+        console.error("failed to fetch v2 server url: ", v2ServerResp);
+        return;
+    }
+    syncv2ServerUrl = syncv2ServerJson.server.replace(/\/$/, ""); // remove trailing /
+
     const container = document.getElementById("roomlistcontainer");
     activeLists.forEach((list) => {
         const roomList = document.createElement("div");
