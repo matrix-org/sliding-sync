@@ -189,6 +189,12 @@ export class SlidingSync {
         });
     }
 
+    /**
+     * Invoke all attached lifecycle listeners.
+     * @param {Number} state The Lifecycle state
+     * @param {object} resp The raw sync response JSON
+     * @param {Error?} err Any error that occurred when making the request e.g network errors.
+     */
     _invokeLifecycleListeners(state, resp, err) {
         this.lifecycleCallbacks.forEach((callback) => {
             callback(state, resp, err);

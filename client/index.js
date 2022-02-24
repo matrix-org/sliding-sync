@@ -12,7 +12,7 @@ import {
 import * as render from "./render.js";
 import * as devtools from "./devtools.js";
 
-let syncv2ServerUrl;
+let syncv2ServerUrl; // will be populated with the URL of the CS API e.g 'https://matrix-client.matrix.org'
 let slidingSync;
 let syncConnection = new SlidingSyncConnection();
 let activeLists = [
@@ -32,6 +32,7 @@ let rooms = {
 };
 window.rooms = rooms;
 window.activeLists = activeLists;
+
 const accumulateRoomData = (r, isUpdate) => {
     let room = r;
     if (isUpdate) {
@@ -192,7 +193,7 @@ const onRoomClick = (e) => {
     // assign room subscription
     slidingSync.roomSubscription =
         activeLists[listIndex].roomIndexToRoomId[index];
-    renderRoomContent(slidingSync.roomSubscription, true);
+    renderRoomTimeline(rooms.roomIdToRoom[slidingSync.roomSubscription], true);
     // get the highlight on the room
     const roomListElements = document.getElementsByClassName("roomlist");
     for (let i = 0; i < roomListElements.length; i++) {
@@ -202,14 +203,10 @@ const onRoomClick = (e) => {
     syncConnection.abort();
 };
 
-const renderRoomContent = (roomId, refresh) => {
-    if (roomId !== slidingSync.roomSubscription) {
-        return;
-    }
-    let room = rooms.roomIdToRoom[slidingSync.roomSubscription];
+const renderRoomTimeline = (room, refresh) => {
     if (!room) {
         console.error(
-            "renderRoomContent: unknown active room ID ",
+            "renderRoomTimeline: cannot render room timeline: unknown active room ID ",
             slidingSync.roomSubscription
         );
         return;
@@ -374,6 +371,7 @@ const doSyncLoop = async (accessToken) => {
     slidingSync = new SlidingSync(activeLists, syncConnection);
     slidingSync.addLifecycleListener((state, resp, err) => {
         switch (state) {
+            // The sync has been processed and we can now re-render the UI.
             case LifecycleSyncComplete:
                 const roomListElements =
                     document.getElementsByClassName("roomlist");
@@ -432,6 +430,7 @@ const doSyncLoop = async (accessToken) => {
                     resp
                 );
                 break;
+            // A sync request has been finished, possibly with an error.
             case LifecycleSyncRequestFinished:
                 if (err) {
                     console.error("/sync failed:", err);
@@ -442,6 +441,7 @@ const doSyncLoop = async (accessToken) => {
                 break;
         }
     });
+
     slidingSync.addRoomDataListener((roomId, roomData, isIncremental) => {
         accumulateRoomData(
             roomData,
@@ -449,7 +449,12 @@ const doSyncLoop = async (accessToken) => {
                 ? isIncremental
                 : rooms.roomIdToRoom[roomId] !== undefined
         );
-        renderRoomContent(roomId);
+        // render the right-hand side section with the room timeline if we are viewing it.
+        if (roomId !== slidingSync.roomSubscription) {
+            return;
+        }
+        let room = rooms.roomIdToRoom[slidingSync.roomSubscription];
+        renderRoomTimeline(room, false);
     });
     slidingSync.start(accessToken);
 };
@@ -492,7 +497,10 @@ const mxcToUrl = (mxc) => {
     return `${syncv2ServerUrl}/_matrix/media/r0/thumbnail/${path}?width=64&height=64&method=crop`;
 };
 
+// Main entry point to the client is here
 window.addEventListener("load", async (event) => {
+    // Download the base CS API server URL from the sliding sync proxy.
+    // We need to know the base URL for media requests, sending events, etc.
     const v2ServerResp = await fetch("./server.json");
     const syncv2ServerJson = await v2ServerResp.json();
     if (!syncv2ServerJson || !syncv2ServerJson.server) {
@@ -501,6 +509,8 @@ window.addEventListener("load", async (event) => {
     }
     syncv2ServerUrl = syncv2ServerJson.server.replace(/\/$/, ""); // remove trailing /
 
+    // Dynamically create the room lists based on the `activeLists` variable.
+    // This exists to allow developers to experiment with different lists and filters.
     const container = document.getElementById("roomlistcontainer");
     activeLists.forEach((list) => {
         const roomList = document.createElement("div");
@@ -514,23 +524,30 @@ window.addEventListener("load", async (event) => {
         roomListWrapper.appendChild(roomList);
         container.appendChild(roomListWrapper);
     });
+
+    // Load any stored access token.
     const storedAccessToken = window.localStorage.getItem("accessToken");
     if (storedAccessToken) {
         document.getElementById("accessToken").value = storedAccessToken;
     }
+
+    // hook up the sync button to start the sync loop
     document.getElementById("syncButton").onclick = () => {
         const accessToken = document.getElementById("accessToken").value;
-        window.localStorage.setItem("accessToken", accessToken);
+        window.localStorage.setItem("accessToken", accessToken); // remember token over refreshes
         doSyncLoop(accessToken);
     };
+
+    // hook up the room filter so it filters as the user types
     document.getElementById("roomfilter").addEventListener("input", (ev) => {
         const roomNameFilter = ev.target.value;
         for (let i = 0; i < activeLists.length; i++) {
+            // apply the room name filter to all lists
             const filters = activeLists[i].getFilters();
             filters.room_name_like = roomNameFilter;
             activeLists[i].setFilters(filters);
         }
-        // bump to the start of the room list again
+        // bump to the start of the room list again. We need to do this to ensure the UI displays correctly.
         const lists = document.getElementsByClassName("roomlist");
         for (let i = 0; i < lists.length; i++) {
             if (lists[i].firstChild) {
