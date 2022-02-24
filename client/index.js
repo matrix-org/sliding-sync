@@ -16,6 +16,9 @@ import * as matrix from "./matrix.js";
 let syncv2ServerUrl; // will be populated with the URL of the CS API e.g 'https://matrix-client.matrix.org'
 let slidingSync;
 let syncConnection = new SlidingSyncConnection();
+
+// The lists present on the UI.
+// You can add/remove these at will to experiment with sliding sync filters.
 let activeLists = [
     new SlidingList("Direct Messages", {
         is_dm: true,
@@ -34,59 +37,72 @@ let rooms = {
 window.rooms = rooms;
 window.activeLists = activeLists;
 
-const accumulateRoomData = (r, isUpdate) => {
-    let room = r;
-    if (isUpdate) {
-        // use what we already have, if any
-        let existingRoom = rooms.roomIdToRoom[r.room_id];
-        if (existingRoom) {
-            if (r.name) {
-                existingRoom.name = r.name;
-            }
-            if (r.highlight_count !== undefined) {
-                existingRoom.highlight_count = r.highlight_count;
-            }
-            if (r.notification_count !== undefined) {
-                existingRoom.notification_count = r.notification_count;
-            }
-            if (r.timeline) {
-                r.timeline.forEach((e) => {
-                    existingRoom.timeline.push(e);
-                });
-            }
-            room = existingRoom;
+/**
+ * Set top-level properties on the response which corresponds to state fields the UI requires.
+ * The normal response returns whole state events in an array which isn't useful when rendering as we
+ * often just need a single key within the content, so pre-emptively find the fields we want and set them.
+ * Modifies the input object.
+ * @param {object} r The room response JSON
+ */
+const setRoomStateFields = (r) => {
+    if (!r.required_state) {
+        return;
+    }
+    for (let i = 0; i < r.required_state.length; i++) {
+        const ev = r.required_state[i];
+        switch (ev.type) {
+            case "m.room.avatar":
+                r.avatar = ev.content.url;
+                break;
+            case "m.room.topic":
+                r.topic = ev.content.topic;
+                break;
+            case "m.room.tombstone":
+                r.obsolete = ev.content.body || "m.room.tombstone";
+                break;
         }
     }
-    // pull out avatar and topic if it exists
-    let avatar;
-    let topic;
-    let obsolete;
-    if (r.required_state) {
-        for (let i = 0; i < r.required_state.length; i++) {
-            const ev = r.required_state[i];
-            switch (ev.type) {
-                case "m.room.avatar":
-                    avatar = ev.content.url;
-                    break;
-                case "m.room.topic":
-                    topic = ev.content.topic;
-                    break;
-                case "m.room.tombstone":
-                    obsolete = ev.content.body || "m.room.tombstone";
-                    break;
-            }
+};
+
+/**
+ * Accumulate room data for this room. This is done by inspecting the 'initial' flag on the response.
+ * If it is set, the entire room is replaced with this data. If it is false, the room data is
+ * merged together with whatever is there in the store.
+ * @param {object} r The room response JSON
+ */
+const accumulateRoomData = (r) => {
+    setRoomStateFields(r);
+    if (r.initial) {
+        rooms.roomIdToRoom[r.room_id] = r;
+        return;
+    }
+    // use what we already have, if any
+    let existingRoom = rooms.roomIdToRoom[r.room_id];
+    if (existingRoom) {
+        if (r.name) {
+            existingRoom.name = r.name;
         }
+        if (r.highlight_count !== undefined) {
+            existingRoom.highlight_count = r.highlight_count;
+        }
+        if (r.notification_count !== undefined) {
+            existingRoom.notification_count = r.notification_count;
+        }
+        if (r.timeline) {
+            r.timeline.forEach((e) => {
+                existingRoom.timeline.push(e);
+            });
+        }
+    } else {
+        // we don't know this room but apparently we should. Whine about it and use what we have.
+        console.error(
+            "room initial flag not set but we have no memory of this room",
+            r
+        );
+        existingRoom = r;
     }
-    if (avatar !== undefined) {
-        room.avatar = avatar;
-    }
-    if (topic !== undefined) {
-        room.topic = topic;
-    }
-    if (obsolete !== undefined) {
-        room.obsolete = obsolete;
-    }
-    rooms.roomIdToRoom[room.room_id] = room;
+
+    rooms.roomIdToRoom[existingRoom.room_id] = existingRoom;
 };
 
 let debounceTimeoutId;
@@ -165,11 +181,6 @@ const intersectionObserver = new IntersectionObserver(
 
 const renderMessage = (container, ev) => {
     const eventIdKey = "msg" + ev.event_id;
-    // try to find the element. If it exists then don't re-render.
-    const existing = document.getElementById(eventIdKey);
-    if (existing) {
-        return;
-    }
     const msgCell = render.renderEvent(eventIdKey, ev);
     container.appendChild(msgCell);
 };
@@ -350,19 +361,14 @@ const doSyncLoop = async (accessToken) => {
         }
     });
 
-    slidingSync.addRoomDataListener((roomId, roomData, isIncremental) => {
-        accumulateRoomData(
-            roomData,
-            isIncremental
-                ? isIncremental
-                : rooms.roomIdToRoom[roomId] !== undefined
-        );
+    slidingSync.addRoomDataListener((roomId, roomData) => {
+        accumulateRoomData(roomData);
         // render the right-hand side section with the room timeline if we are viewing it.
         if (roomId !== slidingSync.roomSubscription) {
             return;
         }
         let room = rooms.roomIdToRoom[slidingSync.roomSubscription];
-        renderRoomTimeline(room, false);
+        renderRoomTimeline(room, roomData.initial);
     });
 
     // begin the sliding sync loop
@@ -450,6 +456,7 @@ window.addEventListener("load", async (event) => {
                         "Error sending message: " + err;
                 }
                 ev.target.removeAttribute("disabled");
+                ev.target.focus();
             }
         });
 });

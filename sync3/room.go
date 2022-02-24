@@ -13,6 +13,7 @@ type Room struct {
 	Timeline          []json.RawMessage `json:"timeline,omitempty"`
 	NotificationCount int64             `json:"notification_count"`
 	HighlightCount    int64             `json:"highlight_count"`
+	Initial           bool              `json:"initial,omitempty"`
 }
 
 type RoomConnMetadata struct {

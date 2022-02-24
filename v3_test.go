@@ -361,6 +361,15 @@ func MatchRoomNotificationCount(count int64) roomMatcher {
 	}
 }
 
+func MatchRoomInitial(initial bool) roomMatcher {
+	return func(r sync3.Room) error {
+		if r.Initial != initial {
+			return fmt.Errorf("MatchRoomInitial: got %v want %v", r.Initial, initial)
+		}
+		return nil
+	}
+}
+
 type roomEvents struct {
 	roomID string
 	name   string

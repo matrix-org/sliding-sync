@@ -161,7 +161,6 @@ func (s *ConnState) onIncomingRequest(ctx context.Context, req *sync3.Request) (
 	response := &sync3.Response{
 		RoomSubscriptions: s.updateRoomSubscriptions(int(sync3.DefaultTimelineLimit), newSubs, newUnsubs),
 		Extensions:        s.extensionsHandler.Handle(ex),
-		Initial:           prevReq == nil,
 	}
 	responseOperations := []sync3.ResponseOp{} // empty not nil slice
 
@@ -513,6 +512,7 @@ func (s *ConnState) getInitialRoomData(timelineLimit int, roomIDs ...string) []s
 			HighlightCount:    int64(userRoomData.HighlightCount),
 			Timeline:          userRoomData.Timeline,
 			RequiredState:     s.globalCache.LoadRoomState(roomID, s.loadPosition, s.muxedReq.GetRequiredState(0, roomID)),
+			Initial:           true,
 		}
 	}
 	return rooms

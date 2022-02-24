@@ -248,11 +248,12 @@ func TestInitialFlag(t *testing.T) {
 	defer v3.close()
 	alice := "@TestInitialFlag_alice:localhost"
 	aliceToken := "ALICE_BEARER_TOKEN_TestInitialFlag"
+	roomID := "!a:localhost"
 	v2.addAccount(alice, aliceToken)
 	v2.queueResponse(alice, sync2.SyncResponse{
 		Rooms: sync2.SyncRoomsResponse{
 			Join: v2JoinTimeline(roomEvents{
-				roomID: "!a:localhost",
+				roomID: roomID,
 				state:  createRoomState(t, alice, time.Now()),
 			}),
 		},
@@ -265,12 +266,26 @@ func TestInitialFlag(t *testing.T) {
 			TimelineLimit: 10,
 		}},
 	})
-	MatchResponse(t, res, func(res *sync3.Response) error {
-		if !res.Initial {
-			return fmt.Errorf("initial flag was not set")
-		}
-		return nil
+	MatchResponse(t, res, MatchV3Ops(
+		MatchV3SyncOpWithMatchers(MatchRoomRange(
+			[]roomMatcher{MatchRoomInitial(true)},
+		)),
+	))
+	// send an update
+	v2.queueResponse(alice, sync2.SyncResponse{
+		Rooms: sync2.SyncRoomsResponse{
+			Join: v2JoinTimeline(
+				roomEvents{
+					roomID: roomID,
+					events: []json.RawMessage{
+						testutils.NewEvent(t, "m.room.message", alice, map[string]interface{}{}, time.Now()),
+					},
+				},
+			),
+		},
 	})
+	v2.waitUntilEmpty(t, alice)
+
 	res = v3.mustDoV3RequestWithPos(t, aliceToken, res.Pos, sync3.Request{
 		Lists: []sync3.RequestList{{
 			Ranges: sync3.SliceRanges{
@@ -278,12 +293,9 @@ func TestInitialFlag(t *testing.T) {
 			},
 		}},
 	})
-	MatchResponse(t, res, func(res *sync3.Response) error {
-		if res.Initial {
-			return fmt.Errorf("initial flag was set")
-		}
-		return nil
-	})
+	MatchResponse(t, res, MatchV3Ops(
+		MatchV3UpdateOp(0, 0, roomID, MatchRoomInitial(false)),
+	))
 }
 
 // Regression test for https://github.com/matrix-org/sliding-sync/commit/39d6e99f967e55b609f8ef8b4271c04ebb053d37

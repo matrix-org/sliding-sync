@@ -20,6 +20,7 @@ const REQUIRED_STATE_EVENTS_IN_LIST = [
 ];
 const REQUIRED_STATE_EVENTS_IN_ROOM = [
     ["m.room.avatar", ""], // need the avatar to display next to the room name
+    ["m.room.tombstone", ""], // need to know if this room has been replaced
     ["m.room.topic", ""], // need the topic to display on the right-hand-side
 ];
 
@@ -178,11 +179,10 @@ export class SlidingSync {
      * Invoke all attached room data listeners.
      * @param {string} roomId The room which received some data.
      * @param {object} roomData The raw sliding sync response JSON.
-     * @param {boolean} isIncremental True if the roomData is a delta. False if this is the complete snapshot.
      */
-    _invokeRoomDataListeners(roomId, roomData, isIncremental) {
+    _invokeRoomDataListeners(roomId, roomData) {
         this.roomDataCallbacks.forEach((callback) => {
-            callback(roomId, roomData, isIncremental);
+            callback(roomId, roomData);
         });
     }
 
@@ -278,7 +278,6 @@ export class SlidingSync {
                 );
             } catch (err) {
                 if (err.name !== "AbortError") {
-                    // XXX: request failed
                     this._invokeLifecycleListeners(
                         LifecycleSyncRequestFinished,
                         null,
@@ -373,13 +372,7 @@ export class SlidingSync {
                         op.room.room_id,
                         ";"
                     );
-                    // TODO: move
-                    // XXX: room data, room ID
-                    this._invokeRoomDataListeners(
-                        op.room.room_id,
-                        op.room,
-                        true
-                    );
+                    this._invokeRoomDataListeners(op.room.room_id, op.room);
                 } else if (op.op === "SYNC") {
                     let syncRooms = [];
                     const startIndex = op.range[0];
