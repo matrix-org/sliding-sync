@@ -332,6 +332,89 @@ func TestRangeDelta(t *testing.T) {
 				{10, 19},
 			}),
 		},
+		// overlaps are handled intelligently
+		{
+			oldRange: SliceRanges([][2]int64{
+				{0, 9},
+			}),
+			newRange: SliceRanges([][2]int64{
+				{0, 10},
+			}),
+			wantSames: SliceRanges([][2]int64{
+				{0, 9},
+			}),
+			wantAdded: SliceRanges([][2]int64{
+				{10, 10},
+			}),
+			wantRemoved: [][2]int64{},
+		},
+		{
+			oldRange: SliceRanges([][2]int64{
+				{0, 9},
+			}),
+			newRange: SliceRanges([][2]int64{
+				{5, 15},
+			}),
+			wantSames: SliceRanges([][2]int64{
+				{5, 9},
+			}),
+			wantAdded: SliceRanges([][2]int64{
+				{10, 15},
+			}),
+			wantRemoved: SliceRanges([][2]int64{
+				{0, 4},
+			}),
+		},
+		{
+			oldRange:    [][2]int64{{5, 15}},
+			newRange:    [][2]int64{{0, 9}},
+			wantSames:   [][2]int64{{5, 9}},
+			wantAdded:   [][2]int64{{0, 4}},
+			wantRemoved: [][2]int64{{10, 15}},
+		},
+		{
+			oldRange:    [][2]int64{{0, 20}, {35, 45}},
+			newRange:    [][2]int64{{0, 20}, {36, 46}},
+			wantSames:   [][2]int64{{0, 20}, {36, 45}},
+			wantAdded:   [][2]int64{{46, 46}},
+			wantRemoved: [][2]int64{{35, 35}},
+		},
+		{
+			oldRange:    [][2]int64{{0, 20}, {35, 45}},
+			newRange:    [][2]int64{{0, 20}, {34, 44}},
+			wantSames:   [][2]int64{{0, 20}, {35, 44}},
+			wantAdded:   [][2]int64{{34, 34}},
+			wantRemoved: [][2]int64{{45, 45}},
+		},
+		// torture window, multiple same, add, remove
+		{
+			oldRange:    [][2]int64{{10, 20}, {40, 50}, {70, 80}, {100, 110}},
+			newRange:    [][2]int64{{0, 15}, {40, 50}, {80, 90}, {111, 120}},
+			wantSames:   [][2]int64{{10, 15}, {40, 50}, {80, 80}},
+			wantAdded:   [][2]int64{{0, 9}, {81, 90}, {111, 120}},
+			wantRemoved: [][2]int64{{16, 20}, {70, 79}, {100, 110}},
+		},
+		// swallowed range (one getting smaller, one getting bigger)
+		{
+			oldRange:    [][2]int64{{0, 20}},
+			newRange:    [][2]int64{{5, 15}},
+			wantSames:   [][2]int64{{5, 15}},
+			wantRemoved: [][2]int64{{0, 4}, {16, 20}},
+		},
+		{
+			oldRange:  [][2]int64{{5, 15}},
+			newRange:  [][2]int64{{0, 20}},
+			wantSames: [][2]int64{{5, 15}},
+			wantAdded: [][2]int64{{0, 4}, {16, 20}},
+		},
+		// regression test
+		{
+			oldRange:    [][2]int64{{0, 20}, {20, 24}},
+			newRange:    [][2]int64{{0, 20}, {20, 24}},
+			wantSames:   [][2]int64{{0, 20}, {20, 20}, {20, 24}},
+			wantAdded:   [][2]int64{},
+			wantRemoved: [][2]int64{},
+		},
 	}
 	for _, tc := range testCases {
 		gotAdd, gotRm, gotSame := tc.oldRange.Delta(tc.newRange)

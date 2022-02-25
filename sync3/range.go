@@ -1,6 +1,10 @@
 package sync3
 
-import "math"
+import (
+	"fmt"
+	"math"
+	"sort"
+)
 
 type SliceRanges [][2]int64
 
@@ -59,30 +63,142 @@ func (r SliceRanges) LowerClamp(i int64) (clampIndex int64) {
 	return
 }
 
-// Delta returns the ranges which are unchanged, added and removed
+type pointInfo struct {
+	x          int64
+	isOldRange bool
+	isOpen     bool
+}
+
+// Delta returns the ranges which are unchanged, added and removed.
+// Intelligently handles overlaps.
 func (r SliceRanges) Delta(next SliceRanges) (added SliceRanges, removed SliceRanges, same SliceRanges) {
-	olds := make(map[[2]int64]bool)
-	for _, oldStartEnd := range r {
-		olds[oldStartEnd] = true
+	added = [][2]int64{}
+	removed = [][2]int64{}
+	same = [][2]int64{}
+	// sort all points from min to max then do a sweep line algorithm over it with open/closed lists
+	// to track overlaps, runtime O(nlogn) due to sorting points
+	//              Old ranges
+	//  .-----.     .------.
+	// -------------------------------------------> number line
+	//     `-----`              `-----`
+	//              New ranges
+	//
+	//  .--.        .------.
+	// -----==------------------------------------> number line
+	//        `--`              `-----`
+	// Overlap has old/same/new
+	var points []pointInfo // a range = 2 points on the x-axis
+	for _, oldRange := range r {
+		points = append(points, pointInfo{
+			x:          oldRange[0],
+			isOldRange: true,
+			isOpen:     true,
+		})
+		points = append(points, pointInfo{
+			x:          oldRange[1],
+			isOldRange: true,
+		})
 	}
-	news := make(map[[2]int64]bool)
-	for _, newStartEnd := range next {
-		news[newStartEnd] = true
+	for _, newRange := range next {
+		points = append(points, pointInfo{
+			x:          newRange[0],
+			isOldRange: false,
+			isOpen:     true,
+		})
+		points = append(points, pointInfo{
+			x:          newRange[1],
+			isOldRange: false,
+		})
+	}
+	sort.Slice(points, func(i, j int) bool {
+		return points[i].x < points[j].x
+	})
+
+	// sweep from low to high and keep tabs of which point is open
+	var openOldPoint *pointInfo
+	var openNewPoint *pointInfo
+	var lastPoint *pointInfo
+	for i := range points {
+		point := points[i]
+		// Possible permutations:
+		// 1- have open old point, now being closed => removed (iff last point is not a close for the same x value)
+		// 2- have open old point, now with open new point => removed-1 (iff points differ, else [0,9] and [0,9] would insert into diff)
+		// 3- have open new point, now being closed => added
+		// 4- have open new point, now with open old point => added-1 (iff points differ)
+		// 5- have both open points, old|new being closed => same
+
+		if openNewPoint != nil && openOldPoint != nil { // 5
+			// this point is a close so we overlap with the previous point
+			same = append(same, [2]int64{
+				lastPoint.x, point.x,
+			})
+		} else if openNewPoint != nil { // 3,4
+			if point.isOpen { // 4
+				lastPointSame := lastPoint.x == point.x
+				if point.x > openNewPoint.x && !lastPointSame {
+					added = append(added, [2]int64{
+						openNewPoint.x, point.x - 1,
+					})
+				}
+			} else { // 3
+				lastPointSameClose := !lastPoint.isOpen && lastPoint.x == point.x
+				if !lastPointSameClose {
+					pos := lastPoint.x
+					if !lastPoint.isOpen {
+						pos += 1 // the last point was a close for an overlap so we need to shift index by one
+					}
+					added = append(added, [2]int64{
+						pos, point.x,
+					})
+				}
+			}
+		} else if openOldPoint != nil { // 1,2
+			if point.isOpen { // 2
+				lastPointSame := lastPoint.x == point.x
+				if point.x > openOldPoint.x && !lastPointSame {
+					removed = append(removed, [2]int64{
+						openOldPoint.x, point.x - 1,
+					})
+				}
+			} else { // 1
+				lastPointSameClose := !lastPoint.isOpen && lastPoint.x == point.x
+				if !lastPointSameClose {
+					pos := lastPoint.x
+					if !lastPoint.isOpen {
+						pos += 1 // the last point was a close for an overlap so we need to shift index by one
+					}
+					removed = append(removed, [2]int64{
+						pos, point.x,
+					})
+				}
+			}
+		}
+
+		// Remember this point
+		if point.isOpen {
+			// ensure we cannot open more than 1 range on old/new at a time
+			if (point.isOldRange && openOldPoint != nil) || (!point.isOldRange && openNewPoint != nil) {
+				panic(fmt.Sprintf("point already open! old=%v new=%v", r, next))
+			}
+			if point.isOldRange {
+				openOldPoint = &point
+			} else {
+				openNewPoint = &point
+			}
+		} else {
+			// ensure we cannot close more than 1 range on old/new at a time
+			if (point.isOldRange && openOldPoint == nil) || (!point.isOldRange && openNewPoint == nil) {
+				panic(fmt.Sprintf("point already closed! old=%v new=%v", r, next))
+			}
+			if point.isOldRange {
+				openOldPoint = nil
+			} else {
+				openNewPoint = nil
+			}
+		}
+		lastPoint = &point
 	}
 
-	for oldStartEnd := range olds {
-		if news[oldStartEnd] {
-			same = append(same, oldStartEnd)
-		} else {
-			removed = append(removed, oldStartEnd)
-		}
-	}
-	for newStartEnd := range news {
-		if olds[newStartEnd] {
-			continue
-		}
-		added = append(added, newStartEnd)
-	}
 	return
 }
 
