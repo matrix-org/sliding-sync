@@ -302,7 +302,7 @@ func (s *ConnState) onIncomingListRequest(listIndex int, prevReqList, nextReqLis
 			List:      listIndex,
 			Operation: sync3.OpSync,
 			Range:     r[:],
-			Rooms:     s.getInitialRoomData(int(nextReqList.TimelineLimit), roomIDs...),
+			Rooms:     s.getInitialRoomData(listIndex, int(nextReqList.TimelineLimit), roomIDs...),
 		})
 	}
 
@@ -472,7 +472,7 @@ func (s *ConnState) updateRoomSubscriptions(timelineLimit int, subs, unsubs []st
 		if sub.TimelineLimit > 0 {
 			timelineLimit = int(sub.TimelineLimit)
 		}
-		rooms := s.getInitialRoomData(timelineLimit, roomID)
+		rooms := s.getInitialRoomData(0, timelineLimit, roomID)
 		result[roomID] = rooms[0]
 	}
 	for _, roomID := range unsubs {
@@ -496,7 +496,7 @@ func (s *ConnState) getDeltaRoomData(roomID string, event json.RawMessage) *sync
 	return room
 }
 
-func (s *ConnState) getInitialRoomData(timelineLimit int, roomIDs ...string) []sync3.Room {
+func (s *ConnState) getInitialRoomData(listIndex int, timelineLimit int, roomIDs ...string) []sync3.Room {
 	roomIDToUserRoomData := s.userCache.LazyLoadTimelines(s.loadPosition, roomIDs, timelineLimit) // TODO: per-room timeline limit
 	rooms := make([]sync3.Room, len(roomIDs))
 	roomMetadatas := s.globalCache.LoadRooms(roomIDs...)
@@ -511,7 +511,7 @@ func (s *ConnState) getInitialRoomData(timelineLimit int, roomIDs ...string) []s
 			NotificationCount: int64(userRoomData.NotificationCount),
 			HighlightCount:    int64(userRoomData.HighlightCount),
 			Timeline:          userRoomData.Timeline,
-			RequiredState:     s.globalCache.LoadRoomState(roomID, s.loadPosition, s.muxedReq.GetRequiredState(0, roomID)),
+			RequiredState:     s.globalCache.LoadRoomState(roomID, s.loadPosition, s.muxedReq.GetRequiredState(listIndex, roomID)),
 			Initial:           true,
 		}
 	}
@@ -594,7 +594,7 @@ func (s *ConnState) moveRoom(reqList *sync3.RequestList, listIndex int, roomID s
 		RoomID: roomID,
 	}
 	if !onlySendRoomID {
-		rooms := s.getInitialRoomData(int(reqList.TimelineLimit), roomID)
+		rooms := s.getInitialRoomData(listIndex, int(reqList.TimelineLimit), roomID)
 		room = &rooms[0]
 	}
 	return []sync3.ResponseOp{
