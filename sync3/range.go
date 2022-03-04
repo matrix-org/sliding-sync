@@ -120,27 +120,39 @@ func (r SliceRanges) Delta(next SliceRanges) (added SliceRanges, removed SliceRa
 	var lastPoint *pointInfo
 	for i := range points {
 		point := points[i]
-		// Possible permutations:
-		// 1- have open old point, now being closed => removed (iff last point is not a close for the same x value)
-		// 2- have open old point, now with open new point => removed-1 (iff points differ, else [0,9] and [0,9] would insert into diff)
-		// 3- have open new point, now being closed => added
-		// 4- have open new point, now with open old point => added-1 (iff points differ)
-		// 5- have both open points, old|new being closed => same
+		// We are effectively tracking a finite state machine that looks like:
+		//
+		//   .------> O <--*--.
+		//  []<---*---|       |--> S
+		//   `------> N <--*--`
+		//
+		// [] = no open points, O = old point open, N = new point open, S = old and new points open
+		//
+		// State transitions causes ranges to be opened or closed. When ranges start, we just remember
+		// the point ([] -> O and [] -> N). When ranges are closed, we create a range. Arrows with
+		// a * in the path indicates a range is created when this state transition occurs.
 
-		if openNewPoint != nil && openOldPoint != nil { // 5
-			// this point is a close so we overlap with the previous point
+		if openNewPoint != nil && openOldPoint != nil { // S->O or S->N
+			// this point is a close so we overlap with the previous point,
+			// which could be an open for O or N, we don't care.
 			same = append(same, [2]int64{
 				lastPoint.x, point.x,
 			})
-		} else if openNewPoint != nil { // 3,4
-			if point.isOpen { // 4
+		} else if openNewPoint != nil { // N->S or N->[]
+			if point.isOpen { // N->S
+				// only add the range [N, S-1] if this point is NOT the same as N otherwise
+				// we will add an incorrect range. In the case where the O and N range are identical
+				// we will already add the range when the outermost range closes (transitioning ->[])
+				// This code is duplicated for the old point further down.
 				lastPointSame := lastPoint.x == point.x
 				if point.x > openNewPoint.x && !lastPointSame {
 					added = append(added, [2]int64{
 						openNewPoint.x, point.x - 1,
 					})
 				}
-			} else { // 3
+			} else { // N->[]
+				// do not create 2 ranges for O=[1,5] N=[1,5]. Skip the innermost close, which is defined
+				// as the last point closing with the same x-value as this close point.
 				lastPointSameClose := !lastPoint.isOpen && lastPoint.x == point.x
 				if !lastPointSameClose {
 					pos := lastPoint.x
@@ -152,15 +164,17 @@ func (r SliceRanges) Delta(next SliceRanges) (added SliceRanges, removed SliceRa
 					})
 				}
 			}
-		} else if openOldPoint != nil { // 1,2
-			if point.isOpen { // 2
+		} else if openOldPoint != nil { // O->S or O->[]
+			if point.isOpen { // O->S
+				// See above comments.
 				lastPointSame := lastPoint.x == point.x
 				if point.x > openOldPoint.x && !lastPointSame {
 					removed = append(removed, [2]int64{
 						openOldPoint.x, point.x - 1,
 					})
 				}
-			} else { // 1
+			} else { // O->[]
+				// See above comments.
 				lastPointSameClose := !lastPoint.isOpen && lastPoint.x == point.x
 				if !lastPointSameClose {
 					pos := lastPoint.x
