@@ -14,6 +14,14 @@ import * as devtools from "./devtools.js";
 import * as matrix from "./matrix.js";
 import { List } from "./list.js";
 
+const roomIdAttrPrefix = (listIndex) => {
+    return "room-" + listIndex + "-";
+};
+
+const roomIdAttr = (listIndex, roomIndex) => {
+    return roomIdAttrPrefix(listIndex) + roomIndex;
+};
+
 let syncv2ServerUrl; // will be populated with the URL of the CS API e.g 'https://matrix-client.matrix.org'
 let slidingSync;
 let syncConnection = new SlidingSyncConnection();
@@ -21,6 +29,7 @@ let syncConnection = new SlidingSyncConnection();
 // The lists present on the UI.
 // You can add/remove these at will to experiment with sliding sync filters.
 let activeLists = [
+    // the data model
     new SlidingList("Direct Messages", {
         is_dm: true,
     }),
@@ -29,7 +38,8 @@ let activeLists = [
     }),
 ];
 let roomDomLists = activeLists.map((al, index) => {
-    return new List("room-" + index + "-", 100, (start, end) => {
+    // the DOM model for UI purposes. It has no reference to SlidingList at all, it just knows about DOM/UI
+    return new List(roomIdAttrPrefix(index), 100, (start, end) => {
         console.log("Intersection indexes for list ", index, ":", start, end);
         const bufferRange = 5;
         start = start - bufferRange < 0 ? 0 : start - bufferRange;
@@ -45,6 +55,7 @@ let roomDomLists = activeLists.map((al, index) => {
         if (start < 20) {
             start = 20;
         }
+        // update the data model
         al.activeRanges[1] = [start, end];
         // interrupt the sync connection to send up new ranges
         syncConnection.abort();
@@ -128,17 +139,10 @@ const accumulateRoomData = (r) => {
     rooms.roomIdToRoom[existingRoom.room_id] = existingRoom;
 };
 
-const renderMessage = (container, ev) => {
-    const eventIdKey = "msg" + ev.event_id;
-    const msgCell = render.renderEvent(eventIdKey, ev);
-    container.appendChild(msgCell);
-};
-
 const onRoomClick = (e) => {
     let listIndex = -1;
     let index = -1;
     // walk up the pointer event path until we find a room-##-## id=
-    // TODO: move to render.js where these attrs are defined?
     const path = e.composedPath();
     for (let i = 0; i < path.length; i++) {
         if (path[i].id && path[i].id.startsWith("room-")) {
@@ -157,10 +161,7 @@ const onRoomClick = (e) => {
         activeLists[listIndex].roomIndexToRoomId[index];
     renderRoomTimeline(rooms.roomIdToRoom[slidingSync.roomSubscription], true);
     // get the highlight on the room
-    const roomListElements = document.getElementsByClassName("roomlist");
-    for (let i = 0; i < roomListElements.length; i++) {
-        renderList(roomListElements[i], i);
-    }
+    renderLists();
     // interrupt the sync to get extra state events
     syncConnection.abort();
 };
@@ -175,58 +176,61 @@ const renderRoomTimeline = (room, refresh) => {
     }
     const container = document.getElementById("messages");
     if (refresh) {
-        document.getElementById("selectedroomname").textContent = "";
         // wipe all message entries
         while (container.hasChildNodes()) {
             container.removeChild(container.firstChild);
         }
     }
-    document.getElementById("selectedroomname").textContent =
-        room.name || room.room_id;
-    if (room.avatar) {
-        // TODO move to render.js
-        document.getElementById("selectedroomavatar").src =
-            render.mxcToUrl(syncv2ServerUrl, room.avatar) ||
-            "/client/placeholder.svg";
-    } else {
-        document.getElementById("selectedroomavatar").src =
-            "/client/placeholder.svg";
-    }
-    if (room.topic) {
-        document.getElementById("selectedroomtopic").textContent = room.topic;
-    } else {
-        document.getElementById("selectedroomtopic").textContent = "";
-    }
+    render.renderRoomHeader(room, syncv2ServerUrl);
 
     // insert timeline messages
     (room.timeline || []).forEach((ev) => {
-        renderMessage(container, ev);
+        const eventIdKey = "msg" + ev.event_id;
+        const msgCell = render.renderEvent(eventIdKey, ev);
+        container.appendChild(msgCell);
     });
     if (container.lastChild) {
         container.lastChild.scrollIntoView();
     }
 };
 
-const renderList = (container, listIndex) => {
-    const listData = activeLists[listIndex];
-    if (!listData) {
-        console.error(
-            "renderList(): cannot render list at index ",
-            listIndex,
-            " no data associated with this index!"
-        );
-        return;
+const renderLists = () => {
+    const roomListElements = document.getElementsByClassName("roomlist");
+    for (let i = 0; i < roomListElements.length; i++) {
+        let listContainer = roomListElements[i];
+        let slidingList = activeLists[i];
+        let domList = roomDomLists[i];
+        if (!domList || !slidingList) {
+            console.error(
+                "renderLists(): cannot render list at index ",
+                i,
+                " no data associated with this index!"
+            );
+            continue;
+        }
+        domList.resize(listContainer, slidingList.joinedCount, (roomIndex) => {
+            const template = document.getElementById("roomCellTemplate");
+            // https://developer.mozilla.org/en-US/docs/Web/HTML/Element/template#avoiding_documentfragment_pitfall
+            const roomCell = template.content.firstElementChild.cloneNode(true);
+            roomCell.setAttribute("id", roomIdAttr(i, roomIndex));
+            roomCell.addEventListener("click", onRoomClick);
+            return roomCell;
+        });
+
+        // loop all elements and modify the contents
+        for (let i = 0; i < listContainer.children.length; i++) {
+            const roomCell = listContainer.children[i];
+            const roomId = slidingList.roomIndexToRoomId[i];
+            const r = rooms.roomIdToRoom[roomId];
+            render.renderRoomCell(
+                roomCell,
+                r,
+                i,
+                r ? r.room_id === slidingSync.roomSubscription : false,
+                syncv2ServerUrl
+            );
+        }
     }
-    render.renderRoomList(
-        container,
-        syncv2ServerUrl,
-        listIndex,
-        listData,
-        slidingSync.roomSubscription,
-        rooms.roomIdToRoom,
-        roomDomLists[listIndex].intersectionObserver,
-        onRoomClick
-    );
 };
 
 const doSyncLoop = async (accessToken) => {
@@ -241,11 +245,7 @@ const doSyncLoop = async (accessToken) => {
             // The sync has been processed and we can now re-render the UI.
             case LifecycleSyncComplete:
                 // this list matches the list in activeLists
-                const roomListElements =
-                    document.getElementsByClassName("roomlist");
-                for (let i = 0; i < roomListElements.length; i++) {
-                    renderList(roomListElements[i], i);
-                }
+                renderLists();
 
                 // check for duplicates and rooms outside tracked ranges which should never happen but can if there's a bug
                 activeLists.forEach((list, listIndex) => {

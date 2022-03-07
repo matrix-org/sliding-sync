@@ -85,10 +85,6 @@ const randomName = (i, long) => {
     }
 };
 
-const roomIdAttr = (listIndex, roomIndex) => {
-    return "room-" + listIndex + "-" + roomIndex;
-};
-
 const zeroPad = (n) => {
     if (n < 10) {
         return "0" + n;
@@ -109,12 +105,29 @@ const formatTimestamp = (originServerTs) => {
     );
 };
 
-export const mxcToUrl = (syncv2ServerUrl, mxc) => {
+const mxcToUrl = (syncv2ServerUrl, mxc) => {
     const path = mxc.substr("mxc://".length);
     if (!path) {
         return;
     }
     return `${syncv2ServerUrl}/_matrix/media/r0/thumbnail/${path}?width=64&height=64&method=crop`;
+};
+
+export const renderRoomHeader = (room, syncv2ServerUrl) => {
+    document.getElementById("selectedroomname").textContent =
+        room.name || room.room_id;
+    if (room.avatar) {
+        document.getElementById("selectedroomavatar").src =
+            mxcToUrl(syncv2ServerUrl, room.avatar) || "/client/placeholder.svg";
+    } else {
+        document.getElementById("selectedroomavatar").src =
+            "/client/placeholder.svg";
+    }
+    if (room.topic) {
+        document.getElementById("selectedroomtopic").textContent = room.topic;
+    } else {
+        document.getElementById("selectedroomtopic").textContent = "";
+    }
 };
 
 export const renderEvent = (eventIdKey, ev) => {
@@ -131,138 +144,93 @@ export const renderEvent = (eventIdKey, ev) => {
 };
 
 /**
- * Render the room list in the given `container`. This is read-only and does not modify internal data structures.
- * @param {Element} container The DOM node to attach the list to.
- * @param {string} syncv2ServerUrl The CS API URL. Used for <img> tags for room avatars.
- * @param {Number} listIndex The index position of this list. Used for setting non-clashing ID attributes.
- * @param {SlidingList} slidingList The list to render.
- * @param {string} highlightedRoomID The room being viewed currently.
- * @param {object} roomIdToRoom  The data store containing the room data.
- * @param {IntersectionObserver} intersectionObserver The intersection observer for observing scroll positions.
- * @param {function} onRoomClick The DOM callback to invoke when a room cell is clicked.
+ * Render a room cell for the room list.
+ * @param {Element} roomCell The DOM element to put the details into. The cell must be already initialised with `roomCellTemplate`.
+ * @param {object} room The room data model, which can be null to indicate a placeholder.
  */
-export const renderRoomList = (
-    container,
-    syncv2ServerUrl,
-    listIndex,
-    slidingList,
-    highlightedRoomID,
-    roomIdToRoom,
-    intersectionObserver,
-    onRoomClick
+export const renderRoomCell = (
+    roomCell,
+    room,
+    index,
+    isHighlighted,
+    syncv2ServerUrl
 ) => {
-    let addCount = 0;
-    let removeCount = 0;
-    // ensure we have the right number of children, remove or add appropriately.
-    while (container.childElementCount > slidingList.joinedCount) {
-        intersectionObserver.unobserve(container.lastChild);
-        container.removeChild(container.lastChild);
-        removeCount += 1;
+    // if this child is a placeholder and it was previously a placeholder then do nothing.
+    if (!room && roomCell.getAttribute("x-placeholder") === "yep") {
+        return;
     }
-    for (
-        let i = container.childElementCount;
-        i < slidingList.joinedCount;
-        i++
-    ) {
-        const template = document.getElementById("roomCellTemplate");
-        // https://developer.mozilla.org/en-US/docs/Web/HTML/Element/template#avoiding_documentfragment_pitfall
-        const roomCell = template.content.firstElementChild.cloneNode(true);
-        roomCell.setAttribute("id", roomIdAttr(listIndex, i));
-        container.appendChild(roomCell);
-        intersectionObserver.observe(roomCell);
-        roomCell.addEventListener("click", onRoomClick);
-        addCount += 1;
-    }
-    if (addCount > 0 || removeCount > 0) {
-        console.log(
-            "render: added ",
-            addCount,
-            "nodes, removed",
-            removeCount,
-            "nodes"
-        );
-    }
-    // loop all elements and modify the contents
-    for (let i = 0; i < container.children.length; i++) {
-        const roomCell = container.children[i];
-        const roomId = slidingList.roomIndexToRoomId[i];
-        const r = roomIdToRoom[roomId];
-        // if this child is a placeholder and it was previously a placeholder then do nothing.
-        if (!r && roomCell.getAttribute("x-placeholder") === "yep") {
-            continue;
-        }
-        const roomNameSpan = roomCell.getElementsByClassName("roomname")[0];
-        const roomContentSpan =
-            roomCell.getElementsByClassName("roomcontent")[0];
-        const roomSenderSpan = roomCell.getElementsByClassName("roomsender")[0];
-        const roomTimestampSpan =
-            roomCell.getElementsByClassName("roomtimestamp")[0];
-        const unreadCountSpan =
-            roomCell.getElementsByClassName("unreadcount")[0];
-        unreadCountSpan.textContent = "";
-        unreadCountSpan.classList.remove("unreadcountnotify");
-        unreadCountSpan.classList.remove("unreadcounthighlight");
-        if (!r) {
-            // placeholder
-            roomNameSpan.textContent = randomName(i, false);
-            roomNameSpan.style = "background: #e0e0e0; color: #e0e0e0;";
-            roomContentSpan.textContent = randomName(i, true);
-            roomContentSpan.style = "background: #e0e0e0; color: #e0e0e0;";
-            roomSenderSpan.textContent = "";
-            roomTimestampSpan.textContent = "";
-            roomCell.getElementsByClassName("roomavatar")[0].src =
-                "/client/placeholder.svg";
-            roomCell.style = "";
-            roomCell.setAttribute("x-placeholder", "yep");
-            continue;
-        }
-        roomCell.removeAttribute("x-placeholder");
+    const roomNameSpan = roomCell.getElementsByClassName("roomname")[0];
+    const roomContentSpan = roomCell.getElementsByClassName("roomcontent")[0];
+    const roomSenderSpan = roomCell.getElementsByClassName("roomsender")[0];
+    const roomTimestampSpan =
+        roomCell.getElementsByClassName("roomtimestamp")[0];
+    const unreadCountSpan = roomCell.getElementsByClassName("unreadcount")[0];
+
+    // remove previous unread counts
+    unreadCountSpan.textContent = "";
+    unreadCountSpan.classList.remove("unreadcountnotify");
+    unreadCountSpan.classList.remove("unreadcounthighlight");
+
+    if (!room) {
+        // make a placeholder
+        roomNameSpan.textContent = randomName(index, false);
+        roomNameSpan.style = "background: #e0e0e0; color: #e0e0e0;";
+        roomContentSpan.textContent = randomName(index, true);
+        roomContentSpan.style = "background: #e0e0e0; color: #e0e0e0;";
+        roomSenderSpan.textContent = "";
+        roomTimestampSpan.textContent = "";
+        roomCell.getElementsByClassName("roomavatar")[0].src =
+            "/client/placeholder.svg";
         roomCell.style = "";
-        roomNameSpan.textContent = r.name || r.room_id;
-        roomNameSpan.style = "";
-        roomContentSpan.style = "";
-        if (r.avatar) {
-            roomCell.getElementsByClassName("roomavatar")[0].src =
-                mxcToUrl(syncv2ServerUrl, r.avatar) ||
-                "/client/placeholder.svg";
-        } else {
-            roomCell.getElementsByClassName("roomavatar")[0].src =
-                "/client/placeholder.svg";
-        }
-        if (roomId === highlightedRoomID) {
-            roomCell.style = "background: #d7d7f7";
-        }
-        if (r.highlight_count > 0) {
-            // use the notification count instead to avoid counts dropping down. This matches ele-web
-            unreadCountSpan.textContent = r.notification_count + "";
-            unreadCountSpan.classList.add("unreadcounthighlight");
-        } else if (r.notification_count > 0) {
-            unreadCountSpan.textContent = r.notification_count + "";
-            unreadCountSpan.classList.add("unreadcountnotify");
-        } else {
-            unreadCountSpan.textContent = "";
-        }
+        roomCell.setAttribute("x-placeholder", "yep");
+        return;
+    }
 
-        if (r.obsolete) {
-            roomContentSpan.textContent = "";
-            roomSenderSpan.textContent = r.obsolete;
-        } else if (r.timeline && r.timeline.length > 0) {
-            const mostRecentEvent = r.timeline[r.timeline.length - 1];
-            roomSenderSpan.textContent = mostRecentEvent.sender;
-            // TODO: move to render.js
-            roomTimestampSpan.textContent = formatTimestamp(
-                mostRecentEvent.origin_server_ts
-            );
+    roomCell.removeAttribute("x-placeholder"); // in case this was previously a placeholder
+    roomCell.style = "";
+    roomNameSpan.textContent = room.name || room.room_id;
+    roomNameSpan.style = "";
+    roomContentSpan.style = "";
+    if (room.avatar) {
+        roomCell.getElementsByClassName("roomavatar")[0].src =
+            mxcToUrl(syncv2ServerUrl, room.avatar) || "/client/placeholder.svg";
+    } else {
+        roomCell.getElementsByClassName("roomavatar")[0].src =
+            "/client/placeholder.svg";
+    }
+    if (isHighlighted) {
+        roomCell.style = "background: #d7d7f7";
+    }
+    if (room.highlight_count > 0) {
+        // use the notification count instead to avoid counts dropping down. This matches ele-web
+        unreadCountSpan.textContent = room.notification_count + "";
+        unreadCountSpan.classList.add("unreadcounthighlight");
+    } else if (room.notification_count > 0) {
+        unreadCountSpan.textContent = room.notification_count + "";
+        unreadCountSpan.classList.add("unreadcountnotify");
+    } else {
+        unreadCountSpan.textContent = "";
+    }
 
-            const body = textForEvent(mostRecentEvent);
-            if (mostRecentEvent.type === "m.room.member") {
-                roomContentSpan.textContent = "";
-                roomSenderSpan.textContent = body;
-            } else {
-                roomContentSpan.textContent = body;
-            }
-        } else {
+    if (room.obsolete) {
+        roomContentSpan.textContent = "";
+        roomSenderSpan.textContent = room.obsolete;
+    } else if (room.timeline && room.timeline.length > 0) {
+        const mostRecentEvent = room.timeline[room.timeline.length - 1];
+        roomSenderSpan.textContent = mostRecentEvent.sender;
+
+        roomTimestampSpan.textContent = formatTimestamp(
+            mostRecentEvent.origin_server_ts
+        );
+
+        const body = textForEvent(mostRecentEvent);
+        if (mostRecentEvent.type === "m.room.member") {
             roomContentSpan.textContent = "";
+            roomSenderSpan.textContent = body;
+        } else {
+            roomContentSpan.textContent = body;
         }
+    } else {
+        roomContentSpan.textContent = "";
     }
 };

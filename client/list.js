@@ -15,7 +15,7 @@ export class List {
         this.debounceTimeoutId = null;
         this.debounceTime = debounceTime;
         this.idPrefix = idPrefix;
-        this.visibleIndexes = {}; // e.g "1-44" meaning list 1 index 44
+        this.visibleIndexes = {}; // e.g "44" meaning index 44
 
         this.intersectionObserver = new IntersectionObserver(
             (entries) => {
@@ -49,5 +49,31 @@ export class List {
                 threshold: [0],
             }
         );
+    }
+
+    resize(container, count, createElement) {
+        let addCount = 0;
+        let removeCount = 0;
+        // ensure we have the right number of children, remove or add appropriately.
+        while (container.childElementCount > count) {
+            this.intersectionObserver.unobserve(container.lastChild);
+            container.removeChild(container.lastChild);
+            removeCount += 1;
+        }
+        for (let i = container.childElementCount; i < count; i++) {
+            const cell = createElement(i);
+            container.appendChild(cell);
+            this.intersectionObserver.observe(cell);
+            addCount += 1;
+        }
+        if (addCount > 0 || removeCount > 0) {
+            console.log(
+                "resize: added ",
+                addCount,
+                "nodes, removed",
+                removeCount,
+                "nodes"
+            );
+        }
     }
 }

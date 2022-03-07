@@ -139,7 +139,7 @@ export function svgify(domNode, activeLists, resp) {
     });
 
     // this is expensive so only do it on smaller accounts
-    if (height < 500 && false) {
+    if (height < 500) {
         const fifth = horizontalPixelWidth / 5;
         // draw white dot for each room which has some kind of data stored
         activeLists.forEach((al, index) => {
