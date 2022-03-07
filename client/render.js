@@ -187,6 +187,10 @@ export const renderRoomList = (
         const roomCell = container.children[i];
         const roomId = slidingList.roomIndexToRoomId[i];
         const r = roomIdToRoom[roomId];
+        // if this child is a placeholder and it was previously a placeholder then do nothing.
+        if (!r && roomCell.getAttribute("x-placeholder") === "yep") {
+            continue;
+        }
         const roomNameSpan = roomCell.getElementsByClassName("roomname")[0];
         const roomContentSpan =
             roomCell.getElementsByClassName("roomcontent")[0];
@@ -209,8 +213,10 @@ export const renderRoomList = (
             roomCell.getElementsByClassName("roomavatar")[0].src =
                 "/client/placeholder.svg";
             roomCell.style = "";
+            roomCell.setAttribute("x-placeholder", "yep");
             continue;
         }
+        roomCell.removeAttribute("x-placeholder");
         roomCell.style = "";
         roomNameSpan.textContent = r.name || r.room_id;
         roomNameSpan.style = "";

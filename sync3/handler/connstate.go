@@ -34,7 +34,7 @@ type ConnEvent struct {
 }
 
 // ConnState tracks all high-level connection state for this connection, like the combined request
-// and the underlying sorted room list. It doesn't track session IDs or positions of the connection.
+// and the underlying sorted room list. It doesn't track positions of the connection.
 type ConnState struct {
 	userID   string
 	deviceID string

@@ -12,6 +12,7 @@ import {
 import * as render from "./render.js";
 import * as devtools from "./devtools.js";
 import * as matrix from "./matrix.js";
+import { List } from "./list.js";
 
 let syncv2ServerUrl; // will be populated with the URL of the CS API e.g 'https://matrix-client.matrix.org'
 let slidingSync;
@@ -27,6 +28,28 @@ let activeLists = [
         is_dm: false,
     }),
 ];
+let roomDomLists = activeLists.map((al, index) => {
+    return new List("room-" + index + "-", 100, (start, end) => {
+        console.log("Intersection indexes for list ", index, ":", start, end);
+        const bufferRange = 5;
+        start = start - bufferRange < 0 ? 0 : start - bufferRange;
+        end =
+            end + bufferRange >= al.joinedCount
+                ? al.joinedCount - 1
+                : end + bufferRange;
+        // we don't need to request rooms between 0,20 as we always have a filter for this
+        if (end <= 20) {
+            return;
+        }
+        // ensure we don't overlap with the 0,20 range
+        if (start < 20) {
+            start = 20;
+        }
+        al.activeRanges[1] = [start, end];
+        // interrupt the sync connection to send up new ranges
+        syncConnection.abort();
+    });
+});
 
 // this is the main data structure the client uses to remember and render rooms. Attach it to
 // the window to allow easy introspection.
@@ -104,80 +127,6 @@ const accumulateRoomData = (r) => {
 
     rooms.roomIdToRoom[existingRoom.room_id] = existingRoom;
 };
-
-let debounceTimeoutId;
-let visibleIndexes = {}; // e.g "1-44" meaning list 1 index 44
-
-const intersectionObserver = new IntersectionObserver(
-    (entries) => {
-        entries.forEach((entry) => {
-            let key = entry.target.id.substr("room-".length);
-            if (entry.isIntersecting) {
-                visibleIndexes[key] = true;
-            } else {
-                delete visibleIndexes[key];
-            }
-        });
-        // we will process the intersections after a short period of inactivity to not thrash the server
-        clearTimeout(debounceTimeoutId);
-        debounceTimeoutId = setTimeout(() => {
-            let listIndexToStartEnd = {};
-            Object.keys(visibleIndexes).forEach((indexes) => {
-                // e.g "1-44"
-                let [listIndex, roomIndex] = indexes.split("-");
-                let i = Number(roomIndex);
-                listIndex = Number(listIndex);
-                if (!listIndexToStartEnd[listIndex]) {
-                    listIndexToStartEnd[listIndex] = {
-                        startIndex: -1,
-                        endIndex: -1,
-                    };
-                }
-                let startIndex = listIndexToStartEnd[listIndex].startIndex;
-                let endIndex = listIndexToStartEnd[listIndex].endIndex;
-                if (startIndex === -1 || i < startIndex) {
-                    listIndexToStartEnd[listIndex].startIndex = i;
-                }
-                if (endIndex === -1 || i > endIndex) {
-                    listIndexToStartEnd[listIndex].endIndex = i;
-                }
-            });
-            console.log(
-                "Intersection indexes:",
-                JSON.stringify(listIndexToStartEnd)
-            );
-            // buffer range
-            const bufferRange = 5;
-
-            Object.keys(listIndexToStartEnd).forEach((listIndex) => {
-                let startIndex = listIndexToStartEnd[listIndex].startIndex;
-                let endIndex = listIndexToStartEnd[listIndex].endIndex;
-                startIndex =
-                    startIndex - bufferRange < 0 ? 0 : startIndex - bufferRange;
-                endIndex =
-                    endIndex + bufferRange >= activeLists[listIndex].joinedCount
-                        ? activeLists[listIndex].joinedCount - 1
-                        : endIndex + bufferRange;
-
-                // we don't need to request rooms between 0,20 as we always have a filter for this
-                if (endIndex <= 20) {
-                    return;
-                }
-                // ensure we don't overlap with the 0,20 range
-                if (startIndex < 20) {
-                    startIndex = 20;
-                }
-
-                activeLists[listIndex].activeRanges[1] = [startIndex, endIndex];
-            });
-            // interrupt the sync connection to send up new ranges
-            syncConnection.abort();
-        }, 100);
-    },
-    {
-        threshold: [0],
-    }
-);
 
 const renderMessage = (container, ev) => {
     const eventIdKey = "msg" + ev.event_id;
@@ -275,7 +224,7 @@ const renderList = (container, listIndex) => {
         listData,
         slidingSync.roomSubscription,
         rooms.roomIdToRoom,
-        intersectionObserver,
+        roomDomLists[listIndex].intersectionObserver,
         onRoomClick
     );
 };
