@@ -24,6 +24,7 @@ func TestGlobalCacheLoadState(t *testing.T) {
 		testutils.NewStateEvent(t, "m.room.name", "", alice, map[string]interface{}{"name": "The Room Name"}),
 		testutils.NewStateEvent(t, "m.room.name", "", alice, map[string]interface{}{"name": "The Updated Room Name"}),
 	}
+
 	_, latest, err := store.Accumulate(roomID, events)
 	if err != nil {
 		t.Fatalf("Accumulate: %s", err)
@@ -68,6 +69,18 @@ func TestGlobalCacheLoadState(t *testing.T) {
 				{"m.room.member", "*"},
 			},
 			wantEvents: []json.RawMessage{events[1], events[3], events[4]},
+		},
+		{ // wildcard matching on event type works
+			requiredState: [][2]string{
+				{"*", ""},
+			},
+			wantEvents: []json.RawMessage{events[0], events[2], events[6]},
+		},
+		{ // all state wildcard matching works
+			requiredState: [][2]string{
+				{"*", "*"},
+			},
+			wantEvents: []json.RawMessage{events[0], events[1], events[2], events[3], events[4], events[6]},
 		},
 		{ // multiple entries for the same state do not return duplicates
 			requiredState: [][2]string{

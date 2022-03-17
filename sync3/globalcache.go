@@ -102,9 +102,18 @@ func (c *GlobalCache) LoadRoomState(roomID string, loadPosition int64, requiredS
 	// pull out unique event types and convert the required state into a map
 	eventTypeSet := make(map[string]bool)
 	requiredStateMap := make(map[string][]string) // event_type -> []state_key
+	hasWildcardEventType := false
 	for _, rs := range requiredState {
+		if rs[0] == "*" {
+			hasWildcardEventType = true
+		}
 		eventTypeSet[rs[0]] = true
 		requiredStateMap[rs[0]] = append(requiredStateMap[rs[0]], rs[1])
+	}
+	// if we have wildcard event types we need to pull all room state and cannot only pull out certain
+	// event types
+	if hasWildcardEventType {
+		eventTypeSet = make(map[string]bool)
 	}
 	eventTypes := make([]string, len(eventTypeSet))
 	i := 0
@@ -120,6 +129,7 @@ func (c *GlobalCache) LoadRoomState(roomID string, loadPosition int64, requiredS
 	var result []json.RawMessage
 	for _, ev := range stateEvents {
 		stateKeys := requiredStateMap[ev.Type]
+		stateKeys = append(stateKeys, requiredStateMap["*"]...)
 		include := false
 		for _, sk := range stateKeys {
 			if sk == "*" { // wildcard
