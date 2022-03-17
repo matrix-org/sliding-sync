@@ -27,8 +27,8 @@ type Request struct {
 	Extensions        extensions.Request          `json:"extensions"`
 
 	// set via query params or inferred
-	pos         int64
-	timeoutSecs int
+	pos          int64
+	timeoutMSecs int
 }
 
 type RequestList struct {
@@ -41,11 +41,11 @@ type RequestList struct {
 func (r *Request) SetPos(pos int64) {
 	r.pos = pos
 }
-func (r *Request) TimeoutSecs() int {
-	return r.timeoutSecs
+func (r *Request) TimeoutMSecs() int {
+	return r.timeoutMSecs
 }
-func (r *Request) SetTimeoutSecs(timeout int) {
-	r.timeoutSecs = timeout
+func (r *Request) SetTimeoutMSecs(timeout int) {
+	r.timeoutMSecs = timeout
 }
 
 func (r *Request) Same(other *Request) bool {

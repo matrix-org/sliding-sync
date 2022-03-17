@@ -181,7 +181,7 @@ blockloop:
 		select {
 		case <-ctx.Done(): // client has given up
 			break blockloop
-		case <-time.After(time.Duration(req.TimeoutSecs()) * time.Second):
+		case <-time.After(time.Duration(req.TimeoutMSecs()) * time.Millisecond):
 			break blockloop
 		case connEvent := <-s.updateEvents: // TODO: keep reading until it is empty before responding.
 			responseOperations = s.processLiveEvent(connEvent, responseOperations, response)

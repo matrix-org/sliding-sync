@@ -139,7 +139,7 @@ func (h *SyncLiveHandler) serve(w http.ResponseWriter, req *http.Request) error 
 		timeout = int(timeout64)
 	}
 
-	requestBody.SetTimeoutSecs(timeout)
+	requestBody.SetTimeoutMSecs(timeout)
 
 	resp, herr := conn.OnIncomingRequest(req.Context(), &requestBody)
 	if herr != nil {
