@@ -398,5 +398,5 @@ func (p *Poller) parseRoomsResponse(res *SyncResponse) {
 		"rooms [invite,join,leave]", []int{len(res.Rooms.Invite), len(res.Rooms.Join), len(res.Rooms.Leave)},
 	).Ints(
 		"storage [states,timelines,typing]", []int{stateCalls, timelineCalls, typingCalls},
-	).Msg("Poller: accumulated data")
+	).Int("to_device", len(res.ToDevice.Events)).Msg("Poller: accumulated data")
 }
