@@ -12,6 +12,8 @@ import (
 	"github.com/matrix-org/sync-v3/testutils"
 )
 
+var valTrue = true
+
 // Checks that e2ee v2 sections `device_lists` and `device_one_time_keys_count` are passed to v3
 func TestExtensionE2EE(t *testing.T) {
 	pqString := testutils.PrepareDBConnectionString()
@@ -40,7 +42,7 @@ func TestExtensionE2EE(t *testing.T) {
 		}},
 		// enable the E2EE extension
 		Extensions: extensions.Request{
-			E2EE: extensions.E2EERequest{
+			E2EE: &extensions.E2EERequest{
 				Enabled: true,
 			},
 		},
@@ -64,12 +66,7 @@ func TestExtensionE2EE(t *testing.T) {
 				[2]int64{0, 10}, // doesn't matter
 			},
 		}},
-		// enable the E2EE extension
-		Extensions: extensions.Request{
-			E2EE: extensions.E2EERequest{
-				Enabled: true,
-			},
-		},
+		// skip enabled: true as it should be sticky
 	})
 	MatchResponse(t, res, MatchOTKCounts(otkCounts))
 
@@ -90,7 +87,7 @@ func TestExtensionE2EE(t *testing.T) {
 		}},
 		// enable the E2EE extension
 		Extensions: extensions.Request{
-			E2EE: extensions.E2EERequest{
+			E2EE: &extensions.E2EERequest{
 				Enabled: true,
 			},
 		},
@@ -119,7 +116,7 @@ func TestExtensionE2EE(t *testing.T) {
 		}},
 		// enable the E2EE extension
 		Extensions: extensions.Request{
-			E2EE: extensions.E2EERequest{
+			E2EE: &extensions.E2EERequest{
 				Enabled: true,
 			},
 		},
@@ -135,7 +132,7 @@ func TestExtensionE2EE(t *testing.T) {
 		}},
 		// enable the E2EE extension
 		Extensions: extensions.Request{
-			E2EE: extensions.E2EERequest{
+			E2EE: &extensions.E2EERequest{
 				Enabled: true,
 			},
 		},
@@ -161,7 +158,7 @@ func TestExtensionE2EE(t *testing.T) {
 		}},
 		// enable the E2EE extension
 		Extensions: extensions.Request{
-			E2EE: extensions.E2EERequest{
+			E2EE: &extensions.E2EERequest{
 				Enabled: true,
 			},
 		},
@@ -205,8 +202,8 @@ func TestExtensionToDevice(t *testing.T) {
 			},
 		}},
 		Extensions: extensions.Request{
-			ToDevice: extensions.ToDeviceRequest{
-				Enabled: true,
+			ToDevice: &extensions.ToDeviceRequest{
+				Enabled: &valTrue,
 			},
 		},
 	})
@@ -220,8 +217,8 @@ func TestExtensionToDevice(t *testing.T) {
 			},
 		}},
 		Extensions: extensions.Request{
-			ToDevice: extensions.ToDeviceRequest{
-				Enabled: true,
+			ToDevice: &extensions.ToDeviceRequest{
+				Enabled: &valTrue,
 			},
 		},
 	})
@@ -235,8 +232,8 @@ func TestExtensionToDevice(t *testing.T) {
 			},
 		}},
 		Extensions: extensions.Request{
-			ToDevice: extensions.ToDeviceRequest{
-				Enabled: true,
+			ToDevice: &extensions.ToDeviceRequest{
+				Enabled: &valTrue,
 				Since:   res.Extensions.ToDevice.NextBatch,
 			},
 		},
@@ -260,8 +257,8 @@ func TestExtensionToDevice(t *testing.T) {
 			},
 		}},
 		Extensions: extensions.Request{
-			ToDevice: extensions.ToDeviceRequest{
-				Enabled: true,
+			ToDevice: &extensions.ToDeviceRequest{
+				Enabled: &valTrue,
 				Since:   res.Extensions.ToDevice.NextBatch,
 			},
 		},
@@ -276,8 +273,8 @@ func TestExtensionToDevice(t *testing.T) {
 			},
 		}},
 		Extensions: extensions.Request{
-			ToDevice: extensions.ToDeviceRequest{
-				Enabled: true,
+			ToDevice: &extensions.ToDeviceRequest{
+				Enabled: &valTrue,
 				Since:   res.Extensions.ToDevice.NextBatch,
 			},
 		},

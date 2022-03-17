@@ -10,9 +10,22 @@ import (
 
 // Client created request params
 type ToDeviceRequest struct {
-	Enabled bool   `json:"enabled"`
+	Enabled *bool  `json:"enabled"`
 	Limit   int    `json:"limit"` // max number of to-device messages per response
 	Since   string `json:"since"` // since token
+}
+
+func (r ToDeviceRequest) ApplyDelta(next *ToDeviceRequest) *ToDeviceRequest {
+	if next.Enabled != nil {
+		r.Enabled = next.Enabled
+	}
+	if next.Limit != 0 {
+		r.Limit = next.Limit
+	}
+	if next.Since != "" {
+		r.Since = next.Since
+	}
+	return &r
 }
 
 // Server response

@@ -9,6 +9,11 @@ type E2EERequest struct {
 	Enabled bool `json:"enabled"`
 }
 
+func (r E2EERequest) ApplyDelta(next *E2EERequest) *E2EERequest {
+	r.Enabled = next.Enabled
+	return &r
+}
+
 // Server response
 type E2EEResponse struct {
 	OTKCounts   map[string]int  `json:"device_one_time_keys_count"`

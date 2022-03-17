@@ -66,7 +66,7 @@ func (r *Request) ApplyDelta(nextReq *Request) (result *Request, subs, unsubs []
 	// Use the newer values unless they aren't specified, then use the older ones.
 	// Go is ew in that this can't be represented in a nicer way
 	result = &Request{
-		Extensions: nextReq.Extensions, // TODO: make them sticky
+		Extensions: r.Extensions.ApplyDelta(&nextReq.Extensions),
 	}
 	lists := make([]RequestList, len(nextReq.Lists))
 	for i := 0; i < len(lists); i++ {

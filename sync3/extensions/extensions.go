@@ -16,8 +16,19 @@ var logger = zerolog.New(os.Stdout).With().Timestamp().Logger().Output(zerolog.C
 type Request struct {
 	UserID   string
 	DeviceID string
-	ToDevice ToDeviceRequest `json:"to_device"`
-	E2EE     E2EERequest     `json:"e2ee"`
+	ToDevice *ToDeviceRequest `json:"to_device"`
+	E2EE     *E2EERequest     `json:"e2ee"`
+}
+
+func (r Request) ApplyDelta(next *Request) Request {
+	// everything is sticky by default, so selectively
+	if next.ToDevice != nil {
+		r.ToDevice = r.ToDevice.ApplyDelta(next.ToDevice)
+	}
+	if next.E2EE != nil {
+		r.E2EE = r.E2EE.ApplyDelta(next.E2EE)
+	}
+	return r
 }
 
 type Response struct {
@@ -39,11 +50,11 @@ type Handler struct {
 }
 
 func (h *Handler) Handle(req Request) (res Response) {
-	if req.ToDevice.Enabled {
-		res.ToDevice = ProcessToDevice(h.Store, req.UserID, req.DeviceID, &req.ToDevice)
+	if req.ToDevice != nil && req.ToDevice.Enabled != nil && *req.ToDevice.Enabled {
+		res.ToDevice = ProcessToDevice(h.Store, req.UserID, req.DeviceID, req.ToDevice)
 	}
-	if req.E2EE.Enabled {
-		res.E2EE = ProcessE2EE(h.E2EEFetcher, req.UserID, req.DeviceID, &req.E2EE)
+	if req.E2EE != nil && req.E2EE.Enabled {
+		res.E2EE = ProcessE2EE(h.E2EEFetcher, req.UserID, req.DeviceID, req.E2EE)
 	}
 	return
 }
