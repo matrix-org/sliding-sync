@@ -527,7 +527,6 @@ func (s *ConnState) onNewConnectionEvent(connEvent *ConnEvent) {
 		return
 	}
 	eventData := connEvent.msg
-	// TODO: remove 0 check when Initialise state returns sensible positions
 	if eventData != nil && eventData.LatestPos != 0 && eventData.LatestPos < s.loadPosition {
 		// do not push this event down the stream as we have already processed it when we loaded
 		// the room list initially.

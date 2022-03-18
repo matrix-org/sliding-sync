@@ -108,15 +108,14 @@ func (h *PollerMap) EnsurePolling(authHeader, userID, deviceID, v2since string, 
 	// a poller exists and hasn't been terminated so we don't need to do anything
 	if ok && !poller.Terminated {
 		h.pollerMu.Unlock()
+		// this existing poller may not have completed the initial sync yet, so we need to make sure
+		// it has before we return.
+		poller.WaitUntilInitialSync()
 		return
 	}
 	// replace the poller
 	poller = NewPoller(userID, authHeader, deviceID, h.v2Client, h, logger)
-	var wg sync.WaitGroup
-	wg.Add(1)
-	go poller.Poll(v2since, func() {
-		wg.Done()
-	})
+	go poller.Poll(v2since)
 	h.Pollers[deviceID] = poller
 
 	// check if we need to wait at all: we don't need to if this user is already syncing on a different device
@@ -133,7 +132,7 @@ func (h *PollerMap) EnsurePolling(authHeader, userID, deviceID, v2since string, 
 
 	h.pollerMu.Unlock()
 	if needToWait {
-		wg.Wait()
+		poller.WaitUntilInitialSync()
 	} else {
 		logger.Info().Str("user", userID).Msg("a poller exists for this user; not waiting for this device to do an initial sync")
 	}
@@ -218,9 +217,12 @@ type Poller struct {
 
 	// flag set to true when poll() returns due to expired access tokens
 	Terminated bool
+	wg         *sync.WaitGroup
 }
 
 func NewPoller(userID, authHeader, deviceID string, client Client, receiver V2DataReceiver, logger zerolog.Logger) *Poller {
+	var wg sync.WaitGroup
+	wg.Add(1)
 	return &Poller{
 		authorizationHeader: authHeader,
 		userID:              userID,
@@ -231,13 +233,19 @@ func NewPoller(userID, authHeader, deviceID string, client Client, receiver V2Da
 		logger:              logger,
 		e2eeMu:              &sync.Mutex{},
 		deviceListChanges:   make(map[string]string),
+		wg:                  &wg,
 	}
+}
+
+// Blocks until the initial sync has been done on this poller.
+func (p *Poller) WaitUntilInitialSync() {
+	p.wg.Wait()
 }
 
 // Poll will block forever, repeatedly calling v2 sync. Do this in a goroutine.
 // Returns if the access token gets invalidated or if there was a fatal error processing v2 responses.
-// Invokes the callback on first success.
-func (p *Poller) Poll(since string, callback func()) {
+// Use WaitUntilInitialSync() to wait until the first poll has been processed.
+func (p *Poller) Poll(since string) {
 	p.logger.Info().Str("since", since).Msg("Poller: v2 poll loop started")
 	failCount := 0
 	firstTime := true
@@ -275,7 +283,7 @@ func (p *Poller) Poll(since string, callback func()) {
 
 		if firstTime {
 			firstTime = false
-			callback()
+			p.wg.Done()
 		}
 	}
 }

@@ -22,7 +22,7 @@ func TestPollerPollFromNothing(t *testing.T) {
 		json.RawMessage(`{"event":2}`),
 		json.RawMessage(`{"event":3}`),
 	}
-	hasPolledSuccessfully := false
+	hasPolledSuccessfully := make(chan struct{})
 	accumulator, client := newMocks(func(authHeader, since string) (*SyncResponse, int, error) {
 		if since == "" {
 			var joinResp SyncV2JoinResponse
@@ -47,13 +47,19 @@ func TestPollerPollFromNothing(t *testing.T) {
 	poller := NewPoller("@alice:localhost", "Authorization: hello world", deviceID, client, accumulator, zerolog.New(os.Stderr))
 	go func() {
 		defer wg.Done()
-		poller.Poll("", func() {
-			hasPolledSuccessfully = true
-		})
+		poller.Poll("")
+	}()
+	go func() {
+		poller.WaitUntilInitialSync()
+		close(hasPolledSuccessfully)
 	}()
 	wg.Wait()
-	if !hasPolledSuccessfully {
-		t.Errorf("failed to poll successfully")
+
+	select {
+	case <-hasPolledSuccessfully:
+		break
+	case <-time.After(time.Second):
+		t.Errorf("WaitUntilInitialSync failed to fire")
 	}
 	if len(accumulator.states[roomID]) != len(roomState) {
 		t.Errorf("did not accumulate initial state for room, got %d events want %d", len(accumulator.states[roomID]), len(roomState))
@@ -88,7 +94,7 @@ func TestPollerPollFromExisting(t *testing.T) {
 			json.RawMessage(`{"event":10}`),
 		},
 	}
-	hasPolledSuccessfully := false
+	hasPolledSuccessfully := make(chan struct{})
 	accumulator, client := newMocks(func(authHeader, since string) (*SyncResponse, int, error) {
 		if since == "" {
 			t.Errorf("called DoSyncV2 with an empty since token")
@@ -124,13 +130,19 @@ func TestPollerPollFromExisting(t *testing.T) {
 	poller := NewPoller("@alice:localhost", "Authorization: hello world", deviceID, client, accumulator, zerolog.New(os.Stderr))
 	go func() {
 		defer wg.Done()
-		poller.Poll(since, func() {
-			hasPolledSuccessfully = true
-		})
+		poller.Poll(since)
+	}()
+	go func() {
+		poller.WaitUntilInitialSync()
+		close(hasPolledSuccessfully)
 	}()
 	wg.Wait()
-	if !hasPolledSuccessfully {
-		t.Errorf("failed to poll successfully")
+
+	select {
+	case <-hasPolledSuccessfully:
+		break
+	case <-time.After(time.Second):
+		t.Errorf("WaitUntilInitialSync failed to fire")
 	}
 	if len(accumulator.timelines[roomID]) != 10 {
 		t.Errorf("did not accumulate timelines for room, got %d events want %d", len(accumulator.timelines[roomID]), 10)
@@ -144,7 +156,7 @@ func TestPollerPollFromExisting(t *testing.T) {
 // Tests that the poller backs off in 2,4,8,etc second increments to a variety of errors
 func TestPollerBackoff(t *testing.T) {
 	deviceID := "FOOBAR"
-	hasPolledSuccessfully := false
+	hasPolledSuccessfully := make(chan struct{})
 	errorResponses := []struct {
 		code    int
 		backoff time.Duration
@@ -194,13 +206,18 @@ func TestPollerBackoff(t *testing.T) {
 	poller := NewPoller("@alice:localhost", "Authorization: hello world", deviceID, client, accumulator, zerolog.New(os.Stderr))
 	go func() {
 		defer wg.Done()
-		poller.Poll("some_since_value", func() {
-			hasPolledSuccessfully = true
-		})
+		poller.Poll("some_since_value")
+	}()
+	go func() {
+		poller.WaitUntilInitialSync()
+		close(hasPolledSuccessfully)
 	}()
 	wg.Wait()
-	if hasPolledSuccessfully {
-		t.Errorf("Incorrectly polled successfully")
+	select {
+	case <-hasPolledSuccessfully:
+		t.Errorf("WaitUntilInitialSync fired incorrectly")
+	case <-time.After(100 * time.Millisecond):
+		break
 	}
 	if errorResponsesIndex != len(errorResponses) {
 		t.Errorf("did not call DoSyncV2 enough, got %d times, want %d", errorResponsesIndex+1, len(errorResponses))
