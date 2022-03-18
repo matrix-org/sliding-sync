@@ -325,6 +325,64 @@ func TestMultipleListsDMUpdate(t *testing.T) {
 	))
 }
 
+// Test that a new list can be added mid-connection
+func TestNewListMidConnection(t *testing.T) {
+	pqString := testutils.PrepareDBConnectionString()
+	// setup code
+	v2 := runTestV2Server(t)
+	v3 := runTestServer(t, v2, pqString)
+	defer v2.close()
+	defer v3.close()
+	alice := "@alice:localhost"
+	aliceToken := "ALICE_BEARER_TOKEN"
+	var allRooms []roomEvents
+	baseTimestamp := time.Now()
+	// make 10 rooms
+	for i := 0; i < 10; i++ {
+		ts := baseTimestamp.Add(time.Duration(-1*i) * time.Second)
+		room := roomEvents{
+			roomID: fmt.Sprintf("!%d:localhost", i),
+			events: createRoomState(t, alice, ts),
+		}
+		allRooms = append(allRooms, room)
+	}
+	v2.addAccount(alice, aliceToken)
+	v2.queueResponse(alice, sync2.SyncResponse{
+		Rooms: sync2.SyncRoomsResponse{
+			Join: v2JoinTimeline(allRooms...),
+		},
+	})
+
+	// first request no list
+	res := v3.mustDoV3Request(t, aliceToken, sync3.Request{
+		Lists: []sync3.RequestList{},
+	})
+
+	MatchResponse(t, res, MatchV3Counts([]int{}))
+
+	// now add a list
+	res = v3.mustDoV3RequestWithPos(t, aliceToken, res.Pos, sync3.Request{
+		Lists: []sync3.RequestList{
+			{
+				Ranges: sync3.SliceRanges{
+					[2]int64{0, 2}, // first 3 rooms
+				},
+				RoomSubscription: sync3.RoomSubscription{
+					TimelineLimit: 1,
+				},
+			},
+		},
+	})
+	MatchResponse(t, res, MatchV3Counts([]int{len(allRooms)}), MatchV3Ops(
+		MatchV3SyncOp(func(op *sync3.ResponseOpRange) error {
+			if op.List != 0 {
+				return fmt.Errorf("got list %d want %d", op.List, 0)
+			}
+			return checkRoomList(op, allRooms[0:3])
+		}),
+	))
+}
+
 // Check that the range op matches all the wantRooms
 func checkRoomList(op *sync3.ResponseOpRange, wantRooms []roomEvents) error {
 	if len(op.Rooms) != len(wantRooms) {

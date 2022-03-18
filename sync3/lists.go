@@ -6,6 +6,10 @@ type SortableRoomLists struct {
 	lists []*FilteredSortableRooms
 }
 
+func (s *SortableRoomLists) ListExists(index int) bool {
+	return index < len(s.lists) && index >= 0
+}
+
 func (s *SortableRoomLists) List(index int) *FilteredSortableRooms {
 	internal.Assert("index within range", index < len(s.lists))
 	return s.lists[index]

@@ -110,18 +110,22 @@ func (s *ConnState) load(req *sync3.Request) error {
 	s.loadPosition = initialLoadPosition
 
 	for i, l := range req.Lists {
-		roomList := sync3.NewFilteredSortableRooms(rooms, l.Filters)
-		sortBy := []string{sync3.SortByRecency}
-		if l.Sort != nil {
-			sortBy = l.Sort
-		}
-		err := roomList.Sort(sortBy)
-		if err != nil {
-			logger.Warn().Err(err).Strs("sort", sortBy).Msg("failed to sort")
-		}
-		s.lists.Set(i, roomList)
+		s.setDefaultList(i, l)
 	}
 	return nil
+}
+
+func (s *ConnState) setDefaultList(i int, l sync3.RequestList) {
+	roomList := sync3.NewFilteredSortableRooms(s.allRooms, l.Filters)
+	sortBy := []string{sync3.SortByRecency}
+	if l.Sort != nil {
+		sortBy = l.Sort
+	}
+	err := roomList.Sort(sortBy)
+	if err != nil {
+		logger.Warn().Err(err).Strs("sort", sortBy).Msg("failed to sort")
+	}
+	s.lists.Set(i, roomList)
 }
 
 // OnIncomingRequest is guaranteed to be called sequentially (it's protected by a mutex in conn.go)
@@ -231,6 +235,9 @@ func (s *ConnState) processLiveEvent(connEvent *ConnEvent, responseOperations []
 }
 
 func (s *ConnState) onIncomingListRequest(listIndex int, prevReqList, nextReqList *sync3.RequestList) []sync3.ResponseOp {
+	if !s.lists.ListExists(listIndex) {
+		s.setDefaultList(listIndex, *nextReqList)
+	}
 	roomList := s.lists.List(listIndex)
 	// TODO: calculate the M values for N < M calcs
 	// TODO: list deltas

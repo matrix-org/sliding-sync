@@ -74,6 +74,11 @@ func (r *Request) ApplyDelta(nextReq *Request) (result *Request, subs, unsubs []
 		if i < len(r.Lists) {
 			existingList = &r.Lists[i]
 		}
+		if existingList == nil {
+			// we added a list
+			lists[i] = nextReq.Lists[i]
+			continue
+		}
 		nextList := nextReq.Lists[i]
 		rooms := nextList.Ranges
 		if rooms == nil {
