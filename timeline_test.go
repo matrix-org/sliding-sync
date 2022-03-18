@@ -317,7 +317,7 @@ func TestDuplicateEventsInTimeline(t *testing.T) {
 	aliceToken := "ALICE_BEARER_TOKEN"
 	roomID := "!a:localhost"
 
-	dupeEvent := testutils.NewEvent(t, "m.room.message", alice, map[string]interface{}{}, time.Now())
+	dupeEvent := testutils.NewStateEvent(t, "m.room.name", "", alice, map[string]interface{}{})
 	v2.addAccount(alice, aliceToken)
 	v2.queueResponse(alice, sync2.SyncResponse{
 		Rooms: sync2.SyncRoomsResponse{
@@ -325,6 +325,7 @@ func TestDuplicateEventsInTimeline(t *testing.T) {
 				roomID: roomID,
 				state:  createRoomState(t, alice, time.Now()),
 				events: []json.RawMessage{
+					testutils.NewStateEvent(t, "m.room.topic", "", alice, map[string]interface{}{}),
 					dupeEvent, dupeEvent,
 				},
 			}),

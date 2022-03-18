@@ -201,6 +201,7 @@ func (a *Accumulator) Accumulate(roomID string, timeline []json.RawMessage) (num
 		// Insert the events. Check for duplicates which can happen in the real world when joining
 		// Matrix HQ on Synapse.
 		events := make([]Event, 0, len(timeline))
+		dedupedTimeline := make([]json.RawMessage, 0, len(timeline))
 		seenEvents := make(map[string]struct{})
 		for i := range timeline {
 			e := Event{
@@ -217,6 +218,7 @@ func (a *Accumulator) Accumulate(roomID string, timeline []json.RawMessage) (num
 				continue
 			}
 			events = append(events, e)
+			dedupedTimeline = append(dedupedTimeline, timeline[i])
 			seenEvents[e.ID] = struct{}{}
 		}
 		numNew, err = a.eventsTable.Insert(txn, events, false)
@@ -229,7 +231,7 @@ func (a *Accumulator) Accumulate(roomID string, timeline []json.RawMessage) (num
 		}
 
 		// The last numNew events are new
-		newEvents := timeline[len(timeline)-numNew:]
+		newEvents := dedupedTimeline[len(dedupedTimeline)-numNew:]
 
 		// Decorate the new events with useful information
 		var newEventsDec []struct {
