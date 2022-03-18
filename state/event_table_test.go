@@ -35,7 +35,7 @@ func TestEventTable(t *testing.T) {
 			JSON: []byte(`{"event_id":"102", "foo":"bar", "type": "T3", "state_key":"", "room_id":"` + roomID + `"}`),
 		},
 	}
-	numNew, err := table.Insert(txn, events)
+	numNew, err := table.Insert(txn, events, true)
 	if err != nil {
 		t.Fatalf("Insert failed: %s", err)
 	}
@@ -50,7 +50,7 @@ func TestEventTable(t *testing.T) {
 	}
 	defer txn.Rollback()
 	// duplicate insert is ok
-	numNew, err = table.Insert(txn, events)
+	numNew, err = table.Insert(txn, events, true)
 	if err != nil {
 		t.Fatalf("Insert failed: %s", err)
 	}
@@ -213,7 +213,7 @@ func TestEventTableNullValue(t *testing.T) {
 			JSON: originalJSON,
 		},
 	}
-	numNew, err := table.Insert(txn, events)
+	numNew, err := table.Insert(txn, events, true)
 	if err != nil {
 		t.Fatalf("Insert failed: %s", err)
 	}
@@ -254,7 +254,7 @@ func TestEventTableDupeInsert(t *testing.T) {
 			RoomID: roomID,
 		},
 	}
-	numNew, err := table.Insert(txn, events)
+	numNew, err := table.Insert(txn, events, true)
 	if err != nil {
 		t.Fatalf("Insert failed: %s", err)
 	}
@@ -281,7 +281,7 @@ func TestEventTableDupeInsert(t *testing.T) {
 			RoomID: roomID,
 		},
 	}
-	numNew, err = table.Insert(txn, events)
+	numNew, err = table.Insert(txn, events, true)
 	if err != nil {
 		t.Fatalf("Insert failed: %s", err)
 	}
@@ -338,7 +338,7 @@ func TestEventTableSelectEventsBetween(t *testing.T) {
 			JSON: []byte(`{"event_id":"` + eventIDs[4] + `","type": "T5", "state_key":"", "room_id":"` + searchRoomID + `"}`),
 		},
 	}
-	numNew, err := table.Insert(txn, events)
+	numNew, err := table.Insert(txn, events, true)
 	if err != nil {
 		t.Fatalf("Insert failed: %s", err)
 	}
@@ -456,7 +456,7 @@ func TestEventTableMembershipDetection(t *testing.T) {
 			),
 		},
 	}
-	_, err = table.Insert(txn, events)
+	_, err = table.Insert(txn, events, true)
 	if err != nil {
 		t.Fatalf("failed to insert: %s", err)
 	}
@@ -590,7 +590,7 @@ func TestEventTableSelectEventsWithTypeStateKey(t *testing.T) {
 			RoomID: roomD,
 			JSON:   testutils.NewStateEvent(t, "m.room.member", "@bob:localhost", userID, map[string]interface{}{"membership": "join"}),
 		},
-	})
+	}, true)
 	txn.Commit()
 	if err != nil {
 		t.Fatalf("failed to insert events: %s", err)
@@ -668,7 +668,7 @@ func TestTortureEventTable(t *testing.T) {
 		}
 		eventIDs[i] = events[i].ID
 	}
-	n, err := table.Insert(txn, events)
+	n, err := table.Insert(txn, events, true)
 	if err != nil {
 		t.Fatalf("failed to insert %d events: %s", len(events), err)
 	}

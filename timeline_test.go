@@ -302,6 +302,53 @@ func TestInitialFlag(t *testing.T) {
 	))
 }
 
+// Regression test for in-the-wild bug:
+//   ERR missing events in database!
+//   ERR V2: failed to accumulate room error="failed to extract nids from inserted events, asked for 9 got 8"
+// We should be able to gracefully handle duplicate events in the timeline.
+func TestDuplicateEventsInTimeline(t *testing.T) {
+	pqString := testutils.PrepareDBConnectionString()
+	// setup code
+	v2 := runTestV2Server(t)
+	v3 := runTestServer(t, v2, pqString)
+	defer v2.close()
+	defer v3.close()
+	alice := "@alice:localhost"
+	aliceToken := "ALICE_BEARER_TOKEN"
+	roomID := "!a:localhost"
+
+	dupeEvent := testutils.NewEvent(t, "m.room.message", alice, map[string]interface{}{}, time.Now())
+	v2.addAccount(alice, aliceToken)
+	v2.queueResponse(alice, sync2.SyncResponse{
+		Rooms: sync2.SyncRoomsResponse{
+			Join: v2JoinTimeline(roomEvents{
+				roomID: roomID,
+				state:  createRoomState(t, alice, time.Now()),
+				events: []json.RawMessage{
+					dupeEvent, dupeEvent,
+				},
+			}),
+		},
+	})
+	res := v3.mustDoV3Request(t, aliceToken, sync3.Request{
+		Lists: []sync3.RequestList{{
+			Ranges: sync3.SliceRanges{
+				[2]int64{0, 10},
+			},
+			RoomSubscription: sync3.RoomSubscription{
+				TimelineLimit: 10,
+			},
+		}},
+	})
+	MatchResponse(t, res, MatchV3Ops(
+		MatchV3SyncOpWithMatchers(MatchRoomRange(
+			[]roomMatcher{
+				MatchRoomTimelineMostRecent(1, []json.RawMessage{dupeEvent}),
+			},
+		)),
+	))
+}
+
 // Regression test for https://github.com/matrix-org/sliding-sync/commit/39d6e99f967e55b609f8ef8b4271c04ebb053d37
 // Request a timeline_limit of 0 for the room list. Sometimes when a new event arrives it causes an
 // unrelated room to be sent to the client (e.g tracking rooms [5,10] and room 15 bumps to room 2,

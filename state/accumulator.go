@@ -128,7 +128,10 @@ func (a *Accumulator) Initialise(roomID string, state []json.RawMessage) (bool, 
 				RoomID: roomID,
 			}
 		}
-		numNew, err := a.eventsTable.Insert(txn, events)
+		if err := ensureFieldsSet(events); err != nil {
+			return fmt.Errorf("events malformed: %s", err)
+		}
+		numNew, err := a.eventsTable.Insert(txn, events, false)
 		if err != nil {
 			return fmt.Errorf("failed to insert events: %w", err)
 		}
@@ -195,15 +198,28 @@ func (a *Accumulator) Accumulate(roomID string, timeline []json.RawMessage) (num
 		return 0, 0, nil
 	}
 	err = sqlutil.WithTransaction(a.db, func(txn *sqlx.Tx) error {
-		// Insert the events
-		events := make([]Event, len(timeline))
-		for i := range events {
-			events[i] = Event{
+		// Insert the events. Check for duplicates which can happen in the real world when joining
+		// Matrix HQ on Synapse.
+		events := make([]Event, 0, len(timeline))
+		seenEvents := make(map[string]struct{})
+		for i := range timeline {
+			e := Event{
 				JSON:   timeline[i],
 				RoomID: roomID,
 			}
+			if err := ensureFieldsSetOnEvent(&e); err != nil {
+				return fmt.Errorf("event malformed: %s", err)
+			}
+			if _, ok := seenEvents[e.ID]; ok {
+				log.Warn().Str("event_id", e.ID).Str("room_id", roomID).Msg(
+					"Accumulator.Accumulate: seen the same event ID twice, ignoring",
+				)
+				continue
+			}
+			events = append(events, e)
+			seenEvents[e.ID] = struct{}{}
 		}
-		numNew, err = a.eventsTable.Insert(txn, events)
+		numNew, err = a.eventsTable.Insert(txn, events, false)
 		if err != nil {
 			return err
 		}

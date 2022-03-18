@@ -41,7 +41,7 @@ func ProcessE2EE(fetcher sync2.E2EEFetcher, userID, deviceID string, req *E2EERe
 			Changed: changed,
 			Left:    left,
 		}
-		logger.Info().Strs("changed", changed).Strs("left", left).Str("user", userID).Msg("E2EE extension: new data")
+		logger.Info().Int("changed", len(changed)).Int("left", len(left)).Str("user", userID).Msg("E2EE extension: new data")
 	}
 	return
 }
