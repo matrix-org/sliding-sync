@@ -21,7 +21,7 @@ type ConnHandler interface {
 	// Callback which is allowed to block as long as the context is active. Return the response
 	// to send back or an error. Errors of type *internal.HandlerError are inspected for the correct
 	// status code to send back.
-	OnIncomingRequest(ctx context.Context, cid ConnID, req *Request) (*Response, error)
+	OnIncomingRequest(ctx context.Context, cid ConnID, req *Request, isInitial bool) (*Response, error)
 	UserID() string
 	Destroy()
 	Alive() bool
@@ -85,7 +85,7 @@ func (c *Conn) OnIncomingRequest(ctx context.Context, req *Request) (resp *Respo
 	}
 	c.lastClientRequest = *req
 
-	resp, err := c.handler.OnIncomingRequest(ctx, c.ConnID, req)
+	resp, err := c.handler.OnIncomingRequest(ctx, c.ConnID, req, req.pos == 0)
 	if err != nil {
 		herr, ok := err.(*internal.HandlerError)
 		if !ok {

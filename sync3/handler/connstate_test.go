@@ -106,7 +106,7 @@ func TestConnStateInitial(t *testing.T) {
 				{0, 9},
 			}),
 		}},
-	})
+	}, false)
 	if err != nil {
 		t.Fatalf("OnIncomingRequest returned error : %s", err)
 	}
@@ -154,7 +154,7 @@ func TestConnStateInitial(t *testing.T) {
 				{0, 9},
 			}),
 		}},
-	})
+	}, false)
 	if err != nil {
 		t.Fatalf("OnIncomingRequest returned error : %s", err)
 	}
@@ -187,7 +187,7 @@ func TestConnStateInitial(t *testing.T) {
 				{0, 9},
 			}),
 		}},
-	})
+	}, false)
 	if err != nil {
 		t.Fatalf("OnIncomingRequest returned error : %s", err)
 	}
@@ -254,7 +254,7 @@ func TestConnStateMultipleRanges(t *testing.T) {
 				{0, 2},
 			}),
 		}},
-	})
+	}, false)
 	if err != nil {
 		t.Fatalf("OnIncomingRequest returned error : %s", err)
 	}
@@ -286,7 +286,7 @@ func TestConnStateMultipleRanges(t *testing.T) {
 				{0, 2}, {4, 6},
 			}),
 		}},
-	})
+	}, false)
 	if err != nil {
 		t.Fatalf("OnIncomingRequest returned error : %s", err)
 	}
@@ -329,7 +329,7 @@ func TestConnStateMultipleRanges(t *testing.T) {
 				{0, 2}, {4, 6},
 			}),
 		}},
-	})
+	}, false)
 	if err != nil {
 		t.Fatalf("OnIncomingRequest returned error : %s", err)
 	}
@@ -369,7 +369,7 @@ func TestConnStateMultipleRanges(t *testing.T) {
 				{0, 2}, {4, 6},
 			}),
 		}},
-	})
+	}, false)
 	if err != nil {
 		t.Fatalf("OnIncomingRequest returned error : %s", err)
 	}
@@ -435,7 +435,7 @@ func TestBumpToOutsideRange(t *testing.T) {
 				{0, 1},
 			}),
 		}},
-	})
+	}, false)
 	if err != nil {
 		t.Fatalf("OnIncomingRequest returned error : %s", err)
 	}
@@ -473,7 +473,7 @@ func TestBumpToOutsideRange(t *testing.T) {
 				{0, 1},
 			}),
 		}},
-	})
+	}, false)
 	if err != nil {
 		t.Fatalf("OnIncomingRequest returned error : %s", err)
 	}
@@ -548,7 +548,7 @@ func TestConnStateRoomSubscriptions(t *testing.T) {
 				{0, 1},
 			}),
 		}},
-	})
+	}, false)
 	if err != nil {
 		t.Fatalf("OnIncomingRequest returned error : %s", err)
 	}
@@ -602,7 +602,7 @@ func TestConnStateRoomSubscriptions(t *testing.T) {
 				{0, 1},
 			}),
 		}},
-	})
+	}, false)
 	if err != nil {
 		t.Fatalf("OnIncomingRequest returned error : %s", err)
 	}
@@ -633,7 +633,7 @@ func TestConnStateRoomSubscriptions(t *testing.T) {
 				{0, 1},
 			}),
 		}},
-	})
+	}, false)
 	if err != nil {
 		t.Fatalf("OnIncomingRequest returned error : %s", err)
 	}

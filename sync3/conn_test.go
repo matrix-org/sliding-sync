@@ -13,11 +13,11 @@ import (
 )
 
 type connHandlerMock struct {
-	fn func(ctx context.Context, cid ConnID, req *Request) (*Response, error)
+	fn func(ctx context.Context, cid ConnID, req *Request, isInitial bool) (*Response, error)
 }
 
-func (c *connHandlerMock) OnIncomingRequest(ctx context.Context, cid ConnID, req *Request) (*Response, error) {
-	return c.fn(ctx, cid, req)
+func (c *connHandlerMock) OnIncomingRequest(ctx context.Context, cid ConnID, req *Request, init bool) (*Response, error) {
+	return c.fn(ctx, cid, req, init)
 }
 func (c *connHandlerMock) UserID() string {
 	return "dummy"
@@ -32,7 +32,7 @@ func TestConn(t *testing.T) {
 		DeviceID: "d",
 	}
 	count := 100
-	c := NewConn(connID, &connHandlerMock{func(ctx context.Context, cid ConnID, req *Request) (*Response, error) {
+	c := NewConn(connID, &connHandlerMock{func(ctx context.Context, cid ConnID, req *Request, isInitial bool) (*Response, error) {
 		count += 1
 		return &Response{
 			Counts: []int{count},
@@ -76,7 +76,7 @@ func TestConnBlocking(t *testing.T) {
 		DeviceID: "d",
 	}
 	ch := make(chan string)
-	c := NewConn(connID, &connHandlerMock{func(ctx context.Context, cid ConnID, req *Request) (*Response, error) {
+	c := NewConn(connID, &connHandlerMock{func(ctx context.Context, cid ConnID, req *Request, init bool) (*Response, error) {
 		if req.Lists[0].Sort[0] == "hi" {
 			time.Sleep(10 * time.Millisecond)
 		}
@@ -130,7 +130,7 @@ func TestConnRetries(t *testing.T) {
 		DeviceID: "d",
 	}
 	callCount := int64(0)
-	c := NewConn(connID, &connHandlerMock{func(ctx context.Context, cid ConnID, req *Request) (*Response, error) {
+	c := NewConn(connID, &connHandlerMock{func(ctx context.Context, cid ConnID, req *Request, init bool) (*Response, error) {
 		callCount += 1
 		return &Response{Counts: []int{20}}, nil
 	}})
@@ -169,7 +169,7 @@ func TestConnErrors(t *testing.T) {
 		DeviceID: "d",
 	}
 	errCh := make(chan error, 1)
-	c := NewConn(connID, &connHandlerMock{func(ctx context.Context, cid ConnID, req *Request) (*Response, error) {
+	c := NewConn(connID, &connHandlerMock{func(ctx context.Context, cid ConnID, req *Request, init bool) (*Response, error) {
 		return nil, <-errCh
 	}})
 
@@ -196,7 +196,7 @@ func TestConnErrorsNoCache(t *testing.T) {
 		DeviceID: "d",
 	}
 	errCh := make(chan error, 1)
-	c := NewConn(connID, &connHandlerMock{func(ctx context.Context, cid ConnID, req *Request) (*Response, error) {
+	c := NewConn(connID, &connHandlerMock{func(ctx context.Context, cid ConnID, req *Request, init bool) (*Response, error) {
 		select {
 		case e := <-errCh:
 			return nil, e

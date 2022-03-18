@@ -34,7 +34,7 @@ type ToDeviceResponse struct {
 	Events    []json.RawMessage `json:"events,omitempty"`
 }
 
-func (r *ToDeviceResponse) HasData() bool {
+func (r *ToDeviceResponse) HasData(isInitial bool) bool {
 	return len(r.Events) > 0
 }
 

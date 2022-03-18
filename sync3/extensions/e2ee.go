@@ -25,7 +25,10 @@ type E2EEDeviceList struct {
 	Left    []string `json:"left"`
 }
 
-func (r *E2EEResponse) HasData() bool {
+func (r *E2EEResponse) HasData(isInitial bool) bool {
+	if isInitial {
+		return true // ensure we send OTK counts immediately
+	}
 	// OTK counts aren't enough to make /sync return early as we send them liberally, not just on change
 	return r.DeviceLists != nil
 }

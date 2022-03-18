@@ -129,17 +129,17 @@ func (s *ConnState) setDefaultList(i int, l sync3.RequestList) {
 }
 
 // OnIncomingRequest is guaranteed to be called sequentially (it's protected by a mutex in conn.go)
-func (s *ConnState) OnIncomingRequest(ctx context.Context, cid sync3.ConnID, req *sync3.Request) (*sync3.Response, error) {
+func (s *ConnState) OnIncomingRequest(ctx context.Context, cid sync3.ConnID, req *sync3.Request, isInitial bool) (*sync3.Response, error) {
 	if s.loadPosition == 0 {
 		s.load(req)
 	}
-	return s.onIncomingRequest(ctx, req)
+	return s.onIncomingRequest(ctx, req, isInitial)
 }
 
 // onIncomingRequest is a callback which fires when the client makes a request to the server. Whilst each request may
 // be on their own goroutine, the requests are linearised for us by Conn so it is safe to modify ConnState without
 // additional locking mechanisms.
-func (s *ConnState) onIncomingRequest(ctx context.Context, req *sync3.Request) (*sync3.Response, error) {
+func (s *ConnState) onIncomingRequest(ctx context.Context, req *sync3.Request, isInitial bool) (*sync3.Response, error) {
 	prevReq := s.muxedReq
 
 	// TODO: factor out room subscription handling
@@ -181,7 +181,7 @@ func (s *ConnState) onIncomingRequest(ctx context.Context, req *sync3.Request) (
 	// do live tracking if we have nothing to tell the client yet
 	// block until we get a new event, with appropriate timeout
 blockloop:
-	for len(responseOperations) == 0 && len(response.RoomSubscriptions) == 0 && !response.Extensions.HasData() {
+	for len(responseOperations) == 0 && len(response.RoomSubscriptions) == 0 && !response.Extensions.HasData(isInitial) {
 		select {
 		case <-ctx.Done(): // client has given up
 			break blockloop

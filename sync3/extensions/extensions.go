@@ -36,8 +36,8 @@ type Response struct {
 	E2EE     *E2EEResponse     `json:"e2ee,omitempty"`
 }
 
-func (e Response) HasData() bool {
-	return (e.ToDevice != nil && e.ToDevice.HasData()) || (e.E2EE != nil && e.E2EE.HasData())
+func (e Response) HasData(isInitial bool) bool {
+	return (e.ToDevice != nil && e.ToDevice.HasData(isInitial)) || (e.E2EE != nil && e.E2EE.HasData(isInitial))
 }
 
 type HandlerInterface interface {
