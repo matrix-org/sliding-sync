@@ -185,7 +185,7 @@ blockloop:
 			break blockloop
 		case connEvent := <-s.updateEvents: // TODO: keep reading until it is empty before responding.
 			responseOperations = s.processLiveEvent(connEvent, responseOperations, response)
-			for len(s.updateEvents) > 0 {
+			for len(s.updateEvents) > 0 && len(responseOperations) < 50 {
 				connEvent = <-s.updateEvents
 				responseOperations = s.processLiveEvent(connEvent, responseOperations, response)
 			}
@@ -400,7 +400,7 @@ func (s *ConnState) resort(listIndex int, reqList *sync3.RequestList, roomList *
 	toIndex, _ := roomList.IndexOf(roomID)
 	isInsideRange := reqList.Ranges.Inside(int64(toIndex))
 	logger = logger.With().Str("room", roomID).Int("from", fromIndex).Int("to", toIndex).Bool("inside_range", isInsideRange).Logger()
-	logger.Info().Msg("moved!")
+	logger.Info().Bool("newEvent", newEvent != nil).Msg("moved!")
 	// the toIndex may not be inside a tracked range. If it isn't, we actually need to notify about a
 	// different room
 	if !isInsideRange {
@@ -615,6 +615,10 @@ func (s *ConnState) moveRoom(reqList *sync3.RequestList, listIndex int, roomID s
 
 // Called by the user cache when events arrive
 func (s *ConnState) OnNewEvent(event *sync3.EventData) {
+	if event.LatestPos == 0 {
+		// this event was from a 'state' block, do not poke active connections
+		return
+	}
 	// pull the current room metadata from the global cache. This is safe to do without locking
 	// as the v2 poll loops all rely on a single poller thread to poke the dispatcher which pokes
 	// the caches (incl. user caches) so there cannot be any concurrent updates. We always get back

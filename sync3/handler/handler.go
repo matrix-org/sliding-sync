@@ -315,7 +315,7 @@ func (h *SyncLiveHandler) Initialise(roomID string, state []json.RawMessage) {
 		// no new events
 		return
 	}
-	// we have new events, notify active connections
+	// we have new state, notify caches
 	h.Dispatcher.OnNewEvents(roomID, state, 0)
 }
 
