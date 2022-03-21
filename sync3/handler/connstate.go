@@ -479,7 +479,7 @@ func (s *ConnState) updateRoomSubscriptions(timelineLimit int, subs, unsubs []st
 		if sub.TimelineLimit > 0 {
 			timelineLimit = int(sub.TimelineLimit)
 		}
-		rooms := s.getInitialRoomData(0, timelineLimit, roomID)
+		rooms := s.getInitialRoomData(-1, timelineLimit, roomID)
 		result[roomID] = rooms[0]
 	}
 	for _, roomID := range unsubs {
@@ -511,7 +511,14 @@ func (s *ConnState) getInitialRoomData(listIndex int, timelineLimit int, roomIDs
 		userRoomData := roomIDToUserRoomData[roomID]
 		metadata := roomMetadatas[i]
 		metadata.RemoveHero(s.userID)
-
+		// this room is a subscription and we want initial data for a list for the same room -> send a stub
+		if _, hasRoomSub := s.roomSubscriptions[roomID]; hasRoomSub && listIndex >= 0 {
+			rooms[i] = sync3.Room{
+				RoomID: roomID,
+				Name:   internal.CalculateRoomName(metadata, 5), // TODO: customisable?
+			}
+			continue
+		}
 		rooms[i] = sync3.Room{
 			RoomID:            roomID,
 			Name:              internal.CalculateRoomName(metadata, 5), // TODO: customisable?

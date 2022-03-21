@@ -168,8 +168,12 @@ func (r *Request) GetTimelineLimit(listIndex int, roomID string) int64 {
 func (r *Request) GetRequiredState(listIndex int, roomID string) [][2]string {
 	if r.RoomSubscriptions != nil {
 		room, ok := r.RoomSubscriptions[roomID]
-		if ok && room.RequiredState != nil {
-			return room.RequiredState
+		if ok {
+			if room.RequiredState != nil {
+				return room.RequiredState
+			}
+			// room subscription trumps lists
+			return nil
 		}
 	}
 	return r.Lists[listIndex].RequiredState
