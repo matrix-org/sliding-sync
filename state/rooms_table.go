@@ -2,6 +2,7 @@ package state
 
 import (
 	"database/sql"
+	"fmt"
 
 	"github.com/jmoiron/sqlx"
 )
@@ -15,35 +16,42 @@ func NewRoomsTable(db *sqlx.DB) *RoomsTable {
 	CREATE TABLE IF NOT EXISTS syncv3_rooms (
 		room_id TEXT NOT NULL PRIMARY KEY,
 		current_snapshot_id BIGINT NOT NULL,
-		is_encrypted BOOL NOT NULL DEFAULT FALSE
+		is_encrypted BOOL NOT NULL DEFAULT FALSE,
+		is_tombstoned BOOL NOT NULL DEFAULT FALSE
 	);
 	`)
 	return &RoomsTable{}
 }
 
-// Split rooms into ones that are encrypted and ones that are not.
-func (t *RoomsTable) SelectEncryptedRooms(txn *sqlx.Tx) (encrypted, unencrypted []string, err error) {
-	err = txn.Select(&encrypted, `SELECT room_id FROM syncv3_rooms WHERE is_encrypted=TRUE`)
-	if err != nil {
-		return
-	}
-	err = txn.Select(&unencrypted, `SELECT room_id FROM syncv3_rooms WHERE is_encrypted=FALSE`)
+func (t *RoomsTable) SelectTombstonedRooms(txn *sqlx.Tx) (tombstones []string, err error) {
+	err = txn.Select(&tombstones, `SELECT room_id FROM syncv3_rooms WHERE is_tombstoned=TRUE`)
 	return
 }
 
-func (t *RoomsTable) UpdateCurrentAfterSnapshotID(txn *sqlx.Tx, roomID string, snapshotID int64, isEncrypted bool) (err error) {
-	// don't touch is_encrypted if we say it is false
-	if !isEncrypted {
-		_, err = txn.Exec(`
-	INSERT INTO syncv3_rooms(room_id, current_snapshot_id) VALUES($1, $2)
-	ON CONFLICT (room_id) DO UPDATE SET current_snapshot_id = $2`, roomID, snapshotID)
-	} else {
-		// flip it to true. This is a bit of a wonky query to ensure that you cannot set is_encrypted=false after it has been
-		// set to true.
-		_, err = txn.Exec(`
-		INSERT INTO syncv3_rooms(room_id, current_snapshot_id, is_encrypted) VALUES($1, $2, true)
-		ON CONFLICT (room_id) DO UPDATE SET current_snapshot_id = $2, is_encrypted = true`, roomID, snapshotID)
+func (t *RoomsTable) SelectEncryptedRooms(txn *sqlx.Tx) (encrypted []string, err error) {
+	err = txn.Select(&encrypted, `SELECT room_id FROM syncv3_rooms WHERE is_encrypted=TRUE`)
+	return
+}
+
+func (t *RoomsTable) UpdateCurrentAfterSnapshotID(txn *sqlx.Tx, roomID string, snapshotID int64, isEncrypted, isTombstoned bool) (err error) {
+	// This is a bit of a wonky query to ensure that you cannot set is_encrypted=false after it has been
+	// set to true.
+	cols := "room_id, current_snapshot_id"
+	vals := "$1, $2"
+	doUpdate := "ON CONFLICT (room_id) DO UPDATE SET current_snapshot_id = $2"
+	if isEncrypted {
+		cols += ", is_encrypted"
+		vals += ", true"
+		doUpdate += ", is_encrypted = true"
 	}
+	if isTombstoned {
+		cols += ", is_tombstoned"
+		vals += ", true"
+		doUpdate += ", is_tombstoned = true"
+	}
+	insertQuery := fmt.Sprintf(`INSERT INTO syncv3_rooms(%s) VALUES(%s) %s`, cols, vals, doUpdate)
+	// flip it to true.
+	_, err = txn.Exec(insertQuery, roomID, snapshotID)
 	return err
 }
 

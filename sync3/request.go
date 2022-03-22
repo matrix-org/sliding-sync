@@ -184,12 +184,16 @@ type RequestFilters struct {
 	IsDM           *bool    `json:"is_dm"`
 	IsEncrypted    *bool    `json:"is_encrypted"`
 	IsInvite       *bool    `json:"is_invite"`
+	IsTombstoned   *bool    `json:"is_tombstoned"`
 	RoomNameFilter string   `json:"room_name_like"`
 	// TODO options to control which events should be live-streamed e.g not_types, types from sync v2
 }
 
 func (rf *RequestFilters) Include(r *RoomConnMetadata) bool {
 	if rf.IsEncrypted != nil && *rf.IsEncrypted != r.Encrypted {
+		return false
+	}
+	if rf.IsTombstoned != nil && *rf.IsTombstoned != r.Tombstoned {
 		return false
 	}
 	if rf.IsDM != nil && *rf.IsDM != r.IsDM {

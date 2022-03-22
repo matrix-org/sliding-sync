@@ -201,7 +201,7 @@ func (s *Storage) MetadataForAllRooms() (map[string]internal.RoomMetadata, error
 	}
 
 	tx := s.accumulator.db.MustBegin()
-	encrypted, _, err := s.accumulator.roomsTable.SelectEncryptedRooms(tx)
+	encrypted, err := s.accumulator.roomsTable.SelectEncryptedRooms(tx)
 	tx.Commit()
 	if err != nil {
 		return nil, fmt.Errorf("failed to select encrypted rooms: %s", err)

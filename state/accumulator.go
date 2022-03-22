@@ -167,9 +167,13 @@ func (a *Accumulator) Initialise(roomID string, state []json.RawMessage) (bool, 
 
 		// check for an encryption event
 		isEncrypted := false
+		isTombstoned := false
 		for _, ev := range events {
 			if ev.Type == "m.room.encryption" && ev.StateKey == "" {
 				isEncrypted = true
+			}
+			if ev.Type == "m.room.tombstone" && ev.StateKey == "" {
+				isTombstoned = true
 			}
 		}
 
@@ -178,7 +182,7 @@ func (a *Accumulator) Initialise(roomID string, state []json.RawMessage) (bool, 
 		// will have an associated state snapshot ID on the event.
 
 		// Set the snapshot ID as the current state
-		return a.roomsTable.UpdateCurrentAfterSnapshotID(txn, roomID, snapshot.SnapshotID, isEncrypted)
+		return a.roomsTable.UpdateCurrentAfterSnapshotID(txn, roomID, snapshot.SnapshotID, isEncrypted, isTombstoned)
 	})
 	return addedEvents, err
 }
@@ -272,8 +276,9 @@ func (a *Accumulator) Accumulate(roomID string, timeline []json.RawMessage) (num
 			}
 		}
 
-		// check if these new events enable encryption in the room
+		// check if these new events enable encryption / tombstone the room
 		isEncrypted := false
+		isTombstoned := false
 
 		// Given a timeline of [E1, E2, S3, E4, S5, S6, E7] (E=message event, S=state event)
 		// And a prior state snapshot of SNAP0 then the BEFORE snapshot IDs are grouped as:
@@ -326,6 +331,9 @@ func (a *Accumulator) Accumulate(roomID string, timeline []json.RawMessage) (num
 				if newStateEvent.Type == "m.room.encryption" && newStateEvent.StateKey == "" {
 					isEncrypted = true
 				}
+				if newStateEvent.Type == "m.room.tombstone" && newStateEvent.StateKey == "" {
+					isTombstoned = true
+				}
 			}
 			if err := a.eventsTable.UpdateBeforeSnapshotID(txn, ev.NID, beforeSnapID, replacesNID); err != nil {
 				return err
@@ -333,7 +341,7 @@ func (a *Accumulator) Accumulate(roomID string, timeline []json.RawMessage) (num
 		}
 
 		// the last fetched snapshot ID is the current one
-		if err = a.roomsTable.UpdateCurrentAfterSnapshotID(txn, roomID, snapID, isEncrypted); err != nil {
+		if err = a.roomsTable.UpdateCurrentAfterSnapshotID(txn, roomID, snapID, isEncrypted, isTombstoned); err != nil {
 			return fmt.Errorf("failed to UpdateCurrentSnapshotID to %d: %w", snapID, err)
 		}
 		return nil

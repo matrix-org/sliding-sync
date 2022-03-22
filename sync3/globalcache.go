@@ -194,6 +194,10 @@ func (c *GlobalCache) OnNewEvent(
 		if ed.StateKey != nil && *ed.StateKey == "" {
 			metadata.Encrypted = true
 		}
+	case "m.room.tombstone":
+		if ed.StateKey != nil && *ed.StateKey == "" {
+			metadata.Tombstoned = true
+		}
 	case "m.room.canonical_alias":
 		if ed.StateKey != nil && *ed.StateKey == "" {
 			metadata.CanonicalAlias = ed.Content.Get("alias").Str
