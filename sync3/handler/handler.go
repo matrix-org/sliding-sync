@@ -221,10 +221,22 @@ func (h *SyncLiveHandler) setupConnection(req *http.Request, syncReq *sync3.Requ
 			// non-fatal, we can still work without doing this
 		}
 	}
+
 	h.PollerMap.EnsurePolling(
 		req.Header.Get("Authorization"), v2device.UserID, v2device.DeviceID, v2device.Since,
 		hlog.FromRequest(req).With().Str("user_id", v2device.UserID).Logger(),
 	)
+	// this may take a while so if the client has given up (e.g timed out) by this point, just stop.
+	// We'll be quicker next time as the poller will already exist.
+	if req.Context().Err() != nil {
+		log.Warn().Str("user_id", v2device.UserID).Msg(
+			"client gave up, not creating connection",
+		)
+		return nil, &internal.HandlerError{
+			StatusCode: 400,
+			Err:        req.Context().Err(),
+		}
+	}
 
 	userCache, err := h.userCache(v2device.UserID)
 	if err != nil {

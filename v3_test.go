@@ -2,6 +2,7 @@ package syncv3
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -37,6 +38,10 @@ func (s *testV2Server) addAccount(userID, token string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.tokenToUser[token] = userID
+	s.queues[userID] = make(chan sync2.SyncResponse, 100)
+	s.waiting[userID] = &sync.Cond{
+		L: &sync.Mutex{},
+	}
 }
 
 func (s *testV2Server) userID(token string) string {
@@ -48,10 +53,6 @@ func (s *testV2Server) userID(token string) string {
 func (s *testV2Server) queueResponse(userID string, resp sync2.SyncResponse) {
 	s.mu.Lock()
 	ch := s.queues[userID]
-	if ch == nil {
-		ch = make(chan sync2.SyncResponse, 100)
-		s.queues[userID] = ch
-	}
 	s.mu.Unlock()
 	ch <- resp
 	log.Printf("testV2Server: enqueued v2 response for %s", userID)
@@ -63,9 +64,6 @@ func (s *testV2Server) waitUntilEmpty(t *testing.T, userID string) {
 	s.mu.Lock()
 	cond := s.waiting[userID]
 	s.mu.Unlock()
-	if cond == nil {
-		return
-	}
 	cond.L.Lock()
 	cond.Wait()
 	cond.L.Unlock()
@@ -75,12 +73,6 @@ func (s *testV2Server) nextResponse(userID string) *sync2.SyncResponse {
 	s.mu.Lock()
 	ch := s.queues[userID]
 	cond := s.waiting[userID]
-	if cond == nil {
-		cond = &sync.Cond{
-			L: &sync.Mutex{},
-		}
-		s.waiting[userID] = cond
-	}
 	s.mu.Unlock()
 	if ch == nil {
 		log.Fatalf("testV2Server: nextResponse called with %s but there is no chan for this user", userID)
@@ -177,14 +169,14 @@ func (s *testV3Server) mustDoV3Request(t *testing.T, token string, reqBody sync3
 
 func (s *testV3Server) mustDoV3RequestWithPos(t *testing.T, token string, pos string, reqBody sync3.Request) (respBody *sync3.Response) {
 	t.Helper()
-	resp, respBytes, code := s.doV3Request(t, token, pos, reqBody)
+	resp, respBytes, code := s.doV3Request(t, context.Background(), token, pos, reqBody)
 	if code != 200 {
 		t.Fatalf("mustDoV3Request returned code %d body: %s", code, string(respBytes))
 	}
 	return resp
 }
 
-func (s *testV3Server) doV3Request(t *testing.T, token string, pos string, reqBody interface{}) (respBody *sync3.Response, respBytes []byte, statusCode int) {
+func (s *testV3Server) doV3Request(t *testing.T, ctx context.Context, token string, pos string, reqBody interface{}) (respBody *sync3.Response, respBytes []byte, statusCode int) {
 	t.Helper()
 	var body io.Reader
 	switch v := reqBody.(type) {
@@ -205,13 +197,16 @@ func (s *testV3Server) doV3Request(t *testing.T, token string, pos string, reqBo
 	if pos != "" {
 		qps += fmt.Sprintf("&pos=%s", pos)
 	}
-	req, err := http.NewRequest("POST", s.srv.URL+"/_matrix/client/v3/sync"+qps, body)
+	req, err := http.NewRequestWithContext(ctx, "POST", s.srv.URL+"/_matrix/client/v3/sync"+qps, body)
 	if err != nil {
 		t.Fatalf("failed to make NewRequest: %s", err)
 	}
 	req.Header.Set("Authorization", "Bearer "+token)
 	resp, err := s.srv.Client().Do(req)
 	if err != nil {
+		if ctx.Err() != nil {
+			return nil, nil, 0
+		}
 		t.Fatalf("failed to Do request: %s", err)
 	}
 	defer resp.Body.Close()

@@ -208,11 +208,9 @@ func TestSecurityRoomSubscriptionLeak(t *testing.T) {
 			}),
 		},
 	})
-	v2.waitUntilEmpty(t, alice)
-	v2.waitUntilEmpty(t, eve)
-
-	// Alice must do a single v3 request so the proxy knows the secret room exists
+	// do initial sync so we start pollers
 	_ = v3.mustDoV3Request(t, aliceToken, sync3.Request{})
+	_ = v3.mustDoV3Request(t, eveToken, sync3.Request{})
 
 	// start sync streams for Eve, with a room subscription to the secret room
 	res := v3.mustDoV3Request(t, eveToken, sync3.Request{
