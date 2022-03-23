@@ -174,6 +174,8 @@ func (s *SortableRooms) comparatorSortByNotificationCount(i, j int) int {
 	return -1
 }
 
+// FilteredSortableRooms is SortableRooms but where rooms are filtered before being added to the list.
+// Updates to room metadata may result in rooms being added/removed.
 type FilteredSortableRooms struct {
 	*SortableRooms
 	filter *RequestFilters

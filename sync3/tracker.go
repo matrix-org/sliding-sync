@@ -4,6 +4,11 @@ import (
 	"sync"
 )
 
+// Tracks who is joined to which rooms. This is critical from a security perspective in order to
+// ensure that only the users joined to the room receive events in that room. Consider the situation
+// where Alice and Bob are joined to room X. If Alice gets kicked from X, the proxy server will still
+// receive messages for room X due to Bob being joined to the room. We therefore need to decide which
+// active connections should be pushed events, which is what this tracker does.
 type JoinedRoomsTracker struct {
 	// map of room_id to joined user IDs.
 	roomIDToJoinedUsers map[string][]string

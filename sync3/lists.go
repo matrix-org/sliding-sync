@@ -2,6 +2,7 @@ package sync3
 
 import "github.com/matrix-org/sync-v3/internal"
 
+// SortableRoomLists is a list of FilteredSortableRooms.
 type SortableRoomLists struct {
 	lists []*FilteredSortableRooms
 }

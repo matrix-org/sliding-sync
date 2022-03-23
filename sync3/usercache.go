@@ -21,6 +21,8 @@ type UserCacheListener interface {
 	OnUnreadCountsChanged(userID, roomID string, urd UserRoomData, hasCountDecreased bool)
 }
 
+// Tracks data specific to a given user. Specifically, this is the map of room ID to UserRoomData.
+// This data is user-scoped, not global or connection scoped.
 type UserCache struct {
 	LazyRoomDataOverride func(loadPos int64, roomIDs []string, maxTimelineEvents int) map[string]UserRoomData
 	UserID               string

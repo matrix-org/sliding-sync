@@ -7,8 +7,7 @@ import (
 	"github.com/ReneKroon/ttlcache/v2"
 )
 
-// ConnMap stores a collection of Conns along with other global server-wide state e.g the in-memory
-// map of which users are joined to which rooms.
+// ConnMap stores a collection of Conns.
 type ConnMap struct {
 	cache *ttlcache.Cache
 

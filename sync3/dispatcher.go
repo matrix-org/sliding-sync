@@ -26,7 +26,7 @@ type Receiver interface {
 	OnNewEvent(event *EventData)
 }
 
-// Dispatches live events to user caches
+// Dispatches live events to caches
 type Dispatcher struct {
 	jrt              *JoinedRoomsTracker
 	userToReceiver   map[string]Receiver
@@ -142,7 +142,7 @@ func (d *Dispatcher) onNewEvent(
 			notifiedTarget = true
 		}
 	}
-	if targetUser != "" && !notifiedTarget { // e.g invites where you aren't joined yet but need to know about it
+	if targetUser != "" && !notifiedTarget { // e.g invites/leaves where you aren't joined yet but need to know about it
 		l := d.userToReceiver[targetUser]
 		if l != nil {
 			l.OnNewEvent(ed)

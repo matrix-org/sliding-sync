@@ -34,8 +34,6 @@ type GlobalCache struct {
 
 	// for loading room state not held in-memory TODO: remove to another struct along with associated functions
 	store *state.Storage
-
-	id int
 }
 
 func NewGlobalCache(store *state.Storage) *GlobalCache {
