@@ -17,7 +17,7 @@ var (
 	SortBy                  = []string{SortByHighlightCount, SortByName, SortByNotificationCount, SortByRecency}
 
 	DefaultTimelineLimit = int64(20)
-	DefaultTimeoutSecs   = 10
+	DefaultTimeoutMSecs  = 10 * 1000 // 10s
 )
 
 type Request struct {

@@ -64,8 +64,7 @@ export class SlidingSyncConnection {
         this.abortController = new AbortController();
         const jsonBody = JSON.stringify(reqBody);
         let resp = await fetch(
-            "/_matrix/client/v3/sync?timeout=20000" +
-                (pos ? "&pos=" + pos : ""),
+            "/_matrix/client/v3/sync" + (pos ? "?pos=" + pos : ""),
             {
                 signal: this.abortController.signal,
                 method: "POST",

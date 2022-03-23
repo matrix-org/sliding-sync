@@ -130,7 +130,7 @@ func (h *SyncLiveHandler) serve(w http.ResponseWriter, req *http.Request) error 
 
 	var timeout int
 	if req.URL.Query().Get("timeout") == "" {
-		timeout = sync3.DefaultTimeoutSecs
+		timeout = sync3.DefaultTimeoutMSecs
 	} else {
 		timeout64, herr := parseIntFromQuery(req.URL, "timeout")
 		if herr != nil {
