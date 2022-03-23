@@ -266,6 +266,7 @@ func (h *SyncLiveHandler) setupConnection(req *http.Request, syncReq *sync3.Requ
 }
 
 func (h *SyncLiveHandler) userCache(userID string) (*sync3.UserCache, error) {
+	// bail if we already have a cache
 	c, ok := h.userCaches.Load(userID)
 	if ok {
 		return c.(*sync3.UserCache), nil
@@ -286,8 +287,14 @@ func (h *SyncLiveHandler) userCache(userID string) (*sync3.UserCache, error) {
 	if directEvent != nil {
 		uc.OnAccountData([]state.AccountData{*directEvent})
 	}
-	h.Dispatcher.Register(userID, uc)
-	h.userCaches.Store(userID, uc)
+
+	// use LoadOrStore here else we can race as 2 brand new /sync conns can both get to this point
+	// at the same time
+	actualUC, loaded := h.userCaches.LoadOrStore(userID, uc)
+	uc = actualUC.(*sync3.UserCache)
+	if !loaded { // we actually inserted the cache, so register with the dispatcher.
+		h.Dispatcher.Register(userID, uc)
+	}
 	return uc, nil
 }
 
