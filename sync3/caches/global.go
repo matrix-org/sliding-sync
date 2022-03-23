@@ -1,4 +1,4 @@
-package sync3
+package caches
 
 import (
 	"encoding/json"
@@ -12,6 +12,19 @@ import (
 	"github.com/rs/zerolog"
 	"github.com/tidwall/gjson"
 )
+
+type EventData struct {
+	Event     json.RawMessage
+	RoomID    string
+	EventType string
+	StateKey  *string
+	Content   gjson.Result
+	Timestamp uint64
+
+	// the absolute latest position for this event data. The NID for this event is guaranteed to
+	// be <= this value.
+	LatestPos int64
+}
 
 var logger = zerolog.New(os.Stdout).With().Timestamp().Logger().Output(zerolog.ConsoleWriter{
 	Out:        os.Stderr,

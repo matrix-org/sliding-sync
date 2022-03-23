@@ -1,4 +1,4 @@
-package sync3
+package caches
 
 import (
 	"encoding/json"

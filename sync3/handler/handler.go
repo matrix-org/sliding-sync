@@ -13,6 +13,7 @@ import (
 	"github.com/matrix-org/sync-v3/state"
 	"github.com/matrix-org/sync-v3/sync2"
 	"github.com/matrix-org/sync-v3/sync3"
+	"github.com/matrix-org/sync-v3/sync3/caches"
 	"github.com/matrix-org/sync-v3/sync3/extensions"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/hlog"
@@ -42,7 +43,7 @@ type SyncLiveHandler struct {
 	userCaches *sync.Map // map[user_id]*UserCache
 	Dispatcher *sync3.Dispatcher
 
-	GlobalCache *sync3.GlobalCache
+	GlobalCache *caches.GlobalCache
 }
 
 func NewSync3Handler(v2Client sync2.Client, postgresDBURI string) (*SyncLiveHandler, error) {
@@ -54,7 +55,7 @@ func NewSync3Handler(v2Client sync2.Client, postgresDBURI string) (*SyncLiveHand
 		ConnMap:     sync3.NewConnMap(),
 		userCaches:  &sync.Map{},
 		Dispatcher:  sync3.NewDispatcher(),
-		GlobalCache: sync3.NewGlobalCache(store),
+		GlobalCache: caches.NewGlobalCache(store),
 	}
 	sh.PollerMap = sync2.NewPollerMap(v2Client, sh)
 	sh.Extensions = &extensions.Handler{
@@ -265,13 +266,13 @@ func (h *SyncLiveHandler) setupConnection(req *http.Request, syncReq *sync3.Requ
 	return conn, nil
 }
 
-func (h *SyncLiveHandler) userCache(userID string) (*sync3.UserCache, error) {
+func (h *SyncLiveHandler) userCache(userID string) (*caches.UserCache, error) {
 	// bail if we already have a cache
 	c, ok := h.userCaches.Load(userID)
 	if ok {
-		return c.(*sync3.UserCache), nil
+		return c.(*caches.UserCache), nil
 	}
-	uc := sync3.NewUserCache(userID, h.GlobalCache, h.Storage)
+	uc := caches.NewUserCache(userID, h.GlobalCache, h.Storage)
 	// select all non-zero highlight or notif counts and set them, as this is less costly than looping every room/user pair
 	err := h.Storage.UnreadTable.SelectAllNonZeroCountsForUser(userID, func(roomID string, highlightCount, notificationCount int) {
 		uc.OnUnreadCounts(roomID, &highlightCount, &notificationCount)
@@ -291,7 +292,7 @@ func (h *SyncLiveHandler) userCache(userID string) (*sync3.UserCache, error) {
 	// use LoadOrStore here else we can race as 2 brand new /sync conns can both get to this point
 	// at the same time
 	actualUC, loaded := h.userCaches.LoadOrStore(userID, uc)
-	uc = actualUC.(*sync3.UserCache)
+	uc = actualUC.(*caches.UserCache)
 	if !loaded { // we actually inserted the cache, so register with the dispatcher.
 		h.Dispatcher.Register(userID, uc)
 	}
@@ -365,7 +366,7 @@ func (h *SyncLiveHandler) UpdateUnreadCounts(roomID, userID string, highlightCou
 	if !ok {
 		return
 	}
-	userCache.(*sync3.UserCache).OnUnreadCounts(roomID, highlightCount, notifCount)
+	userCache.(*caches.UserCache).OnUnreadCounts(roomID, highlightCount, notifCount)
 }
 
 func (h *SyncLiveHandler) OnAccountData(userID, roomID string, events []json.RawMessage) {
@@ -378,7 +379,7 @@ func (h *SyncLiveHandler) OnAccountData(userID, roomID string, events []json.Raw
 	if !ok {
 		return
 	}
-	userCache.(*sync3.UserCache).OnAccountData(data)
+	userCache.(*caches.UserCache).OnAccountData(data)
 }
 
 func parseIntFromQuery(u *url.URL, param string) (result int64, err *internal.HandlerError) {

@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 
 	"github.com/matrix-org/sync-v3/internal"
+	"github.com/matrix-org/sync-v3/sync3/caches"
 )
 
 type Room struct {
@@ -18,7 +19,7 @@ type Room struct {
 
 type RoomConnMetadata struct {
 	internal.RoomMetadata
-	UserRoomData
+	caches.UserRoomData
 
 	CanonicalisedName string // stripped leading symbols like #, all in lower case
 }

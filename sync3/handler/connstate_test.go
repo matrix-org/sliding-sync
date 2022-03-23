@@ -12,13 +12,14 @@ import (
 	"github.com/matrix-org/gomatrixserverlib"
 	"github.com/matrix-org/sync-v3/internal"
 	"github.com/matrix-org/sync-v3/sync3"
+	"github.com/matrix-org/sync-v3/sync3/caches"
 	"github.com/matrix-org/sync-v3/sync3/extensions"
 	"github.com/matrix-org/sync-v3/testutils"
 )
 
 type NopExtensionHandler struct{}
 
-func (h *NopExtensionHandler) Handle(req extensions.Request) (res extensions.Response) {
+func (h *NopExtensionHandler) Handle(req extensions.Request, isInitial bool) (res extensions.Response) {
 	return
 }
 
@@ -36,10 +37,10 @@ func newRoomMetadata(roomID string, lastMsgTimestamp gomatrixserverlib.Timestamp
 	}
 }
 
-func mockLazyRoomOverride(loadPos int64, roomIDs []string, maxTimelineEvents int) map[string]sync3.UserRoomData {
-	result := make(map[string]sync3.UserRoomData)
+func mockLazyRoomOverride(loadPos int64, roomIDs []string, maxTimelineEvents int) map[string]caches.UserRoomData {
+	result := make(map[string]caches.UserRoomData)
 	for _, roomID := range roomIDs {
-		result[roomID] = sync3.UserRoomData{
+		result[roomID] = caches.UserRoomData{
 			Timeline: []json.RawMessage{
 				[]byte(`{}`),
 			},
@@ -66,7 +67,7 @@ func TestConnStateInitial(t *testing.T) {
 		roomB.RoomID: testutils.NewEvent(t, "m.room.message", userID, map[string]interface{}{"body": "b"}, time.Now()),
 		roomC.RoomID: testutils.NewEvent(t, "m.room.message", userID, map[string]interface{}{"body": "c"}, time.Now()),
 	}
-	globalCache := sync3.NewGlobalCache(nil)
+	globalCache := caches.NewGlobalCache(nil)
 	globalCache.Startup(map[string]internal.RoomMetadata{
 		roomA.RoomID: roomA,
 		roomB.RoomID: roomB,
@@ -83,13 +84,13 @@ func TestConnStateInitial(t *testing.T) {
 			&roomA, &roomB, &roomC,
 		}, nil
 	}
-	userCache := sync3.NewUserCache(userID, globalCache, nil)
+	userCache := caches.NewUserCache(userID, globalCache, nil)
 	dispatcher.Register(userCache.UserID, userCache)
 	dispatcher.Register(sync3.DispatcherAllUsers, globalCache)
-	userCache.LazyRoomDataOverride = func(loadPos int64, roomIDs []string, maxTimelineEvents int) map[string]sync3.UserRoomData {
-		result := make(map[string]sync3.UserRoomData)
+	userCache.LazyRoomDataOverride = func(loadPos int64, roomIDs []string, maxTimelineEvents int) map[string]caches.UserRoomData {
+		result := make(map[string]caches.UserRoomData)
 		for _, roomID := range roomIDs {
-			result[roomID] = sync3.UserRoomData{
+			result[roomID] = caches.UserRoomData{
 				Timeline: []json.RawMessage{timeline[roomID]},
 			}
 		}
@@ -216,7 +217,7 @@ func TestConnStateMultipleRanges(t *testing.T) {
 	timestampNow := gomatrixserverlib.Timestamp(1632131678061)
 	var rooms []*internal.RoomMetadata
 	var roomIDs []string
-	globalCache := sync3.NewGlobalCache(nil)
+	globalCache := caches.NewGlobalCache(nil)
 	dispatcher := sync3.NewDispatcher()
 	roomIDToRoom := make(map[string]internal.RoomMetadata)
 	for i := int64(0); i < 10; i++ {
@@ -240,7 +241,7 @@ func TestConnStateMultipleRanges(t *testing.T) {
 	globalCache.LoadJoinedRoomsOverride = func(userID string) (pos int64, joinedRooms []*internal.RoomMetadata, err error) {
 		return 1, rooms, nil
 	}
-	userCache := sync3.NewUserCache(userID, globalCache, nil)
+	userCache := caches.NewUserCache(userID, globalCache, nil)
 	userCache.LazyRoomDataOverride = mockLazyRoomOverride
 	dispatcher.Register(userCache.UserID, userCache)
 	dispatcher.Register(sync3.DispatcherAllUsers, globalCache)
@@ -403,7 +404,7 @@ func TestBumpToOutsideRange(t *testing.T) {
 	roomB := newRoomMetadata("!b:localhost", timestampNow-1000)
 	roomC := newRoomMetadata("!c:localhost", timestampNow-2000)
 	roomD := newRoomMetadata("!d:localhost", timestampNow-3000)
-	globalCache := sync3.NewGlobalCache(nil)
+	globalCache := caches.NewGlobalCache(nil)
 	globalCache.Startup(map[string]internal.RoomMetadata{
 		roomA.RoomID: roomA,
 		roomB.RoomID: roomB,
@@ -422,7 +423,7 @@ func TestBumpToOutsideRange(t *testing.T) {
 			&roomA, &roomB, &roomC, &roomD,
 		}, nil
 	}
-	userCache := sync3.NewUserCache(userID, globalCache, nil)
+	userCache := caches.NewUserCache(userID, globalCache, nil)
 	userCache.LazyRoomDataOverride = mockLazyRoomOverride
 	dispatcher.Register(userCache.UserID, userCache)
 	dispatcher.Register(sync3.DispatcherAllUsers, globalCache)
@@ -495,7 +496,7 @@ func TestConnStateRoomSubscriptions(t *testing.T) {
 	roomC := newRoomMetadata("!c:localhost", gomatrixserverlib.Timestamp(timestampNow-2000))
 	roomD := newRoomMetadata("!d:localhost", gomatrixserverlib.Timestamp(timestampNow-3000))
 	roomIDs := []string{roomA.RoomID, roomB.RoomID, roomC.RoomID, roomD.RoomID}
-	globalCache := sync3.NewGlobalCache(nil)
+	globalCache := caches.NewGlobalCache(nil)
 	globalCache.Startup(map[string]internal.RoomMetadata{
 		roomA.RoomID: roomA,
 		roomB.RoomID: roomB,
@@ -520,11 +521,11 @@ func TestConnStateRoomSubscriptions(t *testing.T) {
 			&roomA, &roomB, &roomC, &roomD,
 		}, nil
 	}
-	userCache := sync3.NewUserCache(userID, globalCache, nil)
-	userCache.LazyRoomDataOverride = func(loadPos int64, roomIDs []string, maxTimelineEvents int) map[string]sync3.UserRoomData {
-		result := make(map[string]sync3.UserRoomData)
+	userCache := caches.NewUserCache(userID, globalCache, nil)
+	userCache.LazyRoomDataOverride = func(loadPos int64, roomIDs []string, maxTimelineEvents int) map[string]caches.UserRoomData {
+		result := make(map[string]caches.UserRoomData)
 		for _, roomID := range roomIDs {
-			result[roomID] = sync3.UserRoomData{
+			result[roomID] = caches.UserRoomData{
 				Timeline: []json.RawMessage{
 					timeline[roomID],
 				},

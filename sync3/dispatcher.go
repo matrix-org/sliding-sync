@@ -2,28 +2,23 @@ package sync3
 
 import (
 	"encoding/json"
+	"os"
 	"sync"
 
+	"github.com/matrix-org/sync-v3/sync3/caches"
+	"github.com/rs/zerolog"
 	"github.com/tidwall/gjson"
 )
 
+var logger = zerolog.New(os.Stdout).With().Timestamp().Logger().Output(zerolog.ConsoleWriter{
+	Out:        os.Stderr,
+	TimeFormat: "15:04:05",
+})
+
 const DispatcherAllUsers = "-"
 
-type EventData struct {
-	Event     json.RawMessage
-	RoomID    string
-	EventType string
-	StateKey  *string
-	Content   gjson.Result
-	Timestamp uint64
-
-	// the absolute latest position for this event data. The NID for this event is guaranteed to
-	// be <= this value.
-	LatestPos int64
-}
-
 type Receiver interface {
-	OnNewEvent(event *EventData)
+	OnNewEvent(event *caches.EventData)
 }
 
 // Dispatches live events to caches
@@ -92,7 +87,7 @@ func (d *Dispatcher) onNewEvent(
 	}
 	eventType := ev.Get("type").Str
 
-	ed := &EventData{
+	ed := &caches.EventData{
 		Event:     event,
 		RoomID:    roomID,
 		EventType: eventType,

@@ -9,6 +9,7 @@ import (
 
 	"github.com/matrix-org/sync-v3/internal"
 	"github.com/matrix-org/sync-v3/sync3"
+	"github.com/matrix-org/sync-v3/sync3/caches"
 	"github.com/matrix-org/sync-v3/sync3/extensions"
 )
 
@@ -26,9 +27,9 @@ type JoinChecker interface {
 type ConnEvent struct {
 	roomMetadata *internal.RoomMetadata
 	roomID       string
-	msg          *sync3.EventData
+	msg          *caches.EventData
 	userMsg      struct {
-		msg               *sync3.UserRoomData
+		msg               *caches.UserRoomData
 		hasCountDecreased bool
 	}
 }
@@ -51,8 +52,8 @@ type ConnState struct {
 	// saying the client is dead and clean up the conn.
 	updateEvents chan *ConnEvent
 
-	globalCache *sync3.GlobalCache
-	userCache   *sync3.UserCache
+	globalCache *caches.GlobalCache
+	userCache   *caches.UserCache
 	userCacheID int
 	bufferFull  bool
 
@@ -61,7 +62,7 @@ type ConnState struct {
 	extensionsHandler extensions.HandlerInterface
 }
 
-func NewConnState(userID, deviceID string, userCache *sync3.UserCache, globalCache *sync3.GlobalCache, ex extensions.HandlerInterface, joinChecker JoinChecker) *ConnState {
+func NewConnState(userID, deviceID string, userCache *caches.UserCache, globalCache *caches.GlobalCache, ex extensions.HandlerInterface, joinChecker JoinChecker) *ConnState {
 	cs := &ConnState{
 		globalCache:       globalCache,
 		userCache:         userCache,
@@ -164,7 +165,7 @@ func (s *ConnState) onIncomingRequest(ctx context.Context, req *sync3.Request, i
 	// start forming the response, handle subscriptions
 	response := &sync3.Response{
 		RoomSubscriptions: s.updateRoomSubscriptions(int(sync3.DefaultTimelineLimit), newSubs, newUnsubs),
-		Extensions:        s.extensionsHandler.Handle(ex),
+		Extensions:        s.extensionsHandler.Handle(ex, isInitial),
 	}
 	responseOperations := []sync3.ResponseOp{} // empty not nil slice
 
@@ -316,7 +317,7 @@ func (s *ConnState) onIncomingListRequest(listIndex int, prevReqList, nextReqLis
 	return responseOperations
 }
 
-func (s *ConnState) processIncomingUserEvent(roomID string, userEvent *sync3.UserRoomData, hasCountDecreased bool) ([]sync3.Room, []sync3.ResponseOp) {
+func (s *ConnState) processIncomingUserEvent(roomID string, userEvent *caches.UserRoomData, hasCountDecreased bool) ([]sync3.Room, []sync3.ResponseOp) {
 	var responseOperations []sync3.ResponseOp
 	var rooms []sync3.Room
 
@@ -351,7 +352,7 @@ func (s *ConnState) processIncomingUserEvent(roomID string, userEvent *sync3.Use
 	return rooms, responseOperations
 }
 
-func (s *ConnState) processIncomingEvent(updateEvent *sync3.EventData) ([]sync3.Room, []sync3.ResponseOp) {
+func (s *ConnState) processIncomingEvent(updateEvent *caches.EventData) ([]sync3.Room, []sync3.ResponseOp) {
 	var responseOperations []sync3.ResponseOp
 	var rooms []sync3.Room
 
@@ -361,7 +362,6 @@ func (s *ConnState) processIncomingEvent(updateEvent *sync3.EventData) ([]sync3.
 	}
 
 	s.lists.ForEach(func(index int, list *sync3.FilteredSortableRooms) {
-
 		fromIndex, ok := list.IndexOf(updateEvent.RoomID)
 		if !ok {
 			// the user may have just joined the room hence not have an entry in this list yet.
@@ -627,7 +627,7 @@ func (s *ConnState) moveRoom(reqList *sync3.RequestList, listIndex int, roomID s
 }
 
 // Called by the user cache when events arrive
-func (s *ConnState) OnNewEvent(event *sync3.EventData) {
+func (s *ConnState) OnNewEvent(event *caches.EventData) {
 	if event.LatestPos == 0 {
 		// this event was from a 'state' block, do not poke active connections
 		return
@@ -645,7 +645,7 @@ func (s *ConnState) OnNewEvent(event *sync3.EventData) {
 }
 
 // Called by the user cache when unread counts have changed
-func (s *ConnState) OnUnreadCountsChanged(userID, roomID string, urd sync3.UserRoomData, hasCountDecreased bool) {
+func (s *ConnState) OnUnreadCountsChanged(userID, roomID string, urd caches.UserRoomData, hasCountDecreased bool) {
 	var ce ConnEvent
 	ce.roomID = roomID
 	ce.userMsg.hasCountDecreased = hasCountDecreased

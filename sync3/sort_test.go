@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/matrix-org/sync-v3/internal"
+	"github.com/matrix-org/sync-v3/sync3/caches"
 )
 
 func TestSortBySingleOperation(t *testing.T) {
@@ -17,7 +18,7 @@ func TestSortBySingleOperation(t *testing.T) {
 				RoomID:               room1,
 				LastMessageTimestamp: 600,
 			},
-			UserRoomData: UserRoomData{
+			UserRoomData: caches.UserRoomData{
 				HighlightCount:    3,
 				NotificationCount: 12,
 			},
@@ -28,7 +29,7 @@ func TestSortBySingleOperation(t *testing.T) {
 				RoomID:               room2,
 				LastMessageTimestamp: 700,
 			},
-			UserRoomData: UserRoomData{
+			UserRoomData: caches.UserRoomData{
 				HighlightCount:    0,
 				NotificationCount: 3,
 			},
@@ -39,7 +40,7 @@ func TestSortBySingleOperation(t *testing.T) {
 				RoomID:               room3,
 				LastMessageTimestamp: 900,
 			},
-			UserRoomData: UserRoomData{
+			UserRoomData: caches.UserRoomData{
 				HighlightCount:    2,
 				NotificationCount: 7,
 			},
@@ -50,7 +51,7 @@ func TestSortBySingleOperation(t *testing.T) {
 				RoomID:               room4,
 				LastMessageTimestamp: 800,
 			},
-			UserRoomData: UserRoomData{
+			UserRoomData: caches.UserRoomData{
 				HighlightCount:    1,
 				NotificationCount: 1,
 			},
@@ -93,7 +94,7 @@ func TestSortByMultipleOperations(t *testing.T) {
 				RoomID:               room1,
 				LastMessageTimestamp: 600,
 			},
-			UserRoomData: UserRoomData{
+			UserRoomData: caches.UserRoomData{
 				HighlightCount:    1,
 				NotificationCount: 1,
 			},
@@ -104,7 +105,7 @@ func TestSortByMultipleOperations(t *testing.T) {
 				RoomID:               room2,
 				LastMessageTimestamp: 700,
 			},
-			UserRoomData: UserRoomData{
+			UserRoomData: caches.UserRoomData{
 				HighlightCount:    1,
 				NotificationCount: 5,
 			},
@@ -115,7 +116,7 @@ func TestSortByMultipleOperations(t *testing.T) {
 				RoomID:               room3,
 				LastMessageTimestamp: 800,
 			},
-			UserRoomData: UserRoomData{
+			UserRoomData: caches.UserRoomData{
 				HighlightCount:    0,
 				NotificationCount: 0,
 			},
@@ -126,7 +127,7 @@ func TestSortByMultipleOperations(t *testing.T) {
 				RoomID:               room4,
 				LastMessageTimestamp: 900,
 			},
-			UserRoomData: UserRoomData{
+			UserRoomData: caches.UserRoomData{
 				HighlightCount:    0,
 				NotificationCount: 0,
 			},

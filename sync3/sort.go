@@ -5,6 +5,7 @@ import (
 	"sort"
 
 	"github.com/matrix-org/sync-v3/internal"
+	"github.com/matrix-org/sync-v3/sync3/caches"
 )
 
 // SortableRooms represents a list of rooms which can be sorted and updated. Maintains mappings of
@@ -32,7 +33,7 @@ func (s *SortableRooms) UpdateGlobalRoomMetadata(roomMeta *internal.RoomMetadata
 	return -1
 }
 
-func (s *SortableRooms) UpdateUserRoomMetadata(roomID string, userEvent *UserRoomData, hasCountDecreased bool) int {
+func (s *SortableRooms) UpdateUserRoomMetadata(roomID string, userEvent *caches.UserRoomData, hasCountDecreased bool) int {
 	index, ok := s.roomIDToIndex[roomID]
 	if !ok {
 		return -1
@@ -218,7 +219,7 @@ func (f *FilteredSortableRooms) UpdateGlobalRoomMetadata(r *internal.RoomMetadat
 	return f.SortableRooms.UpdateGlobalRoomMetadata(r)
 }
 
-func (f *FilteredSortableRooms) UpdateUserRoomMetadata(roomID string, userEvent *UserRoomData, hasCountDecreased bool) int {
+func (f *FilteredSortableRooms) UpdateUserRoomMetadata(roomID string, userEvent *caches.UserRoomData, hasCountDecreased bool) int {
 	index, ok := f.SortableRooms.IndexOf(roomID)
 	if !ok {
 		return -1
