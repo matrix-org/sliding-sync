@@ -93,7 +93,7 @@ func (s *ConnState) load(req *sync3.Request) error {
 			RoomMetadata: *metadata,
 			UserRoomData: urd,
 			CanonicalisedName: strings.ToLower(
-				strings.Trim(internal.CalculateRoomName(metadata, 5), "#!()):_@"),
+				strings.Trim(internal.CalculateRoomName(metadata, 5), "#!():_@"),
 			),
 		}
 	}
@@ -198,32 +198,51 @@ blockloop:
 	return response, nil
 }
 
+func (s *ConnState) writeDeleteOp(listIndex, deletedIndex int) sync3.ResponseOp {
+	// update operations return -1 if nothing gets deleted
+	if deletedIndex < 0 {
+		return nil
+	}
+	// only notify if we are tracking this index
+	if !s.muxedReq.Lists[listIndex].Ranges.Inside(int64(deletedIndex)) {
+		return nil
+	}
+	return &sync3.ResponseOpSingle{
+		List:      listIndex,
+		Operation: sync3.OpDelete,
+		Index:     &deletedIndex,
+	}
+}
+
 func (s *ConnState) processLiveUpdate(up caches.Update, responseOperations []sync3.ResponseOp, response *sync3.Response) []sync3.ResponseOp {
 	roomUpdate, ok := up.(caches.RoomUpdate)
 	if ok {
 		// always update our view of the world
 		s.lists.ForEach(func(index int, list *sync3.FilteredSortableRooms) {
 			// TODO: yuck that the index is here
+			// see if the latest room metadata means we delete a room, else update our state
 			deletedIndex := list.UpdateGlobalRoomMetadata(roomUpdate.GlobalRoomMetadata())
-			if deletedIndex >= 0 && s.muxedReq.Lists[index].Ranges.Inside(int64(deletedIndex)) {
-				responseOperations = append(responseOperations, &sync3.ResponseOpSingle{
-					List:      index,
-					Operation: sync3.OpDelete,
-					Index:     &deletedIndex,
-				})
+			if op := s.writeDeleteOp(index, deletedIndex); op != nil {
+				responseOperations = append(responseOperations, op)
+			}
+			// see if the latest user room metadata means we delete a room (e.g it transition from dm to non-dm)
+			// modify notification counts, DM-ness, etc
+			deletedIndex = list.UpdateUserRoomMetadata(roomUpdate.RoomID(), roomUpdate.UserRoomMetadata())
+			if op := s.writeDeleteOp(index, deletedIndex); op != nil {
+				responseOperations = append(responseOperations, op)
 			}
 		})
 	}
 
 	switch update := up.(type) {
 	case *caches.RoomEventUpdate:
-		subs, ops := s.processIncomingEvent(update.EventData)
+		subs, ops := s.processIncomingEvent(update)
 		responseOperations = append(responseOperations, ops...)
 		for _, sub := range subs {
 			response.RoomSubscriptions[sub.RoomID] = sub
 		}
 	case *caches.UnreadCountUpdate:
-		subs, ops := s.processIncomingUserEvent(update.RoomID(), update.UserRoomMetadata(), update.HasCountDecreased)
+		subs, ops := s.processUnreadCountUpdate(update)
 		responseOperations = append(responseOperations, ops...)
 		for _, sub := range subs {
 			response.RoomSubscriptions[sub.RoomID] = sub
@@ -315,63 +334,48 @@ func (s *ConnState) onIncomingListRequest(listIndex int, prevReqList, nextReqLis
 	return responseOperations
 }
 
-func (s *ConnState) processIncomingUserEvent(roomID string, userEvent *caches.UserRoomData, hasCountDecreased bool) ([]sync3.Room, []sync3.ResponseOp) {
-	var responseOperations []sync3.ResponseOp
-	var rooms []sync3.Room
-
-	s.lists.ForEach(func(index int, list *sync3.FilteredSortableRooms) {
-		// modify notification counts
-		deletedIndex := list.UpdateUserRoomMetadata(roomID, userEvent, hasCountDecreased)
-		// only notify if we are tracking this index
-		if deletedIndex >= 0 && s.muxedReq.Lists[index].Ranges.Inside(int64(deletedIndex)) {
-			responseOperations = append(responseOperations, &sync3.ResponseOpSingle{
-				List:      index,
-				Operation: sync3.OpDelete,
-				Index:     &deletedIndex,
-			})
-		}
-	})
-
-	if !hasCountDecreased {
+func (s *ConnState) processUnreadCountUpdate(up *caches.UnreadCountUpdate) ([]sync3.Room, []sync3.ResponseOp) {
+	if !up.HasCountDecreased {
 		// if the count increases then we'll notify the user for the event which increases the count, hence
 		// do nothing. We only care to notify the user when the counts decrease.
 		return nil, nil
 	}
 
+	var responseOperations []sync3.ResponseOp
+	var rooms []sync3.Room
 	s.lists.ForEach(func(index int, list *sync3.FilteredSortableRooms) {
-		fromIndex, ok := list.IndexOf(roomID)
+		fromIndex, ok := list.IndexOf(up.RoomID())
 		if !ok {
 			return
 		}
-		roomSubs, ops := s.resort(index, &s.muxedReq.Lists[index], list, roomID, fromIndex, nil)
+		roomSubs, ops := s.resort(index, &s.muxedReq.Lists[index], list, up.RoomID(), fromIndex, nil)
 		rooms = append(rooms, roomSubs...)
 		responseOperations = append(responseOperations, ops...)
 	})
 	return rooms, responseOperations
 }
 
-func (s *ConnState) processIncomingEvent(updateEvent *caches.EventData) ([]sync3.Room, []sync3.ResponseOp) {
+func (s *ConnState) processIncomingEvent(update *caches.RoomEventUpdate) ([]sync3.Room, []sync3.ResponseOp) {
 	var responseOperations []sync3.ResponseOp
 	var rooms []sync3.Room
 
 	// keep track of the latest stream position
-	if updateEvent.LatestPos > s.loadPosition {
-		s.loadPosition = updateEvent.LatestPos
+	if update.EventData.LatestPos > s.loadPosition {
+		s.loadPosition = update.EventData.LatestPos
 	}
 
 	s.lists.ForEach(func(index int, list *sync3.FilteredSortableRooms) {
-		fromIndex, ok := list.IndexOf(updateEvent.RoomID)
+		fromIndex, ok := list.IndexOf(update.RoomID())
 		if !ok {
 			// the user may have just joined the room hence not have an entry in this list yet.
 			fromIndex = int(list.Len())
-			roomMetadatas := s.globalCache.LoadRooms(updateEvent.RoomID)
-			roomMetadata := roomMetadatas[0]
+			roomMetadata := update.GlobalRoomMetadata()
 			roomMetadata.RemoveHero(s.userID)
 			newRoomConn := sync3.RoomConnMetadata{
 				RoomMetadata: *roomMetadata,
-				UserRoomData: s.userCache.LoadRoomData(updateEvent.RoomID),
+				UserRoomData: *update.UserRoomMetadata(),
 				CanonicalisedName: strings.ToLower(
-					strings.Trim(internal.CalculateRoomName(roomMetadata, 5), "#!()):_@"),
+					strings.Trim(internal.CalculateRoomName(roomMetadata, 5), "#!():_@"),
 				),
 			}
 			if !list.Add(newRoomConn) {
@@ -379,7 +383,7 @@ func (s *ConnState) processIncomingEvent(updateEvent *caches.EventData) ([]sync3
 				return
 			}
 		}
-		roomSubs, ops := s.resort(index, &s.muxedReq.Lists[index], list, updateEvent.RoomID, fromIndex, updateEvent.Event)
+		roomSubs, ops := s.resort(index, &s.muxedReq.Lists[index], list, update.RoomID(), fromIndex, update.EventData.Event)
 		rooms = append(rooms, roomSubs...)
 		responseOperations = append(responseOperations, ops...)
 	})
@@ -600,6 +604,7 @@ func (s *ConnState) moveRoom(reqList *sync3.RequestList, listIndex int, roomID s
 		rooms := s.getInitialRoomData(listIndex, int(reqList.TimelineLimit), roomID)
 		room = &rooms[0]
 	}
+
 	return []sync3.ResponseOp{
 		&sync3.ResponseOpSingle{
 			List:      listIndex,

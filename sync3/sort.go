@@ -33,7 +33,7 @@ func (s *SortableRooms) UpdateGlobalRoomMetadata(roomMeta *internal.RoomMetadata
 	return -1
 }
 
-func (s *SortableRooms) UpdateUserRoomMetadata(roomID string, userEvent *caches.UserRoomData, hasCountDecreased bool) int {
+func (s *SortableRooms) UpdateUserRoomMetadata(roomID string, userEvent *caches.UserRoomData) int {
 	index, ok := s.roomIDToIndex[roomID]
 	if !ok {
 		return -1
@@ -219,7 +219,7 @@ func (f *FilteredSortableRooms) UpdateGlobalRoomMetadata(r *internal.RoomMetadat
 	return f.SortableRooms.UpdateGlobalRoomMetadata(r)
 }
 
-func (f *FilteredSortableRooms) UpdateUserRoomMetadata(roomID string, userEvent *caches.UserRoomData, hasCountDecreased bool) int {
+func (f *FilteredSortableRooms) UpdateUserRoomMetadata(roomID string, userEvent *caches.UserRoomData) int {
 	index, ok := f.SortableRooms.IndexOf(roomID)
 	if !ok {
 		return -1
@@ -230,5 +230,5 @@ func (f *FilteredSortableRooms) UpdateUserRoomMetadata(roomID string, userEvent 
 	if !f.filter.Include(&room) {
 		return f.Remove(roomID)
 	}
-	return f.SortableRooms.UpdateUserRoomMetadata(roomID, userEvent, hasCountDecreased)
+	return f.SortableRooms.UpdateUserRoomMetadata(roomID, userEvent)
 }
