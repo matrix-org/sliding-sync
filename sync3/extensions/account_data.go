@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 
 	"github.com/matrix-org/sync-v3/state"
+	"github.com/matrix-org/sync-v3/sync3/caches"
 )
 
 // Client created request params
@@ -42,7 +43,14 @@ func (r *AccountDataResponse) HasData(isInitial bool) bool {
 	return len(r.Rooms) > 0
 }
 
-func ProcessAccountData(store *state.Storage, userID string, isInitial bool, req *AccountDataRequest) (res *AccountDataResponse) {
+func ProcessAccountData(store *state.Storage, userCache *caches.UserCache, userID string, isInitial bool, req *AccountDataRequest) (res *AccountDataResponse) {
+	if isInitial {
+		// register with the user cache TODO: need destructor call to unregister
+		// pull account data from store and return that
+	}
+	// on new account data callback, buffer it and then return it assuming isInitial=false
+
+	// TODO: how to handle room account data? Need to know which rooms are being tracked.
 	res = &AccountDataResponse{}
 	return
 }

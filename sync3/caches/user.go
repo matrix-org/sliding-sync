@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"sync"
 
+	"github.com/matrix-org/sync-v3/internal"
 	"github.com/matrix-org/sync-v3/state"
 	"github.com/tidwall/gjson"
 )
@@ -17,8 +18,12 @@ type UserRoomData struct {
 }
 
 type UserCacheListener interface {
-	OnNewEvent(event *EventData)
-	OnUnreadCountsChanged(userID, roomID string, urd UserRoomData, hasCountDecreased bool)
+	// Called when there is an update affecting a room e.g new event, unread count update, room account data.
+	// Type-cast to find out what the update is about.
+	OnRoomUpdate(up RoomUpdate)
+	// Called when there is an update affecting this user e.g global account data, presence.
+	// Type-cast to find out what the update is about.
+	// OnUserUpdate(up UserUpdate)
 }
 
 // Tracks data specific to a given user. Specifically, this is the map of room ID to UserRoomData.
@@ -138,6 +143,32 @@ func (c *UserCache) LoadRoomData(roomID string) UserRoomData {
 	return data
 }
 
+type roomUpdateCache struct {
+	roomID         string
+	globalRoomData *internal.RoomMetadata
+	userRoomData   *UserRoomData
+}
+
+func (c *roomUpdateCache) RoomID() string {
+	return c.roomID
+}
+func (c *roomUpdateCache) GlobalRoomMetadata() *internal.RoomMetadata {
+	return c.globalRoomData
+}
+func (c *roomUpdateCache) UserRoomMetadata() *UserRoomData {
+	return c.userRoomData
+}
+
+// snapshots the user cache / global cache data for this room for sending to connections
+func (c *UserCache) newRoomUpdate(roomID string) RoomUpdate {
+	u := c.LoadRoomData(roomID)
+	return &roomUpdateCache{
+		roomID:         roomID,
+		globalRoomData: c.globalCache.LoadRooms(roomID)[0],
+		userRoomData:   &u,
+	}
+}
+
 // =================================================
 // Listener functions called by v2 pollers are below
 // =================================================
@@ -158,8 +189,14 @@ func (c *UserCache) OnUnreadCounts(roomID string, highlightCount, notifCount *in
 	c.roomToDataMu.Lock()
 	c.roomToData[roomID] = data
 	c.roomToDataMu.Unlock()
+
+	roomUpdate := &UnreadCountUpdate{
+		RoomUpdate:        c.newRoomUpdate(roomID),
+		HasCountDecreased: hasCountDecreased,
+	}
+
 	for _, l := range c.listeners {
-		l.OnUnreadCountsChanged(c.UserID, roomID, data, hasCountDecreased)
+		l.OnRoomUpdate(roomUpdate)
 	}
 }
 
@@ -174,8 +211,13 @@ func (c *UserCache) OnNewEvent(eventData *EventData) {
 	c.roomToData[eventData.RoomID] = urd
 	c.roomToDataMu.Unlock()
 
+	roomUpdate := &RoomEventUpdate{
+		RoomUpdate: c.newRoomUpdate(eventData.RoomID),
+		EventData:  eventData,
+	}
+
 	for _, l := range c.listeners {
-		l.OnNewEvent(eventData)
+		l.OnRoomUpdate(roomUpdate)
 	}
 }
 

@@ -24,16 +24,6 @@ type JoinChecker interface {
 	IsUserJoined(userID, roomID string) bool
 }
 
-type ConnEvent struct {
-	roomMetadata *internal.RoomMetadata
-	roomID       string
-	msg          *caches.EventData
-	userMsg      struct {
-		msg               *caches.UserRoomData
-		hasCountDecreased bool
-	}
-}
-
 // ConnState tracks all high-level connection state for this connection, like the combined request
 // and the underlying sorted room list. It doesn't track positions of the connection.
 type ConnState struct {
@@ -50,7 +40,7 @@ type ConnState struct {
 	// A channel which the dispatcher uses to send updates to the conn goroutine
 	// Consumed when the conn is read. There is a limit to how many updates we will store before
 	// saying the client is dead and clean up the conn.
-	updateEvents chan *ConnEvent
+	updates chan caches.Update
 
 	globalCache *caches.GlobalCache
 	userCache   *caches.UserCache
@@ -69,7 +59,7 @@ func NewConnState(userID, deviceID string, userCache *caches.UserCache, globalCa
 		userID:            userID,
 		deviceID:          deviceID,
 		roomSubscriptions: make(map[string]sync3.RoomSubscription),
-		updateEvents:      make(chan *ConnEvent, MaxPendingEventUpdates), // TODO: customisable
+		updates:           make(chan caches.Update, MaxPendingEventUpdates), // TODO: customisable
 		lists:             &sync3.SortableRoomLists{},
 		extensionsHandler: ex,
 		joinChecker:       joinChecker,
@@ -165,7 +155,6 @@ func (s *ConnState) onIncomingRequest(ctx context.Context, req *sync3.Request, i
 	// start forming the response, handle subscriptions
 	response := &sync3.Response{
 		RoomSubscriptions: s.updateRoomSubscriptions(int(sync3.DefaultTimelineLimit), newSubs, newUnsubs),
-		Extensions:        s.extensionsHandler.Handle(ex, isInitial),
 	}
 	responseOperations := []sync3.ResponseOp{} // empty not nil slice
 
@@ -179,6 +168,10 @@ func (s *ConnState) onIncomingRequest(ctx context.Context, req *sync3.Request, i
 		responseOperations = append(responseOperations, ops...)
 	}
 
+	// Handle extensions AFTER processing lists as extensions may need to know which rooms the client
+	// is being notified about (e.g. for room account data)
+	response.Extensions = s.extensionsHandler.Handle(ex, s.userCache, isInitial)
+
 	// do live tracking if we have nothing to tell the client yet
 	// block until we get a new event, with appropriate timeout
 blockloop:
@@ -188,11 +181,13 @@ blockloop:
 			break blockloop
 		case <-time.After(time.Duration(req.TimeoutMSecs()) * time.Millisecond):
 			break blockloop
-		case connEvent := <-s.updateEvents: // TODO: keep reading until it is empty before responding.
-			responseOperations = s.processLiveEvent(connEvent, responseOperations, response)
-			for len(s.updateEvents) > 0 && len(responseOperations) < 50 {
-				connEvent = <-s.updateEvents
-				responseOperations = s.processLiveEvent(connEvent, responseOperations, response)
+		case update := <-s.updates:
+			responseOperations = s.processLiveUpdate(update, responseOperations, response)
+			// pass event to extensions AFTER processing
+			s.extensionsHandler.HandleLiveData(ex, &response.Extensions, s.userCache, isInitial)
+			for len(s.updates) > 0 && len(responseOperations) < 50 {
+				update = <-s.updates
+				responseOperations = s.processLiveUpdate(update, responseOperations, response)
 			}
 		}
 	}
@@ -203,12 +198,13 @@ blockloop:
 	return response, nil
 }
 
-func (s *ConnState) processLiveEvent(connEvent *ConnEvent, responseOperations []sync3.ResponseOp, response *sync3.Response) []sync3.ResponseOp {
-	if connEvent.roomMetadata != nil {
+func (s *ConnState) processLiveUpdate(up caches.Update, responseOperations []sync3.ResponseOp, response *sync3.Response) []sync3.ResponseOp {
+	roomUpdate, ok := up.(caches.RoomUpdate)
+	if ok {
 		// always update our view of the world
 		s.lists.ForEach(func(index int, list *sync3.FilteredSortableRooms) {
 			// TODO: yuck that the index is here
-			deletedIndex := list.UpdateGlobalRoomMetadata(connEvent.roomMetadata)
+			deletedIndex := list.UpdateGlobalRoomMetadata(roomUpdate.GlobalRoomMetadata())
 			if deletedIndex >= 0 && s.muxedReq.Lists[index].Ranges.Inside(int64(deletedIndex)) {
 				responseOperations = append(responseOperations, &sync3.ResponseOpSingle{
 					List:      index,
@@ -218,20 +214,22 @@ func (s *ConnState) processLiveEvent(connEvent *ConnEvent, responseOperations []
 			}
 		})
 	}
-	if connEvent.msg != nil {
-		subs, ops := s.processIncomingEvent(connEvent.msg)
+
+	switch update := up.(type) {
+	case *caches.RoomEventUpdate:
+		subs, ops := s.processIncomingEvent(update.EventData)
+		responseOperations = append(responseOperations, ops...)
+		for _, sub := range subs {
+			response.RoomSubscriptions[sub.RoomID] = sub
+		}
+	case *caches.UnreadCountUpdate:
+		subs, ops := s.processIncomingUserEvent(update.RoomID(), update.UserRoomMetadata(), update.HasCountDecreased)
 		responseOperations = append(responseOperations, ops...)
 		for _, sub := range subs {
 			response.RoomSubscriptions[sub.RoomID] = sub
 		}
 	}
-	if connEvent.userMsg.msg != nil {
-		subs, ops := s.processIncomingUserEvent(connEvent.roomID, connEvent.userMsg.msg, connEvent.userMsg.hasCountDecreased)
-		responseOperations = append(responseOperations, ops...)
-		for _, sub := range subs {
-			response.RoomSubscriptions[sub.RoomID] = sub
-		}
-	}
+
 	return responseOperations
 }
 
@@ -532,26 +530,18 @@ func (s *ConnState) getInitialRoomData(listIndex int, timelineLimit int, roomIDs
 	return rooms
 }
 
-// Called when the user cache has a new event for us. This callback fires when the server gets a new event and determines this connection MAY be
-// interested in it (e.g the client is joined to the room or it's an invite, etc). Each callback can fire
-// from different v2 poll loops, and there is no locking in order to prevent a slow ConnState from wedging the poll loop.
+// Called when there is an update from the user cache. This callback fires when the server gets a new event and determines this connection MAY be
+// interested in it (e.g the client is joined to the room or it's an invite, etc).
 // We need to move this data onto a channel for onIncomingRequest to consume later.
-func (s *ConnState) onNewConnectionEvent(connEvent *ConnEvent) {
+func (s *ConnState) onUpdate(up caches.Update) {
 	if s.bufferFull {
 		return
 	}
-	eventData := connEvent.msg
-	if eventData != nil && eventData.LatestPos != 0 && eventData.LatestPos < s.loadPosition {
-		// do not push this event down the stream as we have already processed it when we loaded
-		// the room list initially.
-		return
-	}
 	select {
-	case s.updateEvents <- connEvent:
+	case s.updates <- up:
 	case <-time.After(5 * time.Second):
-		// TODO: kill the connection
-		logger.Warn().Interface("event", *connEvent).Str("user", s.userID).Msg(
-			"cannot send event to connection, buffer exceeded. Destroying connection.",
+		logger.Warn().Interface("update", up).Str("user", s.userID).Msg(
+			"cannot send update to connection, buffer exceeded. Destroying connection.",
 		)
 		s.bufferFull = true
 		s.Destroy()
@@ -626,29 +616,19 @@ func (s *ConnState) moveRoom(reqList *sync3.RequestList, listIndex int, roomID s
 
 }
 
-// Called by the user cache when events arrive
-func (s *ConnState) OnNewEvent(event *caches.EventData) {
-	if event.LatestPos == 0 {
-		// this event was from a 'state' block, do not poke active connections
-		return
+// Called by the user cache when updates arrive
+func (s *ConnState) OnRoomUpdate(up caches.RoomUpdate) {
+	switch update := up.(type) {
+	case *caches.RoomEventUpdate:
+		if update.EventData.LatestPos == 0 || update.EventData.LatestPos < s.loadPosition {
+			// 0 -> this event was from a 'state' block, do not poke active connections
+			// pos < load -> this event has already been processed from the initial load, do not poke active connections
+			return
+		}
+		s.onUpdate(update)
+	case caches.RoomUpdate:
+		s.onUpdate(update)
+	default:
+		logger.Warn().Str("room_id", up.RoomID()).Msg("OnRoomUpdate unknown update type")
 	}
-	// pull the current room metadata from the global cache. This is safe to do without locking
-	// as the v2 poll loops all rely on a single poller thread to poke the dispatcher which pokes
-	// the caches (incl. user caches) so there cannot be any concurrent updates. We always get back
-	// a copy of the metadata from LoadRoom so we can pass pointers around freely.
-	meta := s.globalCache.LoadRooms(event.RoomID)
-	s.onNewConnectionEvent(&ConnEvent{
-		roomMetadata: meta[0],
-		roomID:       event.RoomID,
-		msg:          event,
-	})
-}
-
-// Called by the user cache when unread counts have changed
-func (s *ConnState) OnUnreadCountsChanged(userID, roomID string, urd caches.UserRoomData, hasCountDecreased bool) {
-	var ce ConnEvent
-	ce.roomID = roomID
-	ce.userMsg.hasCountDecreased = hasCountDecreased
-	ce.userMsg.msg = &urd
-	s.onNewConnectionEvent(&ce)
 }

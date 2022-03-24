@@ -19,7 +19,11 @@ import (
 
 type NopExtensionHandler struct{}
 
-func (h *NopExtensionHandler) Handle(req extensions.Request, isInitial bool) (res extensions.Response) {
+func (h *NopExtensionHandler) Handle(req extensions.Request, uc *caches.UserCache, isInitial bool) (res extensions.Response) {
+	return
+}
+
+func (h *NopExtensionHandler) HandleLiveData(req extensions.Request, res *extensions.Response, uc *caches.UserCache, isInitial bool) {
 	return
 }
 

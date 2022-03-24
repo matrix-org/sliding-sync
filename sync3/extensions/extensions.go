@@ -5,6 +5,7 @@ import (
 
 	"github.com/matrix-org/sync-v3/state"
 	"github.com/matrix-org/sync-v3/sync2"
+	"github.com/matrix-org/sync-v3/sync3/caches"
 	"github.com/rs/zerolog"
 )
 
@@ -44,7 +45,8 @@ func (e Response) HasData(isInitial bool) bool {
 }
 
 type HandlerInterface interface {
-	Handle(req Request, isInitial bool) (res Response)
+	Handle(req Request, userCache *caches.UserCache, isInitial bool) (res Response)
+	HandleLiveData(req Request, res *Response, userCache *caches.UserCache, isInitial bool)
 }
 
 type Handler struct {
@@ -52,7 +54,12 @@ type Handler struct {
 	E2EEFetcher sync2.E2EEFetcher
 }
 
-func (h *Handler) Handle(req Request, isInitial bool) (res Response) {
+func (h *Handler) HandleLiveData(req Request, res *Response, userCache *caches.UserCache, isInitial bool) {
+	// TODO: Define live data event in caches pkg, NOT ConnEvent.
+	// Update `Response` object.
+}
+
+func (h *Handler) Handle(req Request, userCache *caches.UserCache, isInitial bool) (res Response) {
 	if req.ToDevice != nil && req.ToDevice.Enabled != nil && *req.ToDevice.Enabled {
 		res.ToDevice = ProcessToDevice(h.Store, req.UserID, req.DeviceID, req.ToDevice)
 	}
@@ -60,7 +67,7 @@ func (h *Handler) Handle(req Request, isInitial bool) (res Response) {
 		res.E2EE = ProcessE2EE(h.E2EEFetcher, req.UserID, req.DeviceID, req.E2EE)
 	}
 	if req.AccountData != nil && req.AccountData.Enabled {
-		res.AccountData = ProcessAccountData(h.Store, req.UserID, isInitial, req.AccountData)
+		res.AccountData = ProcessAccountData(h.Store, userCache, req.UserID, isInitial, req.AccountData)
 	}
 	return
 }
