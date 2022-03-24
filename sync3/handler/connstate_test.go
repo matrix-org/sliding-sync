@@ -19,12 +19,11 @@ import (
 
 type NopExtensionHandler struct{}
 
-func (h *NopExtensionHandler) Handle(req extensions.Request, uc *caches.UserCache, isInitial bool) (res extensions.Response) {
+func (h *NopExtensionHandler) Handle(req extensions.Request, listRoomIDs map[string]struct{}, isInitial bool) (res extensions.Response) {
 	return
 }
 
-func (h *NopExtensionHandler) HandleLiveData(req extensions.Request, res *extensions.Response, uc *caches.UserCache, isInitial bool) {
-	return
+func (h *NopExtensionHandler) HandleLiveUpdate(u caches.Update, req extensions.Request, res *extensions.Response, updateWillReturnResponse, isInitial bool) {
 }
 
 type NopJoinTracker struct{}

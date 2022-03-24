@@ -75,6 +75,20 @@ func (r *Response) UnmarshalJSON(b []byte) error {
 
 type ResponseOp interface {
 	Op() string
+	// which rooms are we giving data about
+	IncludedRoomIDs() []string
+}
+
+// Return which room IDs these set of operations are returning information on. Information means
+// things like SYNC/INSERT/UPDATE, and not DELETE/INVALIDATE.
+func IncludedRoomIDsInOps(ops []ResponseOp) map[string]struct{} {
+	set := make(map[string]struct{})
+	for _, o := range ops {
+		for _, roomID := range o.IncludedRoomIDs() {
+			set[roomID] = struct{}{}
+		}
+	}
+	return set
 }
 
 type ResponseOpRange struct {
@@ -87,6 +101,16 @@ type ResponseOpRange struct {
 func (r *ResponseOpRange) Op() string {
 	return r.Operation
 }
+func (r *ResponseOpRange) IncludedRoomIDs() []string {
+	if r.Op() == OpInvalidate {
+		return nil // the rooms are being excluded
+	}
+	roomIDs := make([]string, len(r.Rooms))
+	for i := range r.Rooms {
+		roomIDs[i] = r.Rooms[i].RoomID
+	}
+	return roomIDs
+}
 
 type ResponseOpSingle struct {
 	Operation string `json:"op"`
@@ -97,4 +121,13 @@ type ResponseOpSingle struct {
 
 func (r *ResponseOpSingle) Op() string {
 	return r.Operation
+}
+
+func (r *ResponseOpSingle) IncludedRoomIDs() []string {
+	if r.Op() == OpDelete || r.Room == nil {
+		return nil // the room is being excluded
+	}
+	return []string{
+		r.Room.RoomID,
+	}
 }

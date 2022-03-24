@@ -61,6 +61,16 @@ func (s *Storage) AccountData(userID, roomID, eventType string) (data *AccountDa
 	return
 }
 
+// Pull out all account data for this user. If roomIDs is empty, global account data is returned.
+// If roomIDs is non-empty, all account data for these rooms are extracted.
+func (s *Storage) AccountDatas(userID string, roomIDs ...string) (datas []AccountData, err error) {
+	err = sqlutil.WithTransaction(s.accumulator.db, func(txn *sqlx.Tx) error {
+		datas, err = s.AccountDataTable.SelectMany(txn, userID, roomIDs...)
+		return err
+	})
+	return
+}
+
 func (s *Storage) InsertAccountData(userID, roomID string, events []json.RawMessage) (data []AccountData, err error) {
 	data = make([]AccountData, len(events))
 	for i := range events {

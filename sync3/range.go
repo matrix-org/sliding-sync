@@ -69,6 +69,8 @@ type pointInfo struct {
 	isOpen     bool
 }
 
+// TODO: A,B,C track A,B then B,C incorrectly keeps B?
+
 // Delta returns the ranges which are unchanged, added and removed.
 // Intelligently handles overlaps.
 func (r SliceRanges) Delta(next SliceRanges) (added SliceRanges, removed SliceRanges, same SliceRanges) {

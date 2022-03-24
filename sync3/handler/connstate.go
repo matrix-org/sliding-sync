@@ -162,9 +162,13 @@ func (s *ConnState) onIncomingRequest(ctx context.Context, req *sync3.Request, i
 		responseOperations = append(responseOperations, ops...)
 	}
 
+	includedRoomIDs := sync3.IncludedRoomIDsInOps(responseOperations)
+	for _, roomID := range newSubs { // include room subs in addition to lists
+		includedRoomIDs[roomID] = struct{}{}
+	}
 	// Handle extensions AFTER processing lists as extensions may need to know which rooms the client
 	// is being notified about (e.g. for room account data)
-	response.Extensions = s.extensionsHandler.Handle(ex, s.userCache, isInitial)
+	response.Extensions = s.extensionsHandler.Handle(ex, includedRoomIDs, isInitial)
 
 	// do live tracking if we have nothing to tell the client yet
 	responseOperations = s.live.liveUpdate(ctx, req, ex, isInitial, response, responseOperations)
@@ -416,6 +420,10 @@ func (s *ConnState) moveRoom(
 		},
 	}
 
+}
+
+func (s *ConnState) OnUpdate(up caches.Update) {
+	s.live.onUpdate(up)
 }
 
 // Called by the user cache when updates arrive

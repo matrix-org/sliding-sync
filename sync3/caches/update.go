@@ -25,7 +25,11 @@ type UnreadCountUpdate struct {
 	HasCountDecreased bool
 }
 
-type RoomAccountDataAlert struct {
+type AccountDataUpdate struct {
+	AccountData []state.AccountData
+}
+
+type RoomAccountDataUpdate struct {
 	RoomUpdate
 	AccountData []state.AccountData
 }

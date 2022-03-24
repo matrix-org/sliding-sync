@@ -62,12 +62,14 @@ func (s *connStateLive) liveUpdate(
 			return responseOperations
 		case update := <-s.updates:
 			responseOperations = s.processLiveUpdate(update, responseOperations, response)
+			updateWillReturnResponse := len(responseOperations) > 0
 			// pass event to extensions AFTER processing
-			s.extensionsHandler.HandleLiveData(ex, &response.Extensions, s.userCache, isInitial)
+			s.extensionsHandler.HandleLiveUpdate(update, ex, &response.Extensions, updateWillReturnResponse, isInitial)
 			// if there's more updates and we don't have lots stacked up already, go ahead and process another
 			for len(s.updates) > 0 && len(responseOperations) < 50 {
 				update = <-s.updates
 				responseOperations = s.processLiveUpdate(update, responseOperations, response)
+				s.extensionsHandler.HandleLiveUpdate(update, ex, &response.Extensions, updateWillReturnResponse, isInitial)
 			}
 		}
 	}

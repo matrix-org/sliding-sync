@@ -89,3 +89,18 @@ func NewEvent(t *testing.T, evType, sender string, content interface{}, originSe
 	}
 	return j
 }
+
+func NewAccountData(t *testing.T, evType string, content interface{}) json.RawMessage {
+	e := struct {
+		Type    string      `json:"type"`
+		Content interface{} `json:"content"`
+	}{
+		Type:    evType,
+		Content: content,
+	}
+	j, err := json.Marshal(&e)
+	if err != nil {
+		t.Fatalf("NewAccountData: failed to make event JSON: %s", err)
+	}
+	return j
+}

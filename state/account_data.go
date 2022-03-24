@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"github.com/jmoiron/sqlx"
+	"github.com/lib/pq"
 	"github.com/matrix-org/sync-v3/sqlutil"
 )
 
@@ -70,6 +71,17 @@ func (t *AccountDataTable) Select(txn *sqlx.Tx, userID, eventType, roomID string
 		return nil, nil
 	}
 	return &acc, err
+}
+
+func (t *AccountDataTable) SelectMany(txn *sqlx.Tx, userID string, roomIDs ...string) (datas []AccountData, err error) {
+	if len(roomIDs) == 0 {
+		err = txn.Select(&datas, `SELECT user_id, room_id, type, data FROM syncv3_account_data
+		WHERE user_id=$1 AND room_id = $2`, userID, AccountDataGlobalRoom)
+		return
+	}
+	err = txn.Select(&datas, `SELECT user_id, room_id, type, data FROM syncv3_account_data
+	WHERE user_id=$1 AND room_id=ANY($2)`, userID, pq.StringArray(roomIDs))
+	return
 }
 
 type AccountDataChunker []AccountData

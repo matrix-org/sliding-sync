@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"reflect"
+	"sort"
 	"strings"
 	"sync"
 	"testing"
@@ -605,6 +606,34 @@ func MatchV3Ops(matchOps ...opMatcher) respMatcher {
 	}
 }
 
+func MatchAccountData(globals []json.RawMessage, rooms map[string][]json.RawMessage) respMatcher {
+	return func(res *sync3.Response) error {
+		if res.Extensions.AccountData == nil {
+			return fmt.Errorf("MatchAccountData: no account_data extension")
+		}
+		if len(globals) > 0 {
+			if err := equalAnyOrder(res.Extensions.AccountData.Global, globals); err != nil {
+				return fmt.Errorf("MatchAccountData[global]: %s", err)
+			}
+		}
+		if len(rooms) > 0 {
+			if len(rooms) != len(res.Extensions.AccountData.Rooms) {
+				return fmt.Errorf("MatchAccountData: got %d rooms with account data, want %d", len(res.Extensions.AccountData.Rooms), len(rooms))
+			}
+			for roomID := range rooms {
+				gots := res.Extensions.AccountData.Rooms[roomID]
+				if gots == nil {
+					return fmt.Errorf("MatchAccountData: want room account data for %s but it was missing", roomID)
+				}
+				if err := equalAnyOrder(gots, rooms[roomID]); err != nil {
+					return fmt.Errorf("MatchAccountData[room]: %s", err)
+				}
+			}
+		}
+		return nil
+	}
+}
+
 func MatchResponse(t *testing.T, res *sync3.Response, matchers ...respMatcher) {
 	t.Helper()
 	for _, m := range matchers {
@@ -618,4 +647,22 @@ func MatchResponse(t *testing.T, res *sync3.Response, matchers ...respMatcher) {
 
 func ptr(i int) *int {
 	return &i
+}
+
+func equalAnyOrder(got, want []json.RawMessage) error {
+	if len(got) != len(want) {
+		return fmt.Errorf("equalAnyOrder: got %d, want %d", len(got), len(want))
+	}
+	sort.Slice(got, func(i, j int) bool {
+		return string(got[i]) < string(got[j])
+	})
+	sort.Slice(want, func(i, j int) bool {
+		return string(want[i]) < string(want[j])
+	})
+	for i := range got {
+		if !reflect.DeepEqual(got[i], want[i]) {
+			return fmt.Errorf("equalAnyOrder: [%d] got %v want %v", i, string(got[i]), string(want[i]))
+		}
+	}
+	return nil
 }

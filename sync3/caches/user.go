@@ -21,9 +21,9 @@ type UserCacheListener interface {
 	// Called when there is an update affecting a room e.g new event, unread count update, room account data.
 	// Type-cast to find out what the update is about.
 	OnRoomUpdate(up RoomUpdate)
-	// Called when there is an update affecting this user e.g global account data, presence.
+	// Called when there is an update affecting this user but not in the room e.g global account data, presence.
 	// Type-cast to find out what the update is about.
-	// OnUserUpdate(up UserUpdate)
+	OnUpdate(up Update)
 }
 
 // Tracks data specific to a given user. Specifically, this is the map of room ID to UserRoomData.
@@ -222,7 +222,11 @@ func (c *UserCache) OnNewEvent(eventData *EventData) {
 }
 
 func (c *UserCache) OnAccountData(datas []state.AccountData) {
+	roomUpdates := make(map[string][]state.AccountData)
 	for _, d := range datas {
+		up := roomUpdates[d.RoomID]
+		up = append(up, d)
+		roomUpdates[d.RoomID] = up
 		if d.Type == "m.direct" {
 			dmRoomSet := make(map[string]struct{})
 			// pull out rooms and mark them as DMs
@@ -249,5 +253,26 @@ func (c *UserCache) OnAccountData(datas []state.AccountData) {
 			}
 			c.roomToDataMu.Unlock()
 		}
+
 	}
+	// bucket account data updates per-room and globally then invoke listeners
+	for roomID, updates := range roomUpdates {
+		if roomID == state.AccountDataGlobalRoom {
+			globalUpdate := &AccountDataUpdate{
+				AccountData: updates,
+			}
+			for _, l := range c.listeners {
+				l.OnUpdate(globalUpdate)
+			}
+		} else {
+			roomUpdate := &RoomAccountDataUpdate{
+				AccountData: updates,
+				RoomUpdate:  c.newRoomUpdate(roomID),
+			}
+			for _, l := range c.listeners {
+				l.OnRoomUpdate(roomUpdate)
+			}
+		}
+	}
+
 }
