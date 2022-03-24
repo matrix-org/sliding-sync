@@ -2,8 +2,8 @@ package caches
 
 import (
 	"encoding/json"
-	"fmt"
 	"os"
+	"sort"
 	"sync"
 
 	"github.com/matrix-org/gomatrixserverlib"
@@ -170,9 +170,21 @@ func (c *GlobalCache) LoadRoomState(roomID string, loadPosition int64, requiredS
 func (c *GlobalCache) Startup(roomIDToMetadata map[string]internal.RoomMetadata) error {
 	c.roomIDToMetadataMu.Lock()
 	defer c.roomIDToMetadataMu.Unlock()
-	for roomID := range roomIDToMetadata {
+	// sort room IDs for ease of debugging and for determinism
+	roomIDs := make([]string, len(roomIDToMetadata))
+	i := 0
+	for r := range roomIDToMetadata {
+		roomIDs[i] = r
+		i++
+	}
+	sort.Strings(roomIDs)
+	for _, roomID := range roomIDs {
 		metadata := roomIDToMetadata[roomID]
-		fmt.Printf("Room: %s - %s - %s \n", roomID, metadata.NameEvent, gomatrixserverlib.Timestamp(metadata.LastMessageTimestamp).Time())
+		logger.Debug().Str("room", roomID).Interface(
+			"recent", gomatrixserverlib.Timestamp(metadata.LastMessageTimestamp).Time(),
+		).Bool("encrypted", metadata.Encrypted).Bool("tombstoned", metadata.Tombstoned).Int("joins", metadata.JoinCount).Msg(
+			"",
+		)
 		internal.Assert("room ID is set", metadata.RoomID != "")
 		internal.Assert("last message timestamp exists", metadata.LastMessageTimestamp > 1)
 		c.roomIDToMetadata[roomID] = &metadata
