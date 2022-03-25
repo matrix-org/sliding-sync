@@ -162,9 +162,21 @@ func (c *roomUpdateCache) UserRoomMetadata() *UserRoomData {
 // snapshots the user cache / global cache data for this room for sending to connections
 func (c *UserCache) newRoomUpdate(roomID string) RoomUpdate {
 	u := c.LoadRoomData(roomID)
+	var r *internal.RoomMetadata
+	globalRooms := c.globalCache.LoadRooms(roomID)
+	if globalRooms == nil {
+		// this can happen when we join a room we didn't know about because we process unread counts
+		// before the timeline events. Warn and send a stub
+		logger.Warn().Str("room", roomID).Msg("UserCache update: room doesn't exist in global cache yet, generating stub")
+		r = &internal.RoomMetadata{
+			RoomID: roomID,
+		}
+	} else {
+		r = globalRooms[0]
+	}
 	return &roomUpdateCache{
 		roomID:         roomID,
-		globalRoomData: c.globalCache.LoadRooms(roomID)[0],
+		globalRoomData: r,
 		userRoomData:   &u,
 	}
 }
