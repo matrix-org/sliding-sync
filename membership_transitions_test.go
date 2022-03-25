@@ -17,9 +17,7 @@ func TestRoomStateTransitions(t *testing.T) {
 	v3 := runTestServer(t, v2, pqString)
 	defer v2.close()
 	defer v3.close()
-	alice := "@alice:localhost"
 	bob := "@bob:localhost"
-	aliceToken := "ALICE_BEARER_TOKEN"
 	bobToken := "BOB_BEARER_TOKEN"
 	// make 4 rooms, last room is most recent, with various membership states for Bob
 	latestTimestamp := time.Now()

@@ -31,9 +31,7 @@ func TestSecurityLiveStreamEventLeftLeak(t *testing.T) {
 	defer v2.close()
 	defer v3.close()
 	roomID := "!TestSecurityLiveStreamEventLeftLeak_a:localhost"
-	alice := "@TestSecurityLiveStreamEventLeftLeak_alice:localhost"
 	eve := "@TestSecurityLiveStreamEventLeftLeak_eve:localhost"
-	aliceToken := "ALICE_BEARER_TOKEN_TestSecurityLiveStreamEventLeftLeak"
 	eveToken := "EVE_BEARER_TOKEN_TestSecurityLiveStreamEventLeftLeak"
 	v2.addAccount(alice, aliceToken)
 	v2.addAccount(eve, eveToken)
@@ -182,9 +180,7 @@ func TestSecurityRoomSubscriptionLeak(t *testing.T) {
 	defer v3.close()
 	secretRoomID := "!TestSecurityRoomSubscriptionLeak:localhost"
 	unrelatedRoomID := "!unrelated:localhost"
-	alice := "@TestSecurityRoomSubscriptionLeak_alice:localhost"
 	eve := "@TestSecurityRoomSubscriptionLeak_eve:localhost"
-	aliceToken := "ALICE_BEARER_TOKEN_TestSecurityRoomSubscriptionLeak"
 	eveToken := "EVE_BEARER_TOKEN_TestSecurityRoomSubscriptionLeak"
 	v2.addAccount(alice, aliceToken)
 	v2.addAccount(eve, eveToken)

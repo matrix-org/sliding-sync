@@ -22,8 +22,8 @@ func TestTimelines(t *testing.T) {
 	v3 := runTestServer(t, v2, pqString)
 	defer v2.close()
 	defer v3.close()
+
 	alice := "@TestTimelines_alice:localhost"
-	aliceToken := "ALICE_BEARER_TOKEN_TestTimelines"
 	// make 20 rooms, last room is most recent, and send A,B,C into each room
 	allRooms := make([]roomEvents, 20)
 	for i := 0; i < len(allRooms); i++ {
@@ -102,8 +102,6 @@ func TestTimelinesLiveStream(t *testing.T) {
 	v3 := runTestServer(t, v2, "")
 	defer v2.close()
 	defer v3.close()
-	alice := "@TestTimelinesLiveStream_alice:localhost"
-	aliceToken := "ALICE_BEARER_TOKEN_TestTimelinesLiveStream"
 	// make 20 rooms, last room is most recent, and send A,B,C into each room
 	allRooms := make([]roomEvents, 20)
 	latestTimestamp := time.Now()
@@ -248,8 +246,6 @@ func TestInitialFlag(t *testing.T) {
 	v3 := runTestServer(t, v2, pqString)
 	defer v2.close()
 	defer v3.close()
-	alice := "@TestInitialFlag_alice:localhost"
-	aliceToken := "ALICE_BEARER_TOKEN_TestInitialFlag"
 	roomID := "!a:localhost"
 	v2.addAccount(alice, aliceToken)
 	v2.queueResponse(alice, sync2.SyncResponse{
@@ -313,8 +309,6 @@ func TestDuplicateEventsInTimeline(t *testing.T) {
 	v3 := runTestServer(t, v2, pqString)
 	defer v2.close()
 	defer v3.close()
-	alice := "@alice:localhost"
-	aliceToken := "ALICE_BEARER_TOKEN"
 	roomID := "!a:localhost"
 
 	dupeEvent := testutils.NewStateEvent(t, "m.room.name", "", alice, map[string]interface{}{})
@@ -364,8 +358,6 @@ func TestTimelineMiddleWindowZeroTimelineLimit(t *testing.T) {
 	v3 := runTestServer(t, v2, "")
 	defer v2.close()
 	defer v3.close()
-	alice := "@TestTimelineMiddleWindowZeroTimelineLimit_alice:localhost"
-	aliceToken := "ALICE_BEARER_TOKEN_TestTimelineMiddleWindowZeroTimelineLimit"
 	// make 20 rooms, first room is most recent, and send A,B,C into each room
 	allRooms := make([]roomEvents, 20)
 	for i := 0; i < len(allRooms); i++ {

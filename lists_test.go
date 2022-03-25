@@ -21,8 +21,6 @@ func TestMultipleLists(t *testing.T) {
 	v3 := runTestServer(t, v2, pqString)
 	defer v2.close()
 	defer v3.close()
-	alice := "@TestMultipleLists_alice:localhost"
-	aliceToken := "ALICE_BEARER_TOKEN_TestMultipleLists"
 	var allRooms []roomEvents
 	var encryptedRooms []roomEvents
 	var unencryptedRooms []roomEvents
@@ -193,8 +191,6 @@ func TestMultipleListsDMUpdate(t *testing.T) {
 	v3 := runTestServer(t, v2, pqString)
 	defer v2.close()
 	defer v3.close()
-	alice := "@TestMultipleListsUpdate_alice:localhost"
-	aliceToken := "ALICE_BEARER_TOKEN_TestMultipleListsUpdate"
 	var allRooms []roomEvents
 	var dmRooms []roomEvents
 	var groupRooms []roomEvents
@@ -333,8 +329,6 @@ func TestNewListMidConnection(t *testing.T) {
 	v3 := runTestServer(t, v2, pqString)
 	defer v2.close()
 	defer v3.close()
-	alice := "@alice:localhost"
-	aliceToken := "ALICE_BEARER_TOKEN"
 	var allRooms []roomEvents
 	baseTimestamp := time.Now()
 	// make 10 rooms

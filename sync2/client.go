@@ -129,9 +129,7 @@ type EventsResponse struct {
 
 // InviteResponse represents a /sync response for a room which is under the 'invite' key.
 type SyncV2InviteResponse struct {
-	InviteState struct {
-		Events []json.RawMessage `json:"events"`
-	} `json:"invite_state"`
+	InviteState EventsResponse `json:"invite_state"`
 }
 
 // LeaveResponse represents a /sync response for a room which is under the 'leave' key.

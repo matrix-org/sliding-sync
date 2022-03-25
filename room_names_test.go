@@ -19,9 +19,7 @@ func TestRoomNames(t *testing.T) {
 	v3 := runTestServer(t, v2, pqString)
 	defer v2.close()
 	defer v3.close()
-	alice := "@TestRoomNames_alice:localhost"
 	bob := "@TestRoomNames_bob:localhost"
-	aliceToken := "ALICE_BEARER_TOKEN_TestRoomNames"
 	// make 5 rooms, last room is most recent, and send A,B,C into each room
 	latestTimestamp := time.Now()
 	allRooms := []roomEvents{

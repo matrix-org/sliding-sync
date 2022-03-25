@@ -22,8 +22,6 @@ func TestExtensionE2EE(t *testing.T) {
 	v3 := runTestServer(t, v2, pqString)
 	defer v2.close()
 	defer v3.close()
-	alice := "@TestExtensionE2EE_alice:localhost"
-	aliceToken := "ALICE_BEARER_TOKEN_TestExtensionE2EE"
 
 	// check that OTK counts go through
 	otkCounts := map[string]int{

@@ -12,7 +12,7 @@ import (
 )
 
 // Test that filters work initially and whilst streamed.
-func TestFilters(t *testing.T) {
+func TestFiltersEncryption(t *testing.T) {
 	boolTrue := true
 	boolFalse := false
 	pqString := testutils.PrepareDBConnectionString()
@@ -21,8 +21,6 @@ func TestFilters(t *testing.T) {
 	v3 := runTestServer(t, v2, pqString)
 	defer v2.close()
 	defer v3.close()
-	alice := "@TestFilters_alice:localhost"
-	aliceToken := "ALICE_BEARER_TOKEN_TestFilters"
 	encryptedRoomID := "!TestFilters_encrypted:localhost"
 	unencryptedRoomID := "!TestFilters_unencrypted:localhost"
 	latestTimestamp := time.Now()
@@ -180,4 +178,91 @@ func TestFilters(t *testing.T) {
 		}},
 	})
 	MatchResponse(t, res, MatchV3Count(0))
+}
+
+func TestFiltersInvite(t *testing.T) {
+	t.SkipNow()
+	boolTrue := true
+	boolFalse := false
+	pqString := testutils.PrepareDBConnectionString()
+	// setup code
+	v2 := runTestV2Server(t)
+	v3 := runTestServer(t, v2, pqString)
+	defer v2.close()
+	defer v3.close()
+	roomID := "!a:localhost"
+	v2.addAccount(alice, aliceToken)
+	v2.queueResponse(alice, sync2.SyncResponse{
+		Rooms: sync2.SyncRoomsResponse{
+			Invite: map[string]sync2.SyncV2InviteResponse{
+				roomID: {
+					InviteState: sync2.EventsResponse{
+						Events: nil,
+					},
+				},
+			},
+		},
+	})
+
+	// make sure the is_invite filter works
+	res := v3.mustDoV3Request(t, aliceToken, sync3.Request{
+		Lists: []sync3.RequestList{
+			{
+				Ranges: sync3.SliceRanges{
+					[2]int64{0, 20}, // all rooms
+				},
+				Filters: &sync3.RequestFilters{
+					IsInvite: &boolTrue,
+				},
+			},
+			{
+				Ranges: sync3.SliceRanges{
+					[2]int64{0, 20}, // all rooms
+				},
+				Filters: &sync3.RequestFilters{
+					IsInvite: &boolFalse,
+				},
+			},
+		},
+	})
+	MatchResponse(t, res, MatchV3Counts([]int{1, 0}), MatchV3Ops(
+		MatchV3SyncOp(func(op *sync3.ResponseOpRange) error {
+			if len(op.Rooms) != 1 {
+				return fmt.Errorf("want %d rooms, got %d", 1, len(op.Rooms))
+			}
+			if op.List != 0 {
+				return fmt.Errorf("unknown list: %d", op.List)
+			}
+			if op.Rooms[0].RoomID != roomID {
+				return fmt.Errorf("unknown invite room: %s", op.Rooms[0].RoomID)
+			}
+			return nil
+		}),
+	))
+
+	// Accept the invite
+	// v2.waitUntilEmpty(t, alice)
+	/*
+		// now the room should move from one room to another
+		res = v3.mustDoV3RequestWithPos(t, aliceToken, res.Pos, sync3.Request{
+			Lists: []sync3.RequestList{
+				{
+					Ranges: sync3.SliceRanges{
+						[2]int64{0, int64(len(allRooms) - 1)}, // all rooms
+					},
+					// sticky; should remember filters
+				},
+				{
+					Ranges: sync3.SliceRanges{
+						[2]int64{0, int64(len(allRooms) - 1)}, // all rooms
+					},
+					// sticky; should remember filters
+				},
+			},
+		})
+		MatchResponse(t, res, MatchV3Counts([]int{len(allRooms), 0}), MatchV3Ops(
+			MatchV3DeleteOp(1, 0),
+			MatchV3DeleteOp(0, 1),
+			MatchV3InsertOp(0, 0, unencryptedRoomID),
+		)) */
 }

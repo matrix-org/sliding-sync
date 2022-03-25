@@ -27,6 +27,11 @@ import (
 
 // Integration tests for the sync-v3 server
 
+const (
+	alice      = "@alice:localhost"
+	aliceToken = "ALICE_BEARER_TOKEN"
+)
+
 type testV2Server struct {
 	mu          *sync.Mutex
 	tokenToUser map[string]string

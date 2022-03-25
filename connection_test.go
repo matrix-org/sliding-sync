@@ -22,8 +22,6 @@ func TestMultipleConnsAtStartup(t *testing.T) {
 	v3 := runTestServer(t, v2, pqString)
 	defer v2.close()
 	defer v3.close()
-	alice := "@alice:localhost"
-	aliceToken := "ALICE_BEARER_TOKEN"
 	roomID := "!a:localhost"
 	v2.addAccount(alice, aliceToken)
 	var res *sync3.Response

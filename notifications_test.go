@@ -19,9 +19,7 @@ func TestNotificationsOnTop(t *testing.T) {
 	v3 := runTestServer(t, v2, pqString)
 	defer v2.close()
 	defer v3.close()
-	alice := "@TestNotificationsOnTop_alice:localhost"
 	bob := "@TestNotificationsOnTop_bob:localhost"
-	aliceToken := "ALICE_BEARER_TOKEN_TestNotificationsOnTop"
 	bingRoomID := "!TestNotificationsOnTop_bing:localhost"
 	noBingRoomID := "!TestNotificationsOnTop_nobing:localhost"
 	latestTimestamp := time.Now()
