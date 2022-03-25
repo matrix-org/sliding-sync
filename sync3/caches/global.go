@@ -37,7 +37,7 @@ var logger = zerolog.New(os.Stdout).With().Timestamp().Logger().Output(zerolog.C
 // information is populated at startup from the database and then kept up-to-date by hooking into the
 // Dispatcher for new events.
 type GlobalCache struct {
-	LoadJoinedRoomsOverride func(userID string) (pos int64, joinedRooms, invitedRooms []*internal.RoomMetadata, err error)
+	LoadJoinedRoomsOverride func(userID string) (pos int64, joinedRooms []*internal.RoomMetadata, err error)
 
 	// inserts are done by v2 poll loops, selects are done by v3 request threads
 	// there are lots of overlapping keys as many users (threads) can be joined to the same room (key)
@@ -84,23 +84,22 @@ func (c *GlobalCache) LoadRooms(roomIDs ...string) []*internal.RoomMetadata {
 
 // Load all current joined room metadata for the user given. Returns the absolute database position along
 // with the results. TODO: remove with LoadRoomState?
-func (c *GlobalCache) LoadInvitedJoinedRooms(userID string) (pos int64, joinedRooms, invitedRooms []*internal.RoomMetadata, err error) {
+func (c *GlobalCache) LoadInvitedJoinedRooms(userID string) (pos int64, joinedRooms []*internal.RoomMetadata, err error) {
 	if c.LoadJoinedRoomsOverride != nil {
 		return c.LoadJoinedRoomsOverride(userID)
 	}
 	initialLoadPosition, err := c.store.LatestEventNID()
 	if err != nil {
-		return 0, nil, nil, err
+		return 0, nil, err
 	}
-	joinedRoomIDs, invitedRoomIDs, err := c.store.JoinedRoomsAfterPosition(userID, initialLoadPosition, true)
+	joinedRoomIDs, err := c.store.JoinedRoomsAfterPosition(userID, initialLoadPosition, true)
 	if err != nil {
-		return 0, nil, nil, err
+		return 0, nil, err
 	}
 	// TODO: no guarantee that this state is the same as latest unless called in a dispatcher loop
 	rooms := c.LoadRooms(joinedRoomIDs...)
-	invRooms := c.LoadRooms(invitedRoomIDs...)
 
-	return initialLoadPosition, rooms, invRooms, nil
+	return initialLoadPosition, rooms, nil
 }
 
 // TODO: remove? Doesn't touch global cache fields
