@@ -74,10 +74,18 @@ func NewConnState(
 //   - load() bases its current state based on the latest position, which includes processing of these N events.
 //   - post load() we read N events, processing them a 2nd time.
 func (s *ConnState) load(req *sync3.Request) error {
-	initialLoadPosition, joinedRooms, err := s.globalCache.LoadInvitedJoinedRooms(s.userID)
+	initialLoadPosition, joinedRooms, invitedRooms, err := s.globalCache.LoadInvitedJoinedRooms(s.userID)
 	if err != nil {
 		return err
 	}
+	// The user cache doesn't know which rooms are invites so defaults to is_invite: false (same with DM-ness and unread counts)
+	// However, DM/unread counts are set when the UserCache is created as there are no race concerns (latest wins)
+	// But for invites we can race if we load invite-ness when the UserCache is created as that depends on a load position which
+	// we would then discard and then load again in this function. Any invites between those two positions will not be set
+	// correctly in the UserCache, hence why we are priming the user cache here and not with everything else.
+	s.userCache.MarkInvites(invitedRooms...)
+
+	joinedRooms = append(joinedRooms, invitedRooms...)
 	rooms := make([]sync3.RoomConnMetadata, len(joinedRooms))
 	for i := range joinedRooms {
 		metadata := joinedRooms[i]
@@ -93,7 +101,6 @@ func (s *ConnState) load(req *sync3.Request) error {
 	}
 	s.allRooms = rooms
 	s.loadPosition = initialLoadPosition
-
 	for i, l := range req.Lists {
 		s.setInitialList(i, l)
 	}

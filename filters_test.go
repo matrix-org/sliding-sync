@@ -181,7 +181,6 @@ func TestFiltersEncryption(t *testing.T) {
 }
 
 func TestFiltersInvite(t *testing.T) {
-	t.SkipNow()
 	boolTrue := true
 	boolFalse := false
 	pqString := testutils.PrepareDBConnectionString()
@@ -191,13 +190,21 @@ func TestFiltersInvite(t *testing.T) {
 	defer v2.close()
 	defer v3.close()
 	roomID := "!a:localhost"
+	nameEvent := testutils.NewStateEvent(t, "m.room.name", "", "@bob:localhost", map[string]interface{}{
+		"name": "Ping Pong",
+	})
+	inviteEvent := testutils.NewStateEvent(t, "m.room.member", alice, "@bob:localhost", map[string]interface{}{
+		"membership": "invite",
+	})
 	v2.addAccount(alice, aliceToken)
 	v2.queueResponse(alice, sync2.SyncResponse{
 		Rooms: sync2.SyncRoomsResponse{
 			Invite: map[string]sync2.SyncV2InviteResponse{
 				roomID: {
 					InviteState: sync2.EventsResponse{
-						Events: nil,
+						Events: []json.RawMessage{
+							nameEvent, inviteEvent,
+						},
 					},
 				},
 			},
@@ -241,28 +248,47 @@ func TestFiltersInvite(t *testing.T) {
 	))
 
 	// Accept the invite
-	// v2.waitUntilEmpty(t, alice)
+	v2.queueResponse(alice, sync2.SyncResponse{
+		Rooms: sync2.SyncRoomsResponse{
+			Join: map[string]sync2.SyncV2JoinResponse{
+				roomID: {
+					State: sync2.EventsResponse{
+						Events: []json.RawMessage{
+							testutils.NewStateEvent(t, "m.room.create", "@someone:localhost", "@someone:localhost", map[string]interface{}{"creator": "@someone:localhost"}),
+							nameEvent,
+						},
+					},
+					Timeline: sync2.TimelineResponse{
+						Events: []json.RawMessage{
+							testutils.NewStateEvent(t, "m.room.member", alice, alice, map[string]interface{}{"membership": "join"}),
+						},
+					},
+				},
+			},
+		},
+	})
+	v2.waitUntilEmpty(t, alice)
+
 	/*
 		// now the room should move from one room to another
 		res = v3.mustDoV3RequestWithPos(t, aliceToken, res.Pos, sync3.Request{
 			Lists: []sync3.RequestList{
 				{
 					Ranges: sync3.SliceRanges{
-						[2]int64{0, int64(len(allRooms) - 1)}, // all rooms
+						[2]int64{0, 20}, // all rooms
 					},
 					// sticky; should remember filters
 				},
 				{
 					Ranges: sync3.SliceRanges{
-						[2]int64{0, int64(len(allRooms) - 1)}, // all rooms
+						[2]int64{0, 20}, // all rooms
 					},
 					// sticky; should remember filters
 				},
 			},
 		})
-		MatchResponse(t, res, MatchV3Counts([]int{len(allRooms), 0}), MatchV3Ops(
-			MatchV3DeleteOp(1, 0),
-			MatchV3DeleteOp(0, 1),
-			MatchV3InsertOp(0, 0, unencryptedRoomID),
+		MatchResponse(t, res, MatchV3Counts([]int{0, 1}), MatchV3Ops(
+			MatchV3DeleteOp(0, 0),
+			MatchV3InsertOp(1, 0, roomID),
 		)) */
 }

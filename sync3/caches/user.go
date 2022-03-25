@@ -133,6 +133,20 @@ func (c *UserCache) LazyLoadTimelines(loadPos int64, roomIDs []string, maxTimeli
 	return result
 }
 
+// Mark these rooms as being invites.
+func (c *UserCache) MarkInvites(rooms ...*internal.RoomMetadata) {
+	c.roomToDataMu.Lock()
+	defer c.roomToDataMu.Unlock()
+	for _, room := range rooms {
+		data, ok := c.roomToData[room.RoomID]
+		if !ok {
+			data = UserRoomData{}
+		}
+		data.IsInvite = true
+		c.roomToData[room.RoomID] = data
+	}
+}
+
 func (c *UserCache) LoadRoomData(roomID string) UserRoomData {
 	c.roomToDataMu.RLock()
 	defer c.roomToDataMu.RUnlock()
