@@ -32,6 +32,12 @@ func (t *NopJoinTracker) IsUserJoined(userID, roomID string) bool {
 	return true
 }
 
+type NopTransactionFetcher struct{}
+
+func (t *NopTransactionFetcher) TransactionIDForEvent(userID, eventID string) (txnID string) {
+	return ""
+}
+
 func newRoomMetadata(roomID string, lastMsgTimestamp gomatrixserverlib.Timestamp) internal.RoomMetadata {
 	return internal.RoomMetadata{
 		RoomID:               roomID,
@@ -87,7 +93,7 @@ func TestConnStateInitial(t *testing.T) {
 			&roomA, &roomB, &roomC,
 		}, nil
 	}
-	userCache := caches.NewUserCache(userID, globalCache, nil)
+	userCache := caches.NewUserCache(userID, globalCache, nil, &NopTransactionFetcher{})
 	dispatcher.Register(userCache.UserID, userCache)
 	dispatcher.Register(sync3.DispatcherAllUsers, globalCache)
 	userCache.LazyRoomDataOverride = func(loadPos int64, roomIDs []string, maxTimelineEvents int) map[string]caches.UserRoomData {
@@ -244,7 +250,7 @@ func TestConnStateMultipleRanges(t *testing.T) {
 	globalCache.LoadJoinedRoomsOverride = func(userID string) (pos int64, joinedRooms []*internal.RoomMetadata, err error) {
 		return 1, rooms, nil
 	}
-	userCache := caches.NewUserCache(userID, globalCache, nil)
+	userCache := caches.NewUserCache(userID, globalCache, nil, &NopTransactionFetcher{})
 	userCache.LazyRoomDataOverride = mockLazyRoomOverride
 	dispatcher.Register(userCache.UserID, userCache)
 	dispatcher.Register(sync3.DispatcherAllUsers, globalCache)
@@ -426,7 +432,7 @@ func TestBumpToOutsideRange(t *testing.T) {
 			&roomA, &roomB, &roomC, &roomD,
 		}, nil
 	}
-	userCache := caches.NewUserCache(userID, globalCache, nil)
+	userCache := caches.NewUserCache(userID, globalCache, nil, &NopTransactionFetcher{})
 	userCache.LazyRoomDataOverride = mockLazyRoomOverride
 	dispatcher.Register(userCache.UserID, userCache)
 	dispatcher.Register(sync3.DispatcherAllUsers, globalCache)
@@ -524,7 +530,7 @@ func TestConnStateRoomSubscriptions(t *testing.T) {
 			&roomA, &roomB, &roomC, &roomD,
 		}, nil
 	}
-	userCache := caches.NewUserCache(userID, globalCache, nil)
+	userCache := caches.NewUserCache(userID, globalCache, nil, &NopTransactionFetcher{})
 	userCache.LazyRoomDataOverride = func(loadPos int64, roomIDs []string, maxTimelineEvents int) map[string]caches.UserRoomData {
 		result := make(map[string]caches.UserRoomData)
 		for _, roomID := range roomIDs {

@@ -34,6 +34,10 @@ type E2EEFetcher interface {
 	LatestE2EEData(deviceID string) (otkCounts map[string]int, changed, left []string)
 }
 
+type TransactionIDFetcher interface {
+	TransactionIDForEvent(userID, eventID string) (txnID string)
+}
+
 // PollerMap is a map of device ID to Poller
 type PollerMap struct {
 	v2Client        Client
@@ -42,6 +46,7 @@ type PollerMap struct {
 	Pollers         map[string]*Poller // device_id -> poller
 	executor        chan func()
 	executorRunning bool
+	txnCache        *TransactionIDCache
 }
 
 // NewPollerMap makes a new PollerMap. Guarantees that the V2DataReceiver will be called on the same
@@ -72,7 +77,13 @@ func NewPollerMap(v2Client Client, callbacks V2DataReceiver) *PollerMap {
 		pollerMu:  &sync.Mutex{},
 		Pollers:   make(map[string]*Poller),
 		executor:  make(chan func(), 0),
+		txnCache:  NewTransactionIDCache(),
 	}
+}
+
+// TransactionIDForEvent returns the transaction ID for this event for this user, if one exists.
+func (h *PollerMap) TransactionIDForEvent(userID, eventID string) string {
+	return h.txnCache.Get(userID, eventID)
 }
 
 // LatestE2EEData pulls the latest device_lists and device_one_time_keys_count values from the poller.
@@ -114,7 +125,7 @@ func (h *PollerMap) EnsurePolling(authHeader, userID, deviceID, v2since string, 
 		return
 	}
 	// replace the poller
-	poller = NewPoller(userID, authHeader, deviceID, h.v2Client, h, logger)
+	poller = NewPoller(userID, authHeader, deviceID, h.v2Client, h, h.txnCache, logger)
 	go poller.Poll(v2since)
 	h.Pollers[deviceID] = poller
 
@@ -210,6 +221,9 @@ type Poller struct {
 	receiver            V2DataReceiver
 	logger              zerolog.Logger
 
+	// remember txn ids
+	txnCache *TransactionIDCache
+
 	// E2EE fields
 	e2eeMu            *sync.Mutex
 	otkCounts         map[string]int
@@ -220,7 +234,7 @@ type Poller struct {
 	wg         *sync.WaitGroup
 }
 
-func NewPoller(userID, authHeader, deviceID string, client Client, receiver V2DataReceiver, logger zerolog.Logger) *Poller {
+func NewPoller(userID, authHeader, deviceID string, client Client, receiver V2DataReceiver, txnCache *TransactionIDCache, logger zerolog.Logger) *Poller {
 	var wg sync.WaitGroup
 	wg.Add(1)
 	return &Poller{
@@ -234,6 +248,7 @@ func NewPoller(userID, authHeader, deviceID string, client Client, receiver V2Da
 		e2eeMu:              &sync.Mutex{},
 		deviceListChanges:   make(map[string]string),
 		wg:                  &wg,
+		txnCache:            txnCache,
 	}
 }
 
@@ -342,6 +357,17 @@ func (p *Poller) parseGlobalAccountData(res *SyncResponse) {
 	p.receiver.OnAccountData(p.userID, AccountDataGlobalRoom, res.AccountData.Events)
 }
 
+func (p *Poller) updateTxnIDCache(timeline []json.RawMessage) {
+	for _, e := range timeline {
+		txnID := gjson.GetBytes(e, "unsigned.transaction_id")
+		if !txnID.Exists() {
+			continue
+		}
+		eventID := gjson.GetBytes(e, "event_id").Str
+		p.txnCache.Store(p.userID, eventID, txnID.Str)
+	}
+}
+
 func (p *Poller) parseRoomsResponse(res *SyncResponse) {
 	stateCalls := 0
 	timelineCalls := 0
@@ -363,6 +389,7 @@ func (p *Poller) parseRoomsResponse(res *SyncResponse) {
 		}
 		if len(roomData.Timeline.Events) > 0 {
 			timelineCalls++
+			p.updateTxnIDCache(roomData.Timeline.Events)
 			p.receiver.Accumulate(roomID, roomData.Timeline.Events)
 		}
 		for _, ephEvent := range roomData.Ephemeral.Events {

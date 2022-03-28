@@ -12,6 +12,8 @@ import (
 	"github.com/rs/zerolog"
 )
 
+var txnIDCache = NewTransactionIDCache()
+
 // Check that a call to Poll starts polling and accumulating, and terminates on 401s.
 func TestPollerPollFromNothing(t *testing.T) {
 	nextSince := "next"
@@ -44,7 +46,7 @@ func TestPollerPollFromNothing(t *testing.T) {
 	})
 	var wg sync.WaitGroup
 	wg.Add(1)
-	poller := NewPoller("@alice:localhost", "Authorization: hello world", deviceID, client, accumulator, zerolog.New(os.Stderr))
+	poller := NewPoller("@alice:localhost", "Authorization: hello world", deviceID, client, accumulator, txnIDCache, zerolog.New(os.Stderr))
 	go func() {
 		defer wg.Done()
 		poller.Poll("")
@@ -127,7 +129,7 @@ func TestPollerPollFromExisting(t *testing.T) {
 	})
 	var wg sync.WaitGroup
 	wg.Add(1)
-	poller := NewPoller("@alice:localhost", "Authorization: hello world", deviceID, client, accumulator, zerolog.New(os.Stderr))
+	poller := NewPoller("@alice:localhost", "Authorization: hello world", deviceID, client, accumulator, txnIDCache, zerolog.New(os.Stderr))
 	go func() {
 		defer wg.Done()
 		poller.Poll(since)
@@ -203,7 +205,7 @@ func TestPollerBackoff(t *testing.T) {
 	}
 	var wg sync.WaitGroup
 	wg.Add(1)
-	poller := NewPoller("@alice:localhost", "Authorization: hello world", deviceID, client, accumulator, zerolog.New(os.Stderr))
+	poller := NewPoller("@alice:localhost", "Authorization: hello world", deviceID, client, accumulator, txnIDCache, zerolog.New(os.Stderr))
 	go func() {
 		defer wg.Done()
 		poller.Poll("some_since_value")

@@ -6,7 +6,9 @@ import (
 
 	"github.com/matrix-org/sync-v3/internal"
 	"github.com/matrix-org/sync-v3/state"
+	"github.com/matrix-org/sync-v3/sync2"
 	"github.com/tidwall/gjson"
+	"github.com/tidwall/sjson"
 )
 
 type UserRoomData struct {
@@ -38,9 +40,10 @@ type UserCache struct {
 	id                   int
 	store                *state.Storage
 	globalCache          *GlobalCache
+	txnIDs               sync2.TransactionIDFetcher
 }
 
-func NewUserCache(userID string, globalCache *GlobalCache, store *state.Storage) *UserCache {
+func NewUserCache(userID string, globalCache *GlobalCache, store *state.Storage, txnIDs sync2.TransactionIDFetcher) *UserCache {
 	uc := &UserCache{
 		UserID:       userID,
 		roomToDataMu: &sync.RWMutex{},
@@ -49,6 +52,7 @@ func NewUserCache(userID string, globalCache *GlobalCache, store *state.Storage)
 		listenersMu:  &sync.Mutex{},
 		store:        store,
 		globalCache:  globalCache,
+		txnIDs:       txnIDs,
 	}
 	return uc
 }
@@ -179,6 +183,27 @@ func (c *UserCache) newRoomUpdate(roomID string) RoomUpdate {
 		globalRoomData: r,
 		userRoomData:   &u,
 	}
+}
+
+// AnnotateWithTransactionIDs should be called just prior to returning events to the client. This
+// will modify the events to insert the correct transaction IDs if needed. This is required because
+// events are globally scoped, so if Alice sends a message, Bob might receive it first on his v2 loop
+// which would cause the transaction ID to be missing from the event. Instead, we always look for txn
+// IDs in the v2 poller, and then set them appropriately at request time.
+func (c *UserCache) AnnotateWithTransactionIDs(events []json.RawMessage) []json.RawMessage {
+	for i := range events {
+		eventID := gjson.GetBytes(events[i], "event_id")
+		txnID := c.txnIDs.TransactionIDForEvent(c.UserID, eventID.Str)
+		if txnID != "" {
+			newJSON, err := sjson.SetBytes(events[i], "unsigned.transaction_id", txnID)
+			if err != nil {
+				logger.Err(err).Str("user", c.UserID).Msg("AnnotateWithTransactionIDs: sjson failed")
+			} else {
+				events[i] = newJSON
+			}
+		}
+	}
+	return events
 }
 
 // =================================================

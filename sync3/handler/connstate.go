@@ -314,9 +314,9 @@ func (s *ConnState) getDeltaRoomData(roomID string, event json.RawMessage) *sync
 		HighlightCount:    int64(userRoomData.HighlightCount),
 	}
 	if event != nil {
-		room.Timeline = []json.RawMessage{
+		room.Timeline = s.userCache.AnnotateWithTransactionIDs([]json.RawMessage{
 			event,
-		}
+		})
 	}
 	return room
 }
@@ -342,7 +342,7 @@ func (s *ConnState) getInitialRoomData(listIndex int, timelineLimit int, roomIDs
 			Name:              internal.CalculateRoomName(metadata, 5), // TODO: customisable?
 			NotificationCount: int64(userRoomData.NotificationCount),
 			HighlightCount:    int64(userRoomData.HighlightCount),
-			Timeline:          userRoomData.Timeline,
+			Timeline:          s.userCache.AnnotateWithTransactionIDs(userRoomData.Timeline),
 			RequiredState:     s.globalCache.LoadRoomState(roomID, s.loadPosition, s.muxedReq.GetRequiredState(listIndex, roomID)),
 			Initial:           true,
 		}
