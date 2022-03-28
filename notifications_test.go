@@ -83,7 +83,7 @@ func TestNotificationsOnTop(t *testing.T) {
 	))
 
 	// send a bing message into the bing room, make sure it comes through and is on top
-	bingEvent := testutils.NewEvent(t, "m.room.message", bob, map[string]interface{}{"body": "BING!"}, latestTimestamp.Add(1*time.Minute))
+	bingEvent := testutils.NewEvent(t, "m.room.message", bob, map[string]interface{}{"body": "BING!"}, testutils.WithTimestamp(latestTimestamp.Add(1*time.Minute)))
 	v2.queueResponse(alice, sync2.SyncResponse{
 		Rooms: sync2.SyncRoomsResponse{
 			Join: map[string]sync2.SyncV2JoinResponse{
@@ -108,7 +108,7 @@ func TestNotificationsOnTop(t *testing.T) {
 	))
 
 	// send a message into the nobing room, it's position must not change due to our sort order
-	noBingEvent := testutils.NewEvent(t, "m.room.message", bob, map[string]interface{}{"body": "no bing"}, latestTimestamp.Add(2*time.Minute))
+	noBingEvent := testutils.NewEvent(t, "m.room.message", bob, map[string]interface{}{"body": "no bing"}, testutils.WithTimestamp(latestTimestamp.Add(2*time.Minute)))
 	v2.queueResponse(alice, sync2.SyncResponse{
 		Rooms: sync2.SyncRoomsResponse{
 			Join: map[string]sync2.SyncV2JoinResponse{

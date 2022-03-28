@@ -9,6 +9,7 @@ import (
 	"github.com/matrix-org/sync-v3/sync2"
 	"github.com/matrix-org/sync-v3/sync3"
 	"github.com/matrix-org/sync-v3/testutils"
+	"github.com/tidwall/sjson"
 )
 
 // Inject 20 rooms with A,B,C as the most recent events. Then do a v3 request [0,3] with a timeline limit of 3
@@ -34,9 +35,9 @@ func TestTimelines(t *testing.T) {
 			name:   roomName,
 			events: append(createRoomState(t, alice, ts), []json.RawMessage{
 				testutils.NewStateEvent(t, "m.room.name", "", alice, map[string]interface{}{"name": roomName}, testutils.WithTimestamp(ts.Add(3*time.Second))),
-				testutils.NewEvent(t, "m.room.message", alice, map[string]interface{}{"body": "A"}, ts.Add(4*time.Second)),
-				testutils.NewEvent(t, "m.room.message", alice, map[string]interface{}{"body": "B"}, ts.Add(5*time.Second)),
-				testutils.NewEvent(t, "m.room.message", alice, map[string]interface{}{"body": "C"}, ts.Add(6*time.Second)),
+				testutils.NewEvent(t, "m.room.message", alice, map[string]interface{}{"body": "A"}, testutils.WithTimestamp(ts.Add(4*time.Second))),
+				testutils.NewEvent(t, "m.room.message", alice, map[string]interface{}{"body": "B"}, testutils.WithTimestamp(ts.Add(5*time.Second))),
+				testutils.NewEvent(t, "m.room.message", alice, map[string]interface{}{"body": "C"}, testutils.WithTimestamp(ts.Add(6*time.Second))),
 			}...),
 		}
 	}
@@ -66,13 +67,13 @@ func TestTimelines(t *testing.T) {
 		{
 			roomID: allRooms[0].roomID,
 			events: []json.RawMessage{
-				testutils.NewEvent(t, "m.room.message", alice, map[string]interface{}{"body": "ping"}, latestTimestamp.Add(1*time.Minute)),
+				testutils.NewEvent(t, "m.room.message", alice, map[string]interface{}{"body": "ping"}, testutils.WithTimestamp(latestTimestamp.Add(1*time.Minute))),
 			},
 		},
 		{
 			roomID: allRooms[1].roomID,
 			events: []json.RawMessage{
-				testutils.NewEvent(t, "m.room.message", alice, map[string]interface{}{"body": "ping2"}, latestTimestamp.Add(2*time.Minute)),
+				testutils.NewEvent(t, "m.room.message", alice, map[string]interface{}{"body": "ping2"}, testutils.WithTimestamp(latestTimestamp.Add(2*time.Minute))),
 			},
 		},
 	}
@@ -113,9 +114,9 @@ func TestTimelinesLiveStream(t *testing.T) {
 			name:   roomName,
 			events: append(createRoomState(t, alice, ts), []json.RawMessage{
 				testutils.NewStateEvent(t, "m.room.name", "", alice, map[string]interface{}{"name": roomName}, testutils.WithTimestamp(ts.Add(3*time.Second))),
-				testutils.NewEvent(t, "m.room.message", alice, map[string]interface{}{"body": "A"}, ts.Add(4*time.Second)),
-				testutils.NewEvent(t, "m.room.message", alice, map[string]interface{}{"body": "B"}, ts.Add(5*time.Second)),
-				testutils.NewEvent(t, "m.room.message", alice, map[string]interface{}{"body": "C"}, ts.Add(6*time.Second)),
+				testutils.NewEvent(t, "m.room.message", alice, map[string]interface{}{"body": "A"}, testutils.WithTimestamp(ts.Add(4*time.Second))),
+				testutils.NewEvent(t, "m.room.message", alice, map[string]interface{}{"body": "B"}, testutils.WithTimestamp(ts.Add(5*time.Second))),
+				testutils.NewEvent(t, "m.room.message", alice, map[string]interface{}{"body": "C"}, testutils.WithTimestamp(ts.Add(6*time.Second))),
 			}...),
 		}
 		if ts.After(latestTimestamp) {
@@ -133,7 +134,7 @@ func TestTimelinesLiveStream(t *testing.T) {
 	// send a live event in allRooms[i] (always 1s newer)
 	bumpRoom := func(i int) {
 		latestTimestamp = latestTimestamp.Add(1 * time.Second)
-		ev := testutils.NewEvent(t, "m.room.message", alice, map[string]interface{}{"body": fmt.Sprintf("bump %d", i)}, latestTimestamp)
+		ev := testutils.NewEvent(t, "m.room.message", alice, map[string]interface{}{"body": fmt.Sprintf("bump %d", i)}, testutils.WithTimestamp(latestTimestamp))
 		allRooms[i].events = append(allRooms[i].events, ev)
 		v2.queueResponse(alice, sync2.SyncResponse{
 			Rooms: sync2.SyncRoomsResponse{
@@ -278,7 +279,7 @@ func TestInitialFlag(t *testing.T) {
 				roomEvents{
 					roomID: roomID,
 					events: []json.RawMessage{
-						testutils.NewEvent(t, "m.room.message", alice, map[string]interface{}{}, time.Now()),
+						testutils.NewEvent(t, "m.room.message", alice, map[string]interface{}{}),
 					},
 				},
 			),
@@ -368,9 +369,9 @@ func TestTimelineMiddleWindowZeroTimelineLimit(t *testing.T) {
 			name:   roomName,
 			events: append(createRoomState(t, alice, ts), []json.RawMessage{
 				testutils.NewStateEvent(t, "m.room.name", "", alice, map[string]interface{}{"name": roomName}, testutils.WithTimestamp(ts.Add(3*time.Second))),
-				testutils.NewEvent(t, "m.room.message", alice, map[string]interface{}{"body": "A"}, ts.Add(4*time.Second)),
-				testutils.NewEvent(t, "m.room.message", alice, map[string]interface{}{"body": "B"}, ts.Add(5*time.Second)),
-				testutils.NewEvent(t, "m.room.message", alice, map[string]interface{}{"body": "C"}, ts.Add(6*time.Second)),
+				testutils.NewEvent(t, "m.room.message", alice, map[string]interface{}{"body": "A"}, testutils.WithTimestamp(ts.Add(4*time.Second))),
+				testutils.NewEvent(t, "m.room.message", alice, map[string]interface{}{"body": "B"}, testutils.WithTimestamp(ts.Add(5*time.Second))),
+				testutils.NewEvent(t, "m.room.message", alice, map[string]interface{}{"body": "C"}, testutils.WithTimestamp(ts.Add(6*time.Second))),
 			}...),
 		}
 	}
@@ -418,7 +419,7 @@ func TestTimelineMiddleWindowZeroTimelineLimit(t *testing.T) {
 			Join: v2JoinTimeline(roomEvents{
 				roomID: allRooms[15].roomID,
 				events: []json.RawMessage{
-					testutils.NewEvent(t, "m.room.message", alice, map[string]interface{}{"body": "bump"}, time.Now()),
+					testutils.NewEvent(t, "m.room.message", alice, map[string]interface{}{"body": "bump"}),
 				},
 			}),
 		},
@@ -437,6 +438,124 @@ func TestTimelineMiddleWindowZeroTimelineLimit(t *testing.T) {
 		MatchV3DeleteOp(0, 10),
 		MatchV3InsertOp(0, 5, allRooms[4].roomID),
 	))
+}
+
+// Test that transaction IDs come down the user's stream correctly in the case where 2 clients are
+// in the same room.
+func TestTimelineTxnID(t *testing.T) {
+	pqString := testutils.PrepareDBConnectionString()
+	// setup code
+	v2 := runTestV2Server(t)
+	v3 := runTestServer(t, v2, pqString)
+	defer v2.close()
+	defer v3.close()
+	roomID := "!a:localhost"
+	latestTimestamp := time.Now()
+	// Alice and Bob are in the same room
+	room := roomEvents{
+		roomID: roomID,
+		events: append(
+			createRoomState(t, alice, latestTimestamp),
+			testutils.NewStateEvent(t, "m.room.member", bob, bob, map[string]interface{}{"membership": "join"}),
+		),
+	}
+	v2.addAccount(alice, aliceToken)
+	v2.addAccount(bob, bobToken)
+	v2.queueResponse(alice, sync2.SyncResponse{
+		Rooms: sync2.SyncRoomsResponse{
+			Join: v2JoinTimeline(room),
+		},
+	})
+	v2.queueResponse(bob, sync2.SyncResponse{
+		Rooms: sync2.SyncRoomsResponse{
+			Join: v2JoinTimeline(room),
+		},
+	})
+
+	aliceRes := v3.mustDoV3Request(t, aliceToken, sync3.Request{
+		Lists: []sync3.RequestList{
+			{
+				Ranges: sync3.SliceRanges{
+					[2]int64{0, 10},
+				},
+				RoomSubscription: sync3.RoomSubscription{
+					TimelineLimit: 2,
+				},
+			},
+		},
+	})
+	bobRes := v3.mustDoV3Request(t, bobToken, sync3.Request{
+		Lists: []sync3.RequestList{
+			{
+				Ranges: sync3.SliceRanges{
+					[2]int64{0, 10},
+				},
+				RoomSubscription: sync3.RoomSubscription{
+					TimelineLimit: 2,
+				},
+			},
+		},
+	})
+
+	// Alice has sent a message but it arrives down Bob's poller first, so it has no txn_id
+	txnID := "m1234567890"
+	newEvent := testutils.NewEvent(t, "m.room.message", alice, map[string]interface{}{"body": "hi"}, testutils.WithUnsigned(map[string]interface{}{
+		"transaction_id": txnID,
+	}))
+	newEventNoUnsigned, err := sjson.DeleteBytes(newEvent, "unsigned")
+	if err != nil {
+		t.Fatalf("failed to delete bytes: %s", err)
+	}
+	v2.queueResponse(bob, sync2.SyncResponse{
+		Rooms: sync2.SyncRoomsResponse{
+			Join: v2JoinTimeline(roomEvents{
+				roomID: roomID,
+				events: []json.RawMessage{newEventNoUnsigned},
+			}),
+		},
+	})
+	v2.waitUntilEmpty(t, bob)
+
+	// now it arrives down Alice's poller, but the event has already been persisted at this point!
+	// We need a txn ID cache to remember it.
+	v2.queueResponse(alice, sync2.SyncResponse{
+		Rooms: sync2.SyncRoomsResponse{
+			Join: v2JoinTimeline(roomEvents{
+				roomID: roomID,
+				events: []json.RawMessage{newEvent},
+			}),
+		},
+	})
+	v2.waitUntilEmpty(t, alice)
+
+	// now Alice syncs, she should see the event with the txn ID
+	aliceRes = v3.mustDoV3RequestWithPos(t, aliceToken, aliceRes.Pos, sync3.Request{
+		Lists: []sync3.RequestList{
+			{
+				Ranges: sync3.SliceRanges{
+					[2]int64{0, 10},
+				},
+			},
+		},
+	})
+	MatchResponse(t, aliceRes, MatchV3Counts([]int{1}), MatchV3Ops(
+		MatchV3UpdateOp(0, 0, roomID, MatchRoomID(roomID), MatchRoomTimelineMostRecent(1, []json.RawMessage{newEvent})),
+	))
+
+	// now Bob syncs, he should see the event without the txn ID
+	bobRes = v3.mustDoV3RequestWithPos(t, bobToken, bobRes.Pos, sync3.Request{
+		Lists: []sync3.RequestList{
+			{
+				Ranges: sync3.SliceRanges{
+					[2]int64{0, 10},
+				},
+			},
+		},
+	})
+	MatchResponse(t, bobRes, MatchV3Counts([]int{1}), MatchV3Ops(
+		MatchV3UpdateOp(0, 0, roomID, MatchRoomID(roomID), MatchRoomTimelineMostRecent(1, []json.RawMessage{newEventNoUnsigned})),
+	))
+
 }
 
 // Executes a sync v3 request without a ?pos and asserts that the count, rooms and timeline events match the inputs given.

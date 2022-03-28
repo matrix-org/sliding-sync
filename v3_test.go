@@ -30,6 +30,8 @@ import (
 const (
 	alice      = "@alice:localhost"
 	aliceToken = "ALICE_BEARER_TOKEN"
+	bob        = "@bob:localhost"
+	bobToken   = "BOB_BEARER_TOKEN"
 )
 
 type testV2Server struct {

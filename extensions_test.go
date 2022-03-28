@@ -452,7 +452,10 @@ func TestExtensionAccountData(t *testing.T) {
 			Join: v2JoinTimeline(roomEvents{
 				roomID: roomC,
 				events: []json.RawMessage{
-					testutils.NewEvent(t, "m.poke", alice, map[string]interface{}{}, time.Now().Add(time.Millisecond)),
+					testutils.NewEvent(
+						t, "m.poke", alice, map[string]interface{}{},
+						testutils.WithTimestamp(time.Now().Add(time.Millisecond)),
+					),
 				},
 			}),
 		},

@@ -72,9 +72,9 @@ func TestConnStateInitial(t *testing.T) {
 	roomB := newRoomMetadata("!b:localhost", gomatrixserverlib.AsTimestamp(timestampNow))
 	roomC := newRoomMetadata("!c:localhost", gomatrixserverlib.AsTimestamp(timestampNow.Add(-4*time.Second)))
 	timeline := map[string]json.RawMessage{
-		roomA.RoomID: testutils.NewEvent(t, "m.room.message", userID, map[string]interface{}{"body": "a"}, time.Now()),
-		roomB.RoomID: testutils.NewEvent(t, "m.room.message", userID, map[string]interface{}{"body": "b"}, time.Now()),
-		roomC.RoomID: testutils.NewEvent(t, "m.room.message", userID, map[string]interface{}{"body": "c"}, time.Now()),
+		roomA.RoomID: testutils.NewEvent(t, "m.room.message", userID, map[string]interface{}{"body": "a"}),
+		roomB.RoomID: testutils.NewEvent(t, "m.room.message", userID, map[string]interface{}{"body": "b"}),
+		roomC.RoomID: testutils.NewEvent(t, "m.room.message", userID, map[string]interface{}{"body": "c"}),
 	}
 	globalCache := caches.NewGlobalCache(nil)
 	globalCache.Startup(map[string]internal.RoomMetadata{
@@ -151,7 +151,7 @@ func TestConnStateInitial(t *testing.T) {
 	})
 
 	// bump A to the top
-	newEvent := testutils.NewEvent(t, "unimportant", "me", struct{}{}, gomatrixserverlib.AsTimestamp(timestampNow.Add(1*time.Second)).Time())
+	newEvent := testutils.NewEvent(t, "unimportant", "me", struct{}{}, testutils.WithTimestamp(timestampNow.Add(1*time.Second)))
 	dispatcher.OnNewEvents(roomA.RoomID, []json.RawMessage{
 		newEvent,
 	}, 1)
@@ -186,7 +186,7 @@ func TestConnStateInitial(t *testing.T) {
 	})
 
 	// another message should just update
-	newEvent = testutils.NewEvent(t, "unimportant", "me", struct{}{}, gomatrixserverlib.AsTimestamp(timestampNow.Add(2*time.Second)).Time())
+	newEvent = testutils.NewEvent(t, "unimportant", "me", struct{}{}, testutils.WithTimestamp(timestampNow.Add(2*time.Second)))
 	dispatcher.OnNewEvents(roomA.RoomID, []json.RawMessage{
 		newEvent,
 	}, 1)
@@ -327,7 +327,7 @@ func TestConnStateMultipleRanges(t *testing.T) {
 	// `    `  `    `
 	// 8,0,1,2,3,4,5,6,7,9
 	//
-	newEvent := testutils.NewEvent(t, "unimportant", "me", struct{}{}, timestampNow.Time().Add(2*time.Second))
+	newEvent := testutils.NewEvent(t, "unimportant", "me", struct{}{}, testutils.WithTimestamp(timestampNow.Time().Add(2*time.Second)))
 	dispatcher.OnNewEvents(roomIDs[8], []json.RawMessage{
 		newEvent,
 	}, 1)
@@ -367,7 +367,7 @@ func TestConnStateMultipleRanges(t *testing.T) {
 	// `    `  `    `
 	// 8,0,1,9,2,3,4,5,6,7 room
 	middleTimestamp := int64((roomIDToRoom[roomIDs[1]].LastMessageTimestamp + roomIDToRoom[roomIDs[2]].LastMessageTimestamp) / 2)
-	newEvent = testutils.NewEvent(t, "unimportant", "me", struct{}{}, gomatrixserverlib.Timestamp(middleTimestamp).Time())
+	newEvent = testutils.NewEvent(t, "unimportant", "me", struct{}{}, testutils.WithTimestamp(gomatrixserverlib.Timestamp(middleTimestamp).Time()))
 	dispatcher.OnNewEvents(roomIDs[9], []json.RawMessage{
 		newEvent,
 	}, 1)
@@ -468,7 +468,7 @@ func TestBumpToOutsideRange(t *testing.T) {
 	})
 
 	// D gets bumped to C's position but it's still outside the range so nothing should happen
-	newEvent := testutils.NewEvent(t, "unimportant", "me", struct{}{}, gomatrixserverlib.Timestamp(roomC.LastMessageTimestamp+2).Time())
+	newEvent := testutils.NewEvent(t, "unimportant", "me", struct{}{}, testutils.WithTimestamp(gomatrixserverlib.Timestamp(roomC.LastMessageTimestamp+2).Time()))
 	dispatcher.OnNewEvents(roomD.RoomID, []json.RawMessage{
 		newEvent,
 	}, 1)
@@ -520,10 +520,10 @@ func TestConnStateRoomSubscriptions(t *testing.T) {
 		roomD.RoomID: {userID},
 	})
 	timeline := map[string]json.RawMessage{
-		roomA.RoomID: testutils.NewEvent(t, "m.room.message", userID, map[string]interface{}{"body": "a"}, time.Now()),
-		roomB.RoomID: testutils.NewEvent(t, "m.room.message", userID, map[string]interface{}{"body": "b"}, time.Now()),
-		roomC.RoomID: testutils.NewEvent(t, "m.room.message", userID, map[string]interface{}{"body": "c"}, time.Now()),
-		roomD.RoomID: testutils.NewEvent(t, "m.room.message", userID, map[string]interface{}{"body": "d"}, time.Now()),
+		roomA.RoomID: testutils.NewEvent(t, "m.room.message", userID, map[string]interface{}{"body": "a"}),
+		roomB.RoomID: testutils.NewEvent(t, "m.room.message", userID, map[string]interface{}{"body": "b"}),
+		roomC.RoomID: testutils.NewEvent(t, "m.room.message", userID, map[string]interface{}{"body": "c"}),
+		roomD.RoomID: testutils.NewEvent(t, "m.room.message", userID, map[string]interface{}{"body": "d"}),
 	}
 	globalCache.LoadJoinedRoomsOverride = func(userID string) (pos int64, joinedRooms []*internal.RoomMetadata, err error) {
 		return 1, []*internal.RoomMetadata{
@@ -600,7 +600,7 @@ func TestConnStateRoomSubscriptions(t *testing.T) {
 		},
 	})
 	// room D gets a new event
-	newEvent := testutils.NewEvent(t, "unimportant", "me", struct{}{}, gomatrixserverlib.Timestamp(timestampNow+2000).Time())
+	newEvent := testutils.NewEvent(t, "unimportant", "me", struct{}{}, testutils.WithTimestamp(gomatrixserverlib.Timestamp(timestampNow+2000).Time()))
 	dispatcher.OnNewEvents(roomD.RoomID, []json.RawMessage{
 		newEvent,
 	}, 1)

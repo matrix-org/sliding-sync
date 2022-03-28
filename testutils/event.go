@@ -17,7 +17,7 @@ var (
 
 type eventMock struct {
 	Type           string      `json:"type"`
-	StateKey       string      `json:"state_key"`
+	StateKey       *string     `json:"state_key,omitempty"`
 	Sender         string      `json:"sender"`
 	Content        interface{} `json:"content"`
 	EventID        string      `json:"event_id"`
@@ -52,7 +52,7 @@ func NewStateEvent(t *testing.T, evType, stateKey, sender string, content interf
 	t.Helper()
 	e := &eventMock{
 		Type:           evType,
-		StateKey:       stateKey,
+		StateKey:       &stateKey,
 		Sender:         sender,
 		Content:        content,
 		EventID:        generateEventID(t),
@@ -68,20 +68,17 @@ func NewStateEvent(t *testing.T, evType, stateKey, sender string, content interf
 	return j
 }
 
-func NewEvent(t *testing.T, evType, sender string, content interface{}, originServerTs time.Time) json.RawMessage {
+func NewEvent(t *testing.T, evType, sender string, content interface{}, modifiers ...eventMockModifier) json.RawMessage {
 	t.Helper()
-	e := struct {
-		Type    string      `json:"type"`
-		Sender  string      `json:"sender"`
-		Content interface{} `json:"content"`
-		EventID string      `json:"event_id"`
-		TS      int64       `json:"origin_server_ts"`
-	}{
-		Type:    evType,
-		Sender:  sender,
-		Content: content,
-		EventID: generateEventID(t),
-		TS:      int64(gomatrixserverlib.AsTimestamp(originServerTs)),
+	e := &eventMock{
+		Type:           evType,
+		Sender:         sender,
+		Content:        content,
+		EventID:        generateEventID(t),
+		OriginServerTS: int64(gomatrixserverlib.AsTimestamp(time.Now())),
+	}
+	for _, m := range modifiers {
+		m(e)
 	}
 	j, err := json.Marshal(&e)
 	if err != nil {

@@ -224,7 +224,7 @@ func TestMultipleListsDMUpdate(t *testing.T) {
 	v2.queueResponse(alice, sync2.SyncResponse{
 		AccountData: sync2.EventsResponse{
 			Events: []json.RawMessage{
-				testutils.NewEvent(t, "m.direct", alice, dmContent, time.Now()),
+				testutils.NewEvent(t, "m.direct", alice, dmContent),
 			},
 		},
 		Rooms: sync2.SyncRoomsResponse{
@@ -278,7 +278,7 @@ func TestMultipleListsDMUpdate(t *testing.T) {
 	))
 
 	// now bring the last DM room to the top with a notif
-	pingMessage := testutils.NewEvent(t, "m.room.message", alice, map[string]interface{}{"body": "ping"}, time.Now())
+	pingMessage := testutils.NewEvent(t, "m.room.message", alice, map[string]interface{}{"body": "ping"})
 	v2.queueResponse(alice, sync2.SyncResponse{
 		Rooms: sync2.SyncRoomsResponse{
 			Join: map[string]sync2.SyncV2JoinResponse{

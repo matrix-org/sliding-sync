@@ -272,30 +272,30 @@ func TestVisibleEventNIDsBetween(t *testing.T) {
 			RoomID: roomA,
 			Events: []json.RawMessage{
 				testutils.NewStateEvent(t, "m.room.member", alice, alice, map[string]interface{}{"membership": "join"}),
-				testutils.NewEvent(t, "m.room.message", bob, map[string]interface{}{}, baseTimestamp),
-				testutils.NewEvent(t, "m.room.message", bob, map[string]interface{}{}, baseTimestamp),
+				testutils.NewEvent(t, "m.room.message", bob, map[string]interface{}{}, testutils.WithTimestamp(baseTimestamp)),
+				testutils.NewEvent(t, "m.room.message", bob, map[string]interface{}{}, testutils.WithTimestamp(baseTimestamp)),
 			},
 		},
 		{
 			RoomID: roomB,
 			Events: []json.RawMessage{
-				testutils.NewEvent(t, "m.room.message", bob, map[string]interface{}{}, baseTimestamp),
+				testutils.NewEvent(t, "m.room.message", bob, map[string]interface{}{}, testutils.WithTimestamp(baseTimestamp)),
 				testutils.NewStateEvent(t, "m.room.member", alice, alice, map[string]interface{}{"membership": "join"}),
-				testutils.NewEvent(t, "m.room.message", bob, map[string]interface{}{}, baseTimestamp),
+				testutils.NewEvent(t, "m.room.message", bob, map[string]interface{}{}, testutils.WithTimestamp(baseTimestamp)),
 			},
 		},
 		{
 			RoomID: roomA,
 			Events: []json.RawMessage{
-				testutils.NewEvent(t, "m.room.message", bob, map[string]interface{}{}, baseTimestamp),
+				testutils.NewEvent(t, "m.room.message", bob, map[string]interface{}{}, testutils.WithTimestamp(baseTimestamp)),
 			},
 		},
 		{
 			RoomID: roomC,
 			Events: []json.RawMessage{
-				testutils.NewEvent(t, "m.room.message", bob, map[string]interface{}{}, baseTimestamp),
+				testutils.NewEvent(t, "m.room.message", bob, map[string]interface{}{}, testutils.WithTimestamp(baseTimestamp)),
 				testutils.NewStateEvent(t, "m.room.member", alice, alice, map[string]interface{}{"membership": "leave"}),
-				testutils.NewEvent(t, "m.room.message", bob, map[string]interface{}{}, baseTimestamp),
+				testutils.NewEvent(t, "m.room.message", bob, map[string]interface{}{}, testutils.WithTimestamp(baseTimestamp)),
 			},
 		},
 	}
@@ -371,30 +371,30 @@ func TestVisibleEventNIDsBetween(t *testing.T) {
 		{
 			RoomID: roomE,
 			Events: []json.RawMessage{
-				testutils.NewEvent(t, "m.room.message", bob, map[string]interface{}{}, baseTimestamp),
+				testutils.NewEvent(t, "m.room.message", bob, map[string]interface{}{}, testutils.WithTimestamp(baseTimestamp)),
 				testutils.NewStateEvent(t, "m.room.member", alice, bob, map[string]interface{}{"membership": "invite"}),
-				testutils.NewEvent(t, "m.room.message", bob, map[string]interface{}{}, baseTimestamp.Add(1*time.Second)),
+				testutils.NewEvent(t, "m.room.message", bob, map[string]interface{}{}, testutils.WithTimestamp(baseTimestamp.Add(1*time.Second))),
 			},
 		},
 		{
 			RoomID: roomD,
 			Events: []json.RawMessage{
-				testutils.NewEvent(t, "m.room.message", bob, map[string]interface{}{}, baseTimestamp),
+				testutils.NewEvent(t, "m.room.message", bob, map[string]interface{}{}, testutils.WithTimestamp(baseTimestamp)),
 				testutils.NewStateEvent(t, "m.room.member", alice, alice, map[string]interface{}{"membership": "leave"}),
-				testutils.NewEvent(t, "m.room.message", bob, map[string]interface{}{}, baseTimestamp),
+				testutils.NewEvent(t, "m.room.message", bob, map[string]interface{}{}, testutils.WithTimestamp(baseTimestamp)),
 				testutils.NewStateEvent(t, "m.room.member", alice, alice, map[string]interface{}{"membership": "join"}),
-				testutils.NewEvent(t, "m.room.message", bob, map[string]interface{}{}, baseTimestamp.Add(1*time.Second)),
+				testutils.NewEvent(t, "m.room.message", bob, map[string]interface{}{}, testutils.WithTimestamp(baseTimestamp.Add(1*time.Second))),
 				testutils.NewStateEvent(t, "m.room.member", alice, alice, map[string]interface{}{"membership": "leave"}),
-				testutils.NewEvent(t, "m.room.message", bob, map[string]interface{}{}, baseTimestamp.Add(1*time.Second)),
+				testutils.NewEvent(t, "m.room.message", bob, map[string]interface{}{}, testutils.WithTimestamp(baseTimestamp.Add(1*time.Second))),
 			},
 		},
 		{
 			RoomID: roomE,
 			Events: []json.RawMessage{
-				testutils.NewEvent(t, "m.room.message", bob, map[string]interface{}{}, baseTimestamp),
+				testutils.NewEvent(t, "m.room.message", bob, map[string]interface{}{}, testutils.WithTimestamp(baseTimestamp)),
 				testutils.NewStateEvent(t, "m.room.member", alice, alice, map[string]interface{}{"membership": "join"}),
-				testutils.NewEvent(t, "m.room.message", bob, map[string]interface{}{}, baseTimestamp),
-				testutils.NewEvent(t, "m.room.message", bob, map[string]interface{}{}, baseTimestamp),
+				testutils.NewEvent(t, "m.room.message", bob, map[string]interface{}{}, testutils.WithTimestamp(baseTimestamp)),
+				testutils.NewEvent(t, "m.room.message", bob, map[string]interface{}{}, testutils.WithTimestamp(baseTimestamp)),
 			},
 		},
 	}
