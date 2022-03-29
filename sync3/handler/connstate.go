@@ -342,10 +342,12 @@ func (s *ConnState) getInitialRoomData(listIndex int, timelineLimit int, roomIDs
 	for i, roomID := range roomIDs {
 		userRoomData := roomIDToUserRoomData[roomID]
 		metadata := roomMetadatas[roomID]
+		var inviteState []json.RawMessage
 		// handle invites specially as we do not want to leak additional data beyond the invite_state and if
 		// we happen to have this room in the global cache we will do.
 		if userRoomData.IsInvite {
 			metadata = userRoomData.Invite.RoomMetadata()
+			inviteState = userRoomData.Invite.InviteState
 		}
 		metadata.RemoveHero(s.userID)
 		// this room is a subscription and we want initial data for a list for the same room -> send a stub
@@ -356,13 +358,18 @@ func (s *ConnState) getInitialRoomData(listIndex int, timelineLimit int, roomIDs
 			}
 			continue
 		}
+		var requiredState []json.RawMessage
+		if !userRoomData.IsInvite {
+			requiredState = s.globalCache.LoadRoomState(roomID, s.loadPosition, s.muxedReq.GetRequiredState(listIndex, roomID))
+		}
 		rooms[i] = sync3.Room{
 			RoomID:            roomID,
 			Name:              internal.CalculateRoomName(metadata, 5), // TODO: customisable?
 			NotificationCount: int64(userRoomData.NotificationCount),
 			HighlightCount:    int64(userRoomData.HighlightCount),
 			Timeline:          s.userCache.AnnotateWithTransactionIDs(userRoomData.Timeline),
-			RequiredState:     s.globalCache.LoadRoomState(roomID, s.loadPosition, s.muxedReq.GetRequiredState(listIndex, roomID)),
+			RequiredState:     requiredState,
+			InviteState:       inviteState,
 			Initial:           true,
 		}
 	}
@@ -380,65 +387,6 @@ func (s *ConnState) Alive() bool {
 
 func (s *ConnState) UserID() string {
 	return s.userID
-}
-
-// Move a room from an absolute index position to another absolute position.
-// 1,2,3,4,5
-// 3 bumps to top -> 3,1,2,4,5 -> DELETE index=2, INSERT val=3 index=0
-// 7 bumps to top -> 7,1,2,3,4 -> DELETE index=4, INSERT val=7 index=0
-func (s *ConnState) moveRoom(
-	reqList *sync3.RequestList, listIndex int, roomID string, event json.RawMessage, fromIndex, toIndex int,
-	ranges sync3.SliceRanges, onlySendRoomID bool,
-) []sync3.ResponseOp {
-	if fromIndex == toIndex {
-		// issue an UPDATE, nice and easy because we don't need to move entries in the list
-		room := &sync3.Room{
-			RoomID: roomID,
-		}
-		if !onlySendRoomID {
-			room = s.getDeltaRoomData(roomID, event)
-		}
-		return []sync3.ResponseOp{
-			&sync3.ResponseOpSingle{
-				List:      listIndex,
-				Operation: sync3.OpUpdate,
-				Index:     &fromIndex,
-				Room:      room,
-			},
-		}
-	}
-	// work out which value to DELETE. This varies depending on where the room was and how much of the
-	// list we are tracking. E.g moving to index=0 with ranges [0,99][100,199] and an update in
-	// pos 150 -> DELETE 150, but if we weren't tracking [100,199] then we would DELETE 99. If we were
-	// tracking [0,99][200,299] then it's still DELETE 99 as the 200-299 range isn't touched.
-	deleteIndex := fromIndex
-	if !ranges.Inside(int64(fromIndex)) {
-		// we are not tracking this room, so no point issuing a DELETE for it. Instead, clamp the index
-		// to the highest end-range marker < index
-		deleteIndex = int(ranges.LowerClamp(int64(fromIndex)))
-	}
-	room := &sync3.Room{
-		RoomID: roomID,
-	}
-	if !onlySendRoomID {
-		rooms := s.getInitialRoomData(listIndex, int(reqList.TimelineLimit), roomID)
-		room = &rooms[0]
-	}
-
-	return []sync3.ResponseOp{
-		&sync3.ResponseOpSingle{
-			List:      listIndex,
-			Operation: sync3.OpDelete,
-			Index:     &deleteIndex,
-		},
-		&sync3.ResponseOpSingle{
-			List:      listIndex,
-			Operation: sync3.OpInsert,
-			Index:     &toIndex,
-			Room:      room,
-		},
-	}
-
 }
 
 func (s *ConnState) OnUpdate(up caches.Update) {

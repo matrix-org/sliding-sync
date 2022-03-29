@@ -156,7 +156,7 @@ func (s *connStateLive) processUnreadCountUpdate(up *caches.UnreadCountUpdate) (
 		if !ok {
 			return
 		}
-		roomSubs, ops := s.resort(index, &s.muxedReq.Lists[index], list, up.RoomID(), fromIndex, nil)
+		roomSubs, ops := s.resort(index, &s.muxedReq.Lists[index], list, up.RoomID(), fromIndex, nil, false)
 		rooms = append(rooms, roomSubs...)
 		responseOperations = append(responseOperations, ops...)
 	})
@@ -174,6 +174,7 @@ func (s *connStateLive) processIncomingEvent(update *caches.RoomEventUpdate) ([]
 
 	s.lists.ForEach(func(index int, list *sync3.FilteredSortableRooms) {
 		fromIndex, ok := list.IndexOf(update.RoomID())
+		newlyAdded := false
 		if !ok {
 			// the user may have just joined the room hence not have an entry in this list yet.
 			fromIndex = int(list.Len())
@@ -190,8 +191,10 @@ func (s *connStateLive) processIncomingEvent(update *caches.RoomEventUpdate) ([]
 				// we didn't add this room to the list so we don't need to resort
 				return
 			}
+			logger.Info().Str("room", update.RoomID()).Msg("room added")
+			newlyAdded = true
 		}
-		roomSubs, ops := s.resort(index, &s.muxedReq.Lists[index], list, update.RoomID(), fromIndex, update.EventData.Event)
+		roomSubs, ops := s.resort(index, &s.muxedReq.Lists[index], list, update.RoomID(), fromIndex, update.EventData.Event, newlyAdded)
 		rooms = append(rooms, roomSubs...)
 		responseOperations = append(responseOperations, ops...)
 	})
@@ -201,7 +204,7 @@ func (s *connStateLive) processIncomingEvent(update *caches.RoomEventUpdate) ([]
 // Resort should be called after a specific room has been modified in `sortedJoinedRooms`.
 func (s *connStateLive) resort(
 	listIndex int, reqList *sync3.RequestList, roomList *sync3.FilteredSortableRooms, roomID string,
-	fromIndex int, newEvent json.RawMessage,
+	fromIndex int, newEvent json.RawMessage, newlyAdded bool,
 ) ([]sync3.Room, []sync3.ResponseOp) {
 	if reqList.Sort == nil {
 		reqList.Sort = []string{sync3.SortByRecency}
@@ -269,5 +272,68 @@ func (s *connStateLive) resort(
 		}
 	}
 
-	return subs, s.moveRoom(reqList, listIndex, roomID, newEvent, fromIndex, toIndex, reqList.Ranges, isSubscribedToRoom)
+	return subs, s.moveRoom(reqList, listIndex, roomID, newEvent, fromIndex, toIndex, reqList.Ranges, isSubscribedToRoom, newlyAdded)
+}
+
+// Move a room from an absolute index position to another absolute position.
+// 1,2,3,4,5
+// 3 bumps to top -> 3,1,2,4,5 -> DELETE index=2, INSERT val=3 index=0
+// 7 bumps to top -> 7,1,2,3,4 -> DELETE index=4, INSERT val=7 index=0
+func (s *connStateLive) moveRoom(
+	reqList *sync3.RequestList, listIndex int, roomID string, event json.RawMessage, fromIndex, toIndex int,
+	ranges sync3.SliceRanges, onlySendRoomID, newlyAdded bool,
+) []sync3.ResponseOp {
+	if fromIndex == toIndex {
+		// issue an UPDATE, nice and easy because we don't need to move entries in the list
+		room := &sync3.Room{
+			RoomID: roomID,
+		}
+		op := sync3.OpUpdate
+		if newlyAdded {
+			rooms := s.getInitialRoomData(listIndex, int(reqList.TimelineLimit), roomID)
+			room = &rooms[0]
+			op = sync3.OpInsert
+		} else if !onlySendRoomID {
+			room = s.getDeltaRoomData(roomID, event)
+		}
+		return []sync3.ResponseOp{
+			&sync3.ResponseOpSingle{
+				List:      listIndex,
+				Operation: op,
+				Index:     &fromIndex,
+				Room:      room,
+			},
+		}
+	}
+	// work out which value to DELETE. This varies depending on where the room was and how much of the
+	// list we are tracking. E.g moving to index=0 with ranges [0,99][100,199] and an update in
+	// pos 150 -> DELETE 150, but if we weren't tracking [100,199] then we would DELETE 99. If we were
+	// tracking [0,99][200,299] then it's still DELETE 99 as the 200-299 range isn't touched.
+	deleteIndex := fromIndex
+	if !ranges.Inside(int64(fromIndex)) {
+		// we are not tracking this room, so no point issuing a DELETE for it. Instead, clamp the index
+		// to the highest end-range marker < index
+		deleteIndex = int(ranges.LowerClamp(int64(fromIndex)))
+	}
+	room := &sync3.Room{
+		RoomID: roomID,
+	}
+	if !onlySendRoomID {
+		rooms := s.getInitialRoomData(listIndex, int(reqList.TimelineLimit), roomID)
+		room = &rooms[0]
+	}
+
+	return []sync3.ResponseOp{
+		&sync3.ResponseOpSingle{
+			List:      listIndex,
+			Operation: sync3.OpDelete,
+			Index:     &deleteIndex,
+		},
+		&sync3.ResponseOpSingle{
+			List:      listIndex,
+			Operation: sync3.OpInsert,
+			Index:     &toIndex,
+			Room:      room,
+		},
+	}
 }
