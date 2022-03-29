@@ -22,9 +22,8 @@ type RoomEventUpdate struct {
 
 type InviteUpdate struct {
 	RoomUpdate
-	InviteData  InviteData
-	InviteEvent *EventData
-	Retired     bool
+	InviteData InviteData
+	Retired    bool
 }
 
 type UnreadCountUpdate struct {

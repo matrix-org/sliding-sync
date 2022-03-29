@@ -110,14 +110,32 @@ func (s *connStateLive) processLiveUpdate(up caches.Update, responseOperations [
 			response.RoomSubscriptions[sub.RoomID] = sub
 		}
 	case *caches.InviteUpdate:
-		roomUpdate := &caches.RoomEventUpdate{
-			RoomUpdate: update.RoomUpdate,
-			EventData:  update.InviteEvent,
-		}
-		subs, ops := s.processIncomingEvent(roomUpdate)
-		responseOperations = append(responseOperations, ops...)
-		for _, sub := range subs {
-			response.RoomSubscriptions[sub.RoomID] = sub
+		if update.Retired {
+			// remove the room from all rooms
+			for i, r := range s.allRooms {
+				if r.RoomID == update.RoomID() {
+					// delete the room
+					s.allRooms[i] = s.allRooms[len(s.allRooms)-1]
+					s.allRooms = s.allRooms[:len(s.allRooms)-1]
+				}
+			}
+			// remove the room from any lists
+			s.lists.ForEach(func(index int, list *sync3.FilteredSortableRooms) {
+				deletedIndex := list.Remove(update.RoomID())
+				if op := s.writeDeleteOp(index, deletedIndex); op != nil {
+					responseOperations = append(responseOperations, op)
+				}
+			})
+		} else {
+			roomUpdate := &caches.RoomEventUpdate{
+				RoomUpdate: update.RoomUpdate,
+				EventData:  update.InviteData.InviteEvent,
+			}
+			subs, ops := s.processIncomingEvent(roomUpdate)
+			responseOperations = append(responseOperations, ops...)
+			for _, sub := range subs {
+				response.RoomSubscriptions[sub.RoomID] = sub
+			}
 		}
 	}
 

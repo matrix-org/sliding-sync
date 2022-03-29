@@ -11,6 +11,10 @@ import (
 	"github.com/tidwall/sjson"
 )
 
+const (
+	InvitesAreHighlightsValue = 1 // invite -> highlight count = 1
+)
+
 type UserRoomData struct {
 	IsDM              bool
 	IsInvite          bool
@@ -31,6 +35,7 @@ type InviteData struct {
 	CanonicalAlias       string
 	LastMessageTimestamp uint64
 	Encrypted            bool
+	IsDM                 bool
 }
 
 func NewInviteData(userID, roomID string, inviteState []json.RawMessage) *InviteData {
@@ -58,6 +63,7 @@ func NewInviteData(userID, roomID string, inviteState []json.RawMessage) *Invite
 					Timestamp: uint64(ts),
 					LatestPos: PosAlwaysProcess,
 				}
+				id.IsDM = j.Get("is_direct").Bool()
 			} else if target == j.Get("sender").Str {
 				id.Heroes = append(id.Heroes, internal.Hero{
 					ID:   target,
@@ -71,6 +77,12 @@ func NewInviteData(userID, roomID string, inviteState []json.RawMessage) *Invite
 		case "m.room.encryption":
 			id.Encrypted = true
 		}
+	}
+	if id.InviteEvent == nil {
+		logger.Error().Str("invitee", userID).Str("room", roomID).Int("num_invite_state", len(inviteState)).Msg(
+			"cannot make invite, missing invite event for user",
+		)
+		return nil
 	}
 	return &id
 }
@@ -346,9 +358,14 @@ func (c *UserCache) OnNewEvent(eventData *EventData) {
 
 func (c *UserCache) OnInvite(roomID string, inviteStateEvents []json.RawMessage) {
 	inviteData := NewInviteData(c.UserID, roomID, inviteStateEvents)
+	if inviteData == nil {
+		return // malformed invite
+	}
 
 	urd := c.LoadRoomData(roomID)
 	urd.IsInvite = true
+	urd.HighlightCount = InvitesAreHighlightsValue
+	urd.IsDM = inviteData.IsDM
 	urd.Invite = inviteData
 	c.roomToDataMu.Lock()
 	c.roomToData[roomID] = urd
