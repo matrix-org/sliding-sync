@@ -66,10 +66,10 @@ func TestRoomStateTransitions(t *testing.T) {
 		allRoomsAlicePerspective[indexBobKicked],
 		allRoomsAlicePerspective[indexBobBanned],
 	}
-	// The stripped state does not include a timestamp so it will be treated as most recent hence the invite room must come last in allRoomsAlicePerspective
+
 	var inviteStrippedState sync2.SyncV2InviteResponse
 	inviteStrippedState.InviteState.Events = []json.RawMessage{
-		testutils.NewStateEvent(t, "m.room.member", bob, alice, map[string]interface{}{"membership": "invite"}),
+		testutils.NewStateEvent(t, "m.room.member", bob, alice, map[string]interface{}{"membership": "invite"}, testutils.WithTimestamp(latestTimestamp.Add(time.Second))),
 	}
 	v2.queueResponse(bob, sync2.SyncResponse{
 		Rooms: sync2.SyncRoomsResponse{

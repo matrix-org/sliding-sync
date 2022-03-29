@@ -195,11 +195,7 @@ func TestFiltersInvite(t *testing.T) {
 	v2.queueResponse(alice, sync2.SyncResponse{
 		Rooms: sync2.SyncRoomsResponse{
 			Invite: map[string]sync2.SyncV2InviteResponse{
-				roomID: {
-					InviteState: sync2.EventsResponse{
-						Events: nil,
-					},
-				},
+				roomID: {},
 			},
 		},
 	})

@@ -260,6 +260,8 @@ func (s *mockDataReceiver) AddToDeviceMessages(userID, deviceID string, msgs []j
 func (s *mockDataReceiver) UpdateUnreadCounts(roomID, userID string, highlightCount, notifCount *int) {
 }
 func (s *mockDataReceiver) OnAccountData(userID, roomID string, events []json.RawMessage) {}
+func (s *mockDataReceiver) OnInvite(userID, roomID string, inviteState []json.RawMessage) {}
+func (s *mockDataReceiver) OnRetireInvite(userID, roomID string)                          {}
 
 func newMocks(doSyncV2 func(authHeader, since string) (*SyncResponse, int, error)) (*mockDataReceiver, *mockClient) {
 	client := &mockClient{

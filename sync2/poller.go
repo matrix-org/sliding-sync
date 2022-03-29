@@ -5,10 +5,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/matrix-org/gomatrixserverlib"
 	"github.com/rs/zerolog"
 	"github.com/tidwall/gjson"
-	"github.com/tidwall/sjson"
 )
 
 // alias time.Sleep so tests can monkey patch it out
@@ -27,6 +25,8 @@ type V2DataReceiver interface {
 	UpdateUnreadCounts(roomID, userID string, highlightCount, notifCount *int)
 
 	OnAccountData(userID, roomID string, events []json.RawMessage)
+	OnInvite(userID, roomID string, inviteState []json.RawMessage)
+	OnRetireInvite(userID, roomID string)
 }
 
 // Fetcher which PollerMap satisfies used by the E2EE extension
@@ -181,6 +181,25 @@ func (h *PollerMap) SetTyping(roomID string, userIDs []string) {
 	wg.Add(1)
 	h.executor <- func() {
 		h.callbacks.SetTyping(roomID, userIDs)
+		wg.Done()
+	}
+	wg.Wait()
+}
+func (h *PollerMap) OnInvite(userID, roomID string, inviteState []json.RawMessage) {
+	var wg sync.WaitGroup
+	wg.Add(1)
+	h.executor <- func() {
+		h.callbacks.OnInvite(userID, roomID, inviteState)
+		wg.Done()
+	}
+	wg.Wait()
+}
+
+func (h *PollerMap) OnRetireInvite(userID, roomID string) {
+	var wg sync.WaitGroup
+	wg.Add(1)
+	h.executor <- func() {
+		h.callbacks.OnRetireInvite(userID, roomID)
 		wg.Done()
 	}
 	wg.Wait()
@@ -415,19 +434,10 @@ func (p *Poller) parseRoomsResponse(res *SyncResponse) {
 		if len(roomData.Timeline.Events) > 0 {
 			p.receiver.Accumulate(roomID, roomData.Timeline.Events)
 		}
+		p.receiver.OnRetireInvite(p.userID, roomID)
 	}
-	// we can only safely take the m.room.member event itself
-	// as the others may come down other streams, and indeed will come down this users
-	// stream if they join this room. We don't know the event IDs of the stripped state
-	// so we cannot clobber correctly. The only thing we can clobber is the invite event.
 	for roomID, roomData := range res.Rooms.Invite {
-		for _, ev := range roomData.InviteState.Events {
-			if gjson.GetBytes(ev, "type").Str == "m.room.member" && gjson.GetBytes(ev, "content.membership").Str == "invite" {
-				ev, _ = sjson.SetBytes(ev, "event_id", "$"+res.NextBatch+"-"+p.deviceID)
-				ev, _ = sjson.SetBytes(ev, "origin_server_ts", int64(gomatrixserverlib.AsTimestamp(time.Now())))
-				p.receiver.Accumulate(roomID, []json.RawMessage{ev})
-			}
-		}
+		p.receiver.OnInvite(p.userID, roomID, roomData.InviteState.Events)
 	}
 	p.logger.Info().Ints(
 		"rooms [invite,join,leave]", []int{len(res.Rooms.Invite), len(res.Rooms.Join), len(res.Rooms.Leave)},

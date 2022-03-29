@@ -12,6 +12,7 @@ type Room struct {
 	Name              string            `json:"name,omitempty"`
 	RequiredState     []json.RawMessage `json:"required_state,omitempty"`
 	Timeline          []json.RawMessage `json:"timeline,omitempty"`
+	InviteState       json.RawMessage   `json:"invite_state,omitempty"`
 	NotificationCount int64             `json:"notification_count"`
 	HighlightCount    int64             `json:"highlight_count"`
 	Initial           bool              `json:"initial,omitempty"`

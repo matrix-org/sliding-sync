@@ -24,7 +24,7 @@ type ConnState struct {
 	// the only thing that can touch these data structures is the conn goroutine
 	muxedReq          *sync3.Request
 	lists             *sync3.SortableRoomLists
-	roomSubscriptions map[string]sync3.RoomSubscription
+	roomSubscriptions map[string]sync3.RoomSubscription // room_id -> subscription
 
 	allRooms     []sync3.RoomConnMetadata
 	loadPosition int64
@@ -74,13 +74,13 @@ func NewConnState(
 //   - load() bases its current state based on the latest position, which includes processing of these N events.
 //   - post load() we read N events, processing them a 2nd time.
 func (s *ConnState) load(req *sync3.Request) error {
-	initialLoadPosition, joinedRooms, err := s.globalCache.LoadInvitedJoinedRooms(s.userID)
+	initialLoadPosition, joinedRooms, err := s.globalCache.LoadJoinedRooms(s.userID)
 	if err != nil {
 		return err
 	}
 	rooms := make([]sync3.RoomConnMetadata, len(joinedRooms))
-	for i := range joinedRooms {
-		metadata := joinedRooms[i]
+	i := 0
+	for _, metadata := range joinedRooms {
 		metadata.RemoveHero(s.userID)
 		urd := s.userCache.LoadRoomData(metadata.RoomID)
 		rooms[i] = sync3.RoomConnMetadata{
@@ -90,7 +90,20 @@ func (s *ConnState) load(req *sync3.Request) error {
 				strings.Trim(internal.CalculateRoomName(metadata, 5), "#!():_@"),
 			),
 		}
+		i++
 	}
+	invites := s.userCache.Invites()
+	for _, urd := range invites {
+		metadata := urd.Invite.RoomMetadata()
+		rooms = append(rooms, sync3.RoomConnMetadata{
+			RoomMetadata: *metadata,
+			UserRoomData: urd,
+			CanonicalisedName: strings.ToLower(
+				strings.Trim(internal.CalculateRoomName(metadata, 5), "#!():_@"),
+			),
+		})
+	}
+
 	s.allRooms = rooms
 	s.loadPosition = initialLoadPosition
 
@@ -322,12 +335,18 @@ func (s *ConnState) getDeltaRoomData(roomID string, event json.RawMessage) *sync
 }
 
 func (s *ConnState) getInitialRoomData(listIndex int, timelineLimit int, roomIDs ...string) []sync3.Room {
-	roomIDToUserRoomData := s.userCache.LazyLoadTimelines(s.loadPosition, roomIDs, timelineLimit) // TODO: per-room timeline limit
 	rooms := make([]sync3.Room, len(roomIDs))
+	// We want to grab the user room data and the room metadata for each room ID.
+	roomIDToUserRoomData := s.userCache.LazyLoadTimelines(s.loadPosition, roomIDs, timelineLimit) // TODO: per-room timeline limit
 	roomMetadatas := s.globalCache.LoadRooms(roomIDs...)
 	for i, roomID := range roomIDs {
 		userRoomData := roomIDToUserRoomData[roomID]
-		metadata := roomMetadatas[i]
+		metadata := roomMetadatas[roomID]
+		// handle invites specially as we do not want to leak additional data beyond the invite_state and if
+		// we happen to have this room in the global cache we will do.
+		if userRoomData.IsInvite {
+			metadata = userRoomData.Invite.RoomMetadata()
+		}
 		metadata.RemoveHero(s.userID)
 		// this room is a subscription and we want initial data for a list for the same room -> send a stub
 		if _, hasRoomSub := s.roomSubscriptions[roomID]; hasRoomSub && listIndex >= 0 {
@@ -430,10 +449,12 @@ func (s *ConnState) OnUpdate(up caches.Update) {
 func (s *ConnState) OnRoomUpdate(up caches.RoomUpdate) {
 	switch update := up.(type) {
 	case *caches.RoomEventUpdate:
-		if update.EventData.LatestPos == 0 || update.EventData.LatestPos < s.loadPosition {
-			// 0 -> this event was from a 'state' block, do not poke active connections
-			// pos < load -> this event has already been processed from the initial load, do not poke active connections
-			return
+		if update.EventData.LatestPos != caches.PosAlwaysProcess {
+			if update.EventData.LatestPos == 0 || update.EventData.LatestPos < s.loadPosition {
+				// 0 -> this event was from a 'state' block, do not poke active connections
+				// pos < load -> this event has already been processed from the initial load, do not poke active connections
+				return
+			}
 		}
 		s.live.onUpdate(update)
 	case caches.RoomUpdate:

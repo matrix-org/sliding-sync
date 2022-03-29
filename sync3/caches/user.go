@@ -17,6 +17,76 @@ type UserRoomData struct {
 	NotificationCount int
 	HighlightCount    int
 	Timeline          []json.RawMessage
+	Invite            *InviteData
+}
+
+// Subset of data from internal.RoomMetadata which we can glean from invite_state.
+// Processed in the same way as joined rooms!
+type InviteData struct {
+	roomID               string
+	InviteState          []json.RawMessage
+	Heroes               []internal.Hero
+	InviteEvent          *EventData
+	NameEvent            string // the content of m.room.name, NOT the calculated name
+	CanonicalAlias       string
+	LastMessageTimestamp uint64
+	Encrypted            bool
+}
+
+func NewInviteData(userID, roomID string, inviteState []json.RawMessage) *InviteData {
+	// work out metadata for this invite. There's an origin_server_ts on the invite m.room.member event
+	id := InviteData{
+		roomID:      roomID,
+		InviteState: inviteState,
+	}
+	for _, ev := range inviteState {
+		j := gjson.ParseBytes(ev)
+
+		switch j.Get("type").Str {
+		case "m.room.member":
+			target := j.Get("state_key").Str
+			if userID == target {
+				// this is our invite event; grab the timestamp
+				ts := j.Get("origin_server_ts").Int()
+				id.LastMessageTimestamp = uint64(ts)
+				id.InviteEvent = &EventData{
+					Event:     ev,
+					RoomID:    roomID,
+					EventType: "m.room.member",
+					StateKey:  &target,
+					Content:   j.Get("content"),
+					Timestamp: uint64(ts),
+					LatestPos: PosAlwaysProcess,
+				}
+			} else if target == j.Get("sender").Str {
+				id.Heroes = append(id.Heroes, internal.Hero{
+					ID:   target,
+					Name: j.Get("content.displayname").Str,
+				})
+			}
+		case "m.room.name":
+			id.NameEvent = j.Get("content.name").Str
+		case "m.room.canonical_alias":
+			id.CanonicalAlias = j.Get("content.alias").Str
+		case "m.room.encryption":
+			id.Encrypted = true
+		}
+	}
+	return &id
+}
+
+func (i *InviteData) RoomMetadata() *internal.RoomMetadata {
+	return &internal.RoomMetadata{
+		RoomID:               i.roomID,
+		Heroes:               i.Heroes,
+		NameEvent:            i.NameEvent,
+		CanonicalAlias:       i.CanonicalAlias,
+		InviteCount:          1,
+		JoinCount:            1,
+		LastMessageTimestamp: i.LastMessageTimestamp,
+		Encrypted:            i.Encrypted,
+		Tombstoned:           false,
+	}
 }
 
 type UserCacheListener interface {
@@ -112,6 +182,9 @@ func (c *UserCache) LazyLoadTimelines(loadPos int64, roomIDs []string, maxTimeli
 			}
 		} else {
 			lazyRoomIDs = append(lazyRoomIDs, roomID)
+			// in case the room is left/invited, we may not add them to the result here so do it now,
+			// we'll clobber if we get a timeline
+			result[roomID] = urd
 		}
 	}
 	if len(lazyRoomIDs) == 0 {
@@ -176,13 +249,26 @@ func (c *UserCache) newRoomUpdate(roomID string) RoomUpdate {
 			RoomID: roomID,
 		}
 	} else {
-		r = globalRooms[0]
+		r = globalRooms[roomID]
 	}
 	return &roomUpdateCache{
 		roomID:         roomID,
 		globalRoomData: r,
 		userRoomData:   &u,
 	}
+}
+
+func (c *UserCache) Invites() map[string]UserRoomData {
+	c.roomToDataMu.Lock()
+	defer c.roomToDataMu.Unlock()
+	invites := make(map[string]UserRoomData)
+	for roomID, urd := range c.roomToData {
+		if !urd.IsInvite || urd.Invite == nil {
+			continue
+		}
+		invites[roomID] = urd
+	}
+	return invites
 }
 
 // AnnotateWithTransactionIDs should be called just prior to returning events to the client. This
@@ -255,6 +341,56 @@ func (c *UserCache) OnNewEvent(eventData *EventData) {
 
 	for _, l := range c.listeners {
 		l.OnRoomUpdate(roomUpdate)
+	}
+}
+
+func (c *UserCache) OnInvite(roomID string, inviteStateEvents []json.RawMessage) {
+	inviteData := NewInviteData(c.UserID, roomID, inviteStateEvents)
+
+	urd := c.LoadRoomData(roomID)
+	urd.IsInvite = true
+	urd.Invite = inviteData
+	c.roomToDataMu.Lock()
+	c.roomToData[roomID] = urd
+	c.roomToDataMu.Unlock()
+
+	up := &InviteUpdate{
+		RoomUpdate: &roomUpdateCache{
+			roomID: roomID,
+			// do NOT pull from the global cache as it is a snapshot of the room at the point of
+			// the invite: don't leak additional data!!!
+			globalRoomData: inviteData.RoomMetadata(),
+			userRoomData:   &urd,
+		},
+		InviteData: *inviteData,
+	}
+	for _, l := range c.listeners {
+		l.OnRoomUpdate(up)
+	}
+}
+
+func (c *UserCache) OnRetireInvite(roomID string) {
+	urd := c.LoadRoomData(roomID)
+	urd.IsInvite = false
+	urd.Invite = nil
+	c.roomToDataMu.Lock()
+	c.roomToData[roomID] = urd
+	c.roomToDataMu.Unlock()
+
+	up := &InviteUpdate{
+		RoomUpdate: &roomUpdateCache{
+			roomID: roomID,
+			// do NOT pull from the global cache as it is a snapshot of the room at the point of
+			// the invite: don't leak additional data!!!
+			globalRoomData: &internal.RoomMetadata{
+				RoomID: roomID,
+			},
+			userRoomData: &urd,
+		},
+		Retired: true,
+	}
+	for _, l := range c.listeners {
+		l.OnRoomUpdate(up)
 	}
 }
 

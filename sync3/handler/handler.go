@@ -289,6 +289,15 @@ func (h *SyncLiveHandler) userCache(userID string) (*caches.UserCache, error) {
 		uc.OnAccountData([]state.AccountData{*directEvent})
 	}
 
+	// select outstanding invites
+	invites, err := h.Storage.InvitesTable.SelectAllInvitesForUser(userID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to load outstanding invites for user: %s", err)
+	}
+	for roomID, inviteState := range invites {
+		uc.OnInvite(roomID, inviteState)
+	}
+
 	// use LoadOrStore here else we can race as 2 brand new /sync conns can both get to this point
 	// at the same time
 	actualUC, loaded := h.userCaches.LoadOrStore(userID, uc)
@@ -367,6 +376,30 @@ func (h *SyncLiveHandler) UpdateUnreadCounts(roomID, userID string, highlightCou
 		return
 	}
 	userCache.(*caches.UserCache).OnUnreadCounts(roomID, highlightCount, notifCount)
+}
+
+func (h *SyncLiveHandler) OnInvite(userID, roomID string, inviteState []json.RawMessage) {
+	err := h.Storage.InvitesTable.InsertInvite(userID, roomID, inviteState)
+	if err != nil {
+		logger.Err(err).Str("user", userID).Str("room", roomID).Msg("failed to insert invite")
+	}
+	userCache, ok := h.userCaches.Load(userID)
+	if !ok {
+		return
+	}
+	userCache.(*caches.UserCache).OnInvite(roomID, inviteState)
+}
+
+func (h *SyncLiveHandler) OnRetireInvite(userID, roomID string) {
+	err := h.Storage.InvitesTable.RemoveInvite(userID, roomID)
+	if err != nil {
+		logger.Err(err).Str("user", userID).Str("room", roomID).Msg("failed to retire invite")
+	}
+	userCache, ok := h.userCaches.Load(userID)
+	if !ok {
+		return
+	}
+	userCache.(*caches.UserCache).OnRetireInvite(roomID)
 }
 
 func (h *SyncLiveHandler) OnAccountData(userID, roomID string, events []json.RawMessage) {

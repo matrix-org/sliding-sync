@@ -109,6 +109,16 @@ func (s *connStateLive) processLiveUpdate(up caches.Update, responseOperations [
 		for _, sub := range subs {
 			response.RoomSubscriptions[sub.RoomID] = sub
 		}
+	case *caches.InviteUpdate:
+		roomUpdate := &caches.RoomEventUpdate{
+			RoomUpdate: update.RoomUpdate,
+			EventData:  update.InviteEvent,
+		}
+		subs, ops := s.processIncomingEvent(roomUpdate)
+		responseOperations = append(responseOperations, ops...)
+		for _, sub := range subs {
+			response.RoomSubscriptions[sub.RoomID] = sub
+		}
 	}
 
 	return responseOperations

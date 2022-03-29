@@ -88,9 +88,11 @@ func TestConnStateInitial(t *testing.T) {
 		roomB.RoomID: {userID},
 		roomC.RoomID: {userID},
 	})
-	globalCache.LoadJoinedRoomsOverride = func(userID string) (pos int64, joinedRooms []*internal.RoomMetadata, err error) {
-		return 1, []*internal.RoomMetadata{
-			&roomA, &roomB, &roomC,
+	globalCache.LoadJoinedRoomsOverride = func(userID string) (pos int64, joinedRooms map[string]*internal.RoomMetadata, err error) {
+		return 1, map[string]*internal.RoomMetadata{
+			roomA.RoomID: &roomA,
+			roomB.RoomID: &roomB,
+			roomC.RoomID: &roomC,
 		}, nil
 	}
 	userCache := caches.NewUserCache(userID, globalCache, nil, &NopTransactionFetcher{})
@@ -247,8 +249,12 @@ func TestConnStateMultipleRanges(t *testing.T) {
 			roomID: {userID},
 		})
 	}
-	globalCache.LoadJoinedRoomsOverride = func(userID string) (pos int64, joinedRooms []*internal.RoomMetadata, err error) {
-		return 1, rooms, nil
+	globalCache.LoadJoinedRoomsOverride = func(userID string) (pos int64, joinedRooms map[string]*internal.RoomMetadata, err error) {
+		res := make(map[string]*internal.RoomMetadata)
+		for i, r := range rooms {
+			res[r.RoomID] = rooms[i]
+		}
+		return 1, res, nil
 	}
 	userCache := caches.NewUserCache(userID, globalCache, nil, &NopTransactionFetcher{})
 	userCache.LazyRoomDataOverride = mockLazyRoomOverride
@@ -427,9 +433,12 @@ func TestBumpToOutsideRange(t *testing.T) {
 		roomC.RoomID: {userID},
 		roomD.RoomID: {userID},
 	})
-	globalCache.LoadJoinedRoomsOverride = func(userID string) (pos int64, joinedRooms []*internal.RoomMetadata, err error) {
-		return 1, []*internal.RoomMetadata{
-			&roomA, &roomB, &roomC, &roomD,
+	globalCache.LoadJoinedRoomsOverride = func(userID string) (pos int64, joinedRooms map[string]*internal.RoomMetadata, err error) {
+		return 1, map[string]*internal.RoomMetadata{
+			roomA.RoomID: &roomA,
+			roomB.RoomID: &roomB,
+			roomC.RoomID: &roomC,
+			roomD.RoomID: &roomD,
 		}, nil
 	}
 	userCache := caches.NewUserCache(userID, globalCache, nil, &NopTransactionFetcher{})
@@ -525,9 +534,12 @@ func TestConnStateRoomSubscriptions(t *testing.T) {
 		roomC.RoomID: testutils.NewEvent(t, "m.room.message", userID, map[string]interface{}{"body": "c"}),
 		roomD.RoomID: testutils.NewEvent(t, "m.room.message", userID, map[string]interface{}{"body": "d"}),
 	}
-	globalCache.LoadJoinedRoomsOverride = func(userID string) (pos int64, joinedRooms []*internal.RoomMetadata, err error) {
-		return 1, []*internal.RoomMetadata{
-			&roomA, &roomB, &roomC, &roomD,
+	globalCache.LoadJoinedRoomsOverride = func(userID string) (pos int64, joinedRooms map[string]*internal.RoomMetadata, err error) {
+		return 1, map[string]*internal.RoomMetadata{
+			roomA.RoomID: &roomA,
+			roomB.RoomID: &roomB,
+			roomC.RoomID: &roomC,
+			roomD.RoomID: &roomD,
 		}, nil
 	}
 	userCache := caches.NewUserCache(userID, globalCache, nil, &NopTransactionFetcher{})

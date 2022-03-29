@@ -20,6 +20,13 @@ type RoomEventUpdate struct {
 	EventData *EventData
 }
 
+type InviteUpdate struct {
+	RoomUpdate
+	InviteData  InviteData
+	InviteEvent *EventData
+	Retired     bool
+}
+
 type UnreadCountUpdate struct {
 	RoomUpdate
 	HasCountDecreased bool

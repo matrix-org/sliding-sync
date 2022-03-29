@@ -13,6 +13,9 @@ import (
 	"github.com/tidwall/gjson"
 )
 
+const PosAlwaysProcess = -2
+const PosDoNotProcess = -1
+
 type EventData struct {
 	Event     json.RawMessage
 	RoomID    string
@@ -22,7 +25,8 @@ type EventData struct {
 	Timestamp uint64
 
 	// the absolute latest position for this event data. The NID for this event is guaranteed to
-	// be <= this value.
+	// be <= this value. See PosAlwaysProcess and PosDoNotProcess for things outside the event timeline
+	// e.g invites
 	LatestPos int64
 }
 
@@ -37,7 +41,7 @@ var logger = zerolog.New(os.Stdout).With().Timestamp().Logger().Output(zerolog.C
 // information is populated at startup from the database and then kept up-to-date by hooking into the
 // Dispatcher for new events.
 type GlobalCache struct {
-	LoadJoinedRoomsOverride func(userID string) (pos int64, joinedRooms []*internal.RoomMetadata, err error)
+	LoadJoinedRoomsOverride func(userID string) (pos int64, joinedRooms map[string]*internal.RoomMetadata, err error)
 
 	// inserts are done by v2 poll loops, selects are done by v3 request threads
 	// there are lots of overlapping keys as many users (threads) can be joined to the same room (key)
@@ -60,16 +64,16 @@ func NewGlobalCache(store *state.Storage) *GlobalCache {
 // Load the current room metadata for the given room IDs. Races unless you call this in a dispatcher loop.
 // Always returns copies of the room metadata so ownership can be passed to other threads.
 // Keeps the ordering of the room IDs given.
-func (c *GlobalCache) LoadRooms(roomIDs ...string) []*internal.RoomMetadata {
+func (c *GlobalCache) LoadRooms(roomIDs ...string) map[string]*internal.RoomMetadata {
 	c.roomIDToMetadataMu.RLock()
 	defer c.roomIDToMetadataMu.RUnlock()
-	result := make([]*internal.RoomMetadata, len(roomIDs))
-	for i := range result {
+	result := make(map[string]*internal.RoomMetadata, len(roomIDs))
+	for i := range roomIDs {
 		roomID := roomIDs[i]
 		sr := c.roomIDToMetadata[roomID]
 		if sr == nil {
 			logger.Error().Str("room", roomID).Msg("GlobalCache.LoadRoom: no metadata for this room")
-			return nil
+			continue
 		}
 		srCopy := *sr
 		// copy the heroes or else we may modify the same slice which would be bad :(
@@ -77,14 +81,14 @@ func (c *GlobalCache) LoadRooms(roomIDs ...string) []*internal.RoomMetadata {
 		for i := range sr.Heroes {
 			srCopy.Heroes[i] = sr.Heroes[i]
 		}
-		result[i] = &srCopy
+		result[roomID] = &srCopy
 	}
 	return result
 }
 
 // Load all current joined room metadata for the user given. Returns the absolute database position along
 // with the results. TODO: remove with LoadRoomState?
-func (c *GlobalCache) LoadInvitedJoinedRooms(userID string) (pos int64, joinedRooms []*internal.RoomMetadata, err error) {
+func (c *GlobalCache) LoadJoinedRooms(userID string) (pos int64, joinedRooms map[string]*internal.RoomMetadata, err error) {
 	if c.LoadJoinedRoomsOverride != nil {
 		return c.LoadJoinedRoomsOverride(userID)
 	}
@@ -92,7 +96,7 @@ func (c *GlobalCache) LoadInvitedJoinedRooms(userID string) (pos int64, joinedRo
 	if err != nil {
 		return 0, nil, err
 	}
-	joinedRoomIDs, err := c.store.JoinedRoomsAfterPosition(userID, initialLoadPosition, true)
+	joinedRoomIDs, err := c.store.JoinedRoomsAfterPosition(userID, initialLoadPosition)
 	if err != nil {
 		return 0, nil, err
 	}
