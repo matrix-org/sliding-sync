@@ -58,6 +58,16 @@ func (c *Conn) Alive() bool {
 	return c.handler.Alive()
 }
 
+func (c *Conn) tryRequest(ctx context.Context, req *Request) (res *Response, err error) {
+	defer func() {
+		panicErr := recover()
+		if panicErr != nil {
+			err = fmt.Errorf("panic: %s", panicErr)
+		}
+	}()
+	return c.handler.OnIncomingRequest(ctx, c.ConnID, req, req.pos == 0)
+}
+
 // OnIncomingRequest advances the clients position in the stream, returning the response position and data.
 func (c *Conn) OnIncomingRequest(ctx context.Context, req *Request) (resp *Response, herr *internal.HandlerError) {
 	c.mu.Lock()
@@ -83,9 +93,8 @@ func (c *Conn) OnIncomingRequest(ctx context.Context, req *Request) (resp *Respo
 			Err:        fmt.Errorf("unknown position: %d", req.pos),
 		}
 	}
-	c.lastClientRequest = *req
 
-	resp, err := c.handler.OnIncomingRequest(ctx, c.ConnID, req, req.pos == 0)
+	resp, err := c.tryRequest(ctx, req)
 	if err != nil {
 		herr, ok := err.(*internal.HandlerError)
 		if !ok {
@@ -96,6 +105,9 @@ func (c *Conn) OnIncomingRequest(ctx context.Context, req *Request) (resp *Respo
 		}
 		return nil, herr
 	}
+	// assign the last client request now _after_ we have processed the request so we don't incorrectly
+	// cache errors or panics and result in getting wedged or tightlooping.
+	c.lastClientRequest = *req
 	var posInt int
 	if c.lastServerResponse.Pos != "" {
 		posInt, err = strconv.Atoi(c.lastServerResponse.Pos)
