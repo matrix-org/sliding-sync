@@ -51,6 +51,11 @@ func ProcessToDevice(store *state.Storage, userID, deviceID string, req *ToDevic
 			l.Err(err).Str("since", req.Since).Msg("invalid since value")
 			return nil
 		}
+		// the client is confirming messages up to `from` so delete everything up to and including it.
+		if err = store.ToDeviceTable.DeleteMessagesUpToAndIncluding(deviceID, from); err != nil {
+			l.Err(err).Str("since", req.Since).Msg("failed to delete to-device messages up to this value")
+			// non-fatal
+		}
 	}
 
 	msgs, upTo, err := store.ToDeviceTable.Messages(deviceID, from, -1, int64(req.Limit))
