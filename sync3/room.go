@@ -16,6 +16,7 @@ type Room struct {
 	NotificationCount int64             `json:"notification_count"`
 	HighlightCount    int64             `json:"highlight_count"`
 	Initial           bool              `json:"initial,omitempty"`
+	IsDM              bool              `json:"is_dm,omitempty"`
 }
 
 type RoomConnMetadata struct {

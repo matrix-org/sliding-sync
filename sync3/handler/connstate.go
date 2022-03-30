@@ -371,6 +371,7 @@ func (s *ConnState) getInitialRoomData(listIndex int, timelineLimit int, roomIDs
 			RequiredState:     requiredState,
 			InviteState:       inviteState,
 			Initial:           true,
+			IsDM:              userRoomData.IsDM,
 		}
 	}
 	return rooms
