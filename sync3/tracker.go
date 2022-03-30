@@ -36,15 +36,24 @@ func (t *JoinedRoomsTracker) IsUserJoined(userID, roomID string) bool {
 	return false
 }
 
-func (t *JoinedRoomsTracker) UserJoinedRoom(userID, roomID string) {
+// returns true if the state changed
+func (t *JoinedRoomsTracker) UserJoinedRoom(userID, roomID string) bool {
 	t.mu.Lock()
 	defer t.mu.Unlock()
+	wasJoined := false
+	users := t.roomIDToJoinedUsers[roomID]
+	for _, u := range users {
+		if u == userID {
+			wasJoined = true
+		}
+	}
 	joinedRooms := t.userIDToJoinedRooms[userID]
 	joinedUsers := t.roomIDToJoinedUsers[roomID]
 	joinedRooms = append(joinedRooms, roomID)
 	joinedUsers = append(joinedUsers, userID)
 	t.userIDToJoinedRooms[userID] = joinedRooms
 	t.roomIDToJoinedUsers[roomID] = joinedUsers
+	return !wasJoined
 }
 
 func (t *JoinedRoomsTracker) UserLeftRoom(userID, roomID string) {

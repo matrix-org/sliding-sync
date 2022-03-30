@@ -99,13 +99,17 @@ func (d *Dispatcher) onNewEvent(
 
 	// update the tracker
 	targetUser := ""
+	membership := ""
+	shouldForceInitial := false
 	if ed.EventType == "m.room.member" && ed.StateKey != nil {
 		targetUser = *ed.StateKey
 		// TODO: de-dupe joins in jrt else profile changes will results in 2x room IDs
-		membership := ed.Content.Get("membership").Str
+		membership = ed.Content.Get("membership").Str
 		switch membership {
 		case "join":
-			d.jrt.UserJoinedRoom(targetUser, ed.RoomID)
+			if d.jrt.UserJoinedRoom(targetUser, ed.RoomID) {
+				shouldForceInitial = true
+			}
 		case "ban":
 			fallthrough
 		case "leave":
@@ -129,18 +133,31 @@ func (d *Dispatcher) onNewEvent(
 	// per-user listeners
 	notifiedTarget := false
 	for _, userID := range userIDs {
-		l := d.userToReceiver[userID]
-		if l != nil {
-			l.OnNewEvent(ed)
-		}
+		edd := *ed
 		if targetUser == userID {
 			notifiedTarget = true
+			if shouldForceInitial {
+				edd.ForceInitial = true
+			}
+		}
+		l := d.userToReceiver[userID]
+		if l != nil {
+			l.OnNewEvent(&edd)
 		}
 	}
 	if targetUser != "" && !notifiedTarget { // e.g invites/leaves where you aren't joined yet but need to know about it
-		l := d.userToReceiver[targetUser]
-		if l != nil {
-			l.OnNewEvent(ed)
+		// We expect invites to come down the invitee's poller, which triggers OnInvite code paths and
+		// not normal event codepaths. We need the separate code path to ensure invite stripped state
+		// is sent to the conn and not live data. Hence, if we get the invite event early from a different
+		// connection, do not send it to the target, as they must wait for the invite on their poller.
+		if membership != "invite" {
+			if shouldForceInitial {
+				ed.ForceInitial = true
+			}
+			l := d.userToReceiver[targetUser]
+			if l != nil {
+				l.OnNewEvent(ed)
+			}
 		}
 	}
 }

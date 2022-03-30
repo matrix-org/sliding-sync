@@ -28,6 +28,10 @@ type EventData struct {
 	// be <= this value. See PosAlwaysProcess and PosDoNotProcess for things outside the event timeline
 	// e.g invites
 	LatestPos int64
+
+	// Flag set when this event should force the room contents to be resent e.g
+	// state res, initial join, etc
+	ForceInitial bool
 }
 
 var logger = zerolog.New(os.Stdout).With().Timestamp().Logger().Output(zerolog.ConsoleWriter{

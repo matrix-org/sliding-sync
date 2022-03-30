@@ -25,6 +25,7 @@ func TestRoomStateTransitions(t *testing.T) {
 	indexBobKicked := 1
 	indexBobBanned := 2
 	indexBobInvited := 3
+	bobInviteEvent := testutils.NewStateEvent(t, "m.room.member", bob, alice, map[string]interface{}{"membership": "invite"}, testutils.WithTimestamp(latestTimestamp))
 	allRoomsAlicePerspective := []roomEvents{
 		{
 			roomID: "!TestRoomStateTransitions_joined:localhost",
@@ -49,18 +50,25 @@ func TestRoomStateTransitions(t *testing.T) {
 		{
 			roomID: "!TestRoomStateTransitions_invited:localhost",
 			events: append(createRoomState(t, alice, latestTimestamp), []json.RawMessage{
-				testutils.NewStateEvent(t, "m.room.member", bob, alice, map[string]interface{}{"membership": "invite"}, testutils.WithTimestamp(latestTimestamp)),
+				bobInviteEvent,
 			}...),
 		},
 	}
 	v2.addAccount(alice, aliceToken)
 	v2.addAccount(bob, bobToken)
-	/*
-		v2.queueResponse(alice, sync2.SyncResponse{
-			Rooms: sync2.SyncRoomsResponse{
-				Join: v2JoinTimeline(allRoomsAlicePerspective...),
+
+	// seed the proxy with Alice data
+	_ = v3.mustDoV3Request(t, aliceToken, sync3.Request{
+		Lists: []sync3.RequestList{
+			{
+				Ranges: sync3.SliceRanges{
+					{0, 100},
+				},
+				Sort: []string{sync3.SortByRecency},
 			},
-		}) */
+		},
+	})
+
 	allRoomsBobPerspective := []roomEvents{
 		allRoomsAlicePerspective[indexBobJoined],
 		allRoomsAlicePerspective[indexBobKicked],
@@ -68,9 +76,7 @@ func TestRoomStateTransitions(t *testing.T) {
 	}
 
 	var inviteStrippedState sync2.SyncV2InviteResponse
-	inviteStrippedState.InviteState.Events = []json.RawMessage{
-		testutils.NewStateEvent(t, "m.room.member", bob, alice, map[string]interface{}{"membership": "invite"}, testutils.WithTimestamp(latestTimestamp.Add(time.Second))),
-	}
+	inviteStrippedState.InviteState.Events = []json.RawMessage{bobInviteEvent}
 	v2.queueResponse(bob, sync2.SyncResponse{
 		Rooms: sync2.SyncRoomsResponse{
 			Join: v2JoinTimeline(allRoomsBobPerspective...),
@@ -88,6 +94,12 @@ func TestRoomStateTransitions(t *testing.T) {
 					{0, 100},
 				},
 				Sort: []string{sync3.SortByRecency},
+				RoomSubscription: sync3.RoomSubscription{
+					TimelineLimit: 1,
+					RequiredState: [][2]string{
+						{"m.room.create", ""},
+					},
+				},
 			},
 		},
 	})
@@ -95,9 +107,46 @@ func TestRoomStateTransitions(t *testing.T) {
 		MatchV3SyncOpWithMatchers(
 			MatchRoomRange([]roomMatcher{
 				MatchRoomID(allRoomsAlicePerspective[indexBobInvited].roomID),
+				MatchRoomHighlightCount(1),
+				MatchRoomInitial(true),
+				MatchRoomRequiredState(nil),
+				MatchRoomInviteState(inviteStrippedState.InviteState.Events),
 			}, []roomMatcher{
 				MatchRoomID(allRoomsAlicePerspective[indexBobJoined].roomID),
 			}),
+		),
+	))
+
+	// now bob accepts the invite
+	bobJoinEvent := testutils.NewStateEvent(t, "m.room.member", bob, bob, map[string]interface{}{"membership": "join"}, testutils.WithTimestamp(latestTimestamp.Add(2*time.Second)))
+	allRoomsAlicePerspective[indexBobInvited].events = append(allRoomsAlicePerspective[indexBobInvited].events, bobJoinEvent)
+	v2.queueResponse(bob, sync2.SyncResponse{
+		Rooms: sync2.SyncRoomsResponse{
+			Join: v2JoinTimeline(allRoomsAlicePerspective[indexBobInvited]),
+		},
+	})
+	v2.waitUntilEmpty(t, bob)
+
+	// the room should be UPDATEd with the initial flag set to replace what was in the invite state
+	res = v3.mustDoV3RequestWithPos(t, bobToken, res.Pos, sync3.Request{
+		Lists: []sync3.RequestList{
+			{
+				Ranges: sync3.SliceRanges{
+					{0, 100},
+				},
+			},
+		},
+	})
+	MatchResponse(t, res, MatchV3Count(2), MatchV3Ops(
+		MatchV3UpdateOp(
+			0, 0, allRoomsAlicePerspective[indexBobInvited].roomID, MatchRoomRequiredState([]json.RawMessage{
+				allRoomsAlicePerspective[indexBobInvited].events[0], // create event
+			}),
+			MatchRoomTimelineMostRecent(1, []json.RawMessage{
+				bobJoinEvent,
+			}),
+			MatchRoomInitial(true),
+			MatchRoomHighlightCount(0),
 		),
 	))
 

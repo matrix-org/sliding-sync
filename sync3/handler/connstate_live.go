@@ -156,7 +156,7 @@ func (s *connStateLive) processUnreadCountUpdate(up *caches.UnreadCountUpdate) (
 		if !ok {
 			return
 		}
-		roomSubs, ops := s.resort(index, &s.muxedReq.Lists[index], list, up.RoomID(), fromIndex, nil, false)
+		roomSubs, ops := s.resort(index, &s.muxedReq.Lists[index], list, up.RoomID(), fromIndex, nil, false, false)
 		rooms = append(rooms, roomSubs...)
 		responseOperations = append(responseOperations, ops...)
 	})
@@ -194,7 +194,7 @@ func (s *connStateLive) processIncomingEvent(update *caches.RoomEventUpdate) ([]
 			logger.Info().Str("room", update.RoomID()).Msg("room added")
 			newlyAdded = true
 		}
-		roomSubs, ops := s.resort(index, &s.muxedReq.Lists[index], list, update.RoomID(), fromIndex, update.EventData.Event, newlyAdded)
+		roomSubs, ops := s.resort(index, &s.muxedReq.Lists[index], list, update.RoomID(), fromIndex, update.EventData.Event, newlyAdded, update.EventData.ForceInitial)
 		rooms = append(rooms, roomSubs...)
 		responseOperations = append(responseOperations, ops...)
 	})
@@ -204,7 +204,7 @@ func (s *connStateLive) processIncomingEvent(update *caches.RoomEventUpdate) ([]
 // Resort should be called after a specific room has been modified in `sortedJoinedRooms`.
 func (s *connStateLive) resort(
 	listIndex int, reqList *sync3.RequestList, roomList *sync3.FilteredSortableRooms, roomID string,
-	fromIndex int, newEvent json.RawMessage, newlyAdded bool,
+	fromIndex int, newEvent json.RawMessage, newlyAdded, forceInitial bool,
 ) ([]sync3.Room, []sync3.ResponseOp) {
 	if reqList.Sort == nil {
 		reqList.Sort = []string{sync3.SortByRecency}
@@ -272,7 +272,7 @@ func (s *connStateLive) resort(
 		}
 	}
 
-	return subs, s.moveRoom(reqList, listIndex, roomID, newEvent, fromIndex, toIndex, reqList.Ranges, isSubscribedToRoom, newlyAdded)
+	return subs, s.moveRoom(reqList, listIndex, roomID, newEvent, fromIndex, toIndex, reqList.Ranges, isSubscribedToRoom, newlyAdded, forceInitial)
 }
 
 // Move a room from an absolute index position to another absolute position.
@@ -281,20 +281,22 @@ func (s *connStateLive) resort(
 // 7 bumps to top -> 7,1,2,3,4 -> DELETE index=4, INSERT val=7 index=0
 func (s *connStateLive) moveRoom(
 	reqList *sync3.RequestList, listIndex int, roomID string, event json.RawMessage, fromIndex, toIndex int,
-	ranges sync3.SliceRanges, onlySendRoomID, newlyAdded bool,
+	ranges sync3.SliceRanges, onlySendRoomID, newlyAdded, forceInitial bool,
 ) []sync3.ResponseOp {
 	if fromIndex == toIndex {
 		// issue an UPDATE, nice and easy because we don't need to move entries in the list
 		room := &sync3.Room{
 			RoomID: roomID,
 		}
-		op := sync3.OpUpdate
-		if newlyAdded {
+		if newlyAdded || forceInitial {
 			rooms := s.getInitialRoomData(listIndex, int(reqList.TimelineLimit), roomID)
 			room = &rooms[0]
-			op = sync3.OpInsert
 		} else if !onlySendRoomID {
 			room = s.getDeltaRoomData(roomID, event)
+		}
+		op := sync3.OpUpdate
+		if newlyAdded {
+			op = sync3.OpInsert
 		}
 		return []sync3.ResponseOp{
 			&sync3.ResponseOpSingle{

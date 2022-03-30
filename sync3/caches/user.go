@@ -342,6 +342,13 @@ func (c *UserCache) OnNewEvent(eventData *EventData) {
 		// we're tracking timelines, add this message too
 		urd.Timeline = append(urd.Timeline, eventData.Event)
 	}
+	// reset the IsInvite field when the user actually joins/rejects the invite
+	if urd.IsInvite && eventData.EventType == "m.room.member" && eventData.StateKey != nil && *eventData.StateKey == c.UserID {
+		urd.IsInvite = eventData.Content.Get("membership").Str == "invite"
+		if !urd.IsInvite {
+			urd.HighlightCount = 0
+		}
+	}
 	c.roomToDataMu.Lock()
 	c.roomToData[eventData.RoomID] = urd
 	c.roomToDataMu.Unlock()
@@ -390,6 +397,7 @@ func (c *UserCache) OnRetireInvite(roomID string) {
 	urd := c.LoadRoomData(roomID)
 	urd.IsInvite = false
 	urd.Invite = nil
+	urd.HighlightCount = 0
 	c.roomToDataMu.Lock()
 	c.roomToData[roomID] = urd
 	c.roomToDataMu.Unlock()

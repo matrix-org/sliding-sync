@@ -314,6 +314,27 @@ func MatchRoomRequiredState(events []json.RawMessage) roomMatcher {
 		return nil
 	}
 }
+func MatchRoomInviteState(events []json.RawMessage) roomMatcher {
+	return func(r sync3.Room) error {
+		if len(r.InviteState) != len(events) {
+			return fmt.Errorf("invite state length mismatch, got %d want %d", len(r.InviteState), len(events))
+		}
+		// allow any ordering for required state
+		for _, want := range events {
+			found := false
+			for _, got := range r.InviteState {
+				if bytes.Equal(got, want) {
+					found = true
+					break
+				}
+			}
+			if !found {
+				return fmt.Errorf("required state want event %v but it does not exist", string(want))
+			}
+		}
+		return nil
+	}
+}
 
 // Similar to MatchRoomTimeline but takes the last n events of `events` and only checks with the last
 // n events of the timeline.
