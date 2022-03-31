@@ -25,7 +25,7 @@ func TestGlobalCacheLoadState(t *testing.T) {
 		testutils.NewStateEvent(t, "m.room.name", "", alice, map[string]interface{}{"name": "The Updated Room Name"}),
 	}
 
-	_, latest, err := store.Accumulate(roomID, events)
+	_, latest, err := store.Accumulate(roomID, "", events)
 	if err != nil {
 		t.Fatalf("Accumulate: %s", err)
 	}

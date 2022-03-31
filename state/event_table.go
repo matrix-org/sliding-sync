@@ -26,6 +26,10 @@ type Event struct {
 	BeforeStateSnapshotID int    `db:"before_state_snapshot_id"`
 	ID                    string `db:"event_id"`
 	RoomID                string `db:"room_id"`
+	// not all events include a prev batch (e.g if it was part of state not timeline, and only the first
+	// event in a timeline has a prev_batch attached), but we'll look for the 'closest' prev batch
+	// when returning these tokens to the caller (closest = next newest, assume clients de-dupe)
+	PrevBatch sql.NullString `db:"prev_batch"`
 	// stripped events will be missing this field
 	JSON []byte `db:"event"`
 }
@@ -64,6 +68,7 @@ func NewEventTable(db *sqlx.DB) *EventTable {
 		room_id TEXT NOT NULL,
 		event_type TEXT NOT NULL,
 		state_key TEXT NOT NULL,
+		prev_batch TEXT,
 		membership TEXT,
 		event BYTEA NOT NULL
 	);
@@ -94,12 +99,12 @@ func (t *EventTable) Insert(txn *sqlx.Tx, events []Event, checkFields bool) (int
 	if checkFields {
 		ensureFieldsSet(events)
 	}
-	chunks := sqlutil.Chunkify(6, MaxPostgresParameters, EventChunker(events))
+	chunks := sqlutil.Chunkify(7, MaxPostgresParameters, EventChunker(events))
 	var rowsAffected int64
 	for _, chunk := range chunks {
 		result, err := txn.NamedExec(`
-		INSERT INTO syncv3_events (event_id, event, event_type, state_key, room_id, membership)
-        VALUES (:event_id, :event, :event_type, :state_key, :room_id, :membership) ON CONFLICT (event_id) DO NOTHING`, chunk)
+		INSERT INTO syncv3_events (event_id, event, event_type, state_key, room_id, membership, prev_batch)
+        VALUES (:event_id, :event, :event_type, :state_key, :room_id, :membership, :prev_batch) ON CONFLICT (event_id) DO NOTHING`, chunk)
 		if err != nil {
 			return 0, err
 		}
@@ -268,6 +273,18 @@ func (t *EventTable) SelectEventNIDsWithTypeInRoom(txn *sqlx.Tx, eventType strin
 		&eventNIDs, `SELECT event_nid FROM syncv3_events WHERE event_nid > $1 AND event_nid <= $2 AND event_type = $3 AND room_id = $4 ORDER BY event_nid ASC LIMIT $5`,
 		lowerExclusive, upperInclusive, eventType, targetRoom, limit,
 	)
+	return
+}
+
+// Select the closest prev batch token for the provided event NID. Returns the empty string if there
+// is no closest.
+func (t *EventTable) SelectClosestPrevBatch(roomID string, eventNID int64) (prevBatch string, err error) {
+	err = t.db.QueryRow(
+		`SELECT prev_batch FROM syncv3_events WHERE prev_batch IS NOT NULL AND room_id=$1 AND event_nid >= $2 LIMIT 1`, roomID, eventNID,
+	).Scan(&prevBatch)
+	if err == sql.ErrNoRows {
+		err = nil
+	}
 	return
 }
 

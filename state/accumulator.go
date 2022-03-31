@@ -1,6 +1,7 @@
 package state
 
 import (
+	"database/sql"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -197,7 +198,7 @@ func (a *Accumulator) Initialise(roomID string, state []json.RawMessage) (bool, 
 //     to exist in the database, and the sync stream is already linearised for us.
 //   - Else it creates a new room state snapshot if the timeline contains state events (as this now represents the current state)
 //   - It adds entries to the membership log for membership events.
-func (a *Accumulator) Accumulate(roomID string, timeline []json.RawMessage) (numNew int, latestNID int64, err error) {
+func (a *Accumulator) Accumulate(roomID string, prevBatch string, timeline []json.RawMessage) (numNew int, latestNID int64, err error) {
 	if len(timeline) == 0 {
 		return 0, 0, nil
 	}
@@ -220,6 +221,13 @@ func (a *Accumulator) Accumulate(roomID string, timeline []json.RawMessage) (num
 					"Accumulator.Accumulate: seen the same event ID twice, ignoring",
 				)
 				continue
+			}
+			if i == 0 && prevBatch != "" {
+				// tag the first timeline event with the prev batch token
+				e.PrevBatch = sql.NullString{
+					String: prevBatch,
+					Valid:  true,
+				}
 			}
 			events = append(events, e)
 			dedupedTimeline = append(dedupedTimeline, timeline[i])

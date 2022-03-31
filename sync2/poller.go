@@ -15,7 +15,7 @@ var timeSleep = time.Sleep
 // V2DataReceiver is the receiver for all the v2 sync data the poller gets
 type V2DataReceiver interface {
 	UpdateDeviceSince(deviceID, since string)
-	Accumulate(roomID string, timeline []json.RawMessage)
+	Accumulate(roomID, prevBatch string, timeline []json.RawMessage)
 	Initialise(roomID string, state []json.RawMessage)
 	SetTyping(roomID string, userIDs []string)
 	// Add messages for this device. If an error is returned, the poll loop is terminated as continuing
@@ -158,11 +158,11 @@ func (h *PollerMap) execute() {
 func (h *PollerMap) UpdateDeviceSince(deviceID, since string) {
 	h.callbacks.UpdateDeviceSince(deviceID, since)
 }
-func (h *PollerMap) Accumulate(roomID string, timeline []json.RawMessage) {
+func (h *PollerMap) Accumulate(roomID, prevBatch string, timeline []json.RawMessage) {
 	var wg sync.WaitGroup
 	wg.Add(1)
 	h.executor <- func() {
-		h.callbacks.Accumulate(roomID, timeline)
+		h.callbacks.Accumulate(roomID, prevBatch, timeline)
 		wg.Done()
 	}
 	wg.Wait()
@@ -409,7 +409,7 @@ func (p *Poller) parseRoomsResponse(res *SyncResponse) {
 		if len(roomData.Timeline.Events) > 0 {
 			timelineCalls++
 			p.updateTxnIDCache(roomData.Timeline.Events)
-			p.receiver.Accumulate(roomID, roomData.Timeline.Events)
+			p.receiver.Accumulate(roomID, roomData.Timeline.PrevBatch, roomData.Timeline.Events)
 		}
 		for _, ephEvent := range roomData.Ephemeral.Events {
 			if gjson.GetBytes(ephEvent, "type").Str == "m.typing" {
@@ -432,7 +432,7 @@ func (p *Poller) parseRoomsResponse(res *SyncResponse) {
 		// TODO: do we care about state?
 
 		if len(roomData.Timeline.Events) > 0 {
-			p.receiver.Accumulate(roomID, roomData.Timeline.Events)
+			p.receiver.Accumulate(roomID, roomData.Timeline.PrevBatch, roomData.Timeline.Events)
 		}
 		p.receiver.OnRetireInvite(p.userID, roomID)
 	}

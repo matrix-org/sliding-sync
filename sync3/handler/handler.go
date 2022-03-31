@@ -317,8 +317,8 @@ func (h *SyncLiveHandler) UpdateDeviceSince(deviceID, since string) {
 }
 
 // Called from the v2 poller, implements V2DataReceiver
-func (h *SyncLiveHandler) Accumulate(roomID string, timeline []json.RawMessage) {
-	numNew, latestPos, err := h.Storage.Accumulate(roomID, timeline)
+func (h *SyncLiveHandler) Accumulate(roomID, prevBatch string, timeline []json.RawMessage) {
+	numNew, latestPos, err := h.Storage.Accumulate(roomID, prevBatch, timeline)
 	if err != nil {
 		logger.Err(err).Int("timeline", len(timeline)).Str("room", roomID).Msg("V2: failed to accumulate room")
 		return

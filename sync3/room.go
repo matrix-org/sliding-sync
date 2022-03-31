@@ -17,6 +17,7 @@ type Room struct {
 	HighlightCount    int64             `json:"highlight_count"`
 	Initial           bool              `json:"initial,omitempty"`
 	IsDM              bool              `json:"is_dm,omitempty"`
+	PrevBatch         string            `json:"prev_batch,omitempty"`
 }
 
 type RoomConnMetadata struct {

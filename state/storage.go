@@ -268,8 +268,8 @@ func (s *Storage) currentStateEventsInAllRooms(eventTypes []string) (map[string]
 	return result, nil
 }
 
-func (s *Storage) Accumulate(roomID string, timeline []json.RawMessage) (numNew int, latestNID int64, err error) {
-	return s.accumulator.Accumulate(roomID, timeline)
+func (s *Storage) Accumulate(roomID, prevBatch string, timeline []json.RawMessage) (numNew int, latestNID int64, err error) {
+	return s.accumulator.Accumulate(roomID, prevBatch, timeline)
 }
 
 func (s *Storage) Initialise(roomID string, state []json.RawMessage) (bool, error) {

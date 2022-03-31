@@ -2,6 +2,7 @@ package state
 
 import (
 	"bytes"
+	"database/sql"
 	"fmt"
 	"testing"
 
@@ -692,4 +693,140 @@ func TestTortureEventTable(t *testing.T) {
 		t.Fatalf("failed to retrieve nids for ids, got %d/%d", len(nids), len(eventIDs))
 	}
 
+}
+
+// Test that prev_batch can be inserted and can be intelligently queried.
+// 1: can insert events with a prev_batch
+// 2: SelectClosestPrevBatch with the event which has the prev_batch field returns that event's prev_batch
+// 3: SelectClosestPrevBatch with an event without a prev_batch returns the next newest (stream order) event with a prev_batch
+// 4: SelectClosestPrevBatch with an event without a prev_batch returns nothing if there are no newer events with a prev_batch
+func TestEventTablePrevBatch(t *testing.T) {
+	db, err := sqlx.Open("postgres", postgresConnectionString)
+	if err != nil {
+		t.Fatalf("failed to open SQL db: %s", err)
+	}
+	txn, err := db.Beginx()
+	if err != nil {
+		t.Fatalf("failed to start txn: %s", err)
+	}
+	roomID1 := "!1:localhost"
+	roomID2 := "!2:localhost"
+	table := NewEventTable(db)
+	// interleave room 1 and room 2 events, and assign prev_batch to some events
+	//    ------newer----->
+	//   0 1 2 3 4 5 6 7 8 9   index
+	//   A B C D E F G H I J   event ID
+	//   1 1 2 1 1 2 2 1 2 1   room ID
+	//     p p p   p   p       prev batch
+	events := []Event{
+		{
+			ID:     "$A",
+			RoomID: roomID1,
+			JSON:   []byte(`{"type":"my_type"}`),
+		},
+		{
+			ID:        "$B",
+			RoomID:    roomID1,
+			JSON:      []byte(`{"type":"my_type"}`),
+			PrevBatch: sql.NullString{String: "pb", Valid: true},
+		},
+		{
+			ID:        "$C",
+			RoomID:    roomID2,
+			JSON:      []byte(`{"type":"my_type"}`),
+			PrevBatch: sql.NullString{String: "pc", Valid: true},
+		},
+		{
+			ID:        "$D",
+			RoomID:    roomID1,
+			JSON:      []byte(`{"type":"my_type"}`),
+			PrevBatch: sql.NullString{String: "pd", Valid: true},
+		},
+		{
+			ID:     "$E",
+			RoomID: roomID1,
+			JSON:   []byte(`{"type":"my_type"}`),
+		},
+		{
+			ID:        "$F",
+			RoomID:    roomID2,
+			JSON:      []byte(`{"type":"my_type"}`),
+			PrevBatch: sql.NullString{String: "pf", Valid: true},
+		},
+		{
+			ID:     "$G",
+			RoomID: roomID2,
+			JSON:   []byte(`{"type":"my_type"}`),
+		},
+		{
+			ID:        "$H",
+			RoomID:    roomID1,
+			JSON:      []byte(`{"type":"my_type"}`),
+			PrevBatch: sql.NullString{String: "ph", Valid: true},
+		},
+		{
+			ID:     "$I",
+			RoomID: roomID2,
+			JSON:   []byte(`{"type":"my_type"}`),
+		},
+		{
+			ID:     "$J",
+			RoomID: roomID1,
+			JSON:   []byte(`{"type":"my_type"}`),
+		},
+	}
+	eventIDs := make([]string, len(events))
+	for i := range events {
+		eventIDs[i] = events[i].ID
+	}
+
+	// 1: can insert events with a prev_batch
+	n, err := table.Insert(txn, events, true)
+	if err != nil {
+		t.Fatalf("failed to insert %d events: %s", len(events), err)
+	}
+	if n != len(events) {
+		t.Fatalf("only inserted %d/%d events", n, len(events))
+	}
+	eventNIDs, err := table.SelectNIDsByIDs(txn, eventIDs)
+	if err != nil || len(eventNIDs) != len(eventIDs) {
+		t.Fatalf("failed to get nids for ids: %s", err)
+	}
+	if err = txn.Commit(); err != nil {
+		t.Fatalf("failed to commit insert")
+	}
+
+	// 2: SelectClosestPrevBatch with the event which has the prev_batch field returns that event's prev_batch
+	prevBatch, err := table.SelectClosestPrevBatch(roomID1, eventNIDs[3]) // returns event D
+	if err != nil {
+		t.Fatalf("failed to SelectClosestPrevBatch: %s", err)
+	}
+	if prevBatch == "" || prevBatch != events[3].PrevBatch.String {
+		t.Fatalf("SelectClosestPrevBatch: got %v want %v", prevBatch, events[3].PrevBatch)
+	}
+
+	// 3: SelectClosestPrevBatch with an event without a prev_batch returns the next newest (stream order) event with a prev_batch
+	prevBatch, err = table.SelectClosestPrevBatch(roomID1, eventNIDs[4]) // query event E, returns event H
+	if err != nil {
+		t.Fatalf("failed to SelectClosestPrevBatch: %s", err)
+	}
+	if prevBatch == "" || prevBatch != events[7].PrevBatch.String {
+		t.Fatalf("SelectClosestPrevBatch: got %v want %v", prevBatch, events[7].PrevBatch)
+	}
+	prevBatch, err = table.SelectClosestPrevBatch(roomID1, eventNIDs[0]) // query event A, returns event B
+	if err != nil {
+		t.Fatalf("failed to SelectClosestPrevBatch: %s", err)
+	}
+	if prevBatch == "" || prevBatch != events[1].PrevBatch.String {
+		t.Fatalf("SelectClosestPrevBatch: got %v want %v", prevBatch, events[1].PrevBatch)
+	}
+
+	// 4: SelectClosestPrevBatch with an event without a prev_batch returns nothing if there are no newer events with a prev_batch
+	prevBatch, err = table.SelectClosestPrevBatch(roomID1, eventNIDs[8]) // query event I, returns nothing
+	if err != nil {
+		t.Fatalf("failed to SelectClosestPrevBatch: %s", err)
+	}
+	if prevBatch != "" {
+		t.Fatalf("SelectClosestPrevBatch: got %v want nothing", prevBatch)
+	}
 }
