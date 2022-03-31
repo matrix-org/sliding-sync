@@ -796,37 +796,38 @@ func TestEventTablePrevBatch(t *testing.T) {
 		t.Fatalf("failed to commit insert")
 	}
 
+	assertPrevBatch := func(roomID string, index int, wantPrevBatch string) {
+		gotPrevBatch, err := table.SelectClosestPrevBatch(roomID, eventNIDs[index])
+		if err != nil {
+			t.Fatalf("failed to SelectClosestPrevBatch: %s", err)
+		}
+		if wantPrevBatch != "" {
+			if gotPrevBatch == "" || gotPrevBatch != wantPrevBatch {
+				t.Fatalf("SelectClosestPrevBatch: got %v want %v", gotPrevBatch, wantPrevBatch)
+			}
+		} else if gotPrevBatch != "" {
+			t.Fatalf("SelectClosestPrevBatch: got %v want nothing", gotPrevBatch)
+		}
+		gotPrevBatch, err = table.SelectClosestPrevBatchByID(roomID, eventIDs[index])
+		if err != nil {
+			t.Fatalf("failed to SelectClosestPrevBatchByID: %s", err)
+		}
+		if wantPrevBatch != "" {
+			if gotPrevBatch == "" || gotPrevBatch != wantPrevBatch {
+				t.Fatalf("SelectClosestPrevBatchByID: got %v want %v", gotPrevBatch, wantPrevBatch)
+			}
+		} else if gotPrevBatch != "" {
+			t.Fatalf("SelectClosestPrevBatchByID: got %v want nothing", gotPrevBatch)
+		}
+	}
+
 	// 2: SelectClosestPrevBatch with the event which has the prev_batch field returns that event's prev_batch
-	prevBatch, err := table.SelectClosestPrevBatch(roomID1, eventNIDs[3]) // returns event D
-	if err != nil {
-		t.Fatalf("failed to SelectClosestPrevBatch: %s", err)
-	}
-	if prevBatch == "" || prevBatch != events[3].PrevBatch.String {
-		t.Fatalf("SelectClosestPrevBatch: got %v want %v", prevBatch, events[3].PrevBatch)
-	}
+	assertPrevBatch(roomID1, 3, events[3].PrevBatch.String) // returns event D
 
 	// 3: SelectClosestPrevBatch with an event without a prev_batch returns the next newest (stream order) event with a prev_batch
-	prevBatch, err = table.SelectClosestPrevBatch(roomID1, eventNIDs[4]) // query event E, returns event H
-	if err != nil {
-		t.Fatalf("failed to SelectClosestPrevBatch: %s", err)
-	}
-	if prevBatch == "" || prevBatch != events[7].PrevBatch.String {
-		t.Fatalf("SelectClosestPrevBatch: got %v want %v", prevBatch, events[7].PrevBatch)
-	}
-	prevBatch, err = table.SelectClosestPrevBatch(roomID1, eventNIDs[0]) // query event A, returns event B
-	if err != nil {
-		t.Fatalf("failed to SelectClosestPrevBatch: %s", err)
-	}
-	if prevBatch == "" || prevBatch != events[1].PrevBatch.String {
-		t.Fatalf("SelectClosestPrevBatch: got %v want %v", prevBatch, events[1].PrevBatch)
-	}
+	assertPrevBatch(roomID1, 4, events[7].PrevBatch.String) // query event E, returns event H
+	assertPrevBatch(roomID1, 0, events[1].PrevBatch.String) // query event A, returns event B
 
 	// 4: SelectClosestPrevBatch with an event without a prev_batch returns nothing if there are no newer events with a prev_batch
-	prevBatch, err = table.SelectClosestPrevBatch(roomID1, eventNIDs[8]) // query event I, returns nothing
-	if err != nil {
-		t.Fatalf("failed to SelectClosestPrevBatch: %s", err)
-	}
-	if prevBatch != "" {
-		t.Fatalf("SelectClosestPrevBatch: got %v want nothing", prevBatch)
-	}
+	assertPrevBatch(roomID1, 8, "") // query event I, returns nothing
 }

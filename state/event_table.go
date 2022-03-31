@@ -276,6 +276,19 @@ func (t *EventTable) SelectEventNIDsWithTypeInRoom(txn *sqlx.Tx, eventType strin
 	return
 }
 
+// SelectClosestPrevBatchByID is the same as SelectClosestPrevBatch but works on event IDs not NIDs
+func (t *EventTable) SelectClosestPrevBatchByID(roomID string, eventID string) (prevBatch string, err error) {
+	err = t.db.QueryRow(
+		`SELECT prev_batch FROM syncv3_events WHERE prev_batch IS NOT NULL AND room_id=$1 AND event_nid >= (
+			SELECT event_nid FROM syncv3_events WHERE event_id = $2
+		) LIMIT 1`, roomID, eventID,
+	).Scan(&prevBatch)
+	if err == sql.ErrNoRows {
+		err = nil
+	}
+	return
+}
+
 // Select the closest prev batch token for the provided event NID. Returns the empty string if there
 // is no closest.
 func (t *EventTable) SelectClosestPrevBatch(roomID string, eventNID int64) (prevBatch string, err error) {

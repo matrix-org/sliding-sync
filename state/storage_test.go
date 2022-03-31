@@ -7,9 +7,12 @@ import (
 	"testing"
 	"time"
 
+	"github.com/jmoiron/sqlx"
 	"github.com/matrix-org/gomatrixserverlib"
 	"github.com/matrix-org/sync-v3/internal"
+	"github.com/matrix-org/sync-v3/sqlutil"
 	"github.com/matrix-org/sync-v3/testutils"
+	"github.com/tidwall/gjson"
 )
 
 func TestStorageRoomStateBeforeAndAfterEventPosition(t *testing.T) {
@@ -439,6 +442,91 @@ func TestVisibleEventNIDsBetween(t *testing.T) {
 		{13 + startPos, 15 + startPos},
 	})
 
+}
+
+func TestStorageLatestEventsInRoomsPrevBatch(t *testing.T) {
+	store := NewStorage(postgresConnectionString)
+	roomID := "!joined:bar"
+	alice := "@alice_TestStorageLatestEventsInRoomsPrevBatch:localhost"
+	stateEvents := []json.RawMessage{
+		testutils.NewStateEvent(t, "m.room.create", "", alice, map[string]interface{}{"creator": alice}),
+		testutils.NewStateEvent(t, "m.room.member", alice, alice, map[string]interface{}{"membership": "join"}),
+	}
+	timelines := []struct {
+		timeline  []json.RawMessage
+		prevBatch string
+	}{
+		{
+			prevBatch: "batch A",
+			timeline: []json.RawMessage{
+				testutils.NewEvent(t, "m.room.message", alice, map[string]interface{}{"body": "1"}), // prev batch should be associated with this event
+				testutils.NewEvent(t, "m.room.message", alice, map[string]interface{}{"body": "2"}),
+				testutils.NewEvent(t, "m.room.message", alice, map[string]interface{}{"body": "3"}),
+			},
+		},
+		{
+			prevBatch: "batch B",
+			timeline: []json.RawMessage{
+				testutils.NewEvent(t, "m.room.message", alice, map[string]interface{}{"body": "4"}),
+			},
+		},
+		{
+			prevBatch: "batch C",
+			timeline: []json.RawMessage{
+				testutils.NewEvent(t, "m.room.message", alice, map[string]interface{}{"body": "5"}),
+				testutils.NewEvent(t, "m.room.message", alice, map[string]interface{}{"body": "6"}),
+			},
+		},
+	}
+
+	_, err := store.Initialise(roomID, stateEvents)
+	if err != nil {
+		t.Fatalf("failed to initialise: %s", err)
+	}
+	eventIDs := []string{}
+	for _, timeline := range timelines {
+		_, _, err = store.Accumulate(roomID, timeline.prevBatch, timeline.timeline)
+		if err != nil {
+			t.Fatalf("failed to accumulate: %s", err)
+		}
+		for _, ev := range timeline.timeline {
+			eventIDs = append(eventIDs, gjson.ParseBytes(ev).Get("event_id").Str)
+		}
+	}
+	t.Logf("events: %v", eventIDs)
+	var eventNIDs []int64
+	sqlutil.WithTransaction(store.EventsTable.db, func(txn *sqlx.Tx) error {
+		eventNIDs, err = store.EventsTable.SelectNIDsByIDs(txn, eventIDs)
+		if err != nil {
+			t.Fatalf("failed to get nids for events: %s", err)
+		}
+		return nil
+	})
+	t.Logf("nids: %v", eventNIDs)
+	wantPrevBatches := []string{
+		// first chunk
+		timelines[0].prevBatch,
+		timelines[1].prevBatch,
+		timelines[1].prevBatch,
+		// second chunk
+		timelines[1].prevBatch,
+		// third chunk
+		timelines[2].prevBatch,
+		"",
+	}
+
+	for i := range wantPrevBatches {
+		wantPrevBatch := wantPrevBatches[i]
+		eventNID := eventNIDs[i]
+		// closest batch to the last event in the chunk (latest nid) is always the next prev batch token
+		pb, err := store.EventsTable.SelectClosestPrevBatch(roomID, eventNID)
+		if err != nil {
+			t.Fatalf("failed to SelectClosestPrevBatch: %s", err)
+		}
+		if pb != wantPrevBatch {
+			t.Fatalf("SelectClosestPrevBatch: got %v want %v", pb, wantPrevBatch)
+		}
+	}
 }
 
 func verifyRange(t *testing.T, result map[string][][2]int64, roomID string, wantRanges [][2]int64) {

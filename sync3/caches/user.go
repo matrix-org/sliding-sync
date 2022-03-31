@@ -20,6 +20,7 @@ type UserRoomData struct {
 	IsInvite          bool
 	NotificationCount int
 	HighlightCount    int
+	PrevBatch         string
 	Timeline          []json.RawMessage
 	Invite            *InviteData
 }
@@ -180,13 +181,26 @@ func (c *UserCache) LazyLoadTimelines(loadPos int64, roomIDs []string, maxTimeli
 				}
 			}
 
+			var err error
+			var prevBatch string
+
 			// either we satisfied their request or we can't get any more events, either way that's good enough
 			if len(timeline) == maxTimelineEvents || createEventExists {
+				if !createEventExists && len(timeline) > 0 {
+					// fetch a prev batch token for the earliest event
+					eventID := gjson.ParseBytes(timeline[0]).Get("event_id").Str
+					prevBatch, err = c.store.EventsTable.SelectClosestPrevBatchByID(roomID, eventID)
+					if err != nil {
+						logger.Err(err).Str("room", roomID).Str("event_id", eventID).Msg("failed to get prev batch token for room")
+					}
+				}
+
 				// we already have data, use it
 				result[roomID] = UserRoomData{
 					NotificationCount: urd.NotificationCount,
 					HighlightCount:    urd.HighlightCount,
 					Timeline:          timeline,
+					PrevBatch:         prevBatch,
 				}
 			} else {
 				// refetch from the db
@@ -202,7 +216,7 @@ func (c *UserCache) LazyLoadTimelines(loadPos int64, roomIDs []string, maxTimeli
 	if len(lazyRoomIDs) == 0 {
 		return result
 	}
-	roomIDToEvents, err := c.store.LatestEventsInRooms(c.UserID, lazyRoomIDs, loadPos, maxTimelineEvents)
+	roomIDToEvents, roomIDToPrevBatch, err := c.store.LatestEventsInRooms(c.UserID, lazyRoomIDs, loadPos, maxTimelineEvents)
 	if err != nil {
 		logger.Err(err).Strs("rooms", lazyRoomIDs).Msg("failed to get LatestEventsInRooms")
 		return nil
@@ -214,6 +228,7 @@ func (c *UserCache) LazyLoadTimelines(loadPos int64, roomIDs []string, maxTimeli
 			urd = UserRoomData{}
 		}
 		urd.Timeline = events
+		urd.PrevBatch = roomIDToPrevBatch[roomID]
 
 		result[roomID] = urd
 		c.roomToData[roomID] = urd
