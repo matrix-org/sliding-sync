@@ -593,3 +593,104 @@ func testTimelineLoadInitialEvents(v3 *testV3Server, token string, count int, wa
 		))
 	}
 }
+
+// Test that prev batch tokens appear correctly.
+// 1: When there is no newer prev_batch, none is present.
+// 2: When there is a newer prev_batch, it is present.
+func TestPrevBatchInTimeline(t *testing.T) {
+	pqString := testutils.PrepareDBConnectionString()
+	// setup code
+	v2 := runTestV2Server(t)
+	v3 := runTestServer(t, v2, pqString)
+	defer v2.close()
+	defer v3.close()
+	roomID := "!a:localhost"
+	v2.addAccount(alice, aliceToken)
+	v2.queueResponse(alice, sync2.SyncResponse{
+		Rooms: sync2.SyncRoomsResponse{
+			Join: v2JoinTimeline(roomEvents{
+				prevBatch: "create",
+				roomID:    roomID,
+				state:     createRoomState(t, alice, time.Now()),
+				events: []json.RawMessage{
+					testutils.NewStateEvent(t, "m.room.topic", "", alice, map[string]interface{}{}),
+					testutils.NewEvent(t, "m.room.message", alice, map[string]interface{}{"body": "hello"}),
+				},
+			}),
+		},
+	})
+	res := v3.mustDoV3Request(t, aliceToken, sync3.Request{
+		Lists: []sync3.RequestList{{
+			Ranges: sync3.SliceRanges{
+				[2]int64{0, 10},
+			},
+			RoomSubscription: sync3.RoomSubscription{
+				TimelineLimit: 1,
+			},
+		}},
+	})
+	MatchResponse(t, res, MatchV3Ops(
+		MatchV3SyncOpWithMatchers(MatchRoomRange(
+			[]roomMatcher{
+				MatchRoomID(roomID),
+				MatchRoomPrevBatch(""),
+			},
+		)),
+	))
+
+	// now make a newer prev_batch and try again
+	v2.queueResponse(alice, sync2.SyncResponse{
+		Rooms: sync2.SyncRoomsResponse{
+			Join: v2JoinTimeline(roomEvents{
+				prevBatch: "newer",
+				roomID:    roomID,
+				events: []json.RawMessage{
+					testutils.NewEvent(t, "m.room.message", alice, map[string]interface{}{"body": "hello 2"}),
+				},
+			}),
+		},
+	})
+	v2.waitUntilEmpty(t, alice)
+
+	testCases := []struct {
+		timelineLimit int64
+		wantPrevBatch string
+	}{
+		{
+			timelineLimit: 1,
+			wantPrevBatch: "newer", // the latest event matches the start of the timeline for the new sync, so prev batches align
+		},
+		{
+			timelineLimit: 2,
+			// the end of the timeline for the initial sync, we do not have a prev batch for this event.
+			// we cannot return 'create' here else we will miss the topic event before this event
+			// hence we return the cloest prev batch which is later than this event and hope clients can
+			// deal with dupes.
+			wantPrevBatch: "newer",
+		},
+		{
+			timelineLimit: 3,
+			wantPrevBatch: "create", // the topic event, the start of the timeline for the initial sync, so prev batches align
+		},
+	}
+	for _, tc := range testCases {
+		res := v3.mustDoV3Request(t, aliceToken, sync3.Request{
+			Lists: []sync3.RequestList{{
+				Ranges: sync3.SliceRanges{
+					[2]int64{0, 10},
+				},
+				RoomSubscription: sync3.RoomSubscription{
+					TimelineLimit: tc.timelineLimit,
+				},
+			}},
+		})
+		MatchResponse(t, res, MatchV3Ops(
+			MatchV3SyncOpWithMatchers(MatchRoomRange(
+				[]roomMatcher{
+					MatchRoomID(roomID),
+					MatchRoomPrevBatch(tc.wantPrevBatch),
+				},
+			)),
+		))
+	}
+}

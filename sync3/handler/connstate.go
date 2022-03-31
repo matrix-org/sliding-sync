@@ -337,7 +337,7 @@ func (s *ConnState) getDeltaRoomData(roomID string, event json.RawMessage) *sync
 func (s *ConnState) getInitialRoomData(listIndex int, timelineLimit int, roomIDs ...string) []sync3.Room {
 	rooms := make([]sync3.Room, len(roomIDs))
 	// We want to grab the user room data and the room metadata for each room ID.
-	roomIDToUserRoomData := s.userCache.LazyLoadTimelines(s.loadPosition, roomIDs, timelineLimit) // TODO: per-room timeline limit
+	roomIDToUserRoomData := s.userCache.LazyLoadTimelines(s.loadPosition, roomIDs, timelineLimit)
 	roomMetadatas := s.globalCache.LoadRooms(roomIDs...)
 	for i, roomID := range roomIDs {
 		userRoomData := roomIDToUserRoomData[roomID]
@@ -372,6 +372,7 @@ func (s *ConnState) getInitialRoomData(listIndex int, timelineLimit int, roomIDs
 			InviteState:       inviteState,
 			Initial:           true,
 			IsDM:              userRoomData.IsDM,
+			PrevBatch:         userRoomData.PrevBatch,
 		}
 	}
 	return rooms

@@ -354,6 +354,15 @@ func MatchRoomTimelineMostRecent(n int, events []json.RawMessage) roomMatcher {
 	}
 }
 
+func MatchRoomPrevBatch(prevBatch string) roomMatcher {
+	return func(r sync3.Room) error {
+		if prevBatch != r.PrevBatch {
+			return fmt.Errorf("MatchRoomPrevBatch: got %v want %v", r.PrevBatch, prevBatch)
+		}
+		return nil
+	}
+}
+
 // Match the timeline with exactly these events in exactly this order
 func MatchRoomTimeline(events []json.RawMessage) roomMatcher {
 	return func(r sync3.Room) error {
@@ -395,10 +404,11 @@ func MatchRoomInitial(initial bool) roomMatcher {
 }
 
 type roomEvents struct {
-	roomID string
-	name   string
-	state  []json.RawMessage
-	events []json.RawMessage
+	roomID    string
+	name      string
+	state     []json.RawMessage
+	events    []json.RawMessage
+	prevBatch string
 }
 
 func (re *roomEvents) MatchRoom(r sync3.Room, matchers ...roomMatcher) error {
@@ -424,6 +434,9 @@ func v2JoinTimeline(joinEvents ...roomEvents) map[string]sync2.SyncV2JoinRespons
 			data.State = sync2.EventsResponse{
 				Events: re.state,
 			}
+		}
+		if re.prevBatch != "" {
+			data.Timeline.PrevBatch = re.prevBatch
 		}
 		result[re.roomID] = data
 	}
