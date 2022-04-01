@@ -2,6 +2,7 @@ package main
 
 import (
 	"flag"
+	"fmt"
 	"net/http"
 	_ "net/http/pprof"
 	"os"
@@ -12,6 +13,10 @@ import (
 	"github.com/matrix-org/sync-v3/sync3/handler"
 )
 
+var GitCommit string
+
+const version = "0.1.0"
+
 var (
 	flagDestinationServer = flag.String("server", "", "The destination v2 matrix server")
 	flagBindAddr          = flag.String("port", ":8008", "Bind address")
@@ -19,6 +24,7 @@ var (
 )
 
 func main() {
+	fmt.Printf("Sync v3 [%s] (%s)\n", version, GitCommit)
 	flag.Parse()
 	if *flagDestinationServer == "" {
 		flag.Usage()
