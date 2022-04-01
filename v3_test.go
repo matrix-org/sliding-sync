@@ -63,7 +63,9 @@ func (s *testV2Server) queueResponse(userID string, resp sync2.SyncResponse) {
 	ch := s.queues[userID]
 	s.mu.Unlock()
 	ch <- resp
-	log.Printf("testV2Server: enqueued v2 response for %s", userID)
+	if !testutils.Quiet {
+		log.Printf("testV2Server: enqueued v2 response for %s", userID)
+	}
 }
 
 // blocks until nextResponse is called with an empty channel (that is, the server has caught up with v2 responses)
@@ -93,13 +95,17 @@ func (s *testV2Server) nextResponse(userID string) *sync2.SyncResponse {
 	}
 	select {
 	case data := <-ch:
-		log.Printf(
-			"testV2Server: nextResponse %s returning data: [invite=%d,join=%d,leave=%d]",
-			userID, len(data.Rooms.Invite), len(data.Rooms.Join), len(data.Rooms.Leave),
-		)
+		if !testutils.Quiet {
+			log.Printf(
+				"testV2Server: nextResponse %s returning data: [invite=%d,join=%d,leave=%d]",
+				userID, len(data.Rooms.Invite), len(data.Rooms.Join), len(data.Rooms.Leave),
+			)
+		}
 		return &data
 	case <-time.After(1 * time.Second):
-		log.Printf("testV2Server: nextResponse %s waited >1s for data, returning null", userID)
+		if !testutils.Quiet {
+			log.Printf("testV2Server: nextResponse %s waited >1s for data, returning null", userID)
+		}
 		return nil
 	}
 }
@@ -114,7 +120,7 @@ func (s *testV2Server) close() {
 	s.srv.Close()
 }
 
-func runTestV2Server(t *testing.T) *testV2Server {
+func runTestV2Server(t testutils.TestBenchInterface) *testV2Server {
 	t.Helper()
 	server := &testV2Server{
 		tokenToUser: make(map[string]string),
@@ -154,11 +160,13 @@ func runTestV2Server(t *testing.T) *testV2Server {
 }
 
 type testV3Server struct {
-	srv *httptest.Server
+	srv     *httptest.Server
+	handler *handler.SyncLiveHandler
 }
 
 func (s *testV3Server) close() {
 	s.srv.Close()
+	s.handler.Teardown()
 }
 
 func (s *testV3Server) restart(t *testing.T, v2 *testV2Server, pq string) {
@@ -170,12 +178,12 @@ func (s *testV3Server) restart(t *testing.T, v2 *testV2Server, pq string) {
 	v2.srv.CloseClientConnections() // kick-over v2 conns
 }
 
-func (s *testV3Server) mustDoV3Request(t *testing.T, token string, reqBody sync3.Request) (respBody *sync3.Response) {
+func (s *testV3Server) mustDoV3Request(t testutils.TestBenchInterface, token string, reqBody sync3.Request) (respBody *sync3.Response) {
 	t.Helper()
 	return s.mustDoV3RequestWithPos(t, token, "", reqBody)
 }
 
-func (s *testV3Server) mustDoV3RequestWithPos(t *testing.T, token string, pos string, reqBody sync3.Request) (respBody *sync3.Response) {
+func (s *testV3Server) mustDoV3RequestWithPos(t testutils.TestBenchInterface, token string, pos string, reqBody sync3.Request) (respBody *sync3.Response) {
 	t.Helper()
 	resp, respBytes, code := s.doV3Request(t, context.Background(), token, pos, reqBody)
 	if code != 200 {
@@ -184,7 +192,7 @@ func (s *testV3Server) mustDoV3RequestWithPos(t *testing.T, token string, pos st
 	return resp
 }
 
-func (s *testV3Server) doV3Request(t *testing.T, ctx context.Context, token string, pos string, reqBody interface{}) (respBody *sync3.Response, respBytes []byte, statusCode int) {
+func (s *testV3Server) doV3Request(t testutils.TestBenchInterface, ctx context.Context, token string, pos string, reqBody interface{}) (respBody *sync3.Response, respBytes []byte, statusCode int) {
 	t.Helper()
 	var body io.Reader
 	switch v := reqBody.(type) {
@@ -229,7 +237,7 @@ func (s *testV3Server) doV3Request(t *testing.T, ctx context.Context, token stri
 	return &r, respBytes, resp.StatusCode
 }
 
-func runTestServer(t *testing.T, v2Server *testV2Server, postgresConnectionString string) *testV3Server {
+func runTestServer(t testutils.TestBenchInterface, v2Server *testV2Server, postgresConnectionString string) *testV3Server {
 	t.Helper()
 	if postgresConnectionString == "" {
 		postgresConnectionString = testutils.PrepareDBConnectionString()
@@ -248,11 +256,12 @@ func runTestServer(t *testing.T, v2Server *testV2Server, postgresConnectionStrin
 	r.Handle("/_matrix/client/unstable/org.matrix.msc3575/sync", h)
 	srv := httptest.NewServer(r)
 	return &testV3Server{
-		srv: srv,
+		srv:     srv,
+		handler: h,
 	}
 }
 
-func createRoomState(t *testing.T, creator string, baseTimestamp time.Time) []json.RawMessage {
+func createRoomState(t testutils.TestBenchInterface, creator string, baseTimestamp time.Time) []json.RawMessage {
 	t.Helper()
 	var pl gomatrixserverlib.PowerLevelContent
 	pl.Defaults()

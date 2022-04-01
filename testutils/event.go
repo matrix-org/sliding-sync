@@ -10,6 +10,14 @@ import (
 	"github.com/matrix-org/gomatrixserverlib"
 )
 
+// Common functions between testing.T and testing.B
+type TestBenchInterface interface {
+	Fatalf(s string, args ...interface{})
+	Errorf(s string, args ...interface{})
+	Helper()
+	Name() string
+}
+
 var (
 	eventIDCounter = 0
 	eventIDMu      sync.Mutex
@@ -25,7 +33,7 @@ type eventMock struct {
 	Unsigned       interface{} `json:"unsigned,omitempty"`
 }
 
-func generateEventID(t *testing.T) string {
+func generateEventID(t TestBenchInterface) string {
 	eventIDMu.Lock()
 	defer eventIDMu.Unlock()
 	eventIDCounter++
@@ -48,7 +56,7 @@ func WithUnsigned(unsigned interface{}) eventMockModifier {
 	}
 }
 
-func NewStateEvent(t *testing.T, evType, stateKey, sender string, content interface{}, modifiers ...eventMockModifier) json.RawMessage {
+func NewStateEvent(t TestBenchInterface, evType, stateKey, sender string, content interface{}, modifiers ...eventMockModifier) json.RawMessage {
 	t.Helper()
 	e := &eventMock{
 		Type:           evType,
@@ -68,7 +76,7 @@ func NewStateEvent(t *testing.T, evType, stateKey, sender string, content interf
 	return j
 }
 
-func NewEvent(t *testing.T, evType, sender string, content interface{}, modifiers ...eventMockModifier) json.RawMessage {
+func NewEvent(t TestBenchInterface, evType, sender string, content interface{}, modifiers ...eventMockModifier) json.RawMessage {
 	t.Helper()
 	e := &eventMock{
 		Type:           evType,

@@ -84,6 +84,11 @@ func NewSync3Handler(v2Client sync2.Client, postgresDBURI string) (*SyncLiveHand
 	return sh, nil
 }
 
+// used in tests to close postgres connections
+func (h *SyncLiveHandler) Teardown() {
+	h.Storage.Teardown()
+}
+
 func (h *SyncLiveHandler) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	if req.Method != "POST" {
 		w.WriteHeader(http.StatusMethodNotAllowed)

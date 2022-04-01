@@ -650,3 +650,7 @@ func (s *Storage) joinedRoomsAfterPositionWithEvents(membershipEvents []Event, u
 
 	return joinedRooms, nil
 }
+
+func (s *Storage) Teardown() {
+	s.accumulator.db.Close()
+}

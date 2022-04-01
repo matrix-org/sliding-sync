@@ -8,11 +8,17 @@ import (
 	"os/user"
 )
 
+var Quiet = false
+
 func createLocalDB(dbName string) string {
-	fmt.Println("Note: tests require a postgres install accessible to the current user")
+	if !Quiet {
+		fmt.Println("Note: tests require a postgres install accessible to the current user")
+	}
 	createDB := exec.Command("createdb", dbName)
-	createDB.Stdout = os.Stdout
-	createDB.Stderr = os.Stderr
+	if !Quiet {
+		createDB.Stdout = os.Stdout
+		createDB.Stderr = os.Stderr
+	}
 	createDB.Run()
 	return dbName
 }
@@ -20,7 +26,9 @@ func createLocalDB(dbName string) string {
 func currentUser() string {
 	user, err := user.Current()
 	if err != nil {
-		fmt.Println("cannot get current user: ", err)
+		if !Quiet {
+			fmt.Println("cannot get current user: ", err)
+		}
 		os.Exit(2)
 	}
 	return user.Username
@@ -61,5 +69,6 @@ func PrepareDBConnectionString() (connStr string) {
 	if err != nil {
 		panic(err)
 	}
+	db.Close()
 	return
 }
