@@ -78,6 +78,7 @@ func (m *ConnMap) closeConn(conn *Conn) {
 	}
 
 	connID := conn.ConnID.String()
+	logger.Trace().Str("conn", connID).Msg("closing connection")
 	// remove conn from all the maps
 	delete(m.connIDToConn, connID)
 	h := conn.handler

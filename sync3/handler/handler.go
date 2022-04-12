@@ -151,6 +151,7 @@ func (h *SyncLiveHandler) serve(w http.ResponseWriter, req *http.Request) error 
 	}
 
 	requestBody.SetTimeoutMSecs(timeout)
+	log.Trace().Int64("pos", cpos).Int("timeout", timeout).Msg("recv")
 
 	resp, herr := conn.OnIncomingRequest(req.Context(), &requestBody)
 	if herr != nil {
@@ -199,6 +200,7 @@ func (h *SyncLiveHandler) setupConnection(req *http.Request, syncReq *sync3.Requ
 			}
 		}
 		if conn != nil {
+			log.Trace().Str("conn", conn.ConnID.String()).Msg("reusing conn")
 			return conn, nil
 		}
 		// conn doesn't exist, we probably nuked it.
@@ -233,10 +235,12 @@ func (h *SyncLiveHandler) setupConnection(req *http.Request, syncReq *sync3.Requ
 		}
 	}
 
+	log.Trace().Str("user", v2device.UserID).Msg("checking poller exists and is running")
 	h.PollerMap.EnsurePolling(
 		req.Header.Get("Authorization"), v2device.UserID, v2device.DeviceID, v2device.Since,
 		hlog.FromRequest(req).With().Str("user_id", v2device.UserID).Logger(),
 	)
+	log.Trace().Str("user", v2device.UserID).Msg("poller exists and is running")
 	// this may take a while so if the client has given up (e.g timed out) by this point, just stop.
 	// We'll be quicker next time as the poller will already exist.
 	if req.Context().Err() != nil {
