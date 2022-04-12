@@ -247,7 +247,7 @@ func runTestServer(t testutils.TestBenchInterface, v2Server *testV2Server, postg
 			Timeout: 5 * time.Minute,
 		},
 		DestinationServer: v2Server.url(),
-	}, postgresConnectionString)
+	}, postgresConnectionString, true)
 	if err != nil {
 		t.Fatalf("cannot make v3 handler: %s", err)
 	}

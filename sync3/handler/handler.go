@@ -46,7 +46,12 @@ type SyncLiveHandler struct {
 	GlobalCache *caches.GlobalCache
 }
 
-func NewSync3Handler(v2Client sync2.Client, postgresDBURI string) (*SyncLiveHandler, error) {
+func NewSync3Handler(v2Client sync2.Client, postgresDBURI string, debug bool) (*SyncLiveHandler, error) {
+	if debug {
+		zerolog.SetGlobalLevel(zerolog.TraceLevel)
+	} else {
+		zerolog.SetGlobalLevel(zerolog.InfoLevel)
+	}
 	store := state.NewStorage(postgresDBURI)
 	sh := &SyncLiveHandler{
 		V2:          v2Client,

@@ -55,14 +55,17 @@ func (s *connStateLive) liveUpdate(
 ) []sync3.ResponseOp {
 	// block until we get a new event, with appropriate timeout
 	for len(responseOperations) == 0 && len(response.RoomSubscriptions) == 0 && !response.Extensions.HasData(isInitial) {
+		logger.Trace().Str("user", s.userID).Msg("liveUpdate: no response data yet; blocking")
 		select {
 		case <-ctx.Done(): // client has given up
+			logger.Trace().Str("user", s.userID).Msg("liveUpdate: client gave up")
 			return responseOperations
 		case <-time.After(time.Duration(req.TimeoutMSecs()) * time.Millisecond): // we've timed out
+			logger.Trace().Str("user", s.userID).Msg("liveUpdate: timed out")
 			return responseOperations
 		case update := <-s.updates:
 			responseOperations = s.processLiveUpdate(update, responseOperations, response)
-			updateWillReturnResponse := len(responseOperations) > 0
+			updateWillReturnResponse := len(responseOperations) > 0 || len(response.RoomSubscriptions) > 0
 			// pass event to extensions AFTER processing
 			s.extensionsHandler.HandleLiveUpdate(update, ex, &response.Extensions, updateWillReturnResponse, isInitial)
 			// if there's more updates and we don't have lots stacked up already, go ahead and process another
@@ -73,6 +76,7 @@ func (s *connStateLive) liveUpdate(
 			}
 		}
 	}
+	logger.Trace().Str("user", s.userID).Int("ops", len(responseOperations)).Int("subs", len(response.RoomSubscriptions)).Msg("liveUpdate: returning")
 	// TODO: op consolidation
 	return responseOperations
 }
@@ -98,18 +102,21 @@ func (s *connStateLive) processLiveUpdate(up caches.Update, responseOperations [
 
 	switch update := up.(type) {
 	case *caches.RoomEventUpdate:
+		logger.Trace().Str("user", s.userID).Str("type", update.EventData.EventType).Msg("received event update")
 		subs, ops := s.processIncomingEvent(update)
 		responseOperations = append(responseOperations, ops...)
 		for _, sub := range subs {
 			response.RoomSubscriptions[sub.RoomID] = sub
 		}
 	case *caches.UnreadCountUpdate:
+		logger.Trace().Str("user", s.userID).Str("room", update.RoomID()).Msg("received unread count update")
 		subs, ops := s.processUnreadCountUpdate(update)
 		responseOperations = append(responseOperations, ops...)
 		for _, sub := range subs {
 			response.RoomSubscriptions[sub.RoomID] = sub
 		}
 	case *caches.InviteUpdate:
+		logger.Trace().Str("user", s.userID).Str("room", update.RoomID()).Msg("received invite update")
 		if update.Retired {
 			// remove the room from all rooms
 			for i, r := range s.allRooms {

@@ -439,7 +439,13 @@ func (p *Poller) parseRoomsResponse(res *SyncResponse) {
 	for roomID, roomData := range res.Rooms.Invite {
 		p.receiver.OnInvite(p.userID, roomID, roomData.InviteState.Events)
 	}
-	p.logger.Info().Ints(
+	var l *zerolog.Event
+	if len(res.Rooms.Invite) > 1 || len(res.Rooms.Join) > 1 {
+		l = p.logger.Info()
+	} else {
+		l = p.logger.Debug()
+	}
+	l.Ints(
 		"rooms [invite,join,leave]", []int{len(res.Rooms.Invite), len(res.Rooms.Join), len(res.Rooms.Leave)},
 	).Ints(
 		"storage [states,timelines,typing]", []int{stateCalls, timelineCalls, typingCalls},

@@ -81,6 +81,7 @@ func (c *Conn) OnIncomingRequest(ctx context.Context, req *Request) (resp *Respo
 		if c.lastClientRequest.Same(req) {
 			// this is the 2nd+ time we've seen this request, meaning the client likely retried this
 			// request. Send the response we sent before.
+			logger.Trace().Int64("pos", req.pos).Msg("returning cached response for pos")
 			return &c.lastServerResponse, nil
 		}
 	}
@@ -88,6 +89,7 @@ func (c *Conn) OnIncomingRequest(ctx context.Context, req *Request) (resp *Respo
 	// are playing games
 	if req.pos != 0 && req.pos != c.lastServerResponse.PosInt() && c.lastClientRequest.pos != req.pos {
 		// the client made up a position, reject them
+		logger.Trace().Int64("pos", req.pos).Msg("unknown pos")
 		return nil, &internal.HandlerError{
 			StatusCode: 400,
 			Err:        fmt.Errorf("unknown position: %d", req.pos),

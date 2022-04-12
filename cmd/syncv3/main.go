@@ -41,7 +41,7 @@ func main() {
 			Timeout: 5 * time.Minute,
 		},
 		DestinationServer: *flagDestinationServer,
-	}, *flagPostgres)
+	}, *flagPostgres, os.Getenv("SYNCV3_DEBUG") == "1")
 	if err != nil {
 		panic(err)
 	}
