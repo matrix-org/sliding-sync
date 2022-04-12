@@ -1,52 +1,55 @@
 name: Tests
 
 on:
-  push:
-    branches: ["main"]
-  pull_request:
-    branches: ["main"]
+    push:
+        branches: ["main"]
+    pull_request:
+        branches: ["main"]
 
 jobs:
-  build:
-    runs-on: ubuntu-latest
+    build:
+        runs-on: ubuntu-latest
 
-    # Service containers to run with `container-job`
-    services:
-      # Label used to access the service container
-      postgres:
-        # Docker Hub image
-        image: postgres:13-alpine
-        # Provide the password for postgres
-        env:
-          POSTGRES_USER: postgres
-          POSTGRES_PASSWORD: postgres
-          POSTGRES_DB: syncv3
-        ports:
-          # Maps tcp port 5432 on service container to the host
-          - 5432:5432
-        # Set health checks to wait until postgres has started
-        options: >-
-          --health-cmd pg_isready
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
+        # Service containers to run with `container-job`
+        services:
+            # Label used to access the service container
+            postgres:
+                # Docker Hub image
+                image: postgres:13-alpine
+                # Provide the password for postgres
+                env:
+                    POSTGRES_USER: postgres
+                    POSTGRES_PASSWORD: postgres
+                    POSTGRES_DB: syncv3
+                ports:
+                    # Maps tcp port 5432 on service container to the host
+                    - 5432:5432
+                # Set health checks to wait until postgres has started
+                options: >-
+                    --health-cmd pg_isready
+                    --health-interval 10s
+                    --health-timeout 5s
+                    --health-retries 5
 
-    steps:
-    - uses: actions/checkout@v2
+        steps:
+            - uses: actions/checkout@v2
 
-    - name: Install Go
-      uses: actions/setup-go@v2
-      with:
-        go-version: 1.15
+            - name: Install Go
+              uses: actions/setup-go@v2
+              with:
+                  go-version: 1.15
 
-    - name: Build
-      run: go build ./cmd/syncv3
+            - name: Build
+              run: go build ./cmd/syncv3
 
-    - name: Test
-      run: go test -p 1 ./...
-      env:
-        POSTGRES_HOST: localhost
-        POSTGRES_USER: postgres
-        POSTGRES_PASSWORD: postgres
-        POSTGRES_DB: syncv3
-        SYNCV3_DEBUG: "1"
+            - name: Test
+              run: go test -covermode=atomic -coverpkg ./... -p 1 ./... -coverprofile synccoverage.out
+              env:
+                  POSTGRES_HOST: localhost
+                  POSTGRES_USER: postgres
+                  POSTGRES_PASSWORD: postgres
+                  POSTGRES_DB: syncv3
+                  SYNCV3_DEBUG: "1"
+
+            - name: Coverage
+              run: go tool cover -func=synccoverage.out
