@@ -43,7 +43,8 @@ type Conn struct {
 	lastServerResponse Response
 
 	// ensure only 1 incoming request is handled per connection
-	mu *sync.Mutex
+	mu                       *sync.Mutex
+	cancelOutstandingRequest func()
 }
 
 func NewConn(connID ConnID, h ConnHandler) *Conn {
@@ -70,7 +71,12 @@ func (c *Conn) tryRequest(ctx context.Context, req *Request) (res *Response, err
 
 // OnIncomingRequest advances the clients position in the stream, returning the response position and data.
 func (c *Conn) OnIncomingRequest(ctx context.Context, req *Request) (resp *Response, herr *internal.HandlerError) {
+	if c.cancelOutstandingRequest != nil {
+		c.cancelOutstandingRequest()
+	}
 	c.mu.Lock()
+	ctx, cancel := context.WithCancel(ctx)
+	c.cancelOutstandingRequest = cancel
 	// it's intentional for the lock to be held whilst inside HandleIncomingRequest
 	// as it guarantees linearisation of data within a single connection
 	defer c.mu.Unlock()

@@ -83,6 +83,111 @@ func TestMultipleConnsAtStartup(t *testing.T) {
 	))
 }
 
+// Regression test for running the proxy server behind a reverse proxy.
+// The problem: when using a reverse proxy and a client cancels a request, the reverse proxy may
+// not terminate the upstream connection. If this happens, subsequent requests from the client will
+// stack up in Conn behind a mutex until the cancelled request is processed. In reality, we want the
+// cancelled request to be stopped entirely. Whilst we cannot force reverse proxies to terminate the
+// connection, we _can_ check if there is an outstanding request holding the mutex, and if so, interrupt
+// it at the application layer. This test ensures we do that.
+func TestOutstandingRequestsGetCancelled(t *testing.T) {
+	pqString := testutils.PrepareDBConnectionString()
+	// setup code
+	v2 := runTestV2Server(t)
+	v3 := runTestServer(t, v2, pqString)
+	defer v2.close()
+	defer v3.close()
+	// Rooms A,B gets sent to the client initially, then we will send a 2nd blocking request with a 3s timeout.
+	// During this time, we will send a 3rd request with modified sort operations to ensure that the proxy can
+	// return an immediate response. We _should_ see the response promptly as the blocking request gets cancelled.
+	// If it takes seconds to process this request, that implies it got stacked up behind a previous request,
+	// failing the test.
+	roomA := "!a:localhost" // name is A, older timestamp
+	roomB := "!b:localhost" // name is B, newer timestamp
+	v2.addAccount(alice, aliceToken)
+	v2.queueResponse(alice, sync2.SyncResponse{
+		Rooms: sync2.SyncRoomsResponse{
+			Join: v2JoinTimeline(roomEvents{
+				roomID: roomA,
+				state:  createRoomState(t, alice, time.Now()),
+				events: []json.RawMessage{
+					testutils.NewStateEvent(t, "m.room.name", "", alice, map[string]interface{}{"name": "A"}),
+				},
+			}, roomEvents{
+				roomID: roomB,
+				state:  createRoomState(t, alice, time.Now().Add(time.Hour)),
+				events: []json.RawMessage{
+					testutils.NewStateEvent(t, "m.room.name", "", alice, map[string]interface{}{"name": "B"}, testutils.WithTimestamp(time.Now().Add(time.Hour))),
+				},
+			}),
+		},
+	})
+	// first request to get some data
+	res := v3.mustDoV3Request(t, aliceToken, sync3.Request{
+		Lists: []sync3.RequestList{{
+			Ranges: sync3.SliceRanges{
+				[2]int64{0, 1},
+			},
+			Sort: []string{sync3.SortByName}, // A,B
+			RoomSubscription: sync3.RoomSubscription{
+				TimelineLimit: 1,
+			},
+		}},
+	})
+	MatchResponse(t, res, MatchV3Count(2), MatchV3Ops(
+		MatchV3SyncOpWithMatchers(
+			MatchRoomRange(
+				[]roomMatcher{MatchRoomID(roomA)},
+				[]roomMatcher{MatchRoomID(roomB)},
+			),
+		),
+	))
+	// now we do a blocking request, and a few ms later do another request which can be satisfied
+	// using the same pos
+	pos := res.Pos
+	waitTimeMS := 3000
+	startTime := time.Now()
+	go func() {
+		time.Sleep(100 * time.Millisecond)
+		res2 := v3.mustDoV3RequestWithPos(t, aliceToken, pos, sync3.Request{
+			Lists: []sync3.RequestList{{
+				Ranges: sync3.SliceRanges{
+					[2]int64{0, 1},
+				},
+				Sort: []string{sync3.SortByRecency}, // B,A
+				RoomSubscription: sync3.RoomSubscription{
+					TimelineLimit: 1,
+				},
+			}},
+		})
+		MatchResponse(t, res2, MatchV3Count(2), MatchV3Ops(
+			MatchV3InvalidateOp(0, 0, 1),
+			MatchV3SyncOpWithMatchers(
+				MatchRoomRange(
+					[]roomMatcher{MatchRoomID(roomB)},
+					[]roomMatcher{MatchRoomID(roomA)},
+				),
+			),
+		))
+		if time.Since(startTime) > time.Second {
+			t.Errorf("took >1s to process request which should have been processed instantly, took %v", time.Since(startTime))
+		}
+	}()
+	req := sync3.Request{
+		Lists: []sync3.RequestList{{
+			Ranges: sync3.SliceRanges{
+				[2]int64{0, 1},
+			},
+		}},
+	}
+	req.SetTimeoutMSecs(waitTimeMS)
+	res = v3.mustDoV3RequestWithPos(t, aliceToken, pos, req)
+	if time.Since(startTime) > time.Second {
+		t.Errorf("took >1s to process request which should have been interrupted before timing out, took %v", time.Since(startTime))
+	}
+	MatchResponse(t, res, MatchV3Count(2), MatchV3Ops())
+}
+
 // Regression test to ensure that ?timeout= isn't reset when live events come in.
 func TestConnectionTimeoutNotReset(t *testing.T) {
 	pqString := testutils.PrepareDBConnectionString()

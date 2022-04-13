@@ -635,6 +635,25 @@ func MatchV3DeleteOp(listIndex, roomIndex int) opMatcher {
 	}
 }
 
+func MatchV3InvalidateOp(listIndex int, start, end int64) opMatcher {
+	return func(op sync3.ResponseOp) error {
+		if op.Op() != sync3.OpInvalidate {
+			return fmt.Errorf("op: %s != %s", op.Op(), sync3.OpInvalidate)
+		}
+		oper := op.(*sync3.ResponseOpRange)
+		if oper.Range[0] != start {
+			return fmt.Errorf("%s: got start %d want %d", sync3.OpInvalidate, oper.Range[0], start)
+		}
+		if oper.Range[1] != end {
+			return fmt.Errorf("%s: got end %d want %d", sync3.OpInvalidate, oper.Range[1], end)
+		}
+		if oper.List != listIndex {
+			return fmt.Errorf("%s: got list index %d want %d", sync3.OpInvalidate, oper.List, listIndex)
+		}
+		return nil
+	}
+}
+
 func MatchV3Ops(matchOps ...opMatcher) respMatcher {
 	return func(res *sync3.Response) error {
 		if len(matchOps) != len(res.Ops) {
