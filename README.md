@@ -1,3 +1,5 @@
+![GitHub branch checks state](https://img.shields.io/github/checks-status/matrix-org/sliding-sync/main)
+
 # sync-v3
 
 Run an experimental sync v3 server using an existing Matrix account. This is possible because, for the most part,
