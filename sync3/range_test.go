@@ -411,7 +411,15 @@ func TestRangeDelta(t *testing.T) {
 		{
 			oldRange:    [][2]int64{{0, 20}, {20, 24}},
 			newRange:    [][2]int64{{0, 20}, {20, 24}},
-			wantSames:   [][2]int64{{0, 20}, {20, 20}, {20, 24}},
+			wantSames:   [][2]int64{{0, 20}, {20, 24}},
+			wantAdded:   [][2]int64{},
+			wantRemoved: [][2]int64{},
+		},
+		// another regression test
+		{
+			oldRange:    [][2]int64{{0, 0}},
+			newRange:    [][2]int64{{0, 0}},
+			wantSames:   [][2]int64{{0, 0}},
 			wantAdded:   [][2]int64{},
 			wantRemoved: [][2]int64{},
 		},

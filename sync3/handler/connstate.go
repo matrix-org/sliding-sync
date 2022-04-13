@@ -241,6 +241,7 @@ func (s *ConnState) onIncomingListRequest(listIndex int, prevReqList, nextReqLis
 	if !reflect.DeepEqual(prevSort, nextReqList.Sort) || changedFilters {
 		// the sort/filter operations have changed, invalidate everything (if there were previous syncs), re-sort and re-SYNC
 		if prevSort != nil || changedFilters {
+			logger.Trace().Interface("range", prevRange).Msg("INVALIDATEing because sort/filter ops have changed")
 			for _, r := range prevRange {
 				responseOperations = append(responseOperations, &sync3.ResponseOpRange{
 					List:      listIndex,
@@ -262,6 +263,9 @@ func (s *ConnState) onIncomingListRequest(listIndex int, prevReqList, nextReqLis
 	}
 
 	// send INVALIDATE for these ranges
+	if len(removedRanges) > 0 {
+		logger.Trace().Interface("range", removedRanges).Msg("INVALIDATEing because ranges were removed")
+	}
 	for _, r := range removedRanges {
 		responseOperations = append(responseOperations, &sync3.ResponseOpRange{
 			List:      listIndex,

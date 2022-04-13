@@ -53,14 +53,28 @@ func (s *connStateLive) liveUpdate(
 	ctx context.Context, req *sync3.Request, ex extensions.Request, isInitial bool,
 	response *sync3.Response, responseOperations []sync3.ResponseOp,
 ) []sync3.ResponseOp {
+	// we need to ensure that we keep consuming from the updates channel, even if they want a response
+	// immediately. If we have new list data we won't wait, but if we don't then we need to be able to
+	// catch-up to the current head position, hence giving 100ms grace period for processing.
+	if req.TimeoutMSecs() < 100 {
+		req.SetTimeoutMSecs(100)
+	}
 	// block until we get a new event, with appropriate timeout
+	startTime := time.Now()
 	for len(responseOperations) == 0 && len(response.RoomSubscriptions) == 0 && !response.Extensions.HasData(isInitial) {
-		logger.Trace().Str("user", s.userID).Msg("liveUpdate: no response data yet; blocking")
+		timeToWait := time.Duration(req.TimeoutMSecs()) * time.Millisecond
+		timeWaited := time.Since(startTime)
+		timeLeftToWait := timeToWait - timeWaited
+		if timeLeftToWait < 0 {
+			logger.Trace().Str("user", s.userID).Str("time_waited", timeWaited.String()).Msg("liveUpdate: timed out")
+			return responseOperations
+		}
+		logger.Trace().Str("user", s.userID).Str("dur", timeLeftToWait.String()).Msg("liveUpdate: no response data yet; blocking")
 		select {
 		case <-ctx.Done(): // client has given up
 			logger.Trace().Str("user", s.userID).Msg("liveUpdate: client gave up")
 			return responseOperations
-		case <-time.After(time.Duration(req.TimeoutMSecs()) * time.Millisecond): // we've timed out
+		case <-time.After(timeLeftToWait): // we've timed out
 			logger.Trace().Str("user", s.userID).Msg("liveUpdate: timed out")
 			return responseOperations
 		case update := <-s.updates:

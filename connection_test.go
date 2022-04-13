@@ -82,3 +82,101 @@ func TestMultipleConnsAtStartup(t *testing.T) {
 		)),
 	))
 }
+
+// Regression test to ensure that ?timeout= isn't reset when live events come in.
+func TestConnectionTimeoutNotReset(t *testing.T) {
+	pqString := testutils.PrepareDBConnectionString()
+	// setup code
+	v2 := runTestV2Server(t)
+	v3 := runTestServer(t, v2, pqString)
+	defer v2.close()
+	defer v3.close()
+	// One room gets sent v2 updates, one room does not. Room B gets updates, which, because
+	// we are tracking alphabetically, causes those updates to not trigger a v3 response. This
+	// used to reset the timeout though, so we will check to make sure it doesn't.
+	roomA := "!a:localhost"
+	roomB := "!b:localhost"
+	v2.addAccount(alice, aliceToken)
+	v2.queueResponse(alice, sync2.SyncResponse{
+		Rooms: sync2.SyncRoomsResponse{
+			Join: v2JoinTimeline(roomEvents{
+				roomID: roomA,
+				state:  createRoomState(t, alice, time.Now()),
+				events: []json.RawMessage{
+					testutils.NewStateEvent(t, "m.room.name", "", alice, map[string]interface{}{"name": "A"}),
+				},
+			},
+				roomEvents{
+					roomID: roomB,
+					state:  createRoomState(t, alice, time.Now()),
+					events: []json.RawMessage{
+						testutils.NewStateEvent(t, "m.room.name", "", alice, map[string]interface{}{"name": "B"}),
+					},
+				}),
+		},
+	})
+	// first request to get some data
+	res := v3.mustDoV3Request(t, aliceToken, sync3.Request{
+		Lists: []sync3.RequestList{{
+			Ranges: sync3.SliceRanges{
+				[2]int64{0, 0}, // first room only -> roomID
+			},
+			Sort: []string{sync3.SortByName},
+			RoomSubscription: sync3.RoomSubscription{
+				TimelineLimit: 1,
+			},
+		}},
+	})
+	MatchResponse(t, res, MatchV3Count(2), MatchV3Ops(
+		MatchV3SyncOpWithMatchers(
+			MatchRoomRange(
+				[]roomMatcher{
+					MatchRoomID(roomA),
+				},
+			),
+		),
+	))
+	// 2nd request with a 1s timeout
+	req := sync3.Request{
+		Lists: []sync3.RequestList{{
+			Ranges: sync3.SliceRanges{
+				[2]int64{0, 0},
+			},
+		}},
+	}
+	req.SetTimeoutMSecs(1000) // 1s
+	// inject 4 events 500ms apart - if we reset the timeout each time then we will return late
+	go func() {
+		time.Sleep(10 * time.Millisecond)
+		ticker := time.NewTicker(500 * time.Millisecond)
+		i := 0
+		for range ticker.C {
+			if i > 3 {
+				t.Logf("stopping update")
+				break
+			}
+			t.Logf("sending update")
+			v2.queueResponse(alice, sync2.SyncResponse{
+				Rooms: sync2.SyncRoomsResponse{
+					Join: v2JoinTimeline(roomEvents{
+						roomID: roomB,
+						events: []json.RawMessage{
+							testutils.NewEvent(
+								t, "m.room.message", alice, map[string]interface{}{"old": "msg"}, testutils.WithTimestamp(time.Now().Add(-2*time.Hour)),
+							),
+						},
+					}),
+				},
+			})
+			i++
+		}
+	}()
+	startTime := time.Now()
+	res = v3.mustDoV3RequestWithPos(t, aliceToken, res.Pos, req)
+	dur := time.Since(startTime)
+	if dur > (1500 * time.Millisecond) { // 0.5s leeway
+		t.Fatalf("request took %v to complete, expected ~1s", dur)
+	}
+	MatchResponse(t, res, MatchV3Count(2), MatchV3Ops())
+
+}

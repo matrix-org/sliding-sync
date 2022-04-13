@@ -5,7 +5,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
 	"io/ioutil"
 	"log"
 	"net/http"
@@ -192,24 +191,19 @@ func (s *testV3Server) mustDoV3RequestWithPos(t testutils.TestBenchInterface, to
 	return resp
 }
 
-func (s *testV3Server) doV3Request(t testutils.TestBenchInterface, ctx context.Context, token string, pos string, reqBody interface{}) (respBody *sync3.Response, respBytes []byte, statusCode int) {
+func (s *testV3Server) doV3Request(t testutils.TestBenchInterface, ctx context.Context, token string, pos string, reqBody sync3.Request) (respBody *sync3.Response, respBytes []byte, statusCode int) {
 	t.Helper()
-	var body io.Reader
-	switch v := reqBody.(type) {
-	case []byte:
-		body = bytes.NewBuffer(v)
-	case json.RawMessage:
-		body = bytes.NewBuffer(v)
-	case string:
-		body = bytes.NewBufferString(v)
-	default:
-		j, err := json.Marshal(v)
-		if err != nil {
-			t.Fatalf("cannot marshal request body as JSON: %s", err)
-		}
-		body = bytes.NewBuffer(j)
+	j, err := json.Marshal(reqBody)
+	if err != nil {
+		t.Fatalf("cannot marshal request body as JSON: %s", err)
 	}
-	qps := "?timeout=20"
+	body := bytes.NewBuffer(j)
+	qps := "?timeout="
+	if reqBody.TimeoutMSecs() > 0 {
+		qps += fmt.Sprintf("%d", reqBody.TimeoutMSecs())
+	} else {
+		qps += "20"
+	}
 	if pos != "" {
 		qps += fmt.Sprintf("&pos=%s", pos)
 	}

@@ -77,6 +77,21 @@ func (r SliceRanges) Delta(next SliceRanges) (added SliceRanges, removed SliceRa
 	added = [][2]int64{}
 	removed = [][2]int64{}
 	same = [][2]int64{}
+	// short circuit for same ranges
+	if len(r) == len(next) {
+		isSame := true
+		for i := range next {
+			if r[i] != next[i] {
+				isSame = false
+				break
+			}
+		}
+		if isSame {
+			same = next
+			return
+		}
+	}
+
 	// sort all points from min to max then do a sweep line algorithm over it with open/closed lists
 	// to track overlaps, runtime O(nlogn) due to sorting points
 	//              Old ranges
