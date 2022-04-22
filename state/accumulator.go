@@ -63,7 +63,7 @@ func (a *Accumulator) calculateNewSnapshot(old StrippedEvents, new Event) (Strip
 	newTuple := tupleKey(new)
 	added := false
 	var replacedNID int64
-	var result StrippedEvents
+	result := make(StrippedEvents, 0, len(old)+1)
 	for _, e := range old {
 		existingTuple := tupleKey(e)
 		if e.NID == new.NID && existingTuple != newTuple {
