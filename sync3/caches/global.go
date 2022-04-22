@@ -111,7 +111,7 @@ func (c *GlobalCache) LoadJoinedRooms(userID string) (pos int64, joinedRooms map
 }
 
 // TODO: remove? Doesn't touch global cache fields
-func (c *GlobalCache) LoadRoomState(roomID string, loadPosition int64, requiredState [][2]string) []json.RawMessage {
+func (c *GlobalCache) LoadRoomState(roomIDs []string, loadPosition int64, requiredState [][2]string) map[string][]json.RawMessage {
 	if len(requiredState) == 0 {
 		return nil
 	}
@@ -145,38 +145,42 @@ func (c *GlobalCache) LoadRoomState(roomID string, loadPosition int64, requiredS
 			queryStateMap[evType] = nil
 		}
 	}
-	stateEvents, err := c.store.RoomStateAfterEventPosition(roomID, loadPosition, queryStateMap)
-	if err != nil {
-		logger.Err(err).Str("room", roomID).Int64("pos", loadPosition).Msg("failed to load room state")
-		return nil
-	}
-	var result []json.RawMessage
-NextEvent:
-	for _, ev := range stateEvents {
-		// check if we should include this event due to wildcard event types
-		for _, sk := range stateKeysForWildcardEventType {
-			if sk == ev.StateKey || sk == "*" {
-				result = append(result, ev.JSON)
-				continue NextEvent
+	resultMap := make(map[string][]json.RawMessage, len(roomIDs))
+	for _, roomID := range roomIDs {
+		stateEvents, err := c.store.RoomStateAfterEventPosition(roomID, loadPosition, queryStateMap)
+		if err != nil {
+			logger.Err(err).Str("room", roomID).Int64("pos", loadPosition).Msg("failed to load room state")
+			return nil
+		}
+		var result []json.RawMessage
+	NextEvent:
+		for _, ev := range stateEvents {
+			// check if we should include this event due to wildcard event types
+			for _, sk := range stateKeysForWildcardEventType {
+				if sk == ev.StateKey || sk == "*" {
+					result = append(result, ev.JSON)
+					continue NextEvent
+				}
+			}
+			// check if we should include this event due to wildcard state keys
+			for evType := range eventTypesWithWildcardStateKeys {
+				if evType == ev.Type {
+					result = append(result, ev.JSON)
+					continue NextEvent
+				}
+			}
+			// check if we should include this event due to exact type/state key match
+			for _, sk := range requiredStateMap[ev.Type] {
+				if sk == ev.StateKey {
+					result = append(result, ev.JSON)
+					continue NextEvent
+				}
 			}
 		}
-		// check if we should include this event due to wildcard state keys
-		for evType := range eventTypesWithWildcardStateKeys {
-			if evType == ev.Type {
-				result = append(result, ev.JSON)
-				continue NextEvent
-			}
-		}
-		// check if we should include this event due to exact type/state key match
-		for _, sk := range requiredStateMap[ev.Type] {
-			if sk == ev.StateKey {
-				result = append(result, ev.JSON)
-				continue NextEvent
-			}
-		}
+		resultMap[roomID] = result
 	}
 	// TODO: cache?
-	return result
+	return resultMap
 }
 
 // Startup will populate the cache with the provided metadata.

@@ -96,7 +96,8 @@ func TestGlobalCacheLoadState(t *testing.T) {
 		},
 	}
 	for _, tc := range testCases {
-		got := globalCache.LoadRoomState(roomID, latest, tc.requiredState)
+		gotMap := globalCache.LoadRoomState([]string{roomID}, latest, tc.requiredState)
+		got := gotMap[roomID]
 		if len(got) != len(tc.wantEvents) {
 			t.Errorf("LoadState for input %v got %d events want %d", tc.requiredState, len(got), len(tc.wantEvents))
 			continue

@@ -343,6 +343,9 @@ func (s *ConnState) getInitialRoomData(listIndex int, timelineLimit int, roomIDs
 	// We want to grab the user room data and the room metadata for each room ID.
 	roomIDToUserRoomData := s.userCache.LazyLoadTimelines(s.loadPosition, roomIDs, timelineLimit)
 	roomMetadatas := s.globalCache.LoadRooms(roomIDs...)
+	// FIXME: required_state needs to be honoured!
+	roomIDToState := s.globalCache.LoadRoomState(roomIDs, s.loadPosition, s.muxedReq.GetRequiredState(listIndex, roomIDs[0]))
+
 	for i, roomID := range roomIDs {
 		userRoomData := roomIDToUserRoomData[roomID]
 		metadata := roomMetadatas[roomID]
@@ -364,7 +367,7 @@ func (s *ConnState) getInitialRoomData(listIndex int, timelineLimit int, roomIDs
 		}
 		var requiredState []json.RawMessage
 		if !userRoomData.IsInvite {
-			requiredState = s.globalCache.LoadRoomState(roomID, s.loadPosition, s.muxedReq.GetRequiredState(listIndex, roomID))
+			requiredState = roomIDToState[roomID]
 		}
 		rooms[i] = sync3.Room{
 			RoomID:            roomID,
