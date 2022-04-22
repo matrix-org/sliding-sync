@@ -119,49 +119,60 @@ func (c *GlobalCache) LoadRoomState(roomID string, loadPosition int64, requiredS
 		return nil
 	}
 	// pull out unique event types and convert the required state into a map
-	eventTypeSet := make(map[string]bool)
 	requiredStateMap := make(map[string][]string) // event_type -> []state_key
-	hasWildcardEventType := false
+	eventTypesWithWildcardStateKeys := make(map[string]bool)
+	var stateKeysForWildcardEventType []string
 	for _, rs := range requiredState {
 		if rs[0] == "*" {
-			hasWildcardEventType = true
+			stateKeysForWildcardEventType = append(stateKeysForWildcardEventType, rs[1])
+			continue
 		}
-		eventTypeSet[rs[0]] = true
-		requiredStateMap[rs[0]] = append(requiredStateMap[rs[0]], rs[1])
+		if rs[1] == "*" { // wildcard state key
+			eventTypesWithWildcardStateKeys[rs[0]] = true
+		} else {
+			requiredStateMap[rs[0]] = append(requiredStateMap[rs[0]], rs[1])
+		}
 	}
-	// if we have wildcard event types we need to pull all room state and cannot only pull out certain
-	// event types
-	if hasWildcardEventType {
-		eventTypeSet = make(map[string]bool)
+	// work out what to ask the storage layer: if we have wildcard event types we need to pull all
+	// room state and cannot only pull out certain event types. If we have wildcard state keys we
+	// need to use an empty list for state keys.
+	queryStateMap := make(map[string][]string)
+	if len(stateKeysForWildcardEventType) == 0 { // no wildcard event types
+		for evType, stateKeys := range requiredStateMap {
+			queryStateMap[evType] = stateKeys
+		}
+		for evType := range eventTypesWithWildcardStateKeys {
+			queryStateMap[evType] = nil
+		}
 	}
-	eventTypes := make([]string, len(eventTypeSet))
-	i := 0
-	for et := range eventTypeSet {
-		eventTypes[i] = et
-		i++
-	}
-	stateEvents, err := c.store.RoomStateAfterEventPosition(roomID, loadPosition, eventTypes...)
+	stateEvents, err := c.store.RoomStateAfterEventPosition(roomID, loadPosition, queryStateMap)
 	if err != nil {
 		logger.Err(err).Str("room", roomID).Int64("pos", loadPosition).Msg("failed to load room state")
 		return nil
 	}
 	var result []json.RawMessage
+NextEvent:
 	for _, ev := range stateEvents {
-		stateKeys := requiredStateMap[ev.Type]
-		stateKeys = append(stateKeys, requiredStateMap["*"]...)
-		include := false
-		for _, sk := range stateKeys {
-			if sk == "*" { // wildcard
-				include = true
-				break
-			}
-			if sk == ev.StateKey {
-				include = true
-				break
+		// check if we should include this event due to wildcard event types
+		for _, sk := range stateKeysForWildcardEventType {
+			if sk == ev.StateKey || sk == "*" {
+				result = append(result, ev.JSON)
+				continue NextEvent
 			}
 		}
-		if include {
-			result = append(result, ev.JSON)
+		// check if we should include this event due to wildcard state keys
+		for evType := range eventTypesWithWildcardStateKeys {
+			if evType == ev.Type {
+				result = append(result, ev.JSON)
+				continue NextEvent
+			}
+		}
+		// check if we should include this event due to exact type/state key match
+		for _, sk := range requiredStateMap[ev.Type] {
+			if sk == ev.StateKey {
+				result = append(result, ev.JSON)
+				continue NextEvent
+			}
 		}
 	}
 	// TODO: cache?

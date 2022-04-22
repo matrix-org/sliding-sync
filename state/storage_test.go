@@ -50,7 +50,7 @@ func TestStorageRoomStateBeforeAndAfterEventPosition(t *testing.T) {
 		{
 			name: "room state after the latest position includes the invite event",
 			getEvents: func() []Event {
-				events, err := store.RoomStateAfterEventPosition(roomID, latest)
+				events, err := store.RoomStateAfterEventPosition(roomID, latest, nil)
 				if err != nil {
 					t.Fatalf("RoomStateAfterEventPosition: %s", err)
 				}
@@ -61,7 +61,7 @@ func TestStorageRoomStateBeforeAndAfterEventPosition(t *testing.T) {
 		{
 			name: "room state after the latest position filtered for join_rule returns a single event",
 			getEvents: func() []Event {
-				events, err := store.RoomStateAfterEventPosition(roomID, latest, "m.room.join_rules")
+				events, err := store.RoomStateAfterEventPosition(roomID, latest, map[string][]string{"m.room.join_rules": nil})
 				if err != nil {
 					t.Fatalf("RoomStateAfterEventPosition: %s", err)
 				}
@@ -74,7 +74,10 @@ func TestStorageRoomStateBeforeAndAfterEventPosition(t *testing.T) {
 		{
 			name: "room state after the latest position filtered for join_rule and create event excludes member events",
 			getEvents: func() []Event {
-				events, err := store.RoomStateAfterEventPosition(roomID, latest, "m.room.create", "m.room.join_rules")
+				events, err := store.RoomStateAfterEventPosition(roomID, latest, map[string][]string{
+					"m.room.join_rules": []string{""},
+					"m.room.create":     nil, // all matching state events with this event type
+				})
 				if err != nil {
 					t.Fatalf("RoomStateAfterEventPosition: %s", err)
 				}
@@ -84,12 +87,27 @@ func TestStorageRoomStateBeforeAndAfterEventPosition(t *testing.T) {
 				events[0], events[2],
 			},
 		},
+		{
+			name: "room state after the latest position filtered for all members returns all member events",
+			getEvents: func() []Event {
+				events, err := store.RoomStateAfterEventPosition(roomID, latest, map[string][]string{
+					"m.room.member": nil, // all matching state events with this event type
+				})
+				if err != nil {
+					t.Fatalf("RoomStateAfterEventPosition: %s", err)
+				}
+				return events
+			},
+			wantEvents: []json.RawMessage{
+				events[1], events[3],
+			},
+		},
 	}
 
 	for _, tc := range testCases {
 		gotEvents := tc.getEvents()
 		if len(gotEvents) != len(tc.wantEvents) {
-			t.Errorf("%s: got %d events want %d", tc.name, len(gotEvents), len(tc.wantEvents))
+			t.Errorf("%s: got %d events want %d : got %+v", tc.name, len(gotEvents), len(tc.wantEvents), gotEvents)
 			continue
 		}
 		for i, eventJSON := range tc.wantEvents {

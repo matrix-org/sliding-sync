@@ -3,6 +3,7 @@ package state
 import (
 	"encoding/json"
 	"fmt"
+	"strings"
 
 	"github.com/jmoiron/sqlx"
 	"github.com/matrix-org/gomatrixserverlib"
@@ -276,7 +277,10 @@ func (s *Storage) Initialise(roomID string, state []json.RawMessage) (bool, erro
 	return s.accumulator.Initialise(roomID, state)
 }
 
-func (s *Storage) RoomStateAfterEventPosition(roomID string, pos int64, eventTypes ...string) (events []Event, err error) {
+// Look up room state after the given event position. eventTypesToStateKeys is a map of event type to a list of state keys for that event type.
+// If the list of state keys is empty then all events matching that event type will be returned. If the map is empty entirely, then all room state
+// will be returned.
+func (s *Storage) RoomStateAfterEventPosition(roomID string, pos int64, eventTypesToStateKeys map[string][]string) (events []Event, err error) {
 	err = sqlutil.WithTransaction(s.accumulator.db, func(txn *sqlx.Tx) error {
 		lastEventNID, replacesNID, snapID, err := s.accumulator.eventsTable.BeforeStateSnapshotIDForEventNID(txn, roomID, pos)
 		if err != nil {
@@ -303,7 +307,7 @@ func (s *Storage) RoomStateAfterEventPosition(roomID string, pos int64, eventTyp
 			currEventIsState = gjson.ParseBytes(lastEvent.JSON).Get("state_key").Exists()
 		}
 
-		if len(eventTypes) == 0 {
+		if len(eventTypesToStateKeys) == 0 {
 			snapshotRow, err := s.accumulator.snapshotTable.Select(txn, snapID)
 			if err != nil {
 				return err
@@ -329,14 +333,27 @@ func (s *Storage) RoomStateAfterEventPosition(roomID string, pos int64, eventTyp
 				return err
 			}
 		} else {
-			// do an optimised query to pull out only the event types we care about.
+			// do an optimised query to pull out only the event types and state keys we care about.
+			var args []interface{} // event type, state key, event type, state key, ....
+			var wheres []string
+			for evType, skeys := range eventTypesToStateKeys {
+				for _, skey := range skeys {
+					args = append(args, evType, skey)
+					wheres = append(wheres, "(syncv3_events.event_type = ? AND syncv3_events.state_key = ?)")
+				}
+				if len(skeys) == 0 {
+					args = append(args, evType)
+					wheres = append(wheres, "syncv3_events.event_type = ?")
+				}
+			}
+			args = append(args, snapID)
 			// Similar to CurrentStateEventsInAllRooms
 			query, args, err := sqlx.In(
 				`SELECT syncv3_events.event_nid, syncv3_events.event_type, syncv3_events.state_key, syncv3_events.event FROM syncv3_events
-				WHERE syncv3_events.event_type IN (?) AND syncv3_events.event_nid IN (
+				WHERE (`+strings.Join(wheres, " OR ")+`) AND syncv3_events.event_nid IN (
 					SELECT unnest(events) FROM syncv3_snapshots WHERE syncv3_snapshots.snapshot_id = ?
 				) ORDER BY syncv3_events.event_nid ASC`,
-				eventTypes, snapID,
+				args...,
 			)
 			if err != nil {
 				return fmt.Errorf("failed to form sql query: %s", err)
@@ -356,6 +373,26 @@ func (s *Storage) RoomStateAfterEventPosition(roomID string, pos int64, eventTyp
 					ev = *lastEvent
 				}
 				events = append(events, ev)
+			}
+			// handle the most recent event which won't be in the snapshot but may need to be.
+			// we handle the replace case but don't handle brand new state events
+			if currEventIsState && replacesNID == 0 {
+				// check if we should include it
+				for evType, stateKeys := range eventTypesToStateKeys {
+					if evType != lastEvent.Type {
+						continue
+					}
+					if len(stateKeys) == 0 {
+						events = append(events, *lastEvent)
+					} else {
+						for _, skey := range stateKeys {
+							if skey == lastEvent.StateKey {
+								events = append(events, *lastEvent)
+								break
+							}
+						}
+					}
+				}
 			}
 		}
 
