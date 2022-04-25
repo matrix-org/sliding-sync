@@ -9,6 +9,7 @@ import (
 	"github.com/matrix-org/sync-v3/sync2"
 	"github.com/matrix-org/sync-v3/sync3"
 	"github.com/matrix-org/sync-v3/testutils"
+	"github.com/rs/zerolog"
 )
 
 // The purpose of this benchmark is to ensure that sync v3 responds quickly regardless of how many
@@ -33,6 +34,7 @@ func benchNumV2Rooms(numRooms int, b *testing.B) {
 	pqString := testutils.PrepareDBConnectionString()
 	v2 := runTestV2Server(b)
 	v3 := runTestServer(b, v2, pqString)
+	zerolog.SetGlobalLevel(zerolog.Disabled)
 	defer v2.close()
 	defer v3.close()
 	allRooms := make([]roomEvents, numRooms)
