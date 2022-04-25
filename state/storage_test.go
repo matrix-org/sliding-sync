@@ -37,17 +37,6 @@ func TestStorageRoomStateBeforeAndAfterEventPosition(t *testing.T) {
 		wantEvents []json.RawMessage
 	}{
 		{
-			name: "room state before the latest position excludes the invite event",
-			getEvents: func() []Event {
-				events, err := store.RoomStateBeforeEventPosition(roomID, latest)
-				if err != nil {
-					t.Fatalf("RoomStateBeforeEventPosition: %s", err)
-				}
-				return events
-			},
-			wantEvents: events[0:3],
-		},
-		{
 			name: "room state after the latest position includes the invite event",
 			getEvents: func() []Event {
 				events, err := store.RoomStateAfterEventPosition([]string{roomID}, latest, nil)

@@ -23,7 +23,8 @@ type Event struct {
 	StateKey   string `db:"state_key"`
 	Membership string `db:"membership"`
 	// This is a snapshot ID which corresponds to some room state BEFORE this event has been applied.
-	BeforeStateSnapshotID int    `db:"before_state_snapshot_id"`
+	BeforeStateSnapshotID int64  `db:"before_state_snapshot_id"`
+	ReplacesNID           int64  `db:"event_replaces_nid"`
 	ID                    string `db:"event_id"`
 	RoomID                string `db:"room_id"`
 	// not all events include a prev batch (e.g if it was part of state not timeline, and only the first
@@ -127,7 +128,7 @@ func (t *EventTable) selectAny(txn *sqlx.Tx, numWanted int, queryStr string, pqA
 	}
 	if numWanted > 0 {
 		if numWanted != len(events) {
-			return nil, fmt.Errorf("Events table query %s got %d events wanted %d. err=%s", queryStr, len(events), numWanted, err)
+			return nil, fmt.Errorf("events table query %s got %d events wanted %d. err=%s", queryStr, len(events), numWanted, err)
 		}
 	}
 	return
@@ -191,12 +192,15 @@ func (t *EventTable) UpdateBeforeSnapshotID(txn *sqlx.Tx, eventNID, snapID, repl
 	return err
 }
 
-func (t *EventTable) BeforeStateSnapshotIDForEventNID(txn *sqlx.Tx, roomID string, eventNID int64) (lastEventNID, replacesNID, snapID int64, err error) {
+// query the latest events in each of the room IDs given, using highestNID as the highest event.
+func (t *EventTable) LatestEventInRooms(txn *sqlx.Tx, roomIDs []string, highestNID int64) (events []Event, err error) {
 	// the position (event nid) may be for a random different room, so we need to find the highest nid <= this position for this room
-	err = txn.QueryRow(
-		`SELECT event_nid, event_replaces_nid, before_state_snapshot_id FROM syncv3_events WHERE event_nid =
-		(SELECT MAX(event_nid) FROM syncv3_events WHERE room_id = $1 AND event_nid <= $2)`, roomID, eventNID,
-	).Scan(&lastEventNID, &replacesNID, &snapID)
+	err = txn.Select(
+		&events,
+		`SELECT event_nid, room_id, event_replaces_nid, before_state_snapshot_id, event_type, state_key, event FROM syncv3_events
+		WHERE event_nid IN (SELECT max(event_nid) FROM syncv3_events WHERE event_nid <= $1 AND room_id = ANY($2) GROUP BY room_id)`,
+		highestNID, pq.StringArray(roomIDs),
+	)
 	if err == sql.ErrNoRows {
 		err = nil
 	}

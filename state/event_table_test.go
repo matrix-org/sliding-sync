@@ -94,27 +94,29 @@ func TestEventTable(t *testing.T) {
 		}
 	}
 	// query the snapshot
-	lastEventNID, _, snapID, err := table.BeforeStateSnapshotIDForEventNID(txn, roomID, gotnids[1])
+	latestEvents, err := table.LatestEventInRooms(txn, []string{roomID}, gotnids[1])
+	le := latestEvents[0]
 	if err != nil {
 		t.Fatalf("BeforeStateSnapshotIDForEventNID: %s", err)
 	}
-	if snapID != firstSnapshotID {
-		t.Fatalf("BeforeStateSnapshotIDForEventNID: got snap ID %d want %d", snapID, firstSnapshotID)
+	if int64(le.BeforeStateSnapshotID) != firstSnapshotID {
+		t.Fatalf("BeforeStateSnapshotIDForEventNID: got snap ID %d want %d", int64(le.BeforeStateSnapshotID), firstSnapshotID)
 	}
 	// the queried position
-	if lastEventNID != gotnids[1] {
-		t.Fatalf("BeforeStateSnapshotIDForEventNID: didn't return last inserted event, got %d want %d", lastEventNID, gotnids[1])
+	if le.NID != gotnids[1] {
+		t.Fatalf("BeforeStateSnapshotIDForEventNID: didn't return last inserted event, got %d want %d", le.NID, gotnids[1])
 	}
 	// try again with a much higher pos
-	lastEventNID, _, snapID, err = table.BeforeStateSnapshotIDForEventNID(txn, roomID, 999999)
+	latestEvents, err = table.LatestEventInRooms(txn, []string{roomID}, 999999)
+	le = latestEvents[0]
 	if err != nil {
 		t.Fatalf("BeforeStateSnapshotIDForEventNID: %s", err)
 	}
-	if snapID != firstSnapshotID {
-		t.Fatalf("BeforeStateSnapshotIDForEventNID: got snap ID %d want %d", snapID, firstSnapshotID)
+	if int64(le.BeforeStateSnapshotID) != firstSnapshotID {
+		t.Fatalf("BeforeStateSnapshotIDForEventNID: got snap ID %d want %d", le.BeforeStateSnapshotID, firstSnapshotID)
 	}
-	if lastEventNID != gotnids[2] {
-		t.Fatalf("BeforeStateSnapshotIDForEventNID: didn't return last inserted event, got %d want %d", lastEventNID, gotnids[2])
+	if le.NID != gotnids[2] {
+		t.Fatalf("BeforeStateSnapshotIDForEventNID: didn't return last inserted event, got %d want %d", le.NID, gotnids[2])
 	}
 
 	// find max and query it
