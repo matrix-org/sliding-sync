@@ -197,6 +197,9 @@ func (t *EventTable) BeforeStateSnapshotIDForEventNID(txn *sqlx.Tx, roomID strin
 		`SELECT event_nid, event_replaces_nid, before_state_snapshot_id FROM syncv3_events WHERE event_nid =
 		(SELECT MAX(event_nid) FROM syncv3_events WHERE room_id = $1 AND event_nid <= $2)`, roomID, eventNID,
 	).Scan(&lastEventNID, &replacesNID, &snapID)
+	if err == sql.ErrNoRows {
+		err = nil
+	}
 	return
 }
 

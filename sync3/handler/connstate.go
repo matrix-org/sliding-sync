@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"reflect"
+	"runtime/trace"
 	"strings"
 
 	"github.com/matrix-org/sync-v3/internal"
@@ -128,8 +129,12 @@ func (s *ConnState) setInitialList(i int, l sync3.RequestList) {
 
 // OnIncomingRequest is guaranteed to be called sequentially (it's protected by a mutex in conn.go)
 func (s *ConnState) OnIncomingRequest(ctx context.Context, cid sync3.ConnID, req *sync3.Request, isInitial bool) (*sync3.Response, error) {
+	ctx, task := trace.NewTask(ctx, "OnIncomingRequest")
+	defer task.End()
 	if s.loadPosition == 0 {
+		region := trace.StartRegion(ctx, "load")
 		s.load(req)
+		region.End()
 	}
 	return s.onIncomingRequest(ctx, req, isInitial)
 }
@@ -161,7 +166,7 @@ func (s *ConnState) onIncomingRequest(ctx context.Context, req *sync3.Request, i
 
 	// start forming the response, handle subscriptions
 	response := &sync3.Response{
-		RoomSubscriptions: s.updateRoomSubscriptions(int(sync3.DefaultTimelineLimit), newSubs, newUnsubs),
+		RoomSubscriptions: s.updateRoomSubscriptions(ctx, int(sync3.DefaultTimelineLimit), newSubs, newUnsubs),
 	}
 	responseOperations := []sync3.ResponseOp{} // empty not nil slice
 
@@ -171,7 +176,7 @@ func (s *ConnState) onIncomingRequest(ctx context.Context, req *sync3.Request, i
 		if prevReq != nil && i < len(prevReq.Lists) {
 			prevList = &prevReq.Lists[i]
 		}
-		ops := s.onIncomingListRequest(i, prevList, &s.muxedReq.Lists[i])
+		ops := s.onIncomingListRequest(ctx, i, prevList, &s.muxedReq.Lists[i])
 		responseOperations = append(responseOperations, ops...)
 	}
 
@@ -181,10 +186,14 @@ func (s *ConnState) onIncomingRequest(ctx context.Context, req *sync3.Request, i
 	}
 	// Handle extensions AFTER processing lists as extensions may need to know which rooms the client
 	// is being notified about (e.g. for room account data)
+	region := trace.StartRegion(ctx, "extensions")
 	response.Extensions = s.extensionsHandler.Handle(ex, includedRoomIDs, isInitial)
+	region.End()
 
 	// do live tracking if we have nothing to tell the client yet
+	region = trace.StartRegion(ctx, "liveUpdate")
 	responseOperations = s.live.liveUpdate(ctx, req, ex, isInitial, response, responseOperations)
+	region.End()
 
 	response.Ops = responseOperations
 	response.Counts = s.lists.Counts() // counts are AFTER events are applied
@@ -208,7 +217,8 @@ func (s *ConnState) writeDeleteOp(listIndex, deletedIndex int) sync3.ResponseOp 
 	}
 }
 
-func (s *ConnState) onIncomingListRequest(listIndex int, prevReqList, nextReqList *sync3.RequestList) []sync3.ResponseOp {
+func (s *ConnState) onIncomingListRequest(ctx context.Context, listIndex int, prevReqList, nextReqList *sync3.RequestList) []sync3.ResponseOp {
+	defer trace.StartRegion(ctx, "onIncomingListRequest").End()
 	if !s.lists.ListExists(listIndex) {
 		s.setInitialList(listIndex, *nextReqList)
 	}
@@ -294,7 +304,8 @@ func (s *ConnState) onIncomingListRequest(listIndex int, prevReqList, nextReqLis
 	return responseOperations
 }
 
-func (s *ConnState) updateRoomSubscriptions(timelineLimit int, subs, unsubs []string) map[string]sync3.Room {
+func (s *ConnState) updateRoomSubscriptions(ctx context.Context, timelineLimit int, subs, unsubs []string) map[string]sync3.Room {
+	defer trace.StartRegion(ctx, "updateRoomSubscriptions").End()
 	result := make(map[string]sync3.Room)
 	for _, roomID := range subs {
 		// check that the user is allowed to see these rooms as they can set arbitrary room IDs

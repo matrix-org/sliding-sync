@@ -3,6 +3,7 @@ package handler
 import (
 	"context"
 	"encoding/json"
+	"runtime/trace"
 	"strings"
 	"time"
 
@@ -73,11 +74,14 @@ func (s *connStateLive) liveUpdate(
 		select {
 		case <-ctx.Done(): // client has given up
 			logger.Trace().Str("user", s.userID).Msg("liveUpdate: client gave up")
+			trace.Logf(ctx, "liveUpdate", "context cancelled")
 			return responseOperations
 		case <-time.After(timeLeftToWait): // we've timed out
 			logger.Trace().Str("user", s.userID).Msg("liveUpdate: timed out")
+			trace.Logf(ctx, "liveUpdate", "timed out after %v", timeLeftToWait)
 			return responseOperations
 		case update := <-s.updates:
+			trace.Logf(ctx, "liveUpdate", "process live update")
 			responseOperations = s.processLiveUpdate(update, responseOperations, response)
 			updateWillReturnResponse := len(responseOperations) > 0 || len(response.RoomSubscriptions) > 0
 			// pass event to extensions AFTER processing
