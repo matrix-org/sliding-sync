@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/jmoiron/sqlx"
+	"github.com/lib/pq"
 	"github.com/matrix-org/gomatrixserverlib"
 	"github.com/matrix-org/sync-v3/internal"
 	"github.com/matrix-org/sync-v3/sqlutil"
@@ -280,57 +281,72 @@ func (s *Storage) Initialise(roomID string, state []json.RawMessage) (bool, erro
 // Look up room state after the given event position. eventTypesToStateKeys is a map of event type to a list of state keys for that event type.
 // If the list of state keys is empty then all events matching that event type will be returned. If the map is empty entirely, then all room state
 // will be returned.
-func (s *Storage) RoomStateAfterEventPosition(roomID string, pos int64, eventTypesToStateKeys map[string][]string) (events []Event, err error) {
+func (s *Storage) RoomStateAfterEventPosition(roomIDs []string, pos int64, eventTypesToStateKeys map[string][]string) (roomToEvents map[string][]Event, err error) {
+	roomToEvents = make(map[string][]Event, len(roomIDs))
+	roomIndex := make(map[string]int, len(roomIDs))
 	err = sqlutil.WithTransaction(s.accumulator.db, func(txn *sqlx.Tx) error {
-		lastEventNID, replacesNID, snapID, err := s.accumulator.eventsTable.BeforeStateSnapshotIDForEventNID(txn, roomID, pos)
-		if err != nil {
-			return err
-		}
-		if snapID == 0 {
-			// if there is no before snapshot then this last event NID is _part of_ the initial state,
-			// ergo the state after this == the current state and we can safely ignore the lastEventNID
-			lastEventNID = 0
-			snapID, err = s.accumulator.roomsTable.CurrentAfterSnapshotID(txn, roomID)
+		// the i-th element maps to the right room ID: saves map lookups
+		snapIDs := make([]int64, len(roomIDs))
+		replaceNIDs := make([]int64, len(roomIDs))
+		lastEventNIDs := make([]int64, len(roomIDs))
+		lastEvents := make([]*Event, len(roomIDs))
+		for i, roomID := range roomIDs {
+			roomIndex[roomID] = i
+			lastEventNID, replacesNID, snapID, err := s.accumulator.eventsTable.BeforeStateSnapshotIDForEventNID(txn, roomID, pos)
 			if err != nil {
 				return err
 			}
-		}
-		currEventIsState := false
-		var lastEvent *Event
-		if lastEventNID > 0 {
-			// now load the event which has this before_snapshot and see if we need to roll it forward
-			lastEvents, err := s.accumulator.eventsTable.SelectByNIDs(txn, true, []int64{lastEventNID})
-			if err != nil {
-				return fmt.Errorf("SelectByNIDs last event nid %d : %s", lastEventNID, err)
+			if snapID == 0 {
+				// if there is no before snapshot then this last event NID is _part of_ the initial state,
+				// ergo the state after this == the current state and we can safely ignore the lastEventNID
+				lastEventNID = 0
+				snapID, err = s.accumulator.roomsTable.CurrentAfterSnapshotID(txn, roomID)
+				if err != nil {
+					return err
+				}
 			}
-			lastEvent = &lastEvents[0]
-			currEventIsState = gjson.ParseBytes(lastEvent.JSON).Get("state_key").Exists()
+			var lastEvent *Event
+			if lastEventNID > 0 {
+				// now load the event which has this before_snapshot and see if we need to roll it forward
+				lastEvents, err := s.accumulator.eventsTable.SelectByNIDs(txn, true, []int64{lastEventNID})
+				if err != nil {
+					return fmt.Errorf("SelectByNIDs last event nid %d : %s", lastEventNID, err)
+				}
+				lastEvent = &lastEvents[0]
+			}
+			replaceNIDs[i] = replacesNID
+			snapIDs[i] = snapID
+			lastEvents[i] = lastEvent
+			lastEventNIDs[i] = lastEventNID
 		}
 
 		if len(eventTypesToStateKeys) == 0 {
-			snapshotRow, err := s.accumulator.snapshotTable.Select(txn, snapID)
-			if err != nil {
-				return err
-			}
-			// we need to roll forward if this event is state
-			if currEventIsState {
-				if replacesNID != 0 {
-					// we determined at insert time of this event that this event replaces a nid in the snapshot.
-					// find it and replace it
-					for i := range snapshotRow.Events {
-						if snapshotRow.Events[i] == replacesNID {
-							snapshotRow.Events[i] = lastEventNID
-							break
-						}
-					}
-				} else {
-					// the event is still state, but it doesn't replace anything, so just add it onto the snapshot
-					snapshotRow.Events = append(snapshotRow.Events, lastEventNID)
+			for i, roomID := range roomIDs {
+				snapshotRow, err := s.accumulator.snapshotTable.Select(txn, snapIDs[i])
+				if err != nil {
+					return err
 				}
-			}
-			events, err = s.accumulator.eventsTable.SelectByNIDs(txn, true, snapshotRow.Events)
-			if err != nil {
-				return err
+				// we need to roll forward if this event is state
+				if gjson.ParseBytes(lastEvents[i].JSON).Get("state_key").Exists() {
+					if replaceNIDs[i] != 0 {
+						// we determined at insert time of this event that this event replaces a nid in the snapshot.
+						// find it and replace it
+						for j := range snapshotRow.Events {
+							if snapshotRow.Events[j] == replaceNIDs[i] {
+								snapshotRow.Events[j] = lastEventNIDs[i]
+								break
+							}
+						}
+					} else {
+						// the event is still state, but it doesn't replace anything, so just add it onto the snapshot
+						snapshotRow.Events = append(snapshotRow.Events, lastEventNIDs[i])
+					}
+				}
+				events, err := s.accumulator.eventsTable.SelectByNIDs(txn, true, snapshotRow.Events)
+				if err != nil {
+					return err
+				}
+				roomToEvents[roomID] = events
 			}
 		} else {
 			// do an optimised query to pull out only the event types and state keys we care about.
@@ -346,12 +362,12 @@ func (s *Storage) RoomStateAfterEventPosition(roomID string, pos int64, eventTyp
 					wheres = append(wheres, "syncv3_events.event_type = ?")
 				}
 			}
-			args = append(args, snapID)
+			args = append(args, pq.Int64Array(snapIDs))
 			// Similar to CurrentStateEventsInAllRooms
 			query, args, err := sqlx.In(
-				`SELECT syncv3_events.event_nid, syncv3_events.event_type, syncv3_events.state_key, syncv3_events.event FROM syncv3_events
+				`SELECT syncv3_events.event_nid, syncv3_events.room_id, syncv3_events.event_type, syncv3_events.state_key, syncv3_events.event FROM syncv3_events
 				WHERE (`+strings.Join(wheres, " OR ")+`) AND syncv3_events.event_nid IN (
-					SELECT unnest(events) FROM syncv3_snapshots WHERE syncv3_snapshots.snapshot_id = ?
+					SELECT unnest(events) FROM syncv3_snapshots WHERE syncv3_snapshots.snapshot_id = ANY(?)
 				) ORDER BY syncv3_events.event_nid ASC`,
 				args...,
 			)
@@ -365,37 +381,39 @@ func (s *Storage) RoomStateAfterEventPosition(roomID string, pos int64, eventTyp
 			defer rows.Close()
 			for rows.Next() {
 				var ev Event
-				if err := rows.Scan(&ev.NID, &ev.Type, &ev.StateKey, &ev.JSON); err != nil {
+				if err := rows.Scan(&ev.NID, &ev.RoomID, &ev.Type, &ev.StateKey, &ev.JSON); err != nil {
 					return err
 				}
-				if currEventIsState && replacesNID == ev.NID {
+				i := roomIndex[ev.RoomID]
+				if replaceNIDs[i] == ev.NID {
 					// this event is replaced by the last event
-					ev = *lastEvent
+					ev = *lastEvents[i]
 				}
-				events = append(events, ev)
+				roomToEvents[ev.RoomID] = append(roomToEvents[ev.RoomID], ev)
 			}
-			// handle the most recent event which won't be in the snapshot but may need to be.
+			// handle the most recent events which won't be in the snapshot but may need to be.
 			// we handle the replace case but don't handle brand new state events
-			if currEventIsState && replacesNID == 0 {
-				// check if we should include it
-				for evType, stateKeys := range eventTypesToStateKeys {
-					if evType != lastEvent.Type {
-						continue
-					}
-					if len(stateKeys) == 0 {
-						events = append(events, *lastEvent)
-					} else {
-						for _, skey := range stateKeys {
-							if skey == lastEvent.StateKey {
-								events = append(events, *lastEvent)
-								break
+			for i, replaceNID := range replaceNIDs {
+				if replaceNID == 0 {
+					// check if we should include it
+					for evType, stateKeys := range eventTypesToStateKeys {
+						if evType != lastEvents[i].Type {
+							continue
+						}
+						if len(stateKeys) == 0 {
+							roomToEvents[lastEvents[i].RoomID] = append(roomToEvents[lastEvents[i].RoomID], *lastEvents[i])
+						} else {
+							for _, skey := range stateKeys {
+								if skey == lastEvents[i].StateKey {
+									roomToEvents[lastEvents[i].RoomID] = append(roomToEvents[lastEvents[i].RoomID], *lastEvents[i])
+									break
+								}
 							}
 						}
 					}
 				}
 			}
 		}
-
 		return nil
 	})
 	return

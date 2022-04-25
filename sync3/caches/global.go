@@ -146,12 +146,12 @@ func (c *GlobalCache) LoadRoomState(roomIDs []string, loadPosition int64, requir
 		}
 	}
 	resultMap := make(map[string][]json.RawMessage, len(roomIDs))
-	for _, roomID := range roomIDs {
-		stateEvents, err := c.store.RoomStateAfterEventPosition(roomID, loadPosition, queryStateMap)
-		if err != nil {
-			logger.Err(err).Str("room", roomID).Int64("pos", loadPosition).Msg("failed to load room state")
-			return nil
-		}
+	roomIDToStateEvents, err := c.store.RoomStateAfterEventPosition(roomIDs, loadPosition, queryStateMap)
+	if err != nil {
+		logger.Err(err).Strs("rooms", roomIDs).Int64("pos", loadPosition).Msg("failed to load room state")
+		return nil
+	}
+	for roomID, stateEvents := range roomIDToStateEvents {
 		var result []json.RawMessage
 	NextEvent:
 		for _, ev := range stateEvents {

@@ -50,22 +50,22 @@ func TestStorageRoomStateBeforeAndAfterEventPosition(t *testing.T) {
 		{
 			name: "room state after the latest position includes the invite event",
 			getEvents: func() []Event {
-				events, err := store.RoomStateAfterEventPosition(roomID, latest, nil)
+				events, err := store.RoomStateAfterEventPosition([]string{roomID}, latest, nil)
 				if err != nil {
 					t.Fatalf("RoomStateAfterEventPosition: %s", err)
 				}
-				return events
+				return events[roomID]
 			},
 			wantEvents: events[:],
 		},
 		{
 			name: "room state after the latest position filtered for join_rule returns a single event",
 			getEvents: func() []Event {
-				events, err := store.RoomStateAfterEventPosition(roomID, latest, map[string][]string{"m.room.join_rules": nil})
+				events, err := store.RoomStateAfterEventPosition([]string{roomID}, latest, map[string][]string{"m.room.join_rules": nil})
 				if err != nil {
 					t.Fatalf("RoomStateAfterEventPosition: %s", err)
 				}
-				return events
+				return events[roomID]
 			},
 			wantEvents: []json.RawMessage{
 				events[2],
@@ -74,14 +74,14 @@ func TestStorageRoomStateBeforeAndAfterEventPosition(t *testing.T) {
 		{
 			name: "room state after the latest position filtered for join_rule and create event excludes member events",
 			getEvents: func() []Event {
-				events, err := store.RoomStateAfterEventPosition(roomID, latest, map[string][]string{
+				events, err := store.RoomStateAfterEventPosition([]string{roomID}, latest, map[string][]string{
 					"m.room.join_rules": []string{""},
 					"m.room.create":     nil, // all matching state events with this event type
 				})
 				if err != nil {
 					t.Fatalf("RoomStateAfterEventPosition: %s", err)
 				}
-				return events
+				return events[roomID]
 			},
 			wantEvents: []json.RawMessage{
 				events[0], events[2],
@@ -90,13 +90,13 @@ func TestStorageRoomStateBeforeAndAfterEventPosition(t *testing.T) {
 		{
 			name: "room state after the latest position filtered for all members returns all member events",
 			getEvents: func() []Event {
-				events, err := store.RoomStateAfterEventPosition(roomID, latest, map[string][]string{
+				events, err := store.RoomStateAfterEventPosition([]string{roomID}, latest, map[string][]string{
 					"m.room.member": nil, // all matching state events with this event type
 				})
 				if err != nil {
 					t.Fatalf("RoomStateAfterEventPosition: %s", err)
 				}
-				return events
+				return events[roomID]
 			},
 			wantEvents: []json.RawMessage{
 				events[1], events[3],
