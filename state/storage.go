@@ -3,6 +3,7 @@ package state
 import (
 	"encoding/json"
 	"fmt"
+	"os"
 	"strings"
 
 	"github.com/jmoiron/sqlx"
@@ -10,8 +11,14 @@ import (
 	"github.com/matrix-org/gomatrixserverlib"
 	"github.com/matrix-org/sync-v3/internal"
 	"github.com/matrix-org/sync-v3/sqlutil"
+	"github.com/rs/zerolog"
 	"github.com/tidwall/gjson"
 )
+
+var logger = zerolog.New(os.Stdout).With().Timestamp().Logger().Output(zerolog.ConsoleWriter{
+	Out:        os.Stderr,
+	TimeFormat: "15:04:05",
+})
 
 // Max number of parameters in a single SQL command
 const MaxPostgresParameters = 65535
@@ -278,16 +285,44 @@ func (s *Storage) Initialise(roomID string, state []json.RawMessage) (bool, erro
 	return s.accumulator.Initialise(roomID, state)
 }
 
-// Look up room state after the given event position. eventTypesToStateKeys is a map of event type to a list of state keys for that event type.
+// Look up room state after the given event position and no further. eventTypesToStateKeys is a map of event type to a list of state keys for that event type.
 // If the list of state keys is empty then all events matching that event type will be returned. If the map is empty entirely, then all room state
 // will be returned.
 func (s *Storage) RoomStateAfterEventPosition(roomIDs []string, pos int64, eventTypesToStateKeys map[string][]string) (roomToEvents map[string][]Event, err error) {
 	roomToEvents = make(map[string][]Event, len(roomIDs))
 	roomIndex := make(map[string]int, len(roomIDs))
 	err = sqlutil.WithTransaction(s.accumulator.db, func(txn *sqlx.Tx) error {
-		latestEvents, err := s.accumulator.eventsTable.LatestEventInRooms(txn, roomIDs, pos)
+		// we have 2 ways to pull the latest events:
+		//  - superfast rooms table (which races as it can be updated before the new state hits the dispatcher)
+		//  - slower events table query
+		// we will try to fulfill as many rooms as possible with the rooms table, only using the slower events table
+		// query if we can prove we have races. We can prove this because the latest NIDs will be > pos, meaning the
+		// database state is ahead of the in-memory state (which is normal as we update the DB first). This should
+		// happen infrequently though, so we will warn about this behaviour.
+		roomToLatestNIDs, err := s.accumulator.roomsTable.LatestNIDs(txn, roomIDs)
 		if err != nil {
 			return err
+		}
+		fastNIDs := make([]int64, 0, len(roomToLatestNIDs))
+		var slowRooms []string
+		for roomID, latestNID := range roomToLatestNIDs {
+			if latestNID > pos {
+				slowRooms = append(slowRooms, roomID)
+			} else {
+				fastNIDs = append(fastNIDs, latestNID)
+			}
+		}
+		latestEvents, err := s.accumulator.eventsTable.SelectByNIDs(txn, true, fastNIDs)
+		if err != nil {
+			return err
+		}
+		if len(slowRooms) > 0 {
+			logger.Warn().Int("slow_rooms", len(slowRooms)).Msg("RoomStateAfterEventPosition: pos value provided is far behind the database copy, performance degraded")
+			latestSlowEvents, err := s.accumulator.eventsTable.LatestEventInRooms(txn, slowRooms, pos)
+			if err != nil {
+				return err
+			}
+			latestEvents = append(latestEvents, latestSlowEvents...)
 		}
 		for i, ev := range latestEvents {
 			roomIndex[ev.RoomID] = i

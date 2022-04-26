@@ -45,10 +45,12 @@ func TestGlobalCacheLoadState(t *testing.T) {
 	}
 	globalCache := NewGlobalCache(store)
 	testCases := []struct {
+		name          string
 		requiredState [][2]string
 		wantEvents    map[string][]json.RawMessage
 	}{
-		{ // single required state returns a single event
+		{
+			name: "single required state returns a single event",
 			requiredState: [][2]string{
 				{"m.room.create", ""},
 			},
@@ -56,7 +58,8 @@ func TestGlobalCacheLoadState(t *testing.T) {
 				roomID: {events[0]},
 			},
 		},
-		{ // unknown event returns no error but no events either
+		{
+			name: "unknown event returns no error but no events either",
 			requiredState: [][2]string{
 				{"i do not exist", ""},
 			},
@@ -64,7 +67,8 @@ func TestGlobalCacheLoadState(t *testing.T) {
 				roomID: {},
 			},
 		},
-		{ // multiple required state returns both
+		{
+			name: "multiple required state returns both",
 			requiredState: [][2]string{
 				{"m.room.create", ""}, {"m.room.join_rules", ""},
 			},
@@ -72,7 +76,8 @@ func TestGlobalCacheLoadState(t *testing.T) {
 				roomID: {events[0], events[2]},
 			},
 		},
-		{ // mixed existing and non-existant state returns stuff that exists
+		{
+			name: "mixed existing and non-existant state returns stuff that exists",
 			requiredState: [][2]string{
 				{"i do not exist", ""}, {"m.room.create", ""},
 			},
@@ -80,7 +85,8 @@ func TestGlobalCacheLoadState(t *testing.T) {
 				roomID: {events[0]},
 			},
 		},
-		{ // state key matching works
+		{
+			name: "state key matching works",
 			requiredState: [][2]string{
 				{"m.room.member", bob},
 			},
@@ -88,7 +94,8 @@ func TestGlobalCacheLoadState(t *testing.T) {
 				roomID: {events[3]},
 			},
 		},
-		{ // wildcard matching works
+		{
+			name: "state key wildcard matching works",
 			requiredState: [][2]string{
 				{"m.room.member", "*"},
 			},
@@ -96,7 +103,8 @@ func TestGlobalCacheLoadState(t *testing.T) {
 				roomID: {events[1], events[3], events[4]},
 			},
 		},
-		{ // wildcard matching on event type works
+		{
+			name: "event type wildcard matching works",
 			requiredState: [][2]string{
 				{"*", ""},
 			},
@@ -104,7 +112,8 @@ func TestGlobalCacheLoadState(t *testing.T) {
 				roomID: {events[0], events[2], events[6]},
 			},
 		},
-		{ // all state wildcard matching works
+		{
+			name: "all state wildcard matching works",
 			requiredState: [][2]string{
 				{"*", "*"},
 			},
@@ -112,7 +121,8 @@ func TestGlobalCacheLoadState(t *testing.T) {
 				roomID: {events[0], events[1], events[2], events[3], events[4], events[6]},
 			},
 		},
-		{ // multiple entries for the same state do not return duplicates
+		{
+			name: "multiple entries for the same state do not return duplicates",
 			requiredState: [][2]string{
 				{"m.room.create", ""}, {"m.room.create", ""}, {"m.room.create", ""}, {"m.room.create", ""},
 			},
@@ -120,7 +130,8 @@ func TestGlobalCacheLoadState(t *testing.T) {
 				roomID: {events[0]},
 			},
 		},
-		{ // the newest event is returned in a match
+		{
+			name: "the newest event is returned in a match",
 			requiredState: [][2]string{
 				{"m.room.name", ""},
 			},
@@ -128,7 +139,8 @@ func TestGlobalCacheLoadState(t *testing.T) {
 				roomID: {events[6]},
 			},
 		},
-		{ // state key matching for multiple rooms works
+		{
+			name: "state key matching for multiple rooms works",
 			requiredState: [][2]string{
 				{"m.room.member", bob},
 			},
@@ -139,23 +151,25 @@ func TestGlobalCacheLoadState(t *testing.T) {
 		},
 	}
 	for _, tc := range testCases {
-		var roomIDs []string
-		for r := range tc.wantEvents {
-			roomIDs = append(roomIDs, r)
-		}
-		gotMap := globalCache.LoadRoomState(roomIDs, latest, tc.requiredState)
-		for _, roomID := range roomIDs {
-			got := gotMap[roomID]
-			wantEvents := tc.wantEvents[roomID]
-			if len(got) != len(wantEvents) {
-				t.Errorf("LoadState for rooms %v required_state %v got %d events want %d", roomIDs, tc.requiredState, len(got), len(wantEvents))
-				continue
+		t.Run(tc.name, func(t *testing.T) {
+			var roomIDs []string
+			for r := range tc.wantEvents {
+				roomIDs = append(roomIDs, r)
 			}
-			for i := range wantEvents {
-				if !bytes.Equal(got[i], wantEvents[i]) {
-					t.Errorf("LoadState for input %v at pos %d:\ngot  %s\nwant %s", tc.requiredState, i, string(got[i]), string(wantEvents[i]))
+			gotMap := globalCache.LoadRoomState(roomIDs, latest, tc.requiredState)
+			for _, roomID := range roomIDs {
+				got := gotMap[roomID]
+				wantEvents := tc.wantEvents[roomID]
+				if len(got) != len(wantEvents) {
+					t.Errorf("LoadState %d for rooms %v required_state %v got %d events want %d.", latest, roomIDs, tc.requiredState, len(got), len(wantEvents))
+					continue
+				}
+				for i := range wantEvents {
+					if !bytes.Equal(got[i], wantEvents[i]) {
+						t.Errorf("LoadState %d for input %v at pos %d:\ngot  %s\nwant %s", latest, tc.requiredState, i, string(got[i]), string(wantEvents[i]))
+					}
 				}
 			}
-		}
+		})
 	}
 }
