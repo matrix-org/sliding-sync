@@ -165,6 +165,12 @@ func (a *Accumulator) Initialise(roomID string, state []json.RawMessage) (bool, 
 			return fmt.Errorf("failed to insert snapshot: %w", err)
 		}
 		addedEvents = true
+		latestNID := int64(0)
+		for _, nid := range nids {
+			if nid > latestNID {
+				latestNID = nid
+			}
+		}
 
 		// check for an encryption event
 		isEncrypted := false
@@ -183,7 +189,7 @@ func (a *Accumulator) Initialise(roomID string, state []json.RawMessage) (bool, 
 		// will have an associated state snapshot ID on the event.
 
 		// Set the snapshot ID as the current state
-		return a.roomsTable.UpdateCurrentAfterSnapshotID(txn, roomID, snapshot.SnapshotID, isEncrypted, isTombstoned)
+		return a.roomsTable.UpdateCurrentAfterSnapshotID(txn, roomID, snapshot.SnapshotID, latestNID, isEncrypted, isTombstoned)
 	})
 	return addedEvents, err
 }
@@ -349,7 +355,7 @@ func (a *Accumulator) Accumulate(roomID string, prevBatch string, timeline []jso
 		}
 
 		// the last fetched snapshot ID is the current one
-		if err = a.roomsTable.UpdateCurrentAfterSnapshotID(txn, roomID, snapID, isEncrypted, isTombstoned); err != nil {
+		if err = a.roomsTable.UpdateCurrentAfterSnapshotID(txn, roomID, snapID, latestNID, isEncrypted, isTombstoned); err != nil {
 			return fmt.Errorf("failed to UpdateCurrentSnapshotID to %d: %w", snapID, err)
 		}
 		return nil
