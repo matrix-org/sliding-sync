@@ -2,6 +2,7 @@ package caches
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"testing"
 
@@ -10,6 +11,7 @@ import (
 )
 
 func TestGlobalCacheLoadState(t *testing.T) {
+	ctx := context.Background()
 	store := state.NewStorage(postgresConnectionString)
 	roomID := "!TestConnMapLoadState:localhost"
 	roomID2 := "!another:localhost"
@@ -156,7 +158,7 @@ func TestGlobalCacheLoadState(t *testing.T) {
 			for r := range tc.wantEvents {
 				roomIDs = append(roomIDs, r)
 			}
-			gotMap := globalCache.LoadRoomState(roomIDs, latest, tc.requiredState)
+			gotMap := globalCache.LoadRoomState(ctx, roomIDs, latest, tc.requiredState)
 			for _, roomID := range roomIDs {
 				got := gotMap[roomID]
 				wantEvents := tc.wantEvents[roomID]

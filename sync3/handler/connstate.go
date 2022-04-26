@@ -297,7 +297,7 @@ func (s *ConnState) onIncomingListRequest(ctx context.Context, listIndex int, pr
 			List:      listIndex,
 			Operation: sync3.OpSync,
 			Range:     r[:],
-			Rooms:     s.getInitialRoomData(listIndex, int(nextReqList.TimelineLimit), roomIDs...),
+			Rooms:     s.getInitialRoomData(ctx, listIndex, int(nextReqList.TimelineLimit), roomIDs...),
 		})
 	}
 
@@ -325,7 +325,7 @@ func (s *ConnState) updateRoomSubscriptions(ctx context.Context, timelineLimit i
 		if sub.TimelineLimit > 0 {
 			timelineLimit = int(sub.TimelineLimit)
 		}
-		rooms := s.getInitialRoomData(-1, timelineLimit, roomID)
+		rooms := s.getInitialRoomData(ctx, -1, timelineLimit, roomID)
 		result[roomID] = rooms[0]
 	}
 	for _, roomID := range unsubs {
@@ -349,16 +349,19 @@ func (s *ConnState) getDeltaRoomData(roomID string, event json.RawMessage) *sync
 	return room
 }
 
-func (s *ConnState) getInitialRoomData(listIndex int, timelineLimit int, roomIDs ...string) []sync3.Room {
+func (s *ConnState) getInitialRoomData(ctx context.Context, listIndex int, timelineLimit int, roomIDs ...string) []sync3.Room {
 	rooms := make([]sync3.Room, len(roomIDs))
 	// We want to grab the user room data and the room metadata for each room ID.
 	roomIDToUserRoomData := s.userCache.LazyLoadTimelines(s.loadPosition, roomIDs, timelineLimit)
 	roomMetadatas := s.globalCache.LoadRooms(roomIDs...)
 	// FIXME: required_state needs to be honoured!
-	roomIDToState := s.globalCache.LoadRoomState(roomIDs, s.loadPosition, s.muxedReq.GetRequiredState(listIndex, roomIDs[0]))
+	roomIDToState := s.globalCache.LoadRoomState(ctx, roomIDs, s.loadPosition, s.muxedReq.GetRequiredState(listIndex, roomIDs[0]))
 
 	for i, roomID := range roomIDs {
-		userRoomData := roomIDToUserRoomData[roomID]
+		userRoomData, ok := roomIDToUserRoomData[roomID]
+		if !ok {
+			userRoomData = caches.NewUserRoomData()
+		}
 		metadata := roomMetadatas[roomID]
 		var inviteState []json.RawMessage
 		// handle invites specially as we do not want to leak additional data beyond the invite_state and if
@@ -380,6 +383,7 @@ func (s *ConnState) getInitialRoomData(listIndex int, timelineLimit int, roomIDs
 		if !userRoomData.IsInvite {
 			requiredState = roomIDToState[roomID]
 		}
+		prevBatch, _ := userRoomData.PrevBatch()
 		rooms[i] = sync3.Room{
 			RoomID:            roomID,
 			Name:              internal.CalculateRoomName(metadata, 5), // TODO: customisable?
@@ -390,7 +394,7 @@ func (s *ConnState) getInitialRoomData(listIndex int, timelineLimit int, roomIDs
 			InviteState:       inviteState,
 			Initial:           true,
 			IsDM:              userRoomData.IsDM,
-			PrevBatch:         userRoomData.PrevBatch,
+			PrevBatch:         prevBatch,
 		}
 	}
 	return rooms

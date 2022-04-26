@@ -1,9 +1,11 @@
 package state
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
+	"runtime/trace"
 	"strings"
 
 	"github.com/jmoiron/sqlx"
@@ -288,7 +290,8 @@ func (s *Storage) Initialise(roomID string, state []json.RawMessage) (bool, erro
 // Look up room state after the given event position and no further. eventTypesToStateKeys is a map of event type to a list of state keys for that event type.
 // If the list of state keys is empty then all events matching that event type will be returned. If the map is empty entirely, then all room state
 // will be returned.
-func (s *Storage) RoomStateAfterEventPosition(roomIDs []string, pos int64, eventTypesToStateKeys map[string][]string) (roomToEvents map[string][]Event, err error) {
+func (s *Storage) RoomStateAfterEventPosition(ctx context.Context, roomIDs []string, pos int64, eventTypesToStateKeys map[string][]string) (roomToEvents map[string][]Event, err error) {
+	defer trace.StartRegion(ctx, "RoomStateAfterEventPosition").End()
 	roomToEvents = make(map[string][]Event, len(roomIDs))
 	roomIndex := make(map[string]int, len(roomIDs))
 	err = sqlutil.WithTransaction(s.accumulator.db, func(txn *sqlx.Tx) error {

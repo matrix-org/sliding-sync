@@ -5,6 +5,7 @@ go 1.14
 require (
 	github.com/ReneKroon/ttlcache/v2 v2.8.1
 	github.com/gorilla/mux v1.8.0
+	github.com/hashicorp/golang-lru v0.5.4 // indirect
 	github.com/jmoiron/sqlx v1.3.3
 	github.com/lib/pq v1.10.1
 	github.com/matrix-org/gomatrix v0.0.0-20210324163249-be2af5ef2e16 // indirect

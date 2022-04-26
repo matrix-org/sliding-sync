@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"sync"
 
+	lru "github.com/hashicorp/golang-lru"
 	"github.com/matrix-org/sync-v3/internal"
 	"github.com/matrix-org/sync-v3/state"
 	"github.com/matrix-org/sync-v3/sync2"
@@ -20,9 +21,45 @@ type UserRoomData struct {
 	IsInvite          bool
 	NotificationCount int
 	HighlightCount    int
-	PrevBatch         string
-	Timeline          []json.RawMessage
-	Invite            *InviteData
+	// (event_id, last_event_id) -> closest prev_batch
+	// We mux in last_event_id so we can invalidate prev batch tokens for the same event ID when a new timeline event
+	// comes in, without having to do a SQL query.
+	PrevBatches *lru.Cache
+	Timeline    []json.RawMessage
+	Invite      *InviteData
+}
+
+func NewUserRoomData() UserRoomData {
+	l, _ := lru.New(64) // 64 tokens least recently used evicted
+	return UserRoomData{
+		PrevBatches: l,
+	}
+}
+
+// fetch the prev batch for this timeline
+func (u UserRoomData) PrevBatch() (string, bool) {
+	if len(u.Timeline) == 0 {
+		return "", false
+	}
+	eventID := gjson.GetBytes(u.Timeline[0], "event_id").Str
+	lastEventID := gjson.GetBytes(u.Timeline[len(u.Timeline)-1], "event_id").Str
+	val, ok := u.PrevBatches.Get(eventID + lastEventID)
+	if !ok {
+		return "", false
+	}
+	return val.(string), true
+}
+
+// set the prev batch token for the given event ID. This should come from the database. The prev batch
+// cache will be updated to return this prev batch token for this event ID as well as the latest event
+// ID in this timeline.
+func (u UserRoomData) SetPrevBatch(eventID string, pb string) {
+	if len(u.Timeline) == 0 {
+		return
+	}
+	lastEventID := gjson.GetBytes(u.Timeline[len(u.Timeline)-1], "event_id").Str
+	u.PrevBatches.Add(eventID+lastEventID, pb)
+	u.PrevBatches.Add(eventID+eventID, pb)
 }
 
 // Subset of data from internal.RoomMetadata which we can glean from invite_state.
@@ -181,27 +218,28 @@ func (c *UserCache) LazyLoadTimelines(loadPos int64, roomIDs []string, maxTimeli
 				}
 			}
 
-			var err error
-			var prevBatch string
-
 			// either we satisfied their request or we can't get any more events, either way that's good enough
 			if len(timeline) == maxTimelineEvents || createEventExists {
 				if !createEventExists && len(timeline) > 0 {
 					// fetch a prev batch token for the earliest event
-					eventID := gjson.ParseBytes(timeline[0]).Get("event_id").Str
-					prevBatch, err = c.store.EventsTable.SelectClosestPrevBatchByID(roomID, eventID)
-					if err != nil {
-						logger.Err(err).Str("room", roomID).Str("event_id", eventID).Msg("failed to get prev batch token for room")
+					_, ok := urd.PrevBatch()
+					if !ok {
+						eventID := gjson.ParseBytes(timeline[0]).Get("event_id").Str
+						prevBatch, err := c.store.EventsTable.SelectClosestPrevBatchByID(roomID, eventID)
+						if err != nil {
+							logger.Err(err).Str("room", roomID).Str("event_id", eventID).Msg("failed to get prev batch token for room")
+						}
+						urd.SetPrevBatch(eventID, prevBatch)
 					}
 				}
 
 				// we already have data, use it
-				result[roomID] = UserRoomData{
-					NotificationCount: urd.NotificationCount,
-					HighlightCount:    urd.HighlightCount,
-					Timeline:          timeline,
-					PrevBatch:         prevBatch,
-				}
+				u := NewUserRoomData()
+				u.NotificationCount = urd.NotificationCount
+				u.HighlightCount = urd.HighlightCount
+				u.Timeline = timeline
+				u.PrevBatches = urd.PrevBatches
+				result[roomID] = u
 			} else {
 				// refetch from the db
 				lazyRoomIDs = append(lazyRoomIDs, roomID)
@@ -225,10 +263,13 @@ func (c *UserCache) LazyLoadTimelines(loadPos int64, roomIDs []string, maxTimeli
 	for roomID, events := range roomIDToEvents {
 		urd, ok := c.roomToData[roomID]
 		if !ok {
-			urd = UserRoomData{}
+			urd = NewUserRoomData()
 		}
 		urd.Timeline = events
-		urd.PrevBatch = roomIDToPrevBatch[roomID]
+		if len(events) > 0 {
+			eventID := gjson.ParseBytes(events[0]).Get("event_id").Str
+			urd.SetPrevBatch(eventID, roomIDToPrevBatch[roomID])
+		}
 
 		result[roomID] = urd
 		c.roomToData[roomID] = urd
@@ -242,7 +283,7 @@ func (c *UserCache) LoadRoomData(roomID string) UserRoomData {
 	defer c.roomToDataMu.RUnlock()
 	data, ok := c.roomToData[roomID]
 	if !ok {
-		return UserRoomData{}
+		return NewUserRoomData()
 	}
 	return data
 }
@@ -460,9 +501,9 @@ func (c *UserCache) OnAccountData(datas []state.AccountData) {
 			}
 			// remaining stuff in dmRoomSet are new rooms the cache is unaware of
 			for dmRoomID := range dmRoomSet {
-				c.roomToData[dmRoomID] = UserRoomData{
-					IsDM: true,
-				}
+				u := NewUserRoomData()
+				u.IsDM = true
+				c.roomToData[dmRoomID] = u
 			}
 			c.roomToDataMu.Unlock()
 		}

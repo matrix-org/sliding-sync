@@ -49,11 +49,9 @@ func newRoomMetadata(roomID string, lastMsgTimestamp gomatrixserverlib.Timestamp
 func mockLazyRoomOverride(loadPos int64, roomIDs []string, maxTimelineEvents int) map[string]caches.UserRoomData {
 	result := make(map[string]caches.UserRoomData)
 	for _, roomID := range roomIDs {
-		result[roomID] = caches.UserRoomData{
-			Timeline: []json.RawMessage{
-				[]byte(`{}`),
-			},
-		}
+		u := caches.NewUserRoomData()
+		u.Timeline = []json.RawMessage{[]byte(`{}`)}
+		result[roomID] = u
 	}
 	return result
 }
@@ -101,9 +99,9 @@ func TestConnStateInitial(t *testing.T) {
 	userCache.LazyRoomDataOverride = func(loadPos int64, roomIDs []string, maxTimelineEvents int) map[string]caches.UserRoomData {
 		result := make(map[string]caches.UserRoomData)
 		for _, roomID := range roomIDs {
-			result[roomID] = caches.UserRoomData{
-				Timeline: []json.RawMessage{timeline[roomID]},
-			}
+			u := caches.NewUserRoomData()
+			u.Timeline = []json.RawMessage{timeline[roomID]}
+			result[roomID] = u
 		}
 		return result
 	}
@@ -546,11 +544,9 @@ func TestConnStateRoomSubscriptions(t *testing.T) {
 	userCache.LazyRoomDataOverride = func(loadPos int64, roomIDs []string, maxTimelineEvents int) map[string]caches.UserRoomData {
 		result := make(map[string]caches.UserRoomData)
 		for _, roomID := range roomIDs {
-			result[roomID] = caches.UserRoomData{
-				Timeline: []json.RawMessage{
-					timeline[roomID],
-				},
-			}
+			u := caches.NewUserRoomData()
+			u.Timeline = []json.RawMessage{timeline[roomID]}
+			result[roomID] = u
 		}
 		return result
 	}

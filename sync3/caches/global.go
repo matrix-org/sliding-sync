@@ -1,6 +1,7 @@
 package caches
 
 import (
+	"context"
 	"encoding/json"
 	"os"
 	"sort"
@@ -111,7 +112,7 @@ func (c *GlobalCache) LoadJoinedRooms(userID string) (pos int64, joinedRooms map
 }
 
 // TODO: remove? Doesn't touch global cache fields
-func (c *GlobalCache) LoadRoomState(roomIDs []string, loadPosition int64, requiredState [][2]string) map[string][]json.RawMessage {
+func (c *GlobalCache) LoadRoomState(ctx context.Context, roomIDs []string, loadPosition int64, requiredState [][2]string) map[string][]json.RawMessage {
 	if len(requiredState) == 0 {
 		return nil
 	}
@@ -146,7 +147,7 @@ func (c *GlobalCache) LoadRoomState(roomIDs []string, loadPosition int64, requir
 		}
 	}
 	resultMap := make(map[string][]json.RawMessage, len(roomIDs))
-	roomIDToStateEvents, err := c.store.RoomStateAfterEventPosition(roomIDs, loadPosition, queryStateMap)
+	roomIDToStateEvents, err := c.store.RoomStateAfterEventPosition(ctx, roomIDs, loadPosition, queryStateMap)
 	if err != nil {
 		logger.Err(err).Strs("rooms", roomIDs).Int64("pos", loadPosition).Msg("failed to load room state")
 		return nil
