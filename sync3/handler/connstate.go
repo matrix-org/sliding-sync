@@ -354,8 +354,13 @@ func (s *ConnState) getInitialRoomData(ctx context.Context, listIndex int, timel
 	// We want to grab the user room data and the room metadata for each room ID.
 	roomIDToUserRoomData := s.userCache.LazyLoadTimelines(s.loadPosition, roomIDs, timelineLimit)
 	roomMetadatas := s.globalCache.LoadRooms(roomIDs...)
-	// FIXME: required_state needs to be honoured!
-	roomIDToState := s.globalCache.LoadRoomState(ctx, roomIDs, s.loadPosition, s.muxedReq.GetRequiredState(listIndex, roomIDs[0]))
+	var requiredState [][2]string
+	if listIndex == -1 {
+		requiredState = s.muxedReq.GetRequiredStateForRoom(roomIDs[0])
+	} else {
+		requiredState = s.muxedReq.GetRequiredStateForList(listIndex)
+	}
+	roomIDToState := s.globalCache.LoadRoomState(ctx, roomIDs, s.loadPosition, requiredState)
 
 	for i, roomID := range roomIDs {
 		userRoomData, ok := roomIDToUserRoomData[roomID]

@@ -165,18 +165,21 @@ func (r *Request) GetTimelineLimit(listIndex int, roomID string) int64 {
 	return DefaultTimelineLimit
 }
 
-func (r *Request) GetRequiredState(listIndex int, roomID string) [][2]string {
-	if r.RoomSubscriptions != nil {
-		room, ok := r.RoomSubscriptions[roomID]
-		if ok {
-			if room.RequiredState != nil {
-				return room.RequiredState
-			}
-			// room subscription trumps lists
-			return nil
+func (r *Request) GetRequiredStateForList(listIndex int) [][2]string {
+	return r.Lists[listIndex].RequiredState
+}
+
+func (r *Request) GetRequiredStateForRoom(roomID string) [][2]string {
+	if r.RoomSubscriptions == nil || roomID == "" {
+		return nil
+	}
+	room, ok := r.RoomSubscriptions[roomID]
+	if ok {
+		if room.RequiredState != nil {
+			return room.RequiredState
 		}
 	}
-	return r.Lists[listIndex].RequiredState
+	return nil
 }
 
 type RequestFilters struct {
