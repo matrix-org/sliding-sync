@@ -15,7 +15,7 @@ import (
 
 var GitCommit string
 
-const version = "0.1.3"
+const version = "0.1.4"
 
 var (
 	flagDestinationServer = flag.String("server", "", "The destination v2 matrix server")
