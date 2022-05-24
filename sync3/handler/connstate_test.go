@@ -572,7 +572,7 @@ func TestConnStateRoomSubscriptions(t *testing.T) {
 	}
 	checkResponse(t, false, res, &sync3.Response{
 		Counts: []int{len(roomIDs)},
-		RoomSubscriptions: map[string]sync3.Room{
+		Rooms: map[string]sync3.Room{
 			roomD.RoomID: {
 				RoomID:  roomD.RoomID,
 				Name:    roomD.NameEvent,
@@ -626,7 +626,7 @@ func TestConnStateRoomSubscriptions(t *testing.T) {
 	}
 	checkResponse(t, false, res, &sync3.Response{
 		Counts: []int{len(roomIDs)},
-		RoomSubscriptions: map[string]sync3.Room{
+		Rooms: map[string]sync3.Room{
 			roomD.RoomID: {
 				RoomID: roomD.RoomID,
 				Timeline: []json.RawMessage{
@@ -657,7 +657,7 @@ func TestConnStateRoomSubscriptions(t *testing.T) {
 	}
 	checkResponse(t, false, res, &sync3.Response{
 		Counts: []int{len(roomIDs)},
-		RoomSubscriptions: map[string]sync3.Room{
+		Rooms: map[string]sync3.Room{
 			roomC.RoomID: {
 				RoomID:  roomC.RoomID,
 				Name:    roomC.NameEvent,
@@ -721,12 +721,12 @@ func checkResponse(t *testing.T, checkRoomIDsOnly bool, got, want *sync3.Respons
 			}
 		}
 	}
-	if len(want.RoomSubscriptions) > 0 {
-		if len(want.RoomSubscriptions) != len(got.RoomSubscriptions) {
-			t.Errorf("wrong number of room subs returned, got %d want %d", len(got.RoomSubscriptions), len(want.RoomSubscriptions))
+	if len(want.Rooms) > 0 {
+		if len(want.Rooms) != len(got.Rooms) {
+			t.Errorf("wrong number of room subs returned, got %d want %d", len(got.Rooms), len(want.Rooms))
 		}
-		for roomID, wantData := range want.RoomSubscriptions {
-			gotData, ok := got.RoomSubscriptions[roomID]
+		for roomID, wantData := range want.Rooms {
+			gotData, ok := got.Rooms[roomID]
 			if !ok {
 				t.Errorf("wanted room subscription for %s but it was not returned", roomID)
 				continue

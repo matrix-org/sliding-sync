@@ -464,11 +464,11 @@ func MatchV3Counts(wantCounts []int) respMatcher {
 
 func MatchRoomSubscriptions(strictLength bool, wantSubs map[string][]roomMatcher) respMatcher {
 	return func(res *sync3.Response) error {
-		if strictLength && len(res.RoomSubscriptions) != len(wantSubs) {
-			return fmt.Errorf("MatchRoomSubscriptions: strict length on: got %v subs want %v", len(res.RoomSubscriptions), len(wantSubs))
+		if strictLength && len(res.Rooms) != len(wantSubs) {
+			return fmt.Errorf("MatchRoomSubscriptions: strict length on: got %v subs want %v", len(res.Rooms), len(wantSubs))
 		}
 		for roomID, matchers := range wantSubs {
-			room, ok := res.RoomSubscriptions[roomID]
+			room, ok := res.Rooms[roomID]
 			if !ok {
 				return fmt.Errorf("MatchRoomSubscriptions: want sub for %s but it was missing", roomID)
 			}

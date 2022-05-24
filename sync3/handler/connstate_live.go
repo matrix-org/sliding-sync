@@ -62,7 +62,7 @@ func (s *connStateLive) liveUpdate(
 	}
 	// block until we get a new event, with appropriate timeout
 	startTime := time.Now()
-	for len(responseOperations) == 0 && len(response.RoomSubscriptions) == 0 && !response.Extensions.HasData(isInitial) {
+	for len(responseOperations) == 0 && len(response.Rooms) == 0 && !response.Extensions.HasData(isInitial) {
 		timeToWait := time.Duration(req.TimeoutMSecs()) * time.Millisecond
 		timeWaited := time.Since(startTime)
 		timeLeftToWait := timeToWait - timeWaited
@@ -83,7 +83,7 @@ func (s *connStateLive) liveUpdate(
 		case update := <-s.updates:
 			trace.Logf(ctx, "liveUpdate", "process live update")
 			responseOperations = s.processLiveUpdate(ctx, update, responseOperations, response)
-			updateWillReturnResponse := len(responseOperations) > 0 || len(response.RoomSubscriptions) > 0
+			updateWillReturnResponse := len(responseOperations) > 0 || len(response.Rooms) > 0
 			// pass event to extensions AFTER processing
 			s.extensionsHandler.HandleLiveUpdate(update, ex, &response.Extensions, updateWillReturnResponse, isInitial)
 			// if there's more updates and we don't have lots stacked up already, go ahead and process another
@@ -94,7 +94,7 @@ func (s *connStateLive) liveUpdate(
 			}
 		}
 	}
-	logger.Trace().Str("user", s.userID).Int("ops", len(responseOperations)).Int("subs", len(response.RoomSubscriptions)).Msg("liveUpdate: returning")
+	logger.Trace().Str("user", s.userID).Int("ops", len(responseOperations)).Int("subs", len(response.Rooms)).Msg("liveUpdate: returning")
 	// TODO: op consolidation
 	return responseOperations
 }
@@ -124,14 +124,14 @@ func (s *connStateLive) processLiveUpdate(ctx context.Context, up caches.Update,
 		subs, ops := s.processIncomingEvent(ctx, update)
 		responseOperations = append(responseOperations, ops...)
 		for _, sub := range subs {
-			response.RoomSubscriptions[sub.RoomID] = sub
+			response.Rooms[sub.RoomID] = sub
 		}
 	case *caches.UnreadCountUpdate:
 		logger.Trace().Str("user", s.userID).Str("room", update.RoomID()).Msg("received unread count update")
 		subs, ops := s.processUnreadCountUpdate(ctx, update)
 		responseOperations = append(responseOperations, ops...)
 		for _, sub := range subs {
-			response.RoomSubscriptions[sub.RoomID] = sub
+			response.Rooms[sub.RoomID] = sub
 		}
 	case *caches.InviteUpdate:
 		logger.Trace().Str("user", s.userID).Str("room", update.RoomID()).Msg("received invite update")
@@ -159,7 +159,7 @@ func (s *connStateLive) processLiveUpdate(ctx context.Context, up caches.Update,
 			subs, ops := s.processIncomingEvent(ctx, roomUpdate)
 			responseOperations = append(responseOperations, ops...)
 			for _, sub := range subs {
-				response.RoomSubscriptions[sub.RoomID] = sub
+				response.Rooms[sub.RoomID] = sub
 			}
 		}
 	}

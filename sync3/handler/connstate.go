@@ -166,7 +166,7 @@ func (s *ConnState) onIncomingRequest(ctx context.Context, req *sync3.Request, i
 
 	// start forming the response, handle subscriptions
 	response := &sync3.Response{
-		RoomSubscriptions: s.updateRoomSubscriptions(ctx, int(sync3.DefaultTimelineLimit), newSubs, newUnsubs),
+		Rooms: s.updateRoomSubscriptions(ctx, int(sync3.DefaultTimelineLimit), newSubs, newUnsubs),
 	}
 	responseOperations := []sync3.ResponseOp{} // empty not nil slice
 

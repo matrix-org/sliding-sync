@@ -19,8 +19,8 @@ const (
 type Response struct {
 	Ops []ResponseOp `json:"ops"`
 
-	RoomSubscriptions map[string]Room `json:"room_subscriptions"`
-	Counts            []int           `json:"counts"`
+	Rooms  map[string]Room `json:"rooms"`
+	Counts []int           `json:"counts"`
 
 	Extensions extensions.Response `json:"extensions"`
 
@@ -38,9 +38,9 @@ func (r *Response) UnmarshalJSON(b []byte) error {
 	temporary := struct {
 		Ops []json.RawMessage `json:"ops"`
 
-		RoomSubscriptions map[string]Room     `json:"room_subscriptions"`
-		Counts            []int               `json:"counts"`
-		Extensions        extensions.Response `json:"extensions"`
+		Rooms      map[string]Room     `json:"rooms"`
+		Counts     []int               `json:"counts"`
+		Extensions extensions.Response `json:"extensions"`
 
 		Pos     string `json:"pos"`
 		Session string `json:"session_id,omitempty"`
@@ -48,7 +48,7 @@ func (r *Response) UnmarshalJSON(b []byte) error {
 	if err := json.Unmarshal(b, &temporary); err != nil {
 		return err
 	}
-	r.RoomSubscriptions = temporary.RoomSubscriptions
+	r.Rooms = temporary.Rooms
 	r.Counts = temporary.Counts
 	r.Pos = temporary.Pos
 	r.Session = temporary.Session
