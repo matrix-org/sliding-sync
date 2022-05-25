@@ -280,7 +280,7 @@ func (s *ConnState) onIncomingListRequest(ctx context.Context, listIndex int, pr
 		responseOperations = append(responseOperations, &sync3.ResponseOpRange{
 			Operation: sync3.OpSync,
 			Range:     r[:],
-			Rooms:     s.getInitialRoomData(ctx, listIndex, int(nextReqList.TimelineLimit), roomIDs...),
+			Rooms:     s.getInitialRoomData(ctx, nextReqList, int(nextReqList.TimelineLimit), roomIDs...),
 			RoomIDs:   roomIDs,
 		})
 	}
@@ -312,7 +312,7 @@ func (s *ConnState) updateRoomSubscriptions(ctx context.Context, timelineLimit i
 		if sub.TimelineLimit > 0 {
 			timelineLimit = int(sub.TimelineLimit)
 		}
-		rooms := s.getInitialRoomData(ctx, -1, timelineLimit, roomID)
+		rooms := s.getInitialRoomData(ctx, nil, timelineLimit, roomID)
 		result[roomID] = rooms[0]
 	}
 	for _, roomID := range unsubs {
@@ -336,16 +336,16 @@ func (s *ConnState) getDeltaRoomData(roomID string, event json.RawMessage) *sync
 	return room
 }
 
-func (s *ConnState) getInitialRoomData(ctx context.Context, listIndex int, timelineLimit int, roomIDs ...string) []sync3.Room {
+func (s *ConnState) getInitialRoomData(ctx context.Context, reqList *sync3.RequestList, timelineLimit int, roomIDs ...string) []sync3.Room {
 	rooms := make([]sync3.Room, len(roomIDs))
 	// We want to grab the user room data and the room metadata for each room ID.
 	roomIDToUserRoomData := s.userCache.LazyLoadTimelines(s.loadPosition, roomIDs, timelineLimit)
 	roomMetadatas := s.globalCache.LoadRooms(roomIDs...)
 	var requiredState [][2]string
-	if listIndex == -1 {
+	if reqList == nil {
 		requiredState = s.muxedReq.GetRequiredStateForRoom(roomIDs[0])
 	} else {
-		requiredState = s.muxedReq.GetRequiredStateForList(listIndex)
+		requiredState = reqList.RequiredState
 	}
 	roomIDToState := s.globalCache.LoadRoomState(ctx, roomIDs, s.loadPosition, requiredState)
 
@@ -364,7 +364,7 @@ func (s *ConnState) getInitialRoomData(ctx context.Context, listIndex int, timel
 		}
 		metadata.RemoveHero(s.userID)
 		// this room is a subscription and we want initial data for a list for the same room -> send a stub
-		if _, hasRoomSub := s.roomSubscriptions[roomID]; hasRoomSub && listIndex >= 0 {
+		if _, hasRoomSub := s.roomSubscriptions[roomID]; hasRoomSub && reqList != nil {
 			rooms[i] = sync3.Room{
 				RoomID: roomID,
 				Name:   internal.CalculateRoomName(metadata, 5), // TODO: customisable?

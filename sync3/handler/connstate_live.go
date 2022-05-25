@@ -125,8 +125,7 @@ func (s *connStateLive) processLiveUpdate(ctx context.Context, up caches.Update,
 	// do per-list updates (e.g resorting, adding/removing rooms which no longer match filter)
 	s.lists.ForEach(func(index int, list *sync3.FilteredSortableRooms) {
 		reqList := s.muxedReq.Lists[index]
-		// TODO: remove need for index - required for required_state calcs.
-		if s.processLiveUpdateForList(ctx, up, index, &reqList, s.lists.List(index), &response.Lists[index], isSubscribedToRoom) {
+		if s.processLiveUpdateForList(ctx, up, &reqList, s.lists.List(index), &response.Lists[index], isSubscribedToRoom) {
 			hasUpdates = true
 		}
 	})
@@ -179,7 +178,7 @@ func (s *connStateLive) processGlobalUpdates(ctx context.Context, up caches.Upda
 }
 
 func (s *connStateLive) processLiveUpdateForList(
-	ctx context.Context, up caches.Update, listIndex int, reqList *sync3.RequestList, intList *sync3.FilteredSortableRooms, resList *sync3.ResponseList,
+	ctx context.Context, up caches.Update, reqList *sync3.RequestList, intList *sync3.FilteredSortableRooms, resList *sync3.ResponseList,
 	isSubscribedToRoom bool,
 ) bool {
 	hasUpdates := false
@@ -203,11 +202,11 @@ func (s *connStateLive) processLiveUpdateForList(
 	switch update := up.(type) {
 	case *caches.RoomEventUpdate:
 		logger.Trace().Str("user", s.userID).Str("type", update.EventData.EventType).Msg("received event update")
-		ops := s.processIncomingEventForList(ctx, update, listIndex, reqList, intList, isSubscribedToRoom)
+		ops := s.processIncomingEventForList(ctx, update, reqList, intList, isSubscribedToRoom)
 		resList.Ops = append(resList.Ops, ops...)
 	case *caches.UnreadCountUpdate:
 		logger.Trace().Str("user", s.userID).Str("room", update.RoomID()).Msg("received unread count update")
-		ops := s.processUnreadCountUpdateForList(ctx, update, listIndex, reqList, intList, isSubscribedToRoom)
+		ops := s.processUnreadCountUpdateForList(ctx, update, reqList, intList, isSubscribedToRoom)
 		resList.Ops = append(resList.Ops, ops...)
 	case *caches.InviteUpdate:
 		logger.Trace().Str("user", s.userID).Str("room", update.RoomID()).Msg("received invite update")
@@ -223,7 +222,7 @@ func (s *connStateLive) processLiveUpdateForList(
 				RoomUpdate: update.RoomUpdate,
 				EventData:  update.InviteData.InviteEvent,
 			}
-			ops := s.processIncomingEventForList(ctx, roomUpdate, listIndex, reqList, intList, isSubscribedToRoom)
+			ops := s.processIncomingEventForList(ctx, roomUpdate, reqList, intList, isSubscribedToRoom)
 			resList.Ops = append(resList.Ops, ops...)
 		}
 	}
@@ -236,7 +235,7 @@ func (s *connStateLive) processLiveUpdateForList(
 }
 
 func (s *connStateLive) processUnreadCountUpdateForList(
-	ctx context.Context, up *caches.UnreadCountUpdate, listIndex int, reqList *sync3.RequestList, intList *sync3.FilteredSortableRooms,
+	ctx context.Context, up *caches.UnreadCountUpdate, reqList *sync3.RequestList, intList *sync3.FilteredSortableRooms,
 	isSubscribedToRoom bool,
 ) []sync3.ResponseOp {
 	if !up.HasCountDecreased {
@@ -249,11 +248,11 @@ func (s *connStateLive) processUnreadCountUpdateForList(
 	if !ok {
 		return nil
 	}
-	return s.resort(ctx, listIndex, reqList, intList, up.RoomID(), fromIndex, nil, false, false, isSubscribedToRoom)
+	return s.resort(ctx, reqList, intList, up.RoomID(), fromIndex, nil, false, false, isSubscribedToRoom)
 }
 
 func (s *connStateLive) processIncomingEventForList(
-	ctx context.Context, update *caches.RoomEventUpdate, listIndex int, reqList *sync3.RequestList, intList *sync3.FilteredSortableRooms,
+	ctx context.Context, update *caches.RoomEventUpdate, reqList *sync3.RequestList, intList *sync3.FilteredSortableRooms,
 	isSubscribedToRoom bool,
 ) []sync3.ResponseOp {
 	fromIndex, ok := intList.IndexOf(update.RoomID())
@@ -277,13 +276,13 @@ func (s *connStateLive) processIncomingEventForList(
 		logger.Info().Str("room", update.RoomID()).Msg("room added")
 		newlyAdded = true
 	}
-	return s.resort(ctx, listIndex, reqList, intList, update.RoomID(), fromIndex, update.EventData.Event, newlyAdded, update.EventData.ForceInitial, isSubscribedToRoom)
+	return s.resort(ctx, reqList, intList, update.RoomID(), fromIndex, update.EventData.Event, newlyAdded, update.EventData.ForceInitial, isSubscribedToRoom)
 }
 
 // Resort should be called after a specific room has been modified in `sortedJoinedRooms`.
 func (s *connStateLive) resort(
 	ctx context.Context,
-	listIndex int, reqList *sync3.RequestList, intList *sync3.FilteredSortableRooms, roomID string,
+	reqList *sync3.RequestList, intList *sync3.FilteredSortableRooms, roomID string,
 	fromIndex int, newEvent json.RawMessage, newlyAdded, forceInitial, isSubscribedToRoom bool,
 ) []sync3.ResponseOp {
 	if reqList.Sort == nil {
@@ -345,7 +344,7 @@ func (s *connStateLive) resort(
 		}
 	}
 
-	return s.moveRoom(ctx, reqList, listIndex, roomID, newEvent, fromIndex, toIndex, reqList.Ranges, isSubscribedToRoom, newlyAdded, forceInitial)
+	return s.moveRoom(ctx, reqList, roomID, newEvent, fromIndex, toIndex, reqList.Ranges, isSubscribedToRoom, newlyAdded, forceInitial)
 }
 
 // Move a room from an absolute index position to another absolute position.
@@ -354,7 +353,7 @@ func (s *connStateLive) resort(
 // 7 bumps to top -> 7,1,2,3,4 -> DELETE index=4, INSERT val=7 index=0
 func (s *connStateLive) moveRoom(
 	ctx context.Context,
-	reqList *sync3.RequestList, listIndex int, roomID string, event json.RawMessage, fromIndex, toIndex int,
+	reqList *sync3.RequestList, roomID string, event json.RawMessage, fromIndex, toIndex int,
 	ranges sync3.SliceRanges, onlySendRoomID, newlyAdded, forceInitial bool,
 ) []sync3.ResponseOp {
 	if fromIndex == toIndex {
@@ -363,7 +362,7 @@ func (s *connStateLive) moveRoom(
 			RoomID: roomID,
 		}
 		if newlyAdded || forceInitial {
-			rooms := s.getInitialRoomData(ctx, listIndex, int(reqList.TimelineLimit), roomID)
+			rooms := s.getInitialRoomData(ctx, reqList, int(reqList.TimelineLimit), roomID)
 			room = &rooms[0]
 		} else if !onlySendRoomID {
 			room = s.getDeltaRoomData(roomID, event)
@@ -395,7 +394,7 @@ func (s *connStateLive) moveRoom(
 		RoomID: roomID,
 	}
 	if !onlySendRoomID {
-		rooms := s.getInitialRoomData(ctx, listIndex, int(reqList.TimelineLimit), roomID)
+		rooms := s.getInitialRoomData(ctx, reqList, int(reqList.TimelineLimit), roomID)
 		room = &rooms[0]
 	}
 

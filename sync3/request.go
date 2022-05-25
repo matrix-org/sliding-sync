@@ -165,10 +165,6 @@ func (r *Request) GetTimelineLimit(listIndex int, roomID string) int64 {
 	return DefaultTimelineLimit
 }
 
-func (r *Request) GetRequiredStateForList(listIndex int) [][2]string {
-	return r.Lists[listIndex].RequiredState
-}
-
 func (r *Request) GetRequiredStateForRoom(roomID string) [][2]string {
 	if r.RoomSubscriptions == nil || roomID == "" {
 		return nil
