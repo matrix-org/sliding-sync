@@ -79,7 +79,7 @@ func TestRoomNames(t *testing.T) {
 				},
 			}},
 		})
-		MatchResponse(t, res, MatchV3Count(len(allRooms)), MatchV3Ops(
+		MatchResponse(t, res, MatchV3Count(len(allRooms)), MatchV3Ops(0,
 			MatchV3SyncOp(func(op *sync3.ResponseOpRange) error {
 				if len(op.Rooms) != len(allRooms) {
 					return fmt.Errorf("want %d rooms, got %d", len(allRooms), len(op.Rooms))
@@ -124,7 +124,7 @@ func TestRoomNames(t *testing.T) {
 				MatchRoomID(wantRooms[i].roomID),
 			}
 		}
-		MatchResponse(t, res, MatchV3Count(len(wantRooms)), MatchV3Ops(
+		MatchResponse(t, res, MatchV3Count(len(wantRooms)), MatchV3Ops(0,
 			MatchV3SyncOpWithMatchers(MatchRoomRange(matchers...)),
 		))
 	}

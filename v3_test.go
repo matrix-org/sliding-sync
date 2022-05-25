@@ -455,8 +455,13 @@ func MatchV3Count(wantCount int) respMatcher {
 }
 func MatchV3Counts(wantCounts []int) respMatcher {
 	return func(res *sync3.Response) error {
-		if !reflect.DeepEqual(res.Counts, wantCounts) {
-			return fmt.Errorf("counts: got %v want %v", res.Counts, wantCounts)
+		if len(res.Lists) != len(wantCounts) {
+			return fmt.Errorf("MatchV3Counts: got %v lists, want %v", len(res.Lists), len(wantCounts))
+		}
+		for i := range wantCounts {
+			if res.Lists[i].Count != wantCounts[i] {
+				return fmt.Errorf("MatchV3Counts: list %d got %v want %v", i, res.Lists[i].Count, wantCounts[i])
+			}
 		}
 		return nil
 	}
@@ -571,15 +576,12 @@ func MatchV3SyncOp(fn func(op *sync3.ResponseOpRange) error) opMatcher {
 	}
 }
 
-func MatchV3InsertOp(listIndex, roomIndex int, roomID string, matchers ...roomMatcher) opMatcher {
+func MatchV3InsertOp(roomIndex int, roomID string, matchers ...roomMatcher) opMatcher {
 	return func(op sync3.ResponseOp) error {
 		if op.Op() != sync3.OpInsert {
 			return fmt.Errorf("op: %s != %s", op.Op(), sync3.OpInsert)
 		}
 		oper := op.(*sync3.ResponseOpSingle)
-		if oper.List != listIndex {
-			return fmt.Errorf("%s: got list index %d want %d", sync3.OpInsert, oper.List, listIndex)
-		}
 		if *oper.Index != roomIndex {
 			return fmt.Errorf("%s: got index %d want %d", sync3.OpInsert, *oper.Index, roomIndex)
 		}
@@ -595,15 +597,12 @@ func MatchV3InsertOp(listIndex, roomIndex int, roomID string, matchers ...roomMa
 	}
 }
 
-func MatchV3UpdateOp(listIndex, roomIndex int, roomID string, matchers ...roomMatcher) opMatcher {
+func MatchV3UpdateOp(roomIndex int, roomID string, matchers ...roomMatcher) opMatcher {
 	return func(op sync3.ResponseOp) error {
 		if op.Op() != sync3.OpUpdate {
 			return fmt.Errorf("op: %s != %s", op.Op(), sync3.OpUpdate)
 		}
 		oper := op.(*sync3.ResponseOpSingle)
-		if oper.List != listIndex {
-			return fmt.Errorf("%s: got list index %d want %d", sync3.OpUpdate, oper.List, listIndex)
-		}
 		if *oper.Index != roomIndex {
 			return fmt.Errorf("%s: got room index %d want %d", sync3.OpUpdate, *oper.Index, roomIndex)
 		}
@@ -619,7 +618,7 @@ func MatchV3UpdateOp(listIndex, roomIndex int, roomID string, matchers ...roomMa
 	}
 }
 
-func MatchV3DeleteOp(listIndex, roomIndex int) opMatcher {
+func MatchV3DeleteOp(roomIndex int) opMatcher {
 	return func(op sync3.ResponseOp) error {
 		if op.Op() != sync3.OpDelete {
 			return fmt.Errorf("op: %s != %s", op.Op(), sync3.OpDelete)
@@ -628,14 +627,11 @@ func MatchV3DeleteOp(listIndex, roomIndex int) opMatcher {
 		if *oper.Index != roomIndex {
 			return fmt.Errorf("%s: got room index %d want %d", sync3.OpDelete, *oper.Index, roomIndex)
 		}
-		if oper.List != listIndex {
-			return fmt.Errorf("%s: got list index %d want %d", sync3.OpDelete, oper.List, listIndex)
-		}
 		return nil
 	}
 }
 
-func MatchV3InvalidateOp(listIndex int, start, end int64) opMatcher {
+func MatchV3InvalidateOp(start, end int64) opMatcher {
 	return func(op sync3.ResponseOp) error {
 		if op.Op() != sync3.OpInvalidate {
 			return fmt.Errorf("op: %s != %s", op.Op(), sync3.OpInvalidate)
@@ -647,20 +643,31 @@ func MatchV3InvalidateOp(listIndex int, start, end int64) opMatcher {
 		if oper.Range[1] != end {
 			return fmt.Errorf("%s: got end %d want %d", sync3.OpInvalidate, oper.Range[1], end)
 		}
-		if oper.List != listIndex {
-			return fmt.Errorf("%s: got list index %d want %d", sync3.OpInvalidate, oper.List, listIndex)
+		return nil
+	}
+}
+
+func MatchNoV3Ops() respMatcher {
+	return func(res *sync3.Response) error {
+		for i, l := range res.Lists {
+			if len(l.Ops) > 0 {
+				return fmt.Errorf("MatchNoV3Ops: list %d got %d ops", i, len(l.Ops))
+			}
 		}
 		return nil
 	}
 }
 
-func MatchV3Ops(matchOps ...opMatcher) respMatcher {
+func MatchV3Ops(listIndex int, matchOps ...opMatcher) respMatcher {
 	return func(res *sync3.Response) error {
-		if len(matchOps) != len(res.Ops) {
-			return fmt.Errorf("ops: got %d ops want %d", len(res.Ops), len(matchOps))
+		if listIndex >= len(res.Lists) {
+			return fmt.Errorf("MatchV3Ops: list index %d doesn't exist", listIndex)
 		}
-		for i := range res.Ops {
-			op := res.Ops[i]
+		if len(matchOps) != len(res.Lists[listIndex].Ops) {
+			return fmt.Errorf("ops: got %d ops want %d", len(res.Lists[listIndex].Ops), len(matchOps))
+		}
+		for i := range res.Lists[listIndex].Ops {
+			op := res.Lists[listIndex].Ops[i]
 			if err := matchOps[i](op); err != nil {
 				return fmt.Errorf("op[%d](%s) - %s", i, op.Op(), err)
 			}

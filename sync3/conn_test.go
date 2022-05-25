@@ -3,7 +3,6 @@ package sync3
 import (
 	"context"
 	"errors"
-	"reflect"
 	"strconv"
 	"sync"
 	"testing"
@@ -35,7 +34,11 @@ func TestConn(t *testing.T) {
 	c := NewConn(connID, &connHandlerMock{func(ctx context.Context, cid ConnID, req *Request, isInitial bool) (*Response, error) {
 		count += 1
 		return &Response{
-			Counts: []int{count},
+			Lists: []ResponseList{
+				{
+					Count: count,
+				},
+			},
 		}, nil
 	}})
 
@@ -45,14 +48,14 @@ func TestConn(t *testing.T) {
 	})
 	assertNoError(t, err)
 	assertPos(t, resp.Pos, 1)
-	assertInts(t, resp.Counts, []int{101})
+	assertInt(t, resp.Lists[0].Count, 101)
 
 	// happy case, pos=1
 	resp, err = c.OnIncomingRequest(ctx, &Request{
 		pos: 1,
 	})
 	assertPos(t, resp.Pos, 2)
-	assertInts(t, resp.Counts, []int{102})
+	assertInt(t, resp.Lists[0].Count, 102)
 	assertNoError(t, err)
 	// bogus position returns a 400
 	_, err = c.OnIncomingRequest(ctx, &Request{
@@ -129,25 +132,29 @@ func TestConnRetries(t *testing.T) {
 	connID := ConnID{
 		DeviceID: "d",
 	}
-	callCount := int64(0)
+	callCount := 0
 	c := NewConn(connID, &connHandlerMock{func(ctx context.Context, cid ConnID, req *Request, init bool) (*Response, error) {
 		callCount += 1
-		return &Response{Counts: []int{20}}, nil
+		return &Response{Lists: []ResponseList{
+			{
+				Count: 20,
+			},
+		}}, nil
 	}})
 	resp, err := c.OnIncomingRequest(ctx, &Request{})
 	assertPos(t, resp.Pos, 1)
-	assertInts(t, resp.Counts, []int{20})
+	assertInt(t, resp.Lists[0].Count, 20)
 	assertInt(t, callCount, 1)
 	assertNoError(t, err)
 	resp, err = c.OnIncomingRequest(ctx, &Request{pos: 1})
 	assertPos(t, resp.Pos, 2)
-	assertInts(t, resp.Counts, []int{20})
+	assertInt(t, resp.Lists[0].Count, 20)
 	assertInt(t, callCount, 2)
 	assertNoError(t, err)
 	// retry! Shouldn't invoke handler again
 	resp, err = c.OnIncomingRequest(ctx, &Request{pos: 1})
 	assertPos(t, resp.Pos, 2)
-	assertInts(t, resp.Counts, []int{20})
+	assertInt(t, resp.Lists[0].Count, 20)
 	assertInt(t, callCount, 2) // this doesn't increment
 	assertNoError(t, err)
 	// retry! but with modified request body, so should invoke handler again
@@ -158,7 +165,7 @@ func TestConnRetries(t *testing.T) {
 			},
 		}})
 	assertPos(t, resp.Pos, 3)
-	assertInts(t, resp.Counts, []int{20})
+	assertInt(t, resp.Lists[0].Count, 20)
 	assertInt(t, callCount, 3)
 	assertNoError(t, err)
 }
@@ -225,27 +232,20 @@ func TestConnErrorsNoCache(t *testing.T) {
 	}
 }
 
-func assertPos(t *testing.T, pos string, wantPos int64) {
+func assertPos(t *testing.T, pos string, wantPos int) {
 	t.Helper()
 	gotPos, err := strconv.Atoi(pos)
 	if err != nil {
 		t.Errorf("pos isn't an int: %s", err)
 		return
 	}
-	assertInt(t, int64(gotPos), wantPos)
+	assertInt(t, int(gotPos), wantPos)
 }
 
-func assertInt(t *testing.T, nextPos, wantPos int64) {
+func assertInt(t *testing.T, got, want int) {
 	t.Helper()
-	if nextPos != wantPos {
-		t.Errorf("got %d pos %d", nextPos, wantPos)
-	}
-}
-
-func assertInts(t *testing.T, gots, wants []int) {
-	t.Helper()
-	if !reflect.DeepEqual(gots, wants) {
-		t.Errorf("got %v want %v", gots, wants)
+	if got != want {
+		t.Errorf("got %d want %d", got, want)
 	}
 }
 

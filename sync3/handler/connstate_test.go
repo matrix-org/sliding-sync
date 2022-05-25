@@ -121,29 +121,33 @@ func TestConnStateInitial(t *testing.T) {
 		t.Fatalf("OnIncomingRequest returned error : %s", err)
 	}
 	checkResponse(t, false, res, &sync3.Response{
-		Counts: []int{3},
-		Ops: []sync3.ResponseOp{
-			&sync3.ResponseOpRange{
-				Operation: "SYNC",
-				Range:     []int64{0, 9},
-				Rooms: []sync3.Room{
-					{
-						RoomID:   roomB.RoomID,
-						Name:     roomB.NameEvent,
-						Initial:  true,
-						Timeline: []json.RawMessage{timeline[roomB.RoomID]},
-					},
-					{
-						RoomID:   roomC.RoomID,
-						Name:     roomC.NameEvent,
-						Initial:  true,
-						Timeline: []json.RawMessage{timeline[roomC.RoomID]},
-					},
-					{
-						RoomID:   roomA.RoomID,
-						Name:     roomA.NameEvent,
-						Initial:  true,
-						Timeline: []json.RawMessage{timeline[roomA.RoomID]},
+		Lists: []sync3.ResponseList{
+			{
+				Count: 3,
+				Ops: []sync3.ResponseOp{
+					&sync3.ResponseOpRange{
+						Operation: "SYNC",
+						Range:     []int64{0, 9},
+						Rooms: []sync3.Room{
+							{
+								RoomID:   roomB.RoomID,
+								Name:     roomB.NameEvent,
+								Initial:  true,
+								Timeline: []json.RawMessage{timeline[roomB.RoomID]},
+							},
+							{
+								RoomID:   roomC.RoomID,
+								Name:     roomC.NameEvent,
+								Initial:  true,
+								Timeline: []json.RawMessage{timeline[roomC.RoomID]},
+							},
+							{
+								RoomID:   roomA.RoomID,
+								Name:     roomA.NameEvent,
+								Initial:  true,
+								Timeline: []json.RawMessage{timeline[roomA.RoomID]},
+							},
+						},
 					},
 				},
 			},
@@ -169,17 +173,21 @@ func TestConnStateInitial(t *testing.T) {
 		t.Fatalf("OnIncomingRequest returned error : %s", err)
 	}
 	checkResponse(t, true, res, &sync3.Response{
-		Counts: []int{3},
-		Ops: []sync3.ResponseOp{
-			&sync3.ResponseOpSingle{
-				Operation: "DELETE",
-				Index:     intPtr(2),
-			},
-			&sync3.ResponseOpSingle{
-				Operation: "INSERT",
-				Index:     intPtr(0),
-				Room: &sync3.Room{
-					RoomID: roomA.RoomID,
+		Lists: []sync3.ResponseList{
+			{
+				Count: 3,
+				Ops: []sync3.ResponseOp{
+					&sync3.ResponseOpSingle{
+						Operation: "DELETE",
+						Index:     intPtr(2),
+					},
+					&sync3.ResponseOpSingle{
+						Operation: "INSERT",
+						Index:     intPtr(0),
+						Room: &sync3.Room{
+							RoomID: roomA.RoomID,
+						},
+					},
 				},
 			},
 		},
@@ -202,13 +210,17 @@ func TestConnStateInitial(t *testing.T) {
 		t.Fatalf("OnIncomingRequest returned error : %s", err)
 	}
 	checkResponse(t, true, res, &sync3.Response{
-		Counts: []int{3},
-		Ops: []sync3.ResponseOp{
-			&sync3.ResponseOpSingle{
-				Operation: "UPDATE",
-				Index:     intPtr(0),
-				Room: &sync3.Room{
-					RoomID: roomA.RoomID,
+		Lists: []sync3.ResponseList{
+			{
+				Count: 3,
+				Ops: []sync3.ResponseOp{
+					&sync3.ResponseOpSingle{
+						Operation: "UPDATE",
+						Index:     intPtr(0),
+						Room: &sync3.Room{
+							RoomID: roomA.RoomID,
+						},
+					},
 				},
 			},
 		},
@@ -273,20 +285,24 @@ func TestConnStateMultipleRanges(t *testing.T) {
 		t.Fatalf("OnIncomingRequest returned error : %s", err)
 	}
 	checkResponse(t, true, res, &sync3.Response{
-		Counts: []int{(len(rooms))},
-		Ops: []sync3.ResponseOp{
-			&sync3.ResponseOpRange{
-				Operation: "SYNC",
-				Range:     []int64{0, 2},
-				Rooms: []sync3.Room{
-					{
-						RoomID: roomIDs[0],
-					},
-					{
-						RoomID: roomIDs[1],
-					},
-					{
-						RoomID: roomIDs[2],
+		Lists: []sync3.ResponseList{
+			{
+				Count: len(rooms),
+				Ops: []sync3.ResponseOp{
+					&sync3.ResponseOpRange{
+						Operation: "SYNC",
+						Range:     []int64{0, 2},
+						Rooms: []sync3.Room{
+							{
+								RoomID: roomIDs[0],
+							},
+							{
+								RoomID: roomIDs[1],
+							},
+							{
+								RoomID: roomIDs[2],
+							},
+						},
 					},
 				},
 			},
@@ -305,20 +321,24 @@ func TestConnStateMultipleRanges(t *testing.T) {
 		t.Fatalf("OnIncomingRequest returned error : %s", err)
 	}
 	checkResponse(t, true, res, &sync3.Response{
-		Counts: []int{len(rooms)},
-		Ops: []sync3.ResponseOp{
-			&sync3.ResponseOpRange{
-				Operation: "SYNC",
-				Range:     []int64{4, 6},
-				Rooms: []sync3.Room{
-					{
-						RoomID: roomIDs[4],
-					},
-					{
-						RoomID: roomIDs[5],
-					},
-					{
-						RoomID: roomIDs[6],
+		Lists: []sync3.ResponseList{
+			{
+				Count: len(rooms),
+				Ops: []sync3.ResponseOp{
+					&sync3.ResponseOpRange{
+						Operation: "SYNC",
+						Range:     []int64{4, 6},
+						Rooms: []sync3.Room{
+							{
+								RoomID: roomIDs[4],
+							},
+							{
+								RoomID: roomIDs[5],
+							},
+							{
+								RoomID: roomIDs[6],
+							},
+						},
 					},
 				},
 			},
@@ -348,17 +368,21 @@ func TestConnStateMultipleRanges(t *testing.T) {
 		t.Fatalf("OnIncomingRequest returned error : %s", err)
 	}
 	checkResponse(t, true, res, &sync3.Response{
-		Counts: []int{len(rooms)},
-		Ops: []sync3.ResponseOp{
-			&sync3.ResponseOpSingle{
-				Operation: "DELETE",
-				Index:     intPtr(6),
-			},
-			&sync3.ResponseOpSingle{
-				Operation: "INSERT",
-				Index:     intPtr(0),
-				Room: &sync3.Room{
-					RoomID: roomIDs[8],
+		Lists: []sync3.ResponseList{
+			{
+				Count: len(rooms),
+				Ops: []sync3.ResponseOp{
+					&sync3.ResponseOpSingle{
+						Operation: "DELETE",
+						Index:     intPtr(6),
+					},
+					&sync3.ResponseOpSingle{
+						Operation: "INSERT",
+						Index:     intPtr(0),
+						Room: &sync3.Room{
+							RoomID: roomIDs[8],
+						},
+					},
 				},
 			},
 		},
@@ -388,17 +412,21 @@ func TestConnStateMultipleRanges(t *testing.T) {
 		t.Fatalf("OnIncomingRequest returned error : %s", err)
 	}
 	checkResponse(t, true, res, &sync3.Response{
-		Counts: []int{len(rooms)},
-		Ops: []sync3.ResponseOp{
-			&sync3.ResponseOpSingle{
-				Operation: "DELETE",
-				Index:     intPtr(6),
-			},
-			&sync3.ResponseOpSingle{
-				Operation: "INSERT",
-				Index:     intPtr(4),
-				Room: &sync3.Room{
-					RoomID: roomIDs[2],
+		Lists: []sync3.ResponseList{
+			{
+				Count: len(rooms),
+				Ops: []sync3.ResponseOp{
+					&sync3.ResponseOpSingle{
+						Operation: "DELETE",
+						Index:     intPtr(6),
+					},
+					&sync3.ResponseOpSingle{
+						Operation: "INSERT",
+						Index:     intPtr(4),
+						Room: &sync3.Room{
+							RoomID: roomIDs[2],
+						},
+					},
 				},
 			},
 		},
@@ -457,17 +485,21 @@ func TestBumpToOutsideRange(t *testing.T) {
 		t.Fatalf("OnIncomingRequest returned error : %s", err)
 	}
 	checkResponse(t, true, res, &sync3.Response{
-		Counts: []int{4},
-		Ops: []sync3.ResponseOp{
-			&sync3.ResponseOpRange{
-				Operation: "SYNC",
-				Range:     []int64{0, 1},
-				Rooms: []sync3.Room{
-					{
-						RoomID: roomA.RoomID,
-					},
-					{
-						RoomID: roomB.RoomID,
+		Lists: []sync3.ResponseList{
+			{
+				Count: 4,
+				Ops: []sync3.ResponseOp{
+					&sync3.ResponseOpRange{
+						Operation: "SYNC",
+						Range:     []int64{0, 1},
+						Rooms: []sync3.Room{
+							{
+								RoomID: roomA.RoomID,
+							},
+							{
+								RoomID: roomB.RoomID,
+							},
+						},
 					},
 				},
 			},
@@ -494,7 +526,7 @@ func TestBumpToOutsideRange(t *testing.T) {
 	if err != nil {
 		t.Fatalf("OnIncomingRequest returned error : %s", err)
 	}
-	if len(res.Ops) > 0 {
+	if len(res.Lists[0].Ops) > 0 {
 		t.Errorf("response returned ops, expected none")
 	}
 }
@@ -571,7 +603,35 @@ func TestConnStateRoomSubscriptions(t *testing.T) {
 		t.Fatalf("OnIncomingRequest returned error : %s", err)
 	}
 	checkResponse(t, false, res, &sync3.Response{
-		Counts: []int{len(roomIDs)},
+		Lists: []sync3.ResponseList{
+			{
+				Count: len(roomIDs),
+				Ops: []sync3.ResponseOp{
+					&sync3.ResponseOpRange{
+						Operation: "SYNC",
+						Range:     []int64{0, 1},
+						Rooms: []sync3.Room{
+							{
+								RoomID:  roomA.RoomID,
+								Name:    roomA.NameEvent,
+								Initial: true,
+								Timeline: []json.RawMessage{
+									timeline[roomA.RoomID],
+								},
+							},
+							{
+								RoomID:  roomB.RoomID,
+								Name:    roomB.NameEvent,
+								Initial: true,
+								Timeline: []json.RawMessage{
+									timeline[roomB.RoomID],
+								},
+							},
+						},
+					},
+				},
+			},
+		},
 		Rooms: map[string]sync3.Room{
 			roomD.RoomID: {
 				RoomID:  roomD.RoomID,
@@ -579,30 +639,6 @@ func TestConnStateRoomSubscriptions(t *testing.T) {
 				Initial: true,
 				Timeline: []json.RawMessage{
 					timeline[roomD.RoomID],
-				},
-			},
-		},
-		Ops: []sync3.ResponseOp{
-			&sync3.ResponseOpRange{
-				Operation: "SYNC",
-				Range:     []int64{0, 1},
-				Rooms: []sync3.Room{
-					{
-						RoomID:  roomA.RoomID,
-						Name:    roomA.NameEvent,
-						Initial: true,
-						Timeline: []json.RawMessage{
-							timeline[roomA.RoomID],
-						},
-					},
-					{
-						RoomID:  roomB.RoomID,
-						Name:    roomB.NameEvent,
-						Initial: true,
-						Timeline: []json.RawMessage{
-							timeline[roomB.RoomID],
-						},
-					},
 				},
 			},
 		},
@@ -625,7 +661,11 @@ func TestConnStateRoomSubscriptions(t *testing.T) {
 		t.Fatalf("OnIncomingRequest returned error : %s", err)
 	}
 	checkResponse(t, false, res, &sync3.Response{
-		Counts: []int{len(roomIDs)},
+		Lists: []sync3.ResponseList{
+			{
+				Count: len(roomIDs),
+			},
+		},
 		Rooms: map[string]sync3.Room{
 			roomD.RoomID: {
 				RoomID: roomD.RoomID,
@@ -656,7 +696,11 @@ func TestConnStateRoomSubscriptions(t *testing.T) {
 		t.Fatalf("OnIncomingRequest returned error : %s", err)
 	}
 	checkResponse(t, false, res, &sync3.Response{
-		Counts: []int{len(roomIDs)},
+		Lists: []sync3.ResponseList{
+			{
+				Count: len(roomIDs),
+			},
+		},
 		Rooms: map[string]sync3.Room{
 			roomC.RoomID: {
 				RoomID:  roomC.RoomID,
@@ -672,52 +716,59 @@ func TestConnStateRoomSubscriptions(t *testing.T) {
 
 func checkResponse(t *testing.T, checkRoomIDsOnly bool, got, want *sync3.Response) {
 	t.Helper()
-	if len(want.Counts) > 0 {
-		if !reflect.DeepEqual(got.Counts, want.Counts) {
-			t.Errorf("response Counts: got %v want %v", got.Counts, want.Counts)
-		}
+	if len(got.Lists) != len(want.Lists) {
+		t.Errorf("got %v lists, want %v", len(got.Lists), len(want.Lists))
 	}
-	if len(want.Ops) > 0 {
-		t.Logf("got %v", serialise(t, got))
-		t.Logf("want %v", serialise(t, want))
-		defer func() {
-			t.Helper()
-			if !t.Failed() {
-				t.Logf("OK!")
-			}
-		}()
-		if len(got.Ops) != len(want.Ops) {
-			t.Fatalf("got %d ops, want %d", len(got.Ops), len(want.Ops))
+	for i := 0; i < len(want.Lists); i++ {
+		wl := want.Lists[i]
+		gl := got.Lists[i]
+		if wl.Count > 0 && gl.Count != wl.Count {
+			t.Errorf("response list %d got count %d want %d", i, gl.Count, wl.Count)
 		}
-		for i, wantOpVal := range want.Ops {
-			gotOp := got.Ops[i]
-			if gotOp.Op() != wantOpVal.Op() {
-				t.Errorf("operation i=%d got '%s' want '%s'", i, gotOp.Op(), wantOpVal.Op())
+
+		if len(wl.Ops) > 0 {
+			t.Logf("got %v", serialise(t, gl))
+			t.Logf("want %v", serialise(t, wl))
+			t.Logf("DEBUG %v", serialise(t, got))
+			defer func() {
+				t.Helper()
+				if !t.Failed() {
+					t.Logf("OK!")
+				}
+			}()
+			if len(gl.Ops) != len(wl.Ops) {
+				t.Fatalf("got %d ops, want %d", len(gl.Ops), len(wl.Ops))
 			}
-			switch wantOp := wantOpVal.(type) {
-			case *sync3.ResponseOpRange:
-				gotOpRange, ok := gotOp.(*sync3.ResponseOpRange)
-				if !ok {
-					t.Fatalf("operation i=%d (%s) want type ResponseOpRange but it isn't", i, gotOp.Op())
+			for i, wantOpVal := range wl.Ops {
+				gotOp := gl.Ops[i]
+				if gotOp.Op() != wantOpVal.Op() {
+					t.Errorf("operation i=%d got '%s' want '%s'", i, gotOp.Op(), wantOpVal.Op())
 				}
-				if !reflect.DeepEqual(gotOpRange.Range, wantOp.Range) {
-					t.Errorf("operation i=%d (%s) got range %v want range %v", i, gotOp.Op(), gotOpRange.Range, wantOp.Range)
+				switch wantOp := wantOpVal.(type) {
+				case *sync3.ResponseOpRange:
+					gotOpRange, ok := gotOp.(*sync3.ResponseOpRange)
+					if !ok {
+						t.Fatalf("operation i=%d (%s) want type ResponseOpRange but it isn't", i, gotOp.Op())
+					}
+					if !reflect.DeepEqual(gotOpRange.Range, wantOp.Range) {
+						t.Errorf("operation i=%d (%s) got range %v want range %v", i, gotOp.Op(), gotOpRange.Range, wantOp.Range)
+					}
+					if len(gotOpRange.Rooms) != len(wantOp.Rooms) {
+						t.Fatalf("operation i=%d (%s) got %d rooms in array, want %d", i, gotOp.Op(), len(gotOpRange.Rooms), len(wantOp.Rooms))
+					}
+					for j := range wantOp.Rooms {
+						checkRoomsEqual(t, checkRoomIDsOnly, &gotOpRange.Rooms[j], &wantOp.Rooms[j])
+					}
+				case *sync3.ResponseOpSingle:
+					gotOpSingle, ok := gotOp.(*sync3.ResponseOpSingle)
+					if !ok {
+						t.Fatalf("operation i=%d (%s) want type ResponseOpSingle but it isn't", i, gotOp.Op())
+					}
+					if *gotOpSingle.Index != *wantOp.Index {
+						t.Errorf("operation i=%d (%s) single op on index %d want index %d", i, gotOp.Op(), *gotOpSingle.Index, *wantOp.Index)
+					}
+					checkRoomsEqual(t, checkRoomIDsOnly, gotOpSingle.Room, wantOp.Room)
 				}
-				if len(gotOpRange.Rooms) != len(wantOp.Rooms) {
-					t.Fatalf("operation i=%d (%s) got %d rooms in array, want %d", i, gotOp.Op(), len(gotOpRange.Rooms), len(wantOp.Rooms))
-				}
-				for j := range wantOp.Rooms {
-					checkRoomsEqual(t, checkRoomIDsOnly, &gotOpRange.Rooms[j], &wantOp.Rooms[j])
-				}
-			case *sync3.ResponseOpSingle:
-				gotOpSingle, ok := gotOp.(*sync3.ResponseOpSingle)
-				if !ok {
-					t.Fatalf("operation i=%d (%s) want type ResponseOpSingle but it isn't", i, gotOp.Op())
-				}
-				if *gotOpSingle.Index != *wantOp.Index {
-					t.Errorf("operation i=%d (%s) single op on index %d want index %d", i, gotOp.Op(), *gotOpSingle.Index, *wantOp.Index)
-				}
-				checkRoomsEqual(t, checkRoomIDsOnly, gotOpSingle.Room, wantOp.Room)
 			}
 		}
 	}

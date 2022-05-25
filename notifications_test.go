@@ -65,7 +65,7 @@ func TestNotificationsOnTop(t *testing.T) {
 		}},
 	}
 	res := v3.mustDoV3Request(t, aliceToken, syncRequestBody)
-	MatchResponse(t, res, MatchV3Count(len(allRooms)), MatchV3Ops(
+	MatchResponse(t, res, MatchV3Count(len(allRooms)), MatchV3Ops(0,
 		MatchV3SyncOp(func(op *sync3.ResponseOpRange) error {
 			if len(op.Rooms) != len(allRooms) {
 				return fmt.Errorf("want %d rooms, got %d", len(allRooms), len(op.Rooms))
@@ -102,10 +102,9 @@ func TestNotificationsOnTop(t *testing.T) {
 	})
 	v2.waitUntilEmpty(t, alice)
 	res = v3.mustDoV3RequestWithPos(t, aliceToken, res.Pos, syncRequestBody)
-	MatchResponse(t, res, MatchV3Count(len(allRooms)), MatchV3Ops(
-		MatchV3DeleteOp(0, 1),
-		MatchV3InsertOp(0, 0, bingRoomID),
-	))
+	MatchResponse(t, res, MatchV3Count(len(allRooms)),
+		MatchV3Ops(0, MatchV3DeleteOp(1), MatchV3InsertOp(0, bingRoomID)),
+	)
 
 	// send a message into the nobing room, it's position must not change due to our sort order
 	noBingEvent := testutils.NewEvent(t, "m.room.message", bob, map[string]interface{}{"body": "no bing"}, testutils.WithTimestamp(latestTimestamp.Add(2*time.Minute)))
@@ -124,9 +123,9 @@ func TestNotificationsOnTop(t *testing.T) {
 	})
 	v2.waitUntilEmpty(t, alice)
 	res = v3.mustDoV3RequestWithPos(t, aliceToken, res.Pos, syncRequestBody)
-	MatchResponse(t, res, MatchV3Count(len(allRooms)), MatchV3Ops(
-		MatchV3UpdateOp(0, 1, noBingRoomID),
-	))
+	MatchResponse(t, res, MatchV3Count(len(allRooms)),
+		MatchV3Ops(0, MatchV3UpdateOp(1, noBingRoomID)),
+	)
 
 	// restart the server and sync from fresh again, it should still have the bing room on top
 	v3.restart(t, v2, pqString)
@@ -142,7 +141,7 @@ func TestNotificationsOnTop(t *testing.T) {
 			Sort: []string{sync3.SortByHighlightCount, sync3.SortByNotificationCount, sync3.SortByRecency},
 		}},
 	})
-	MatchResponse(t, res, MatchV3Count(len(allRooms)), MatchV3Ops(
+	MatchResponse(t, res, MatchV3Count(len(allRooms)), MatchV3Ops(0,
 		MatchV3SyncOp(func(op *sync3.ResponseOpRange) error {
 			if len(op.Rooms) != len(allRooms) {
 				return fmt.Errorf("want %d rooms, got %d", len(allRooms), len(op.Rooms))

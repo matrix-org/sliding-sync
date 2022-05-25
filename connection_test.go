@@ -74,7 +74,7 @@ func TestMultipleConnsAtStartup(t *testing.T) {
 			},
 		}},
 	})
-	MatchResponse(t, res, MatchV3Ops(
+	MatchResponse(t, res, MatchV3Ops(0,
 		MatchV3SyncOpWithMatchers(MatchRoomRange(
 			[]roomMatcher{
 				MatchRoomID(roomID),
@@ -134,7 +134,7 @@ func TestOutstandingRequestsGetCancelled(t *testing.T) {
 			},
 		}},
 	})
-	MatchResponse(t, res, MatchV3Count(2), MatchV3Ops(
+	MatchResponse(t, res, MatchV3Count(2), MatchV3Ops(0,
 		MatchV3SyncOpWithMatchers(
 			MatchRoomRange(
 				[]roomMatcher{MatchRoomID(roomA)},
@@ -160,8 +160,8 @@ func TestOutstandingRequestsGetCancelled(t *testing.T) {
 				},
 			}},
 		})
-		MatchResponse(t, res2, MatchV3Count(2), MatchV3Ops(
-			MatchV3InvalidateOp(0, 0, 1),
+		MatchResponse(t, res2, MatchV3Count(2), MatchV3Ops(0,
+			MatchV3InvalidateOp(0, 1),
 			MatchV3SyncOpWithMatchers(
 				MatchRoomRange(
 					[]roomMatcher{MatchRoomID(roomB)},
@@ -185,7 +185,7 @@ func TestOutstandingRequestsGetCancelled(t *testing.T) {
 	if time.Since(startTime) > time.Second {
 		t.Errorf("took >1s to process request which should have been interrupted before timing out, took %v", time.Since(startTime))
 	}
-	MatchResponse(t, res, MatchV3Count(2), MatchV3Ops())
+	MatchResponse(t, res, MatchV3Count(2), MatchNoV3Ops())
 }
 
 // Regression test to ensure that ?timeout= isn't reset when live events come in.
@@ -232,7 +232,7 @@ func TestConnectionTimeoutNotReset(t *testing.T) {
 			},
 		}},
 	})
-	MatchResponse(t, res, MatchV3Count(2), MatchV3Ops(
+	MatchResponse(t, res, MatchV3Count(2), MatchV3Ops(0,
 		MatchV3SyncOpWithMatchers(
 			MatchRoomRange(
 				[]roomMatcher{
@@ -282,6 +282,6 @@ func TestConnectionTimeoutNotReset(t *testing.T) {
 	if dur > (1500 * time.Millisecond) { // 0.5s leeway
 		t.Fatalf("request took %v to complete, expected ~1s", dur)
 	}
-	MatchResponse(t, res, MatchV3Count(2), MatchV3Ops())
+	MatchResponse(t, res, MatchV3Count(2), MatchNoV3Ops())
 
 }

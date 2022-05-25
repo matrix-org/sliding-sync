@@ -85,27 +85,19 @@ func TestMultipleLists(t *testing.T) {
 		},
 	})
 
-	seen := map[int]bool{}
-	opMatch := func(op *sync3.ResponseOpRange) error {
-		seen[op.List] = true
-		if op.List == 0 { // first 3 encrypted rooms
+	MatchResponse(t, res,
+		MatchV3Counts([]int{len(encryptedRooms), len(unencryptedRooms)}),
+		MatchV3Ops(0, MatchV3SyncOp(func(op *sync3.ResponseOpRange) error {
+			// first 3 encrypted rooms
 			return checkRoomList(op, encryptedRooms[:3])
-		} else if op.List == 1 { // first 3 unencrypted rooms
+		})),
+		MatchV3Ops(1, MatchV3SyncOp(func(op *sync3.ResponseOpRange) error {
+			// first 3 unencrypted rooms
 			return checkRoomList(op, unencryptedRooms[:3])
-		}
-		return fmt.Errorf("unknown List: %d", op.List)
-	}
-
-	MatchResponse(t, res, MatchV3Counts([]int{len(encryptedRooms), len(unencryptedRooms)}), MatchV3Ops(
-		MatchV3SyncOp(opMatch), MatchV3SyncOp(opMatch),
-	))
-
-	if !seen[0] || !seen[1] {
-		t.Fatalf("didn't see both list 0 and 1: %+v", res)
-	}
+		})),
+	)
 
 	// now scroll one of the lists
-
 	res = v3.mustDoV3RequestWithPos(t, aliceToken, res.Pos, sync3.Request{
 		Lists: []sync3.RequestList{
 			{
@@ -121,11 +113,8 @@ func TestMultipleLists(t *testing.T) {
 			},
 		},
 	})
-	MatchResponse(t, res, MatchV3Counts([]int{len(encryptedRooms), len(unencryptedRooms)}), MatchV3Ops(
+	MatchResponse(t, res, MatchV3Counts([]int{len(encryptedRooms), len(unencryptedRooms)}), MatchV3Ops(1,
 		MatchV3SyncOp(func(op *sync3.ResponseOpRange) error {
-			if op.List != 1 {
-				return fmt.Errorf("expected unencrypted list to be SYNCed but wasn't, got list %d want %d", op.List, 1)
-			}
 			return checkRoomList(op, unencryptedRooms[3:6])
 		}),
 	))
@@ -173,9 +162,9 @@ func TestMultipleLists(t *testing.T) {
 	// We are tracking the first few encrypted rooms so we expect list 0 to update
 	// However we do not track old unencrypted rooms so we expect no change in list 1
 	// TODO: We always assume operations are done sequentially starting at list 0, is this safe?
-	MatchResponse(t, res, MatchV3Counts([]int{len(encryptedRooms), len(unencryptedRooms)}), MatchV3Ops(
-		MatchV3DeleteOp(0, 2),
-		MatchV3InsertOp(0, 0, encryptedRooms[0].roomID),
+	MatchResponse(t, res, MatchV3Counts([]int{len(encryptedRooms), len(unencryptedRooms)}), MatchV3Ops(0,
+		MatchV3DeleteOp(2),
+		MatchV3InsertOp(0, encryptedRooms[0].roomID),
 	))
 }
 
@@ -262,20 +251,17 @@ func TestMultipleListsDMUpdate(t *testing.T) {
 		},
 	})
 
-	seen := map[int]bool{}
-	opMatch := func(op *sync3.ResponseOpRange) error {
-		seen[op.List] = true
-		if op.List == 0 { // first 3 DM rooms
+	MatchResponse(t, res,
+		MatchV3Counts([]int{len(dmRooms), len(groupRooms)}),
+		MatchV3Ops(0, MatchV3SyncOp(func(op *sync3.ResponseOpRange) error {
+			// first 3 DM rooms
 			return checkRoomList(op, dmRooms[:3])
-		} else if op.List == 1 { // first 3 group rooms
+		})),
+		MatchV3Ops(1, MatchV3SyncOp(func(op *sync3.ResponseOpRange) error {
+			// first 3 group rooms
 			return checkRoomList(op, groupRooms[:3])
-		}
-		return fmt.Errorf("unknown List: %d", op.List)
-	}
-
-	MatchResponse(t, res, MatchV3Counts([]int{len(dmRooms), len(groupRooms)}), MatchV3Ops(
-		MatchV3SyncOp(opMatch), MatchV3SyncOp(opMatch),
-	))
+		})),
+	)
 
 	// now bring the last DM room to the top with a notif
 	pingMessage := testutils.NewEvent(t, "m.room.message", alice, map[string]interface{}{"body": "ping"})
@@ -315,10 +301,12 @@ func TestMultipleListsDMUpdate(t *testing.T) {
 			},
 		},
 	})
-	MatchResponse(t, res, MatchV3Counts([]int{len(dmRooms), len(groupRooms)}), MatchV3Ops(
-		MatchV3DeleteOp(0, 2),
-		MatchV3InsertOp(0, 0, dmRooms[0].roomID, MatchRoomHighlightCount(1), MatchRoomTimelineMostRecent(1, dmRooms[0].events)),
-	))
+	MatchResponse(t, res, MatchV3Counts([]int{len(dmRooms), len(groupRooms)}),
+		MatchV3Ops(
+			0, MatchV3DeleteOp(2),
+			MatchV3InsertOp(0, dmRooms[0].roomID, MatchRoomHighlightCount(1), MatchRoomTimelineMostRecent(1, dmRooms[0].events)),
+		),
+	)
 }
 
 // Test that a new list can be added mid-connection
@@ -367,11 +355,8 @@ func TestNewListMidConnection(t *testing.T) {
 			},
 		},
 	})
-	MatchResponse(t, res, MatchV3Counts([]int{len(allRooms)}), MatchV3Ops(
+	MatchResponse(t, res, MatchV3Counts([]int{len(allRooms)}), MatchV3Ops(0,
 		MatchV3SyncOp(func(op *sync3.ResponseOpRange) error {
-			if op.List != 0 {
-				return fmt.Errorf("got list %d want %d", op.List, 0)
-			}
 			return checkRoomList(op, allRooms[0:3])
 		}),
 	))

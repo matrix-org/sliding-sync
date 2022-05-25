@@ -31,11 +31,11 @@ func (s *SortableRoomLists) Set(index int, val *FilteredSortableRooms) {
 	s.lists[index] = val
 }
 
-// Counts returns the counts of all lists
-func (s *SortableRoomLists) Counts() []int {
-	counts := make([]int, len(s.lists))
-	for i := range s.lists {
-		counts[i] = int(s.lists[i].Len())
-	}
-	return counts
+// Count returns the count of total rooms in this list
+func (s *SortableRoomLists) Count(index int) int {
+	return int(s.lists[index].Len())
+}
+
+func (s *SortableRoomLists) Len() int {
+	return len(s.lists)
 }

@@ -167,8 +167,8 @@ func (s *ConnState) onIncomingRequest(ctx context.Context, req *sync3.Request, i
 	// start forming the response, handle subscriptions
 	response := &sync3.Response{
 		Rooms: s.updateRoomSubscriptions(ctx, int(sync3.DefaultTimelineLimit), newSubs, newUnsubs),
+		Lists: make([]sync3.ResponseList, len(s.muxedReq.Lists)),
 	}
-	responseOperations := []sync3.ResponseOp{} // empty not nil slice
 
 	// loop each list and handle each independently
 	for i := range s.muxedReq.Lists {
@@ -176,11 +176,10 @@ func (s *ConnState) onIncomingRequest(ctx context.Context, req *sync3.Request, i
 		if prevReq != nil && i < len(prevReq.Lists) {
 			prevList = &prevReq.Lists[i]
 		}
-		ops := s.onIncomingListRequest(ctx, i, prevList, &s.muxedReq.Lists[i])
-		responseOperations = append(responseOperations, ops...)
+		response.Lists[i] = s.onIncomingListRequest(ctx, i, prevList, &s.muxedReq.Lists[i])
 	}
 
-	includedRoomIDs := sync3.IncludedRoomIDsInOps(responseOperations)
+	includedRoomIDs := sync3.IncludedRoomIDsInOps(response.Lists)
 	for _, roomID := range newSubs { // include room subs in addition to lists
 		includedRoomIDs[roomID] = struct{}{}
 	}
@@ -192,32 +191,19 @@ func (s *ConnState) onIncomingRequest(ctx context.Context, req *sync3.Request, i
 
 	// do live tracking if we have nothing to tell the client yet
 	region = trace.StartRegion(ctx, "liveUpdate")
-	responseOperations = s.live.liveUpdate(ctx, req, ex, isInitial, response, responseOperations)
+	s.live.liveUpdate(ctx, req, ex, isInitial, response)
 	region.End()
 
-	response.Ops = responseOperations
-	response.Counts = s.lists.Counts() // counts are AFTER events are applied
+	// counts are AFTER events are applied
+	for i := range response.Lists {
+		response.Lists[i].Count = s.lists.Count(i)
+	}
 
 	return response, nil
 }
 
-func (s *ConnState) writeDeleteOp(listIndex, deletedIndex int) sync3.ResponseOp {
-	// update operations return -1 if nothing gets deleted
-	if deletedIndex < 0 {
-		return nil
-	}
-	// only notify if we are tracking this index
-	if !s.muxedReq.Lists[listIndex].Ranges.Inside(int64(deletedIndex)) {
-		return nil
-	}
-	return &sync3.ResponseOpSingle{
-		List:      listIndex,
-		Operation: sync3.OpDelete,
-		Index:     &deletedIndex,
-	}
-}
-
-func (s *ConnState) onIncomingListRequest(ctx context.Context, listIndex int, prevReqList, nextReqList *sync3.RequestList) []sync3.ResponseOp {
+// TODO, response list + room data
+func (s *ConnState) onIncomingListRequest(ctx context.Context, listIndex int, prevReqList, nextReqList *sync3.RequestList) sync3.ResponseList {
 	defer trace.StartRegion(ctx, "onIncomingListRequest").End()
 	if !s.lists.ListExists(listIndex) {
 		s.setInitialList(listIndex, *nextReqList)
@@ -254,7 +240,6 @@ func (s *ConnState) onIncomingListRequest(ctx context.Context, listIndex int, pr
 			logger.Trace().Interface("range", prevRange).Msg("INVALIDATEing because sort/filter ops have changed")
 			for _, r := range prevRange {
 				responseOperations = append(responseOperations, &sync3.ResponseOpRange{
-					List:      listIndex,
 					Operation: sync3.OpInvalidate,
 					Range:     r[:],
 				})
@@ -278,7 +263,6 @@ func (s *ConnState) onIncomingListRequest(ctx context.Context, listIndex int, pr
 	}
 	for _, r := range removedRanges {
 		responseOperations = append(responseOperations, &sync3.ResponseOpRange{
-			List:      listIndex,
 			Operation: sync3.OpInvalidate,
 			Range:     r[:],
 		})
@@ -294,14 +278,16 @@ func (s *ConnState) onIncomingListRequest(ctx context.Context, listIndex int, pr
 		roomIDs := sortableRooms.RoomIDs()
 
 		responseOperations = append(responseOperations, &sync3.ResponseOpRange{
-			List:      listIndex,
 			Operation: sync3.OpSync,
 			Range:     r[:],
 			Rooms:     s.getInitialRoomData(ctx, listIndex, int(nextReqList.TimelineLimit), roomIDs...),
 		})
 	}
 
-	return responseOperations
+	return sync3.ResponseList{
+		Ops: responseOperations,
+		// count will be filled in later
+	}
 }
 
 func (s *ConnState) updateRoomSubscriptions(ctx context.Context, timelineLimit int, subs, unsubs []string) map[string]sync3.Room {
