@@ -224,3 +224,110 @@ type RoomSubscription struct {
 	RequiredState [][2]string `json:"required_state"`
 	TimelineLimit int64       `json:"timeline_limit"`
 }
+
+// Combine this subcription with another, returning a union of both as a copy.
+func (rs RoomSubscription) Combine(other RoomSubscription) RoomSubscription {
+	var result RoomSubscription
+	// choose max value
+	if rs.TimelineLimit > other.TimelineLimit {
+		result.TimelineLimit = rs.TimelineLimit
+	} else {
+		result.TimelineLimit = other.TimelineLimit
+	}
+	// combine together required_state fields, we'll union them later
+	result.RequiredState = append(rs.RequiredState, other.RequiredState...)
+	return result
+}
+
+// Calculate the required state map for this room subscription. Given event types A,B,C and state keys
+// 1,2,3, the following Venn diagrams are possible:
+//  .---------[*,*]----------.
+//  |      .---------.       |
+//  |      |   A,2   | A,3   |
+//  | .----+--[B,*]--+-----. |
+//  | |    | .-----. |     | |
+//  | |B,1 | | B,2 | | B,3 | |
+//  | |    | `[B,2]` |     | |
+//  | `----+---------+-----` |
+//  |      |   C,2   | C,3   |
+//  |      `--[*,2]--`       |
+//  `------------------------`
+//
+// The largest set will be used when returning the required state map.
+// For example, [B,2] + [B,*] = [B,*] because [B,*] encompasses [B,2]. This means [*,*] encompasses
+// everything.
+func (rs RoomSubscription) RequiredStateMap() *RequiredStateMap {
+	result := make(map[string][]string)
+	eventTypesWithWildcardStateKeys := make(map[string]struct{})
+	var stateKeysForWildcardEventType []string
+	for _, tuple := range rs.RequiredState {
+		if tuple[0] == "*" {
+			if tuple[1] == "*" { // all state
+				return &RequiredStateMap{
+					allState: true,
+				}
+			}
+			stateKeysForWildcardEventType = append(stateKeysForWildcardEventType, tuple[1])
+			continue
+		}
+		if tuple[1] == "*" { // wildcard state key
+			eventTypesWithWildcardStateKeys[tuple[0]] = struct{}{}
+		} else {
+			result[tuple[0]] = append(result[tuple[0]], tuple[1])
+		}
+	}
+	return &RequiredStateMap{
+		eventTypesWithWildcardStateKeys: eventTypesWithWildcardStateKeys,
+		stateKeysForWildcardEventType:   stateKeysForWildcardEventType,
+		eventTypeToStateKeys:            result,
+		allState:                        false,
+	}
+}
+
+type RequiredStateMap struct {
+	eventTypesWithWildcardStateKeys map[string]struct{}
+	stateKeysForWildcardEventType   []string
+	eventTypeToStateKeys            map[string][]string
+	allState                        bool
+}
+
+func (rsm *RequiredStateMap) Include(evType, stateKey string) bool {
+	if rsm.allState {
+		return true
+	}
+	// check if we should include this event due to wildcard event types
+	for _, sk := range rsm.stateKeysForWildcardEventType {
+		if sk == stateKey || sk == "*" {
+			return true
+		}
+	}
+	// check if we should include this event due to wildcard state keys
+	for et := range rsm.eventTypesWithWildcardStateKeys {
+		if et == evType {
+			return true
+		}
+	}
+	// check if we should include this event due to exact type/state key match
+	for _, sk := range rsm.eventTypeToStateKeys[evType] {
+		if sk == stateKey {
+			return true
+		}
+	}
+	return false
+}
+
+// work out what to ask the storage layer: if we have wildcard event types we need to pull all
+// room state and cannot only pull out certain event types. If we have wildcard state keys we
+// need to use an empty list for state keys.
+func (rsm *RequiredStateMap) QueryStateMap() map[string][]string {
+	queryStateMap := make(map[string][]string)
+	if len(rsm.stateKeysForWildcardEventType) == 0 { // no wildcard event types
+		for evType, stateKeys := range rsm.eventTypeToStateKeys {
+			queryStateMap[evType] = stateKeys
+		}
+		for evType := range rsm.eventTypesWithWildcardStateKeys {
+			queryStateMap[evType] = nil
+		}
+	}
+	return queryStateMap
+}
