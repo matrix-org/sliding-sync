@@ -377,6 +377,7 @@ func (s *connStateLive) moveRoom(
 				Operation: op,
 				Index:     &fromIndex,
 				Room:      room,
+				RoomID:    roomID,
 			},
 		}
 	}
@@ -407,6 +408,7 @@ func (s *connStateLive) moveRoom(
 			Operation: sync3.OpInsert,
 			Index:     &toIndex,
 			Room:      room,
+			RoomID:    roomID,
 		},
 	}
 }

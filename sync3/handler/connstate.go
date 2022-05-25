@@ -281,6 +281,7 @@ func (s *ConnState) onIncomingListRequest(ctx context.Context, listIndex int, pr
 			Operation: sync3.OpSync,
 			Range:     r[:],
 			Rooms:     s.getInitialRoomData(ctx, listIndex, int(nextReqList.TimelineLimit), roomIDs...),
+			RoomIDs:   roomIDs,
 		})
 	}
 
