@@ -362,7 +362,7 @@ func (s *connStateLive) moveRoom(
 			RoomID: roomID,
 		}
 		if newlyAdded || forceInitial {
-			rooms := s.getInitialRoomData(ctx, reqList, int(reqList.TimelineLimit), roomID)
+			rooms := s.getInitialRoomData(ctx, reqList.RoomSubscription, roomID)
 			room = &rooms[0]
 		} else if !onlySendRoomID {
 			room = s.getDeltaRoomData(roomID, event)
@@ -394,7 +394,7 @@ func (s *connStateLive) moveRoom(
 		RoomID: roomID,
 	}
 	if !onlySendRoomID {
-		rooms := s.getInitialRoomData(ctx, reqList, int(reqList.TimelineLimit), roomID)
+		rooms := s.getInitialRoomData(ctx, reqList.RoomSubscription, roomID)
 		room = &rooms[0]
 	}
 

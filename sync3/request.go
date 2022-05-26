@@ -256,16 +256,14 @@ func (rs RoomSubscription) Combine(other RoomSubscription) RoomSubscription {
 // The largest set will be used when returning the required state map.
 // For example, [B,2] + [B,*] = [B,*] because [B,*] encompasses [B,2]. This means [*,*] encompasses
 // everything.
-func (rs RoomSubscription) RequiredStateMap() *RequiredStateMap {
+func (rs RoomSubscription) RequiredStateMap() *internal.RequiredStateMap {
 	result := make(map[string][]string)
 	eventTypesWithWildcardStateKeys := make(map[string]struct{})
 	var stateKeysForWildcardEventType []string
 	for _, tuple := range rs.RequiredState {
 		if tuple[0] == "*" {
 			if tuple[1] == "*" { // all state
-				return &RequiredStateMap{
-					allState: true,
-				}
+				return internal.NewRequiredStateMap(nil, nil, nil, true)
 			}
 			stateKeysForWildcardEventType = append(stateKeysForWildcardEventType, tuple[1])
 			continue
@@ -276,58 +274,5 @@ func (rs RoomSubscription) RequiredStateMap() *RequiredStateMap {
 			result[tuple[0]] = append(result[tuple[0]], tuple[1])
 		}
 	}
-	return &RequiredStateMap{
-		eventTypesWithWildcardStateKeys: eventTypesWithWildcardStateKeys,
-		stateKeysForWildcardEventType:   stateKeysForWildcardEventType,
-		eventTypeToStateKeys:            result,
-		allState:                        false,
-	}
-}
-
-type RequiredStateMap struct {
-	eventTypesWithWildcardStateKeys map[string]struct{}
-	stateKeysForWildcardEventType   []string
-	eventTypeToStateKeys            map[string][]string
-	allState                        bool
-}
-
-func (rsm *RequiredStateMap) Include(evType, stateKey string) bool {
-	if rsm.allState {
-		return true
-	}
-	// check if we should include this event due to wildcard event types
-	for _, sk := range rsm.stateKeysForWildcardEventType {
-		if sk == stateKey || sk == "*" {
-			return true
-		}
-	}
-	// check if we should include this event due to wildcard state keys
-	for et := range rsm.eventTypesWithWildcardStateKeys {
-		if et == evType {
-			return true
-		}
-	}
-	// check if we should include this event due to exact type/state key match
-	for _, sk := range rsm.eventTypeToStateKeys[evType] {
-		if sk == stateKey {
-			return true
-		}
-	}
-	return false
-}
-
-// work out what to ask the storage layer: if we have wildcard event types we need to pull all
-// room state and cannot only pull out certain event types. If we have wildcard state keys we
-// need to use an empty list for state keys.
-func (rsm *RequiredStateMap) QueryStateMap() map[string][]string {
-	queryStateMap := make(map[string][]string)
-	if len(rsm.stateKeysForWildcardEventType) == 0 { // no wildcard event types
-		for evType, stateKeys := range rsm.eventTypeToStateKeys {
-			queryStateMap[evType] = stateKeys
-		}
-		for evType := range rsm.eventTypesWithWildcardStateKeys {
-			queryStateMap[evType] = nil
-		}
-	}
-	return queryStateMap
+	return internal.NewRequiredStateMap(eventTypesWithWildcardStateKeys, stateKeysForWildcardEventType, result, false)
 }

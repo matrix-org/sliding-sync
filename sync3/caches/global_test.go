@@ -1,4 +1,4 @@
-package caches
+package caches_test
 
 import (
 	"bytes"
@@ -7,6 +7,8 @@ import (
 	"testing"
 
 	"github.com/matrix-org/sync-v3/state"
+	"github.com/matrix-org/sync-v3/sync3"
+	"github.com/matrix-org/sync-v3/sync3/caches"
 	"github.com/matrix-org/sync-v3/testutils"
 )
 
@@ -45,7 +47,7 @@ func TestGlobalCacheLoadState(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Accumulate: %s", err)
 	}
-	globalCache := NewGlobalCache(store)
+	globalCache := caches.NewGlobalCache(store)
 	testCases := []struct {
 		name          string
 		requiredState [][2]string
@@ -158,7 +160,10 @@ func TestGlobalCacheLoadState(t *testing.T) {
 			for r := range tc.wantEvents {
 				roomIDs = append(roomIDs, r)
 			}
-			gotMap := globalCache.LoadRoomState(ctx, roomIDs, latest, tc.requiredState)
+			rs := sync3.RoomSubscription{
+				RequiredState: tc.requiredState,
+			}
+			gotMap := globalCache.LoadRoomState(ctx, roomIDs, latest, rs.RequiredStateMap())
 			for _, roomID := range roomIDs {
 				got := gotMap[roomID]
 				wantEvents := tc.wantEvents[roomID]

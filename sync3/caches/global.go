@@ -112,70 +112,21 @@ func (c *GlobalCache) LoadJoinedRooms(userID string) (pos int64, joinedRooms map
 }
 
 // TODO: remove? Doesn't touch global cache fields
-func (c *GlobalCache) LoadRoomState(ctx context.Context, roomIDs []string, loadPosition int64, requiredState [][2]string) map[string][]json.RawMessage {
-	if len(requiredState) == 0 {
-		return nil
-	}
+func (c *GlobalCache) LoadRoomState(ctx context.Context, roomIDs []string, loadPosition int64, requiredStateMap *internal.RequiredStateMap) map[string][]json.RawMessage {
 	if c.store == nil {
 		return nil
 	}
-	// pull out unique event types and convert the required state into a map
-	requiredStateMap := make(map[string][]string) // event_type -> []state_key
-	eventTypesWithWildcardStateKeys := make(map[string]bool)
-	var stateKeysForWildcardEventType []string
-	for _, rs := range requiredState {
-		if rs[0] == "*" {
-			stateKeysForWildcardEventType = append(stateKeysForWildcardEventType, rs[1])
-			continue
-		}
-		if rs[1] == "*" { // wildcard state key
-			eventTypesWithWildcardStateKeys[rs[0]] = true
-		} else {
-			requiredStateMap[rs[0]] = append(requiredStateMap[rs[0]], rs[1])
-		}
-	}
-	// work out what to ask the storage layer: if we have wildcard event types we need to pull all
-	// room state and cannot only pull out certain event types. If we have wildcard state keys we
-	// need to use an empty list for state keys.
-	queryStateMap := make(map[string][]string)
-	if len(stateKeysForWildcardEventType) == 0 { // no wildcard event types
-		for evType, stateKeys := range requiredStateMap {
-			queryStateMap[evType] = stateKeys
-		}
-		for evType := range eventTypesWithWildcardStateKeys {
-			queryStateMap[evType] = nil
-		}
-	}
 	resultMap := make(map[string][]json.RawMessage, len(roomIDs))
-	roomIDToStateEvents, err := c.store.RoomStateAfterEventPosition(ctx, roomIDs, loadPosition, queryStateMap)
+	roomIDToStateEvents, err := c.store.RoomStateAfterEventPosition(ctx, roomIDs, loadPosition, requiredStateMap.QueryStateMap())
 	if err != nil {
 		logger.Err(err).Strs("rooms", roomIDs).Int64("pos", loadPosition).Msg("failed to load room state")
 		return nil
 	}
 	for roomID, stateEvents := range roomIDToStateEvents {
 		var result []json.RawMessage
-	NextEvent:
 		for _, ev := range stateEvents {
-			// check if we should include this event due to wildcard event types
-			for _, sk := range stateKeysForWildcardEventType {
-				if sk == ev.StateKey || sk == "*" {
-					result = append(result, ev.JSON)
-					continue NextEvent
-				}
-			}
-			// check if we should include this event due to wildcard state keys
-			for evType := range eventTypesWithWildcardStateKeys {
-				if evType == ev.Type {
-					result = append(result, ev.JSON)
-					continue NextEvent
-				}
-			}
-			// check if we should include this event due to exact type/state key match
-			for _, sk := range requiredStateMap[ev.Type] {
-				if sk == ev.StateKey {
-					result = append(result, ev.JSON)
-					continue NextEvent
-				}
+			if requiredStateMap.Include(ev.Type, ev.StateKey) {
+				result = append(result, ev.JSON)
 			}
 		}
 		resultMap[roomID] = result
