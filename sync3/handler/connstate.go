@@ -179,7 +179,7 @@ func (s *ConnState) onIncomingRequest(ctx context.Context, req *sync3.Request, i
 		response.Lists[i] = s.onIncomingListRequest(ctx, i, prevList, &s.muxedReq.Lists[i])
 	}
 
-	includedRoomIDs := sync3.IncludedRoomIDsInOps(response.Lists)
+	includedRoomIDs := response.IncludedRoomIDsInOps()
 	for _, roomID := range newSubs { // include room subs in addition to lists
 		includedRoomIDs[roomID] = struct{}{}
 	}
