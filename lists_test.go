@@ -363,6 +363,187 @@ func TestNewListMidConnection(t *testing.T) {
 	))
 }
 
+// Tests that if a room appears in >1 list that we union room subscriptions correctly.
+func TestMultipleOverlappingLists(t *testing.T) {
+	boolTrue := true
+	pqString := testutils.PrepareDBConnectionString()
+	// setup code
+	v2 := runTestV2Server(t)
+	v3 := runTestServer(t, v2, pqString)
+	defer v2.close()
+	defer v3.close()
+	var allRooms []roomEvents
+	var encryptedRooms []roomEvents
+	var encryptedRoomIDs []string
+	var dmRooms []roomEvents
+	var dmRoomIDs []string
+	dmContent := map[string][]string{} // user_id -> [room_id]
+	dmUser := bob
+	baseTimestamp := time.Now()
+	// make 3 encrypted rooms, 3 encrypted/dm rooms, 3 dm rooms.
+	for i := 0; i < 9; i++ {
+		isEncrypted := i < 6
+		isDM := i >= 3
+		ts := baseTimestamp.Add(time.Duration(-1*i) * time.Second)
+		room := roomEvents{
+			roomID: fmt.Sprintf("!room_%d:localhost", i),
+			events: createRoomState(t, alice, ts),
+		}
+		if isEncrypted {
+			room.events = append(room.events, testutils.NewStateEvent(
+				t, "m.room.encryption", "", alice, map[string]interface{}{
+					"algorithm":            "m.megolm.v1.aes-sha2",
+					"rotation_period_ms":   604800000,
+					"rotation_period_msgs": 100,
+				}, testutils.WithTimestamp(ts),
+			))
+		}
+		if isDM {
+			dmContent[dmUser] = append(dmContent[dmUser], room.roomID)
+		}
+		allRooms = append(allRooms, room)
+		if isEncrypted {
+			encryptedRooms = append(encryptedRooms, room)
+			encryptedRoomIDs = append(encryptedRoomIDs, room.roomID)
+		}
+		if isDM {
+			dmRooms = append(dmRooms, room)
+			dmRoomIDs = append(dmRoomIDs, room.roomID)
+		}
+	}
+	v2.addAccount(alice, aliceToken)
+	v2.queueResponse(alice, sync2.SyncResponse{
+		AccountData: sync2.EventsResponse{
+			Events: []json.RawMessage{
+				testutils.NewEvent(t, "m.direct", alice, dmContent),
+			},
+		},
+		Rooms: sync2.SyncRoomsResponse{
+			Join: v2JoinTimeline(allRooms...),
+		},
+	})
+	// request 2 lists: one DMs, one encrypted. The room subscriptions are different so they should be UNION'd correctly.
+	// We request 5 rooms to ensure there is some overlap but not total overlap:
+	//   newest     top 5 DM
+	//   v     .-------------.
+	//   E E E ED* ED* ED* D D D
+	//   `-----------`
+	//      top 5 Encrypted
+	//
+	// Rooms with * are union'd
+	res := v3.mustDoV3Request(t, aliceToken, sync3.Request{
+		Lists: []sync3.RequestList{
+			{
+				Sort: []string{sync3.SortByRecency},
+				Ranges: sync3.SliceRanges{
+					[2]int64{0, 4}, // first 5 rooms
+				},
+				RoomSubscription: sync3.RoomSubscription{
+					TimelineLimit: 3,
+					RequiredState: [][2]string{
+						{"m.room.join_rules", ""},
+					},
+				},
+				Filters: &sync3.RequestFilters{
+					IsEncrypted: &boolTrue,
+				},
+			},
+			{
+				Sort: []string{sync3.SortByRecency},
+				Ranges: sync3.SliceRanges{
+					[2]int64{0, 4}, // first 5 rooms
+				},
+				RoomSubscription: sync3.RoomSubscription{
+					TimelineLimit: 1,
+					RequiredState: [][2]string{
+						{"m.room.power_levels", ""},
+					},
+				},
+				Filters: &sync3.RequestFilters{
+					IsDM: &boolTrue,
+				},
+			},
+		},
+	})
+
+	MatchResponse(t, res,
+		MatchV3Ops(0, MatchV3SyncOp(0, 4, encryptedRoomIDs[:5])),
+		MatchV3Ops(1, MatchV3SyncOp(0, 4, dmRoomIDs[:5])),
+		MatchRoomSubscriptions(map[string][]roomMatcher{
+			// encrypted rooms just come from the encrypted only list
+			encryptedRoomIDs[0]: {
+				MatchRoomID(encryptedRoomIDs[0]),
+				MatchRoomInitial(true),
+				MatchRoomRequiredState([]json.RawMessage{
+					encryptedRooms[0].getStateEvent("m.room.join_rules", ""),
+				}),
+				MatchRoomTimelineMostRecent(3, encryptedRooms[0].events),
+			},
+			encryptedRoomIDs[1]: {
+				MatchRoomID(encryptedRoomIDs[1]),
+				MatchRoomInitial(true),
+				MatchRoomRequiredState([]json.RawMessage{
+					encryptedRooms[1].getStateEvent("m.room.join_rules", ""),
+				}),
+				MatchRoomTimelineMostRecent(3, encryptedRooms[1].events),
+			},
+			encryptedRoomIDs[2]: {
+				MatchRoomID(encryptedRoomIDs[2]),
+				MatchRoomInitial(true),
+				MatchRoomRequiredState([]json.RawMessage{
+					encryptedRooms[2].getStateEvent("m.room.join_rules", ""),
+				}),
+				MatchRoomTimelineMostRecent(3, encryptedRooms[2].events),
+			},
+			// overlapping with DM rooms
+			encryptedRoomIDs[3]: {
+				MatchRoomID(encryptedRoomIDs[3]),
+				MatchRoomInitial(true),
+				MatchRoomRequiredState([]json.RawMessage{
+					encryptedRooms[3].getStateEvent("m.room.join_rules", ""),
+					encryptedRooms[3].getStateEvent("m.room.power_levels", ""),
+				}),
+				MatchRoomTimelineMostRecent(3, encryptedRooms[3].events),
+			},
+			encryptedRoomIDs[4]: {
+				MatchRoomID(encryptedRoomIDs[4]),
+				MatchRoomInitial(true),
+				MatchRoomRequiredState([]json.RawMessage{
+					encryptedRooms[4].getStateEvent("m.room.join_rules", ""),
+					encryptedRooms[4].getStateEvent("m.room.power_levels", ""),
+				}),
+				MatchRoomTimelineMostRecent(3, encryptedRooms[4].events),
+			},
+			// DM only rooms
+			dmRoomIDs[2]: {
+				MatchRoomID(dmRoomIDs[2]),
+				MatchRoomInitial(true),
+				MatchRoomRequiredState([]json.RawMessage{
+					dmRooms[2].getStateEvent("m.room.power_levels", ""),
+				}),
+				MatchRoomTimelineMostRecent(1, dmRooms[2].events),
+			},
+			dmRoomIDs[3]: {
+				MatchRoomID(dmRoomIDs[3]),
+				MatchRoomInitial(true),
+				MatchRoomRequiredState([]json.RawMessage{
+					dmRooms[3].getStateEvent("m.room.power_levels", ""),
+				}),
+				MatchRoomTimelineMostRecent(1, dmRooms[3].events),
+			},
+			dmRoomIDs[4]: {
+				MatchRoomID(dmRoomIDs[4]),
+				MatchRoomInitial(true),
+				MatchRoomRequiredState([]json.RawMessage{
+					dmRooms[4].getStateEvent("m.room.power_levels", ""),
+				}),
+				MatchRoomTimelineMostRecent(1, dmRooms[4].events),
+			},
+		}),
+	)
+
+}
+
 // Check that the range op matches all the wantRooms
 func checkRoomList(res *sync3.Response, op *sync3.ResponseOpRange, wantRooms []roomEvents) error {
 	if len(op.RoomIDs) != len(wantRooms) {

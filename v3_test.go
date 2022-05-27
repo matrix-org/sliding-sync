@@ -22,6 +22,7 @@ import (
 	"github.com/matrix-org/sync-v3/sync3"
 	"github.com/matrix-org/sync-v3/sync3/handler"
 	"github.com/matrix-org/sync-v3/testutils"
+	"github.com/tidwall/gjson"
 )
 
 // Integration tests for the sync-v3 server
@@ -414,6 +415,17 @@ type roomEvents struct {
 	prevBatch string
 }
 
+func (re *roomEvents) getStateEvent(evType, stateKey string) json.RawMessage {
+	for _, s := range append(re.state, re.events...) {
+		m := gjson.ParseBytes(s)
+		if m.Get("type").Str == evType && m.Get("state_key").Str == stateKey {
+			return s
+		}
+	}
+	fmt.Println("getStateEvent not found ", evType, stateKey)
+	return nil
+}
+
 func (re *roomEvents) MatchRoom(r sync3.Room, matchers ...roomMatcher) error {
 	if re.roomID != r.RoomID {
 		return fmt.Errorf("MatchRoom room id: got %s want %s", r.RoomID, re.roomID)
@@ -511,7 +523,7 @@ func MatchRoomSubscriptions(wantSubs map[string][]roomMatcher) respMatcher {
 			}
 			for _, m := range matchers {
 				if err := m(room); err != nil {
-					return fmt.Errorf("MatchRoomSubscriptions: %s", err)
+					return fmt.Errorf("MatchRoomSubscriptions[%s]: %s", roomID, err)
 				}
 			}
 		}
@@ -673,12 +685,12 @@ func MatchV3Ops(listIndex int, matchOps ...opMatcher) respMatcher {
 			return fmt.Errorf("MatchV3Ops: list index %d doesn't exist", listIndex)
 		}
 		if len(matchOps) != len(res.Lists[listIndex].Ops) {
-			return fmt.Errorf("ops: got %d ops want %d", len(res.Lists[listIndex].Ops), len(matchOps))
+			return fmt.Errorf("MatchV3Ops: list %d got %d ops want %d", listIndex, len(res.Lists[listIndex].Ops), len(matchOps))
 		}
 		for i := range res.Lists[listIndex].Ops {
 			op := res.Lists[listIndex].Ops[i]
 			if err := matchOps[i](op); err != nil {
-				return fmt.Errorf("op[%d](%s) - %s", i, op.Op(), err)
+				return fmt.Errorf("MatchV3Ops: list %d op[%d](%s) - %s", listIndex, i, op.Op(), err)
 			}
 		}
 		return nil

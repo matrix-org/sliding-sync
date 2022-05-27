@@ -3,7 +3,6 @@ package handler
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"runtime/trace"
 	"strings"
 	"time"
@@ -21,10 +20,6 @@ var (
 	// buffer on this connection. Too large and we consume lots of memory. Too small and busy accounts
 	// will trip the connection knifing.
 	MaxPendingEventUpdates = 200
-
-	UpdateTypeDeletion UpdateType = 1 // this event caused the room to be deleted.
-	UpdateTypeDelta    UpdateType = 2 // this event causes a delta update
-	UpdateTypeInitial  UpdateType = 3 // this event causes an initial update
 )
 
 // Contains code for processing live updates. Split out from connstate because they concern different
@@ -150,7 +145,6 @@ func (s *connStateLive) processLiveUpdate(ctx context.Context, up caches.Update,
 				r.NotificationCount = roomSub.NotificationCount
 				r.Timeline = append(r.Timeline, roomSub.Timeline[0])
 				response.Rooms[roomUpdate.RoomID()] = r
-				fmt.Println("SENDING DELTA ", string(roomSub.Timeline[0]))
 			}
 		}
 	})
