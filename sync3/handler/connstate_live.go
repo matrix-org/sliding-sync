@@ -227,11 +227,17 @@ func (s *connStateLive) processLiveUpdateForList(
 	switch update := up.(type) {
 	case *caches.RoomEventUpdate:
 		logger.Trace().Str("user", s.userID).Str("type", update.EventData.EventType).Msg("received event update")
-		ops := s.processIncomingEventForList(ctx, builder, update, reqList, intList, isSubscribedToRoom)
+		ops, didUpdate := s.processIncomingEventForList(ctx, builder, update, reqList, intList, isSubscribedToRoom)
+		if didUpdate {
+			hasUpdates = true
+		}
 		resList.Ops = append(resList.Ops, ops...)
 	case *caches.UnreadCountUpdate:
 		logger.Trace().Str("user", s.userID).Str("room", update.RoomID()).Msg("received unread count update")
-		ops := s.processUnreadCountUpdateForList(ctx, builder, update, reqList, intList, isSubscribedToRoom)
+		ops, didUpdate := s.processUnreadCountUpdateForList(ctx, builder, update, reqList, intList, isSubscribedToRoom)
+		if didUpdate {
+			hasUpdates = true
+		}
 		resList.Ops = append(resList.Ops, ops...)
 	case *caches.InviteUpdate:
 		logger.Trace().Str("user", s.userID).Str("room", update.RoomID()).Msg("received invite update")
@@ -247,8 +253,11 @@ func (s *connStateLive) processLiveUpdateForList(
 				RoomUpdate: update.RoomUpdate,
 				EventData:  update.InviteData.InviteEvent,
 			}
-			ops := s.processIncomingEventForList(ctx, builder, roomUpdate, reqList, intList, isSubscribedToRoom)
+			ops, didUpdate := s.processIncomingEventForList(ctx, builder, roomUpdate, reqList, intList, isSubscribedToRoom)
 			resList.Ops = append(resList.Ops, ops...)
+			if didUpdate {
+				hasUpdates = true
+			}
 		}
 	}
 
@@ -262,16 +271,16 @@ func (s *connStateLive) processLiveUpdateForList(
 func (s *connStateLive) processUnreadCountUpdateForList(
 	ctx context.Context, builder *RoomsBuilder, up *caches.UnreadCountUpdate, reqList *sync3.RequestList, intList *sync3.FilteredSortableRooms,
 	isSubscribedToRoom bool,
-) []sync3.ResponseOp {
+) (ops []sync3.ResponseOp, didUpdate bool) {
 	if !up.HasCountDecreased {
 		// if the count increases then we'll notify the user for the event which increases the count, hence
 		// do nothing. We only care to notify the user when the counts decrease.
-		return nil
+		return nil, false
 	}
 
 	fromIndex, ok := intList.IndexOf(up.RoomID())
 	if !ok {
-		return nil
+		return nil, false
 	}
 	return s.resort(ctx, builder, reqList, intList, up.RoomID(), fromIndex, nil, false, false)
 }
@@ -279,7 +288,7 @@ func (s *connStateLive) processUnreadCountUpdateForList(
 func (s *connStateLive) processIncomingEventForList(
 	ctx context.Context, builder *RoomsBuilder, update *caches.RoomEventUpdate, reqList *sync3.RequestList, intList *sync3.FilteredSortableRooms,
 	isSubscribedToRoom bool,
-) []sync3.ResponseOp {
+) (ops []sync3.ResponseOp, didUpdate bool) {
 	fromIndex, ok := intList.IndexOf(update.RoomID())
 	newlyAdded := false
 	if !ok {
@@ -296,7 +305,7 @@ func (s *connStateLive) processIncomingEventForList(
 		}
 		if !intList.Add(newRoomConn) {
 			// we didn't add this room to the list so we don't need to resort
-			return nil
+			return nil, false
 		}
 		logger.Info().Str("room", update.RoomID()).Msg("room added")
 		newlyAdded = true
@@ -306,12 +315,12 @@ func (s *connStateLive) processIncomingEventForList(
 	)
 }
 
-// Resort should be called after a specific room has been modified in `sortedJoinedRooms`.
+// Resort should be called after a specific room has been modified in `intList`.
 func (s *connStateLive) resort(
 	ctx context.Context, builder *RoomsBuilder,
 	reqList *sync3.RequestList, intList *sync3.FilteredSortableRooms, roomID string,
 	fromIndex int, newEvent json.RawMessage, newlyAdded, forceInitial bool,
-) []sync3.ResponseOp {
+) (ops []sync3.ResponseOp, didUpdate bool) {
 	if reqList.Sort == nil {
 		reqList.Sort = []string{sync3.SortByRecency}
 	}
@@ -334,13 +343,13 @@ func (s *connStateLive) resort(
 			logger.Warn().Int("to", toIndex).Int("size", count).Msg(
 				"cannot move to index, it's greater than the list of sorted rooms",
 			)
-			return nil
+			return nil, false
 		}
 		if toIndex == -1 {
 			logger.Warn().Int("from", fromIndex).Int("to", toIndex).Interface("ranges", reqList.Ranges).Msg(
 				"room moved but not in tracked ranges, ignoring",
 			)
-			return nil
+			return nil, false
 		}
 		toRoom := intList.Get(toIndex)
 
@@ -368,7 +377,7 @@ func (s *connStateLive) resort(
 					"Rooms may be duplicated in the list.",
 			)
 			// do nothing and pretend the new event didn't exist...
-			return nil
+			return nil, false
 		}
 	}
 
@@ -376,7 +385,7 @@ func (s *connStateLive) resort(
 		newlyAdded = true
 	}
 
-	return s.moveRoom(ctx, builder, reqList, roomID, newEvent, fromIndex, toIndex, reqList.Ranges, newlyAdded, forceInitial)
+	return s.moveRoom(ctx, builder, reqList, roomID, newEvent, fromIndex, toIndex, reqList.Ranges, newlyAdded, forceInitial), true
 }
 
 // Move a room from an absolute index position to another absolute position.
@@ -394,18 +403,7 @@ func (s *connStateLive) moveRoom(
 	}
 
 	if fromIndex == toIndex {
-		// issue an UPDATE, nice and easy because we don't need to move entries in the list
-		op := sync3.OpUpdate
-		if newlyAdded {
-			op = sync3.OpInsert
-		}
-		return []sync3.ResponseOp{
-			&sync3.ResponseOpSingle{
-				Operation: op,
-				Index:     &fromIndex,
-				RoomID:    roomID,
-			},
-		}
+		return nil // we only care to notify clients about moves in the list
 	}
 	// work out which value to DELETE. This varies depending on where the room was and how much of the
 	// list we are tracking. E.g moving to index=0 with ranges [0,99][100,199] and an update in

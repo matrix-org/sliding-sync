@@ -134,9 +134,9 @@ func TestSecurityLiveStreamEventLeftLeak(t *testing.T) {
 		}},
 	})
 	// TODO: We include left counts mid-sync so clients can see the user has left/been kicked. Should be configurable.
-	MatchResponse(t, res, MatchV3Count(1), MatchV3Ops(0,
-		MatchV3UpdateOp(0, roomID),
-	), MatchRoomSubscription(roomID, MatchRoomName(""), MatchRoomRequiredState(nil), MatchRoomTimelineMostRecent(1, []json.RawMessage{kickEvent})))
+	MatchResponse(t, res, MatchV3Count(1), MatchNoV3Ops(), MatchRoomSubscription(
+		roomID, MatchRoomName(""), MatchRoomRequiredState(nil), MatchRoomTimelineMostRecent(1, []json.RawMessage{kickEvent}),
+	))
 
 	// Ensure Alice does see both events
 	res = v3.mustDoV3RequestWithPos(t, aliceToken, tokenToPos[aliceToken], sync3.Request{
@@ -153,10 +153,9 @@ func TestSecurityLiveStreamEventLeftLeak(t *testing.T) {
 	})
 	// TODO: We should consolidate 2x UPDATEs into 1x if we get scenarios like this
 	// TODO: WE should be returning updated values for name and required_state
-	MatchResponse(t, res, MatchV3Count(1), MatchV3Ops(0,
-		MatchV3UpdateOp(0, roomID),
-		MatchV3UpdateOp(0, roomID),
-	), MatchRoomSubscription(roomID, MatchRoomTimelineMostRecent(2, []json.RawMessage{kickEvent, sensitiveEvent})))
+	MatchResponse(t, res, MatchV3Count(1), MatchNoV3Ops(), MatchRoomSubscription(
+		roomID, MatchRoomTimelineMostRecent(2, []json.RawMessage{kickEvent, sensitiveEvent}),
+	))
 }
 
 // Test that events do not leak via direct room subscriptions.

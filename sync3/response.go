@@ -13,7 +13,6 @@ const (
 	OpInvalidate = "INVALIDATE"
 	OpInsert     = "INSERT"
 	OpDelete     = "DELETE"
-	OpUpdate     = "UPDATE"
 )
 
 type Response struct {

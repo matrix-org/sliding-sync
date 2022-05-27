@@ -124,7 +124,7 @@ func TestNotificationsOnTop(t *testing.T) {
 	v2.waitUntilEmpty(t, alice)
 	res = v3.mustDoV3RequestWithPos(t, aliceToken, res.Pos, syncRequestBody)
 	MatchResponse(t, res, MatchV3Count(len(allRooms)),
-		MatchV3Ops(0, MatchV3UpdateOp(1, noBingRoomID)),
+		MatchNoV3Ops(),
 	)
 
 	// restart the server and sync from fresh again, it should still have the bing room on top

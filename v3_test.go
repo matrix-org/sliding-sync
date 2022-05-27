@@ -623,22 +623,6 @@ func MatchV3InsertOp(roomIndex int, roomID string) opMatcher {
 	}
 }
 
-func MatchV3UpdateOp(roomIndex int, roomID string) opMatcher {
-	return func(op sync3.ResponseOp) error {
-		if op.Op() != sync3.OpUpdate {
-			return fmt.Errorf("op: %s != %s", op.Op(), sync3.OpUpdate)
-		}
-		oper := op.(*sync3.ResponseOpSingle)
-		if *oper.Index != roomIndex {
-			return fmt.Errorf("%s: got room index %d want %d", sync3.OpUpdate, *oper.Index, roomIndex)
-		}
-		if oper.RoomID != roomID {
-			return fmt.Errorf("%s: got %s want %s", sync3.OpUpdate, oper.RoomID, roomID)
-		}
-		return nil
-	}
-}
-
 func MatchV3DeleteOp(roomIndex int) opMatcher {
 	return func(op sync3.ResponseOp) error {
 		if op.Op() != sync3.OpDelete {

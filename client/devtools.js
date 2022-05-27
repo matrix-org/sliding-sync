@@ -53,7 +53,6 @@ export function svgify(domNode, activeLists, resp) {
     const colorPlaceholder = "#404040";
     const colorDelete = "#ff0000";
     const colorInsert = "#00ff00";
-    const colorUpdate = "#00ffff";
     const colorSync = "#ffff00";
     const colorInvalidate = "#500000";
     const colorRoom = "#ffffff";
@@ -120,8 +119,6 @@ export function svgify(domNode, activeLists, resp) {
                 addLine(listIndex, op.index, colorDelete);
             } else if (op.op === "INSERT") {
                 addLine(listIndex, op.index, colorInsert);
-            } else if (op.op === "UPDATE") {
-                addLine(listIndex, op.index, colorUpdate);
             } else if (op.op === "SYNC") {
                 addLine(
                     listIndex,

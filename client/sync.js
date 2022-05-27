@@ -363,14 +363,6 @@ export class SlidingSync {
                         }
                         this.lists[listIndex].roomIndexToRoomId[op.index] =
                             op.room_id;
-                    } else if (op.op === "UPDATE") {
-                        console.log(
-                            "UPDATE",
-                            listIndex,
-                            op.index,
-                            op.room_id,
-                            ";"
-                        );
                     } else if (op.op === "SYNC") {
                         let syncRooms = [];
                         const startIndex = op.range[0];

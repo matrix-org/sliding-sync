@@ -213,9 +213,7 @@ func TestTimelinesLiveStream(t *testing.T) {
 			},
 		}},
 	})
-	MatchResponse(t, res, MatchV3Count(len(allRooms)), MatchV3Ops(0,
-		MatchV3UpdateOp(0, allRooms[7].roomID),
-	))
+	MatchResponse(t, res, MatchV3Count(len(allRooms)), MatchNoV3Ops())
 
 	bumpRoom(18)
 
@@ -286,9 +284,7 @@ func TestInitialFlag(t *testing.T) {
 			},
 		}},
 	})
-	MatchResponse(t, res, MatchV3Ops(0,
-		MatchV3UpdateOp(0, roomID),
-	), MatchRoomSubscription(roomID, MatchRoomInitial(false)))
+	MatchResponse(t, res, MatchNoV3Ops(), MatchRoomSubscription(roomID, MatchRoomInitial(false)))
 }
 
 // Regression test for in-the-wild bug:
@@ -526,9 +522,9 @@ func TestTimelineTxnID(t *testing.T) {
 			},
 		},
 	})
-	MatchResponse(t, aliceRes, MatchV3Counts([]int{1}), MatchV3Ops(0,
-		MatchV3UpdateOp(0, roomID),
-	), MatchRoomSubscription(roomID, MatchRoomID(roomID), MatchRoomTimelineMostRecent(1, []json.RawMessage{newEvent})))
+	MatchResponse(t, aliceRes, MatchV3Counts([]int{1}), MatchNoV3Ops(), MatchRoomSubscription(
+		roomID, MatchRoomID(roomID), MatchRoomTimelineMostRecent(1, []json.RawMessage{newEvent}),
+	))
 
 	// now Bob syncs, he should see the event without the txn ID
 	bobRes = v3.mustDoV3RequestWithPos(t, bobToken, bobRes.Pos, sync3.Request{
@@ -540,10 +536,9 @@ func TestTimelineTxnID(t *testing.T) {
 			},
 		},
 	})
-	MatchResponse(t, bobRes, MatchV3Counts([]int{1}), MatchV3Ops(0,
-		MatchV3UpdateOp(0, roomID),
-	), MatchRoomSubscription(roomID, MatchRoomID(roomID), MatchRoomTimelineMostRecent(1, []json.RawMessage{newEventNoUnsigned})))
-
+	MatchResponse(t, bobRes, MatchV3Counts([]int{1}), MatchNoV3Ops(), MatchRoomSubscription(
+		roomID, MatchRoomID(roomID), MatchRoomTimelineMostRecent(1, []json.RawMessage{newEventNoUnsigned}),
+	))
 }
 
 // Executes a sync v3 request without a ?pos and asserts that the count, rooms and timeline events match the inputs given.

@@ -223,13 +223,6 @@ func TestConnStateInitial(t *testing.T) {
 		Lists: []sync3.ResponseList{
 			{
 				Count: 3,
-				Ops: []sync3.ResponseOp{
-					&sync3.ResponseOpSingle{
-						Operation: "UPDATE",
-						Index:     intPtr(0),
-						RoomID:    roomA.RoomID,
-					},
-				},
 			},
 		},
 	})
