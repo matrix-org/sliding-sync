@@ -66,13 +66,13 @@ func TestNotificationsOnTop(t *testing.T) {
 	}
 	res := v3.mustDoV3Request(t, aliceToken, syncRequestBody)
 	MatchResponse(t, res, MatchV3Count(len(allRooms)), MatchV3Ops(0,
-		MatchV3SyncOp(func(op *sync3.ResponseOpRange) error {
-			if len(op.Rooms) != len(allRooms) {
-				return fmt.Errorf("want %d rooms, got %d", len(allRooms), len(op.Rooms))
+		MatchV3SyncOpFn(func(op *sync3.ResponseOpRange) error {
+			if len(op.RoomIDs) != len(allRooms) {
+				return fmt.Errorf("want %d rooms, got %d", len(allRooms), len(op.RoomIDs))
 			}
 			for i := range allRooms {
 				err := allRooms[i].MatchRoom(
-					op.Rooms[i],
+					res.Rooms[op.RoomIDs[i]],
 				)
 				if err != nil {
 					return err
@@ -142,12 +142,12 @@ func TestNotificationsOnTop(t *testing.T) {
 		}},
 	})
 	MatchResponse(t, res, MatchV3Count(len(allRooms)), MatchV3Ops(0,
-		MatchV3SyncOp(func(op *sync3.ResponseOpRange) error {
-			if len(op.Rooms) != len(allRooms) {
-				return fmt.Errorf("want %d rooms, got %d", len(allRooms), len(op.Rooms))
+		MatchV3SyncOpFn(func(op *sync3.ResponseOpRange) error {
+			if len(op.RoomIDs) != len(allRooms) {
+				return fmt.Errorf("want %d rooms, got %d", len(allRooms), len(op.RoomIDs))
 			}
 			err := allRooms[1].MatchRoom(
-				op.Rooms[0], // bing room is first
+				res.Rooms[op.RoomIDs[0]], // bing room is first
 				MatchRoomHighlightCount(1),
 				MatchRoomNotificationCount(0),
 				MatchRoomTimelineMostRecent(1, []json.RawMessage{bingEvent}),
@@ -156,7 +156,7 @@ func TestNotificationsOnTop(t *testing.T) {
 				return err
 			}
 			err = allRooms[0].MatchRoom(
-				op.Rooms[1], // no bing room is second
+				res.Rooms[op.RoomIDs[1]], // no bing room is second
 				MatchRoomHighlightCount(0),
 				MatchRoomNotificationCount(0),
 				MatchRoomTimelineMostRecent(1, []json.RawMessage{noBingEvent}),

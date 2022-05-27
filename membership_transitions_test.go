@@ -104,18 +104,20 @@ func TestRoomStateTransitions(t *testing.T) {
 		},
 	})
 	MatchResponse(t, res, MatchV3Count(2), MatchV3Ops(0,
-		MatchV3SyncOpWithMatchers(
-			MatchRoomRange([]roomMatcher{
-				MatchRoomID(allRoomsAlicePerspective[indexBobInvited].roomID),
-				MatchRoomHighlightCount(1),
-				MatchRoomInitial(true),
-				MatchRoomRequiredState(nil),
-				MatchRoomInviteState(inviteStrippedState.InviteState.Events),
-			}, []roomMatcher{
-				MatchRoomID(allRoomsAlicePerspective[indexBobJoined].roomID),
-			}),
-		),
-	))
+		MatchV3SyncOp(0, 100, []string{allRoomsAlicePerspective[indexBobInvited].roomID, allRoomsAlicePerspective[indexBobJoined].roomID}),
+	), MatchRoomSubscriptions(map[string][]roomMatcher{
+		allRoomsAlicePerspective[indexBobInvited].roomID: {
+			MatchRoomID(allRoomsAlicePerspective[indexBobInvited].roomID),
+			MatchRoomHighlightCount(1),
+			MatchRoomInitial(true),
+			MatchRoomRequiredState(nil),
+			MatchRoomInviteState(inviteStrippedState.InviteState.Events),
+		},
+		allRoomsAlicePerspective[indexBobJoined].roomID: {
+			MatchRoomID(allRoomsAlicePerspective[indexBobJoined].roomID),
+		},
+	}),
+	)
 
 	// now bob accepts the invite
 	bobJoinEvent := testutils.NewStateEvent(t, "m.room.member", bob, bob, map[string]interface{}{"membership": "join"}, testutils.WithTimestamp(latestTimestamp.Add(2*time.Second)))
@@ -138,16 +140,15 @@ func TestRoomStateTransitions(t *testing.T) {
 		},
 	})
 	MatchResponse(t, res, MatchV3Count(2), MatchV3Ops(0,
-		MatchV3UpdateOp(
-			0, allRoomsAlicePerspective[indexBobInvited].roomID, MatchRoomRequiredState([]json.RawMessage{
-				allRoomsAlicePerspective[indexBobInvited].events[0], // create event
-			}),
-			MatchRoomTimelineMostRecent(1, []json.RawMessage{
-				bobJoinEvent,
-			}),
-			MatchRoomInitial(true),
-			MatchRoomHighlightCount(0),
-		),
-	))
+		MatchV3UpdateOp(0, allRoomsAlicePerspective[indexBobInvited].roomID),
+	), MatchRoomSubscription(allRoomsAlicePerspective[indexBobInvited].roomID,
+		MatchRoomRequiredState([]json.RawMessage{
+			allRoomsAlicePerspective[indexBobInvited].events[0], // create event
+		}),
+		MatchRoomTimelineMostRecent(1, []json.RawMessage{
+			bobJoinEvent,
+		}),
+		MatchRoomInitial(true),
+		MatchRoomHighlightCount(0)))
 
 }

@@ -73,18 +73,18 @@ func TestFiltersEncryption(t *testing.T) {
 	})
 	MatchResponse(t, res, MatchV3Counts([]int{1, 1}),
 		MatchV3Ops(0,
-			MatchV3SyncOp(func(op *sync3.ResponseOpRange) error {
-				if len(op.Rooms) != 1 {
-					return fmt.Errorf("want %d rooms, got %d", 1, len(op.Rooms))
+			MatchV3SyncOpFn(func(op *sync3.ResponseOpRange) error {
+				if len(op.RoomIDs) != 1 {
+					return fmt.Errorf("want %d rooms, got %d", 1, len(op.RoomIDs))
 				}
-				return allRooms[0].MatchRoom(op.Rooms[0]) // encrypted room
+				return allRooms[0].MatchRoom(res.Rooms[op.RoomIDs[0]]) // encrypted room
 			})),
 		MatchV3Ops(1,
-			MatchV3SyncOp(func(op *sync3.ResponseOpRange) error {
-				if len(op.Rooms) != 1 {
-					return fmt.Errorf("want %d rooms, got %d", 1, len(op.Rooms))
+			MatchV3SyncOpFn(func(op *sync3.ResponseOpRange) error {
+				if len(op.RoomIDs) != 1 {
+					return fmt.Errorf("want %d rooms, got %d", 1, len(op.RoomIDs))
 				}
-				return allRooms[1].MatchRoom(op.Rooms[0]) // encrypted room
+				return allRooms[1].MatchRoom(res.Rooms[op.RoomIDs[0]]) // encrypted room
 			}),
 		))
 
@@ -144,14 +144,14 @@ func TestFiltersEncryption(t *testing.T) {
 		}},
 	})
 	MatchResponse(t, res, MatchV3Count(2), MatchV3Ops(0,
-		MatchV3SyncOp(func(op *sync3.ResponseOpRange) error {
-			if len(op.Rooms) != len(allRooms) {
-				return fmt.Errorf("want %d rooms, got %d", len(allRooms), len(op.Rooms))
+		MatchV3SyncOpFn(func(op *sync3.ResponseOpRange) error {
+			if len(op.RoomIDs) != len(allRooms) {
+				return fmt.Errorf("want %d rooms, got %d", len(allRooms), len(op.RoomIDs))
 			}
 			wantRooms := []roomEvents{allRooms[1], allRooms[0]}
 			for i := range wantRooms {
 				err := wantRooms[i].MatchRoom(
-					op.Rooms[i],
+					res.Rooms[op.RoomIDs[i]],
 				)
 				if err != nil {
 					return err
@@ -217,40 +217,32 @@ func TestFiltersInvite(t *testing.T) {
 		},
 	})
 	MatchResponse(t, res, MatchV3Counts([]int{1, 0}), MatchV3Ops(0,
-		MatchV3SyncOp(func(op *sync3.ResponseOpRange) error {
-			if len(op.Rooms) != 1 {
-				return fmt.Errorf("want %d rooms, got %d", 1, len(op.Rooms))
-			}
-			if op.Rooms[0].RoomID != roomID {
-				return fmt.Errorf("unknown invite room: %s", op.Rooms[0].RoomID)
-			}
-			return nil
-		}),
+		MatchV3SyncOp(0, 20, []string{roomID}),
 	))
 
 	// Accept the invite
 	// v2.waitUntilEmpty(t, alice)
-	/*
-		// now the room should move from one room to another
-		res = v3.mustDoV3RequestWithPos(t, aliceToken, res.Pos, sync3.Request{
-			Lists: []sync3.RequestList{
-				{
-					Ranges: sync3.SliceRanges{
-						[2]int64{0, int64(len(allRooms) - 1)}, // all rooms
-					},
-					// sticky; should remember filters
+	/* TODO FIXME XXX
+	// now the room should move from one room to another
+	res = v3.mustDoV3RequestWithPos(t, aliceToken, res.Pos, sync3.Request{
+		Lists: []sync3.RequestList{
+			{
+				Ranges: sync3.SliceRanges{
+					[2]int64{0, int64(len(allRooms) - 1)}, // all rooms
 				},
-				{
-					Ranges: sync3.SliceRanges{
-						[2]int64{0, int64(len(allRooms) - 1)}, // all rooms
-					},
-					// sticky; should remember filters
-				},
+				// sticky; should remember filters
 			},
-		})
-		MatchResponse(t, res, MatchV3Counts([]int{len(allRooms), 0}), MatchV3Ops(
-			MatchV3DeleteOp(1, 0),
-			MatchV3DeleteOp(0, 1),
-			MatchV3InsertOp(0, 0, unencryptedRoomID),
-		)) */
+			{
+				Ranges: sync3.SliceRanges{
+					[2]int64{0, int64(len(allRooms) - 1)}, // all rooms
+				},
+				// sticky; should remember filters
+			},
+		},
+	})
+	MatchResponse(t, res, MatchV3Counts([]int{len(allRooms), 0}), MatchV3Ops(
+		MatchV3DeleteOp(1, 0),
+		MatchV3DeleteOp(0, 1),
+		MatchV3InsertOp(0, 0, unencryptedRoomID),
+	)) */
 }

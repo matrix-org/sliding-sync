@@ -80,13 +80,13 @@ func TestRoomNames(t *testing.T) {
 			}},
 		})
 		MatchResponse(t, res, MatchV3Count(len(allRooms)), MatchV3Ops(0,
-			MatchV3SyncOp(func(op *sync3.ResponseOpRange) error {
-				if len(op.Rooms) != len(allRooms) {
-					return fmt.Errorf("want %d rooms, got %d", len(allRooms), len(op.Rooms))
+			MatchV3SyncOpFn(func(op *sync3.ResponseOpRange) error {
+				if len(op.RoomIDs) != len(allRooms) {
+					return fmt.Errorf("want %d rooms, got %d", len(allRooms), len(op.RoomIDs))
 				}
 				for i := range allRooms {
 					err := allRooms[i].MatchRoom(
-						op.Rooms[i],
+						res.Rooms[op.RoomIDs[i]],
 						MatchRoomName(allRooms[i].name),
 					)
 					if err != nil {
@@ -117,16 +117,18 @@ func TestRoomNames(t *testing.T) {
 				},
 			}},
 		})
-		matchers := make([][]roomMatcher, len(wantRooms))
+		matchers := make(map[string][]roomMatcher, len(wantRooms))
+		wantRoomIDs := make([]string, len(wantRooms))
 		for i := range wantRooms {
-			matchers[i] = []roomMatcher{
+			wantRoomIDs[i] = wantRooms[i].roomID
+			matchers[wantRooms[i].roomID] = []roomMatcher{
 				MatchRoomName(wantRooms[i].name),
 				MatchRoomID(wantRooms[i].roomID),
 			}
 		}
 		MatchResponse(t, res, MatchV3Count(len(wantRooms)), MatchV3Ops(0,
-			MatchV3SyncOpWithMatchers(MatchRoomRange(matchers...)),
-		))
+			MatchV3SyncOp(0, int64(len(allRooms)-1), wantRoomIDs),
+		), MatchRoomSubscriptions(matchers))
 	}
 	// case-insensitive matching
 	checkRoomNameFilter("my room name", []roomEvents{allRooms[1]})

@@ -75,11 +75,7 @@ func TestMultipleConnsAtStartup(t *testing.T) {
 		}},
 	})
 	MatchResponse(t, res, MatchV3Ops(0,
-		MatchV3SyncOpWithMatchers(MatchRoomRange(
-			[]roomMatcher{
-				MatchRoomID(roomID),
-			},
-		)),
+		MatchV3SyncOp(0, 10, []string{roomID}),
 	))
 }
 
@@ -135,12 +131,7 @@ func TestOutstandingRequestsGetCancelled(t *testing.T) {
 		}},
 	})
 	MatchResponse(t, res, MatchV3Count(2), MatchV3Ops(0,
-		MatchV3SyncOpWithMatchers(
-			MatchRoomRange(
-				[]roomMatcher{MatchRoomID(roomA)},
-				[]roomMatcher{MatchRoomID(roomB)},
-			),
-		),
+		MatchV3SyncOp(0, 1, []string{roomA, roomB}),
 	))
 	// now we do a blocking request, and a few ms later do another request which can be satisfied
 	// using the same pos
@@ -162,12 +153,7 @@ func TestOutstandingRequestsGetCancelled(t *testing.T) {
 		})
 		MatchResponse(t, res2, MatchV3Count(2), MatchV3Ops(0,
 			MatchV3InvalidateOp(0, 1),
-			MatchV3SyncOpWithMatchers(
-				MatchRoomRange(
-					[]roomMatcher{MatchRoomID(roomB)},
-					[]roomMatcher{MatchRoomID(roomA)},
-				),
-			),
+			MatchV3SyncOp(0, 1, []string{roomB, roomA}),
 		))
 		if time.Since(startTime) > time.Second {
 			t.Errorf("took >1s to process request which should have been processed instantly, took %v", time.Since(startTime))
@@ -233,13 +219,7 @@ func TestConnectionTimeoutNotReset(t *testing.T) {
 		}},
 	})
 	MatchResponse(t, res, MatchV3Count(2), MatchV3Ops(0,
-		MatchV3SyncOpWithMatchers(
-			MatchRoomRange(
-				[]roomMatcher{
-					MatchRoomID(roomA),
-				},
-			),
-		),
+		MatchV3SyncOp(0, 0, []string{roomA}),
 	))
 	// 2nd request with a 1s timeout
 	req := sync3.Request{

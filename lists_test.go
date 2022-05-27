@@ -87,13 +87,13 @@ func TestMultipleLists(t *testing.T) {
 
 	MatchResponse(t, res,
 		MatchV3Counts([]int{len(encryptedRooms), len(unencryptedRooms)}),
-		MatchV3Ops(0, MatchV3SyncOp(func(op *sync3.ResponseOpRange) error {
+		MatchV3Ops(0, MatchV3SyncOpFn(func(op *sync3.ResponseOpRange) error {
 			// first 3 encrypted rooms
-			return checkRoomList(op, encryptedRooms[:3])
+			return checkRoomList(res, op, encryptedRooms[:3])
 		})),
-		MatchV3Ops(1, MatchV3SyncOp(func(op *sync3.ResponseOpRange) error {
+		MatchV3Ops(1, MatchV3SyncOpFn(func(op *sync3.ResponseOpRange) error {
 			// first 3 unencrypted rooms
-			return checkRoomList(op, unencryptedRooms[:3])
+			return checkRoomList(res, op, unencryptedRooms[:3])
 		})),
 	)
 
@@ -114,8 +114,8 @@ func TestMultipleLists(t *testing.T) {
 		},
 	})
 	MatchResponse(t, res, MatchV3Counts([]int{len(encryptedRooms), len(unencryptedRooms)}), MatchV3Ops(1,
-		MatchV3SyncOp(func(op *sync3.ResponseOpRange) error {
-			return checkRoomList(op, unencryptedRooms[3:6])
+		MatchV3SyncOpFn(func(op *sync3.ResponseOpRange) error {
+			return checkRoomList(res, op, unencryptedRooms[3:6])
 		}),
 	))
 
@@ -253,13 +253,13 @@ func TestMultipleListsDMUpdate(t *testing.T) {
 
 	MatchResponse(t, res,
 		MatchV3Counts([]int{len(dmRooms), len(groupRooms)}),
-		MatchV3Ops(0, MatchV3SyncOp(func(op *sync3.ResponseOpRange) error {
+		MatchV3Ops(0, MatchV3SyncOpFn(func(op *sync3.ResponseOpRange) error {
 			// first 3 DM rooms
-			return checkRoomList(op, dmRooms[:3])
+			return checkRoomList(res, op, dmRooms[:3])
 		})),
-		MatchV3Ops(1, MatchV3SyncOp(func(op *sync3.ResponseOpRange) error {
+		MatchV3Ops(1, MatchV3SyncOpFn(func(op *sync3.ResponseOpRange) error {
 			// first 3 group rooms
-			return checkRoomList(op, groupRooms[:3])
+			return checkRoomList(res, op, groupRooms[:3])
 		})),
 	)
 
@@ -304,8 +304,9 @@ func TestMultipleListsDMUpdate(t *testing.T) {
 	MatchResponse(t, res, MatchV3Counts([]int{len(dmRooms), len(groupRooms)}),
 		MatchV3Ops(
 			0, MatchV3DeleteOp(2),
-			MatchV3InsertOp(0, dmRooms[0].roomID, MatchRoomHighlightCount(1), MatchRoomTimelineMostRecent(1, dmRooms[0].events)),
+			MatchV3InsertOp(0, dmRooms[0].roomID),
 		),
+		MatchRoomSubscription(dmRooms[0].roomID, MatchRoomHighlightCount(1), MatchRoomTimelineMostRecent(1, dmRooms[0].events)),
 	)
 }
 
@@ -356,20 +357,20 @@ func TestNewListMidConnection(t *testing.T) {
 		},
 	})
 	MatchResponse(t, res, MatchV3Counts([]int{len(allRooms)}), MatchV3Ops(0,
-		MatchV3SyncOp(func(op *sync3.ResponseOpRange) error {
-			return checkRoomList(op, allRooms[0:3])
+		MatchV3SyncOpFn(func(op *sync3.ResponseOpRange) error {
+			return checkRoomList(res, op, allRooms[0:3])
 		}),
 	))
 }
 
 // Check that the range op matches all the wantRooms
-func checkRoomList(op *sync3.ResponseOpRange, wantRooms []roomEvents) error {
-	if len(op.Rooms) != len(wantRooms) {
-		return fmt.Errorf("want %d rooms, got %d", len(wantRooms), len(op.Rooms))
+func checkRoomList(res *sync3.Response, op *sync3.ResponseOpRange, wantRooms []roomEvents) error {
+	if len(op.RoomIDs) != len(wantRooms) {
+		return fmt.Errorf("want %d rooms, got %d", len(wantRooms), len(op.RoomIDs))
 	}
 	for i := range wantRooms {
 		err := wantRooms[i].MatchRoom(
-			op.Rooms[i],
+			res.Rooms[op.RoomIDs[i]],
 			MatchRoomTimelineMostRecent(1, wantRooms[i].events),
 		)
 		if err != nil {
