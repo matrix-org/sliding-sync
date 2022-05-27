@@ -264,14 +264,12 @@ export class SlidingSync {
                 if (subscribingToRoom) {
                     currentSub = subscribingToRoom;
                 }
-                if (!resp.ops) {
-                    resp.ops = [];
+                if (!resp.lists) {
+                    resp.lists = [];
                 }
-                if (resp.counts) {
-                    resp.counts.forEach((count, index) => {
-                        this.lists[index].joinedCount = count;
-                    });
-                }
+                resp.lists.forEach((l, index) => {
+                    this.lists[index].joinedCount = l.count;
+                });
                 this._invokeLifecycleListeners(
                     LifecycleSyncRequestFinished,
                     resp
@@ -290,126 +288,126 @@ export class SlidingSync {
                 continue;
             }
 
-            Object.keys(resp.room_subscriptions).forEach((roomId) => {
-                this._invokeRoomDataListeners(
-                    roomId,
-                    resp.room_subscriptions[roomId]
-                );
+            Object.keys(resp.rooms).forEach((roomId) => {
+                this._invokeRoomDataListeners(roomId, resp.rooms[roomId]);
             });
 
-            // TODO: clear gapIndex immediately after next op to avoid a genuine DELETE shifting incorrectly e.g leaving a room
-            let gapIndexes = {};
-            resp.counts.forEach((count, index) => {
-                gapIndexes[index] = -1;
-            });
-            resp.ops.forEach((op) => {
-                if (op.op === "DELETE") {
-                    console.log("DELETE", op.list, op.index, ";");
-                    delete this.lists[op.list].roomIndexToRoomId[op.index];
-                    gapIndexes[op.list] = op.index;
-                } else if (op.op === "INSERT") {
-                    console.log(
-                        "INSERT",
-                        op.list,
-                        op.index,
-                        op.room.room_id,
-                        ";"
-                    );
-                    if (this.lists[op.list].roomIndexToRoomId[op.index]) {
-                        const gapIndex = gapIndexes[op.list];
-                        // something is in this space, shift items out of the way
-                        if (gapIndex < 0) {
-                            console.log(
-                                "cannot work out where gap is, INSERT without previous DELETE! List: ",
-                                op.list
-                            );
-                            return;
-                        }
-                        //  0,1,2,3  index
-                        // [A,B,C,D]
-                        //   DEL 3
-                        // [A,B,C,_]
-                        //   INSERT E 0
-                        // [E,A,B,C]
-                        // gapIndex=3, op.index=0
-                        if (gapIndex > op.index) {
-                            // the gap is further down the list, shift every element to the right
-                            // starting at the gap so we can just shift each element in turn:
-                            // [A,B,C,_] gapIndex=3, op.index=0
-                            // [A,B,C,C] i=3
-                            // [A,B,B,C] i=2
-                            // [A,A,B,C] i=1
-                            // Terminate. We'll assign into op.index next.
-                            for (let i = gapIndex; i > op.index; i--) {
-                                if (indexInRange(op.list, i)) {
-                                    this.lists[op.list].roomIndexToRoomId[i] =
-                                        this.lists[op.list].roomIndexToRoomId[
-                                            i - 1
-                                        ];
-                                }
-                            }
-                        } else if (gapIndex < op.index) {
-                            // the gap is further up the list, shift every element to the left
-                            // starting at the gap so we can just shift each element in turn
-                            for (let i = gapIndex; i < op.index; i++) {
-                                if (indexInRange(op.list, i)) {
-                                    this.lists[op.list].roomIndexToRoomId[i] =
-                                        this.lists[op.list].roomIndexToRoomId[
-                                            i + 1
-                                        ];
-                                }
-                            }
-                        }
-                    }
-                    this.lists[op.list].roomIndexToRoomId[op.index] =
-                        op.room.room_id;
-                    this._invokeRoomDataListeners(op.room.room_id, op.room);
-                } else if (op.op === "UPDATE") {
-                    console.log(
-                        "UPDATE",
-                        op.list,
-                        op.index,
-                        op.room.room_id,
-                        ";"
-                    );
-                    this._invokeRoomDataListeners(op.room.room_id, op.room);
-                } else if (op.op === "SYNC") {
-                    let syncRooms = [];
-                    const startIndex = op.range[0];
-                    for (let i = startIndex; i <= op.range[1]; i++) {
-                        const r = op.rooms[i - startIndex];
-                        if (!r) {
-                            break; // we are at the end of list
-                        }
-                        this.lists[op.list].roomIndexToRoomId[i] = r.room_id;
-                        syncRooms.push(r.room_id);
-                        this._invokeRoomDataListeners(r.room_id, r);
-                    }
-                    console.log(
-                        "SYNC",
-                        op.list,
-                        op.range[0],
-                        op.range[1],
-                        syncRooms.join(" "),
-                        ";"
-                    );
-                } else if (op.op === "INVALIDATE") {
-                    let invalidRooms = [];
-                    const startIndex = op.range[0];
-                    for (let i = startIndex; i <= op.range[1]; i++) {
-                        invalidRooms.push(
-                            this.lists[op.list].roomIndexToRoomId[i]
+            resp.lists.forEach((list, listIndex) => {
+                // TODO: clear gapIndex immediately after next op to avoid a genuine DELETE shifting incorrectly e.g leaving a room
+                let gapIndex = -1;
+                list.ops = list.ops || [];
+
+                list.ops.forEach((op) => {
+                    if (op.op === "DELETE") {
+                        console.log("DELETE", listIndex, op.index, ";");
+                        delete this.lists[listIndex].roomIndexToRoomId[
+                            op.index
+                        ];
+                        gapIndex = op.index;
+                    } else if (op.op === "INSERT") {
+                        console.log(
+                            "INSERT",
+                            listIndex,
+                            op.index,
+                            op.room_id,
+                            ";"
                         );
-                        delete this.lists[op.list].roomIndexToRoomId[i];
+                        if (this.lists[listIndex].roomIndexToRoomId[op.index]) {
+                            // something is in this space, shift items out of the way
+                            if (gapIndex < 0) {
+                                console.log(
+                                    "cannot work out where gap is, INSERT without previous DELETE! List: ",
+                                    listIndex
+                                );
+                                return;
+                            }
+                            //  0,1,2,3  index
+                            // [A,B,C,D]
+                            //   DEL 3
+                            // [A,B,C,_]
+                            //   INSERT E 0
+                            // [E,A,B,C]
+                            // gapIndex=3, op.index=0
+                            if (gapIndex > op.index) {
+                                // the gap is further down the list, shift every element to the right
+                                // starting at the gap so we can just shift each element in turn:
+                                // [A,B,C,_] gapIndex=3, op.index=0
+                                // [A,B,C,C] i=3
+                                // [A,B,B,C] i=2
+                                // [A,A,B,C] i=1
+                                // Terminate. We'll assign into op.index next.
+                                for (let i = gapIndex; i > op.index; i--) {
+                                    if (indexInRange(listIndex, i)) {
+                                        this.lists[listIndex].roomIndexToRoomId[
+                                            i
+                                        ] =
+                                            this.lists[
+                                                listIndex
+                                            ].roomIndexToRoomId[i - 1];
+                                    }
+                                }
+                            } else if (gapIndex < op.index) {
+                                // the gap is further up the list, shift every element to the left
+                                // starting at the gap so we can just shift each element in turn
+                                for (let i = gapIndex; i < op.index; i++) {
+                                    if (indexInRange(listIndex, i)) {
+                                        this.lists[listIndex].roomIndexToRoomId[
+                                            i
+                                        ] =
+                                            this.lists[
+                                                listIndex
+                                            ].roomIndexToRoomId[i + 1];
+                                    }
+                                }
+                            }
+                        }
+                        this.lists[listIndex].roomIndexToRoomId[op.index] =
+                            op.room_id;
+                    } else if (op.op === "UPDATE") {
+                        console.log(
+                            "UPDATE",
+                            listIndex,
+                            op.index,
+                            op.room_id,
+                            ";"
+                        );
+                    } else if (op.op === "SYNC") {
+                        let syncRooms = [];
+                        const startIndex = op.range[0];
+                        for (let i = startIndex; i <= op.range[1]; i++) {
+                            const r = op.room_ids[i - startIndex];
+                            if (!r) {
+                                break; // we are at the end of list
+                            }
+                            this.lists[listIndex].roomIndexToRoomId[i] = r;
+                            syncRooms.push(r);
+                        }
+                        console.log(
+                            "SYNC",
+                            listIndex,
+                            op.range[0],
+                            op.range[1],
+                            syncRooms.join(" "),
+                            ";"
+                        );
+                    } else if (op.op === "INVALIDATE") {
+                        let invalidRooms = [];
+                        const startIndex = op.range[0];
+                        for (let i = startIndex; i <= op.range[1]; i++) {
+                            invalidRooms.push(
+                                this.lists[listIndex].roomIndexToRoomId[i]
+                            );
+                            delete this.lists[listIndex].roomIndexToRoomId[i];
+                        }
+                        console.log(
+                            "INVALIDATE",
+                            listIndex,
+                            op.range[0],
+                            op.range[1],
+                            ";"
+                        );
                     }
-                    console.log(
-                        "INVALIDATE",
-                        op.list,
-                        op.range[0],
-                        op.range[1],
-                        ";"
-                    );
-                }
+                });
             });
 
             this._invokeLifecycleListeners(LifecycleSyncComplete, resp);

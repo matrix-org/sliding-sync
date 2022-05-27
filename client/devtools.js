@@ -24,7 +24,7 @@ export function bandwidth(domNode, conn) {
  * @param {object} resp The Sliding Sync response JSON
  */
 export function svgify(domNode, activeLists, resp) {
-    if (resp.ops.length === 0) {
+    if (resp.lists.length === 0) {
         return;
     }
     const horizontalPixelWidth = 10;
@@ -114,28 +114,30 @@ export function svgify(domNode, activeLists, resp) {
     };
 
     // add insertions, deletions and updates
-    resp.ops.forEach((op) => {
-        if (op.op === "DELETE") {
-            addLine(op.list, op.index, colorDelete);
-        } else if (op.op === "INSERT") {
-            addLine(op.list, op.index, colorInsert);
-        } else if (op.op === "UPDATE") {
-            addLine(op.list, op.index, colorUpdate);
-        } else if (op.op === "SYNC") {
-            addLine(
-                op.list,
-                op.range[0],
-                colorSync,
-                op.range[1] - op.range[0] + 1
-            );
-        } else if (op.op === "INVALIDATE") {
-            addLine(
-                op.list,
-                op.range[0],
-                colorInvalidate,
-                op.range[1] - op.range[0] + 1
-            );
-        }
+    resp.lists.forEach((list, listIndex) => {
+        list.ops.forEach((op) => {
+            if (op.op === "DELETE") {
+                addLine(listIndex, op.index, colorDelete);
+            } else if (op.op === "INSERT") {
+                addLine(listIndex, op.index, colorInsert);
+            } else if (op.op === "UPDATE") {
+                addLine(listIndex, op.index, colorUpdate);
+            } else if (op.op === "SYNC") {
+                addLine(
+                    listIndex,
+                    op.range[0],
+                    colorSync,
+                    op.range[1] - op.range[0] + 1
+                );
+            } else if (op.op === "INVALIDATE") {
+                addLine(
+                    listIndex,
+                    op.range[0],
+                    colorInvalidate,
+                    op.range[1] - op.range[0] + 1
+                );
+            }
+        });
     });
 
     // this is expensive so only do it on smaller accounts
