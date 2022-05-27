@@ -336,22 +336,22 @@ func (s *ConnState) buildRooms(ctx context.Context, builtSubs []BuiltSubscriptio
 	result := make(map[string]sync3.Room)
 	for _, bs := range builtSubs {
 		rooms := s.getInitialRoomData(ctx, bs.RoomSubscription, bs.RoomIDs...)
-		for i := range rooms {
-			result[rooms[i].RoomID] = rooms[i]
+		for roomID, room := range rooms {
+			result[roomID] = room
 		}
 	}
 	return result
 }
 
-func (s *ConnState) getInitialRoomData(ctx context.Context, roomSub sync3.RoomSubscription, roomIDs ...string) []sync3.Room {
-	rooms := make([]sync3.Room, len(roomIDs))
+func (s *ConnState) getInitialRoomData(ctx context.Context, roomSub sync3.RoomSubscription, roomIDs ...string) map[string]sync3.Room {
+	rooms := make(map[string]sync3.Room, len(roomIDs))
 	// We want to grab the user room data and the room metadata for each room ID.
 	roomIDToUserRoomData := s.userCache.LazyLoadTimelines(s.loadPosition, roomIDs, int(roomSub.TimelineLimit))
 	roomMetadatas := s.globalCache.LoadRooms(roomIDs...)
 
 	roomIDToState := s.globalCache.LoadRoomState(ctx, roomIDs, s.loadPosition, roomSub.RequiredStateMap())
 
-	for i, roomID := range roomIDs {
+	for _, roomID := range roomIDs {
 		userRoomData, ok := roomIDToUserRoomData[roomID]
 		if !ok {
 			userRoomData = caches.NewUserRoomData()
@@ -370,8 +370,7 @@ func (s *ConnState) getInitialRoomData(ctx context.Context, roomSub sync3.RoomSu
 			requiredState = roomIDToState[roomID]
 		}
 		prevBatch, _ := userRoomData.PrevBatch()
-		rooms[i] = sync3.Room{
-			RoomID:            roomID,
+		rooms[roomID] = sync3.Room{
 			Name:              internal.CalculateRoomName(metadata, 5), // TODO: customisable?
 			NotificationCount: int64(userRoomData.NotificationCount),
 			HighlightCount:    int64(userRoomData.HighlightCount),

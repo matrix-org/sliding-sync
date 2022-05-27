@@ -77,14 +77,14 @@ func TestFiltersEncryption(t *testing.T) {
 				if len(op.RoomIDs) != 1 {
 					return fmt.Errorf("want %d rooms, got %d", 1, len(op.RoomIDs))
 				}
-				return allRooms[0].MatchRoom(res.Rooms[op.RoomIDs[0]]) // encrypted room
+				return allRooms[0].MatchRoom(op.RoomIDs[0], res.Rooms[op.RoomIDs[0]]) // encrypted room
 			})),
 		MatchV3Ops(1,
 			MatchV3SyncOpFn(func(op *sync3.ResponseOpRange) error {
 				if len(op.RoomIDs) != 1 {
 					return fmt.Errorf("want %d rooms, got %d", 1, len(op.RoomIDs))
 				}
-				return allRooms[1].MatchRoom(res.Rooms[op.RoomIDs[0]]) // encrypted room
+				return allRooms[1].MatchRoom(op.RoomIDs[0], res.Rooms[op.RoomIDs[0]]) // encrypted room
 			}),
 		))
 
@@ -150,7 +150,7 @@ func TestFiltersEncryption(t *testing.T) {
 			}
 			wantRooms := []roomEvents{allRooms[1], allRooms[0]}
 			for i := range wantRooms {
-				err := wantRooms[i].MatchRoom(
+				err := wantRooms[i].MatchRoom(op.RoomIDs[i],
 					res.Rooms[op.RoomIDs[i]],
 				)
 				if err != nil {

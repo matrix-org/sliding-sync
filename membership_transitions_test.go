@@ -107,15 +107,12 @@ func TestRoomStateTransitions(t *testing.T) {
 		MatchV3SyncOp(0, 100, []string{allRoomsAlicePerspective[indexBobInvited].roomID, allRoomsAlicePerspective[indexBobJoined].roomID}),
 	), MatchRoomSubscriptions(map[string][]roomMatcher{
 		allRoomsAlicePerspective[indexBobInvited].roomID: {
-			MatchRoomID(allRoomsAlicePerspective[indexBobInvited].roomID),
 			MatchRoomHighlightCount(1),
 			MatchRoomInitial(true),
 			MatchRoomRequiredState(nil),
 			MatchRoomInviteState(inviteStrippedState.InviteState.Events),
 		},
-		allRoomsAlicePerspective[indexBobJoined].roomID: {
-			MatchRoomID(allRoomsAlicePerspective[indexBobJoined].roomID),
-		},
+		allRoomsAlicePerspective[indexBobJoined].roomID: {},
 	}),
 	)
 

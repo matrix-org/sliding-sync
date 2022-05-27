@@ -274,18 +274,6 @@ func createRoomState(t testutils.TestBenchInterface, creator string, baseTimesta
 
 type roomMatcher func(r sync3.Room) error
 
-func MatchRoomID(id string) roomMatcher {
-	return func(r sync3.Room) error {
-		if id == "" {
-			return nil
-		}
-		if r.RoomID != id {
-			return fmt.Errorf("MatchRoomID: mismatch, got %s want %s", r.RoomID, id)
-		}
-		return nil
-	}
-}
-
 func MatchRoomName(name string) roomMatcher {
 	return func(r sync3.Room) error {
 		if name == "" {
@@ -426,13 +414,13 @@ func (re *roomEvents) getStateEvent(evType, stateKey string) json.RawMessage {
 	return nil
 }
 
-func (re *roomEvents) MatchRoom(r sync3.Room, matchers ...roomMatcher) error {
-	if re.roomID != r.RoomID {
-		return fmt.Errorf("MatchRoom room id: got %s want %s", r.RoomID, re.roomID)
+func (re *roomEvents) MatchRoom(roomID string, r sync3.Room, matchers ...roomMatcher) error {
+	if re.roomID != roomID {
+		return fmt.Errorf("MatchRoom room id: got %s want %s", roomID, re.roomID)
 	}
 	for _, m := range matchers {
 		if err := m(r); err != nil {
-			return fmt.Errorf("MatchRoom %s : %s", r.RoomID, err)
+			return fmt.Errorf("MatchRoom %s : %s", roomID, err)
 		}
 	}
 	return nil

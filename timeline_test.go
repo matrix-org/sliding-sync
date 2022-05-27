@@ -172,7 +172,7 @@ func TestTimelinesLiveStream(t *testing.T) {
 				return fmt.Errorf("want %d rooms, got %d", len(wantRooms), len(op.RoomIDs))
 			}
 			for i := range wantRooms {
-				err := wantRooms[i].MatchRoom(
+				err := wantRooms[i].MatchRoom(op.RoomIDs[i],
 					res.Rooms[op.RoomIDs[i]],
 					MatchRoomName(wantRooms[i].name),
 					MatchRoomTimelineMostRecent(numTimelineEventsPerRoom, wantRooms[i].events),
@@ -384,7 +384,7 @@ func TestTimelineMiddleWindowZeroTimelineLimit(t *testing.T) {
 				return fmt.Errorf("want %d rooms, got %d", len(wantRooms), len(op.RoomIDs))
 			}
 			for i := range wantRooms {
-				err := wantRooms[i].MatchRoom(
+				err := wantRooms[i].MatchRoom(op.RoomIDs[i],
 					res.Rooms[op.RoomIDs[i]],
 					MatchRoomName(wantRooms[i].name),
 					MatchRoomTimeline(nil),
@@ -523,7 +523,7 @@ func TestTimelineTxnID(t *testing.T) {
 		},
 	})
 	MatchResponse(t, aliceRes, MatchV3Counts([]int{1}), MatchNoV3Ops(), MatchRoomSubscription(
-		roomID, MatchRoomID(roomID), MatchRoomTimelineMostRecent(1, []json.RawMessage{newEvent}),
+		roomID, MatchRoomTimelineMostRecent(1, []json.RawMessage{newEvent}),
 	))
 
 	// now Bob syncs, he should see the event without the txn ID
@@ -537,7 +537,7 @@ func TestTimelineTxnID(t *testing.T) {
 		},
 	})
 	MatchResponse(t, bobRes, MatchV3Counts([]int{1}), MatchNoV3Ops(), MatchRoomSubscription(
-		roomID, MatchRoomID(roomID), MatchRoomTimelineMostRecent(1, []json.RawMessage{newEventNoUnsigned}),
+		roomID, MatchRoomTimelineMostRecent(1, []json.RawMessage{newEventNoUnsigned}),
 	))
 }
 
@@ -562,7 +562,7 @@ func testTimelineLoadInitialEvents(v3 *testV3Server, token string, count int, wa
 					return fmt.Errorf("want %d rooms, got %d", len(wantRooms), len(op.RoomIDs))
 				}
 				for i := range wantRooms {
-					err := wantRooms[i].MatchRoom(
+					err := wantRooms[i].MatchRoom(op.RoomIDs[i],
 						res.Rooms[op.RoomIDs[i]],
 						MatchRoomName(wantRooms[i].name),
 						MatchRoomTimelineMostRecent(numTimelineEventsPerRoom, wantRooms[i].events),
@@ -614,7 +614,7 @@ func TestPrevBatchInTimeline(t *testing.T) {
 	})
 	MatchResponse(t, res, MatchV3Ops(0,
 		MatchV3SyncOp(0, 10, []string{roomID}),
-	), MatchRoomSubscription(roomID, MatchRoomID(roomID), MatchRoomPrevBatch("")))
+	), MatchRoomSubscription(roomID, MatchRoomPrevBatch("")))
 
 	// now make a newer prev_batch and try again
 	v2.queueResponse(alice, sync2.SyncResponse{
@@ -664,6 +664,6 @@ func TestPrevBatchInTimeline(t *testing.T) {
 		})
 		MatchResponse(t, res, MatchV3Ops(0,
 			MatchV3SyncOp(0, 10, []string{roomID}),
-		), MatchRoomSubscription(roomID, MatchRoomID(roomID), MatchRoomPrevBatch(tc.wantPrevBatch)))
+		), MatchRoomSubscription(roomID, MatchRoomPrevBatch(tc.wantPrevBatch)))
 	}
 }

@@ -119,7 +119,6 @@ func (s *connStateLive) processLiveUpdate(ctx context.Context, up caches.Update,
 			// there is a subscription for this room, so update the room subscription response
 			roomSub := *s.getDeltaRoomData(roomUpdate.RoomID(), roomUpdate.EventData.Event)
 			r := response.Rooms[roomUpdate.RoomID()]
-			r.RoomID = roomUpdate.RoomID()
 			r.HighlightCount = roomSub.HighlightCount
 			r.NotificationCount = roomSub.NotificationCount
 			r.Timeline = append(r.Timeline, roomSub.Timeline[0])
@@ -140,7 +139,6 @@ func (s *connStateLive) processLiveUpdate(ctx context.Context, up caches.Update,
 			if !isSubscribedToRoom { // don't send the same event twice
 				roomSub := *s.getDeltaRoomData(roomUpdate.RoomID(), roomUpdate.EventData.Event)
 				r := response.Rooms[roomUpdate.RoomID()]
-				r.RoomID = roomUpdate.RoomID()
 				r.HighlightCount = roomSub.HighlightCount
 				r.NotificationCount = roomSub.NotificationCount
 				r.Timeline = append(r.Timeline, roomSub.Timeline[0])
@@ -153,7 +151,9 @@ func (s *connStateLive) processLiveUpdate(ctx context.Context, up caches.Update,
 	builtSubs := builder.BuildSubscriptions()
 	for _, sub := range builtSubs {
 		rooms := s.getInitialRoomData(ctx, sub.RoomSubscription, roomUpdate.RoomID())
-		response.Rooms[roomUpdate.RoomID()] = rooms[0]
+		for roomID, r := range rooms {
+			response.Rooms[roomID] = r
+		}
 	}
 	return hasUpdates
 }
@@ -447,7 +447,6 @@ func (s *connStateLive) writeDeleteOp(reqList *sync3.RequestList, deletedIndex i
 func (s *connStateLive) getDeltaRoomData(roomID string, event json.RawMessage) *sync3.Room {
 	userRoomData := s.userCache.LoadRoomData(roomID) // TODO: don't do this as we have a ref in live code
 	room := &sync3.Room{
-		RoomID:            roomID,
 		NotificationCount: int64(userRoomData.NotificationCount),
 		HighlightCount:    int64(userRoomData.HighlightCount),
 	}

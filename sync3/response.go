@@ -26,7 +26,7 @@ type Response struct {
 }
 
 type ResponseList struct {
-	Ops   []ResponseOp `json:"ops"`
+	Ops   []ResponseOp `json:"ops,omitempty"`
 	Count int          `json:"count"`
 }
 

@@ -472,7 +472,6 @@ func TestMultipleOverlappingLists(t *testing.T) {
 		MatchRoomSubscriptions(map[string][]roomMatcher{
 			// encrypted rooms just come from the encrypted only list
 			encryptedRoomIDs[0]: {
-				MatchRoomID(encryptedRoomIDs[0]),
 				MatchRoomInitial(true),
 				MatchRoomRequiredState([]json.RawMessage{
 					encryptedRooms[0].getStateEvent("m.room.join_rules", ""),
@@ -480,7 +479,6 @@ func TestMultipleOverlappingLists(t *testing.T) {
 				MatchRoomTimelineMostRecent(3, encryptedRooms[0].events),
 			},
 			encryptedRoomIDs[1]: {
-				MatchRoomID(encryptedRoomIDs[1]),
 				MatchRoomInitial(true),
 				MatchRoomRequiredState([]json.RawMessage{
 					encryptedRooms[1].getStateEvent("m.room.join_rules", ""),
@@ -488,7 +486,6 @@ func TestMultipleOverlappingLists(t *testing.T) {
 				MatchRoomTimelineMostRecent(3, encryptedRooms[1].events),
 			},
 			encryptedRoomIDs[2]: {
-				MatchRoomID(encryptedRoomIDs[2]),
 				MatchRoomInitial(true),
 				MatchRoomRequiredState([]json.RawMessage{
 					encryptedRooms[2].getStateEvent("m.room.join_rules", ""),
@@ -497,7 +494,6 @@ func TestMultipleOverlappingLists(t *testing.T) {
 			},
 			// overlapping with DM rooms
 			encryptedRoomIDs[3]: {
-				MatchRoomID(encryptedRoomIDs[3]),
 				MatchRoomInitial(true),
 				MatchRoomRequiredState([]json.RawMessage{
 					encryptedRooms[3].getStateEvent("m.room.join_rules", ""),
@@ -506,7 +502,6 @@ func TestMultipleOverlappingLists(t *testing.T) {
 				MatchRoomTimelineMostRecent(3, encryptedRooms[3].events),
 			},
 			encryptedRoomIDs[4]: {
-				MatchRoomID(encryptedRoomIDs[4]),
 				MatchRoomInitial(true),
 				MatchRoomRequiredState([]json.RawMessage{
 					encryptedRooms[4].getStateEvent("m.room.join_rules", ""),
@@ -516,7 +511,6 @@ func TestMultipleOverlappingLists(t *testing.T) {
 			},
 			// DM only rooms
 			dmRoomIDs[2]: {
-				MatchRoomID(dmRoomIDs[2]),
 				MatchRoomInitial(true),
 				MatchRoomRequiredState([]json.RawMessage{
 					dmRooms[2].getStateEvent("m.room.power_levels", ""),
@@ -524,7 +518,6 @@ func TestMultipleOverlappingLists(t *testing.T) {
 				MatchRoomTimelineMostRecent(1, dmRooms[2].events),
 			},
 			dmRoomIDs[3]: {
-				MatchRoomID(dmRoomIDs[3]),
 				MatchRoomInitial(true),
 				MatchRoomRequiredState([]json.RawMessage{
 					dmRooms[3].getStateEvent("m.room.power_levels", ""),
@@ -532,7 +525,6 @@ func TestMultipleOverlappingLists(t *testing.T) {
 				MatchRoomTimelineMostRecent(1, dmRooms[3].events),
 			},
 			dmRoomIDs[4]: {
-				MatchRoomID(dmRoomIDs[4]),
 				MatchRoomInitial(true),
 				MatchRoomRequiredState([]json.RawMessage{
 					dmRooms[4].getStateEvent("m.room.power_levels", ""),
@@ -550,7 +542,7 @@ func checkRoomList(res *sync3.Response, op *sync3.ResponseOpRange, wantRooms []r
 		return fmt.Errorf("want %d rooms, got %d", len(wantRooms), len(op.RoomIDs))
 	}
 	for i := range wantRooms {
-		err := wantRooms[i].MatchRoom(
+		err := wantRooms[i].MatchRoom(op.RoomIDs[i],
 			res.Rooms[op.RoomIDs[i]],
 			MatchRoomTimelineMostRecent(1, wantRooms[i].events),
 		)

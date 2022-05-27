@@ -75,7 +75,7 @@ func TestSecurityLiveStreamEventLeftLeak(t *testing.T) {
 			if len(op.RoomIDs) != 1 {
 				return fmt.Errorf("range missing room: got %d want 1", len(op.RoomIDs))
 			}
-			return theRoom.MatchRoom(res.Rooms[op.RoomIDs[0]])
+			return theRoom.MatchRoom(op.RoomIDs[0], res.Rooms[op.RoomIDs[0]])
 		})))
 		tokenToPos[token] = res.Pos
 	}
@@ -223,9 +223,7 @@ func TestSecurityRoomSubscriptionLeak(t *testing.T) {
 	MatchResponse(t, res, MatchV3Count(1), MatchV3Ops(0,
 		MatchV3SyncOp(0, 10, []string{unrelatedRoomID}),
 	), MatchRoomSubscriptionsStrict(map[string][]roomMatcher{
-		unrelatedRoomID: []roomMatcher{
-			MatchRoomID(unrelatedRoomID),
-		},
+		unrelatedRoomID: []roomMatcher{},
 	}))
 
 	// Assert that live updates still don't feed through to Eve

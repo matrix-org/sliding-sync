@@ -85,7 +85,7 @@ func TestRoomNames(t *testing.T) {
 					return fmt.Errorf("want %d rooms, got %d", len(allRooms), len(op.RoomIDs))
 				}
 				for i := range allRooms {
-					err := allRooms[i].MatchRoom(
+					err := allRooms[i].MatchRoom(op.RoomIDs[i],
 						res.Rooms[op.RoomIDs[i]],
 						MatchRoomName(allRooms[i].name),
 					)
@@ -123,7 +123,6 @@ func TestRoomNames(t *testing.T) {
 			wantRoomIDs[i] = wantRooms[i].roomID
 			matchers[wantRooms[i].roomID] = []roomMatcher{
 				MatchRoomName(wantRooms[i].name),
-				MatchRoomID(wantRooms[i].roomID),
 			}
 		}
 		MatchResponse(t, res, MatchV3Count(len(wantRooms)), MatchV3Ops(0,

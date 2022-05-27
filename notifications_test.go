@@ -71,7 +71,7 @@ func TestNotificationsOnTop(t *testing.T) {
 				return fmt.Errorf("want %d rooms, got %d", len(allRooms), len(op.RoomIDs))
 			}
 			for i := range allRooms {
-				err := allRooms[i].MatchRoom(
+				err := allRooms[i].MatchRoom(op.RoomIDs[i],
 					res.Rooms[op.RoomIDs[i]],
 				)
 				if err != nil {
@@ -146,7 +146,7 @@ func TestNotificationsOnTop(t *testing.T) {
 			if len(op.RoomIDs) != len(allRooms) {
 				return fmt.Errorf("want %d rooms, got %d", len(allRooms), len(op.RoomIDs))
 			}
-			err := allRooms[1].MatchRoom(
+			err := allRooms[1].MatchRoom(op.RoomIDs[0],
 				res.Rooms[op.RoomIDs[0]], // bing room is first
 				MatchRoomHighlightCount(1),
 				MatchRoomNotificationCount(0),
@@ -155,7 +155,7 @@ func TestNotificationsOnTop(t *testing.T) {
 			if err != nil {
 				return err
 			}
-			err = allRooms[0].MatchRoom(
+			err = allRooms[0].MatchRoom(op.RoomIDs[1],
 				res.Rooms[op.RoomIDs[1]], // no bing room is second
 				MatchRoomHighlightCount(0),
 				MatchRoomNotificationCount(0),
