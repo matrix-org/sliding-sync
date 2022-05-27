@@ -102,9 +102,11 @@ const setRoomStateFields = (r) => {
  * Accumulate room data for this room. This is done by inspecting the 'initial' flag on the response.
  * If it is set, the entire room is replaced with this data. If it is false, the room data is
  * merged together with whatever is there in the store.
+ * @param {string} roomId The room ID for this room
  * @param {object} r The room response JSON
  */
-const accumulateRoomData = (r) => {
+const accumulateRoomData = (roomId, r) => {
+    r.room_id = roomId;
     setRoomStateFields(r);
     if (r.initial) {
         rooms.roomIdToRoom[r.room_id] = r;
@@ -311,7 +313,7 @@ const doSyncLoop = async (accessToken) => {
     });
 
     slidingSync.addRoomDataListener((roomId, roomData) => {
-        accumulateRoomData(roomData);
+        accumulateRoomData(roomId, roomData);
         // render the right-hand side section with the room timeline if we are viewing it.
         if (roomId !== slidingSync.roomSubscription) {
             return;
