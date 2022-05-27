@@ -164,19 +164,18 @@ func (s *ConnState) onIncomingRequest(ctx context.Context, req *sync3.Request, i
 	ex.UserID = s.userID
 	ex.DeviceID = s.deviceID
 
+	// work out which rooms we'll return data for and add their relevant subscriptions to the builder
+	// for it to mix together
+	builder := NewRoomsBuilder()
+	// works out which rooms are subscribed to but doesn't pull room data
+	s.buildRoomSubscriptions(builder, newSubs, newUnsubs)
+	// works out how rooms get moved about but doesn't pull room data
+	respLists := s.buildListSubscriptions(ctx, builder, prevReq)
+
 	// start forming the response, handle subscriptions
 	response := &sync3.Response{
-		Rooms: s.updateRoomSubscriptions(ctx, int(sync3.DefaultTimelineLimit), newSubs, newUnsubs),
-		Lists: make([]sync3.ResponseList, len(s.muxedReq.Lists)),
-	}
-
-	// loop each list and handle each independently
-	for i := range s.muxedReq.Lists {
-		var prevList *sync3.RequestList
-		if prevReq != nil && i < len(prevReq.Lists) {
-			prevList = &prevReq.Lists[i]
-		}
-		response.Lists[i] = s.onIncomingListRequest(ctx, i, prevList, &s.muxedReq.Lists[i])
+		Rooms: s.buildRooms(ctx, builder.BuildSubscriptions()), // pull room data
+		Lists: respLists,
 	}
 
 	includedRoomIDs := response.IncludedRoomIDsInOps()
@@ -202,8 +201,7 @@ func (s *ConnState) onIncomingRequest(ctx context.Context, req *sync3.Request, i
 	return response, nil
 }
 
-// TODO, response list + room data
-func (s *ConnState) onIncomingListRequest(ctx context.Context, listIndex int, prevReqList, nextReqList *sync3.RequestList) sync3.ResponseList {
+func (s *ConnState) onIncomingListRequest(ctx context.Context, builder *RoomsBuilder, listIndex int, prevReqList, nextReqList *sync3.RequestList) sync3.ResponseList {
 	defer trace.StartRegion(ctx, "onIncomingListRequest").End()
 	if !s.lists.ListExists(listIndex) {
 		s.setInitialList(listIndex, *nextReqList)
@@ -267,6 +265,10 @@ func (s *ConnState) onIncomingListRequest(ctx context.Context, listIndex int, pr
 			Range:     r[:],
 		})
 	}
+
+	// inform the builder about this list
+	subID := builder.AddSubscription(nextReqList.RoomSubscription)
+
 	// send full room data for these ranges
 	for _, r := range addedRanges {
 		sr := sync3.SliceRanges([][2]int64{r})
@@ -276,11 +278,12 @@ func (s *ConnState) onIncomingListRequest(ctx context.Context, listIndex int, pr
 		}
 		sortableRooms := subslice[0].(*sync3.SortableRooms)
 		roomIDs := sortableRooms.RoomIDs()
+		// the builder will populate this with the right room data
+		builder.AddRoomsToSubscription(subID, roomIDs)
 
 		responseOperations = append(responseOperations, &sync3.ResponseOpRange{
 			Operation: sync3.OpSync,
 			Range:     r[:],
-			Rooms:     s.getInitialRoomData(ctx, nextReqList.RoomSubscription, roomIDs...),
 			RoomIDs:   roomIDs,
 		})
 	}
@@ -291,9 +294,21 @@ func (s *ConnState) onIncomingListRequest(ctx context.Context, listIndex int, pr
 	}
 }
 
-func (s *ConnState) updateRoomSubscriptions(ctx context.Context, timelineLimit int, subs, unsubs []string) map[string]sync3.Room {
-	defer trace.StartRegion(ctx, "updateRoomSubscriptions").End()
-	result := make(map[string]sync3.Room)
+func (s *ConnState) buildListSubscriptions(ctx context.Context, builder *RoomsBuilder, prevReq *sync3.Request) []sync3.ResponseList {
+	result := make([]sync3.ResponseList, len(s.muxedReq.Lists))
+	// loop each list and handle each independently
+	for i := range s.muxedReq.Lists {
+		var prevList *sync3.RequestList
+		if prevReq != nil && i < len(prevReq.Lists) {
+			prevList = &prevReq.Lists[i]
+		}
+		respList := s.onIncomingListRequest(ctx, builder, i, prevList, &s.muxedReq.Lists[i])
+		result[i] = respList
+	}
+	return result
+}
+
+func (s *ConnState) buildRoomSubscriptions(builder *RoomsBuilder, subs, unsubs []string) {
 	for _, roomID := range subs {
 		// check that the user is allowed to see these rooms as they can set arbitrary room IDs
 		if !s.joinChecker.IsUserJoined(s.userID, roomID) {
@@ -308,28 +323,24 @@ func (s *ConnState) updateRoomSubscriptions(ctx context.Context, timelineLimit i
 			continue
 		}
 		s.roomSubscriptions[roomID] = sub
-		rooms := s.getInitialRoomData(ctx, sub, roomID)
-		result[roomID] = rooms[0]
+		subID := builder.AddSubscription(sub)
+		builder.AddRoomsToSubscription(subID, []string{roomID})
 	}
 	for _, roomID := range unsubs {
 		delete(s.roomSubscriptions, roomID)
 	}
-	return result
 }
 
-func (s *ConnState) getDeltaRoomData(roomID string, event json.RawMessage) *sync3.Room {
-	userRoomData := s.userCache.LoadRoomData(roomID) // TODO: don't do this as we have a ref in live code
-	room := &sync3.Room{
-		RoomID:            roomID,
-		NotificationCount: int64(userRoomData.NotificationCount),
-		HighlightCount:    int64(userRoomData.HighlightCount),
+func (s *ConnState) buildRooms(ctx context.Context, builtSubs []BuiltSubscription) map[string]sync3.Room {
+	defer trace.StartRegion(ctx, "buildRooms").End()
+	result := make(map[string]sync3.Room)
+	for _, bs := range builtSubs {
+		rooms := s.getInitialRoomData(ctx, bs.RoomSubscription, bs.RoomIDs...)
+		for i := range rooms {
+			result[rooms[i].RoomID] = rooms[i]
+		}
 	}
-	if event != nil {
-		room.Timeline = s.userCache.AnnotateWithTransactionIDs([]json.RawMessage{
-			event,
-		})
-	}
-	return room
+	return result
 }
 
 func (s *ConnState) getInitialRoomData(ctx context.Context, roomSub sync3.RoomSubscription, roomIDs ...string) []sync3.Room {

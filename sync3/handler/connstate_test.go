@@ -1,7 +1,6 @@
 package handler
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -121,6 +120,26 @@ func TestConnStateInitial(t *testing.T) {
 		t.Fatalf("OnIncomingRequest returned error : %s", err)
 	}
 	checkResponse(t, false, res, &sync3.Response{
+		Rooms: map[string]sync3.Room{
+			roomB.RoomID: {
+				RoomID:   roomB.RoomID,
+				Name:     roomB.NameEvent,
+				Initial:  true,
+				Timeline: []json.RawMessage{timeline[roomB.RoomID]},
+			},
+			roomC.RoomID: {
+				RoomID:   roomC.RoomID,
+				Name:     roomC.NameEvent,
+				Initial:  true,
+				Timeline: []json.RawMessage{timeline[roomC.RoomID]},
+			},
+			roomA.RoomID: {
+				RoomID:   roomA.RoomID,
+				Name:     roomA.NameEvent,
+				Initial:  true,
+				Timeline: []json.RawMessage{timeline[roomA.RoomID]},
+			},
+		},
 		Lists: []sync3.ResponseList{
 			{
 				Count: 3,
@@ -128,25 +147,8 @@ func TestConnStateInitial(t *testing.T) {
 					&sync3.ResponseOpRange{
 						Operation: "SYNC",
 						Range:     []int64{0, 9},
-						Rooms: []sync3.Room{
-							{
-								RoomID:   roomB.RoomID,
-								Name:     roomB.NameEvent,
-								Initial:  true,
-								Timeline: []json.RawMessage{timeline[roomB.RoomID]},
-							},
-							{
-								RoomID:   roomC.RoomID,
-								Name:     roomC.NameEvent,
-								Initial:  true,
-								Timeline: []json.RawMessage{timeline[roomC.RoomID]},
-							},
-							{
-								RoomID:   roomA.RoomID,
-								Name:     roomA.NameEvent,
-								Initial:  true,
-								Timeline: []json.RawMessage{timeline[roomA.RoomID]},
-							},
+						RoomIDs: []string{
+							roomB.RoomID, roomC.RoomID, roomA.RoomID,
 						},
 					},
 				},
@@ -173,6 +175,11 @@ func TestConnStateInitial(t *testing.T) {
 		t.Fatalf("OnIncomingRequest returned error : %s", err)
 	}
 	checkResponse(t, true, res, &sync3.Response{
+		Rooms: map[string]sync3.Room{
+			roomA.RoomID: {
+				Timeline: []json.RawMessage{newEvent},
+			},
+		},
 		Lists: []sync3.ResponseList{
 			{
 				Count: 3,
@@ -184,9 +191,7 @@ func TestConnStateInitial(t *testing.T) {
 					&sync3.ResponseOpSingle{
 						Operation: "INSERT",
 						Index:     intPtr(0),
-						Room: &sync3.Room{
-							RoomID: roomA.RoomID,
-						},
+						RoomID:    roomA.RoomID,
 					},
 				},
 			},
@@ -210,6 +215,11 @@ func TestConnStateInitial(t *testing.T) {
 		t.Fatalf("OnIncomingRequest returned error : %s", err)
 	}
 	checkResponse(t, true, res, &sync3.Response{
+		Rooms: map[string]sync3.Room{
+			roomA.RoomID: {
+				Timeline: []json.RawMessage{newEvent},
+			},
+		},
 		Lists: []sync3.ResponseList{
 			{
 				Count: 3,
@@ -217,9 +227,7 @@ func TestConnStateInitial(t *testing.T) {
 					&sync3.ResponseOpSingle{
 						Operation: "UPDATE",
 						Index:     intPtr(0),
-						Room: &sync3.Room{
-							RoomID: roomA.RoomID,
-						},
+						RoomID:    roomA.RoomID,
 					},
 				},
 			},
@@ -292,17 +300,7 @@ func TestConnStateMultipleRanges(t *testing.T) {
 					&sync3.ResponseOpRange{
 						Operation: "SYNC",
 						Range:     []int64{0, 2},
-						Rooms: []sync3.Room{
-							{
-								RoomID: roomIDs[0],
-							},
-							{
-								RoomID: roomIDs[1],
-							},
-							{
-								RoomID: roomIDs[2],
-							},
-						},
+						RoomIDs:   []string{roomIDs[0], roomIDs[1], roomIDs[2]},
 					},
 				},
 			},
@@ -328,17 +326,7 @@ func TestConnStateMultipleRanges(t *testing.T) {
 					&sync3.ResponseOpRange{
 						Operation: "SYNC",
 						Range:     []int64{4, 6},
-						Rooms: []sync3.Room{
-							{
-								RoomID: roomIDs[4],
-							},
-							{
-								RoomID: roomIDs[5],
-							},
-							{
-								RoomID: roomIDs[6],
-							},
-						},
+						RoomIDs:   []string{roomIDs[4], roomIDs[5], roomIDs[6]},
 					},
 				},
 			},
@@ -379,9 +367,7 @@ func TestConnStateMultipleRanges(t *testing.T) {
 					&sync3.ResponseOpSingle{
 						Operation: "INSERT",
 						Index:     intPtr(0),
-						Room: &sync3.Room{
-							RoomID: roomIDs[8],
-						},
+						RoomID:    roomIDs[8],
 					},
 				},
 			},
@@ -423,9 +409,7 @@ func TestConnStateMultipleRanges(t *testing.T) {
 					&sync3.ResponseOpSingle{
 						Operation: "INSERT",
 						Index:     intPtr(4),
-						Room: &sync3.Room{
-							RoomID: roomIDs[2],
-						},
+						RoomID:    roomIDs[2],
 					},
 				},
 			},
@@ -492,13 +476,8 @@ func TestBumpToOutsideRange(t *testing.T) {
 					&sync3.ResponseOpRange{
 						Operation: "SYNC",
 						Range:     []int64{0, 1},
-						Rooms: []sync3.Room{
-							{
-								RoomID: roomA.RoomID,
-							},
-							{
-								RoomID: roomB.RoomID,
-							},
+						RoomIDs: []string{
+							roomA.RoomID, roomB.RoomID,
 						},
 					},
 				},
@@ -610,29 +589,30 @@ func TestConnStateRoomSubscriptions(t *testing.T) {
 					&sync3.ResponseOpRange{
 						Operation: "SYNC",
 						Range:     []int64{0, 1},
-						Rooms: []sync3.Room{
-							{
-								RoomID:  roomA.RoomID,
-								Name:    roomA.NameEvent,
-								Initial: true,
-								Timeline: []json.RawMessage{
-									timeline[roomA.RoomID],
-								},
-							},
-							{
-								RoomID:  roomB.RoomID,
-								Name:    roomB.NameEvent,
-								Initial: true,
-								Timeline: []json.RawMessage{
-									timeline[roomB.RoomID],
-								},
-							},
+						RoomIDs: []string{
+							roomA.RoomID, roomB.RoomID,
 						},
 					},
 				},
 			},
 		},
 		Rooms: map[string]sync3.Room{
+			roomA.RoomID: {
+				RoomID:  roomA.RoomID,
+				Name:    roomA.NameEvent,
+				Initial: true,
+				Timeline: []json.RawMessage{
+					timeline[roomA.RoomID],
+				},
+			},
+			roomB.RoomID: {
+				RoomID:  roomB.RoomID,
+				Name:    roomB.NameEvent,
+				Initial: true,
+				Timeline: []json.RawMessage{
+					timeline[roomB.RoomID],
+				},
+			},
 			roomD.RoomID: {
 				RoomID:  roomD.RoomID,
 				Name:    roomD.NameEvent,
@@ -643,8 +623,8 @@ func TestConnStateRoomSubscriptions(t *testing.T) {
 			},
 		},
 	})
-	// room D gets a new event
-	newEvent := testutils.NewEvent(t, "unimportant", "me", struct{}{}, testutils.WithTimestamp(gomatrixserverlib.Timestamp(timestampNow+2000).Time()))
+	// room D gets a new event but it's so old it doesn't bump to the top of the list
+	newEvent := testutils.NewEvent(t, "unimportant", "me", struct{}{}, testutils.WithTimestamp(gomatrixserverlib.Timestamp(timestampNow-20000).Time()))
 	dispatcher.OnNewEvents(roomD.RoomID, []json.RawMessage{
 		newEvent,
 	}, 1)
@@ -753,11 +733,11 @@ func checkResponse(t *testing.T, checkRoomIDsOnly bool, got, want *sync3.Respons
 					if !reflect.DeepEqual(gotOpRange.Range, wantOp.Range) {
 						t.Errorf("operation i=%d (%s) got range %v want range %v", i, gotOp.Op(), gotOpRange.Range, wantOp.Range)
 					}
-					if len(gotOpRange.Rooms) != len(wantOp.Rooms) {
-						t.Fatalf("operation i=%d (%s) got %d rooms in array, want %d", i, gotOp.Op(), len(gotOpRange.Rooms), len(wantOp.Rooms))
+					if len(gotOpRange.RoomIDs) != len(wantOp.RoomIDs) {
+						t.Fatalf("operation i=%d (%s) got %d rooms in array, want %d", i, gotOp.Op(), len(gotOpRange.RoomIDs), len(wantOp.RoomIDs))
 					}
-					for j := range wantOp.Rooms {
-						checkRoomsEqual(t, checkRoomIDsOnly, &gotOpRange.Rooms[j], &wantOp.Rooms[j])
+					for j := range wantOp.RoomIDs {
+						checkRoomIDsEqual(t, gotOpRange.RoomIDs[j], wantOp.RoomIDs[j])
 					}
 				case *sync3.ResponseOpSingle:
 					gotOpSingle, ok := gotOp.(*sync3.ResponseOpSingle)
@@ -767,7 +747,7 @@ func checkResponse(t *testing.T, checkRoomIDsOnly bool, got, want *sync3.Respons
 					if *gotOpSingle.Index != *wantOp.Index {
 						t.Errorf("operation i=%d (%s) single op on index %d want index %d", i, gotOp.Op(), *gotOpSingle.Index, *wantOp.Index)
 					}
-					checkRoomsEqual(t, checkRoomIDsOnly, gotOpSingle.Room, wantOp.Room)
+					checkRoomIDsEqual(t, gotOpSingle.RoomID, wantOp.RoomID)
 				}
 			}
 		}
@@ -776,41 +756,30 @@ func checkResponse(t *testing.T, checkRoomIDsOnly bool, got, want *sync3.Respons
 		if len(want.Rooms) != len(got.Rooms) {
 			t.Errorf("wrong number of room subs returned, got %d want %d", len(got.Rooms), len(want.Rooms))
 		}
-		for roomID, wantData := range want.Rooms {
-			gotData, ok := got.Rooms[roomID]
-			if !ok {
-				t.Errorf("wanted room subscription for %s but it was not returned", roomID)
+		for wantRoomID := range want.Rooms {
+			if _, ok := got.Rooms[wantRoomID]; !ok {
+				t.Errorf("wanted room %s in 'rooms' but it wasn't there", wantRoomID)
 				continue
 			}
-			checkRoomsEqual(t, checkRoomIDsOnly, &gotData, &wantData)
+			wantTimeline := want.Rooms[wantRoomID].Timeline
+			gotTimeline := got.Rooms[wantRoomID].Timeline
+			if len(wantTimeline) > 0 {
+				if !reflect.DeepEqual(gotTimeline, wantTimeline) {
+					t.Errorf("timeline mismatch for room %s:\ngot  %v\nwant %v", wantRoomID, serialise(t, gotTimeline), serialise(t, wantTimeline))
+				}
+			}
+			if want.Rooms[wantRoomID].Initial != got.Rooms[wantRoomID].Initial {
+				t.Errorf("'initial' flag mismatch on room %s: got %v want %v", wantRoomID, got.Rooms[wantRoomID].Initial, want.Rooms[wantRoomID].Initial)
+			}
 		}
+		// TODO: check inside room objects
 	}
 }
 
-func checkRoomsEqual(t *testing.T, checkRoomIDsOnly bool, got, want *sync3.Room) {
+func checkRoomIDsEqual(t *testing.T, got, want string) {
 	t.Helper()
-	if got == nil && want == nil {
-		return // e.g DELETE ops
-	}
-	if (got == nil && want != nil) || (want == nil && got != nil) {
-		t.Fatalf("nil room, got %+v want %+v", got, want)
-	}
-	if checkRoomIDsOnly {
-		if got.RoomID != want.RoomID {
-			t.Fatalf("got room '%s' want room '%s'", got.RoomID, want.RoomID)
-		}
-		return
-	}
-	gotBytes, err := json.Marshal(got)
-	if err != nil {
-		t.Fatalf("cannot marshal got room: %s", err)
-	}
-	wantBytes, err := json.Marshal(want)
-	if err != nil {
-		t.Fatalf("cannot marshal want room: %s", err)
-	}
-	if !bytes.Equal(gotBytes, wantBytes) {
-		t.Errorf("rooms do not match,\ngot  %s want %s", string(gotBytes), string(wantBytes))
+	if got != want {
+		t.Fatalf("got room '%s' want room '%s'", got, want)
 	}
 }
 

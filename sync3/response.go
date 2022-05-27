@@ -116,7 +116,6 @@ type ResponseOp interface {
 type ResponseOpRange struct {
 	Operation string   `json:"op"`
 	Range     []int64  `json:"range,omitempty"`
-	Rooms     []Room   `json:"rooms,omitempty"`
 	RoomIDs   []string `json:"room_ids,omitempty"`
 }
 
@@ -127,17 +126,12 @@ func (r *ResponseOpRange) IncludedRoomIDs() []string {
 	if r.Op() == OpInvalidate {
 		return nil // the rooms are being excluded
 	}
-	roomIDs := make([]string, len(r.Rooms))
-	for i := range r.Rooms {
-		roomIDs[i] = r.Rooms[i].RoomID
-	}
-	return roomIDs
+	return r.RoomIDs
 }
 
 type ResponseOpSingle struct {
 	Operation string `json:"op"`
 	Index     *int   `json:"index,omitempty"` // 0 is a valid value, hence *int
-	Room      *Room  `json:"room,omitempty"`
 	RoomID    string `json:"room_id,omitempty"`
 }
 
@@ -146,10 +140,8 @@ func (r *ResponseOpSingle) Op() string {
 }
 
 func (r *ResponseOpSingle) IncludedRoomIDs() []string {
-	if r.Op() == OpDelete || r.Room == nil {
+	if r.Op() == OpDelete || r.RoomID == "" {
 		return nil // the room is being excluded
 	}
-	return []string{
-		r.Room.RoomID,
-	}
+	return []string{r.RoomID}
 }

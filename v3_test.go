@@ -467,11 +467,43 @@ func MatchV3Counts(wantCounts []int) respMatcher {
 	}
 }
 
-func MatchRoomSubscriptions(strictLength bool, wantSubs map[string][]roomMatcher) respMatcher {
+func MatchRoomSubscriptionsStrict(wantSubs map[string][]roomMatcher) respMatcher {
 	return func(res *sync3.Response) error {
-		if strictLength && len(res.Rooms) != len(wantSubs) {
-			return fmt.Errorf("MatchRoomSubscriptions: strict length on: got %v subs want %v", len(res.Rooms), len(wantSubs))
+		if len(res.Rooms) != len(wantSubs) {
+			return fmt.Errorf("MatchRoomSubscriptionsStrict: strict length on: got %v subs want %v", len(res.Rooms), len(wantSubs))
 		}
+		for roomID, matchers := range wantSubs {
+			room, ok := res.Rooms[roomID]
+			if !ok {
+				return fmt.Errorf("MatchRoomSubscriptionsStrict: want sub for %s but it was missing", roomID)
+			}
+			for _, m := range matchers {
+				if err := m(room); err != nil {
+					return fmt.Errorf("MatchRoomSubscriptionsStrict: %s", err)
+				}
+			}
+		}
+		return nil
+	}
+}
+
+func MatchRoomSubscription(roomID string, matchers ...roomMatcher) respMatcher {
+	return func(res *sync3.Response) error {
+		room, ok := res.Rooms[roomID]
+		if !ok {
+			return fmt.Errorf("MatchRoomSubscription: want sub for %s but it was missing", roomID)
+		}
+		for _, m := range matchers {
+			if err := m(room); err != nil {
+				return fmt.Errorf("MatchRoomSubscription: %s", err)
+			}
+		}
+		return nil
+	}
+}
+
+func MatchRoomSubscriptions(wantSubs map[string][]roomMatcher) respMatcher {
+	return func(res *sync3.Response) error {
 		for roomID, matchers := range wantSubs {
 			room, ok := res.Rooms[roomID]
 			if !ok {
@@ -534,39 +566,26 @@ func MatchToDeviceMessages(wantMsgs []json.RawMessage) respMatcher {
 	}
 }
 
-func MatchRoomRange(rooms ...[]roomMatcher) rangeMatcher {
-	return func(op sync3.ResponseOpRange) error {
-		if len(rooms) != len(op.Rooms) {
-			return fmt.Errorf("MatchRoomRange: length of params must match ordering of rooms in range response. Got %v params want %v", len(rooms), len(op.Rooms))
-		}
-		for i, matchers := range rooms {
-			room := op.Rooms[i]
-			for _, m := range matchers {
-				if err := m(room); err != nil {
-					return err
-				}
-			}
-		}
-		return nil
-	}
-}
-
-func MatchV3SyncOpWithMatchers(matchers ...rangeMatcher) opMatcher {
+func MatchV3SyncOp(start, end int64, roomIDs []string) opMatcher {
 	return func(op sync3.ResponseOp) error {
 		if op.Op() != sync3.OpSync {
 			return fmt.Errorf("op: %s != %s", op.Op(), sync3.OpSync)
 		}
 		oper := op.(*sync3.ResponseOpRange)
-		for _, m := range matchers {
-			if err := m(*oper); err != nil {
-				return err
-			}
+		if oper.Range[0] != start {
+			return fmt.Errorf("%s: got start %d want %d", sync3.OpSync, oper.Range[0], start)
+		}
+		if oper.Range[1] != end {
+			return fmt.Errorf("%s: got end %d want %d", sync3.OpSync, oper.Range[1], end)
+		}
+		if !reflect.DeepEqual(roomIDs, oper.RoomIDs) {
+			return fmt.Errorf("%s: got rooms %v want %v", sync3.OpSync, oper.RoomIDs, roomIDs)
 		}
 		return nil
 	}
 }
 
-func MatchV3SyncOp(fn func(op *sync3.ResponseOpRange) error) opMatcher {
+func MatchV3SyncOpFn(fn func(op *sync3.ResponseOpRange) error) opMatcher {
 	return func(op sync3.ResponseOp) error {
 		if op.Op() != sync3.OpSync {
 			return fmt.Errorf("op: %s != %s", op.Op(), sync3.OpSync)
@@ -576,7 +595,7 @@ func MatchV3SyncOp(fn func(op *sync3.ResponseOpRange) error) opMatcher {
 	}
 }
 
-func MatchV3InsertOp(roomIndex int, roomID string, matchers ...roomMatcher) opMatcher {
+func MatchV3InsertOp(roomIndex int, roomID string) opMatcher {
 	return func(op sync3.ResponseOp) error {
 		if op.Op() != sync3.OpInsert {
 			return fmt.Errorf("op: %s != %s", op.Op(), sync3.OpInsert)
@@ -585,19 +604,14 @@ func MatchV3InsertOp(roomIndex int, roomID string, matchers ...roomMatcher) opMa
 		if *oper.Index != roomIndex {
 			return fmt.Errorf("%s: got index %d want %d", sync3.OpInsert, *oper.Index, roomIndex)
 		}
-		if oper.Room.RoomID != roomID {
-			return fmt.Errorf("%s: got %s want %s", sync3.OpInsert, oper.Room.RoomID, roomID)
-		}
-		for _, m := range matchers {
-			if err := m(*oper.Room); err != nil {
-				return err
-			}
+		if oper.RoomID != roomID {
+			return fmt.Errorf("%s: got %s want %s", sync3.OpInsert, oper.RoomID, roomID)
 		}
 		return nil
 	}
 }
 
-func MatchV3UpdateOp(roomIndex int, roomID string, matchers ...roomMatcher) opMatcher {
+func MatchV3UpdateOp(roomIndex int, roomID string) opMatcher {
 	return func(op sync3.ResponseOp) error {
 		if op.Op() != sync3.OpUpdate {
 			return fmt.Errorf("op: %s != %s", op.Op(), sync3.OpUpdate)
@@ -606,13 +620,8 @@ func MatchV3UpdateOp(roomIndex int, roomID string, matchers ...roomMatcher) opMa
 		if *oper.Index != roomIndex {
 			return fmt.Errorf("%s: got room index %d want %d", sync3.OpUpdate, *oper.Index, roomIndex)
 		}
-		if oper.Room.RoomID != roomID {
-			return fmt.Errorf("%s: got %s want %s", sync3.OpUpdate, oper.Room.RoomID, roomID)
-		}
-		for _, m := range matchers {
-			if err := m(*oper.Room); err != nil {
-				return err
-			}
+		if oper.RoomID != roomID {
+			return fmt.Errorf("%s: got %s want %s", sync3.OpUpdate, oper.RoomID, roomID)
 		}
 		return nil
 	}

@@ -167,13 +167,13 @@ func TestTimelinesLiveStream(t *testing.T) {
 		}},
 	})
 	MatchResponse(t, res, MatchV3Count(len(allRooms)), MatchV3Ops(0,
-		MatchV3SyncOp(func(op *sync3.ResponseOpRange) error {
-			if len(op.Rooms) != len(wantRooms) {
-				return fmt.Errorf("want %d rooms, got %d", len(wantRooms), len(op.Rooms))
+		MatchV3SyncOpFn(func(op *sync3.ResponseOpRange) error {
+			if len(op.RoomIDs) != len(wantRooms) {
+				return fmt.Errorf("want %d rooms, got %d", len(wantRooms), len(op.RoomIDs))
 			}
 			for i := range wantRooms {
 				err := wantRooms[i].MatchRoom(
-					op.Rooms[i],
+					res.Rooms[op.RoomIDs[i]],
 					MatchRoomName(wantRooms[i].name),
 					MatchRoomTimelineMostRecent(numTimelineEventsPerRoom, wantRooms[i].events),
 				)
@@ -198,11 +198,9 @@ func TestTimelinesLiveStream(t *testing.T) {
 	})
 	MatchResponse(t, res, MatchV3Count(len(allRooms)), MatchV3Ops(0,
 		MatchV3DeleteOp(3),
-		MatchV3InsertOp(
-			0, allRooms[7].roomID,
-			MatchRoomName(allRooms[7].name),
-			MatchRoomTimelineMostRecent(numTimelineEventsPerRoom, allRooms[7].events),
-		),
+		MatchV3InsertOp(0, allRooms[7].roomID),
+	), MatchRoomSubscription(
+		allRooms[7].roomID, MatchRoomName(allRooms[7].name), MatchRoomTimelineMostRecent(numTimelineEventsPerRoom, allRooms[7].events),
 	))
 
 	bumpRoom(7)
@@ -231,12 +229,8 @@ func TestTimelinesLiveStream(t *testing.T) {
 	})
 	MatchResponse(t, res, MatchV3Count(len(allRooms)), MatchV3Ops(0,
 		MatchV3DeleteOp(2),
-		MatchV3InsertOp(
-			0, allRooms[18].roomID,
-			MatchRoomName(allRooms[18].name),
-			MatchRoomTimelineMostRecent(numTimelineEventsPerRoom, allRooms[18].events),
-		),
-	))
+		MatchV3InsertOp(0, allRooms[18].roomID),
+	), MatchRoomSubscription(allRooms[18].roomID, MatchRoomTimelineMostRecent(1, []json.RawMessage{allRooms[18].events[len(allRooms[18].events)-1]})))
 
 }
 
@@ -268,10 +262,8 @@ func TestInitialFlag(t *testing.T) {
 		}},
 	})
 	MatchResponse(t, res, MatchV3Ops(0,
-		MatchV3SyncOpWithMatchers(MatchRoomRange(
-			[]roomMatcher{MatchRoomInitial(true)},
-		)),
-	))
+		MatchV3SyncOp(0, 10, []string{roomID}),
+	), MatchRoomSubscription(roomID, MatchRoomInitial(true)))
 	// send an update
 	v2.queueResponse(alice, sync2.SyncResponse{
 		Rooms: sync2.SyncRoomsResponse{
@@ -295,8 +287,8 @@ func TestInitialFlag(t *testing.T) {
 		}},
 	})
 	MatchResponse(t, res, MatchV3Ops(0,
-		MatchV3UpdateOp(0, roomID, MatchRoomInitial(false)),
-	))
+		MatchV3UpdateOp(0, roomID),
+	), MatchRoomSubscription(roomID, MatchRoomInitial(false)))
 }
 
 // Regression test for in-the-wild bug:
@@ -337,12 +329,8 @@ func TestDuplicateEventsInTimeline(t *testing.T) {
 		}},
 	})
 	MatchResponse(t, res, MatchV3Ops(0,
-		MatchV3SyncOpWithMatchers(MatchRoomRange(
-			[]roomMatcher{
-				MatchRoomTimelineMostRecent(1, []json.RawMessage{dupeEvent}),
-			},
-		)),
-	))
+		MatchV3SyncOp(0, 10, []string{roomID}),
+	), MatchRoomSubscription(roomID, MatchRoomTimelineMostRecent(1, []json.RawMessage{dupeEvent})))
 }
 
 // Regression test for https://github.com/matrix-org/sliding-sync/commit/39d6e99f967e55b609f8ef8b4271c04ebb053d37
@@ -395,13 +383,13 @@ func TestTimelineMiddleWindowZeroTimelineLimit(t *testing.T) {
 	})
 	wantRooms := allRooms[5:11]
 	MatchResponse(t, res, MatchV3Count(len(allRooms)), MatchV3Ops(0,
-		MatchV3SyncOp(func(op *sync3.ResponseOpRange) error {
-			if len(op.Rooms) != len(wantRooms) {
-				return fmt.Errorf("want %d rooms, got %d", len(wantRooms), len(op.Rooms))
+		MatchV3SyncOpFn(func(op *sync3.ResponseOpRange) error {
+			if len(op.RoomIDs) != len(wantRooms) {
+				return fmt.Errorf("want %d rooms, got %d", len(wantRooms), len(op.RoomIDs))
 			}
 			for i := range wantRooms {
 				err := wantRooms[i].MatchRoom(
-					op.Rooms[i],
+					res.Rooms[op.RoomIDs[i]],
 					MatchRoomName(wantRooms[i].name),
 					MatchRoomTimeline(nil),
 				)
@@ -539,8 +527,8 @@ func TestTimelineTxnID(t *testing.T) {
 		},
 	})
 	MatchResponse(t, aliceRes, MatchV3Counts([]int{1}), MatchV3Ops(0,
-		MatchV3UpdateOp(0, roomID, MatchRoomID(roomID), MatchRoomTimelineMostRecent(1, []json.RawMessage{newEvent})),
-	))
+		MatchV3UpdateOp(0, roomID),
+	), MatchRoomSubscription(roomID, MatchRoomID(roomID), MatchRoomTimelineMostRecent(1, []json.RawMessage{newEvent})))
 
 	// now Bob syncs, he should see the event without the txn ID
 	bobRes = v3.mustDoV3RequestWithPos(t, bobToken, bobRes.Pos, sync3.Request{
@@ -553,8 +541,8 @@ func TestTimelineTxnID(t *testing.T) {
 		},
 	})
 	MatchResponse(t, bobRes, MatchV3Counts([]int{1}), MatchV3Ops(0,
-		MatchV3UpdateOp(0, roomID, MatchRoomID(roomID), MatchRoomTimelineMostRecent(1, []json.RawMessage{newEventNoUnsigned})),
-	))
+		MatchV3UpdateOp(0, roomID),
+	), MatchRoomSubscription(roomID, MatchRoomID(roomID), MatchRoomTimelineMostRecent(1, []json.RawMessage{newEventNoUnsigned})))
 
 }
 
@@ -574,13 +562,13 @@ func testTimelineLoadInitialEvents(v3 *testV3Server, token string, count int, wa
 		})
 
 		MatchResponse(t, res, MatchV3Count(count), MatchV3Ops(0,
-			MatchV3SyncOp(func(op *sync3.ResponseOpRange) error {
-				if len(op.Rooms) != len(wantRooms) {
-					return fmt.Errorf("want %d rooms, got %d", len(wantRooms), len(op.Rooms))
+			MatchV3SyncOpFn(func(op *sync3.ResponseOpRange) error {
+				if len(op.RoomIDs) != len(wantRooms) {
+					return fmt.Errorf("want %d rooms, got %d", len(wantRooms), len(op.RoomIDs))
 				}
 				for i := range wantRooms {
 					err := wantRooms[i].MatchRoom(
-						op.Rooms[i],
+						res.Rooms[op.RoomIDs[i]],
 						MatchRoomName(wantRooms[i].name),
 						MatchRoomTimelineMostRecent(numTimelineEventsPerRoom, wantRooms[i].events),
 					)
@@ -630,13 +618,8 @@ func TestPrevBatchInTimeline(t *testing.T) {
 		}},
 	})
 	MatchResponse(t, res, MatchV3Ops(0,
-		MatchV3SyncOpWithMatchers(MatchRoomRange(
-			[]roomMatcher{
-				MatchRoomID(roomID),
-				MatchRoomPrevBatch(""),
-			},
-		)),
-	))
+		MatchV3SyncOp(0, 10, []string{roomID}),
+	), MatchRoomSubscription(roomID, MatchRoomID(roomID), MatchRoomPrevBatch("")))
 
 	// now make a newer prev_batch and try again
 	v2.queueResponse(alice, sync2.SyncResponse{
@@ -685,12 +668,7 @@ func TestPrevBatchInTimeline(t *testing.T) {
 			}},
 		})
 		MatchResponse(t, res, MatchV3Ops(0,
-			MatchV3SyncOpWithMatchers(MatchRoomRange(
-				[]roomMatcher{
-					MatchRoomID(roomID),
-					MatchRoomPrevBatch(tc.wantPrevBatch),
-				},
-			)),
-		))
+			MatchV3SyncOp(0, 10, []string{roomID}),
+		), MatchRoomSubscription(roomID, MatchRoomID(roomID), MatchRoomPrevBatch(tc.wantPrevBatch)))
 	}
 }

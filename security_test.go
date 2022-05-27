@@ -71,11 +71,11 @@ func TestSecurityLiveStreamEventLeftLeak(t *testing.T) {
 				},
 			}},
 		})
-		MatchResponse(t, res, MatchV3Count(1), MatchV3Ops(0, MatchV3SyncOp(func(op *sync3.ResponseOpRange) error {
-			if len(op.Rooms) != 1 {
-				return fmt.Errorf("range missing room: got %d want 1", len(op.Rooms))
+		MatchResponse(t, res, MatchV3Count(1), MatchV3Ops(0, MatchV3SyncOpFn(func(op *sync3.ResponseOpRange) error {
+			if len(op.RoomIDs) != 1 {
+				return fmt.Errorf("range missing room: got %d want 1", len(op.RoomIDs))
 			}
-			return theRoom.MatchRoom(op.Rooms[0])
+			return theRoom.MatchRoom(res.Rooms[op.RoomIDs[0]])
 		})))
 		tokenToPos[token] = res.Pos
 	}
@@ -135,8 +135,8 @@ func TestSecurityLiveStreamEventLeftLeak(t *testing.T) {
 	})
 	// TODO: We include left counts mid-sync so clients can see the user has left/been kicked. Should be configurable.
 	MatchResponse(t, res, MatchV3Count(1), MatchV3Ops(0,
-		MatchV3UpdateOp(0, roomID, MatchRoomName(""), MatchRoomRequiredState(nil), MatchRoomTimelineMostRecent(1, []json.RawMessage{kickEvent})),
-	))
+		MatchV3UpdateOp(0, roomID),
+	), MatchRoomSubscription(roomID, MatchRoomName(""), MatchRoomRequiredState(nil), MatchRoomTimelineMostRecent(1, []json.RawMessage{kickEvent})))
 
 	// Ensure Alice does see both events
 	res = v3.mustDoV3RequestWithPos(t, aliceToken, tokenToPos[aliceToken], sync3.Request{
@@ -154,13 +154,9 @@ func TestSecurityLiveStreamEventLeftLeak(t *testing.T) {
 	// TODO: We should consolidate 2x UPDATEs into 1x if we get scenarios like this
 	// TODO: WE should be returning updated values for name and required_state
 	MatchResponse(t, res, MatchV3Count(1), MatchV3Ops(0,
-		MatchV3UpdateOp(
-			0, roomID, MatchRoomTimelineMostRecent(1, []json.RawMessage{kickEvent}),
-		),
-		MatchV3UpdateOp(
-			0, roomID, MatchRoomTimelineMostRecent(1, []json.RawMessage{sensitiveEvent}),
-		),
-	))
+		MatchV3UpdateOp(0, roomID),
+		MatchV3UpdateOp(0, roomID),
+	), MatchRoomSubscription(roomID, MatchRoomTimelineMostRecent(2, []json.RawMessage{kickEvent, sensitiveEvent})))
 }
 
 // Test that events do not leak via direct room subscriptions.
@@ -226,12 +222,12 @@ func TestSecurityRoomSubscriptionLeak(t *testing.T) {
 	})
 	// Assert that Eve doesn't see anything
 	MatchResponse(t, res, MatchV3Count(1), MatchV3Ops(0,
-		MatchV3SyncOpWithMatchers(
-			MatchRoomRange([]roomMatcher{
-				MatchRoomID(unrelatedRoomID),
-			}),
-		),
-	), MatchRoomSubscriptions(true, map[string][]roomMatcher{}))
+		MatchV3SyncOp(0, 10, []string{unrelatedRoomID}),
+	), MatchRoomSubscriptionsStrict(map[string][]roomMatcher{
+		unrelatedRoomID: []roomMatcher{
+			MatchRoomID(unrelatedRoomID),
+		},
+	}))
 
 	// Assert that live updates still don't feed through to Eve
 	sensitiveEvent := testutils.NewStateEvent(
@@ -264,5 +260,5 @@ func TestSecurityRoomSubscriptionLeak(t *testing.T) {
 		},
 	})
 	// Assert that Eve doesn't see anything
-	MatchResponse(t, res, MatchV3Count(1), MatchNoV3Ops(), MatchRoomSubscriptions(true, map[string][]roomMatcher{}))
+	MatchResponse(t, res, MatchV3Count(1), MatchNoV3Ops(), MatchRoomSubscriptionsStrict(map[string][]roomMatcher{}))
 }

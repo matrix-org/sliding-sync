@@ -37,6 +37,17 @@ func NewRoomsBuilder() *RoomsBuilder {
 	}
 }
 
+func (rb *RoomsBuilder) IncludesRoom(roomID string) bool {
+	for _, roomIDs := range rb.subToRooms {
+		for _, rid := range roomIDs {
+			if roomID == rid {
+				return true
+			}
+		}
+	}
+	return false
+}
+
 // Add a room subscription to the builder, e.g from a list or room subscription. This should NOT
 // be a combined subscription.
 func (rb *RoomsBuilder) AddSubscription(rs sync3.RoomSubscription) (id int) {
@@ -98,7 +109,6 @@ func (rb *RoomsBuilder) BuildSubscriptions() (result []BuiltSubscription) {
 		// add this room to this combined sub. Relies on the pointers being the same for combined subs
 		subToRoomIDs[combinedSub] = append(subToRoomIDs[combinedSub], roomID)
 	}
-	fmt.Printf("%+v\n", subIDToSub)
 	// make the subscriptions
 	for sub, roomIDs := range subToRoomIDs {
 		result = append(result, BuiltSubscription{
