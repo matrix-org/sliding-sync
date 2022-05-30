@@ -74,7 +74,7 @@ func NewConnState(
 //     N events arrive and get buffered.
 //   - load() bases its current state based on the latest position, which includes processing of these N events.
 //   - post load() we read N events, processing them a 2nd time.
-func (s *ConnState) load(req *sync3.Request) error {
+func (s *ConnState) load() error {
 	initialLoadPosition, joinedRooms, err := s.globalCache.LoadJoinedRooms(s.userID)
 	if err != nil {
 		return err
@@ -107,10 +107,6 @@ func (s *ConnState) load(req *sync3.Request) error {
 
 	s.allRooms = rooms
 	s.loadPosition = initialLoadPosition
-
-	for i, l := range req.Lists {
-		s.setInitialList(i, l)
-	}
 	return nil
 }
 
@@ -133,7 +129,7 @@ func (s *ConnState) OnIncomingRequest(ctx context.Context, cid sync3.ConnID, req
 	defer task.End()
 	if s.loadPosition == 0 {
 		region := trace.StartRegion(ctx, "load")
-		s.load(req)
+		s.load()
 		region.End()
 	}
 	return s.onIncomingRequest(ctx, req, isInitial)
@@ -143,22 +139,10 @@ func (s *ConnState) OnIncomingRequest(ctx context.Context, cid sync3.ConnID, req
 // be on their own goroutine, the requests are linearised for us by Conn so it is safe to modify ConnState without
 // additional locking mechanisms.
 func (s *ConnState) onIncomingRequest(ctx context.Context, req *sync3.Request, isInitial bool) (*sync3.Response, error) {
-	prevReq := s.muxedReq
+	// ApplyDelta works fine if s.muxedReq is nil
+	var delta *sync3.RequestDelta
+	s.muxedReq, delta = s.muxedReq.ApplyDelta(req)
 
-	// TODO: factor out room subscription handling
-	var newSubs []string
-	var newUnsubs []string
-	if s.muxedReq == nil {
-		s.muxedReq = req
-		for roomID := range req.RoomSubscriptions {
-			newSubs = append(newSubs, roomID)
-		}
-	} else {
-		combinedReq, subs, unsubs := s.muxedReq.ApplyDelta(req)
-		s.muxedReq = combinedReq
-		newSubs = subs
-		newUnsubs = unsubs
-	}
 	// associate extensions context
 	ex := s.muxedReq.Extensions
 	ex.UserID = s.userID
@@ -168,9 +152,9 @@ func (s *ConnState) onIncomingRequest(ctx context.Context, req *sync3.Request, i
 	// for it to mix together
 	builder := NewRoomsBuilder()
 	// works out which rooms are subscribed to but doesn't pull room data
-	s.buildRoomSubscriptions(builder, newSubs, newUnsubs)
+	s.buildRoomSubscriptions(builder, delta.Subs, delta.Unsubs)
 	// works out how rooms get moved about but doesn't pull room data
-	respLists := s.buildListSubscriptions(ctx, builder, prevReq)
+	respLists := s.buildListSubscriptions(ctx, builder, delta.Lists)
 
 	// start forming the response, handle subscriptions
 	response := &sync3.Response{
@@ -179,7 +163,7 @@ func (s *ConnState) onIncomingRequest(ctx context.Context, req *sync3.Request, i
 	}
 
 	includedRoomIDs := response.IncludedRoomIDsInOps()
-	for _, roomID := range newSubs { // include room subs in addition to lists
+	for _, roomID := range delta.Subs { // include room subs in addition to lists
 		includedRoomIDs[roomID] = struct{}{}
 	}
 	// Handle extensions AFTER processing lists as extensions may need to know which rooms the client
@@ -294,15 +278,11 @@ func (s *ConnState) onIncomingListRequest(ctx context.Context, builder *RoomsBui
 	}
 }
 
-func (s *ConnState) buildListSubscriptions(ctx context.Context, builder *RoomsBuilder, prevReq *sync3.Request) []sync3.ResponseList {
+func (s *ConnState) buildListSubscriptions(ctx context.Context, builder *RoomsBuilder, listDeltas []sync3.RequestListDelta) []sync3.ResponseList {
 	result := make([]sync3.ResponseList, len(s.muxedReq.Lists))
 	// loop each list and handle each independently
-	for i := range s.muxedReq.Lists {
-		var prevList *sync3.RequestList
-		if prevReq != nil && i < len(prevReq.Lists) {
-			prevList = &prevReq.Lists[i]
-		}
-		respList := s.onIncomingListRequest(ctx, builder, i, prevList, &s.muxedReq.Lists[i])
+	for i := range listDeltas {
+		respList := s.onIncomingListRequest(ctx, builder, i, listDeltas[i].Prev, listDeltas[i].Curr)
 		result[i] = respList
 	}
 	return result

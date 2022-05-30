@@ -60,14 +60,42 @@ func (r *Request) Same(other *Request) bool {
 	return bytes.Equal(serialised, otherSer)
 }
 
-// Apply this delta on top of the request. Returns a new Request with the combined output, ready for
-// persisting into the database. Also returns the DELTA for rooms to subscribe and unsubscribe from.
-func (r *Request) ApplyDelta(nextReq *Request) (result *Request, subs, unsubs []string) {
-	// Use the newer values unless they aren't specified, then use the older ones.
-	// Go is ew in that this can't be represented in a nicer way
-	result = &Request{
-		Extensions: r.Extensions.ApplyDelta(&nextReq.Extensions),
+// Internal struct used to represent the diffs between 2 requests
+type RequestDelta struct {
+	// new room IDs to subscribe to
+	Subs []string
+	// room IDs to unsubscribe from
+	Unsubs []string
+	// The complete union of both lists (contains max(a,b) lists)
+	Lists []RequestListDelta
+}
+
+// Internal struct used to represent a single list delta.
+type RequestListDelta struct {
+	// What was there before, nullable
+	Prev *RequestList
+	// What is there now, nullable. Combined result.
+	Curr *RequestList
+}
+
+// Apply this delta on top of the request. Returns a new Request with the combined output, along
+// with the delta operations `nextReq` cannot be nil, but `r` can be nil in the case of an initial
+// request.
+func (r *Request) ApplyDelta(nextReq *Request) (result *Request, delta *RequestDelta) {
+	if r == nil {
+		result = &Request{
+			Extensions: nextReq.Extensions,
+		}
+		r = &Request{}
+	} else {
+		// Use the newer values unless they aren't specified, then use the older ones.
+		// Go is ew in that this can't be represented in a nicer way
+		result = &Request{
+			Extensions: r.Extensions.ApplyDelta(&nextReq.Extensions),
+		}
 	}
+
+	delta = &RequestDelta{}
 	lists := make([]RequestList, len(nextReq.Lists))
 	for i := 0; i < len(lists); i++ {
 		var existingList *RequestList
@@ -111,6 +139,21 @@ func (r *Request) ApplyDelta(nextReq *Request) (result *Request, subs, unsubs []
 		}
 	}
 	result.Lists = lists
+	// the delta is as large as the longest list of lists
+	maxLen := len(result.Lists)
+	if len(r.Lists) > maxLen {
+		maxLen = len(r.Lists)
+	}
+	delta.Lists = make([]RequestListDelta, maxLen)
+	for i := range result.Lists {
+		delta.Lists[i] = RequestListDelta{
+			Curr: &result.Lists[i],
+		}
+	}
+	for i := range r.Lists {
+		delta.Lists[i].Prev = &r.Lists[i]
+	}
+
 	// Work out subscriptions. The operations are applied as:
 	// old.subs -> apply old.unsubs (should be empty) -> apply new.subs -> apply new.unsubs
 	// Meaning if a room is both in subs and unsubs then the result is unsub.
@@ -122,7 +165,7 @@ func (r *Request) ApplyDelta(nextReq *Request) (result *Request, subs, unsubs []
 	for _, roomID := range r.UnsubscribeRooms {
 		_, ok := resultSubs[roomID]
 		if ok {
-			unsubs = append(unsubs, roomID)
+			delta.Unsubs = append(delta.Unsubs, roomID)
 		}
 		delete(resultSubs, roomID)
 	}
@@ -136,7 +179,7 @@ func (r *Request) ApplyDelta(nextReq *Request) (result *Request, subs, unsubs []
 			// if this request both subscribes and unsubscribes to the same room ID,
 			// don't mark this as an unsub delta
 			if _, ok = nextReq.RoomSubscriptions[roomID]; !ok {
-				unsubs = append(unsubs, roomID)
+				delta.Unsubs = append(delta.Unsubs, roomID)
 			}
 		}
 		delete(resultSubs, roomID)
@@ -146,7 +189,7 @@ func (r *Request) ApplyDelta(nextReq *Request) (result *Request, subs, unsubs []
 		if _, ok := r.RoomSubscriptions[roomID]; ok {
 			continue // already subscribed
 		}
-		subs = append(subs, roomID)
+		delta.Subs = append(delta.Subs, roomID)
 	}
 	result.RoomSubscriptions = resultSubs
 	return

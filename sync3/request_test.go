@@ -1,6 +1,8 @@
 package sync3
 
 import (
+	"bytes"
+	"encoding/json"
 	"reflect"
 	"testing"
 )
@@ -141,16 +143,203 @@ func TestRoomSubscriptionUnion(t *testing.T) {
 	}
 }
 
+type testData struct {
+	name string
+	next Request
+	want Request
+}
+
 func TestRequestApplyDeltas(t *testing.T) {
+	boolTrue := true
 	testCases := []struct {
-		input Request
+		input *Request
 		tests []struct {
-			next  Request
-			check func(t *testing.T, r Request, subs, unsubs []string)
+			testData
+			wantDelta func(input *Request, d testData) RequestDelta
 		}
 	}{
 		{
-			input: Request{
+			input: nil, // no previous input -> first request
+			tests: []struct {
+				testData
+				wantDelta func(input *Request, d testData) RequestDelta
+			}{
+				{
+					testData: testData{
+						name: "initial: room sub only",
+						next: Request{
+							RoomSubscriptions: map[string]RoomSubscription{
+								"!foo:bar": {
+									TimelineLimit: 10,
+								},
+							},
+						},
+						want: Request{
+							Lists: []RequestList{},
+							RoomSubscriptions: map[string]RoomSubscription{
+								"!foo:bar": {
+									TimelineLimit: 10,
+								},
+							},
+						},
+					},
+					wantDelta: func(input *Request, d testData) RequestDelta {
+						return RequestDelta{
+							Subs:  []string{"!foo:bar"},
+							Lists: []RequestListDelta{},
+						}
+					},
+				},
+				{
+					testData: testData{
+						name: "initial: list only",
+						next: Request{
+							Lists: []RequestList{
+								{
+									Ranges: [][2]int64{{0, 20}},
+									Sort:   []string{SortByHighlightCount},
+								},
+							},
+						},
+						want: Request{
+							Lists: []RequestList{
+								{
+									Ranges: [][2]int64{{0, 20}},
+									Sort:   []string{SortByHighlightCount},
+								},
+							},
+							RoomSubscriptions: make(map[string]RoomSubscription),
+						},
+					},
+					wantDelta: func(input *Request, d testData) RequestDelta {
+						return RequestDelta{
+							Lists: []RequestListDelta{
+								{
+									Prev: nil,
+									Curr: &d.want.Lists[0],
+								},
+							},
+						}
+					},
+				},
+				{
+					testData: testData{
+						name: "initial: multiple lists",
+						next: Request{
+							Lists: []RequestList{
+								{
+									Ranges: [][2]int64{{0, 20}},
+									Sort:   []string{SortByHighlightCount},
+								},
+								{
+									Ranges: [][2]int64{{0, 10}},
+									Filters: &RequestFilters{
+										IsEncrypted: &boolTrue,
+									},
+									Sort: []string{SortByRecency},
+								},
+								{
+									Ranges: [][2]int64{{0, 5}},
+									RoomSubscription: RoomSubscription{
+										TimelineLimit: 11,
+										RequiredState: [][2]string{
+											{"m.room.create", ""},
+										},
+									},
+								},
+							},
+						},
+						want: Request{
+							Lists: []RequestList{
+								{
+									Ranges: [][2]int64{{0, 20}},
+									Sort:   []string{SortByHighlightCount},
+								},
+								{
+									Ranges: [][2]int64{{0, 10}},
+									Filters: &RequestFilters{
+										IsEncrypted: &boolTrue,
+									},
+									Sort: []string{SortByRecency},
+								},
+								{
+									Ranges: [][2]int64{{0, 5}},
+									RoomSubscription: RoomSubscription{
+										TimelineLimit: 11,
+										RequiredState: [][2]string{
+											{"m.room.create", ""},
+										},
+									},
+								},
+							},
+							RoomSubscriptions: make(map[string]RoomSubscription),
+						},
+					},
+					wantDelta: func(input *Request, d testData) RequestDelta {
+						return RequestDelta{
+							Lists: []RequestListDelta{
+								{
+									Prev: nil,
+									Curr: &d.want.Lists[0],
+								},
+								{
+									Prev: nil,
+									Curr: &d.want.Lists[1],
+								},
+								{
+									Prev: nil,
+									Curr: &d.want.Lists[2],
+								},
+							},
+						}
+					},
+				},
+				{
+					testData: testData{
+						name: "initial: list and sub",
+						next: Request{
+							Lists: []RequestList{
+								{
+									Ranges: [][2]int64{{0, 20}},
+									Sort:   []string{SortByHighlightCount},
+								},
+							},
+							RoomSubscriptions: map[string]RoomSubscription{
+								"!foo:bar": {
+									TimelineLimit: 10,
+								},
+							},
+						},
+						want: Request{
+							Lists: []RequestList{
+								{
+									Ranges: [][2]int64{{0, 20}},
+									Sort:   []string{SortByHighlightCount},
+								},
+							},
+							RoomSubscriptions: map[string]RoomSubscription{
+								"!foo:bar": {
+									TimelineLimit: 10,
+								},
+							},
+						},
+					},
+					wantDelta: func(input *Request, d testData) RequestDelta {
+						return RequestDelta{
+							Subs: []string{"!foo:bar"},
+							Lists: []RequestListDelta{
+								{
+									Prev: nil,
+									Curr: &d.want.Lists[0],
+								},
+							},
+						}
+					},
+				},
+			},
+		},
+		{
+			input: &Request{
 				Lists: []RequestList{
 					{
 						Sort: []string{SortByName},
@@ -166,93 +355,270 @@ func TestRequestApplyDeltas(t *testing.T) {
 				},
 			},
 			tests: []struct {
-				next  Request
-				check func(t *testing.T, r Request, subs, unsubs []string)
+				testData
+				wantDelta func(input *Request, d testData) RequestDelta
 			}{
-				// check overwriting of sort and updating subs without adding new ones
 				{
-					next: Request{
-						Lists: []RequestList{
-							{
-								Sort: []string{SortByRecency},
+					// check overwriting of sort and updating subs without adding new ones
+					testData: testData{
+						name: "overwriting of sort and updating subs without adding new ones",
+						next: Request{
+							Lists: []RequestList{
+								{
+									Sort: []string{SortByRecency},
+								},
+							},
+							RoomSubscriptions: map[string]RoomSubscription{
+								"!foo:bar": {
+									TimelineLimit: 100,
+								},
 							},
 						},
-						RoomSubscriptions: map[string]RoomSubscription{
-							"!foo:bar": {
-								TimelineLimit: 100,
+						want: Request{
+							Lists: []RequestList{
+								{
+									Sort: []string{SortByRecency},
+									RoomSubscription: RoomSubscription{
+										TimelineLimit: 5,
+									},
+								},
+							},
+							RoomSubscriptions: map[string]RoomSubscription{
+								"!foo:bar": {
+									TimelineLimit: 100,
+								},
 							},
 						},
 					},
-					check: func(t *testing.T, r Request, subs, unsubs []string) {
-						ensureEmpty(t, subs, unsubs)
-						if r.RoomSubscriptions["!foo:bar"].TimelineLimit != 100 {
-							t.Errorf("subscription was not updated, got %+v", r)
+					wantDelta: func(input *Request, d testData) RequestDelta {
+						return RequestDelta{
+							Subs:   nil,
+							Unsubs: nil,
+							Lists: []RequestListDelta{
+								{
+									Prev: &input.Lists[0],
+									Curr: &d.want.Lists[0],
+								},
+							},
 						}
 					},
 				},
-				// check adding a subs
 				{
-					next: Request{
-						Lists: []RequestList{
-							{
-								Sort: []string{SortByRecency},
+					// check adding a subs
+					testData: testData{
+						name: "Adding a sub",
+						next: Request{
+							Lists: []RequestList{
+								{
+									Sort: []string{SortByRecency},
+									RoomSubscription: RoomSubscription{
+										TimelineLimit: 5,
+									},
+								},
+							},
+							RoomSubscriptions: map[string]RoomSubscription{
+								"!bar:baz": {
+									TimelineLimit: 42,
+								},
 							},
 						},
-						RoomSubscriptions: map[string]RoomSubscription{
-							"!bar:baz": {
-								TimelineLimit: 42,
+						want: Request{
+							Lists: []RequestList{
+								{
+									Sort: []string{SortByRecency},
+									RoomSubscription: RoomSubscription{
+										TimelineLimit: 5,
+									},
+								},
+							},
+							RoomSubscriptions: map[string]RoomSubscription{
+								"!bar:baz": {
+									TimelineLimit: 42,
+								},
+								"!foo:bar": {
+									TimelineLimit: 10,
+								},
 							},
 						},
 					},
-					check: func(t *testing.T, r Request, subs, unsubs []string) {
-						ensureEmpty(t, unsubs)
-						if r.RoomSubscriptions["!bar:baz"].TimelineLimit != 42 {
-							t.Errorf("subscription was not added, got %+v", r)
-						}
-						if !reflect.DeepEqual(subs, []string{"!bar:baz"}) {
-							t.Errorf("subscription not added: got %v", subs)
+					wantDelta: func(input *Request, d testData) RequestDelta {
+						return RequestDelta{
+							Subs:   []string{"!bar:baz"},
+							Unsubs: nil,
+							Lists: []RequestListDelta{
+								{
+									Prev: &input.Lists[0],
+									Curr: &d.want.Lists[0],
+								},
+							},
 						}
 					},
 				},
-				// check unsubscribing
 				{
-					next: Request{
-						Lists: []RequestList{
-							{
-								Sort: []string{SortByRecency},
+					// check unsubscribing
+					testData: testData{
+						name: "Unsubscribing",
+						next: Request{
+							Lists: []RequestList{
+								{
+									Sort: []string{SortByName},
+								},
 							},
+							UnsubscribeRooms: []string{"!foo:bar"},
 						},
-						UnsubscribeRooms: []string{"!foo:bar"},
+						want: Request{
+							Lists: []RequestList{
+								{
+									Sort: []string{SortByName},
+									RoomSubscription: RoomSubscription{
+										TimelineLimit: 5,
+									},
+								},
+							},
+							RoomSubscriptions: map[string]RoomSubscription{},
+						},
 					},
-					check: func(t *testing.T, r Request, subs, unsubs []string) {
-						ensureEmpty(t, subs)
-						if len(r.RoomSubscriptions) != 0 {
-							t.Errorf("Expected empty subs, got %+v", r.RoomSubscriptions)
-						}
-						if !reflect.DeepEqual(unsubs, []string{"!foo:bar"}) {
-							t.Errorf("subscription not removed: got %v", unsubs)
+					wantDelta: func(input *Request, d testData) RequestDelta {
+						return RequestDelta{
+							Subs:   nil,
+							Unsubs: []string{"!foo:bar"},
+							Lists: []RequestListDelta{
+								{
+									Prev: &input.Lists[0],
+									Curr: &d.want.Lists[0],
+								},
+							},
 						}
 					},
 				},
-				// check subscribing and unsubscribing = no change
 				{
-					next: Request{
-						Lists: []RequestList{
-							{
-								Sort: []string{SortByRecency},
+					// check subscribing and unsubscribing = no change
+					testData: testData{
+						name: "Subscribing/Unsubscribing in one request",
+						next: Request{
+							Lists: []RequestList{
+								{
+									Sort: []string{SortByRecency},
+								},
+							},
+							RoomSubscriptions: map[string]RoomSubscription{
+								"!bar:baz": {
+									TimelineLimit: 42,
+								},
+							},
+							UnsubscribeRooms: []string{"!bar:baz"},
+						},
+						want: Request{
+							Lists: []RequestList{
+								{
+									Sort: []string{SortByRecency},
+									RoomSubscription: RoomSubscription{
+										TimelineLimit: 5,
+									},
+								},
+							},
+							RoomSubscriptions: map[string]RoomSubscription{
+								"!foo:bar": {
+									TimelineLimit: 10,
+								},
 							},
 						},
-						RoomSubscriptions: map[string]RoomSubscription{
-							"!bar:baz": {
-								TimelineLimit: 42,
-							},
-						},
-						UnsubscribeRooms: []string{"!bar:baz"},
 					},
-					check: func(t *testing.T, r Request, subs, unsubs []string) {
-						ensureEmpty(t, subs, unsubs)
-						if len(r.RoomSubscriptions) != 1 {
-							t.Errorf("Expected 1 subs, got %+v", r.RoomSubscriptions)
+					wantDelta: func(input *Request, d testData) RequestDelta {
+						return RequestDelta{
+							Subs:   nil,
+							Unsubs: nil,
+							Lists: []RequestListDelta{
+								{
+									Prev: &input.Lists[0],
+									Curr: &d.want.Lists[0],
+								},
+							},
+						}
+					},
+				},
+				{
+					testData: testData{
+						name: "deleting a list",
+						next: Request{
+							Lists:             []RequestList{},
+							RoomSubscriptions: map[string]RoomSubscription{},
+						},
+						want: Request{
+							Lists: []RequestList{},
+							RoomSubscriptions: map[string]RoomSubscription{
+								"!foo:bar": {
+									TimelineLimit: 10,
+								},
+							},
+						},
+					},
+					wantDelta: func(input *Request, d testData) RequestDelta {
+						return RequestDelta{
+							Subs:   nil,
+							Unsubs: nil,
+							Lists: []RequestListDelta{
+								{
+									Prev: &input.Lists[0],
+									Curr: nil,
+								},
+							},
+						}
+					},
+				},
+				{
+					testData: testData{
+						name: "adding a list",
+						next: Request{
+							Lists: []RequestList{
+								{
+									Sort: []string{SortByRecency},
+								},
+								{
+									Sort: []string{SortByHighlightCount},
+									RoomSubscription: RoomSubscription{
+										TimelineLimit: 9000,
+									},
+								},
+							},
+							RoomSubscriptions: map[string]RoomSubscription{},
+						},
+						want: Request{
+							Lists: []RequestList{
+								{
+									Sort: []string{SortByRecency},
+									RoomSubscription: RoomSubscription{
+										TimelineLimit: 5,
+									},
+								},
+								{
+									Sort: []string{SortByHighlightCount},
+									RoomSubscription: RoomSubscription{
+										TimelineLimit: 9000,
+									},
+								},
+							},
+							RoomSubscriptions: map[string]RoomSubscription{
+								"!foo:bar": {
+									TimelineLimit: 10,
+								},
+							},
+						},
+					},
+					wantDelta: func(input *Request, d testData) RequestDelta {
+						return RequestDelta{
+							Subs:   nil,
+							Unsubs: nil,
+							Lists: []RequestListDelta{
+								{
+									Prev: &input.Lists[0],
+									Curr: &d.want.Lists[0],
+								},
+								{
+									Prev: nil,
+									Curr: &d.want.Lists[1],
+								},
+							},
 						}
 					},
 				},
@@ -261,17 +627,24 @@ func TestRequestApplyDeltas(t *testing.T) {
 	}
 	for _, tc := range testCases {
 		for _, test := range tc.tests {
-			result, subs, unsubs := tc.input.ApplyDelta(&test.next)
-			test.check(t, *result, subs, unsubs)
+			gotRequest, gotDelta := tc.input.ApplyDelta(&test.next)
+			jsonEqual(t, test.name, gotRequest, test.want)
+			wd := test.wantDelta(tc.input, test.testData)
+			jsonEqual(t, test.name, gotDelta, wd)
 		}
 	}
 }
 
-func ensureEmpty(t *testing.T, others ...[]string) {
-	t.Helper()
-	for _, slice := range others {
-		if len(slice) != 0 {
-			t.Fatalf("got %v - want nothing", slice)
-		}
+func jsonEqual(t *testing.T, name string, got, want interface{}) {
+	aa, err := json.Marshal(got)
+	if err != nil {
+		t.Fatalf("failed to marshal: %s", err)
+	}
+	bb, err := json.Marshal(want)
+	if err != nil {
+		t.Fatalf("failed to marshal: %s", err)
+	}
+	if !bytes.Equal(aa, bb) {
+		t.Errorf("%s\ngot  %s\nwant %s", name, string(aa), string(bb))
 	}
 }
