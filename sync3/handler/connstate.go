@@ -24,10 +24,9 @@ type ConnState struct {
 	deviceID string
 	// the only thing that can touch these data structures is the conn goroutine
 	muxedReq          *sync3.Request
-	lists             *sync3.SortableRoomLists
+	lists             *sync3.InternalRequestLists
 	roomSubscriptions map[string]sync3.RoomSubscription // room_id -> subscription
 
-	allRooms     []sync3.RoomConnMetadata
 	loadPosition int64
 
 	live *connStateLive
@@ -51,7 +50,7 @@ func NewConnState(
 		userID:            userID,
 		deviceID:          deviceID,
 		roomSubscriptions: make(map[string]sync3.RoomSubscription),
-		lists:             &sync3.SortableRoomLists{},
+		lists:             &sync3.InternalRequestLists{},
 		extensionsHandler: ex,
 		joinChecker:       joinChecker,
 	}
@@ -105,22 +104,9 @@ func (s *ConnState) load() error {
 		})
 	}
 
-	s.allRooms = rooms
+	s.lists.AddRooms(rooms)
 	s.loadPosition = initialLoadPosition
 	return nil
-}
-
-func (s *ConnState) setInitialList(i int, l sync3.RequestList) {
-	roomList := sync3.NewFilteredSortableRooms(s.allRooms, l.Filters)
-	sortBy := []string{sync3.SortByRecency}
-	if l.Sort != nil {
-		sortBy = l.Sort
-	}
-	err := roomList.Sort(sortBy)
-	if err != nil {
-		logger.Warn().Err(err).Strs("sort", sortBy).Msg("failed to sort")
-	}
-	s.lists.Set(i, roomList)
 }
 
 // OnIncomingRequest is guaranteed to be called sequentially (it's protected by a mutex in conn.go)
@@ -187,8 +173,17 @@ func (s *ConnState) onIncomingRequest(ctx context.Context, req *sync3.Request, i
 
 func (s *ConnState) onIncomingListRequest(ctx context.Context, builder *RoomsBuilder, listIndex int, prevReqList, nextReqList *sync3.RequestList) sync3.ResponseList {
 	defer trace.StartRegion(ctx, "onIncomingListRequest").End()
+	if nextReqList == nil {
+		// they deleted this list
+		s.lists.DeleteList(listIndex)
+		return sync3.ResponseList{}
+	}
 	if !s.lists.ListExists(listIndex) {
-		s.setInitialList(listIndex, *nextReqList)
+		sortBy := nextReqList.Sort
+		if sortBy == nil {
+			sortBy = []string{sync3.SortByRecency}
+		}
+		s.lists.OverwriteList(listIndex, nextReqList.Filters, sortBy)
 	}
 	roomList := s.lists.List(listIndex)
 	// TODO: calculate the M values for N < M calcs
@@ -229,8 +224,7 @@ func (s *ConnState) onIncomingListRequest(ctx context.Context, builder *RoomsBui
 		}
 		if changedFilters {
 			// we need to re-create the list as the rooms may have completely changed
-			roomList = sync3.NewFilteredSortableRooms(s.allRooms, nextReqList.Filters)
-			s.lists.Set(listIndex, roomList)
+			s.lists.OverwriteList(listIndex, nextReqList.Filters, nextReqList.Sort)
 		}
 		if err := roomList.Sort(nextReqList.Sort); err != nil {
 			logger.Err(err).Int("index", listIndex).Msg("cannot sort list")
@@ -282,8 +276,7 @@ func (s *ConnState) buildListSubscriptions(ctx context.Context, builder *RoomsBu
 	result := make([]sync3.ResponseList, len(s.muxedReq.Lists))
 	// loop each list and handle each independently
 	for i := range listDeltas {
-		respList := s.onIncomingListRequest(ctx, builder, i, listDeltas[i].Prev, listDeltas[i].Curr)
-		result[i] = respList
+		result[i] = s.onIncomingListRequest(ctx, builder, i, listDeltas[i].Prev, listDeltas[i].Curr)
 	}
 	return result
 }

@@ -171,34 +171,16 @@ func (s *connStateLive) processGlobalUpdates(ctx context.Context, up caches.Upda
 		if update.Retired {
 			// remove the room from all rooms
 			logger.Trace().Str("user", s.userID).Str("room", update.RoomID()).Msg("processGlobalUpdates: room was retired")
-			for i, r := range s.allRooms {
-				if r.RoomID == update.RoomID() {
-					// delete the room
-					s.allRooms[i] = s.allRooms[len(s.allRooms)-1]
-					s.allRooms = s.allRooms[:len(s.allRooms)-1]
-				}
-			}
+			s.lists.RemoveRoom(update.RoomID())
 		} else {
-			// add the room to allRooms if it doesn't exist
-			exists := false
-			for _, r := range s.allRooms {
-				if r.RoomID == update.RoomID() {
-					exists = true
-					break
-				}
-			}
-			if !exists {
-				logger.Trace().Str("user", s.userID).Str("room", update.RoomID()).Msg("processGlobalUpdates: newly invited room")
-				// TODO: factor out
-				metadata := update.InviteData.RoomMetadata()
-				s.allRooms = append(s.allRooms, sync3.RoomConnMetadata{
-					RoomMetadata: *metadata,
-					UserRoomData: *update.UserRoomMetadata(),
-					CanonicalisedName: strings.ToLower(
-						strings.Trim(internal.CalculateRoomName(metadata, 5), "#!():_@"),
-					),
-				})
-			}
+			metadata := update.InviteData.RoomMetadata()
+			s.lists.AddRoomIfNotExists(sync3.RoomConnMetadata{
+				RoomMetadata: *metadata,
+				UserRoomData: *update.UserRoomMetadata(),
+				CanonicalisedName: strings.ToLower(
+					strings.Trim(internal.CalculateRoomName(metadata, 5), "#!():_@"),
+				),
+			})
 		}
 	}
 }
