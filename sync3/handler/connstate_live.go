@@ -129,7 +129,7 @@ func (s *connStateLive) processLiveUpdate(ctx context.Context, up caches.Update,
 		}
 	})
 
-	if hasUpdates {
+	if hasUpdates && roomUpdate != nil {
 		// include this update in the rooms response TODO: filters on event type?
 		userRoomData := s.userCache.LoadRoomData(roomUpdate.RoomID()) // TODO: don't do this as we have a ref in live code
 		r := response.Rooms[roomUpdate.RoomID()]
