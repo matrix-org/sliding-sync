@@ -87,6 +87,36 @@ func (rl *RequestList) WriteDeleteOp(deletedIndex int) *ResponseOpSingle {
 	}
 }
 
+// Calculate the real from -> to index positions for the two input index positions. This takes into
+// account the ranges on the list. Return ok=false if swap indexes are not valid e.g the index being
+// swapped to is outside the range.
+func (rl *RequestList) CalculateSwapIndexes(fromIndex, toIndex int) (f, t int, ok bool) {
+	isInsideRange := rl.Ranges.Inside(int64(toIndex))
+	// the toIndex may not be inside a tracked range. If it isn't, we actually need to notify about a
+	// different room
+	if !isInsideRange {
+		toIndex = int(rl.Ranges.UpperClamp(int64(toIndex)))
+		if toIndex == -1 {
+			// room moved but isn't in tracked range
+			return 0, 0, false
+		}
+	}
+
+	// work out which value to DELETE. This varies depending on where the room was and how much of the
+	// list we are tracking. E.g moving to index=0 with ranges [0,99][100,199] and an update in
+	// pos 150 -> DELETE 150, but if we weren't tracking [100,199] then we would DELETE 99. If we were
+	// tracking [0,99][200,299] then it's still DELETE 99 as the 200-299 range isn't touched.
+	if !rl.Ranges.Inside(int64(fromIndex)) {
+		// we are not tracking this room, so no point issuing a DELETE for it. Instead, clamp the index
+		// to the highest end-range marker < index
+		fromIndex = int(rl.Ranges.LowerClamp(int64(fromIndex)))
+	}
+	if fromIndex == -1 {
+		return 0, 0, false
+	}
+	return fromIndex, toIndex, true
+}
+
 // Move a room from an absolute index position to another absolute position. These positions do not
 // need to be inside a valid range. Returns 0-2 operations. For example:
 //   1,2,3,4,5 tracking range [0,4]
@@ -94,28 +124,18 @@ func (rl *RequestList) WriteDeleteOp(deletedIndex int) *ResponseOpSingle {
 //   7 bumps to top -> 7,1,2,3,4 -> DELETE index=4, INSERT val=7 index=0
 //   7 bumps to op again -> 7,1,2,3,4 -> no-op as from == to index
 //   new room 8 in i=5 -> 7,1,2,3,4,8 -> no-op as 8 is outside the range.
+// Returns the list of ops as well as the new toIndex if it wasn't inside a range.
 func (rl *RequestList) WriteSwapOp(
 	roomID string, fromIndex, toIndex int,
 ) []ResponseOp {
 	if fromIndex == toIndex {
 		return nil // we only care to notify clients about moves in the list
 	}
-	// work out which value to DELETE. This varies depending on where the room was and how much of the
-	// list we are tracking. E.g moving to index=0 with ranges [0,99][100,199] and an update in
-	// pos 150 -> DELETE 150, but if we weren't tracking [100,199] then we would DELETE 99. If we were
-	// tracking [0,99][200,299] then it's still DELETE 99 as the 200-299 range isn't touched.
-	deleteIndex := fromIndex
-	if !rl.Ranges.Inside(int64(fromIndex)) {
-		// we are not tracking this room, so no point issuing a DELETE for it. Instead, clamp the index
-		// to the highest end-range marker < index
-		deleteIndex = int(rl.Ranges.LowerClamp(int64(fromIndex)))
-	}
-	// TODO: toIndex needs to be inside range?
 
 	return []ResponseOp{
 		&ResponseOpSingle{
 			Operation: OpDelete,
-			Index:     &deleteIndex,
+			Index:     &fromIndex,
 		},
 		&ResponseOpSingle{
 			Operation: OpInsert,

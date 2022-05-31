@@ -299,45 +299,35 @@ func (s *connStateLive) resort(
 	fromIndex int, newlyAdded bool,
 ) (ops []sync3.ResponseOp, didUpdate bool) {
 	wasInsideRange := reqList.Ranges.Inside(int64(fromIndex))
+	// this should only move exactly 1 room at most as this is called for every single update
 	if err := intList.Sort(reqList.Sort); err != nil {
 		logger.Err(err).Msg("cannot sort list")
 	}
-
 	toIndex, _ := intList.IndexOf(roomID)
-	isInsideRange := reqList.Ranges.Inside(int64(toIndex))
-	logger = logger.With().Str("room", roomID).Int("from", fromIndex).Int("to", toIndex).Bool("inside_range", isInsideRange).Logger()
-	logger.Info().Bool("was_inside", wasInsideRange).Msg("moved!")
-	// the toIndex may not be inside a tracked range. If it isn't, we actually need to notify about a
-	// different room
-	if !isInsideRange {
-		toIndex = int(reqList.Ranges.UpperClamp(int64(toIndex)))
-		count := int(intList.Len())
-		if toIndex >= count {
-			// no room exists
-			logger.Warn().Int("to", toIndex).Int("size", count).Msg(
-				"cannot move to index, it's greater than the list of sorted rooms",
-			)
-			return nil, false
-		}
-		if toIndex == -1 {
-			logger.Warn().Int("from", fromIndex).Int("to", toIndex).Interface("ranges", reqList.Ranges).Msg(
-				"room moved but not in tracked ranges, ignoring",
-			)
-			return nil, false
-		}
-		toRoom := intList.Get(toIndex)
+
+	listFromIndex, listToIndex, ok := reqList.CalculateSwapIndexes(fromIndex, toIndex)
+	if !ok {
+		return nil, false
+	}
+	wasUpdatedRoomInserted := listToIndex == toIndex
+
+	// a different index position was INSERT'd, find it and mark it
+	if !wasUpdatedRoomInserted {
+		toRoom := intList.Get(listToIndex)
 		// clobber before falling through. This will cause this different room to be added in the
 		// room subscription and hence initial data be sent for it.
 		roomID = toRoom.RoomID
-	}
-
-	if !wasInsideRange && isInsideRange {
+		newlyAdded = true
+	} else if !wasInsideRange {
+		// we inserted this room due to the update, but this room wasn't previously in the range,
+		// so it's newly added and we should send an initial state.
 		newlyAdded = true
 	}
+
 	if newlyAdded {
 		subID := builder.AddSubscription(reqList.RoomSubscription)
 		builder.AddRoomsToSubscription(subID, []string{roomID})
 	}
 
-	return reqList.WriteSwapOp(roomID, fromIndex, toIndex), true
+	return reqList.WriteSwapOp(roomID, listFromIndex, listToIndex), true
 }
