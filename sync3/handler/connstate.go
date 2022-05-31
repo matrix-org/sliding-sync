@@ -153,8 +153,8 @@ func (s *ConnState) onIncomingRequest(ctx context.Context, req *sync3.Request, i
 		Lists: respLists,
 	}
 
-	includedRoomIDs := response.IncludedRoomIDsInOps()
-	for _, roomID := range delta.Subs { // include room subs in addition to lists
+	includedRoomIDs := make(map[string]struct{})
+	for roomID := range response.Rooms {
 		includedRoomIDs[roomID] = struct{}{}
 	}
 	// Handle extensions AFTER processing lists as extensions may need to know which rooms the client
@@ -178,7 +178,20 @@ func (s *ConnState) onIncomingRequest(ctx context.Context, req *sync3.Request, i
 
 func (s *ConnState) onIncomingListRequest(ctx context.Context, builder *RoomsBuilder, listIndex int, prevReqList, nextReqList *sync3.RequestList) sync3.ResponseList {
 	defer trace.StartRegion(ctx, "onIncomingListRequest").End()
-	roomList := s.lists.AssignList(listIndex, nextReqList.Filters, nextReqList.Sort, sync3.DoNotOverwrite)
+	roomList, overwritten := s.lists.AssignList(listIndex, nextReqList.Filters, nextReqList.Sort, sync3.DoNotOverwrite)
+
+	if nextReqList.ShouldGetAllRooms() {
+		if overwritten || prevReqList.FiltersChanged(nextReqList) {
+			// this is either a new list or the filters changed, so we need to splat all the rooms to the client.
+			subID := builder.AddSubscription(nextReqList.RoomSubscription)
+			builder.AddRoomsToSubscription(subID, roomList.RoomIDs())
+			return sync3.ResponseList{
+				// no ops
+				// count will be filled in later
+			}
+		}
+	}
+
 	// TODO: calculate the M values for N < M calcs
 	// TODO: list deltas
 	var responseOperations []sync3.ResponseOp

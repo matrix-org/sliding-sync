@@ -33,9 +33,14 @@ type Request struct {
 
 type RequestList struct {
 	RoomSubscription
-	Ranges  SliceRanges     `json:"ranges"`
-	Sort    []string        `json:"sort"`
-	Filters *RequestFilters `json:"filters"`
+	Ranges          SliceRanges     `json:"ranges"`
+	Sort            []string        `json:"sort"`
+	Filters         *RequestFilters `json:"filters"`
+	SlowGetAllRooms *bool           `json:"slow_get_all_rooms,omitempty"`
+}
+
+func (rl *RequestList) ShouldGetAllRooms() bool {
+	return rl.SlowGetAllRooms != nil && *rl.SlowGetAllRooms
 }
 
 func (rl *RequestList) SortOrderChanged(next *RequestList) bool {
@@ -277,6 +282,11 @@ func (r *Request) ApplyDelta(nextReq *Request) (result *Request, delta *RequestD
 		if reqState == nil {
 			reqState = existingList.RequiredState
 		}
+		slowGetAllRooms := nextList.SlowGetAllRooms
+		if slowGetAllRooms == nil {
+			slowGetAllRooms = existingList.SlowGetAllRooms
+		}
+
 		timelineLimit := nextList.TimelineLimit
 		if timelineLimit == 0 {
 			timelineLimit = existingList.TimelineLimit
@@ -290,9 +300,10 @@ func (r *Request) ApplyDelta(nextReq *Request) (result *Request, delta *RequestD
 				RequiredState: reqState,
 				TimelineLimit: timelineLimit,
 			},
-			Ranges:  rooms,
-			Sort:    sort,
-			Filters: filters,
+			Ranges:          rooms,
+			Sort:            sort,
+			Filters:         filters,
+			SlowGetAllRooms: slowGetAllRooms,
 		}
 	}
 	result.Lists = lists

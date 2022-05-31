@@ -45,20 +45,6 @@ func (r *Response) ListOps() int {
 	return num
 }
 
-// Return which room IDs these set of operations are returning information on. Information means
-// things like SYNC/INSERT/UPDATE, and not DELETE/INVALIDATE.
-func (res *Response) IncludedRoomIDsInOps() map[string]struct{} {
-	set := make(map[string]struct{})
-	for _, list := range res.Lists {
-		for _, op := range list.Ops {
-			for _, roomID := range op.IncludedRoomIDs() {
-				set[roomID] = struct{}{}
-			}
-		}
-	}
-	return set
-}
-
 // Custom unmarshal so we can dynamically create the right ResponseOp for Ops
 func (r *Response) UnmarshalJSON(b []byte) error {
 	temporary := struct {

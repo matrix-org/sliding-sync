@@ -59,11 +59,11 @@ func (s *InternalRequestLists) DeleteList(index int) {
 }
 
 // Assign a new list at the given index. If Overwrite, any existing list is replaced. If DoNotOverwrite, the existing
-// list is returned if one exists, else a new list is created.
-func (s *InternalRequestLists) AssignList(index int, filters *RequestFilters, sort []string, shouldOverwrite OverwriteVal) *FilteredSortableRooms {
+// list is returned if one exists, else a new list is created. Returns the list and true if the list was overwritten.
+func (s *InternalRequestLists) AssignList(index int, filters *RequestFilters, sort []string, shouldOverwrite OverwriteVal) (*FilteredSortableRooms, bool) {
 	internal.Assert("Set index is at most list size", index <= len(s.lists))
 	if shouldOverwrite == DoNotOverwrite && index < len(s.lists) {
-		return s.lists[index]
+		return s.lists[index], false
 	}
 	roomList := NewFilteredSortableRooms(s.allRooms, filters)
 	if sort != nil {
@@ -74,10 +74,10 @@ func (s *InternalRequestLists) AssignList(index int, filters *RequestFilters, so
 	}
 	if index == len(s.lists) {
 		s.lists = append(s.lists, roomList)
-		return roomList
+		return roomList, true
 	}
 	s.lists[index] = roomList
-	return roomList
+	return roomList, true
 }
 
 // Count returns the count of total rooms in this list

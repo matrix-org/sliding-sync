@@ -283,7 +283,7 @@ func (s *connStateLive) processIncomingEventForList(
 		newlyAdded = true
 	}
 	if update.EventData.ForceInitial {
-		// add room to sub
+		// add room to sub: this applies for when we track all rooms too as we want joins/etc to come through with initial data
 		subID := builder.AddSubscription(reqList.RoomSubscription)
 		builder.AddRoomsToSubscription(subID, []string{update.RoomID()})
 	}
@@ -298,6 +298,13 @@ func (s *connStateLive) resort(
 	reqList *sync3.RequestList, intList *sync3.FilteredSortableRooms, roomID string,
 	fromIndex int, newlyAdded bool,
 ) (ops []sync3.ResponseOp, didUpdate bool) {
+	if reqList.ShouldGetAllRooms() {
+		// no need to sort this list as we get all rooms
+		// no need to calculate ops as we get all rooms
+		// no need to send initial state for some rooms as we already sent initial state for all rooms
+		return nil, true
+	}
+
 	wasInsideRange := reqList.Ranges.Inside(int64(fromIndex))
 	// this should only move exactly 1 room at most as this is called for every single update
 	if err := intList.Sort(reqList.Sort); err != nil {
