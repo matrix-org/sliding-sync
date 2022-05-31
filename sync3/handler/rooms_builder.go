@@ -62,6 +62,7 @@ func (rb *RoomsBuilder) AddRoomsToSubscription(id int, roomIDs []string) {
 }
 
 // Work out which subscriptions need to be combined and produce a new set of subscriptions -> room IDs.
+// Any given room ID will appear in exactly one BuiltSubscription.
 func (rb *RoomsBuilder) BuildSubscriptions() (result []BuiltSubscription) {
 	// calculate the inverse (room -> subs)
 	roomToSubIDs := make(map[string]map[int]struct{}) // room_id to set of ints

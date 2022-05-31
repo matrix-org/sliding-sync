@@ -133,7 +133,7 @@ func (s *connStateLive) processLiveUpdate(ctx context.Context, up caches.Update,
 	// do per-list updates (e.g resorting, adding/removing rooms which no longer match filter)
 	s.lists.ForEach(func(index int, list *sync3.FilteredSortableRooms) {
 		reqList := s.muxedReq.Lists[index]
-		updates := s.processLiveUpdateForList(ctx, builder, up, &reqList, s.lists.List(index), &response.Lists[index], isSubscribedToRoom)
+		updates := s.processLiveUpdateForList(ctx, builder, up, &reqList, list, &response.Lists[index], isSubscribedToRoom)
 		if updates {
 			hasUpdates = true
 			if !isSubscribedToRoom { // don't send the same event twice
@@ -148,12 +148,9 @@ func (s *connStateLive) processLiveUpdate(ctx context.Context, up caches.Update,
 	})
 
 	// add in initial rooms
-	builtSubs := builder.BuildSubscriptions()
-	for _, sub := range builtSubs {
-		rooms := s.getInitialRoomData(ctx, sub.RoomSubscription, roomUpdate.RoomID())
-		for roomID, r := range rooms {
-			response.Rooms[roomID] = r
-		}
+	rooms := s.buildRooms(ctx, builder.BuildSubscriptions())
+	for roomID, room := range rooms {
+		response.Rooms[roomID] = room
 	}
 	return hasUpdates
 }

@@ -28,8 +28,7 @@ type ConnState struct {
 	// to match up with muxedReq.Lists - can we factor that away?
 	lists *sync3.InternalRequestLists
 
-	// TODO XXX: fix moveRoom and resort - also we seem to set default sorts in too many places. Do it
-	// in ApplyDelta then never check again?
+	// TODO XXX: fix moveRoom and resort
 	// AFTER: Allow `ops` to be turned off for a list.
 
 	// Confirmed room subscriptions. Entries in this list have been checked for things like
@@ -151,7 +150,7 @@ func (s *ConnState) onIncomingRequest(ctx context.Context, req *sync3.Request, i
 	// works out how rooms get moved about but doesn't pull room data
 	respLists := s.buildListSubscriptions(ctx, builder, delta.Lists)
 
-	// start forming the response, handle subscriptions
+	// pull room data and set changes on the response
 	response := &sync3.Response{
 		Rooms: s.buildRooms(ctx, builder.BuildSubscriptions()), // pull room data
 		Lists: respLists,
@@ -182,10 +181,7 @@ func (s *ConnState) onIncomingRequest(ctx context.Context, req *sync3.Request, i
 
 func (s *ConnState) onIncomingListRequest(ctx context.Context, builder *RoomsBuilder, listIndex int, prevReqList, nextReqList *sync3.RequestList) sync3.ResponseList {
 	defer trace.StartRegion(ctx, "onIncomingListRequest").End()
-	if !s.lists.ListExists(listIndex) {
-		s.lists.OverwriteList(listIndex, nextReqList.Filters, nextReqList.Sort)
-	}
-	roomList := s.lists.List(listIndex)
+	roomList := s.lists.AssignList(listIndex, nextReqList.Filters, nextReqList.Sort, sync3.DoNotOverwrite)
 	// TODO: calculate the M values for N < M calcs
 	// TODO: list deltas
 	var responseOperations []sync3.ResponseOp
@@ -221,7 +217,7 @@ func (s *ConnState) onIncomingListRequest(ctx context.Context, builder *RoomsBui
 		}
 		if changedFilters {
 			// we need to re-create the list as the rooms may have completely changed
-			s.lists.OverwriteList(listIndex, nextReqList.Filters, nextReqList.Sort)
+			s.lists.AssignList(listIndex, nextReqList.Filters, nextReqList.Sort, sync3.Overwrite)
 		}
 		if err := roomList.Sort(nextReqList.Sort); err != nil {
 			logger.Err(err).Int("index", listIndex).Msg("cannot sort list")
@@ -324,7 +320,6 @@ func (s *ConnState) getInitialRoomData(ctx context.Context, roomSub sync3.RoomSu
 	// We want to grab the user room data and the room metadata for each room ID.
 	roomIDToUserRoomData := s.userCache.LazyLoadTimelines(s.loadPosition, roomIDs, int(roomSub.TimelineLimit))
 	roomMetadatas := s.globalCache.LoadRooms(roomIDs...)
-
 	roomIDToState := s.globalCache.LoadRoomState(ctx, roomIDs, s.loadPosition, roomSub.RequiredStateMap())
 
 	for _, roomID := range roomIDs {

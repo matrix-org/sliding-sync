@@ -2,6 +2,13 @@ package sync3
 
 import "github.com/matrix-org/sync-v3/internal"
 
+type OverwriteVal bool
+
+var (
+	DoNotOverwrite OverwriteVal = false
+	Overwrite      OverwriteVal = true
+)
+
 // InternalRequestLists is a list of lists which matches each index position in the request
 // JSON 'lists'. It contains all the internal metadata for rooms and controls access and updatings of said
 // lists.
@@ -39,15 +46,8 @@ func (s *InternalRequestLists) RemoveRoom(roomID string) {
 	// TODO: update lists?
 }
 
-func (s *InternalRequestLists) ListExists(index int) bool {
-	return index < len(s.lists) && index >= 0
-}
-
-func (s *InternalRequestLists) List(index int) *FilteredSortableRooms {
-	internal.Assert("index within range", index < len(s.lists))
-	return s.lists[index]
-}
-
+// Call the given function for each list. Useful when there is a live update and you don't know
+// which list may be updated.
 func (s *InternalRequestLists) ForEach(fn func(index int, fsr *FilteredSortableRooms)) {
 	for i, l := range s.lists {
 		fn(i, l)
@@ -58,8 +58,13 @@ func (s *InternalRequestLists) DeleteList(index int) {
 	// TODO
 }
 
-func (s *InternalRequestLists) OverwriteList(index int, filters *RequestFilters, sort []string) {
+// Assign a new list at the given index. If Overwrite, any existing list is replaced. If DoNotOverwrite, the existing
+// list is returned if one exists, else a new list is created.
+func (s *InternalRequestLists) AssignList(index int, filters *RequestFilters, sort []string, shouldOverwrite OverwriteVal) *FilteredSortableRooms {
 	internal.Assert("Set index is at most list size", index <= len(s.lists))
+	if shouldOverwrite == DoNotOverwrite && index < len(s.lists) {
+		return s.lists[index]
+	}
 	roomList := NewFilteredSortableRooms(s.allRooms, filters)
 	if sort != nil {
 		err := roomList.Sort(sort)
@@ -69,9 +74,10 @@ func (s *InternalRequestLists) OverwriteList(index int, filters *RequestFilters,
 	}
 	if index == len(s.lists) {
 		s.lists = append(s.lists, roomList)
-		return
+		return roomList
 	}
 	s.lists[index] = roomList
+	return roomList
 }
 
 // Count returns the count of total rooms in this list
