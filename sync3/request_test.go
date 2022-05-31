@@ -736,7 +736,128 @@ func TestRequestListDiffs(t *testing.T) {
 	}
 }
 
-func TestRequestListWriteDeleteOp(t *testing.T) {
+func TestRequestList_CalculateMoveIndexes(t *testing.T) {
+	testCases := []struct {
+		name     string
+		rl       RequestList
+		from     int
+		to       int
+		wantFrom int
+		wantTo   int
+		wantOk   bool
+	}{
+		{
+			name: "move from inside range to inside range",
+			rl: RequestList{
+				Ranges: [][2]int64{{0, 10}},
+			},
+			from:     5,
+			to:       0,
+			wantFrom: 5,
+			wantTo:   0,
+			wantOk:   true,
+		},
+		{
+			name: "move from outside range to inside range",
+			rl: RequestList{
+				Ranges: [][2]int64{{0, 10}},
+			},
+			from:     15,
+			to:       0,
+			wantFrom: 10,
+			wantTo:   0,
+			wantOk:   true,
+		},
+		{
+			name: "move from inside range to outside range",
+			rl: RequestList{
+				Ranges: [][2]int64{{0, 10}},
+			},
+			from:     5,
+			to:       20,
+			wantFrom: 5,
+			wantTo:   10,
+			wantOk:   true,
+		},
+		{
+			name: "move from outside range to outside range",
+			rl: RequestList{
+				Ranges: [][2]int64{{0, 10}},
+			},
+			from:     50,
+			to:       20,
+			wantFrom: 0,
+			wantTo:   0,
+			wantOk:   false,
+		},
+		{
+			name: "move from outside range to outside range, 1 jump",
+			rl: RequestList{
+				Ranges: [][2]int64{{10, 20}},
+			},
+			from:     50,
+			to:       2,
+			wantFrom: 20,
+			wantTo:   10,
+			wantOk:   true,
+		},
+		/*
+			// multiple range fun
+			{
+				name: "move from between two ranges to inside first range",
+				rl: RequestList{
+					Ranges: [][2]int64{{0, 10}, {20, 30}},
+				},
+				from:     15,
+				to:       2,
+				wantFrom: 10,
+				wantTo:   2,
+				wantOk:   true,
+			},
+			{
+				name: "move from between two ranges to inside second range",
+				rl: RequestList{
+					Ranges: [][2]int64{{0, 10}, {20, 30}},
+				},
+				from: 15,
+				to:   25,
+				// Moving from x to y:
+				// [0...10]  x [20..y..30]
+				// means the timeline is now:
+				// [0...10] 11,12,13,14,DELETE,16,17,18,19 [20..INSERT..30]
+				// which creates a gap in 15 causing an insert on 25, but we are not tracking 15,
+				// so instead 20 gets deleted.
+				wantFrom: 20,
+				wantTo:   25,
+				wantOk:   true,
+			},
+			{
+				name: "move from between two ranges to outside range",
+				rl: RequestList{
+					Ranges: [][2]int64{{0, 10}, {20, 30}},
+				},
+				from:     15,
+				to:       45,
+				wantFrom: 20,
+				wantTo:   30,
+				wantOk:   false,
+			}, */
+	}
+	for _, tc := range testCases {
+		gotFrom, gotTo, gotOk := tc.rl.CalculateMoveIndexes(tc.from, tc.to)
+		if gotFrom != tc.wantFrom {
+			t.Errorf("%s: from: got %v want %v", tc.name, gotFrom, tc.wantFrom)
+		}
+		if gotTo != tc.wantTo {
+			t.Errorf("%s: to: got %v want %v", tc.name, gotTo, tc.wantTo)
+		}
+		if gotOk != tc.wantOk {
+			t.Errorf("%s: ok: got %v want %v", tc.name, gotOk, tc.wantOk)
+		}
+	}
+}
+
+func TestRequestList_WriteDeleteOp(t *testing.T) {
 	noIndex := -1
 	testCases := []struct {
 		name             string

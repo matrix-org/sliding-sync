@@ -88,33 +88,79 @@ func (rl *RequestList) WriteDeleteOp(deletedIndex int) *ResponseOpSingle {
 }
 
 // Calculate the real from -> to index positions for the two input index positions. This takes into
-// account the ranges on the list. Return ok=false if swap indexes are not valid e.g the index being
-// swapped to is outside the range.
-func (rl *RequestList) CalculateSwapIndexes(fromIndex, toIndex int) (f, t int, ok bool) {
-	isInsideRange := rl.Ranges.Inside(int64(toIndex))
-	// the toIndex may not be inside a tracked range. If it isn't, we actually need to notify about a
-	// different room
-	if !isInsideRange {
-		toIndex = int(rl.Ranges.UpperClamp(int64(toIndex)))
-		if toIndex == -1 {
-			// room moved but isn't in tracked range
+// account the ranges on the list. Return ok=false if move indexes are not valid e.g the index being
+// moved from/to is outside all ranges and doesn't go over slices. TODO handle going over slices
+func (rl *RequestList) CalculateMoveIndexes(fromIndex, toIndex int) (f, t int, ok bool) {
+	// Given a range like the following there are several cases to consider:
+	// 0  1  2  3  4  5  6  7  8  9  10
+	//    |--------|        |-----|        [1,4],[7,9]                                           RESULT
+	//       T  F                          move inside the same range                             3, 2
+	//          T     F                    move from outside to inside the range                  4, 3
+	//                F        T           move from outside to inside the range (higher)         7, 8
+	//          F        T                 move from inside to outside the range (higher)         3, 4
+	//                T        F           move from inside to outside the range                  8, 7
+	//          T              F           move between two ranges                                8, 3
+	//                F  T                 move outside the ranges, no jumps                      !ok
+	// T              F                    move outside the ranges, jumping over a range          4, 1 (everything shift rights)       TODO
+	// T                              F    move outside the ranges, jumping over multiple ranges  4,1 + 7, 9 (everything shifts right) TODO
+
+	// This can be summarised with the following rules:
+	//  A- If BOTH from/to are inside ranges: return those indexes.
+	//  B- If ONE index is inside a range:
+	//     * Use the index inside the range
+	//     * Find the direction of movement (towards / away from zero)
+	//     * Find the closest range boundary in that direction for the index outside the range and use that.
+	//  C- If BOTH from/to are outside ranges:
+	//     * Find which ranges are jumped over. If none, return !ok
+	//     * For each jumped over range:
+	//        * Set from/to index to the range boundaries according to the direction of movement
+	//     * Return potentially > 1 set of move indexes
+
+	isFromInsideRange := rl.Ranges.Inside(int64(fromIndex))
+	isToInsideRange := rl.Ranges.Inside(int64(toIndex))
+	if isFromInsideRange && isToInsideRange { // case A
+		return fromIndex, toIndex, true
+	}
+	if !isFromInsideRange && !isToInsideRange { // case C
+		// TODO jumping over multiple range
+		// work out which ranges are jumped over
+		var jumpedOverRanges [][2]int64
+		hi := int64(fromIndex)
+		lo := int64(toIndex)
+		if fromIndex < toIndex {
+			hi = int64(toIndex)
+			lo = int64(fromIndex)
+		}
+		for _, r := range rl.Ranges {
+			if r[0] > lo && r[0] < hi && r[1] > lo && r[1] < hi {
+				jumpedOverRanges = append(jumpedOverRanges, r)
+			}
+		}
+		if len(jumpedOverRanges) == 0 {
 			return 0, 0, false
+		}
+		// TODO: handle multiple ranges
+		jumpedOverRange := jumpedOverRanges[0]
+		if fromIndex > toIndex { // heading towards zero
+			return int(jumpedOverRange[1]), int(jumpedOverRange[0]), true
+		} else {
+			return int(jumpedOverRange[0]), int(jumpedOverRange[1]), true
 		}
 	}
 
-	// work out which value to DELETE. This varies depending on where the room was and how much of the
-	// list we are tracking. E.g moving to index=0 with ranges [0,99][100,199] and an update in
-	// pos 150 -> DELETE 150, but if we weren't tracking [100,199] then we would DELETE 99. If we were
-	// tracking [0,99][200,299] then it's still DELETE 99 as the 200-299 range isn't touched.
-	if !rl.Ranges.Inside(int64(fromIndex)) {
-		// we are not tracking this room, so no point issuing a DELETE for it. Instead, clamp the index
-		// to the highest end-range marker < index
-		fromIndex = int(rl.Ranges.LowerClamp(int64(fromIndex)))
+	// case B
+	if isFromInsideRange {
+		f = fromIndex
+		// snap toIndex to a lower value i.e towards zero IF to > from
+		t = int(rl.Ranges.ClosestInDirection(int64(toIndex), toIndex > fromIndex))
 	}
-	if fromIndex == -1 {
-		return 0, 0, false
+	if isToInsideRange {
+		t = toIndex
+		// snap fromIndex to a lower value i.e towards zero IF to < from
+		f = int(rl.Ranges.ClosestInDirection(int64(fromIndex), toIndex < fromIndex))
 	}
-	return fromIndex, toIndex, true
+
+	return f, t, true
 }
 
 // Move a room from an absolute index position to another absolute position. These positions do not

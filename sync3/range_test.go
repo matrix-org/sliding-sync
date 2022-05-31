@@ -166,95 +166,78 @@ func TestRangeInside(t *testing.T) {
 	}
 }
 
-func TestRangeLowerClamp(t *testing.T) {
+func TestRangeClosestInDirection(t *testing.T) {
 	testCases := []struct {
-		testRange SliceRanges
-		i         int64
-		clampVal  int64
+		ranges           SliceRanges
+		i                int64
+		towardsZero      bool
+		wantClosestIndex int64
 	}{
 		{
-			testRange: SliceRanges([][2]int64{
-				{0, 9},
-			}),
-			i:        14,
-			clampVal: 9,
+			ranges:           [][2]int64{{0, 20}},
+			i:                15,
+			towardsZero:      true,
+			wantClosestIndex: 0,
 		},
 		{
-			testRange: SliceRanges([][2]int64{
-				{0, 9},
-			}),
-			i:        6,
-			clampVal: -1,
+			ranges:           [][2]int64{{0, 20}},
+			i:                15,
+			towardsZero:      false,
+			wantClosestIndex: 20,
 		},
 		{
-			testRange: SliceRanges([][2]int64{
-				{0, 9}, {10, 19},
-			}),
-			i:        14,
-			clampVal: 9,
+			ranges:           [][2]int64{{10, 20}},
+			i:                5,
+			towardsZero:      true,
+			wantClosestIndex: -1,
 		},
 		{
-			testRange: SliceRanges([][2]int64{
-				{0, 9}, {20, 29},
-			}),
-			i:        24,
-			clampVal: 9,
+			ranges:           [][2]int64{{10, 20}},
+			i:                5,
+			towardsZero:      false,
+			wantClosestIndex: 10,
 		},
 		{
-			testRange: SliceRanges([][2]int64{
-				{0, 9}, {20, 29},
-			}),
-			i:        34,
-			clampVal: 29,
+			ranges:           [][2]int64{{10, 20}},
+			i:                25,
+			towardsZero:      false,
+			wantClosestIndex: -1,
+		},
+		{
+			ranges:           [][2]int64{{10, 20}},
+			i:                25,
+			towardsZero:      true,
+			wantClosestIndex: 20,
+		},
+		{
+			ranges:           [][2]int64{{10, 20}, {30, 40}},
+			i:                25,
+			towardsZero:      true,
+			wantClosestIndex: 20,
+		},
+		{
+			ranges:           [][2]int64{{10, 20}, {30, 40}},
+			i:                25,
+			towardsZero:      false,
+			wantClosestIndex: 30,
+		},
+		{
+			ranges:           [][2]int64{{10, 20}, {30, 40}},
+			i:                35,
+			towardsZero:      true,
+			wantClosestIndex: 30,
+		},
+		{
+			ranges:           [][2]int64{{10, 20}, {30, 40}},
+			i:                35,
+			towardsZero:      false,
+			wantClosestIndex: 40,
 		},
 	}
 	for _, tc := range testCases {
-		gotVal := tc.testRange.LowerClamp(tc.i)
-		if gotVal != tc.clampVal {
-			t.Errorf("%+v got LowerClamp %v want %v", tc, gotVal, tc.clampVal)
-		}
-	}
-}
-
-func TestRangeUpperClamp(t *testing.T) {
-	testCases := []struct {
-		testRange SliceRanges
-		i         int64
-		clampVal  int64
-	}{
-		{
-			testRange: SliceRanges([][2]int64{
-				{10, 19},
-			}),
-			i:        6,
-			clampVal: 10,
-		},
-		{
-			testRange: SliceRanges([][2]int64{
-				{10, 19},
-			}),
-			i:        16,
-			clampVal: -1,
-		},
-		{
-			testRange: SliceRanges([][2]int64{
-				{10, 19}, {20, 29},
-			}),
-			i:        16,
-			clampVal: 20,
-		},
-		{
-			testRange: SliceRanges([][2]int64{
-				{20, 29}, {30, 39}, {40, 49}, {10, 19},
-			}),
-			i:        6,
-			clampVal: 10,
-		},
-	}
-	for _, tc := range testCases {
-		gotVal := tc.testRange.UpperClamp(tc.i)
-		if gotVal != tc.clampVal {
-			t.Errorf("%+v got LowerClamp %v want %v", tc, gotVal, tc.clampVal)
+		gotClosest := tc.ranges.ClosestInDirection(tc.i, tc.towardsZero)
+		if gotClosest != tc.wantClosestIndex {
+			t.Errorf("%+v: got %v want %v", tc, gotClosest, tc.wantClosestIndex)
 		}
 	}
 }

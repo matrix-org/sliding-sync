@@ -305,7 +305,7 @@ func (s *connStateLive) resort(
 	}
 	toIndex, _ := intList.IndexOf(roomID)
 
-	listFromIndex, listToIndex, ok := reqList.CalculateSwapIndexes(fromIndex, toIndex)
+	listFromIndex, listToIndex, ok := reqList.CalculateMoveIndexes(fromIndex, toIndex)
 	if !ok {
 		return nil, false
 	}

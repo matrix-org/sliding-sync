@@ -2,7 +2,6 @@ package sync3
 
 import (
 	"fmt"
-	"math"
 	"sort"
 )
 
@@ -31,36 +30,49 @@ func (r SliceRanges) Inside(i int64) bool {
 	return false
 }
 
-// UpperClamp returns the start-index e.g [50,99] -> 50 of the first range higher than i.
-// If `i` is inside a range, returns -1.
-// E.g [50,99] i=30 -> 50, [50,99] i=55 -> -1
-func (r SliceRanges) UpperClamp(i int64) (clampIndex int64) {
-	clampIndex = math.MaxInt64 - 1
-	modified := false
+// ClosestInDirection returns the index position of a range bound that is closest to `i`, heading either
+// towards 0 or towards infinity. If there is no range boundary in that direction, -1 is returned.
+// For example:
+//   [0,20] i=25,towardsZero=true => 20
+//   [0,20] i=15,towardsZero=true => 0
+//   [0,20] i=15,towardsZero=false => 20
+//   [0,20] i=25,towardsZero=false => -1
+//   [0,20],[40,60] i=25,towardsZero=true => 20
+//   [0,20],[40,60] i=25,towardsZero=false => 40
+func (r SliceRanges) ClosestInDirection(i int64, towardsZero bool) (closestIndex int64) {
+	// sort all range boundaries in ascending order
+	indexes := make([]int64, 0, len(r)*2)
 	for _, sr := range r {
-		if sr[0] > i && sr[0] < int64(clampIndex) {
-			clampIndex = sr[0]
-			modified = true
-		}
+		indexes = append(indexes, sr[0], sr[1])
 	}
-	if !modified {
-		clampIndex = -1
-	}
-	return
-}
+	sort.Slice(indexes, func(x, y int) bool {
+		return indexes[x] < indexes[y]
+	})
+	closestIndex = -1
 
-// LowerClamp returns the end-index e.g [0,99] -> 99 of the first range lower than i.
-// This is critical to determine which index to delete when rooms move outside of the tracked range.
-// If `i` is inside a range, returns the clamp for the lower range. Returns -1 if a clamp cannot be found
-// e.g [0,99] i=50 -> -1 whereas [0,99][150,199] i=160 -> 99
-func (r SliceRanges) LowerClamp(i int64) (clampIndex int64) {
-	clampIndex = -1
-	for _, sr := range r {
-		if sr[1] < i && sr[1] > int64(clampIndex) {
-			clampIndex = sr[1]
+	if towardsZero {
+		// we want the first value < i so loop from low->high and when we see the first > index, take the previous
+		for j := range indexes {
+			if indexes[j] > i {
+				if j == 0 {
+					return -1
+				}
+				return indexes[j-1]
+			}
 		}
+		return indexes[len(indexes)-1] // all values are lower than i, choose the highest
+	} else {
+		// we want the first value > i so loop from high->low and when we see the first < index, take the previous
+		for j := len(indexes) - 1; j >= 0; j-- {
+			if indexes[j] < i {
+				if j == len(indexes)-1 {
+					return -1
+				}
+				return indexes[j+1]
+			}
+		}
+		return indexes[0] // all values are higher than i, choose the lowest
 	}
-	return
 }
 
 type pointInfo struct {
