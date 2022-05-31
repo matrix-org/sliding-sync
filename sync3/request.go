@@ -38,6 +38,39 @@ type RequestList struct {
 	Filters *RequestFilters `json:"filters"`
 }
 
+func (rl *RequestList) SortOrderChanged(next *RequestList) bool {
+	prevLen := 0
+	if rl != nil {
+		prevLen = len(rl.Sort)
+	}
+	if prevLen != len(next.Sort) {
+		return true
+	}
+	for i := range rl.Sort {
+		if rl.Sort[i] != next.Sort[i] {
+			return true
+		}
+	}
+	return false
+}
+
+func (rl *RequestList) FiltersChanged(next *RequestList) bool {
+	var prev *RequestFilters
+	if rl != nil {
+		prev = rl.Filters
+	}
+	// easier to marshal as JSON rather than do a bazillion nil checks
+	pb, err := json.Marshal(prev)
+	if err != nil {
+		panic(err)
+	}
+	nb, err := json.Marshal(next.Filters)
+	if err != nil {
+		panic(err)
+	}
+	return !bytes.Equal(pb, nb)
+}
+
 func (r *Request) SetPos(pos int64) {
 	r.pos = pos
 }
@@ -239,19 +272,6 @@ func (rf *RequestFilters) Include(r *RoomConnMetadata) bool {
 		return false
 	}
 	return true
-}
-
-func ChangedFilters(prev, next *RequestFilters) bool {
-	// easier to marshal as JSON rather than do a bazillion nil checks
-	pb, err := json.Marshal(prev)
-	if err != nil {
-		panic(err)
-	}
-	nb, err := json.Marshal(next)
-	if err != nil {
-		panic(err)
-	}
-	return !bytes.Equal(pb, nb)
 }
 
 type RoomSubscription struct {

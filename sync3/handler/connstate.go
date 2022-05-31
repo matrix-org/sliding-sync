@@ -3,7 +3,6 @@ package handler
 import (
 	"context"
 	"encoding/json"
-	"reflect"
 	"runtime/trace"
 	"strings"
 
@@ -187,26 +186,24 @@ func (s *ConnState) onIncomingListRequest(ctx context.Context, builder *RoomsBui
 	var responseOperations []sync3.ResponseOp
 
 	var prevRange sync3.SliceRanges
-	var prevSort []string
-	var prevFilters *sync3.RequestFilters
 	if prevReqList != nil {
 		prevRange = prevReqList.Ranges
-		prevSort = prevReqList.Sort
-		prevFilters = prevReqList.Filters
 	}
 
 	// Handle SYNC / INVALIDATE ranges
-
 	var addedRanges, removedRanges sync3.SliceRanges
 	if prevRange != nil {
 		addedRanges, removedRanges, _ = prevRange.Delta(nextReqList.Ranges)
 	} else {
 		addedRanges = nextReqList.Ranges
 	}
-	changedFilters := sync3.ChangedFilters(prevFilters, nextReqList.Filters)
-	if !reflect.DeepEqual(prevSort, nextReqList.Sort) || changedFilters {
+
+	sortChanged := prevReqList.SortOrderChanged(nextReqList)
+	filtersChanged := prevReqList.FiltersChanged(nextReqList)
+	if sortChanged || filtersChanged {
 		// the sort/filter operations have changed, invalidate everything (if there were previous syncs), re-sort and re-SYNC
-		if prevSort != nil || changedFilters {
+		if prevReqList != nil {
+			// there were previous syncs for this list, INVALIDATE the lot
 			logger.Trace().Interface("range", prevRange).Msg("INVALIDATEing because sort/filter ops have changed")
 			for _, r := range prevRange {
 				responseOperations = append(responseOperations, &sync3.ResponseOpRange{
@@ -215,10 +212,11 @@ func (s *ConnState) onIncomingListRequest(ctx context.Context, builder *RoomsBui
 				})
 			}
 		}
-		if changedFilters {
+		if filtersChanged {
 			// we need to re-create the list as the rooms may have completely changed
 			s.lists.AssignList(listIndex, nextReqList.Filters, nextReqList.Sort, sync3.Overwrite)
 		}
+		// resort as either we changed the sort order or we added/removed a bunch of rooms
 		if err := roomList.Sort(nextReqList.Sort); err != nil {
 			logger.Err(err).Int("index", listIndex).Msg("cannot sort list")
 		}

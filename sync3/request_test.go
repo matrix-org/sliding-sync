@@ -668,6 +668,74 @@ func TestRequestApplyDeltas(t *testing.T) {
 	}
 }
 
+func TestRequestListDiffs(t *testing.T) {
+	boolTrue := true
+	boolFalse := false
+	testCases := []struct {
+		name        string
+		a           *RequestList
+		b           RequestList
+		sortChanged *bool
+	}{
+		{
+			name: "initial: set sort",
+			a:    nil,
+			b: RequestList{
+				Sort: []string{SortByHighlightCount},
+			},
+			sortChanged: &boolTrue,
+		},
+		{
+			name: "same sort",
+			a: &RequestList{
+				Sort: []string{SortByHighlightCount},
+			},
+			b: RequestList{
+				Sort: []string{SortByHighlightCount},
+			},
+			sortChanged: &boolFalse,
+		},
+		{
+			name: "changed sort",
+			a: &RequestList{
+				Sort: []string{SortByHighlightCount},
+			},
+			b: RequestList{
+				Sort: []string{SortByName},
+			},
+			sortChanged: &boolTrue,
+		},
+		{
+			name: "changed sort additional",
+			a: &RequestList{
+				Sort: []string{SortByHighlightCount},
+			},
+			b: RequestList{
+				Sort: []string{SortByName, SortByRecency},
+			},
+			sortChanged: &boolTrue,
+		},
+		{
+			name: "changed sort removal",
+			a: &RequestList{
+				Sort: []string{SortByName, SortByRecency},
+			},
+			b: RequestList{
+				Sort: []string{SortByName},
+			},
+			sortChanged: &boolTrue,
+		},
+	}
+	for _, tc := range testCases {
+		if tc.sortChanged != nil {
+			got := tc.a.SortOrderChanged(&tc.b)
+			if got != *tc.sortChanged {
+				t.Errorf("SORT: %s : got %v want %v", tc.name, got, *tc.sortChanged)
+			}
+		}
+	}
+}
+
 func jsonEqual(t *testing.T, name string, got, want interface{}) {
 	aa, err := json.Marshal(got)
 	if err != nil {

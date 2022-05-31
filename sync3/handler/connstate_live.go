@@ -13,8 +13,6 @@ import (
 	"github.com/matrix-org/sync-v3/sync3/extensions"
 )
 
-type UpdateType uint8
-
 var (
 	// The max number of events the client is eligible to read (unfiltered) which we are willing to
 	// buffer on this connection. Too large and we consume lots of memory. Too small and busy accounts
