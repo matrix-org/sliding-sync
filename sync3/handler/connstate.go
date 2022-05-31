@@ -23,9 +23,7 @@ type ConnState struct {
 	deviceID string
 	// the only thing that can touch these data structures is the conn goroutine
 	muxedReq *sync3.Request
-	// TODO XXX: Cut down as many functions as possible in here. The problem is that the indexes need
-	// to match up with muxedReq.Lists - can we factor that away?
-	lists *sync3.InternalRequestLists
+	lists    *sync3.InternalRequestLists
 
 	// TODO XXX: fix moveRoom and resort
 	// AFTER: Allow `ops` to be turned off for a list.

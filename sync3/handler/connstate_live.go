@@ -102,7 +102,7 @@ func (s *connStateLive) liveUpdate(
 }
 
 func (s *connStateLive) processLiveUpdate(ctx context.Context, up caches.Update, response *sync3.Response) bool {
-	hasUpdates := false
+	hasUpdates := false // true if this update results in a response
 	internal.Assert("processLiveUpdate: response list length != internal list length", s.lists.Len() == len(response.Lists))
 	internal.Assert("processLiveUpdate: request list length != internal list length", s.lists.Len() == len(s.muxedReq.Lists))
 
@@ -110,18 +110,10 @@ func (s *connStateLive) processLiveUpdate(ctx context.Context, up caches.Update,
 	s.processGlobalUpdates(ctx, up)
 
 	// process room subscriptions
-	isSubscribedToRoom := false
 	roomUpdate, ok := up.(*caches.RoomEventUpdate)
 	if ok {
 		if _, ok = s.roomSubscriptions[roomUpdate.RoomID()]; ok {
-			// there is a subscription for this room, so update the room subscription response
-			roomSub := *s.getDeltaRoomData(roomUpdate.RoomID(), roomUpdate.EventData.Event)
-			r := response.Rooms[roomUpdate.RoomID()]
-			r.HighlightCount = roomSub.HighlightCount
-			r.NotificationCount = roomSub.NotificationCount
-			r.Timeline = append(r.Timeline, roomSub.Timeline[0])
-			response.Rooms[roomUpdate.RoomID()] = r
-			isSubscribedToRoom = true
+			// there is a subscription for this room
 			hasUpdates = true
 		}
 	}
@@ -131,19 +123,25 @@ func (s *connStateLive) processLiveUpdate(ctx context.Context, up caches.Update,
 	// do per-list updates (e.g resorting, adding/removing rooms which no longer match filter)
 	s.lists.ForEach(func(index int, list *sync3.FilteredSortableRooms) {
 		reqList := s.muxedReq.Lists[index]
-		updates := s.processLiveUpdateForList(ctx, builder, up, &reqList, list, &response.Lists[index], isSubscribedToRoom)
+		updates := s.processLiveUpdateForList(ctx, builder, up, &reqList, list, &response.Lists[index])
 		if updates {
 			hasUpdates = true
-			if !isSubscribedToRoom { // don't send the same event twice
-				roomSub := *s.getDeltaRoomData(roomUpdate.RoomID(), roomUpdate.EventData.Event)
-				r := response.Rooms[roomUpdate.RoomID()]
-				r.HighlightCount = roomSub.HighlightCount
-				r.NotificationCount = roomSub.NotificationCount
-				r.Timeline = append(r.Timeline, roomSub.Timeline[0])
-				response.Rooms[roomUpdate.RoomID()] = r
-			}
 		}
 	})
+
+	if hasUpdates {
+		// include this update in the rooms response TODO: filters on event type?
+		userRoomData := s.userCache.LoadRoomData(roomUpdate.RoomID()) // TODO: don't do this as we have a ref in live code
+		r := response.Rooms[roomUpdate.RoomID()]
+		r.HighlightCount = int64(userRoomData.HighlightCount)
+		r.NotificationCount = int64(userRoomData.NotificationCount)
+		if roomUpdate.EventData.Event != nil {
+			r.Timeline = append(r.Timeline, s.userCache.AnnotateWithTransactionIDs([]json.RawMessage{
+				roomUpdate.EventData.Event,
+			})...)
+		}
+		response.Rooms[roomUpdate.RoomID()] = r
+	}
 
 	// add in initial rooms
 	rooms := s.buildRooms(ctx, builder.BuildSubscriptions())
@@ -182,7 +180,6 @@ func (s *connStateLive) processGlobalUpdates(ctx context.Context, up caches.Upda
 
 func (s *connStateLive) processLiveUpdateForList(
 	ctx context.Context, builder *RoomsBuilder, up caches.Update, reqList *sync3.RequestList, intList *sync3.FilteredSortableRooms, resList *sync3.ResponseList,
-	isSubscribedToRoom bool,
 ) (hasUpdates bool) {
 	roomUpdate, ok := up.(caches.RoomUpdate)
 	if ok { // update the internal lists - this may remove rooms if the room no longer matches a filter
@@ -204,14 +201,14 @@ func (s *connStateLive) processLiveUpdateForList(
 	switch update := up.(type) {
 	case *caches.RoomEventUpdate:
 		logger.Trace().Str("user", s.userID).Str("type", update.EventData.EventType).Msg("received event update")
-		ops, didUpdate := s.processIncomingEventForList(ctx, builder, update, reqList, intList, isSubscribedToRoom)
+		ops, didUpdate := s.processIncomingEventForList(ctx, builder, update, reqList, intList)
 		if didUpdate {
 			hasUpdates = true
 		}
 		resList.Ops = append(resList.Ops, ops...)
 	case *caches.UnreadCountUpdate:
 		logger.Trace().Str("user", s.userID).Str("room", update.RoomID()).Msg("received unread count update")
-		ops, didUpdate := s.processUnreadCountUpdateForList(ctx, builder, update, reqList, intList, isSubscribedToRoom)
+		ops, didUpdate := s.processUnreadCountUpdateForList(ctx, builder, update, reqList, intList)
 		if didUpdate {
 			hasUpdates = true
 		}
@@ -230,7 +227,7 @@ func (s *connStateLive) processLiveUpdateForList(
 				RoomUpdate: update.RoomUpdate,
 				EventData:  update.InviteData.InviteEvent,
 			}
-			ops, didUpdate := s.processIncomingEventForList(ctx, builder, roomUpdate, reqList, intList, isSubscribedToRoom)
+			ops, didUpdate := s.processIncomingEventForList(ctx, builder, roomUpdate, reqList, intList)
 			resList.Ops = append(resList.Ops, ops...)
 			if didUpdate {
 				hasUpdates = true
@@ -247,7 +244,6 @@ func (s *connStateLive) processLiveUpdateForList(
 
 func (s *connStateLive) processUnreadCountUpdateForList(
 	ctx context.Context, builder *RoomsBuilder, up *caches.UnreadCountUpdate, reqList *sync3.RequestList, intList *sync3.FilteredSortableRooms,
-	isSubscribedToRoom bool,
 ) (ops []sync3.ResponseOp, didUpdate bool) {
 	if !up.HasCountDecreased {
 		// if the count increases then we'll notify the user for the event which increases the count, hence
@@ -264,7 +260,6 @@ func (s *connStateLive) processUnreadCountUpdateForList(
 
 func (s *connStateLive) processIncomingEventForList(
 	ctx context.Context, builder *RoomsBuilder, update *caches.RoomEventUpdate, reqList *sync3.RequestList, intList *sync3.FilteredSortableRooms,
-	isSubscribedToRoom bool,
 ) (ops []sync3.ResponseOp, didUpdate bool) {
 	fromIndex, ok := intList.IndexOf(update.RoomID())
 	newlyAdded := false
@@ -416,18 +411,4 @@ func (s *connStateLive) writeDeleteOp(reqList *sync3.RequestList, deletedIndex i
 		Operation: sync3.OpDelete,
 		Index:     &deletedIndex,
 	}
-}
-
-func (s *connStateLive) getDeltaRoomData(roomID string, event json.RawMessage) *sync3.Room {
-	userRoomData := s.userCache.LoadRoomData(roomID) // TODO: don't do this as we have a ref in live code
-	room := &sync3.Room{
-		NotificationCount: int64(userRoomData.NotificationCount),
-		HighlightCount:    int64(userRoomData.HighlightCount),
-	}
-	if event != nil {
-		room.Timeline = s.userCache.AnnotateWithTransactionIDs([]json.RawMessage{
-			event,
-		})
-	}
-	return room
 }

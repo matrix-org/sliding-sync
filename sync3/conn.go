@@ -3,6 +3,7 @@ package sync3
 import (
 	"context"
 	"fmt"
+	"runtime/debug"
 	"strconv"
 	"sync"
 
@@ -64,6 +65,7 @@ func (c *Conn) tryRequest(ctx context.Context, req *Request) (res *Response, err
 		panicErr := recover()
 		if panicErr != nil {
 			err = fmt.Errorf("panic: %s", panicErr)
+			logger.Error().Msg(string(debug.Stack()))
 		}
 	}()
 	return c.handler.OnIncomingRequest(ctx, c.ConnID, req, req.pos == 0)
