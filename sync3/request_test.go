@@ -224,6 +224,37 @@ func TestRequestApplyDeltas(t *testing.T) {
 				},
 				{
 					testData: testData{
+						name: "initial: sets sort order to be by_recency if missing",
+						next: Request{
+							Lists: []RequestList{
+								{
+									Ranges: [][2]int64{{0, 20}},
+								},
+							},
+						},
+						want: Request{
+							Lists: []RequestList{
+								{
+									Ranges: [][2]int64{{0, 20}},
+									Sort:   []string{SortByRecency},
+								},
+							},
+							RoomSubscriptions: make(map[string]RoomSubscription),
+						},
+					},
+					wantDelta: func(input *Request, d testData) RequestDelta {
+						return RequestDelta{
+							Lists: []RequestListDelta{
+								{
+									Prev: nil,
+									Curr: &d.want.Lists[0],
+								},
+							},
+						}
+					},
+				},
+				{
+					testData: testData{
 						name: "initial: multiple lists",
 						next: Request{
 							Lists: []RequestList{
@@ -240,6 +271,7 @@ func TestRequestApplyDeltas(t *testing.T) {
 								},
 								{
 									Ranges: [][2]int64{{0, 5}},
+									Sort:   []string{SortByRecency, SortByName},
 									RoomSubscription: RoomSubscription{
 										TimelineLimit: 11,
 										RequiredState: [][2]string{
@@ -264,6 +296,7 @@ func TestRequestApplyDeltas(t *testing.T) {
 								},
 								{
 									Ranges: [][2]int64{{0, 5}},
+									Sort:   []string{SortByRecency, SortByName},
 									RoomSubscription: RoomSubscription{
 										TimelineLimit: 11,
 										RequiredState: [][2]string{

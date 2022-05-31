@@ -126,6 +126,7 @@ func (h *SyncLiveHandler) serve(w http.ResponseWriter, req *http.Request) error 
 			}
 		}
 	}
+
 	conn, err := h.setupConnection(req, &requestBody, req.URL.Query().Get("pos") != "")
 	if err != nil {
 		hlog.FromRequest(req).Err(err).Msg("failed to get or create Conn")

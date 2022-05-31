@@ -23,8 +23,17 @@ type ConnState struct {
 	userID   string
 	deviceID string
 	// the only thing that can touch these data structures is the conn goroutine
-	muxedReq          *sync3.Request
-	lists             *sync3.InternalRequestLists
+	muxedReq *sync3.Request
+	// TODO XXX: Cut down as many functions as possible in here. The problem is that the indexes need
+	// to match up with muxedReq.Lists - can we factor that away?
+	lists *sync3.InternalRequestLists
+
+	// TODO XXX: fix moveRoom and resort - also we seem to set default sorts in too many places. Do it
+	// in ApplyDelta then never check again?
+	// AFTER: Allow `ops` to be turned off for a list.
+
+	// Confirmed room subscriptions. Entries in this list have been checked for things like
+	// "is the user joined to this room?" whereas subscriptions in muxedReq are untrusted.
 	roomSubscriptions map[string]sync3.RoomSubscription // room_id -> subscription
 
 	loadPosition int64
@@ -163,7 +172,7 @@ func (s *ConnState) onIncomingRequest(ctx context.Context, req *sync3.Request, i
 	s.live.liveUpdate(ctx, req, ex, isInitial, response)
 	region.End()
 
-	// counts are AFTER events are applied
+	// counts are AFTER events are applied, hence after liveUpdate
 	for i := range response.Lists {
 		response.Lists[i].Count = s.lists.Count(i)
 	}
@@ -173,17 +182,8 @@ func (s *ConnState) onIncomingRequest(ctx context.Context, req *sync3.Request, i
 
 func (s *ConnState) onIncomingListRequest(ctx context.Context, builder *RoomsBuilder, listIndex int, prevReqList, nextReqList *sync3.RequestList) sync3.ResponseList {
 	defer trace.StartRegion(ctx, "onIncomingListRequest").End()
-	if nextReqList == nil {
-		// they deleted this list
-		s.lists.DeleteList(listIndex)
-		return sync3.ResponseList{}
-	}
 	if !s.lists.ListExists(listIndex) {
-		sortBy := nextReqList.Sort
-		if sortBy == nil {
-			sortBy = []string{sync3.SortByRecency}
-		}
-		s.lists.OverwriteList(listIndex, nextReqList.Filters, sortBy)
+		s.lists.OverwriteList(listIndex, nextReqList.Filters, nextReqList.Sort)
 	}
 	roomList := s.lists.List(listIndex)
 	// TODO: calculate the M values for N < M calcs
@@ -197,9 +197,6 @@ func (s *ConnState) onIncomingListRequest(ctx context.Context, builder *RoomsBui
 		prevRange = prevReqList.Ranges
 		prevSort = prevReqList.Sort
 		prevFilters = prevReqList.Filters
-	}
-	if nextReqList.Sort == nil {
-		nextReqList.Sort = []string{sync3.SortByRecency}
 	}
 
 	// Handle SYNC / INVALIDATE ranges
@@ -276,6 +273,12 @@ func (s *ConnState) buildListSubscriptions(ctx context.Context, builder *RoomsBu
 	result := make([]sync3.ResponseList, len(s.muxedReq.Lists))
 	// loop each list and handle each independently
 	for i := range listDeltas {
+		if listDeltas[i].Curr == nil {
+			// they deleted this list
+			logger.Debug().Int("index", i).Msg("list deleted")
+			s.lists.DeleteList(i)
+			continue
+		}
 		result[i] = s.onIncomingListRequest(ctx, builder, i, listDeltas[i].Prev, listDeltas[i].Curr)
 	}
 	return result

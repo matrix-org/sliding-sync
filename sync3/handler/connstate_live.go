@@ -303,9 +303,6 @@ func (s *connStateLive) resort(
 	reqList *sync3.RequestList, intList *sync3.FilteredSortableRooms, roomID string,
 	fromIndex int, newEvent json.RawMessage, newlyAdded, forceInitial bool,
 ) (ops []sync3.ResponseOp, didUpdate bool) {
-	if reqList.Sort == nil {
-		reqList.Sort = []string{sync3.SortByRecency}
-	}
 	wasInsideRange := reqList.Ranges.Inside(int64(fromIndex))
 	if err := intList.Sort(reqList.Sort); err != nil {
 		logger.Err(err).Msg("cannot sort list")

@@ -102,6 +102,10 @@ func (r *Request) ApplyDelta(nextReq *Request) (result *Request, delta *RequestD
 		if i < len(r.Lists) {
 			existingList = &r.Lists[i]
 		}
+		// default to recency sort order if missing and there isn't a previous list to draw from
+		if len(nextReq.Lists[i].Sort) == 0 && existingList == nil {
+			nextReq.Lists[i].Sort = []string{SortByRecency}
+		}
 		if existingList == nil {
 			// we added a list
 			lists[i] = nextReq.Lists[i]
