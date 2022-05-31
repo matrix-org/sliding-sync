@@ -302,6 +302,11 @@ func (s *connStateLive) resort(
 		// no need to sort this list as we get all rooms
 		// no need to calculate ops as we get all rooms
 		// no need to send initial state for some rooms as we already sent initial state for all rooms
+		if newlyAdded {
+			// ensure we send data when the user joins a new room
+			subID := builder.AddSubscription(reqList.RoomSubscription)
+			builder.AddRoomsToSubscription(subID, []string{roomID})
+		}
 		return nil, true
 	}
 
