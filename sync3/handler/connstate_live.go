@@ -255,7 +255,7 @@ func (s *connStateLive) processUnreadCountUpdateForList(
 	if !ok {
 		return nil, false
 	}
-	return s.resort(ctx, builder, reqList, intList, up.RoomID(), fromIndex, nil, false, false)
+	return s.resort(ctx, builder, reqList, intList, up.RoomID(), fromIndex, false)
 }
 
 func (s *connStateLive) processIncomingEventForList(
@@ -282,8 +282,13 @@ func (s *connStateLive) processIncomingEventForList(
 		logger.Info().Str("room", update.RoomID()).Msg("room added")
 		newlyAdded = true
 	}
+	if update.EventData.ForceInitial {
+		// add room to sub
+		subID := builder.AddSubscription(reqList.RoomSubscription)
+		builder.AddRoomsToSubscription(subID, []string{update.RoomID()})
+	}
 	return s.resort(
-		ctx, builder, reqList, intList, update.RoomID(), fromIndex, update.EventData.Event, newlyAdded, update.EventData.ForceInitial,
+		ctx, builder, reqList, intList, update.RoomID(), fromIndex, newlyAdded,
 	)
 }
 
@@ -291,7 +296,7 @@ func (s *connStateLive) processIncomingEventForList(
 func (s *connStateLive) resort(
 	ctx context.Context, builder *RoomsBuilder,
 	reqList *sync3.RequestList, intList *sync3.FilteredSortableRooms, roomID string,
-	fromIndex int, newEvent json.RawMessage, newlyAdded, forceInitial bool,
+	fromIndex int, newlyAdded bool,
 ) (ops []sync3.ResponseOp, didUpdate bool) {
 	wasInsideRange := reqList.Ranges.Inside(int64(fromIndex))
 	if err := intList.Sort(reqList.Sort); err != nil {
@@ -301,7 +306,7 @@ func (s *connStateLive) resort(
 	toIndex, _ := intList.IndexOf(roomID)
 	isInsideRange := reqList.Ranges.Inside(int64(toIndex))
 	logger = logger.With().Str("room", roomID).Int("from", fromIndex).Int("to", toIndex).Bool("inside_range", isInsideRange).Logger()
-	logger.Info().Bool("newEvent", newEvent != nil).Bool("was_inside", wasInsideRange).Msg("moved!")
+	logger.Info().Bool("was_inside", wasInsideRange).Msg("moved!")
 	// the toIndex may not be inside a tracked range. If it isn't, we actually need to notify about a
 	// different room
 	if !isInsideRange {
@@ -321,56 +326,30 @@ func (s *connStateLive) resort(
 			return nil, false
 		}
 		toRoom := intList.Get(toIndex)
-
-		// fake an update event for this room.
-		// We do this because we are introducing a new room in the list because of this situation:
-		// tracking [10,20] and room 24 jumps to position 0, so now we are tracking [9,19] as all rooms
-		// have been shifted to the right, hence we need to inject a fake event for room 9 (client has 10-19)
-		tempTimelineLimit := int(reqList.TimelineLimit)
-		if tempTimelineLimit == 0 {
-			// We need to make sure that we actually give a valid timeline limit here as we will yank the most
-			// recent timeline event to inject as the fake event, hence min check
-			tempTimelineLimit = 1
-		}
-		rooms := s.userCache.LazyLoadTimelines(s.loadPosition, []string{toRoom.RoomID}, tempTimelineLimit) // TODO: per-room timeline limit
-		urd := rooms[toRoom.RoomID]
-
-		// clobber before falling through
+		// clobber before falling through. This will cause this different room to be added in the
+		// room subscription and hence initial data be sent for it.
 		roomID = toRoom.RoomID
-		if len(urd.Timeline) > 0 {
-			newEvent = urd.Timeline[len(urd.Timeline)-1]
-		} else {
-			logger.Warn().Str("to_room", toRoom.RoomID).Int("limit", tempTimelineLimit).Msg(
-				"tried to lazy load timeline for room but no timeline entries were returned. " +
-					"This isn't possible under normal operation, please report. " +
-					"Rooms may be duplicated in the list.",
-			)
-			// do nothing and pretend the new event didn't exist...
-			return nil, false
-		}
 	}
 
 	if !wasInsideRange && isInsideRange {
 		newlyAdded = true
 	}
-
-	return s.moveRoom(ctx, builder, reqList, roomID, newEvent, fromIndex, toIndex, reqList.Ranges, newlyAdded, forceInitial), true
-}
-
-// Move a room from an absolute index position to another absolute position.
-// 1,2,3,4,5
-// 3 bumps to top -> 3,1,2,4,5 -> DELETE index=2, INSERT val=3 index=0
-// 7 bumps to top -> 7,1,2,3,4 -> DELETE index=4, INSERT val=7 index=0
-func (s *connStateLive) moveRoom(
-	ctx context.Context, builder *RoomsBuilder,
-	reqList *sync3.RequestList, roomID string, event json.RawMessage, fromIndex, toIndex int,
-	ranges sync3.SliceRanges, newlyAdded, forceInitial bool,
-) []sync3.ResponseOp {
-	if newlyAdded || forceInitial {
+	if newlyAdded {
 		subID := builder.AddSubscription(reqList.RoomSubscription)
 		builder.AddRoomsToSubscription(subID, []string{roomID})
 	}
 
+	return s.writeSwapOp(reqList, roomID, fromIndex, toIndex), true
+}
+
+// Move a room from an absolute index position to another absolute position. These positions do not
+// need to be inside a valid range.
+// 1,2,3,4,5
+// 3 bumps to top -> 3,1,2,4,5 -> DELETE index=2, INSERT val=3 index=0
+// 7 bumps to top -> 7,1,2,3,4 -> DELETE index=4, INSERT val=7 index=0
+func (s *connStateLive) writeSwapOp(
+	reqList *sync3.RequestList, roomID string, fromIndex, toIndex int,
+) []sync3.ResponseOp {
 	if fromIndex == toIndex {
 		return nil // we only care to notify clients about moves in the list
 	}
@@ -379,11 +358,12 @@ func (s *connStateLive) moveRoom(
 	// pos 150 -> DELETE 150, but if we weren't tracking [100,199] then we would DELETE 99. If we were
 	// tracking [0,99][200,299] then it's still DELETE 99 as the 200-299 range isn't touched.
 	deleteIndex := fromIndex
-	if !ranges.Inside(int64(fromIndex)) {
+	if !reqList.Ranges.Inside(int64(fromIndex)) {
 		// we are not tracking this room, so no point issuing a DELETE for it. Instead, clamp the index
 		// to the highest end-range marker < index
-		deleteIndex = int(ranges.LowerClamp(int64(fromIndex)))
+		deleteIndex = int(reqList.Ranges.LowerClamp(int64(fromIndex)))
 	}
+	// TODO: toIndex needs to be inside range?
 
 	return []sync3.ResponseOp{
 		&sync3.ResponseOpSingle{
