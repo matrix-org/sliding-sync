@@ -71,6 +71,60 @@ func (rl *RequestList) FiltersChanged(next *RequestList) bool {
 	return !bytes.Equal(pb, nb)
 }
 
+// Write a delete operation for this list. Can return nil for invalid indexes or if this index isn't being tracked.
+func (rl *RequestList) WriteDeleteOp(deletedIndex int) *ResponseOpSingle {
+	// update operations return -1 if nothing gets deleted
+	if deletedIndex < 0 {
+		return nil
+	}
+	// only notify if we are tracking this index
+	if !rl.Ranges.Inside(int64(deletedIndex)) {
+		return nil
+	}
+	return &ResponseOpSingle{
+		Operation: OpDelete,
+		Index:     &deletedIndex,
+	}
+}
+
+// Move a room from an absolute index position to another absolute position. These positions do not
+// need to be inside a valid range. Returns 0-2 operations. For example:
+//   1,2,3,4,5 tracking range [0,4]
+//   3 bumps to top -> 3,1,2,4,5 -> DELETE index=2, INSERT val=3 index=0
+//   7 bumps to top -> 7,1,2,3,4 -> DELETE index=4, INSERT val=7 index=0
+//   7 bumps to op again -> 7,1,2,3,4 -> no-op as from == to index
+//   new room 8 in i=5 -> 7,1,2,3,4,8 -> no-op as 8 is outside the range.
+func (rl *RequestList) WriteSwapOp(
+	roomID string, fromIndex, toIndex int,
+) []ResponseOp {
+	if fromIndex == toIndex {
+		return nil // we only care to notify clients about moves in the list
+	}
+	// work out which value to DELETE. This varies depending on where the room was and how much of the
+	// list we are tracking. E.g moving to index=0 with ranges [0,99][100,199] and an update in
+	// pos 150 -> DELETE 150, but if we weren't tracking [100,199] then we would DELETE 99. If we were
+	// tracking [0,99][200,299] then it's still DELETE 99 as the 200-299 range isn't touched.
+	deleteIndex := fromIndex
+	if !rl.Ranges.Inside(int64(fromIndex)) {
+		// we are not tracking this room, so no point issuing a DELETE for it. Instead, clamp the index
+		// to the highest end-range marker < index
+		deleteIndex = int(rl.Ranges.LowerClamp(int64(fromIndex)))
+	}
+	// TODO: toIndex needs to be inside range?
+
+	return []ResponseOp{
+		&ResponseOpSingle{
+			Operation: OpDelete,
+			Index:     &deleteIndex,
+		},
+		&ResponseOpSingle{
+			Operation: OpInsert,
+			Index:     &toIndex,
+			RoomID:    roomID,
+		},
+	}
+}
+
 func (r *Request) SetPos(pos int64) {
 	r.pos = pos
 }

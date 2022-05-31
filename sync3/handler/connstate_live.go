@@ -185,14 +185,14 @@ func (s *connStateLive) processLiveUpdateForList(
 	if ok { // update the internal lists - this may remove rooms if the room no longer matches a filter
 		// see if the latest room metadata means we delete a room, else update our state
 		deletedIndex := intList.UpdateGlobalRoomMetadata(roomUpdate.GlobalRoomMetadata())
-		if op := s.writeDeleteOp(reqList, deletedIndex); op != nil {
+		if op := reqList.WriteDeleteOp(deletedIndex); op != nil {
 			resList.Ops = append(resList.Ops, op)
 			hasUpdates = true
 		}
 		// see if the latest user room metadata means we delete a room (e.g it transition from dm to non-dm)
 		// modify notification counts, DM-ness, etc
 		deletedIndex = intList.UpdateUserRoomMetadata(roomUpdate.RoomID(), roomUpdate.UserRoomMetadata())
-		if op := s.writeDeleteOp(reqList, deletedIndex); op != nil {
+		if op := reqList.WriteDeleteOp(deletedIndex); op != nil {
 			resList.Ops = append(resList.Ops, op)
 			hasUpdates = true
 		}
@@ -218,7 +218,7 @@ func (s *connStateLive) processLiveUpdateForList(
 		if update.Retired {
 			// remove the room from this list if need be
 			deletedIndex := intList.Remove(update.RoomID())
-			if op := s.writeDeleteOp(reqList, deletedIndex); op != nil {
+			if op := reqList.WriteDeleteOp(deletedIndex); op != nil {
 				resList.Ops = append(resList.Ops, op)
 				hasUpdates = true
 			}
@@ -339,56 +339,5 @@ func (s *connStateLive) resort(
 		builder.AddRoomsToSubscription(subID, []string{roomID})
 	}
 
-	return s.writeSwapOp(reqList, roomID, fromIndex, toIndex), true
-}
-
-// Move a room from an absolute index position to another absolute position. These positions do not
-// need to be inside a valid range.
-// 1,2,3,4,5
-// 3 bumps to top -> 3,1,2,4,5 -> DELETE index=2, INSERT val=3 index=0
-// 7 bumps to top -> 7,1,2,3,4 -> DELETE index=4, INSERT val=7 index=0
-func (s *connStateLive) writeSwapOp(
-	reqList *sync3.RequestList, roomID string, fromIndex, toIndex int,
-) []sync3.ResponseOp {
-	if fromIndex == toIndex {
-		return nil // we only care to notify clients about moves in the list
-	}
-	// work out which value to DELETE. This varies depending on where the room was and how much of the
-	// list we are tracking. E.g moving to index=0 with ranges [0,99][100,199] and an update in
-	// pos 150 -> DELETE 150, but if we weren't tracking [100,199] then we would DELETE 99. If we were
-	// tracking [0,99][200,299] then it's still DELETE 99 as the 200-299 range isn't touched.
-	deleteIndex := fromIndex
-	if !reqList.Ranges.Inside(int64(fromIndex)) {
-		// we are not tracking this room, so no point issuing a DELETE for it. Instead, clamp the index
-		// to the highest end-range marker < index
-		deleteIndex = int(reqList.Ranges.LowerClamp(int64(fromIndex)))
-	}
-	// TODO: toIndex needs to be inside range?
-
-	return []sync3.ResponseOp{
-		&sync3.ResponseOpSingle{
-			Operation: sync3.OpDelete,
-			Index:     &deleteIndex,
-		},
-		&sync3.ResponseOpSingle{
-			Operation: sync3.OpInsert,
-			Index:     &toIndex,
-			RoomID:    roomID,
-		},
-	}
-}
-
-func (s *connStateLive) writeDeleteOp(reqList *sync3.RequestList, deletedIndex int) sync3.ResponseOp {
-	// update operations return -1 if nothing gets deleted
-	if deletedIndex < 0 {
-		return nil
-	}
-	// only notify if we are tracking this index
-	if !reqList.Ranges.Inside(int64(deletedIndex)) {
-		return nil
-	}
-	return &sync3.ResponseOpSingle{
-		Operation: sync3.OpDelete,
-		Index:     &deletedIndex,
-	}
+	return reqList.WriteSwapOp(roomID, fromIndex, toIndex), true
 }

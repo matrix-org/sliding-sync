@@ -736,6 +736,62 @@ func TestRequestListDiffs(t *testing.T) {
 	}
 }
 
+func TestRequestListWriteDeleteOp(t *testing.T) {
+	noIndex := -1
+	testCases := []struct {
+		name             string
+		rl               RequestList
+		deleteIndex      int
+		wantDeletedIndex int
+	}{
+		{
+			name: "basic delete",
+			rl: RequestList{
+				Ranges: [][2]int64{{0, 20}},
+			},
+			deleteIndex:      5,
+			wantDeletedIndex: 5,
+		},
+		{
+			name: "delete outside range",
+			rl: RequestList{
+				Ranges: [][2]int64{{0, 20}},
+			},
+			deleteIndex:      30,
+			wantDeletedIndex: noIndex,
+		},
+		{
+			name: "delete edge of range",
+			rl: RequestList{
+				Ranges: [][2]int64{{0, 20}},
+			},
+			deleteIndex:      0,
+			wantDeletedIndex: 0,
+		},
+		{
+			name: "delete between range no-ops",
+			rl: RequestList{
+				Ranges: [][2]int64{{0, 20}, {30, 40}},
+			},
+			deleteIndex:      25,
+			wantDeletedIndex: noIndex,
+		},
+	}
+	for _, tc := range testCases {
+		gotOp := tc.rl.WriteDeleteOp(tc.deleteIndex)
+		if gotOp == nil {
+			if tc.wantDeletedIndex == noIndex {
+				continue
+			}
+			t.Errorf("WriteDeleteOp: %s got no ip, wanted %v", tc.name, tc.wantDeletedIndex)
+			continue
+		}
+		if *gotOp.Index != tc.wantDeletedIndex {
+			t.Errorf("WriteDeleteOp: %s got %v want %v", tc.name, *gotOp.Index, tc.wantDeletedIndex)
+		}
+	}
+}
+
 func jsonEqual(t *testing.T, name string, got, want interface{}) {
 	aa, err := json.Marshal(got)
 	if err != nil {
