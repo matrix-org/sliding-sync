@@ -7,6 +7,11 @@ v3 sync is a strict subset of v2 sync.
 
 An implementation of [MSC3575](https://github.com/matrix-org/matrix-doc/blob/kegan/sync-v3/proposals/3575-sync.md).
 
+Proxy version to MSC API specification:
+
+-   Version 0.1.x: [2022/04/01](https://github.com/matrix-org/matrix-spec-proposals/blob/615e8f5a7bfe4da813bc2db661ed0bd00bccac20/proposals/3575-sync.md)
+-   Version 0.2.x: [2022/05/24](https://github.com/matrix-org/matrix-spec-proposals/blob/bea7323c0b03dbd46600ce8fe01218d55f0de083/proposals/3575-sync.md)
+
 ## Usage
 
 Requires Postgres 13+.
