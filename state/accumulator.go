@@ -54,7 +54,7 @@ func (a *Accumulator) strippedEventsForSnapshot(txn *sqlx.Tx, snapID int64) (Str
 // calculateNewSnapshot works out the new snapshot by combining an old snapshot and a new state event. Events get replaced
 // if the tuple of event type/state_key match. A new slice is returned (the inputs are not modified) along with the NID
 // that got replaced.
-func (a *Accumulator) calculateNewSnapshot(old StrippedEvents, new Event) (StrippedEvents, int64) {
+func (a *Accumulator) calculateNewSnapshot(old StrippedEvents, new Event) (StrippedEvents, int64, error) {
 	// TODO: implement dendrite's binary tree diff algorithm?
 	tupleKey := func(e Event) string {
 		// 0x1f = unit separator
@@ -63,9 +63,14 @@ func (a *Accumulator) calculateNewSnapshot(old StrippedEvents, new Event) (Strip
 	newTuple := tupleKey(new)
 	added := false
 	var replacedNID int64
+	seenTuples := make(map[string]struct{}, len(old))
 	result := make(StrippedEvents, 0, len(old)+1)
 	for _, e := range old {
 		existingTuple := tupleKey(e)
+		if _, seen := seenTuples[existingTuple]; seen {
+			return nil, 0, fmt.Errorf("seen this tuple before: %v", existingTuple)
+		}
+		seenTuples[existingTuple] = struct{}{}
 		if e.NID == new.NID && existingTuple != newTuple {
 			// ruh roh. This should be impossible, but it can happen if the v2 response sends the same
 			// event in both state and timeline. We need to alert the operator and whine badly as it means
@@ -75,9 +80,7 @@ func (a *Accumulator) calculateNewSnapshot(old StrippedEvents, new Event) (Strip
 					"This can happen when the v2 /sync response sends the same event in both state and timeline sections. " +
 					"The event in this log line has been dropped!",
 			)
-			result = make([]Event, len(old))
-			copy(result, old)
-			return result, 0
+			return nil, 0, fmt.Errorf("new event has same nid value '%d' as event in snapshot but has a different tuple: %v != %v", new.NID, existingTuple, newTuple)
 		}
 		if existingTuple == newTuple {
 			// use the new event
@@ -92,7 +95,7 @@ func (a *Accumulator) calculateNewSnapshot(old StrippedEvents, new Event) (Strip
 	if !added {
 		result = append(result, new)
 	}
-	return result, replacedNID
+	return result, replacedNID, nil
 }
 
 // Initialise starts a new sync accumulator for the given room using the given state as a baseline.
@@ -132,11 +135,11 @@ func (a *Accumulator) Initialise(roomID string, state []json.RawMessage) (bool, 
 		if err := ensureFieldsSet(events); err != nil {
 			return fmt.Errorf("events malformed: %s", err)
 		}
-		numNew, err := a.eventsTable.Insert(txn, events, false)
+		eventIDToNID, err := a.eventsTable.Insert(txn, events, false)
 		if err != nil {
 			return fmt.Errorf("failed to insert events: %w", err)
 		}
-		if numNew == 0 {
+		if len(eventIDToNID) == 0 {
 			// we don't have a current snapshot for this room but yet no events are new,
 			// no idea how this should be handled.
 			log.Error().Str("room_id", roomID).Msg(
@@ -150,9 +153,16 @@ func (a *Accumulator) Initialise(roomID string, state []json.RawMessage) (bool, 
 		for i := range eventIDs {
 			eventIDs[i] = events[i].ID
 		}
-		nids, err := a.eventsTable.SelectNIDsByIDs(txn, eventIDs)
+		idToNIDs, err := a.eventsTable.SelectNIDsByIDs(txn, eventIDs)
 		if err != nil {
 			return fmt.Errorf("failed to select NIDs for inserted events: %w", err)
+		}
+		if len(idToNIDs) != len(eventIDs) {
+			return fmt.Errorf("missing events just inserted, asked for %v got %v", eventIDs, idToNIDs)
+		}
+		nids := make([]int64, 0, len(idToNIDs))
+		for _, nid := range idToNIDs {
+			nids = append(nids, nid)
 		}
 
 		// Make a current snapshot
@@ -211,8 +221,7 @@ func (a *Accumulator) Accumulate(roomID string, prevBatch string, timeline []jso
 	err = sqlutil.WithTransaction(a.db, func(txn *sqlx.Tx) error {
 		// Insert the events. Check for duplicates which can happen in the real world when joining
 		// Matrix HQ on Synapse.
-		events := make([]Event, 0, len(timeline))
-		dedupedTimeline := make([]json.RawMessage, 0, len(timeline))
+		dedupedEvents := make([]Event, 0, len(timeline))
 		seenEvents := make(map[string]struct{})
 		for i := range timeline {
 			e := Event{
@@ -235,21 +244,26 @@ func (a *Accumulator) Accumulate(roomID string, prevBatch string, timeline []jso
 					Valid:  true,
 				}
 			}
-			events = append(events, e)
-			dedupedTimeline = append(dedupedTimeline, timeline[i])
+			dedupedEvents = append(dedupedEvents, e)
 			seenEvents[e.ID] = struct{}{}
 		}
-		numNew, err = a.eventsTable.Insert(txn, events, false)
+		eventIDToNID, err := a.eventsTable.Insert(txn, dedupedEvents, false)
 		if err != nil {
 			return err
 		}
-		if numNew == 0 {
+		if len(eventIDToNID) == 0 {
 			// nothing to do, we already know about these events
 			return nil
 		}
+		numNew = len(eventIDToNID)
 
-		// The last numNew events are new
-		newEvents := dedupedTimeline[len(dedupedTimeline)-numNew:]
+		newEvents := make([]json.RawMessage, 0, len(eventIDToNID))
+		for _, ev := range dedupedEvents {
+			_, ok := eventIDToNID[ev.ID]
+			if ok {
+				newEvents = append(newEvents, ev.JSON)
+			}
+		}
 
 		// Decorate the new events with useful information
 		var newEventsDec []struct {
@@ -257,7 +271,6 @@ func (a *Accumulator) Accumulate(roomID string, prevBatch string, timeline []jso
 			NID     int64
 			IsState bool
 		}
-		var newEventIDs []string
 		for _, ev := range newEvents {
 			var evDec struct {
 				JSON    gjson.Result
@@ -265,29 +278,18 @@ func (a *Accumulator) Accumulate(roomID string, prevBatch string, timeline []jso
 				IsState bool
 			}
 			eventJSON := gjson.ParseBytes(ev)
-			newEventIDs = append(newEventIDs, eventJSON.Get("event_id").Str) // track the event IDs for mapping to NIDs
+			eventID := eventJSON.Get("event_id").Str
 			evDec.JSON = eventJSON
+			evDec.NID = int64(eventIDToNID[eventID])
 			if eventJSON.Get("state_key").Exists() {
 				evDec.IsState = true
 			}
-			newEventsDec = append(newEventsDec, evDec)
-		}
-
-		newEventNIDs, err := a.eventsTable.SelectNIDsByIDs(txn, newEventIDs)
-		if err != nil {
-			return err
-		}
-		if len(newEventNIDs) != len(newEventIDs) {
-			log.Error().Strs("asked", newEventIDs).Ints64("gots", newEventNIDs).Msg("missing events in database!")
-			return fmt.Errorf("failed to extract nids from inserted events, asked for %d got %d", len(newEventIDs), len(newEventNIDs))
-		}
-		for i, nid := range newEventNIDs {
-			newEventsDec[i].NID = nid
 			// assign the highest nid value to the latest nid.
 			// we'll return this to the caller so they can stay in-sync
-			if nid > latestNID {
-				latestNID = nid
+			if evDec.NID > latestNID {
+				latestNID = evDec.NID
 			}
+			newEventsDec = append(newEventsDec, evDec)
 		}
 
 		// check if these new events enable encryption / tombstone the room
@@ -329,9 +331,9 @@ func (a *Accumulator) Accumulate(roomID string, prevBatch string, timeline []jso
 					ID:       ev.JSON.Get("event_id").Str,
 					RoomID:   roomID,
 				}
-				newStripped, replacedNID := a.calculateNewSnapshot(oldStripped, newStateEvent)
+				newStripped, replacedNID, err := a.calculateNewSnapshot(oldStripped, newStateEvent)
 				if err != nil {
-					return err
+					return fmt.Errorf("failed to calculateNewSnapshot: %s", err)
 				}
 				replacesNID = replacedNID
 				newSnapshot := &SnapshotRow{

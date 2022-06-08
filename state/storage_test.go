@@ -503,15 +503,15 @@ func TestStorageLatestEventsInRoomsPrevBatch(t *testing.T) {
 		}
 	}
 	t.Logf("events: %v", eventIDs)
-	var eventNIDs []int64
+	var idsToNIDs map[string]int64
 	sqlutil.WithTransaction(store.EventsTable.db, func(txn *sqlx.Tx) error {
-		eventNIDs, err = store.EventsTable.SelectNIDsByIDs(txn, eventIDs)
+		idsToNIDs, err = store.EventsTable.SelectNIDsByIDs(txn, eventIDs)
 		if err != nil {
 			t.Fatalf("failed to get nids for events: %s", err)
 		}
 		return nil
 	})
-	t.Logf("nids: %v", eventNIDs)
+	t.Logf("nids: %v", idsToNIDs)
 	wantPrevBatches := []string{
 		// first chunk
 		timelines[0].prevBatch,
@@ -526,7 +526,7 @@ func TestStorageLatestEventsInRoomsPrevBatch(t *testing.T) {
 
 	for i := range wantPrevBatches {
 		wantPrevBatch := wantPrevBatches[i]
-		eventNID := eventNIDs[i]
+		eventNID := idsToNIDs[eventIDs[i]]
 		// closest batch to the last event in the chunk (latest nid) is always the next prev batch token
 		pb, err := store.EventsTable.SelectClosestPrevBatch(roomID, eventNID)
 		if err != nil {

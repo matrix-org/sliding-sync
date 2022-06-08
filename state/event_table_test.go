@@ -36,12 +36,12 @@ func TestEventTable(t *testing.T) {
 			JSON: []byte(`{"event_id":"102", "foo":"bar", "type": "T3", "state_key":"", "room_id":"` + roomID + `"}`),
 		},
 	}
-	numNew, err := table.Insert(txn, events, true)
+	idToNID, err := table.Insert(txn, events, true)
 	if err != nil {
 		t.Fatalf("Insert failed: %s", err)
 	}
-	if numNew != len(events) {
-		t.Fatalf("wanted %d new events, got %d", len(events), numNew)
+	if len(idToNID) != len(events) {
+		t.Fatalf("wanted %d new events, got %d", len(events), len(idToNID))
 	}
 	txn.Commit()
 
@@ -51,12 +51,12 @@ func TestEventTable(t *testing.T) {
 	}
 	defer txn.Rollback()
 	// duplicate insert is ok
-	numNew, err = table.Insert(txn, events, true)
+	idToNID, err = table.Insert(txn, events, true)
 	if err != nil {
 		t.Fatalf("Insert failed: %s", err)
 	}
-	if numNew != 0 {
-		t.Fatalf("wanted 0 new events, got %d", numNew)
+	if len(idToNID) != 0 {
+		t.Fatalf("wanted 0 new events, got %d", len(idToNID))
 	}
 
 	// pulling non-existent ids returns no error but a zero slice
@@ -78,23 +78,23 @@ func TestEventTable(t *testing.T) {
 	}
 
 	// pulling nids by event_id is ok
-	gotnids, err := table.SelectNIDsByIDs(txn, []string{"100", "101", "102"})
+	idToNIDs, err := table.SelectNIDsByIDs(txn, []string{"100", "101", "102"})
 	if err != nil {
 		t.Fatalf("SelectNIDsByIDs failed: %s", err)
 	}
-	if len(gotnids) != 3 {
-		t.Fatalf("SelectNIDsByIDs returned %d events, want 3", len(gotnids))
+	if len(idToNIDs) != 3 {
+		t.Fatalf("SelectNIDsByIDs returned %v, want 3", idToNIDs)
 	}
 
 	// set a snapshot ID on them
 	var firstSnapshotID int64 = 55
-	for _, nid := range gotnids {
+	for _, nid := range idToNIDs {
 		if err = table.UpdateBeforeSnapshotID(txn, nid, firstSnapshotID, 0); err != nil {
 			t.Fatalf("UpdateSnapshotID: %s", err)
 		}
 	}
 	// query the snapshot
-	latestEvents, err := table.LatestEventInRooms(txn, []string{roomID}, gotnids[1])
+	latestEvents, err := table.LatestEventInRooms(txn, []string{roomID}, idToNIDs["101"])
 	le := latestEvents[0]
 	if err != nil {
 		t.Fatalf("BeforeStateSnapshotIDForEventNID: %s", err)
@@ -103,8 +103,8 @@ func TestEventTable(t *testing.T) {
 		t.Fatalf("BeforeStateSnapshotIDForEventNID: got snap ID %d want %d", int64(le.BeforeStateSnapshotID), firstSnapshotID)
 	}
 	// the queried position
-	if le.NID != gotnids[1] {
-		t.Fatalf("BeforeStateSnapshotIDForEventNID: didn't return last inserted event, got %d want %d", le.NID, gotnids[1])
+	if le.NID != idToNIDs["101"] {
+		t.Fatalf("BeforeStateSnapshotIDForEventNID: didn't return last inserted event, got %d want %d", le.NID, idToNIDs["101"])
 	}
 	// try again with a much higher pos
 	latestEvents, err = table.LatestEventInRooms(txn, []string{roomID}, 999999)
@@ -115,13 +115,13 @@ func TestEventTable(t *testing.T) {
 	if int64(le.BeforeStateSnapshotID) != firstSnapshotID {
 		t.Fatalf("BeforeStateSnapshotIDForEventNID: got snap ID %d want %d", le.BeforeStateSnapshotID, firstSnapshotID)
 	}
-	if le.NID != gotnids[2] {
-		t.Fatalf("BeforeStateSnapshotIDForEventNID: didn't return last inserted event, got %d want %d", le.NID, gotnids[2])
+	if le.NID != idToNIDs["102"] {
+		t.Fatalf("BeforeStateSnapshotIDForEventNID: didn't return last inserted event, got %d want %d", le.NID, idToNIDs["102"])
 	}
 
 	// find max and query it
 	var wantHighestNID int64
-	for _, nid := range gotnids {
+	for _, nid := range idToNIDs {
 		if nid > wantHighestNID {
 			wantHighestNID = nid
 		}
@@ -216,12 +216,12 @@ func TestEventTableNullValue(t *testing.T) {
 			JSON: originalJSON,
 		},
 	}
-	numNew, err := table.Insert(txn, events, true)
+	idToNID, err := table.Insert(txn, events, true)
 	if err != nil {
 		t.Fatalf("Insert failed: %s", err)
 	}
-	if numNew != len(events) {
-		t.Fatalf("wanted %d new events, got %d", len(events), numNew)
+	if len(idToNID) != len(events) {
+		t.Fatalf("wanted %d new events, got %d", len(events), len(idToNID))
 	}
 	gotEvents, err := table.SelectByIDs(txn, true, []string{"nullevent"})
 	if err != nil {
@@ -257,20 +257,16 @@ func TestEventTableDupeInsert(t *testing.T) {
 			RoomID: roomID,
 		},
 	}
-	numNew, err := table.Insert(txn, events, true)
+	idToNID, err := table.Insert(txn, events, true)
 	if err != nil {
 		t.Fatalf("Insert failed: %s", err)
 	}
-	if numNew != len(events) {
-		t.Fatalf("wanted %d new events, got %d", len(events), numNew)
+	if len(idToNID) != len(events) {
+		t.Fatalf("wanted %d new events, got %d", len(events), len(idToNID))
 	}
 
 	// pull out the nid
-	nids, err := table.SelectNIDsByIDs(txn, []string{"dupeevent"})
-	if err != nil {
-		t.Fatalf("SelectNIDsByIDs: %s", err)
-	}
-	nid := nids[0]
+	nid := idToNID["dupeevent"]
 	txn.Commit()
 
 	// now insert again
@@ -284,24 +280,23 @@ func TestEventTableDupeInsert(t *testing.T) {
 			RoomID: roomID,
 		},
 	}
-	numNew, err = table.Insert(txn, events, true)
+	idToNID2, err := table.Insert(txn, events, true)
 	if err != nil {
 		t.Fatalf("Insert failed: %s", err)
 	}
-	if numNew != 0 {
-		t.Fatalf("wanted 0 new events, got %d", numNew)
+	if len(idToNID2) != 0 {
+		t.Fatalf("wanted 0 new events, got %d", len(idToNID2))
 	}
 
 	// pull out the nid
-	nids, err = table.SelectNIDsByIDs(txn, []string{"dupeevent"})
+	idToNID3, err := table.SelectNIDsByIDs(txn, []string{"dupeevent"})
 	if err != nil {
-		t.Fatalf("SelectNIDsByIDs: %s", err)
+		t.Fatalf("SelectNIDsByIDs: %v", err)
 	}
-	nid2 := nids[0]
 	txn.Commit()
 
-	if nid != nid2 {
-		t.Fatalf("nid mismatch, got %v want %v", nid2, nid)
+	if nid != int(idToNID3["dupeevent"]) {
+		t.Fatalf("nid mismatch, got %v want %v", int(idToNID3["dupeevent"]), nid)
 	}
 }
 
@@ -341,12 +336,12 @@ func TestEventTableSelectEventsBetween(t *testing.T) {
 			JSON: []byte(`{"event_id":"` + eventIDs[4] + `","type": "T5", "state_key":"", "room_id":"` + searchRoomID + `"}`),
 		},
 	}
-	numNew, err := table.Insert(txn, events, true)
+	idToNID, err := table.Insert(txn, events, true)
 	if err != nil {
 		t.Fatalf("Insert failed: %s", err)
 	}
-	if numNew != len(events) {
-		t.Fatalf("failed to insert events: got %d want %d", numNew, len(events))
+	if len(idToNID) != len(events) {
+		t.Fatalf("failed to insert events: got %d want %d", len(idToNID), len(events))
 	}
 	txn.Commit()
 
@@ -671,12 +666,12 @@ func TestTortureEventTable(t *testing.T) {
 		}
 		eventIDs[i] = events[i].ID
 	}
-	n, err := table.Insert(txn, events, true)
+	idToNID, err := table.Insert(txn, events, true)
 	if err != nil {
 		t.Fatalf("failed to insert %d events: %s", len(events), err)
 	}
-	if n != len(events) {
-		t.Fatalf("only inserted %d/%d events", n, len(events))
+	if len(idToNID) != len(events) {
+		t.Fatalf("only inserted %d/%d events", len(idToNID), len(events))
 	}
 	if err = txn.Commit(); err != nil {
 		t.Fatalf("failed to commit insert")
@@ -783,23 +778,19 @@ func TestEventTablePrevBatch(t *testing.T) {
 	}
 
 	// 1: can insert events with a prev_batch
-	n, err := table.Insert(txn, events, true)
+	idToNID, err := table.Insert(txn, events, true)
 	if err != nil {
 		t.Fatalf("failed to insert %d events: %s", len(events), err)
 	}
-	if n != len(events) {
-		t.Fatalf("only inserted %d/%d events", n, len(events))
-	}
-	eventNIDs, err := table.SelectNIDsByIDs(txn, eventIDs)
-	if err != nil || len(eventNIDs) != len(eventIDs) {
-		t.Fatalf("failed to get nids for ids: %s", err)
+	if len(idToNID) != len(events) {
+		t.Fatalf("only inserted %d/%d events", len(idToNID), len(events))
 	}
 	if err = txn.Commit(); err != nil {
 		t.Fatalf("failed to commit insert")
 	}
 
 	assertPrevBatch := func(roomID string, index int, wantPrevBatch string) {
-		gotPrevBatch, err := table.SelectClosestPrevBatch(roomID, eventNIDs[index])
+		gotPrevBatch, err := table.SelectClosestPrevBatch(roomID, int64(idToNID[events[index].ID]))
 		if err != nil {
 			t.Fatalf("failed to SelectClosestPrevBatch: %s", err)
 		}

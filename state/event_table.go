@@ -96,26 +96,29 @@ func (t *EventTable) SelectHighestNID() (highest int64, err error) {
 
 // Insert events into the event table. Returns the number of rows added. If the number of rows is >0,
 // and the list of events is in sync stream order, it can be inferred that the last element(s) are new.
-func (t *EventTable) Insert(txn *sqlx.Tx, events []Event, checkFields bool) (int, error) {
+func (t *EventTable) Insert(txn *sqlx.Tx, events []Event, checkFields bool) (map[string]int, error) {
 	if checkFields {
 		ensureFieldsSet(events)
 	}
+	result := make(map[string]int)
 	chunks := sqlutil.Chunkify(7, MaxPostgresParameters, EventChunker(events))
-	var rowsAffected int64
+	var eventID string
+	var eventNID int
 	for _, chunk := range chunks {
-		result, err := txn.NamedExec(`
+		rows, err := txn.NamedQuery(`
 		INSERT INTO syncv3_events (event_id, event, event_type, state_key, room_id, membership, prev_batch)
-        VALUES (:event_id, :event, :event_type, :state_key, :room_id, :membership, :prev_batch) ON CONFLICT (event_id) DO NOTHING`, chunk)
+        VALUES (:event_id, :event, :event_type, :state_key, :room_id, :membership, :prev_batch) ON CONFLICT (event_id) DO NOTHING RETURNING event_id, event_nid`, chunk)
 		if err != nil {
-			return 0, err
+			return nil, err
 		}
-		ra, err := result.RowsAffected()
-		if err != nil {
-			return 0, err
+		for rows.Next() {
+			if err := rows.Scan(&eventID, &eventNID); err != nil {
+				return nil, err
+			}
+			result[eventID] = eventNID
 		}
-		rowsAffected += ra
 	}
-	return int(rowsAffected), nil
+	return result, nil
 }
 
 // select events in a list of nids or ids, depending on the query. Provides flexibility to query on NID or ID, as well as
@@ -154,11 +157,19 @@ func (t *EventTable) SelectByIDs(txn *sqlx.Tx, verifyAll bool, ids []string) (ev
 	WHERE event_id = ANY ($1) ORDER BY event_nid ASC;`, pq.StringArray(ids))
 }
 
-func (t *EventTable) SelectNIDsByIDs(txn *sqlx.Tx, ids []string) (nids []int64, err error) {
+func (t *EventTable) SelectNIDsByIDs(txn *sqlx.Tx, ids []string) (nids map[string]int64, err error) {
 	// Select NIDs using a single parameter which is a string array
 	// https://stackoverflow.com/questions/52712022/what-is-the-most-performant-way-to-rewrite-a-large-in-clause
-	err = txn.Select(&nids, "SELECT event_nid FROM syncv3_events WHERE event_id = ANY ($1) ORDER BY event_nid ASC;", pq.StringArray(ids))
-	return
+	result := make(map[string]int64, len(ids))
+	rows := []struct {
+		NID int64  `db:"event_nid"`
+		ID  string `db:"event_id"`
+	}{}
+	err = txn.Select(&rows, "SELECT event_nid, event_id FROM syncv3_events WHERE event_id = ANY ($1);", pq.StringArray(ids))
+	for _, row := range rows {
+		result[row.ID] = row.NID
+	}
+	return result, err
 }
 
 func (t *EventTable) SelectStrippedEventsByNIDs(txn *sqlx.Tx, verifyAll bool, nids []int64) (StrippedEvents, error) {
