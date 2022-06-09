@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"reflect"
+	"sort"
 	"testing"
 )
 
@@ -738,121 +739,182 @@ func TestRequestListDiffs(t *testing.T) {
 
 func TestRequestList_CalculateMoveIndexes(t *testing.T) {
 	testCases := []struct {
-		name     string
-		rl       RequestList
-		from     int
-		to       int
-		wantFrom int
-		wantTo   int
-		wantOk   bool
+		name        string
+		rl          RequestList
+		from        int
+		to          int
+		wantFromTos [][2]int
+		wantOk      bool
 	}{
 		{
 			name: "move from inside range to inside range",
 			rl: RequestList{
 				Ranges: [][2]int64{{0, 10}},
 			},
-			from:     5,
-			to:       0,
-			wantFrom: 5,
-			wantTo:   0,
-			wantOk:   true,
+			from:        5,
+			to:          0,
+			wantFromTos: [][2]int{{5, 0}},
+			wantOk:      true,
 		},
 		{
 			name: "move from outside range to inside range",
 			rl: RequestList{
 				Ranges: [][2]int64{{0, 10}},
 			},
-			from:     15,
-			to:       0,
-			wantFrom: 10,
-			wantTo:   0,
-			wantOk:   true,
+			from:        15,
+			to:          0,
+			wantFromTos: [][2]int{{10, 0}},
+			wantOk:      true,
 		},
 		{
 			name: "move from inside range to outside range",
 			rl: RequestList{
 				Ranges: [][2]int64{{0, 10}},
 			},
-			from:     5,
-			to:       20,
-			wantFrom: 5,
-			wantTo:   10,
-			wantOk:   true,
+			from:        5,
+			to:          20,
+			wantFromTos: [][2]int{{5, 10}},
+			wantOk:      true,
 		},
 		{
 			name: "move from outside range to outside range",
 			rl: RequestList{
 				Ranges: [][2]int64{{0, 10}},
 			},
-			from:     50,
-			to:       20,
-			wantFrom: 0,
-			wantTo:   0,
-			wantOk:   false,
+			from:   50,
+			to:     20,
+			wantOk: false,
 		},
 		{
 			name: "move from outside range to outside range, 1 jump",
 			rl: RequestList{
 				Ranges: [][2]int64{{10, 20}},
 			},
-			from:     50,
-			to:       2,
-			wantFrom: 20,
-			wantTo:   10,
-			wantOk:   true,
+			from:        50,
+			to:          2,
+			wantFromTos: [][2]int{{20, 10}},
+			wantOk:      true,
 		},
-		/*
-			// multiple range fun
-			{
-				name: "move from between two ranges to inside first range",
-				rl: RequestList{
-					Ranges: [][2]int64{{0, 10}, {20, 30}},
-				},
-				from:     15,
-				to:       2,
-				wantFrom: 10,
-				wantTo:   2,
-				wantOk:   true,
+		{
+			name: "move from between two ranges to inside first range",
+			rl: RequestList{
+				Ranges: [][2]int64{{0, 10}, {20, 30}},
 			},
-			{
-				name: "move from between two ranges to inside second range",
-				rl: RequestList{
-					Ranges: [][2]int64{{0, 10}, {20, 30}},
-				},
-				from: 15,
-				to:   25,
-				// Moving from x to y:
-				// [0...10]  x [20..y..30]
-				// means the timeline is now:
-				// [0...10] 11,12,13,14,DELETE,16,17,18,19 [20..INSERT..30]
-				// which creates a gap in 15 causing an insert on 25, but we are not tracking 15,
-				// so instead 20 gets deleted.
-				wantFrom: 20,
-				wantTo:   25,
-				wantOk:   true,
+			from:        15,
+			to:          2,
+			wantFromTos: [][2]int{{10, 2}},
+			wantOk:      true,
+		},
+		{
+			name: "move from between two ranges to inside second range",
+			rl: RequestList{
+				Ranges: [][2]int64{{0, 10}, {20, 30}},
 			},
-			{
-				name: "move from between two ranges to outside range",
-				rl: RequestList{
-					Ranges: [][2]int64{{0, 10}, {20, 30}},
-				},
-				from:     15,
-				to:       45,
-				wantFrom: 20,
-				wantTo:   30,
-				wantOk:   false,
-			}, */
+			from: 15,
+			to:   25,
+			// Moving from x to y:
+			// [0...10]  x [20..y..30]
+			// means the timeline is now:
+			// [0...10] 11,12,13,14,DELETE,16,17,18,19 [20..INSERT..30]
+			// which creates a gap in 15 causing an insert on 25, but we are not tracking 15,
+			// so instead 20 gets deleted.
+			wantFromTos: [][2]int{{20, 25}},
+			wantOk:      true,
+		},
+		{
+			name: "move from between two ranges to outside range",
+			rl: RequestList{
+				Ranges: [][2]int64{{0, 10}, {20, 30}},
+			},
+			from:        15,
+			to:          45,
+			wantFromTos: [][2]int{{20, 30}},
+			wantOk:      true,
+		},
+		// multiple range fun
+		{
+			name: "jump over 2 ranges towards zero",
+			rl: RequestList{
+				Ranges: [][2]int64{{10, 20}, {30, 40}},
+			},
+			from:        50,
+			to:          5,
+			wantFromTos: [][2]int{{20, 10}, {40, 30}},
+			wantOk:      true,
+		},
+		{
+			name: "jump over 2 ranges towards infinity",
+			rl: RequestList{
+				Ranges: [][2]int64{{10, 20}, {30, 40}},
+			},
+			from:        5,
+			to:          50,
+			wantFromTos: [][2]int{{10, 20}, {30, 40}},
+			wantOk:      true,
+		},
+		{
+			name: "jump over 2 ranges towards zero into a 3rd range",
+			rl: RequestList{
+				Ranges: [][2]int64{{0, 5}, {10, 20}, {30, 40}},
+			},
+			from:        50,
+			to:          2,
+			wantFromTos: [][2]int{{5, 2}, {20, 10}, {40, 30}},
+			wantOk:      true,
+		},
+		{
+			name: "jump over 2 ranges towards infinity into a 3rd range",
+			rl: RequestList{
+				Ranges: [][2]int64{{3, 5}, {10, 20}, {30, 40}},
+			},
+			from:        0,
+			to:          35,
+			wantFromTos: [][2]int{{3, 5}, {10, 20}, {30, 35}},
+			wantOk:      true,
+		},
+		{
+			name: "move from inside range to jump over 2 ranges towards zero into a 4th range",
+			rl: RequestList{
+				Ranges: [][2]int64{{0, 5}, {10, 20}, {30, 40}, {50, 60}},
+			},
+			from:        55,
+			to:          2,
+			wantFromTos: [][2]int{{5, 2}, {20, 10}, {40, 30}, {55, 50}},
+			wantOk:      true,
+		},
+		{
+			name: "move from inside range to jump over 2 ranges towards infinity into a 4th range",
+			rl: RequestList{
+				Ranges: [][2]int64{{0, 5}, {10, 20}, {30, 40}, {50, 60}},
+			},
+			from:        2,
+			to:          55,
+			wantFromTos: [][2]int{{2, 5}, {10, 20}, {30, 40}, {50, 55}},
+			wantOk:      true,
+		},
+		{
+			name: "move across ranges which are next to each other",
+			rl: RequestList{
+				Ranges: [][2]int64{{0, 10}, {11, 20}},
+			},
+			from:        25,
+			to:          0,
+			wantFromTos: [][2]int{{10, 0}, {20, 11}},
+			wantOk:      true,
+		},
 	}
 	for _, tc := range testCases {
-		gotFrom, gotTo, gotOk := tc.rl.CalculateMoveIndexes(tc.from, tc.to)
-		if gotFrom != tc.wantFrom {
-			t.Errorf("%s: from: got %v want %v", tc.name, gotFrom, tc.wantFrom)
-		}
-		if gotTo != tc.wantTo {
-			t.Errorf("%s: to: got %v want %v", tc.name, gotTo, tc.wantTo)
-		}
+		gots, gotOk := tc.rl.CalculateMoveIndexes(tc.from, tc.to)
 		if gotOk != tc.wantOk {
 			t.Errorf("%s: ok: got %v want %v", tc.name, gotOk, tc.wantOk)
+		}
+		if gotOk && tc.wantOk {
+			sort.Slice(gots, func(i, j int) bool {
+				return gots[i][0] < gots[j][0]
+			})
+			if !reflect.DeepEqual(gots, tc.wantFromTos) {
+				t.Errorf("%s: from/tos: got %v want %v", tc.name, gots, tc.wantFromTos)
+			}
 		}
 	}
 }

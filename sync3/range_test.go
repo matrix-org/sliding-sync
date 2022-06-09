@@ -159,7 +159,7 @@ func TestRangeInside(t *testing.T) {
 		},
 	}
 	for _, tc := range testCases {
-		gotInside := tc.testRange.Inside(tc.i)
+		_, gotInside := tc.testRange.Inside(tc.i)
 		if gotInside != tc.inside {
 			t.Errorf("%+v got Inside:%v want %v", tc, gotInside, tc.inside)
 		}
@@ -176,6 +176,18 @@ func TestRangeClosestInDirection(t *testing.T) {
 		{
 			ranges:           [][2]int64{{0, 20}},
 			i:                15,
+			towardsZero:      true,
+			wantClosestIndex: 0,
+		},
+		{
+			ranges:           [][2]int64{{0, 20}},
+			i:                0,
+			towardsZero:      false,
+			wantClosestIndex: 20,
+		},
+		{
+			ranges:           [][2]int64{{0, 20}},
+			i:                20,
 			towardsZero:      true,
 			wantClosestIndex: 0,
 		},

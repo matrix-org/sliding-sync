@@ -310,17 +310,19 @@ func (s *connStateLive) resort(
 		return nil, true
 	}
 
-	wasInsideRange := reqList.Ranges.Inside(int64(fromIndex))
+	_, wasInsideRange := reqList.Ranges.Inside(int64(fromIndex))
 	// this should only move exactly 1 room at most as this is called for every single update
 	if err := intList.Sort(reqList.Sort); err != nil {
 		logger.Err(err).Msg("cannot sort list")
 	}
 	toIndex, _ := intList.IndexOf(roomID)
 
-	listFromIndex, listToIndex, ok := reqList.CalculateMoveIndexes(fromIndex, toIndex)
-	if !ok {
+	listFromTos, ok := reqList.CalculateMoveIndexes(fromIndex, toIndex)
+	if !ok || len(listFromTos) == 0 {
 		return nil, false
 	}
+	listFromIndex := listFromTos[0][0]
+	listToIndex := listFromTos[0][1]
 	wasUpdatedRoomInserted := listToIndex == toIndex
 
 	// a different index position was INSERT'd, find it and mark it

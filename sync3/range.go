@@ -21,13 +21,13 @@ func (r SliceRanges) Valid() bool {
 }
 
 // Inside returns true if i is inside the range
-func (r SliceRanges) Inside(i int64) bool {
+func (r SliceRanges) Inside(i int64) ([2]int64, bool) {
 	for _, sr := range r {
 		if sr[0] <= i && i <= sr[1] {
-			return true
+			return sr, true
 		}
 	}
-	return false
+	return [2]int64{}, false
 }
 
 // ClosestInDirection returns the index position of a range bound that is closest to `i`, heading either
@@ -49,11 +49,10 @@ func (r SliceRanges) ClosestInDirection(i int64, towardsZero bool) (closestIndex
 		return indexes[x] < indexes[y]
 	})
 	closestIndex = -1
-
 	if towardsZero {
-		// we want the first value < i so loop from low->high and when we see the first > index, take the previous
+		// we want the first value < i so loop from low->high and when we see the first >= index, take the previous
 		for j := range indexes {
-			if indexes[j] > i {
+			if indexes[j] >= i {
 				if j == 0 {
 					return -1
 				}
@@ -62,9 +61,9 @@ func (r SliceRanges) ClosestInDirection(i int64, towardsZero bool) (closestIndex
 		}
 		return indexes[len(indexes)-1] // all values are lower than i, choose the highest
 	} else {
-		// we want the first value > i so loop from high->low and when we see the first < index, take the previous
+		// we want the first value > i so loop from high->low and when we see the first <= index, take the previous
 		for j := len(indexes) - 1; j >= 0; j-- {
-			if indexes[j] < i {
+			if indexes[j] <= i {
 				if j == len(indexes)-1 {
 					return -1
 				}
