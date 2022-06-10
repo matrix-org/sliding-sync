@@ -250,8 +250,8 @@ func (s *ConnState) onIncomingListRequest(ctx context.Context, builder *RoomsBui
 	subID := builder.AddSubscription(nextReqList.RoomSubscription)
 
 	// send full room data for these ranges
-	for _, r := range addedRanges {
-		sr := sync3.SliceRanges([][2]int64{r})
+	for i := range addedRanges {
+		sr := sync3.SliceRanges([][2]int64{addedRanges[i]})
 		subslice := sr.SliceInto(roomList)
 		if len(subslice) == 0 {
 			continue
@@ -263,7 +263,7 @@ func (s *ConnState) onIncomingListRequest(ctx context.Context, builder *RoomsBui
 
 		responseOperations = append(responseOperations, &sync3.ResponseOpRange{
 			Operation: sync3.OpSync,
-			Range:     r[:],
+			Range:     addedRanges[i][:],
 			RoomIDs:   roomIDs,
 		})
 	}

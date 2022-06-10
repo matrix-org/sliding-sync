@@ -321,27 +321,21 @@ func (s *connStateLive) resort(
 	if !ok || len(listFromTos) == 0 {
 		return nil, false
 	}
-	listFromIndex := listFromTos[0][0]
-	listToIndex := listFromTos[0][1]
-	wasUpdatedRoomInserted := listToIndex == toIndex
-
-	// a different index position was INSERT'd, find it and mark it
-	if !wasUpdatedRoomInserted {
+	for _, listFromTo := range listFromTos {
+		listFromIndex := listFromTo[0]
+		listToIndex := listFromTo[1]
+		wasUpdatedRoomInserted := listToIndex == toIndex
 		toRoom := intList.Get(listToIndex)
-		// clobber before falling through. This will cause this different room to be added in the
-		// room subscription and hence initial data be sent for it.
 		roomID = toRoom.RoomID
-		newlyAdded = true
-	} else if !wasInsideRange {
-		// we inserted this room due to the update, but this room wasn't previously in the range,
-		// so it's newly added and we should send an initial state.
-		newlyAdded = true
-	}
 
-	if newlyAdded {
-		subID := builder.AddSubscription(reqList.RoomSubscription)
-		builder.AddRoomsToSubscription(subID, []string{roomID})
-	}
+		// if a different room is being inserted or the room wasn't previously inside a range, send
+		// the entire room data
+		if !wasUpdatedRoomInserted || !wasInsideRange {
+			subID := builder.AddSubscription(reqList.RoomSubscription)
+			builder.AddRoomsToSubscription(subID, []string{roomID})
+		}
 
-	return reqList.WriteSwapOp(roomID, listFromIndex, listToIndex), true
+		ops = append(ops, reqList.WriteSwapOp(roomID, listFromIndex, listToIndex)...)
+	}
+	return ops, true
 }

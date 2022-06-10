@@ -229,6 +229,100 @@ func TestTimelinesLiveStream(t *testing.T) {
 		MatchV3DeleteOp(2),
 		MatchV3InsertOp(0, allRooms[18].roomID),
 	), MatchRoomSubscription(allRooms[18].roomID, MatchRoomTimelineMostRecent(1, []json.RawMessage{allRooms[18].events[len(allRooms[18].events)-1]})))
+}
+
+func TestMultipleWindows(t *testing.T) {
+	// setup code
+	pqString := testutils.PrepareDBConnectionString()
+	v2 := runTestV2Server(t)
+	v3 := runTestServer(t, v2, pqString)
+	defer v2.close()
+	defer v3.close()
+
+	// make 20 rooms, first room is most recent, and send A,B,C into each room
+	allRooms := make([]roomEvents, 20)
+	for i := 0; i < len(allRooms); i++ {
+		ts := time.Now().Add(time.Duration(i) * -1 * time.Minute)
+		roomName := fmt.Sprintf("My Room %d", i)
+		allRooms[i] = roomEvents{
+			roomID: fmt.Sprintf("!TestMultipleWindows_%d:localhost", i),
+			name:   roomName,
+			events: append(createRoomState(t, alice, ts), []json.RawMessage{
+				testutils.NewStateEvent(t, "m.room.name", "", alice, map[string]interface{}{"name": roomName}, testutils.WithTimestamp(ts.Add(3*time.Second))),
+				testutils.NewEvent(t, "m.room.message", alice, map[string]interface{}{"body": "A"}, testutils.WithTimestamp(ts.Add(4*time.Second))),
+				testutils.NewEvent(t, "m.room.message", alice, map[string]interface{}{"body": "B"}, testutils.WithTimestamp(ts.Add(5*time.Second))),
+				testutils.NewEvent(t, "m.room.message", alice, map[string]interface{}{"body": "C"}, testutils.WithTimestamp(ts.Add(6*time.Second))),
+			}...),
+		}
+	}
+	v2.addAccount(alice, aliceToken)
+	v2.queueResponse(alice, sync2.SyncResponse{
+		Rooms: sync2.SyncRoomsResponse{
+			Join: v2JoinTimeline(allRooms...),
+		},
+	})
+	numTimelineEventsPerRoom := 2
+
+	// request 3 windows
+	res := v3.mustDoV3Request(t, aliceToken, sync3.Request{
+		Lists: []sync3.RequestList{{
+			Ranges: sync3.SliceRanges{
+				[2]int64{0, 2},   // first 3 rooms
+				[2]int64{10, 12}, // 3 rooms in the middle
+				[2]int64{17, 19}, // last 3 rooms
+			},
+			RoomSubscription: sync3.RoomSubscription{
+				TimelineLimit: int64(numTimelineEventsPerRoom),
+			},
+		}},
+	})
+	MatchResponse(t, res, MatchV3Count(len(allRooms)), MatchV3Ops(0,
+		MatchV3SyncOp(0, 2, []string{allRooms[0].roomID, allRooms[1].roomID, allRooms[2].roomID}),
+		MatchV3SyncOp(10, 12, []string{allRooms[10].roomID, allRooms[11].roomID, allRooms[12].roomID}),
+		MatchV3SyncOp(17, 19, []string{allRooms[17].roomID, allRooms[18].roomID, allRooms[19].roomID}),
+	))
+
+	// bump room 18 to position 0
+	latestTimestamp := time.Now().Add(time.Hour)
+	bumpRoom := func(i int) {
+		latestTimestamp = latestTimestamp.Add(1 * time.Second)
+		ev := testutils.NewEvent(t, "m.room.message", alice, map[string]interface{}{"body": fmt.Sprintf("bump %d", i)}, testutils.WithTimestamp(latestTimestamp))
+		allRooms[i].events = append(allRooms[i].events, ev)
+		v2.queueResponse(alice, sync2.SyncResponse{
+			Rooms: sync2.SyncRoomsResponse{
+				Join: v2JoinTimeline(roomEvents{
+					roomID: allRooms[i].roomID,
+					events: []json.RawMessage{ev},
+				}),
+			},
+		})
+		v2.waitUntilEmpty(t, alice)
+	}
+	bumpRoom(18)
+
+	res = v3.mustDoV3RequestWithPos(t, aliceToken, res.Pos, sync3.Request{
+		Lists: []sync3.RequestList{{
+			Ranges: sync3.SliceRanges{
+				[2]int64{0, 2},   // first 3 rooms
+				[2]int64{10, 12}, // 3 rooms in the middle
+				[2]int64{17, 19}, // last 3 rooms
+			},
+		}},
+	})
+	// Range A             Range B              Range C
+	// _____               ________             ________
+	// 0 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19
+	//18 0 1 2 3 4 5 6 7 8 9  10 11 12 13 14 15 16 17 18
+	// DELETE 2            DELETE 12            DELETE 18
+	// INSERT 0,18         INSERT 10,9          INSERT 17,16
+	MatchResponse(t, res, MatchV3Count(len(allRooms)), MatchV3Ops(0,
+		MatchV3DeleteOp(18),
+		MatchV3InsertOp(17, allRooms[16].roomID),
+		MatchV3DeleteOp(2),
+		MatchV3InsertOp(0, allRooms[18].roomID),
+		MatchV3DeleteOp(12),
+		MatchV3InsertOp(10, allRooms[9].roomID),
+	))
 
 }
 
