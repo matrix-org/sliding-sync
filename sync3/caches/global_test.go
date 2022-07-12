@@ -22,19 +22,19 @@ func TestGlobalCacheLoadState(t *testing.T) {
 	charlie := "@charlie:localhost"
 	events := []json.RawMessage{
 		testutils.NewStateEvent(t, "m.room.create", "", alice, map[string]interface{}{"creator": alice}),
-		testutils.NewStateEvent(t, "m.room.member", alice, alice, map[string]interface{}{"membership": "join"}),
+		testutils.NewJoinEvent(t, alice),
 		testutils.NewStateEvent(t, "m.room.join_rules", "", alice, map[string]interface{}{"join_rule": "public"}),
-		testutils.NewStateEvent(t, "m.room.member", bob, bob, map[string]interface{}{"membership": "join"}),
-		testutils.NewStateEvent(t, "m.room.member", charlie, charlie, map[string]interface{}{"membership": "join"}),
+		testutils.NewJoinEvent(t, bob),
+		testutils.NewJoinEvent(t, charlie),
 		testutils.NewStateEvent(t, "m.room.name", "", alice, map[string]interface{}{"name": "The Room Name"}),
 		testutils.NewStateEvent(t, "m.room.name", "", alice, map[string]interface{}{"name": "The Updated Room Name"}),
 	}
 	moreEvents := []json.RawMessage{
 		testutils.NewStateEvent(t, "m.room.create", "", alice, map[string]interface{}{"creator": alice}),
-		testutils.NewStateEvent(t, "m.room.member", alice, alice, map[string]interface{}{"membership": "join"}),
+		testutils.NewJoinEvent(t, alice),
 		testutils.NewStateEvent(t, "m.room.join_rules", "", alice, map[string]interface{}{"join_rule": "public"}),
-		testutils.NewStateEvent(t, "m.room.member", bob, bob, map[string]interface{}{"membership": "join"}),
-		testutils.NewStateEvent(t, "m.room.member", charlie, charlie, map[string]interface{}{"membership": "join"}),
+		testutils.NewJoinEvent(t, bob),
+		testutils.NewJoinEvent(t, charlie),
 		testutils.NewStateEvent(t, "m.room.name", "", alice, map[string]interface{}{"name": "The Room Name"}),
 		testutils.NewStateEvent(t, "m.room.name", "", alice, map[string]interface{}{"name": "The Updated Room Name"}),
 	}

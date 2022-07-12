@@ -56,6 +56,13 @@ func WithUnsigned(unsigned interface{}) eventMockModifier {
 	}
 }
 
+// Create a new m.room.member state event with membership: join for the given userID.
+func NewJoinEvent(t TestBenchInterface, userID string, modifiers ...eventMockModifier) json.RawMessage {
+	return NewStateEvent(t, "m.room.member", userID, userID, map[string]interface{}{
+		"membership": "join",
+	}, modifiers...)
+}
+
 func NewStateEvent(t TestBenchInterface, evType, stateKey, sender string, content interface{}, modifiers ...eventMockModifier) json.RawMessage {
 	t.Helper()
 	e := &eventMock{

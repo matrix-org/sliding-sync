@@ -436,7 +436,7 @@ func TestEventTableMembershipDetection(t *testing.T) {
 	events := []Event{
 		{
 			RoomID: roomID,
-			JSON:   testutils.NewStateEvent(t, "m.room.member", alice, alice, map[string]interface{}{"membership": "join"}),
+			JSON:   testutils.NewJoinEvent(t, alice),
 		},
 		{
 			RoomID: roomID,
@@ -444,8 +444,7 @@ func TestEventTableMembershipDetection(t *testing.T) {
 		},
 		{
 			RoomID: roomID,
-			JSON: testutils.NewStateEvent(
-				t, "m.room.member", alice, alice, map[string]interface{}{"membership": "join"},
+			JSON: testutils.NewJoinEvent(t, alice,
 				testutils.WithUnsigned(map[string]interface{}{
 					"prev_content": map[string]interface{}{
 						"membership": "join",
@@ -574,15 +573,15 @@ func TestEventTableSelectEventsWithTypeStateKey(t *testing.T) {
 		},
 		{
 			RoomID: roomA,
-			JSON:   testutils.NewStateEvent(t, "m.room.member", userID, userID, map[string]interface{}{"membership": "join"}),
+			JSON:   testutils.NewJoinEvent(t, userID),
 		},
 		{
 			RoomID: roomB,
-			JSON:   testutils.NewStateEvent(t, "m.room.member", userID, userID, map[string]interface{}{"membership": "join"}),
+			JSON:   testutils.NewJoinEvent(t, userID),
 		},
 		{
 			RoomID: roomC,
-			JSON:   testutils.NewStateEvent(t, "m.room.member", userID, userID, map[string]interface{}{"membership": "join"}),
+			JSON:   testutils.NewJoinEvent(t, userID),
 		},
 		{
 			RoomID: roomD,

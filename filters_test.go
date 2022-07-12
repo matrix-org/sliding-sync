@@ -232,9 +232,7 @@ func TestFiltersInvite(t *testing.T) {
 		Rooms: sync2.SyncRoomsResponse{
 			Join: v2JoinTimeline(roomEvents{
 				roomID: roomID,
-				events: []json.RawMessage{testutils.NewStateEvent(t, "m.room.member", alice, alice, map[string]interface{}{
-					"membership": "join",
-				})},
+				events: []json.RawMessage{testutils.NewJoinEvent(t, alice)},
 			}),
 		},
 	})

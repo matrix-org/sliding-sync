@@ -193,10 +193,8 @@ func TestMultipleListsDMUpdate(t *testing.T) {
 		dmRoom := roomEvents{
 			roomID: dmRoomID,
 			events: append(createRoomState(t, alice, ts), []json.RawMessage{
-				testutils.NewStateEvent(
-					t, "m.room.member", dmUser, dmUser, map[string]interface{}{
-						"membership": "join",
-					}, testutils.WithTimestamp(ts),
+				testutils.NewJoinEvent(
+					t, dmUser, testutils.WithTimestamp(ts),
 				),
 			}...),
 		}

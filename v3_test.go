@@ -266,7 +266,7 @@ func createRoomState(t testutils.TestBenchInterface, creator string, baseTimesta
 	// all with the same timestamp as they get made atomically
 	return []json.RawMessage{
 		testutils.NewStateEvent(t, "m.room.create", "", creator, map[string]interface{}{"creator": creator}, testutils.WithTimestamp(baseTimestamp)),
-		testutils.NewStateEvent(t, "m.room.member", creator, creator, map[string]interface{}{"membership": "join"}, testutils.WithTimestamp(baseTimestamp)),
+		testutils.NewJoinEvent(t, creator, testutils.WithTimestamp(baseTimestamp)),
 		testutils.NewStateEvent(t, "m.room.power_levels", "", creator, pl, testutils.WithTimestamp(baseTimestamp)),
 		testutils.NewStateEvent(t, "m.room.join_rules", "", creator, map[string]interface{}{"join_rule": "public"}, testutils.WithTimestamp(baseTimestamp)),
 	}

@@ -36,14 +36,14 @@ func TestRoomStateTransitions(t *testing.T) {
 		{
 			roomID: "!TestRoomStateTransitions_kicked:localhost",
 			events: append(createRoomState(t, alice, latestTimestamp), []json.RawMessage{
-				testutils.NewStateEvent(t, "m.room.member", bob, bob, map[string]interface{}{"membership": "join"}, testutils.WithTimestamp(latestTimestamp.Add(-5*time.Second))),
+				testutils.NewJoinEvent(t, bob, testutils.WithTimestamp(latestTimestamp.Add(-5*time.Second))),
 				testutils.NewStateEvent(t, "m.room.member", bob, alice, map[string]interface{}{"membership": "leave"}, testutils.WithTimestamp(latestTimestamp.Add(-4*time.Second))),
 			}...),
 		},
 		{
 			roomID: "!TestRoomStateTransitions_banned:localhost",
 			events: append(createRoomState(t, alice, latestTimestamp), []json.RawMessage{
-				testutils.NewStateEvent(t, "m.room.member", bob, bob, map[string]interface{}{"membership": "join"}, testutils.WithTimestamp(latestTimestamp.Add(-3*time.Second))),
+				testutils.NewJoinEvent(t, bob, testutils.WithTimestamp(latestTimestamp.Add(-3*time.Second))),
 				testutils.NewStateEvent(t, "m.room.member", bob, alice, map[string]interface{}{"membership": "ban"}, testutils.WithTimestamp(latestTimestamp.Add(-2*time.Second))),
 			}...),
 		},
@@ -117,7 +117,7 @@ func TestRoomStateTransitions(t *testing.T) {
 	)
 
 	// now bob accepts the invite
-	bobJoinEvent := testutils.NewStateEvent(t, "m.room.member", bob, bob, map[string]interface{}{"membership": "join"}, testutils.WithTimestamp(latestTimestamp.Add(2*time.Second)))
+	bobJoinEvent := testutils.NewJoinEvent(t, bob, testutils.WithTimestamp(latestTimestamp.Add(2*time.Second)))
 	allRoomsAlicePerspective[indexBobInvited].events = append(allRoomsAlicePerspective[indexBobInvited].events, bobJoinEvent)
 	v2.queueResponse(bob, sync2.SyncResponse{
 		Rooms: sync2.SyncRoomsResponse{

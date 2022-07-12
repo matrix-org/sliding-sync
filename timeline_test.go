@@ -534,7 +534,7 @@ func TestTimelineTxnID(t *testing.T) {
 		roomID: roomID,
 		events: append(
 			createRoomState(t, alice, latestTimestamp),
-			testutils.NewStateEvent(t, "m.room.member", bob, bob, map[string]interface{}{"membership": "join"}),
+			testutils.NewJoinEvent(t, bob),
 		),
 	}
 	v2.addAccount(alice, aliceToken)

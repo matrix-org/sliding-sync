@@ -24,7 +24,7 @@ func TestStorageRoomStateBeforeAndAfterEventPosition(t *testing.T) {
 	bob := "@bob:localhost"
 	events := []json.RawMessage{
 		testutils.NewStateEvent(t, "m.room.create", "", alice, map[string]interface{}{"creator": alice}),
-		testutils.NewStateEvent(t, "m.room.member", alice, alice, map[string]interface{}{"membership": "join"}),
+		testutils.NewJoinEvent(t, alice),
 		testutils.NewStateEvent(t, "m.room.join_rules", "", alice, map[string]interface{}{"join_rule": "invite"}),
 		testutils.NewStateEvent(t, "m.room.member", bob, alice, map[string]interface{}{"membership": "invite"}),
 	}
@@ -122,28 +122,28 @@ func TestStorageJoinedRoomsAfterPosition(t *testing.T) {
 	roomIDToEventMap := map[string][]json.RawMessage{
 		joinedRoomID: {
 			testutils.NewStateEvent(t, "m.room.create", "", alice, map[string]interface{}{"creator": alice}),
-			testutils.NewStateEvent(t, "m.room.member", alice, alice, map[string]interface{}{"membership": "join"}),
+			testutils.NewJoinEvent(t, alice),
 		},
 		invitedRoomID: {
 			testutils.NewStateEvent(t, "m.room.create", "", bob, map[string]interface{}{"creator": bob}),
-			testutils.NewStateEvent(t, "m.room.member", bob, bob, map[string]interface{}{"membership": "join"}),
+			testutils.NewJoinEvent(t, bob),
 			testutils.NewStateEvent(t, "m.room.member", alice, bob, map[string]interface{}{"membership": "invite"}),
 		},
 		leftRoomID: {
 			testutils.NewStateEvent(t, "m.room.create", "", alice, map[string]interface{}{"creator": alice}),
-			testutils.NewStateEvent(t, "m.room.member", alice, alice, map[string]interface{}{"membership": "join"}),
+			testutils.NewJoinEvent(t, alice),
 			testutils.NewStateEvent(t, "m.room.member", alice, alice, map[string]interface{}{"membership": "leave"}),
 		},
 		banRoomID: {
 			testutils.NewStateEvent(t, "m.room.create", "", bob, map[string]interface{}{"creator": bob}),
-			testutils.NewStateEvent(t, "m.room.member", bob, bob, map[string]interface{}{"membership": "join"}),
-			testutils.NewStateEvent(t, "m.room.member", alice, alice, map[string]interface{}{"membership": "join"}),
+			testutils.NewJoinEvent(t, bob),
+			testutils.NewJoinEvent(t, alice),
 			testutils.NewStateEvent(t, "m.room.member", alice, bob, map[string]interface{}{"membership": "ban"}),
 		},
 		bobJoinedRoomID: {
 			testutils.NewStateEvent(t, "m.room.create", "", bob, map[string]interface{}{"creator": bob}),
-			testutils.NewStateEvent(t, "m.room.member", bob, bob, map[string]interface{}{"membership": "join"}),
-			testutils.NewStateEvent(t, "m.room.member", charlie, charlie, map[string]interface{}{"membership": "join"}),
+			testutils.NewJoinEvent(t, bob),
+			testutils.NewJoinEvent(t, charlie),
 		},
 	}
 	var latestPos int64
@@ -238,24 +238,24 @@ func TestVisibleEventNIDsBetween(t *testing.T) {
 	roomIDToEventMap := map[string][]json.RawMessage{
 		roomA: {
 			testutils.NewStateEvent(t, "m.room.create", "", bob, map[string]interface{}{"creator": bob}),
-			testutils.NewStateEvent(t, "m.room.member", bob, bob, map[string]interface{}{"membership": "join"}),
+			testutils.NewJoinEvent(t, bob),
 		},
 		roomB: {
 			testutils.NewStateEvent(t, "m.room.create", "", bob, map[string]interface{}{"creator": bob}),
-			testutils.NewStateEvent(t, "m.room.member", bob, bob, map[string]interface{}{"membership": "join"}),
+			testutils.NewJoinEvent(t, bob),
 		},
 		roomC: {
 			testutils.NewStateEvent(t, "m.room.create", "", bob, map[string]interface{}{"creator": bob}),
-			testutils.NewStateEvent(t, "m.room.member", bob, bob, map[string]interface{}{"membership": "join"}),
-			testutils.NewStateEvent(t, "m.room.member", alice, alice, map[string]interface{}{"membership": "join"}),
+			testutils.NewJoinEvent(t, bob),
+			testutils.NewJoinEvent(t, alice),
 		},
 		roomD: {
 			testutils.NewStateEvent(t, "m.room.create", "", bob, map[string]interface{}{"creator": bob}),
-			testutils.NewStateEvent(t, "m.room.member", bob, bob, map[string]interface{}{"membership": "join"}),
+			testutils.NewJoinEvent(t, bob),
 		},
 		roomE: {
 			testutils.NewStateEvent(t, "m.room.create", "", bob, map[string]interface{}{"creator": bob}),
-			testutils.NewStateEvent(t, "m.room.member", bob, bob, map[string]interface{}{"membership": "join"}),
+			testutils.NewJoinEvent(t, bob),
 		},
 	}
 	for roomID, eventMap := range roomIDToEventMap {
@@ -283,7 +283,7 @@ func TestVisibleEventNIDsBetween(t *testing.T) {
 		{
 			RoomID: roomA,
 			Events: []json.RawMessage{
-				testutils.NewStateEvent(t, "m.room.member", alice, alice, map[string]interface{}{"membership": "join"}),
+				testutils.NewJoinEvent(t, alice),
 				testutils.NewEvent(t, "m.room.message", bob, map[string]interface{}{}, testutils.WithTimestamp(baseTimestamp)),
 				testutils.NewEvent(t, "m.room.message", bob, map[string]interface{}{}, testutils.WithTimestamp(baseTimestamp)),
 			},
@@ -292,7 +292,7 @@ func TestVisibleEventNIDsBetween(t *testing.T) {
 			RoomID: roomB,
 			Events: []json.RawMessage{
 				testutils.NewEvent(t, "m.room.message", bob, map[string]interface{}{}, testutils.WithTimestamp(baseTimestamp)),
-				testutils.NewStateEvent(t, "m.room.member", alice, alice, map[string]interface{}{"membership": "join"}),
+				testutils.NewJoinEvent(t, alice),
 				testutils.NewEvent(t, "m.room.message", bob, map[string]interface{}{}, testutils.WithTimestamp(baseTimestamp)),
 			},
 		},
@@ -377,7 +377,7 @@ func TestVisibleEventNIDsBetween(t *testing.T) {
 		{
 			RoomID: roomD,
 			Events: []json.RawMessage{
-				testutils.NewStateEvent(t, "m.room.member", alice, alice, map[string]interface{}{"membership": "join"}),
+				testutils.NewJoinEvent(t, alice),
 			},
 		},
 		{
@@ -394,7 +394,7 @@ func TestVisibleEventNIDsBetween(t *testing.T) {
 				testutils.NewEvent(t, "m.room.message", bob, map[string]interface{}{}, testutils.WithTimestamp(baseTimestamp)),
 				testutils.NewStateEvent(t, "m.room.member", alice, alice, map[string]interface{}{"membership": "leave"}),
 				testutils.NewEvent(t, "m.room.message", bob, map[string]interface{}{}, testutils.WithTimestamp(baseTimestamp)),
-				testutils.NewStateEvent(t, "m.room.member", alice, alice, map[string]interface{}{"membership": "join"}),
+				testutils.NewJoinEvent(t, alice),
 				testutils.NewEvent(t, "m.room.message", bob, map[string]interface{}{}, testutils.WithTimestamp(baseTimestamp.Add(1*time.Second))),
 				testutils.NewStateEvent(t, "m.room.member", alice, alice, map[string]interface{}{"membership": "leave"}),
 				testutils.NewEvent(t, "m.room.message", bob, map[string]interface{}{}, testutils.WithTimestamp(baseTimestamp.Add(1*time.Second))),
@@ -404,7 +404,7 @@ func TestVisibleEventNIDsBetween(t *testing.T) {
 			RoomID: roomE,
 			Events: []json.RawMessage{
 				testutils.NewEvent(t, "m.room.message", bob, map[string]interface{}{}, testutils.WithTimestamp(baseTimestamp)),
-				testutils.NewStateEvent(t, "m.room.member", alice, alice, map[string]interface{}{"membership": "join"}),
+				testutils.NewJoinEvent(t, alice),
 				testutils.NewEvent(t, "m.room.message", bob, map[string]interface{}{}, testutils.WithTimestamp(baseTimestamp)),
 				testutils.NewEvent(t, "m.room.message", bob, map[string]interface{}{}, testutils.WithTimestamp(baseTimestamp)),
 			},
@@ -459,7 +459,7 @@ func TestStorageLatestEventsInRoomsPrevBatch(t *testing.T) {
 	alice := "@alice_TestStorageLatestEventsInRoomsPrevBatch:localhost"
 	stateEvents := []json.RawMessage{
 		testutils.NewStateEvent(t, "m.room.create", "", alice, map[string]interface{}{"creator": alice}),
-		testutils.NewStateEvent(t, "m.room.member", alice, alice, map[string]interface{}{"membership": "join"}),
+		testutils.NewJoinEvent(t, alice),
 	}
 	timelines := []struct {
 		timeline  []json.RawMessage

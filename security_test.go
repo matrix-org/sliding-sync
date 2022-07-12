@@ -35,10 +35,8 @@ func TestSecurityLiveStreamEventLeftLeak(t *testing.T) {
 	eveToken := "EVE_BEARER_TOKEN_TestSecurityLiveStreamEventLeftLeak"
 	v2.addAccount(alice, aliceToken)
 	v2.addAccount(eve, eveToken)
-	eveJoinEvent := testutils.NewStateEvent(
-		t, "m.room.member", eve, eve, map[string]interface{}{"membership": "join"},
-		testutils.WithTimestamp(time.Now().Add(5*time.Second)),
-	)
+	eveJoinEvent := testutils.NewJoinEvent(t, eve, testutils.WithTimestamp(time.Now().Add(5*time.Second)))
+
 	// Alice and Eve in the room
 	theRoom := roomEvents{
 		roomID: roomID,

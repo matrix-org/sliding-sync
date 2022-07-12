@@ -46,7 +46,7 @@ func TestRoomNames(t *testing.T) {
 			roomID: "!TestRoomNames_dm_name_set_after_join:localhost",
 			name:   "Bob",
 			state: append(createRoomState(t, alice, latestTimestamp), []json.RawMessage{
-				testutils.NewStateEvent(t, "m.room.member", bob, bob, map[string]interface{}{"membership": "join"}, testutils.WithTimestamp(latestTimestamp)),
+				testutils.NewJoinEvent(t, bob, testutils.WithTimestamp(latestTimestamp)),
 			}...),
 			events: []json.RawMessage{
 				testutils.NewStateEvent(
