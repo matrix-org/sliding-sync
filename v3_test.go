@@ -562,7 +562,8 @@ func MatchToDeviceMessages(wantMsgs []json.RawMessage) respMatcher {
 	}
 }
 
-func MatchV3SyncOp(start, end int64, roomIDs []string) opMatcher {
+func MatchV3SyncOp(start, end int64, roomIDs []string, anyOrder ...bool) opMatcher {
+	allowAnyOrder := len(anyOrder) > 0 && anyOrder[0]
 	return func(op sync3.ResponseOp) error {
 		if op.Op() != sync3.OpSync {
 			return fmt.Errorf("op: %s != %s", op.Op(), sync3.OpSync)
@@ -573,6 +574,10 @@ func MatchV3SyncOp(start, end int64, roomIDs []string) opMatcher {
 		}
 		if oper.Range[1] != end {
 			return fmt.Errorf("%s: got end %d want %d", sync3.OpSync, oper.Range[1], end)
+		}
+		if allowAnyOrder {
+			sort.Strings(oper.RoomIDs)
+			sort.Strings(roomIDs)
 		}
 		if !reflect.DeepEqual(roomIDs, oper.RoomIDs) {
 			return fmt.Errorf("%s: got rooms %v want %v", sync3.OpSync, oper.RoomIDs, roomIDs)

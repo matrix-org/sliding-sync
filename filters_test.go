@@ -215,3 +215,88 @@ func TestFiltersInvite(t *testing.T) {
 		},
 	))
 }
+
+func TestFiltersRoomName(t *testing.T) {
+	rig := NewTestRig(t)
+	defer rig.Finish()
+	ridApple := "!a:localhost"
+	ridPear := "!b:localhost"
+	ridLemon := "!c:localhost"
+	ridOrange := "!d:localhost"
+	ridPineapple := "!e:localhost"
+	ridBanana := "!f:localhost"
+	ridKiwi := "!g:localhost"
+	rig.SetupV2RoomsForUser(t, alice, NoFlush, map[string]RoomDescriptor{
+		ridApple: {
+			Name: "apple",
+		},
+		ridPear: {
+			Name: "PEAR",
+		},
+		ridLemon: {
+			Name: "Lemon Lemon",
+		},
+		ridOrange: {
+			Name: "ooooorange",
+		},
+		ridPineapple: {
+			Name: "PineApple",
+		},
+		ridBanana: {
+			Name: "BaNaNaNaNaNaNaN",
+		},
+		ridKiwi: {
+			Name: "kiwiwiwiwiwiwi",
+		},
+	})
+	aliceToken := rig.Token(alice)
+
+	// make sure the room name filter works
+	res := rig.V3.mustDoV3Request(t, aliceToken, sync3.Request{
+		Lists: []sync3.RequestList{
+			{
+				Ranges: sync3.SliceRanges{
+					[2]int64{0, 20}, // all rooms
+				},
+				Filters: &sync3.RequestFilters{
+					RoomNameFilter: "a",
+				},
+			},
+		},
+	})
+	MatchResponse(t, res, MatchLists(
+		[]listMatcher{
+			MatchV3Count(5),
+			MatchV3Ops(
+				MatchV3SyncOp(0, 20, []string{
+					ridApple, ridPear, ridOrange, ridPineapple, ridBanana,
+				}, true),
+			),
+		},
+	))
+
+	// refine the filter
+	res = rig.V3.mustDoV3RequestWithPos(t, aliceToken, res.Pos, sync3.Request{
+		Lists: []sync3.RequestList{
+			{
+				Ranges: sync3.SliceRanges{
+					[2]int64{0, 20}, // all rooms
+				},
+				Filters: &sync3.RequestFilters{
+					RoomNameFilter: "app",
+				},
+			},
+		},
+	})
+	MatchResponse(t, res, MatchLists(
+		[]listMatcher{
+			MatchV3Count(2),
+			MatchV3Ops(
+				MatchV3InvalidateOp(0, 20),
+				MatchV3SyncOp(0, 20, []string{
+					ridApple, ridPineapple,
+				}, true),
+			),
+		},
+	))
+}

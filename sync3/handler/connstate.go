@@ -225,7 +225,7 @@ func (s *ConnState) onIncomingListRequest(ctx context.Context, builder *RoomsBui
 		}
 		if filtersChanged {
 			// we need to re-create the list as the rooms may have completely changed
-			s.lists.AssignList(listIndex, nextReqList.Filters, nextReqList.Sort, sync3.Overwrite)
+			roomList, _ = s.lists.AssignList(listIndex, nextReqList.Filters, nextReqList.Sort, sync3.Overwrite)
 		}
 		// resort as either we changed the sort order or we added/removed a bunch of rooms
 		if err := roomList.Sort(nextReqList.Sort); err != nil {

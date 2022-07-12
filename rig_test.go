@@ -71,6 +71,13 @@ func (r *testRig) SetupV2RoomsForUser(t *testing.T, v2UserID string, f FlushEnum
 					},
 				))
 			}
+			if descriptor.Name != "" {
+				timeline = append(timeline, testutils.NewStateEvent(
+					t, "m.room.name", "", creator, map[string]interface{}{
+						"name": descriptor.Name,
+					},
+				))
+			}
 			for _, userID := range descriptor.InvitedUsers {
 				timeline = append(timeline, testutils.NewStateEvent(
 					t, "m.room.member", userID, creator, map[string]interface{}{
@@ -160,6 +167,7 @@ type RoomDescriptor struct {
 	InvitedUsers       []string
 	MembershipOfSyncer string
 	IsEncrypted        bool
+	Name               string
 }
 
 type TestRoom struct {
