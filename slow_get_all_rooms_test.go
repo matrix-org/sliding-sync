@@ -25,6 +25,7 @@ func TestSlowGetAllRoomsInitial(t *testing.T) {
 	defer v3.close()
 	// make 20 rooms, last room is most recent, and send A,B,C into each room
 	allRooms := make([]roomEvents, 20)
+	allRoomIDs := make([]string, len(allRooms))
 	allRoomMatchers := make(map[string][]roomMatcher)
 	latestTimestamp := time.Now()
 	for i := 0; i < len(allRooms); i++ {
@@ -40,6 +41,7 @@ func TestSlowGetAllRoomsInitial(t *testing.T) {
 				testutils.NewEvent(t, "m.room.message", alice, map[string]interface{}{"body": "C"}, testutils.WithTimestamp(ts.Add(6*time.Second))),
 			}...),
 		}
+		allRoomIDs[i] = allRooms[i].roomID
 		if ts.After(latestTimestamp) {
 			latestTimestamp = ts.Add(10 * time.Second)
 		}
@@ -67,7 +69,9 @@ func TestSlowGetAllRoomsInitial(t *testing.T) {
 			},
 		}},
 	})
-	MatchResponse(t, res, MatchList(0, MatchV3Count(len(allRooms))), MatchNoV3Ops(), MatchRoomSubscriptionsStrict(allRoomMatchers))
+	MatchResponse(t, res, MatchList(0, MatchV3Count(len(allRooms)), MatchV3Ops(
+		MatchV3SyncOp(0, int64(len(allRooms)-1), allRoomIDs, true),
+	)), MatchRoomSubscriptionsStrict(allRoomMatchers))
 
 	// now redo this but with a room name filter
 	res = v3.mustDoV3Request(t, aliceToken, sync3.Request{
@@ -91,7 +95,13 @@ func TestSlowGetAllRoomsInitial(t *testing.T) {
 		}
 		delete(allRoomMatchers, allRooms[i].roomID)
 	}
-	MatchResponse(t, res, MatchList(0, MatchV3Count(len(allRoomMatchers))), MatchNoV3Ops(), MatchRoomSubscriptionsStrict(allRoomMatchers))
+	roomIDs := make([]string, 0, len(allRoomMatchers))
+	for roomID := range allRoomMatchers {
+		roomIDs = append(roomIDs, roomID)
+	}
+	MatchResponse(t, res, MatchList(0, MatchV3Count(len(allRoomMatchers)), MatchV3Ops(
+		MatchV3SyncOp(0, int64(len(allRoomMatchers)-1), roomIDs, true),
+	)), MatchRoomSubscriptionsStrict(allRoomMatchers))
 
 	t.Run("Newly joined rooms get all state", func(t *testing.T) {
 		ts := latestTimestamp

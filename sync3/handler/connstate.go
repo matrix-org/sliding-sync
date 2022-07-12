@@ -184,10 +184,18 @@ func (s *ConnState) onIncomingListRequest(ctx context.Context, builder *RoomsBui
 		if overwritten || prevReqList.FiltersChanged(nextReqList) {
 			// this is either a new list or the filters changed, so we need to splat all the rooms to the client.
 			subID := builder.AddSubscription(nextReqList.RoomSubscription)
-			builder.AddRoomsToSubscription(subID, roomList.RoomIDs())
+			allRoomIDs := roomList.RoomIDs()
+			builder.AddRoomsToSubscription(subID, allRoomIDs)
 			return sync3.ResponseList{
-				// no ops
-				// count will be filled in later
+				// send all the room IDs initially so the user knows which rooms in the top-level rooms map
+				// correspond to this list.
+				Ops: []sync3.ResponseOp{
+					&sync3.ResponseOpRange{
+						Operation: sync3.OpSync,
+						Range:     []int64{0, int64(len(allRoomIDs) - 1)},
+						RoomIDs:   allRoomIDs,
+					},
+				},
 			}
 		}
 	}
