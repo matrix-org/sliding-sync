@@ -335,7 +335,19 @@ func (s *connStateLive) resort(
 			builder.AddRoomsToSubscription(subID, []string{roomID})
 		}
 
-		ops = append(ops, reqList.WriteSwapOp(roomID, listFromIndex, listToIndex)...)
+		swapOp := reqList.WriteSwapOp(roomID, listFromIndex, listToIndex)
+
+		if swapOp == nil && wasUpdatedRoomInserted && newlyAdded {
+			// we inserted this room and it is a new room, so there is no swap operation
+			// as we aren't _swapping_ anything, we're just appending it to the list. Write an insert
+			// op to ensure we see the room
+			subID := builder.AddSubscription(reqList.RoomSubscription)
+			builder.AddRoomsToSubscription(subID, []string{roomID})
+			ops = append(ops, reqList.WriteInsertOp(toIndex, roomID))
+		} else {
+			ops = append(ops, swapOp...)
+		}
+
 	}
 	return ops, true
 }

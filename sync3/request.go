@@ -76,7 +76,25 @@ func (rl *RequestList) FiltersChanged(next *RequestList) bool {
 	return !bytes.Equal(pb, nb)
 }
 
+// Write an insert operation for this list. Can return nil for indexes not being tracked. Useful when
+// rooms are added to the list e.g newly joined rooms.
+func (rl *RequestList) WriteInsertOp(insertedIndex int, roomID string) *ResponseOpSingle {
+	if insertedIndex < 0 {
+		return nil
+	}
+	// only notify if we are tracking this index
+	if _, inside := rl.Ranges.Inside(int64(insertedIndex)); !inside {
+		return nil
+	}
+	return &ResponseOpSingle{
+		Operation: OpInsert,
+		Index:     &insertedIndex,
+		RoomID:    roomID,
+	}
+}
+
 // Write a delete operation for this list. Can return nil for invalid indexes or if this index isn't being tracked.
+// Useful when rooms are removed from the list e.g left rooms.
 func (rl *RequestList) WriteDeleteOp(deletedIndex int) *ResponseOpSingle {
 	// update operations return -1 if nothing gets deleted
 	if deletedIndex < 0 {

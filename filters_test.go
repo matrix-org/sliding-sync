@@ -84,7 +84,7 @@ func TestFiltersEncryption(t *testing.T) {
 				if len(op.RoomIDs) != 1 {
 					return fmt.Errorf("want %d rooms, got %d", 1, len(op.RoomIDs))
 				}
-				return allRooms[1].MatchRoom(op.RoomIDs[0], res.Rooms[op.RoomIDs[0]]) // encrypted room
+				return allRooms[1].MatchRoom(op.RoomIDs[0], res.Rooms[op.RoomIDs[0]]) // unencrypted room
 			}),
 		))
 
@@ -176,7 +176,6 @@ func TestFiltersEncryption(t *testing.T) {
 }
 
 func TestFiltersInvite(t *testing.T) {
-	t.SkipNow()
 	boolTrue := true
 	boolFalse := false
 	pqString := testutils.PrepareDBConnectionString()
@@ -190,7 +189,15 @@ func TestFiltersInvite(t *testing.T) {
 	v2.queueResponse(alice, sync2.SyncResponse{
 		Rooms: sync2.SyncRoomsResponse{
 			Invite: map[string]sync2.SyncV2InviteResponse{
-				roomID: {},
+				roomID: {
+					InviteState: sync2.EventsResponse{
+						Events: []json.RawMessage{
+							testutils.NewStateEvent(t, "m.room.member", alice, "@inviter:localhost", map[string]interface{}{
+								"membership": "invite",
+							}),
+						},
+					},
+				},
 			},
 		},
 	})
@@ -221,28 +228,37 @@ func TestFiltersInvite(t *testing.T) {
 	))
 
 	// Accept the invite
-	// v2.waitUntilEmpty(t, alice)
-	/* TODO FIXME XXX
+	v2.queueResponse(alice, sync2.SyncResponse{
+		Rooms: sync2.SyncRoomsResponse{
+			Join: v2JoinTimeline(roomEvents{
+				roomID: roomID,
+				events: []json.RawMessage{testutils.NewStateEvent(t, "m.room.member", alice, alice, map[string]interface{}{
+					"membership": "join",
+				})},
+			}),
+		},
+	})
+	v2.waitUntilEmpty(t, alice)
 	// now the room should move from one room to another
 	res = v3.mustDoV3RequestWithPos(t, aliceToken, res.Pos, sync3.Request{
 		Lists: []sync3.RequestList{
 			{
 				Ranges: sync3.SliceRanges{
-					[2]int64{0, int64(len(allRooms) - 1)}, // all rooms
+					[2]int64{0, 20}, // all rooms
 				},
 				// sticky; should remember filters
 			},
 			{
 				Ranges: sync3.SliceRanges{
-					[2]int64{0, int64(len(allRooms) - 1)}, // all rooms
+					[2]int64{0, 20}, // all rooms
 				},
 				// sticky; should remember filters
 			},
 		},
 	})
-	MatchResponse(t, res, MatchV3Counts([]int{len(allRooms), 0}), MatchV3Ops(
-		MatchV3DeleteOp(1, 0),
-		MatchV3DeleteOp(0, 1),
-		MatchV3InsertOp(0, 0, unencryptedRoomID),
-	)) */
+	// the room swaps from the invite list to the join list
+	MatchResponse(t, res, MatchV3Counts([]int{0, 1}),
+		MatchV3Ops(0, MatchV3DeleteOp(0)),
+		MatchV3Ops(1, MatchV3InsertOp(0, roomID)),
+	)
 }

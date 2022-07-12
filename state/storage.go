@@ -317,7 +317,7 @@ func (s *Storage) RoomStateAfterEventPosition(ctx context.Context, roomIDs []str
 		}
 		latestEvents, err := s.accumulator.eventsTable.SelectByNIDs(txn, true, fastNIDs)
 		if err != nil {
-			return err
+			return fmt.Errorf("failed to select latest nids in rooms %v: %s", roomIDs, err)
 		}
 		if len(slowRooms) > 0 {
 			logger.Warn().Int("slow_rooms", len(slowRooms)).Msg("RoomStateAfterEventPosition: pos value provided is far behind the database copy, performance degraded")
@@ -359,13 +359,23 @@ func (s *Storage) RoomStateAfterEventPosition(ctx context.Context, roomIDs []str
 							}
 						}
 					} else {
-						// the event is still state, but it doesn't replace anything, so just add it onto the snapshot
-						snapshotRow.Events = append(snapshotRow.Events, ev.NID)
+						// the event is still state, but it doesn't replace anything, so just add it onto the snapshot,
+						// but only if we haven't already
+						alreadyExists := false
+						for _, nid := range snapshotRow.Events {
+							if nid == ev.NID {
+								alreadyExists = true
+								break
+							}
+						}
+						if !alreadyExists {
+							snapshotRow.Events = append(snapshotRow.Events, ev.NID)
+						}
 					}
 				}
 				events, err := s.accumulator.eventsTable.SelectByNIDs(txn, true, snapshotRow.Events)
 				if err != nil {
-					return err
+					return fmt.Errorf("failed to select state snapshot %v for room %v: %s", ev.BeforeStateSnapshotID, ev.RoomID, err)
 				}
 				roomToEvents[ev.RoomID] = events
 			}
