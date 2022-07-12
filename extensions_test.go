@@ -211,7 +211,7 @@ func TestExtensionToDevice(t *testing.T) {
 			},
 		},
 	})
-	MatchResponse(t, res, MatchV3Count(0), MatchToDeviceMessages(toDeviceMsgs))
+	MatchResponse(t, res, MatchList(0, MatchV3Count(0)), MatchToDeviceMessages(toDeviceMsgs))
 
 	// 2: repeating the fresh sync request returns the same messages (not deleted)
 	res = v3.mustDoV3Request(t, aliceToken, sync3.Request{
@@ -226,7 +226,7 @@ func TestExtensionToDevice(t *testing.T) {
 			},
 		},
 	})
-	MatchResponse(t, res, MatchV3Count(0), MatchToDeviceMessages(toDeviceMsgs))
+	MatchResponse(t, res, MatchList(0, MatchV3Count(0)), MatchToDeviceMessages(toDeviceMsgs))
 
 	// 3: update the since token -> no new messages
 	res = v3.mustDoV3Request(t, aliceToken, sync3.Request{
@@ -242,7 +242,7 @@ func TestExtensionToDevice(t *testing.T) {
 			},
 		},
 	})
-	MatchResponse(t, res, MatchV3Count(0), MatchToDeviceMessages([]json.RawMessage{}))
+	MatchResponse(t, res, MatchList(0, MatchV3Count(0)), MatchToDeviceMessages([]json.RawMessage{}))
 
 	// 4: inject live to-device messages -> receive them only.
 	sinceBeforeMsgs := res.Extensions.ToDevice.NextBatch
@@ -268,7 +268,7 @@ func TestExtensionToDevice(t *testing.T) {
 			},
 		},
 	})
-	MatchResponse(t, res, MatchV3Count(0), MatchToDeviceMessages(newToDeviceMsgs))
+	MatchResponse(t, res, MatchList(0, MatchV3Count(0)), MatchToDeviceMessages(newToDeviceMsgs))
 
 	// 5: repeating the previous sync request returns the same live to-device messages (retransmit)
 	res = v3.mustDoV3RequestWithPos(t, aliceToken, res.Pos, sync3.Request{
@@ -283,7 +283,7 @@ func TestExtensionToDevice(t *testing.T) {
 			},
 		},
 	})
-	MatchResponse(t, res, MatchV3Count(0), MatchToDeviceMessages(newToDeviceMsgs))
+	MatchResponse(t, res, MatchList(0, MatchV3Count(0)), MatchToDeviceMessages(newToDeviceMsgs))
 
 	// ack the to-device messages
 	res = v3.mustDoV3RequestWithPos(t, aliceToken, res.Pos, sync3.Request{
@@ -299,7 +299,7 @@ func TestExtensionToDevice(t *testing.T) {
 		},
 	})
 	// this response contains nothing
-	MatchResponse(t, res, MatchV3Count(0), MatchToDeviceMessages([]json.RawMessage{}))
+	MatchResponse(t, res, MatchList(0, MatchV3Count(0)), MatchToDeviceMessages([]json.RawMessage{}))
 
 	// 6: using an old since token does not return to-device messages anymore as they were deleted.
 	res = v3.mustDoV3RequestWithPos(t, aliceToken, res.Pos, sync3.Request{
@@ -314,7 +314,7 @@ func TestExtensionToDevice(t *testing.T) {
 			},
 		},
 	})
-	MatchResponse(t, res, MatchV3Count(0), MatchToDeviceMessages([]json.RawMessage{}))
+	MatchResponse(t, res, MatchList(0, MatchV3Count(0)), MatchToDeviceMessages([]json.RawMessage{}))
 }
 
 // tests that the account data extension works:

@@ -67,7 +67,7 @@ func TestSlowGetAllRoomsInitial(t *testing.T) {
 			},
 		}},
 	})
-	MatchResponse(t, res, MatchV3Count(len(allRooms)), MatchNoV3Ops(), MatchRoomSubscriptionsStrict(allRoomMatchers))
+	MatchResponse(t, res, MatchList(0, MatchV3Count(len(allRooms))), MatchNoV3Ops(), MatchRoomSubscriptionsStrict(allRoomMatchers))
 
 	// now redo this but with a room name filter
 	res = v3.mustDoV3Request(t, aliceToken, sync3.Request{
@@ -91,7 +91,7 @@ func TestSlowGetAllRoomsInitial(t *testing.T) {
 		}
 		delete(allRoomMatchers, allRooms[i].roomID)
 	}
-	MatchResponse(t, res, MatchV3Count(len(allRoomMatchers)), MatchNoV3Ops(), MatchRoomSubscriptionsStrict(allRoomMatchers))
+	MatchResponse(t, res, MatchList(0, MatchV3Count(len(allRoomMatchers))), MatchNoV3Ops(), MatchRoomSubscriptionsStrict(allRoomMatchers))
 
 	t.Run("Newly joined rooms get all state", func(t *testing.T) {
 		ts := latestTimestamp
@@ -116,7 +116,7 @@ func TestSlowGetAllRoomsInitial(t *testing.T) {
 		res = v3.mustDoV3RequestWithPos(t, aliceToken, res.Pos, sync3.Request{
 			Lists: []sync3.RequestList{{}},
 		})
-		MatchResponse(t, res, MatchV3Count(len(allRoomMatchers)+1), MatchNoV3Ops(), MatchRoomSubscriptionsStrict(map[string][]roomMatcher{
+		MatchResponse(t, res, MatchList(0, MatchV3Count(len(allRoomMatchers)+1)), MatchNoV3Ops(), MatchRoomSubscriptionsStrict(map[string][]roomMatcher{
 			newRoom.roomID: {
 				MatchRoomInitial(true),
 				MatchRoomName(roomName),
@@ -139,7 +139,7 @@ func TestSlowGetAllRoomsInitial(t *testing.T) {
 		res = v3.mustDoV3RequestWithPos(t, aliceToken, res.Pos, sync3.Request{
 			Lists: []sync3.RequestList{{}},
 		})
-		MatchResponse(t, res, MatchV3Count(len(allRoomMatchers)+1), MatchNoV3Ops(), MatchRoomSubscriptionsStrict(map[string][]roomMatcher{
+		MatchResponse(t, res, MatchList(0, MatchV3Count(len(allRoomMatchers)+1)), MatchNoV3Ops(), MatchRoomSubscriptionsStrict(map[string][]roomMatcher{
 			allRooms[11].roomID: {
 				MatchRoomInitial(false),
 				MatchRoomTimelineMostRecent(1, []json.RawMessage{newEvent}),

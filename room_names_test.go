@@ -79,7 +79,7 @@ func TestRoomNames(t *testing.T) {
 				},
 			}},
 		})
-		MatchResponse(t, res, MatchV3Count(len(allRooms)), MatchV3Ops(0,
+		MatchResponse(t, res, MatchList(0, MatchV3Count(len(allRooms)), MatchV3Ops(
 			MatchV3SyncOpFn(func(op *sync3.ResponseOpRange) error {
 				if len(op.RoomIDs) != len(allRooms) {
 					return fmt.Errorf("want %d rooms, got %d", len(allRooms), len(op.RoomIDs))
@@ -95,7 +95,7 @@ func TestRoomNames(t *testing.T) {
 				}
 				return nil
 			}),
-		))
+		)))
 	}
 
 	checkRoomNames("a")
@@ -125,9 +125,9 @@ func TestRoomNames(t *testing.T) {
 				MatchRoomName(wantRooms[i].name),
 			}
 		}
-		MatchResponse(t, res, MatchV3Count(len(wantRooms)), MatchV3Ops(0,
+		MatchResponse(t, res, MatchList(0, MatchV3Count(len(wantRooms)), MatchV3Ops(
 			MatchV3SyncOp(0, int64(len(allRooms)-1), wantRoomIDs),
-		), MatchRoomSubscriptions(matchers))
+		)), MatchRoomSubscriptions(matchers))
 	}
 	// case-insensitive matching
 	checkRoomNameFilter("my room name", []roomEvents{allRooms[1]})

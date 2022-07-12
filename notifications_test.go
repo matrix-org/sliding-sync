@@ -65,7 +65,7 @@ func TestNotificationsOnTop(t *testing.T) {
 		}},
 	}
 	res := v3.mustDoV3Request(t, aliceToken, syncRequestBody)
-	MatchResponse(t, res, MatchV3Count(len(allRooms)), MatchV3Ops(0,
+	MatchResponse(t, res, MatchList(0, MatchV3Count(len(allRooms)), MatchV3Ops(
 		MatchV3SyncOpFn(func(op *sync3.ResponseOpRange) error {
 			if len(op.RoomIDs) != len(allRooms) {
 				return fmt.Errorf("want %d rooms, got %d", len(allRooms), len(op.RoomIDs))
@@ -80,7 +80,7 @@ func TestNotificationsOnTop(t *testing.T) {
 			}
 			return nil
 		}),
-	))
+	)))
 
 	// send a bing message into the bing room, make sure it comes through and is on top
 	bingEvent := testutils.NewEvent(t, "m.room.message", bob, map[string]interface{}{"body": "BING!"}, testutils.WithTimestamp(latestTimestamp.Add(1*time.Minute)))
@@ -102,9 +102,9 @@ func TestNotificationsOnTop(t *testing.T) {
 	})
 	v2.waitUntilEmpty(t, alice)
 	res = v3.mustDoV3RequestWithPos(t, aliceToken, res.Pos, syncRequestBody)
-	MatchResponse(t, res, MatchV3Count(len(allRooms)),
-		MatchV3Ops(0, MatchV3DeleteOp(1), MatchV3InsertOp(0, bingRoomID)),
-	)
+	MatchResponse(t, res, MatchList(0, MatchV3Count(len(allRooms)),
+		MatchV3Ops(MatchV3DeleteOp(1), MatchV3InsertOp(0, bingRoomID)),
+	))
 
 	// send a message into the nobing room, it's position must not change due to our sort order
 	noBingEvent := testutils.NewEvent(t, "m.room.message", bob, map[string]interface{}{"body": "no bing"}, testutils.WithTimestamp(latestTimestamp.Add(2*time.Minute)))
@@ -123,7 +123,7 @@ func TestNotificationsOnTop(t *testing.T) {
 	})
 	v2.waitUntilEmpty(t, alice)
 	res = v3.mustDoV3RequestWithPos(t, aliceToken, res.Pos, syncRequestBody)
-	MatchResponse(t, res, MatchV3Count(len(allRooms)),
+	MatchResponse(t, res, MatchList(0, MatchV3Count(len(allRooms))),
 		MatchNoV3Ops(),
 	)
 
@@ -141,7 +141,7 @@ func TestNotificationsOnTop(t *testing.T) {
 			Sort: []string{sync3.SortByHighlightCount, sync3.SortByNotificationCount, sync3.SortByRecency},
 		}},
 	})
-	MatchResponse(t, res, MatchV3Count(len(allRooms)), MatchV3Ops(0,
+	MatchResponse(t, res, MatchList(0, MatchV3Count(len(allRooms)), MatchV3Ops(
 		MatchV3SyncOpFn(func(op *sync3.ResponseOpRange) error {
 			if len(op.RoomIDs) != len(allRooms) {
 				return fmt.Errorf("want %d rooms, got %d", len(allRooms), len(op.RoomIDs))
@@ -166,5 +166,5 @@ func TestNotificationsOnTop(t *testing.T) {
 			}
 			return nil
 		}),
-	))
+	)))
 }

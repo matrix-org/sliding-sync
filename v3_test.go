@@ -418,15 +418,10 @@ func (re *roomEvents) MatchRoom(roomID string, r sync3.Room, matchers ...roomMat
 	if re.roomID != roomID {
 		return fmt.Errorf("MatchRoom room id: got %s want %s", roomID, re.roomID)
 	}
-	for _, m := range matchers {
-		if err := m(r); err != nil {
-			return fmt.Errorf("MatchRoom %s : %s", roomID, err)
-		}
-	}
-	return nil
+	return CheckRoom(r, matchers...)
 }
 
-func MatchRoom(r sync3.Room, matchers ...roomMatcher) error {
+func CheckRoom(r sync3.Room, matchers ...roomMatcher) error {
 	for _, m := range matchers {
 		if err := m(r); err != nil {
 			return fmt.Errorf("MatchRoom : %s", err)
@@ -456,21 +451,13 @@ func v2JoinTimeline(joinEvents ...roomEvents) map[string]sync2.SyncV2JoinRespons
 }
 
 type respMatcher func(res *sync3.Response) error
+type listMatcher func(list sync3.ResponseList) error
 type opMatcher func(op sync3.ResponseOp) error
-type rangeMatcher func(op sync3.ResponseOpRange) error
 
-func MatchV3Count(wantCount int) respMatcher {
-	return MatchV3Counts([]int{wantCount})
-}
-func MatchV3Counts(wantCounts []int) respMatcher {
-	return func(res *sync3.Response) error {
-		if len(res.Lists) != len(wantCounts) {
-			return fmt.Errorf("MatchV3Counts: got %v lists, want %v", len(res.Lists), len(wantCounts))
-		}
-		for i := range wantCounts {
-			if res.Lists[i].Count != wantCounts[i] {
-				return fmt.Errorf("MatchV3Counts: list %d got %v want %v", i, res.Lists[i].Count, wantCounts[i])
-			}
+func MatchV3Count(wantCount int) listMatcher {
+	return func(res sync3.ResponseList) error {
+		if res.Count != wantCount {
+			return fmt.Errorf("list got count %d want %d", res.Count, wantCount)
 		}
 		return nil
 	}
@@ -660,18 +647,15 @@ func MatchNoV3Ops() respMatcher {
 	}
 }
 
-func MatchV3Ops(listIndex int, matchOps ...opMatcher) respMatcher {
-	return func(res *sync3.Response) error {
-		if listIndex >= len(res.Lists) {
-			return fmt.Errorf("MatchV3Ops: list index %d doesn't exist", listIndex)
+func MatchV3Ops(matchOps ...opMatcher) listMatcher {
+	return func(res sync3.ResponseList) error {
+		if len(matchOps) != len(res.Ops) {
+			return fmt.Errorf("MatchV3Ops: got %d ops want %d", len(res.Ops), len(matchOps))
 		}
-		if len(matchOps) != len(res.Lists[listIndex].Ops) {
-			return fmt.Errorf("MatchV3Ops: list %d got %d ops want %d", listIndex, len(res.Lists[listIndex].Ops), len(matchOps))
-		}
-		for i := range res.Lists[listIndex].Ops {
-			op := res.Lists[listIndex].Ops[i]
+		for i := range res.Ops {
+			op := res.Ops[i]
 			if err := matchOps[i](op); err != nil {
-				return fmt.Errorf("MatchV3Ops: list %d op[%d](%s) - %s", listIndex, i, op.Op(), err)
+				return fmt.Errorf("MatchV3Ops: op[%d](%s) - %s", i, op.Op(), err)
 			}
 		}
 		return nil
@@ -700,6 +684,39 @@ func MatchAccountData(globals []json.RawMessage, rooms map[string][]json.RawMess
 				if err := equalAnyOrder(gots, rooms[roomID]); err != nil {
 					return fmt.Errorf("MatchAccountData[room]: %s", err)
 				}
+			}
+		}
+		return nil
+	}
+}
+
+func CheckList(res sync3.ResponseList, matchers ...listMatcher) error {
+	for _, m := range matchers {
+		if err := m(res); err != nil {
+			return fmt.Errorf("MatchList: %v", err)
+		}
+	}
+	return nil
+}
+
+func MatchList(i int, matchers ...listMatcher) respMatcher {
+	return func(res *sync3.Response) error {
+		if i >= len(res.Lists) {
+			return fmt.Errorf("MatchSingleList: index %d does not exist, got %d lists", i, len(res.Lists))
+		}
+		list := res.Lists[i]
+		return CheckList(list, matchers...)
+	}
+}
+
+func MatchLists(matchers ...[]listMatcher) respMatcher {
+	return func(res *sync3.Response) error {
+		if len(matchers) != len(res.Lists) {
+			return fmt.Errorf("MatchLists: got %d matchers for %d lists", len(matchers), len(res.Lists))
+		}
+		for i := range matchers {
+			if err := CheckList(res.Lists[i], matchers[i]...); err != nil {
+				return fmt.Errorf("MatchLists[%d]: %v", i, err)
 			}
 		}
 		return nil

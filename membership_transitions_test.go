@@ -103,9 +103,9 @@ func TestRoomStateTransitions(t *testing.T) {
 			},
 		},
 	})
-	MatchResponse(t, res, MatchV3Count(2), MatchV3Ops(0,
+	MatchResponse(t, res, MatchList(0, MatchV3Count(2), MatchV3Ops(
 		MatchV3SyncOp(0, 100, []string{allRoomsAlicePerspective[indexBobInvited].roomID, allRoomsAlicePerspective[indexBobJoined].roomID}),
-	), MatchRoomSubscriptions(map[string][]roomMatcher{
+	)), MatchRoomSubscriptions(map[string][]roomMatcher{
 		allRoomsAlicePerspective[indexBobInvited].roomID: {
 			MatchRoomHighlightCount(1),
 			MatchRoomInitial(true),
@@ -136,7 +136,7 @@ func TestRoomStateTransitions(t *testing.T) {
 			},
 		},
 	})
-	MatchResponse(t, res, MatchV3Count(2), MatchNoV3Ops(), MatchRoomSubscription(allRoomsAlicePerspective[indexBobInvited].roomID,
+	MatchResponse(t, res, MatchNoV3Ops(), MatchList(0, MatchV3Count(2)), MatchRoomSubscription(allRoomsAlicePerspective[indexBobInvited].roomID,
 		MatchRoomRequiredState([]json.RawMessage{
 			allRoomsAlicePerspective[indexBobInvited].events[0], // create event
 		}),

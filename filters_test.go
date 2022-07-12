@@ -1,8 +1,6 @@
 package syncv3
 
 import (
-	"fmt"
-	"reflect"
 	"testing"
 
 	"github.com/matrix-org/sync-v3/sync3"
@@ -47,28 +45,20 @@ func TestFiltersEncryption(t *testing.T) {
 			},
 		},
 	})
-	MatchResponse(t, res, MatchV3Counts([]int{1, 1}),
-		MatchV3Ops(0,
-			MatchV3SyncOpFn(func(op *sync3.ResponseOpRange) error {
-				if len(op.RoomIDs) != 1 {
-					return fmt.Errorf("want %d rooms, got %d", 1, len(op.RoomIDs))
-				}
-				if op.RoomIDs[0] != encryptedRoomID {
-					return fmt.Errorf("got %v want %v", op.RoomIDs[0], encryptedRoomID)
-				}
-				return nil
-			})),
-		MatchV3Ops(1,
-			MatchV3SyncOpFn(func(op *sync3.ResponseOpRange) error {
-				if len(op.RoomIDs) != 1 {
-					return fmt.Errorf("want %d rooms, got %d", 1, len(op.RoomIDs))
-				}
-				if op.RoomIDs[0] != unencryptedRoomID {
-					return fmt.Errorf("got %v want %v", op.RoomIDs[0], unencryptedRoomID)
-				}
-				return nil
-			}),
-		))
+	MatchResponse(t, res, MatchLists(
+		[]listMatcher{
+			MatchV3Count(1),
+			MatchV3Ops(
+				MatchV3SyncOp(0, 1, []string{encryptedRoomID}),
+			),
+		},
+		[]listMatcher{
+			MatchV3Count(1),
+			MatchV3Ops(
+				MatchV3SyncOp(0, 1, []string{unencryptedRoomID}),
+			),
+		},
+	))
 
 	// change the unencrypted room into an encrypted room
 	rig.EncryptRoom(t, alice, unencryptedRoomID)
@@ -90,10 +80,20 @@ func TestFiltersEncryption(t *testing.T) {
 			},
 		},
 	})
-	MatchResponse(t, res, MatchV3Counts([]int{2, 0}),
-		MatchV3Ops(1, MatchV3DeleteOp(0)),
-		MatchV3Ops(0, MatchV3DeleteOp(1), MatchV3InsertOp(0, unencryptedRoomID)),
-	)
+	MatchResponse(t, res, MatchLists(
+		[]listMatcher{
+			MatchV3Count(2),
+			MatchV3Ops(
+				MatchV3DeleteOp(1), MatchV3InsertOp(0, unencryptedRoomID),
+			),
+		},
+		[]listMatcher{
+			MatchV3Count(0),
+			MatchV3Ops(
+				MatchV3DeleteOp(0),
+			),
+		},
+	))
 
 	// requesting the encrypted list from scratch returns 2 rooms now
 	res = rig.V3.mustDoV3Request(t, aliceToken, sync3.Request{
@@ -106,17 +106,13 @@ func TestFiltersEncryption(t *testing.T) {
 			},
 		}},
 	})
-	MatchResponse(t, res, MatchV3Count(2), MatchV3Ops(0,
-		MatchV3SyncOpFn(func(op *sync3.ResponseOpRange) error {
-			if len(op.RoomIDs) != 2 {
-				return fmt.Errorf("want %d rooms, got %d", 2, len(op.RoomIDs))
-			}
-			wantRoomIDs := []string{unencryptedRoomID, encryptedRoomID}
-			if !reflect.DeepEqual(op.RoomIDs, wantRoomIDs) {
-				return fmt.Errorf("got %v want %v", op.RoomIDs, wantRoomIDs)
-			}
-			return nil
-		}),
+	MatchResponse(t, res, MatchLists(
+		[]listMatcher{
+			MatchV3Count(2),
+			MatchV3Ops(
+				MatchV3SyncOp(0, 1, []string{unencryptedRoomID, encryptedRoomID}),
+			),
+		},
 	))
 
 	// requesting the unencrypted stream from scratch returns 0 rooms
@@ -130,7 +126,11 @@ func TestFiltersEncryption(t *testing.T) {
 			},
 		}},
 	})
-	MatchResponse(t, res, MatchV3Count(0))
+	MatchResponse(t, res, MatchLists(
+		[]listMatcher{
+			MatchV3Count(0),
+		},
+	))
 }
 
 func TestFiltersInvite(t *testing.T) {
@@ -167,8 +167,16 @@ func TestFiltersInvite(t *testing.T) {
 			},
 		},
 	})
-	MatchResponse(t, res, MatchV3Counts([]int{1, 0}), MatchV3Ops(0,
-		MatchV3SyncOp(0, 20, []string{roomID}),
+	MatchResponse(t, res, MatchLists(
+		[]listMatcher{
+			MatchV3Count(1),
+			MatchV3Ops(
+				MatchV3SyncOp(0, 20, []string{roomID}),
+			),
+		},
+		[]listMatcher{
+			MatchV3Count(0),
+		},
 	))
 
 	// Accept the invite
@@ -192,8 +200,18 @@ func TestFiltersInvite(t *testing.T) {
 		},
 	})
 	// the room swaps from the invite list to the join list
-	MatchResponse(t, res, MatchV3Counts([]int{0, 1}),
-		MatchV3Ops(0, MatchV3DeleteOp(0)),
-		MatchV3Ops(1, MatchV3InsertOp(0, roomID)),
-	)
+	MatchResponse(t, res, MatchLists(
+		[]listMatcher{
+			MatchV3Count(0),
+			MatchV3Ops(
+				MatchV3DeleteOp(0),
+			),
+		},
+		[]listMatcher{
+			MatchV3Count(1),
+			MatchV3Ops(
+				MatchV3InsertOp(0, roomID),
+			),
+		},
+	))
 }

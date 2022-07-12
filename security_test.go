@@ -69,12 +69,12 @@ func TestSecurityLiveStreamEventLeftLeak(t *testing.T) {
 				},
 			}},
 		})
-		MatchResponse(t, res, MatchV3Count(1), MatchV3Ops(0, MatchV3SyncOpFn(func(op *sync3.ResponseOpRange) error {
+		MatchResponse(t, res, MatchList(0, MatchV3Count(1), MatchV3Ops(MatchV3SyncOpFn(func(op *sync3.ResponseOpRange) error {
 			if len(op.RoomIDs) != 1 {
 				return fmt.Errorf("range missing room: got %d want 1", len(op.RoomIDs))
 			}
 			return theRoom.MatchRoom(op.RoomIDs[0], res.Rooms[op.RoomIDs[0]])
-		})))
+		}))))
 		tokenToPos[token] = res.Pos
 	}
 
@@ -132,7 +132,7 @@ func TestSecurityLiveStreamEventLeftLeak(t *testing.T) {
 		}},
 	})
 	// TODO: We include left counts mid-sync so clients can see the user has left/been kicked. Should be configurable.
-	MatchResponse(t, res, MatchV3Count(1), MatchNoV3Ops(), MatchRoomSubscription(
+	MatchResponse(t, res, MatchList(0, MatchV3Count(1)), MatchNoV3Ops(), MatchRoomSubscription(
 		roomID, MatchRoomName(""), MatchRoomRequiredState(nil), MatchRoomTimelineMostRecent(1, []json.RawMessage{kickEvent}),
 	))
 
@@ -151,7 +151,7 @@ func TestSecurityLiveStreamEventLeftLeak(t *testing.T) {
 	})
 	// TODO: We should consolidate 2x UPDATEs into 1x if we get scenarios like this
 	// TODO: WE should be returning updated values for name and required_state
-	MatchResponse(t, res, MatchV3Count(1), MatchNoV3Ops(), MatchRoomSubscription(
+	MatchResponse(t, res, MatchList(0, MatchV3Count(1)), MatchNoV3Ops(), MatchRoomSubscription(
 		roomID, MatchRoomTimelineMostRecent(2, []json.RawMessage{kickEvent, sensitiveEvent}),
 	))
 }
@@ -218,9 +218,9 @@ func TestSecurityRoomSubscriptionLeak(t *testing.T) {
 		},
 	})
 	// Assert that Eve doesn't see anything
-	MatchResponse(t, res, MatchV3Count(1), MatchV3Ops(0,
+	MatchResponse(t, res, MatchList(0, MatchV3Count(1), MatchV3Ops(
 		MatchV3SyncOp(0, 10, []string{unrelatedRoomID}),
-	), MatchRoomSubscriptionsStrict(map[string][]roomMatcher{
+	)), MatchRoomSubscriptionsStrict(map[string][]roomMatcher{
 		unrelatedRoomID: []roomMatcher{},
 	}))
 
@@ -255,5 +255,5 @@ func TestSecurityRoomSubscriptionLeak(t *testing.T) {
 		},
 	})
 	// Assert that Eve doesn't see anything
-	MatchResponse(t, res, MatchV3Count(1), MatchNoV3Ops(), MatchRoomSubscriptionsStrict(map[string][]roomMatcher{}))
+	MatchResponse(t, res, MatchList(0, MatchV3Count(1)), MatchNoV3Ops(), MatchRoomSubscriptionsStrict(map[string][]roomMatcher{}))
 }

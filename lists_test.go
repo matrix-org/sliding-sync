@@ -86,15 +86,20 @@ func TestMultipleLists(t *testing.T) {
 	})
 
 	MatchResponse(t, res,
-		MatchV3Counts([]int{len(encryptedRooms), len(unencryptedRooms)}),
-		MatchV3Ops(0, MatchV3SyncOpFn(func(op *sync3.ResponseOpRange) error {
-			// first 3 encrypted rooms
-			return checkRoomList(res, op, encryptedRooms[:3])
-		})),
-		MatchV3Ops(1, MatchV3SyncOpFn(func(op *sync3.ResponseOpRange) error {
-			// first 3 unencrypted rooms
-			return checkRoomList(res, op, unencryptedRooms[:3])
-		})),
+		MatchLists([]listMatcher{
+			MatchV3Count(len(encryptedRooms)),
+			MatchV3Ops(MatchV3SyncOpFn(func(op *sync3.ResponseOpRange) error {
+				// first 3 encrypted rooms
+				return checkRoomList(res, op, encryptedRooms[:3])
+			}),
+			),
+		}, []listMatcher{
+			MatchV3Count(len(unencryptedRooms)),
+			MatchV3Ops(MatchV3SyncOpFn(func(op *sync3.ResponseOpRange) error {
+				// first 3 unencrypted rooms
+				return checkRoomList(res, op, unencryptedRooms[:3])
+			})),
+		}),
 	)
 
 	// now scroll one of the lists
@@ -113,11 +118,16 @@ func TestMultipleLists(t *testing.T) {
 			},
 		},
 	})
-	MatchResponse(t, res, MatchV3Counts([]int{len(encryptedRooms), len(unencryptedRooms)}), MatchV3Ops(1,
-		MatchV3SyncOpFn(func(op *sync3.ResponseOpRange) error {
-			return checkRoomList(res, op, unencryptedRooms[3:6])
-		}),
-	))
+	MatchResponse(t, res, MatchLists([]listMatcher{
+		MatchV3Count(len(encryptedRooms)),
+	}, []listMatcher{
+		MatchV3Count(len(unencryptedRooms)),
+		MatchV3Ops(
+			MatchV3SyncOpFn(func(op *sync3.ResponseOpRange) error {
+				return checkRoomList(res, op, unencryptedRooms[3:6])
+			}),
+		),
+	}))
 
 	// now shift the last/oldest unencrypted room to an encrypted room and make sure both lists update
 	v2.queueResponse(alice, sync2.SyncResponse{
@@ -161,11 +171,15 @@ func TestMultipleLists(t *testing.T) {
 	})
 	// We are tracking the first few encrypted rooms so we expect list 0 to update
 	// However we do not track old unencrypted rooms so we expect no change in list 1
-	// TODO: We always assume operations are done sequentially starting at list 0, is this safe?
-	MatchResponse(t, res, MatchV3Counts([]int{len(encryptedRooms), len(unencryptedRooms)}), MatchV3Ops(0,
-		MatchV3DeleteOp(2),
-		MatchV3InsertOp(0, encryptedRooms[0].roomID),
-	))
+	MatchResponse(t, res, MatchLists([]listMatcher{
+		MatchV3Count(len(encryptedRooms)),
+		MatchV3Ops(
+			MatchV3DeleteOp(2),
+			MatchV3InsertOp(0, encryptedRooms[0].roomID),
+		),
+	}, []listMatcher{
+		MatchV3Count(len(unencryptedRooms)),
+	}))
 }
 
 // Test that highlights / bumps only update a single list and not both. Regression test for when
@@ -249,17 +263,19 @@ func TestMultipleListsDMUpdate(t *testing.T) {
 		},
 	})
 
-	MatchResponse(t, res,
-		MatchV3Counts([]int{len(dmRooms), len(groupRooms)}),
-		MatchV3Ops(0, MatchV3SyncOpFn(func(op *sync3.ResponseOpRange) error {
+	MatchResponse(t, res, MatchLists([]listMatcher{
+		MatchV3Count(len(dmRooms)),
+		MatchV3Ops(MatchV3SyncOpFn(func(op *sync3.ResponseOpRange) error {
 			// first 3 DM rooms
 			return checkRoomList(res, op, dmRooms[:3])
 		})),
-		MatchV3Ops(1, MatchV3SyncOpFn(func(op *sync3.ResponseOpRange) error {
+	}, []listMatcher{
+		MatchV3Count(len(groupRooms)),
+		MatchV3Ops(MatchV3SyncOpFn(func(op *sync3.ResponseOpRange) error {
 			// first 3 group rooms
 			return checkRoomList(res, op, groupRooms[:3])
 		})),
-	)
+	}))
 
 	// now bring the last DM room to the top with a notif
 	pingMessage := testutils.NewEvent(t, "m.room.message", alice, map[string]interface{}{"body": "ping"})
@@ -299,13 +315,15 @@ func TestMultipleListsDMUpdate(t *testing.T) {
 			},
 		},
 	})
-	MatchResponse(t, res, MatchV3Counts([]int{len(dmRooms), len(groupRooms)}),
+	MatchResponse(t, res, MatchLists([]listMatcher{
+		MatchV3Count(len(dmRooms)),
 		MatchV3Ops(
-			0, MatchV3DeleteOp(2),
+			MatchV3DeleteOp(2),
 			MatchV3InsertOp(0, dmRooms[0].roomID),
 		),
-		MatchRoomSubscription(dmRooms[0].roomID, MatchRoomHighlightCount(1), MatchRoomTimelineMostRecent(1, dmRooms[0].events)),
-	)
+	}, []listMatcher{
+		MatchV3Count(len(groupRooms)),
+	}), MatchRoomSubscription(dmRooms[0].roomID, MatchRoomHighlightCount(1), MatchRoomTimelineMostRecent(1, dmRooms[0].events)))
 }
 
 // Test that a new list can be added mid-connection
@@ -339,7 +357,7 @@ func TestNewListMidConnection(t *testing.T) {
 		Lists: []sync3.RequestList{},
 	})
 
-	MatchResponse(t, res, MatchV3Counts([]int{}))
+	MatchResponse(t, res, MatchLists())
 
 	// now add a list
 	res = v3.mustDoV3RequestWithPos(t, aliceToken, res.Pos, sync3.Request{
@@ -354,11 +372,11 @@ func TestNewListMidConnection(t *testing.T) {
 			},
 		},
 	})
-	MatchResponse(t, res, MatchV3Counts([]int{len(allRooms)}), MatchV3Ops(0,
+	MatchResponse(t, res, MatchList(0, MatchV3Count(len(allRooms)), MatchV3Ops(
 		MatchV3SyncOpFn(func(op *sync3.ResponseOpRange) error {
 			return checkRoomList(res, op, allRooms[0:3])
 		}),
-	))
+	)))
 }
 
 // Tests that if a room appears in >1 list that we union room subscriptions correctly.
@@ -465,8 +483,8 @@ func TestMultipleOverlappingLists(t *testing.T) {
 	})
 
 	MatchResponse(t, res,
-		MatchV3Ops(0, MatchV3SyncOp(0, 4, encryptedRoomIDs[:5])),
-		MatchV3Ops(1, MatchV3SyncOp(0, 4, dmRoomIDs[:5])),
+		MatchList(0, MatchV3Ops(MatchV3SyncOp(0, 4, encryptedRoomIDs[:5]))),
+		MatchList(1, MatchV3Ops(MatchV3SyncOp(0, 4, dmRoomIDs[:5]))),
 		MatchRoomSubscriptions(map[string][]roomMatcher{
 			// encrypted rooms just come from the encrypted only list
 			encryptedRoomIDs[0]: {
