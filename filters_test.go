@@ -1,61 +1,37 @@
 package syncv3
 
 import (
-	"encoding/json"
 	"fmt"
+	"reflect"
 	"testing"
-	"time"
 
-	"github.com/matrix-org/sync-v3/sync2"
 	"github.com/matrix-org/sync-v3/sync3"
-	"github.com/matrix-org/sync-v3/testutils"
 )
 
 // Test that filters work initially and whilst streamed.
 func TestFiltersEncryption(t *testing.T) {
 	boolTrue := true
 	boolFalse := false
-	pqString := testutils.PrepareDBConnectionString()
-	// setup code
-	v2 := runTestV2Server(t)
-	v3 := runTestServer(t, v2, pqString)
-	defer v2.close()
-	defer v3.close()
+	rig := NewTestRig(t)
+	defer rig.Finish()
 	encryptedRoomID := "!TestFilters_encrypted:localhost"
 	unencryptedRoomID := "!TestFilters_unencrypted:localhost"
-	latestTimestamp := time.Now()
-	allRooms := []roomEvents{
-		// make an encrypted room and an unencrypted room
-		{
-			roomID: encryptedRoomID,
-			events: append(createRoomState(t, alice, latestTimestamp), []json.RawMessage{
-				testutils.NewStateEvent(
-					t, "m.room.encryption", "", alice, map[string]interface{}{
-						"algorithm":            "m.megolm.v1.aes-sha2",
-						"rotation_period_ms":   604800000,
-						"rotation_period_msgs": 100,
-					},
-				),
-			}...),
+	rig.SetupV2RoomsForUser(t, alice, NoFlush, map[string]RoomDescriptor{
+		encryptedRoomID: {
+			IsEncrypted: true,
 		},
-		{
-			roomID: unencryptedRoomID,
-			events: createRoomState(t, alice, latestTimestamp),
-		},
-	}
-	v2.addAccount(alice, aliceToken)
-	v2.queueResponse(alice, sync2.SyncResponse{
-		Rooms: sync2.SyncRoomsResponse{
-			Join: v2JoinTimeline(allRooms...),
+		unencryptedRoomID: {
+			IsEncrypted: false,
 		},
 	})
+	aliceToken := rig.Token(alice)
 
 	// connect and make sure either the encrypted room or not depending on what the filter says
-	res := v3.mustDoV3Request(t, aliceToken, sync3.Request{
+	res := rig.V3.mustDoV3Request(t, aliceToken, sync3.Request{
 		Lists: []sync3.RequestList{
 			{
 				Ranges: sync3.SliceRanges{
-					[2]int64{0, int64(len(allRooms) - 1)}, // all rooms
+					[2]int64{0, 1}, // all rooms
 				},
 				Filters: &sync3.RequestFilters{
 					IsEncrypted: &boolTrue,
@@ -63,7 +39,7 @@ func TestFiltersEncryption(t *testing.T) {
 			},
 			{
 				Ranges: sync3.SliceRanges{
-					[2]int64{0, int64(len(allRooms) - 1)}, // all rooms
+					[2]int64{0, 1}, // all rooms
 				},
 				Filters: &sync3.RequestFilters{
 					IsEncrypted: &boolFalse,
@@ -77,66 +53,53 @@ func TestFiltersEncryption(t *testing.T) {
 				if len(op.RoomIDs) != 1 {
 					return fmt.Errorf("want %d rooms, got %d", 1, len(op.RoomIDs))
 				}
-				return allRooms[0].MatchRoom(op.RoomIDs[0], res.Rooms[op.RoomIDs[0]]) // encrypted room
+				if op.RoomIDs[0] != encryptedRoomID {
+					return fmt.Errorf("got %v want %v", op.RoomIDs[0], encryptedRoomID)
+				}
+				return nil
 			})),
 		MatchV3Ops(1,
 			MatchV3SyncOpFn(func(op *sync3.ResponseOpRange) error {
 				if len(op.RoomIDs) != 1 {
 					return fmt.Errorf("want %d rooms, got %d", 1, len(op.RoomIDs))
 				}
-				return allRooms[1].MatchRoom(op.RoomIDs[0], res.Rooms[op.RoomIDs[0]]) // unencrypted room
+				if op.RoomIDs[0] != unencryptedRoomID {
+					return fmt.Errorf("got %v want %v", op.RoomIDs[0], unencryptedRoomID)
+				}
+				return nil
 			}),
 		))
 
 	// change the unencrypted room into an encrypted room
-	v2.queueResponse(alice, sync2.SyncResponse{
-		Rooms: sync2.SyncRoomsResponse{
-			Join: map[string]sync2.SyncV2JoinResponse{
-				unencryptedRoomID: {
-					Timeline: sync2.TimelineResponse{
-						Events: []json.RawMessage{
-							testutils.NewStateEvent(
-								t, "m.room.encryption", "", alice, map[string]interface{}{
-									"algorithm":            "m.megolm.v1.aes-sha2",
-									"rotation_period_ms":   604800000,
-									"rotation_period_msgs": 100,
-								},
-							),
-						},
-					},
-				},
-			},
-		},
-	})
-	v2.waitUntilEmpty(t, alice)
+	rig.EncryptRoom(t, alice, unencryptedRoomID)
 
 	// now requesting the encrypted list should include it (added)
-	res = v3.mustDoV3RequestWithPos(t, aliceToken, res.Pos, sync3.Request{
+	res = rig.V3.mustDoV3RequestWithPos(t, aliceToken, res.Pos, sync3.Request{
 		Lists: []sync3.RequestList{
 			{
 				Ranges: sync3.SliceRanges{
-					[2]int64{0, int64(len(allRooms) - 1)}, // all rooms
+					[2]int64{0, 1}, // all rooms
 				},
 				// sticky; should remember filters
 			},
 			{
 				Ranges: sync3.SliceRanges{
-					[2]int64{0, int64(len(allRooms) - 1)}, // all rooms
+					[2]int64{0, 1}, // all rooms
 				},
 				// sticky; should remember filters
 			},
 		},
 	})
-	MatchResponse(t, res, MatchV3Counts([]int{len(allRooms), 0}),
+	MatchResponse(t, res, MatchV3Counts([]int{2, 0}),
 		MatchV3Ops(1, MatchV3DeleteOp(0)),
 		MatchV3Ops(0, MatchV3DeleteOp(1), MatchV3InsertOp(0, unencryptedRoomID)),
 	)
 
 	// requesting the encrypted list from scratch returns 2 rooms now
-	res = v3.mustDoV3Request(t, aliceToken, sync3.Request{
+	res = rig.V3.mustDoV3Request(t, aliceToken, sync3.Request{
 		Lists: []sync3.RequestList{{
 			Ranges: sync3.SliceRanges{
-				[2]int64{0, int64(len(allRooms) - 1)}, // all rooms
+				[2]int64{0, 1}, // all rooms
 			},
 			Filters: &sync3.RequestFilters{
 				IsEncrypted: &boolTrue,
@@ -145,27 +108,22 @@ func TestFiltersEncryption(t *testing.T) {
 	})
 	MatchResponse(t, res, MatchV3Count(2), MatchV3Ops(0,
 		MatchV3SyncOpFn(func(op *sync3.ResponseOpRange) error {
-			if len(op.RoomIDs) != len(allRooms) {
-				return fmt.Errorf("want %d rooms, got %d", len(allRooms), len(op.RoomIDs))
+			if len(op.RoomIDs) != 2 {
+				return fmt.Errorf("want %d rooms, got %d", 2, len(op.RoomIDs))
 			}
-			wantRooms := []roomEvents{allRooms[1], allRooms[0]}
-			for i := range wantRooms {
-				err := wantRooms[i].MatchRoom(op.RoomIDs[i],
-					res.Rooms[op.RoomIDs[i]],
-				)
-				if err != nil {
-					return err
-				}
+			wantRoomIDs := []string{unencryptedRoomID, encryptedRoomID}
+			if !reflect.DeepEqual(op.RoomIDs, wantRoomIDs) {
+				return fmt.Errorf("got %v want %v", op.RoomIDs, wantRoomIDs)
 			}
 			return nil
 		}),
 	))
 
 	// requesting the unencrypted stream from scratch returns 0 rooms
-	res = v3.mustDoV3Request(t, aliceToken, sync3.Request{
+	res = rig.V3.mustDoV3Request(t, aliceToken, sync3.Request{
 		Lists: []sync3.RequestList{{
 			Ranges: sync3.SliceRanges{
-				[2]int64{0, int64(len(allRooms) - 1)}, // all rooms
+				[2]int64{0, 1}, // all rooms
 			},
 			Filters: &sync3.RequestFilters{
 				IsEncrypted: &boolFalse,
@@ -178,32 +136,18 @@ func TestFiltersEncryption(t *testing.T) {
 func TestFiltersInvite(t *testing.T) {
 	boolTrue := true
 	boolFalse := false
-	pqString := testutils.PrepareDBConnectionString()
-	// setup code
-	v2 := runTestV2Server(t)
-	v3 := runTestServer(t, v2, pqString)
-	defer v2.close()
-	defer v3.close()
+	rig := NewTestRig(t)
+	defer rig.Finish()
 	roomID := "!a:localhost"
-	v2.addAccount(alice, aliceToken)
-	v2.queueResponse(alice, sync2.SyncResponse{
-		Rooms: sync2.SyncRoomsResponse{
-			Invite: map[string]sync2.SyncV2InviteResponse{
-				roomID: {
-					InviteState: sync2.EventsResponse{
-						Events: []json.RawMessage{
-							testutils.NewStateEvent(t, "m.room.member", alice, "@inviter:localhost", map[string]interface{}{
-								"membership": "invite",
-							}),
-						},
-					},
-				},
-			},
+	rig.SetupV2RoomsForUser(t, alice, NoFlush, map[string]RoomDescriptor{
+		roomID: {
+			MembershipOfSyncer: "invite",
 		},
 	})
+	aliceToken := rig.Token(alice)
 
 	// make sure the is_invite filter works
-	res := v3.mustDoV3Request(t, aliceToken, sync3.Request{
+	res := rig.V3.mustDoV3Request(t, aliceToken, sync3.Request{
 		Lists: []sync3.RequestList{
 			{
 				Ranges: sync3.SliceRanges{
@@ -228,17 +172,10 @@ func TestFiltersInvite(t *testing.T) {
 	))
 
 	// Accept the invite
-	v2.queueResponse(alice, sync2.SyncResponse{
-		Rooms: sync2.SyncRoomsResponse{
-			Join: v2JoinTimeline(roomEvents{
-				roomID: roomID,
-				events: []json.RawMessage{testutils.NewJoinEvent(t, alice)},
-			}),
-		},
-	})
-	v2.waitUntilEmpty(t, alice)
+	rig.JoinRoom(t, alice, roomID)
+
 	// now the room should move from one room to another
-	res = v3.mustDoV3RequestWithPos(t, aliceToken, res.Pos, sync3.Request{
+	res = rig.V3.mustDoV3RequestWithPos(t, aliceToken, res.Pos, sync3.Request{
 		Lists: []sync3.RequestList{
 			{
 				Ranges: sync3.SliceRanges{

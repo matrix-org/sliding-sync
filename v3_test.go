@@ -426,6 +426,15 @@ func (re *roomEvents) MatchRoom(roomID string, r sync3.Room, matchers ...roomMat
 	return nil
 }
 
+func MatchRoom(r sync3.Room, matchers ...roomMatcher) error {
+	for _, m := range matchers {
+		if err := m(r); err != nil {
+			return fmt.Errorf("MatchRoom : %s", err)
+		}
+	}
+	return nil
+}
+
 func v2JoinTimeline(joinEvents ...roomEvents) map[string]sync2.SyncV2JoinResponse {
 	result := make(map[string]sync2.SyncV2JoinResponse)
 	for _, re := range joinEvents {
