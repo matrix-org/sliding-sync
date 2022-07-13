@@ -1,7 +1,6 @@
 package main
 
 import (
-	"flag"
 	"fmt"
 	"net/http"
 	_ "net/http/pprof"
@@ -17,17 +16,34 @@ var GitCommit string
 
 const version = "0.2.0rc2"
 
-var (
-	flagDestinationServer = flag.String("server", "", "The destination v2 matrix server")
-	flagBindAddr          = flag.String("port", ":8008", "Bind address")
-	flagPostgres          = flag.String("db", "user=postgres dbname=syncv3 sslmode=disable", "Postgres DB connection string (see lib/pq docs)")
+const (
+	EnvServer   = "SYNCV3_SERVER"
+	EnvDB       = "SYNCV3_DB"
+	EnvBindAddr = "SYNCV3_BINDADDR"
 )
+
+var helpMsg = fmt.Sprintf(`
+Environment var
+%s   Required. The destination homeserver to talk to (CS API HTTPS URL) e.g 'https://matrix-client.matrix.org'
+%s       Required. The postgres connection string: https://www.postgresql.org/docs/current/libpq-connect.html#LIBPQ-CONNSTRING 
+%s (Default: 0.0.0.0:8008) The interface and port to listen on.
+`, EnvServer, EnvDB, EnvBindAddr)
+
+func defaulting(in, dft string) string {
+	if in == "" {
+		return dft
+	}
+	return in
+}
 
 func main() {
 	fmt.Printf("Sync v3 [%s] (%s)\n", version, GitCommit)
-	flag.Parse()
-	if *flagDestinationServer == "" {
-		flag.Usage()
+	flagDestinationServer := os.Getenv(EnvServer)
+	flagPostgres := os.Getenv(EnvDB)
+	flagBindAddr := defaulting(os.Getenv(EnvBindAddr), "0.0.0.0:8008")
+	if flagDestinationServer == "" || flagPostgres == "" {
+		fmt.Print(helpMsg)
+		fmt.Printf("\n%s and %s must be set\n", EnvServer, EnvBindAddr)
 		os.Exit(1)
 	}
 	// pprof
@@ -40,10 +56,10 @@ func main() {
 		Client: &http.Client{
 			Timeout: 5 * time.Minute,
 		},
-		DestinationServer: *flagDestinationServer,
-	}, *flagPostgres, os.Getenv("SYNCV3_DEBUG") == "1")
+		DestinationServer: flagDestinationServer,
+	}, flagPostgres, os.Getenv("SYNCV3_DEBUG") == "1")
 	if err != nil {
 		panic(err)
 	}
-	syncv3.RunSyncV3Server(h, *flagBindAddr, *flagDestinationServer)
+	syncv3.RunSyncV3Server(h, flagBindAddr, flagDestinationServer)
 }
