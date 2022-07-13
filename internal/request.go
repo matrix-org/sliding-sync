@@ -68,17 +68,17 @@ func (rsm *RequiredStateMap) QueryStateMap() map[string][]string {
 	return queryStateMap
 }
 
-func DeviceIDFromRequest(req *http.Request) (string, error) {
+func HashedTokenFromRequest(req *http.Request) (hashAccessToken string, accessToken string, err error) {
 	// return a hash of the access token
 	ah := req.Header.Get("Authorization")
 	if ah == "" {
-		return "", fmt.Errorf("missing Authorization header")
+		return "", "", fmt.Errorf("missing Authorization header")
 	}
-	accessToken := strings.TrimPrefix(ah, "Bearer ")
+	accessToken = strings.TrimPrefix(ah, "Bearer ")
 	// important that this is a cryptographically secure hash function to prevent
 	// preimage attacks where Eve can use a fake token to hash to an existing device ID
 	// on the server.
 	hash := sha256.New()
 	hash.Write([]byte(accessToken))
-	return hex.EncodeToString(hash.Sum(nil)), nil
+	return hex.EncodeToString(hash.Sum(nil)), accessToken, nil
 }

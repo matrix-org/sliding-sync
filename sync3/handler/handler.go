@@ -46,7 +46,7 @@ type SyncLiveHandler struct {
 	GlobalCache *caches.GlobalCache
 }
 
-func NewSync3Handler(v2Client sync2.Client, postgresDBURI string, debug bool) (*SyncLiveHandler, error) {
+func NewSync3Handler(v2Client sync2.Client, postgresDBURI, secret string, debug bool) (*SyncLiveHandler, error) {
 	if debug {
 		zerolog.SetGlobalLevel(zerolog.TraceLevel)
 	} else {
@@ -56,7 +56,7 @@ func NewSync3Handler(v2Client sync2.Client, postgresDBURI string, debug bool) (*
 	sh := &SyncLiveHandler{
 		V2:          v2Client,
 		Storage:     store,
-		V2Store:     sync2.NewStore(postgresDBURI),
+		V2Store:     sync2.NewStore(postgresDBURI, secret),
 		ConnMap:     sync3.NewConnMap(),
 		userCaches:  &sync.Map{},
 		Dispatcher:  sync3.NewDispatcher(),
@@ -178,7 +178,7 @@ func (h *SyncLiveHandler) setupConnection(req *http.Request, syncReq *sync3.Requ
 	var conn *sync3.Conn
 
 	// Identify the device
-	deviceID, err := internal.DeviceIDFromRequest(req)
+	deviceID, accessToken, err := internal.HashedTokenFromRequest(req)
 	if err != nil {
 		log.Warn().Err(err).Msg("failed to get device ID from request")
 		return nil, &internal.HandlerError{
@@ -213,7 +213,7 @@ func (h *SyncLiveHandler) setupConnection(req *http.Request, syncReq *sync3.Requ
 
 	// We're going to make a new connection
 	// Ensure we have the v2 side of things hooked up
-	v2device, err := h.V2Store.InsertDevice(deviceID)
+	v2device, err := h.V2Store.InsertDevice(deviceID, accessToken)
 	if err != nil {
 		log.Warn().Err(err).Str("device_id", deviceID).Msg("failed to insert v2 device")
 		return nil, &internal.HandlerError{
