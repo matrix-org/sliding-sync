@@ -68,6 +68,9 @@ func RunSyncV3Server(h http.Handler, bindAddr, destV2Server string) {
 		chain: []func(next http.Handler) http.Handler{
 			hlog.NewHandler(logger),
 			hlog.AccessHandler(func(r *http.Request, status, size int, duration time.Duration) {
+				if r.Method == "OPTIONS" {
+					return
+				}
 				hlog.FromRequest(r).Info().
 					Str("method", r.Method).
 					Int("status", status).

@@ -109,7 +109,7 @@ func (h *PollerMap) LatestE2EEData(deviceID string) (otkCounts map[string]int, c
 // Note that we will immediately return if there is a poller for the same user but a different device.
 // We do this to allow for logins on clients to be snappy fast, even though they won't yet have the
 // to-device msgs to decrypt E2EE roms.
-func (h *PollerMap) EnsurePolling(authHeader, userID, deviceID, v2since string, logger zerolog.Logger) {
+func (h *PollerMap) EnsurePolling(accessToken, userID, deviceID, v2since string, logger zerolog.Logger) {
 	h.pollerMu.Lock()
 	if !h.executorRunning {
 		h.executorRunning = true
@@ -125,7 +125,7 @@ func (h *PollerMap) EnsurePolling(authHeader, userID, deviceID, v2since string, 
 		return
 	}
 	// replace the poller
-	poller = NewPoller(userID, authHeader, deviceID, h.v2Client, h, h.txnCache, logger)
+	poller = NewPoller(userID, accessToken, deviceID, h.v2Client, h, h.txnCache, logger)
 	go poller.Poll(v2since)
 	h.Pollers[deviceID] = poller
 
@@ -233,12 +233,12 @@ func (h *PollerMap) OnAccountData(userID, roomID string, events []json.RawMessag
 
 // Poller can automatically poll the sync v2 endpoint and accumulate the responses in storage
 type Poller struct {
-	userID              string
-	authorizationHeader string
-	deviceID            string
-	client              Client
-	receiver            V2DataReceiver
-	logger              zerolog.Logger
+	userID      string
+	accessToken string
+	deviceID    string
+	client      Client
+	receiver    V2DataReceiver
+	logger      zerolog.Logger
 
 	// remember txn ids
 	txnCache *TransactionIDCache
@@ -253,21 +253,21 @@ type Poller struct {
 	wg         *sync.WaitGroup
 }
 
-func NewPoller(userID, authHeader, deviceID string, client Client, receiver V2DataReceiver, txnCache *TransactionIDCache, logger zerolog.Logger) *Poller {
+func NewPoller(userID, accessToken, deviceID string, client Client, receiver V2DataReceiver, txnCache *TransactionIDCache, logger zerolog.Logger) *Poller {
 	var wg sync.WaitGroup
 	wg.Add(1)
 	return &Poller{
-		authorizationHeader: authHeader,
-		userID:              userID,
-		deviceID:            deviceID,
-		client:              client,
-		receiver:            receiver,
-		Terminated:          false,
-		logger:              logger,
-		e2eeMu:              &sync.Mutex{},
-		deviceListChanges:   make(map[string]string),
-		wg:                  &wg,
-		txnCache:            txnCache,
+		accessToken:       accessToken,
+		userID:            userID,
+		deviceID:          deviceID,
+		client:            client,
+		receiver:          receiver,
+		Terminated:        false,
+		logger:            logger,
+		e2eeMu:            &sync.Mutex{},
+		deviceListChanges: make(map[string]string),
+		wg:                &wg,
+		txnCache:          txnCache,
 	}
 }
 
@@ -292,7 +292,7 @@ func (p *Poller) Poll(since string) {
 			p.logger.Warn().Str("duration", waitTime.String()).Int("fail-count", failCount).Msg("Poller: waiting before next poll")
 			timeSleep(waitTime)
 		}
-		resp, statusCode, err := p.client.DoSyncV2(p.authorizationHeader, since, firstTime)
+		resp, statusCode, err := p.client.DoSyncV2(p.accessToken, since, firstTime)
 		if err != nil {
 			// check if temporary
 			if statusCode != 401 {

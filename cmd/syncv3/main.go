@@ -64,5 +64,6 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
+	h.StartV2Pollers()
 	syncv3.RunSyncV3Server(h, flagBindAddr, flagDestinationServer)
 }

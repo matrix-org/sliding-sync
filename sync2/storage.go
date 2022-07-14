@@ -116,6 +116,20 @@ func (s *Storage) Device(deviceID string) (*Device, error) {
 	return &d, err
 }
 
+func (s *Storage) AllDevices() (devices []Device, err error) {
+	err = s.db.Select(&devices, `SELECT device_id, user_id, since, v2_token_encrypted FROM syncv3_sync2_devices`)
+	if err != nil {
+		return
+	}
+	for i := range devices {
+		devices[i].AccessToken, err = s.decrypt(devices[i].AccessTokenEncrypted)
+		if err != nil {
+			return
+		}
+	}
+	return
+}
+
 func (s *Storage) InsertDevice(deviceID, accessToken string) (*Device, error) {
 	var device Device
 	device.AccessToken = accessToken

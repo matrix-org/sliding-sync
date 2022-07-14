@@ -94,6 +94,39 @@ func (h *SyncLiveHandler) Teardown() {
 	h.Storage.Teardown()
 }
 
+func (h *SyncLiveHandler) StartV2Pollers() {
+	devices, err := h.V2Store.AllDevices()
+	if err != nil {
+		logger.Err(err).Msg("StartV2Pollers: failed to query devices")
+		return
+	}
+	logger.Info().Int("num_devices", len(devices)).Msg("StartV2Pollers")
+	// how many concurrent pollers to make at startup.
+	// Too high and this will flood the upstream server with sync requests at startup.
+	// Too low and this will take ages for the v2 pollers to startup.
+	numWorkers := 16
+	ch := make(chan sync2.Device, len(devices))
+	for _, d := range devices {
+		ch <- d
+	}
+	close(ch)
+	var wg sync.WaitGroup
+	wg.Add(numWorkers)
+	for i := 0; i < numWorkers; i++ {
+		go func() {
+			defer wg.Done()
+			for d := range ch {
+				h.PollerMap.EnsurePolling(
+					d.AccessToken, d.UserID, d.DeviceID, d.Since,
+					logger.With().Str("user_id", d.UserID).Logger(),
+				)
+			}
+		}()
+	}
+	wg.Wait()
+	logger.Info().Msg("StartV2Pollers finished")
+}
+
 func (h *SyncLiveHandler) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	if req.Method != "POST" {
 		w.WriteHeader(http.StatusMethodNotAllowed)
@@ -222,7 +255,7 @@ func (h *SyncLiveHandler) setupConnection(req *http.Request, syncReq *sync3.Requ
 		}
 	}
 	if v2device.UserID == "" {
-		v2device.UserID, err = h.V2.WhoAmI(req.Header.Get("Authorization"))
+		v2device.UserID, err = h.V2.WhoAmI(accessToken)
 		if err != nil {
 			log.Warn().Err(err).Str("device_id", deviceID).Msg("failed to get user ID from device ID")
 			return nil, &internal.HandlerError{
@@ -238,7 +271,7 @@ func (h *SyncLiveHandler) setupConnection(req *http.Request, syncReq *sync3.Requ
 
 	log.Trace().Str("user", v2device.UserID).Msg("checking poller exists and is running")
 	h.PollerMap.EnsurePolling(
-		req.Header.Get("Authorization"), v2device.UserID, v2device.DeviceID, v2device.Since,
+		accessToken, v2device.UserID, v2device.DeviceID, v2device.Since,
 		hlog.FromRequest(req).With().Str("user_id", v2device.UserID).Logger(),
 	)
 	log.Trace().Str("user", v2device.UserID).Msg("poller exists and is running")
