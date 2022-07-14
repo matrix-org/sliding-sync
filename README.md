@@ -12,7 +12,7 @@ Proxy version to MSC API specification:
 -   Version 0.1.x: [2022/04/01](https://github.com/matrix-org/matrix-spec-proposals/blob/615e8f5a7bfe4da813bc2db661ed0bd00bccac20/proposals/3575-sync.md)
     -   First release
 -   Version 0.2.x: [2022/06/09](https://github.com/matrix-org/matrix-spec-proposals/blob/3b2b3d547b41e4aeebbde2ad6e89606dd684a86c/proposals/3575-sync.md)
-    -   Reworked where lists and ops are situated in the response JSON. Added new filters like `room_name_like`. Added `slow_get_all_rooms`. Standardised on env vars for configuring the proxy.
+    -   Reworked where lists and ops are situated in the response JSON. Added new filters like `room_name_like`. Added `slow_get_all_rooms`. Standardised on env vars for configuring the proxy. Persist access tokens, encrypted with SYNCV3_SECRET.
 
 ## Usage
 
@@ -20,8 +20,9 @@ Requires Postgres 13+.
 
 ```bash
 $ createdb syncv3
+$ echo -n "$(openssl rand -hex 32)" > .secret # this MUST remain the same throughout the lifetime of the database created above.
 $ go build ./cmd/syncv3
-$ SYNCV3_SERVER="https://matrix-client.matrix.org" SYNCV3_DB="user=$(whoami) dbname=syncv3 sslmode=disable" SYNCV3_BINDADDR=0.0.0.0:8008 ./syncv3
+$ SYNCV3_SECRET=$(cat .secret) SYNCV3_SERVER="https://matrix-client.matrix.org" SYNCV3_DB="user=$(whoami) dbname=syncv3 sslmode=disable" SYNCV3_BINDADDR=0.0.0.0:8008 ./syncv3
 ```
 
 Then visit http://localhost:8008/client/ (with trailing slash) and paste in the `access_token` for any account on `-server`.

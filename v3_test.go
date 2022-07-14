@@ -9,6 +9,7 @@ import (
 	"log"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"reflect"
 	"sort"
 	"strings"
@@ -242,7 +243,7 @@ func runTestServer(t testutils.TestBenchInterface, v2Server *testV2Server, postg
 			Timeout: 5 * time.Minute,
 		},
 		DestinationServer: v2Server.url(),
-	}, postgresConnectionString, "thisshouldbealongsecret", true)
+	}, postgresConnectionString, os.Getenv("SYNCV3_SECRET"), true)
 	if err != nil {
 		t.Fatalf("cannot make v3 handler: %s", err)
 	}

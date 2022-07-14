@@ -50,6 +50,14 @@ jobs:
                   POSTGRES_PASSWORD: postgres
                   POSTGRES_DB: syncv3
                   SYNCV3_DEBUG: "1"
+                  SYNCV3_SECRET: itsasecret
 
             - name: Coverage
               run: go tool cover -func=synccoverage.out
+
+            - name: Check /client works
+              run: ./client-check.sh
+              env:
+                  SYNCV3_DB: user=postgres dbname=syncv3 sslmode=disable password=postgres host=localhost
+                  SYNCV3_SERVER: https://matrix-client.matrix.org
+                  SYNCV3_SECRET: itsasecret
