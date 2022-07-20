@@ -107,6 +107,10 @@ func (h *SyncLiveHandler) StartV2Pollers() {
 	numWorkers := 16
 	ch := make(chan sync2.Device, len(devices))
 	for _, d := range devices {
+		// if we fail to decrypt the access token, skip it.
+		if d.AccessToken == "" {
+			continue
+		}
 		ch <- d
 	}
 	close(ch)

@@ -122,10 +122,7 @@ func (s *Storage) AllDevices() (devices []Device, err error) {
 		return
 	}
 	for i := range devices {
-		devices[i].AccessToken, err = s.decrypt(devices[i].AccessTokenEncrypted)
-		if err != nil {
-			return
-		}
+		devices[i].AccessToken, _ = s.decrypt(devices[i].AccessTokenEncrypted)
 	}
 	return
 }
