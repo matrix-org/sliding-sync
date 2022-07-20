@@ -11,6 +11,7 @@ FROM alpine:latest
 
 COPY --from=base /build/bin/* /usr/bin/
 
+RUN apk --update --no-cache add curl
 ENV SYNCV3_BINDADDR="0.0.0.0:8008"
 EXPOSE 8008
 
