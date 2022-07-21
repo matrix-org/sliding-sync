@@ -128,8 +128,9 @@ func (a *Accumulator) Initialise(roomID string, state []json.RawMessage) (bool, 
 		events := make([]Event, len(state))
 		for i := range events {
 			events[i] = Event{
-				JSON:   state[i],
-				RoomID: roomID,
+				JSON:    state[i],
+				RoomID:  roomID,
+				IsState: true,
 			}
 		}
 		if err := ensureFieldsSet(events); err != nil {

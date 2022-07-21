@@ -526,6 +526,53 @@ func TestTimelineMiddleWindowZeroTimelineLimit(t *testing.T) {
 	))
 }
 
+// Regression test to ensure that the 'state' block NEVER appears when requesting a high timeline_limit.
+// In the past, the proxy treated state/timeline sections as the 'same' in that they were inserted into the
+// events table and had stream positions associated with them. This could cause ancient state events to appear
+// in the timeline if the timeline_limit was greatert than the number of genuine timeline events received via
+// v2 sync.
+func TestHistoryDoesntIncludeState(t *testing.T) {
+	pqString := testutils.PrepareDBConnectionString()
+	// setup code
+	v2 := runTestV2Server(t)
+	v3 := runTestServer(t, v2, pqString)
+	defer v2.close()
+	defer v3.close()
+	roomID := "!a:localhost"
+
+	prevBatch := "P_B"
+	room := roomEvents{
+		roomID: roomID,
+		// these events should NEVER appear in the timeline
+		state: createRoomState(t, alice, time.Now()),
+		// these events are the timeline and should appear
+		events: []json.RawMessage{
+			testutils.NewStateEvent(t, "m.room.topic", "", alice, map[string]interface{}{"topic": "boo"}),
+			testutils.NewEvent(t, "m.room.message", alice, map[string]interface{}{"body": "hello"}),
+		},
+		prevBatch: prevBatch,
+	}
+	v2.addAccount(alice, aliceToken)
+	v2.queueResponse(alice, sync2.SyncResponse{
+		Rooms: sync2.SyncRoomsResponse{
+			Join: v2JoinTimeline(room),
+		},
+	})
+	res := v3.mustDoV3Request(t, aliceToken, sync3.Request{
+		Lists: []sync3.RequestList{{
+			Ranges: sync3.SliceRanges{
+				[2]int64{0, 10},
+			},
+			RoomSubscription: sync3.RoomSubscription{
+				TimelineLimit: 10,
+			},
+		}},
+	})
+	MatchResponse(t, res, MatchList(0,
+		MatchV3Ops(MatchV3SyncOp(0, 10, []string{roomID})),
+	), MatchRoomSubscription(roomID, MatchRoomTimeline(room.events), MatchRoomPrevBatch(prevBatch)))
+}
+
 // Test that transaction IDs come down the user's stream correctly in the case where 2 clients are
 // in the same room.
 func TestTimelineTxnID(t *testing.T) {

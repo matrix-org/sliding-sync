@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io/ioutil"
 	"net/http"
+	"net/url"
 
 	"github.com/matrix-org/gomatrixserverlib"
 	"github.com/tidwall/gjson"
@@ -51,7 +52,9 @@ func (v *HTTPClient) WhoAmI(accessToken string) (string, error) {
 func (v *HTTPClient) DoSyncV2(accessToken, since string, isFirst bool) (*SyncResponse, int, error) {
 	qps := "?"
 	if isFirst {
-		qps += "timeout=0"
+		qps += "timeout=0&filter=" + url.QueryEscape(
+			`{"room":{"timeline":{"limit":1}}}`,
+		)
 	} else {
 		qps += "timeout=30000"
 	}
