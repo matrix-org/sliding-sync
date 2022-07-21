@@ -305,6 +305,9 @@ func (p *Poller) Poll(since string) {
 				return
 			}
 		}
+		if since == "" {
+			p.logger.Info().Msg("Poller: valid initial sync response received")
+		}
 		failCount = 0
 		p.parseE2EEData(resp)
 		p.parseGlobalAccountData(resp)

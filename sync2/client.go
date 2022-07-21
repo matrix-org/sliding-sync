@@ -51,15 +51,17 @@ func (v *HTTPClient) WhoAmI(accessToken string) (string, error) {
 // or an error. Set isFirst=true on the first sync to force a timeout=0 sync to ensure snapiness.
 func (v *HTTPClient) DoSyncV2(accessToken, since string, isFirst bool) (*SyncResponse, int, error) {
 	qps := "?"
-	if isFirst {
-		qps += "timeout=0&filter=" + url.QueryEscape(
-			`{"room":{"timeline":{"limit":1}}}`,
-		)
+	if isFirst { // first time syncing in this process
+		qps += "timeout=0"
 	} else {
 		qps += "timeout=30000"
 	}
 	if since != "" {
 		qps += "&since=" + since
+	} else {
+		qps += "&filter=" + url.QueryEscape(
+			`{"room":{"timeline":{"limit":1}}}`,
+		)
 	}
 	req, err := http.NewRequest(
 		"GET", v.DestinationServer+"/_matrix/client/r0/sync"+qps, nil,
