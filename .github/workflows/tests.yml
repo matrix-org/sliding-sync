@@ -61,34 +61,21 @@ jobs:
                   SYNCV3_DB: user=postgres dbname=syncv3 sslmode=disable password=postgres host=localhost
                   SYNCV3_SERVER: https://matrix-client.matrix.org
                   SYNCV3_SECRET: itsasecret
-    prep_synapse:
-        runs-on: ubuntu-latest
-        steps:
-            - name: Build Synapse image
-              run: |
-                  echo 'mkdir data && /start.py generate && /start.py run' >> custom-start.sh
-                  chmod a+x custom-start.sh
-                  echo 'FROM matrixdotorg/synapse:v1.62.0' >> Dockerfile
-                  echo 'COPY custom-start.sh .' >> Dockerfile
-                  echo 'ENTRYPOINT /custom-start.sh' >> Dockerfile
-                  docker build -t custom-synapse:latest .
-            - name: Upload image
-              uses: ishworkh/docker-image-artifact-upload@v1
-              with:
-                  image: "custom-synapse:latest"
     end_to_end:
-        needs: prep_synapse
         runs-on: ubuntu-latest
 
         # Service containers to run with `container-job`
         services:
             synapse:
-                image: custom-synapse:latest
+                image: matrixdotorg/synapse:v1.62.0
                 env:
                     SYNAPSE_SERVER_NAME: synapse
                     SYNAPSE_REPORT_STATS: no
                 ports:
                     - 8008:8008
+                options: >-
+                    --entrypoint=/bin/bash
+                    mkdir data && /start.py generate && /start.py run
 
             # Label used to access the service container
             postgres:
@@ -111,10 +98,6 @@ jobs:
 
         steps:
             - uses: actions/checkout@v2
-            - name: Download image
-              uses: ishworkh/docker-image-artifact-download@v1
-              with:
-                  image: "custom-synapse:latest"
             - name: "Set Go Version"
               run: |
                   echo "$GOROOT_1_17_X64/bin" >> $GITHUB_PATH
