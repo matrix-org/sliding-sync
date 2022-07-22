@@ -71,7 +71,7 @@ jobs:
                   echo 'FROM matrixdotorg/synapse:v1.62.0' >> Dockerfile
                   echo 'COPY custom-start.sh .' >> Dockerfile
                   echo 'ENTRYPOINT /custom-start.sh' >> Dockerfile
-                  docker build -t custom-synapse .
+                  docker build -t custom-synapse:latest .
     end_to_end:
         needs: prep_synapse
         runs-on: ubuntu-latest
@@ -79,7 +79,7 @@ jobs:
         # Service containers to run with `container-job`
         services:
             synapse:
-                image: custom-synapse
+                image: custom-synapse:latest
                 env:
                     SYNAPSE_SERVER_NAME: synapse
                     SYNAPSE_REPORT_STATS: no
