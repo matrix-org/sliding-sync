@@ -61,3 +61,63 @@ jobs:
                   SYNCV3_DB: user=postgres dbname=syncv3 sslmode=disable password=postgres host=localhost
                   SYNCV3_SERVER: https://matrix-client.matrix.org
                   SYNCV3_SECRET: itsasecret
+    prep_synapse:
+        runs-on: ubuntu-latest
+        steps:
+            - name: Build Synapse Docker image
+              run: |
+                  echo 'mkdir data && /start.py generate && /start.py run' >> custom-start.sh
+                  chmod a+x custom-start.sh
+                  echo 'FROM matrixdotorg/synapse:v1.62.0' >> Dockerfile
+                  echo 'COPY custom-start.sh .' >> Dockerfile
+                  echo 'ENTRYPOINT /custom-start.sh' >> Dockerfile
+                  docker build -t custom-synapse .
+    end_to_end:
+        needs: prep_synapse
+        runs-on: ubuntu-latest
+
+        # Service containers to run with `container-job`
+        services:
+            synapse:
+                image: custom-synapse
+                env:
+                    SYNAPSE_SERVER_NAME: synapse
+                    SYNAPSE_REPORT_STATS: no
+                ports:
+                    - 8008:8008
+
+            # Label used to access the service container
+            postgres:
+                # Docker Hub image
+                image: postgres:13-alpine
+                # Provide the password for postgres
+                env:
+                    POSTGRES_USER: postgres
+                    POSTGRES_PASSWORD: postgres
+                    POSTGRES_DB: syncv3
+                ports:
+                    # Maps tcp port 5432 on service container to the host
+                    - 5432:5432
+                # Set health checks to wait until postgres has started
+                options: >-
+                    --health-cmd pg_isready
+                    --health-interval 10s
+                    --health-timeout 5s
+                    --health-retries 5
+
+        steps:
+            - uses: actions/checkout@v2
+            - name: "Set Go Version"
+              run: |
+                  echo "$GOROOT_1_17_X64/bin" >> $GITHUB_PATH
+                  echo "~/go/bin" >> $GITHUB_PATH
+
+            - name: Build
+              run: go build ./cmd/syncv3
+
+            - name: Check Synapse works
+              run: ./e2e-check.sh
+              env:
+                  SYNCV3_DB: user=postgres dbname=syncv3 sslmode=disable password=postgres host=localhost
+                  SYNCV3_SERVER: http://synapse
+                  SYNCV3_SECRET: itsasecret
