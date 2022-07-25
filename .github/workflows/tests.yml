@@ -56,7 +56,7 @@ jobs:
               run: go tool cover -func=synccoverage.out
 
             - name: Check /client works
-              run: ./client-check.sh
+              run: ./tests-e2e/client-check.sh
               env:
                   SYNCV3_DB: user=postgres dbname=syncv3 sslmode=disable password=postgres host=localhost
                   SYNCV3_SERVER: https://matrix-client.matrix.org
@@ -69,7 +69,7 @@ jobs:
                 image: ghcr.io/matrix-org/synapse-service:v1.62.0
                 env:
                     SYNAPSE_COMPLEMENT_DATABASE: sqlite
-                    SERVER_NAME: synapse # must match the service name
+                    SERVER_NAME: synapse
                 ports:
                     - 8008:8008
             # Label used to access the service container
