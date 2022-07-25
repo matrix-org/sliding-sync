@@ -43,7 +43,7 @@ jobs:
               run: go build ./cmd/syncv3
 
             - name: Test
-              run: go test -covermode=atomic -coverpkg ./... -p 1 ./... -coverprofile synccoverage.out
+              run: go test -covermode=atomic -coverpkg ./... -p 1 $(go list ./... | grep -v tests-e2e) -coverprofile synccoverage.out
               env:
                   POSTGRES_HOST: localhost
                   POSTGRES_USER: postgres
