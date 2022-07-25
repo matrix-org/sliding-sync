@@ -67,15 +67,13 @@ jobs:
         # Service containers to run with `container-job`
         services:
             synapse:
-                image: matrixdotorg/synapse:v1.62.0
+                # Custom image built from https://github.com/matrix-org/synapse/tree/v1.62.0/docker/complement with a dummy /complement/ca set
+                image: ghcr.io/matrix-org/synapse-service:v1.62.0
                 env:
-                    SYNAPSE_SERVER_NAME: synapse
-                    SYNAPSE_REPORT_STATS: no
+                    SYNAPSE_COMPLEMENT_DATABASE: sqlite
+                    SERVER_NAME: synapse # must match the service name
                 ports:
                     - 8008:8008
-                options: >-
-                    --entrypoint=/bin/bash
-                    mkdir data && /start.py generate && /start.py run
 
             # Label used to access the service container
             postgres:
