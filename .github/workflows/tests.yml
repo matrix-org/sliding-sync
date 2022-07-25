@@ -63,8 +63,6 @@ jobs:
                   SYNCV3_SECRET: itsasecret
     end_to_end:
         runs-on: ubuntu-latest
-
-        # Service containers to run with `container-job`
         services:
             synapse:
                 # Custom image built from https://github.com/matrix-org/synapse/tree/v1.62.0/docker/complement with a dummy /complement/ca set
@@ -74,7 +72,6 @@ jobs:
                     SERVER_NAME: synapse # must match the service name
                 ports:
                     - 8008:8008
-
             # Label used to access the service container
             postgres:
                 # Docker Hub image
@@ -93,17 +90,14 @@ jobs:
                     --health-interval 10s
                     --health-timeout 5s
                     --health-retries 5
-
         steps:
             - uses: actions/checkout@v2
             - name: "Set Go Version"
               run: |
                   echo "$GOROOT_1_17_X64/bin" >> $GITHUB_PATH
                   echo "~/go/bin" >> $GITHUB_PATH
-
             - name: Build
               run: go build ./cmd/syncv3
-
             - name: Check Synapse works
               run: ./e2e-check.sh
               env:
