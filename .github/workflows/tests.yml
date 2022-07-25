@@ -7,7 +7,7 @@ on:
         branches: ["main"]
 
 jobs:
-    build:
+    integration:
         runs-on: ubuntu-latest
 
         # Service containers to run with `container-job`
@@ -37,7 +37,7 @@ jobs:
             - name: Install Go
               uses: actions/setup-go@v2
               with:
-                  go-version: 1.15
+                  go-version: 1.17
 
             - name: Build
               run: go build ./cmd/syncv3
@@ -99,7 +99,7 @@ jobs:
             - name: Build
               run: go build ./cmd/syncv3
             - name: Check Synapse works
-              run: ./e2e-check.sh
+              run: ./tests-e2e/e2e-check.sh
               env:
                   SYNCV3_DB: user=postgres dbname=syncv3 sslmode=disable password=postgres host=localhost
                   SYNCV3_SERVER: http://localhost:8008
