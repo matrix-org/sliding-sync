@@ -102,5 +102,5 @@ jobs:
               run: ./e2e-check.sh
               env:
                   SYNCV3_DB: user=postgres dbname=syncv3 sslmode=disable password=postgres host=localhost
-                  SYNCV3_SERVER: http://synapse
+                  SYNCV3_SERVER: http://localhost:8008
                   SYNCV3_SECRET: itsasecret

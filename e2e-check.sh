@@ -1,5 +1,3 @@
-#!/bin/bash
+#!/bin/bash -eu
 
-ping -c 2 synapse
-dig synapse
-curl -v -XGET 'http://synapse:8008/_matrix/client/versions'
+curl -v -XGET 'http://localhost:8008/_matrix/client/versions'
