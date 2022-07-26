@@ -27,6 +27,11 @@ const (
 	SharedSecret = "complement"
 )
 
+var (
+	boolTrue  = true
+	boolFalse = false
+)
+
 type Event struct {
 	ID       string                 `json:"event_id"`
 	Type     string                 `json:"type"`
@@ -51,6 +56,18 @@ type Event struct {
 
 	// If this is a redaction, the event that it redacts
 	Redacts string `json:"redacts"`
+}
+
+func NewEncryptionEvent() Event {
+	return Event{
+		Type:     "m.room.encryption",
+		StateKey: ptr(""),
+		Content: map[string]interface{}{
+			"algorithm":            "m.megolm.v1.aes-sha2",
+			"rotation_period_ms":   604800000,
+			"rotation_period_msgs": 100,
+		},
+	}
 }
 
 type MessagesBatch struct {
@@ -510,6 +527,11 @@ func (c *CSAPI) MustDoFunc(t *testing.T, method string, paths []string, opts ...
 // SlidingSync performs a single sliding sync request
 func (c *CSAPI) SlidingSync(t *testing.T, data sync3.Request, opts ...RequestOpt) (resBody *sync3.Response) {
 	t.Helper()
+	if len(opts) == 0 {
+		opts = append(opts, WithQueries(url.Values{
+			"timeout": []string{"500"},
+		}))
+	}
 	opts = append(opts, WithJSONBody(t, data))
 	res := c.MustDoFunc(t, "POST", []string{"_matrix", "client", "unstable", "org.matrix.msc3575", "sync"}, opts...)
 	body := ParseJSON(t, res)

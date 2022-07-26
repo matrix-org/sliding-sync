@@ -378,10 +378,10 @@ func MatchAccountData(globals []json.RawMessage, rooms map[string][]json.RawMess
 	}
 }
 
-func CheckList(res sync3.ResponseList, matchers ...ListMatcher) error {
+func CheckList(i int, res sync3.ResponseList, matchers ...ListMatcher) error {
 	for _, m := range matchers {
 		if err := m(res); err != nil {
-			return fmt.Errorf("MatchList: %v", err)
+			return fmt.Errorf("MatchList[%d]: %v", i, err)
 		}
 	}
 	return nil
@@ -393,7 +393,7 @@ func MatchList(i int, matchers ...ListMatcher) RespMatcher {
 			return fmt.Errorf("MatchSingleList: index %d does not exist, got %d lists", i, len(res.Lists))
 		}
 		list := res.Lists[i]
-		return CheckList(list, matchers...)
+		return CheckList(i, list, matchers...)
 	}
 }
 
@@ -403,7 +403,7 @@ func MatchLists(matchers ...[]ListMatcher) RespMatcher {
 			return fmt.Errorf("MatchLists: got %d matchers for %d lists", len(matchers), len(res.Lists))
 		}
 		for i := range matchers {
-			if err := CheckList(res.Lists[i], matchers[i]...); err != nil {
+			if err := CheckList(i, res.Lists[i], matchers[i]...); err != nil {
 				return fmt.Errorf("MatchLists[%d]: %v", i, err)
 			}
 		}

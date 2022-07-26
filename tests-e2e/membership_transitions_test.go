@@ -1,7 +1,6 @@
 package syncv3_test
 
 import (
-	"net/url"
 	"testing"
 
 	"github.com/matrix-org/sync-v3/sync3"
@@ -82,10 +81,7 @@ func TestRoomStateTransitions(t *testing.T) {
 				},
 			},
 		},
-	}, WithQueries(url.Values{
-		"timeout": []string{"500"},
-		"pos":     []string{bobRes.Pos},
-	}))
+	}, WithPos(bobRes.Pos))
 	m.MatchResponse(t, bobRes, m.MatchNoV3Ops(), m.MatchList(0, m.MatchV3Count(2)), m.MatchRoomSubscription(inviteRoomID,
 		MatchRoomRequiredState([]Event{
 			{

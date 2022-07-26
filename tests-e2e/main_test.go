@@ -3,6 +3,7 @@ package syncv3_test
 import (
 	"encoding/json"
 	"fmt"
+	"net/url"
 	"os"
 	"reflect"
 	"strings"
@@ -31,6 +32,13 @@ func TestMain(m *testing.M) {
 	fmt.Println("proxy located at", proxyBaseURL)
 	exitCode := m.Run()
 	os.Exit(exitCode)
+}
+
+func WithPos(pos string) RequestOpt {
+	return WithQueries(url.Values{
+		"pos":     []string{pos},
+		"timeout": []string{"500"}, // 0.5s
+	})
 }
 
 func assertEventsEqual(t *testing.T, wantList []Event, gotList []json.RawMessage) {
@@ -77,11 +85,13 @@ func eventsEqual(wantList []Event, gotList []json.RawMessage) error {
 func MatchRoomTimelineMostRecent(n int, events []Event) m.RoomMatcher {
 	subset := events[len(events)-n:]
 	return func(r sync3.Room) error {
-		if len(r.Timeline) < len(subset) {
-			return fmt.Errorf("timeline length mismatch: got %d want at least %d", len(r.Timeline), len(subset))
-		}
-		gotSubset := r.Timeline[len(r.Timeline)-n:]
-		return eventsEqual(events, gotSubset)
+		return MatchRoomTimeline(subset)(r)
+	}
+}
+
+func MatchRoomTimeline(events []Event) m.RoomMatcher {
+	return func(r sync3.Room) error {
+		return eventsEqual(events, r.Timeline)
 	}
 }
 

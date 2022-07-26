@@ -2,7 +2,6 @@ package syncv3_test
 
 import (
 	"encoding/json"
-	"net/url"
 	"testing"
 
 	"github.com/matrix-org/sync-v3/sync3"
@@ -79,10 +78,7 @@ func TestSecurityLiveStreamEventLeftLeak(t *testing.T) {
 				},
 			},
 		}},
-	}, WithQueries(url.Values{
-		"timeout": []string{"500"}, // 0.5s
-		"pos":     []string{aliceRes.Pos},
-	}))
+	}, WithPos(aliceRes.Pos))
 
 	timeline := aliceRes.Rooms[roomID].Timeline
 	lastTwoEvents := timeline[len(timeline)-2:]
@@ -125,10 +121,7 @@ func TestSecurityLiveStreamEventLeftLeak(t *testing.T) {
 				},
 			},
 		}},
-	}, WithQueries(url.Values{
-		"timeout": []string{"500"}, // 0.5s
-		"pos":     []string{eveRes.Pos},
-	}))
+	}, WithPos(eveRes.Pos))
 	// the room is deleted from eve's point of view and she sees up to and including her kick event
 	m.MatchResponse(t, eveRes, m.MatchList(0, m.MatchV3Count(0), m.MatchV3Ops(m.MatchV3DeleteOp(0))), m.MatchRoomSubscription(
 		roomID, m.MatchRoomName(""), m.MatchRoomRequiredState(nil), m.MatchRoomTimelineMostRecent(1, []json.RawMessage{kickEvent}),
@@ -194,10 +187,7 @@ func TestSecurityRoomSubscriptionLeak(t *testing.T) {
 				[2]int64{0, 10}, // doesn't matter
 			},
 		}},
-	}, WithQueries(url.Values{
-		"timeout": []string{"500"}, // 0.5s
-		"pos":     []string{eveRes.Pos},
-	}))
+	}, WithPos(eveRes.Pos))
 
 	// Assert that Eve doesn't see anything
 	m.MatchResponse(t, eveRes, m.MatchList(0, m.MatchV3Count(1)), m.MatchNoV3Ops(), m.MatchRoomSubscriptionsStrict(map[string][]m.RoomMatcher{}))
