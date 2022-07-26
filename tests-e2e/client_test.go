@@ -507,9 +507,10 @@ func (c *CSAPI) MustDoFunc(t *testing.T, method string, paths []string, opts ...
 }
 
 // SlidingSync performs a single sliding sync request
-func (c *CSAPI) SlidingSync(t *testing.T, data sync3.Request) (resBody *sync3.Response) {
+func (c *CSAPI) SlidingSync(t *testing.T, data sync3.Request, opts ...RequestOpt) (resBody *sync3.Response) {
 	t.Helper()
-	res := c.MustDo(t, "POST", []string{"_matrix", "client", "unstable", "org.matrix.msc3575", "sync"}, data)
+	opts = append(opts, WithJSONBody(t, data))
+	res := c.MustDoFunc(t, "POST", []string{"_matrix", "client", "unstable", "org.matrix.msc3575", "sync"}, opts...)
 	body := ParseJSON(t, res)
 	if err := json.Unmarshal(body, &resBody); err != nil {
 		t.Fatalf("failed to unmarshal response: %v", err)

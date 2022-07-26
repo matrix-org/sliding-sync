@@ -4,43 +4,13 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/url"
-	"reflect"
 	"testing"
-	"time"
 
 	"github.com/matrix-org/sync-v3/sync3"
 )
 
-func assertEventsEqual(t *testing.T, wantList []Event, gotList []json.RawMessage) {
-	t.Helper()
-	if len(wantList) != len(gotList) {
-		t.Errorf("got %d events, want %d", len(gotList), len(wantList))
-		return
-	}
-	for i := 0; i < len(wantList); i++ {
-		want := wantList[i]
-		var got Event
-		if err := json.Unmarshal(gotList[i], &got); err != nil {
-			t.Errorf("failed to unmarshal event %d: %s", i, err)
-		}
-		if got.ID != want.ID {
-			t.Errorf("event %d ID mismatch: got %v want %v", i, got.ID, want.ID)
-		}
-		if !reflect.DeepEqual(got.Content, want.Content) {
-			t.Errorf("event %d content mismatch: got %+v want %+v", i, got.Content, want.Content)
-		}
-	}
-}
-
 func TestPrevBatch(t *testing.T) {
-	// create user
-	httpClient := NewLoggedClient(t, "localhost", nil)
-	client := &CSAPI{
-		Client:           httpClient,
-		BaseURL:          homeserverBaseURL,
-		SyncUntilTimeout: 3 * time.Second,
-	}
-	client.UserID, client.AccessToken, client.DeviceID = client.RegisterUser(t, "alice", "password")
+	client := registerNewUser(t)
 
 	// create room
 	roomID := client.CreateRoom(t, map[string]interface{}{})
