@@ -10,6 +10,7 @@ import (
 	"github.com/matrix-org/sync-v3/sync3"
 	"github.com/matrix-org/sync-v3/sync3/extensions"
 	"github.com/matrix-org/sync-v3/testutils"
+	"github.com/matrix-org/sync-v3/testutils/m"
 )
 
 var valTrue = true
@@ -45,7 +46,7 @@ func TestExtensionE2EE(t *testing.T) {
 			},
 		},
 	})
-	MatchResponse(t, res, MatchOTKCounts(otkCounts))
+	m.MatchResponse(t, res, m.MatchOTKCounts(otkCounts))
 
 	// check that OTK counts remain constant when they aren't included in the v2 response.
 	// Do this by feeding in a new joined room
@@ -66,7 +67,7 @@ func TestExtensionE2EE(t *testing.T) {
 		}},
 		// skip enabled: true as it should be sticky
 	})
-	MatchResponse(t, res, MatchOTKCounts(otkCounts))
+	m.MatchResponse(t, res, m.MatchOTKCounts(otkCounts))
 
 	// check that OTK counts update when they are included in the v2 response
 	otkCounts = map[string]int{
@@ -90,7 +91,7 @@ func TestExtensionE2EE(t *testing.T) {
 			},
 		},
 	})
-	MatchResponse(t, res, MatchOTKCounts(otkCounts))
+	m.MatchResponse(t, res, m.MatchOTKCounts(otkCounts))
 
 	// check that changed|left get passed to v3
 	wantChanged := []string{"bob"}
@@ -119,7 +120,7 @@ func TestExtensionE2EE(t *testing.T) {
 			},
 		},
 	})
-	MatchResponse(t, res, MatchDeviceLists(wantChanged, wantLeft))
+	m.MatchResponse(t, res, m.MatchDeviceLists(wantChanged, wantLeft))
 
 	// check that changed|left persist if requesting with the same v3 position
 	res = v3.mustDoV3RequestWithPos(t, aliceToken, lastPos, sync3.Request{
@@ -135,7 +136,7 @@ func TestExtensionE2EE(t *testing.T) {
 			},
 		},
 	})
-	MatchResponse(t, res, MatchDeviceLists(wantChanged, wantLeft))
+	m.MatchResponse(t, res, m.MatchDeviceLists(wantChanged, wantLeft))
 
 	// check that changed|left do *not* persist once consumed (advanced v3 position). This requires
 	// another poke so we don't wait until up to the timeout value in tests
@@ -161,7 +162,7 @@ func TestExtensionE2EE(t *testing.T) {
 			},
 		},
 	})
-	MatchResponse(t, res, func(res *sync3.Response) error {
+	m.MatchResponse(t, res, func(res *sync3.Response) error {
 		if res.Extensions.E2EE.DeviceLists != nil {
 			return fmt.Errorf("e2ee device lists present when it shouldn't be")
 		}
@@ -211,7 +212,7 @@ func TestExtensionToDevice(t *testing.T) {
 			},
 		},
 	})
-	MatchResponse(t, res, MatchList(0, MatchV3Count(0)), MatchToDeviceMessages(toDeviceMsgs))
+	m.MatchResponse(t, res, m.MatchList(0, m.MatchV3Count(0)), m.MatchToDeviceMessages(toDeviceMsgs))
 
 	// 2: repeating the fresh sync request returns the same messages (not deleted)
 	res = v3.mustDoV3Request(t, aliceToken, sync3.Request{
@@ -226,7 +227,7 @@ func TestExtensionToDevice(t *testing.T) {
 			},
 		},
 	})
-	MatchResponse(t, res, MatchList(0, MatchV3Count(0)), MatchToDeviceMessages(toDeviceMsgs))
+	m.MatchResponse(t, res, m.MatchList(0, m.MatchV3Count(0)), m.MatchToDeviceMessages(toDeviceMsgs))
 
 	// 3: update the since token -> no new messages
 	res = v3.mustDoV3Request(t, aliceToken, sync3.Request{
@@ -242,7 +243,7 @@ func TestExtensionToDevice(t *testing.T) {
 			},
 		},
 	})
-	MatchResponse(t, res, MatchList(0, MatchV3Count(0)), MatchToDeviceMessages([]json.RawMessage{}))
+	m.MatchResponse(t, res, m.MatchList(0, m.MatchV3Count(0)), m.MatchToDeviceMessages([]json.RawMessage{}))
 
 	// 4: inject live to-device messages -> receive them only.
 	sinceBeforeMsgs := res.Extensions.ToDevice.NextBatch
@@ -268,7 +269,7 @@ func TestExtensionToDevice(t *testing.T) {
 			},
 		},
 	})
-	MatchResponse(t, res, MatchList(0, MatchV3Count(0)), MatchToDeviceMessages(newToDeviceMsgs))
+	m.MatchResponse(t, res, m.MatchList(0, m.MatchV3Count(0)), m.MatchToDeviceMessages(newToDeviceMsgs))
 
 	// 5: repeating the previous sync request returns the same live to-device messages (retransmit)
 	res = v3.mustDoV3RequestWithPos(t, aliceToken, res.Pos, sync3.Request{
@@ -283,7 +284,7 @@ func TestExtensionToDevice(t *testing.T) {
 			},
 		},
 	})
-	MatchResponse(t, res, MatchList(0, MatchV3Count(0)), MatchToDeviceMessages(newToDeviceMsgs))
+	m.MatchResponse(t, res, m.MatchList(0, m.MatchV3Count(0)), m.MatchToDeviceMessages(newToDeviceMsgs))
 
 	// ack the to-device messages
 	res = v3.mustDoV3RequestWithPos(t, aliceToken, res.Pos, sync3.Request{
@@ -299,7 +300,7 @@ func TestExtensionToDevice(t *testing.T) {
 		},
 	})
 	// this response contains nothing
-	MatchResponse(t, res, MatchList(0, MatchV3Count(0)), MatchToDeviceMessages([]json.RawMessage{}))
+	m.MatchResponse(t, res, m.MatchList(0, m.MatchV3Count(0)), m.MatchToDeviceMessages([]json.RawMessage{}))
 
 	// 6: using an old since token does not return to-device messages anymore as they were deleted.
 	res = v3.mustDoV3RequestWithPos(t, aliceToken, res.Pos, sync3.Request{
@@ -314,7 +315,7 @@ func TestExtensionToDevice(t *testing.T) {
 			},
 		},
 	})
-	MatchResponse(t, res, MatchList(0, MatchV3Count(0)), MatchToDeviceMessages([]json.RawMessage{}))
+	m.MatchResponse(t, res, m.MatchList(0, m.MatchV3Count(0)), m.MatchToDeviceMessages([]json.RawMessage{}))
 }
 
 // tests that the account data extension works:
@@ -405,7 +406,7 @@ func TestExtensionAccountData(t *testing.T) {
 			},
 		}},
 	})
-	MatchResponse(t, res, MatchAccountData(
+	m.MatchResponse(t, res, m.MatchAccountData(
 		globalAccountData,
 		map[string][]json.RawMessage{
 			roomA: roomAAccountData,
@@ -421,7 +422,7 @@ func TestExtensionAccountData(t *testing.T) {
 			},
 		}},
 	})
-	MatchResponse(t, res, MatchAccountData(
+	m.MatchResponse(t, res, m.MatchAccountData(
 		nil,
 		map[string][]json.RawMessage{
 			roomC: roomCAccountData,
@@ -441,7 +442,7 @@ func TestExtensionAccountData(t *testing.T) {
 			},
 		},
 	})
-	MatchResponse(t, res, MatchAccountData(
+	m.MatchResponse(t, res, m.MatchAccountData(
 		globalAccountData,
 		map[string][]json.RawMessage{
 			roomB: roomBAccountData,
@@ -457,7 +458,7 @@ func TestExtensionAccountData(t *testing.T) {
 	})
 	v2.waitUntilEmpty(t, alice)
 	res = v3.mustDoV3RequestWithPos(t, aliceToken, res.Pos, sync3.Request{})
-	MatchResponse(t, res, MatchAccountData(
+	m.MatchResponse(t, res, m.MatchAccountData(
 		[]json.RawMessage{newGlobalEvent},
 		nil,
 	))
@@ -502,7 +503,7 @@ func TestExtensionAccountData(t *testing.T) {
 			},
 		}},
 	})
-	MatchResponse(t, res, MatchAccountData(
+	m.MatchResponse(t, res, m.MatchAccountData(
 		nil,
 		map[string][]json.RawMessage{
 			roomC: roomCAccountData,

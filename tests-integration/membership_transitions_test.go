@@ -8,6 +8,7 @@ import (
 	"github.com/matrix-org/sync-v3/sync2"
 	"github.com/matrix-org/sync-v3/sync3"
 	"github.com/matrix-org/sync-v3/testutils"
+	"github.com/matrix-org/sync-v3/testutils/m"
 )
 
 func TestRoomStateTransitions(t *testing.T) {
@@ -103,14 +104,14 @@ func TestRoomStateTransitions(t *testing.T) {
 			},
 		},
 	})
-	MatchResponse(t, res, MatchList(0, MatchV3Count(2), MatchV3Ops(
-		MatchV3SyncOp(0, 100, []string{allRoomsAlicePerspective[indexBobInvited].roomID, allRoomsAlicePerspective[indexBobJoined].roomID}),
-	)), MatchRoomSubscriptions(map[string][]roomMatcher{
+	m.MatchResponse(t, res, m.MatchList(0, m.MatchV3Count(2), m.MatchV3Ops(
+		m.MatchV3SyncOp(0, 100, []string{allRoomsAlicePerspective[indexBobInvited].roomID, allRoomsAlicePerspective[indexBobJoined].roomID}),
+	)), m.MatchRoomSubscriptions(map[string][]m.RoomMatcher{
 		allRoomsAlicePerspective[indexBobInvited].roomID: {
-			MatchRoomHighlightCount(1),
-			MatchRoomInitial(true),
-			MatchRoomRequiredState(nil),
-			MatchRoomInviteState(inviteStrippedState.InviteState.Events),
+			m.MatchRoomHighlightCount(1),
+			m.MatchRoomInitial(true),
+			m.MatchRoomRequiredState(nil),
+			m.MatchRoomInviteState(inviteStrippedState.InviteState.Events),
 		},
 		allRoomsAlicePerspective[indexBobJoined].roomID: {},
 	}),
@@ -136,14 +137,14 @@ func TestRoomStateTransitions(t *testing.T) {
 			},
 		},
 	})
-	MatchResponse(t, res, MatchNoV3Ops(), MatchList(0, MatchV3Count(2)), MatchRoomSubscription(allRoomsAlicePerspective[indexBobInvited].roomID,
-		MatchRoomRequiredState([]json.RawMessage{
+	m.MatchResponse(t, res, m.MatchNoV3Ops(), m.MatchList(0, m.MatchV3Count(2)), m.MatchRoomSubscription(allRoomsAlicePerspective[indexBobInvited].roomID,
+		m.MatchRoomRequiredState([]json.RawMessage{
 			allRoomsAlicePerspective[indexBobInvited].events[0], // create event
 		}),
-		MatchRoomTimelineMostRecent(1, []json.RawMessage{
+		m.MatchRoomTimelineMostRecent(1, []json.RawMessage{
 			bobJoinEvent,
 		}),
-		MatchRoomInitial(true),
-		MatchRoomHighlightCount(0)))
+		m.MatchRoomInitial(true),
+		m.MatchRoomHighlightCount(0)))
 
 }

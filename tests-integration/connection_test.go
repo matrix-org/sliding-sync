@@ -10,6 +10,7 @@ import (
 	"github.com/matrix-org/sync-v3/sync2"
 	"github.com/matrix-org/sync-v3/sync3"
 	"github.com/matrix-org/sync-v3/testutils"
+	"github.com/matrix-org/sync-v3/testutils/m"
 )
 
 // Test that if you hit /sync and give up, we only start 1 connection.
@@ -74,8 +75,8 @@ func TestMultipleConnsAtStartup(t *testing.T) {
 			},
 		}},
 	})
-	MatchResponse(t, res, MatchList(0, MatchV3Ops(
-		MatchV3SyncOp(0, 10, []string{roomID}),
+	m.MatchResponse(t, res, m.MatchList(0, m.MatchV3Ops(
+		m.MatchV3SyncOp(0, 10, []string{roomID}),
 	)))
 }
 
@@ -130,8 +131,8 @@ func TestOutstandingRequestsGetCancelled(t *testing.T) {
 			},
 		}},
 	})
-	MatchResponse(t, res, MatchList(0, MatchV3Count(2), MatchV3Ops(
-		MatchV3SyncOp(0, 1, []string{roomA, roomB}),
+	m.MatchResponse(t, res, m.MatchList(0, m.MatchV3Count(2), m.MatchV3Ops(
+		m.MatchV3SyncOp(0, 1, []string{roomA, roomB}),
 	)))
 	// now we do a blocking request, and a few ms later do another request which can be satisfied
 	// using the same pos
@@ -151,9 +152,9 @@ func TestOutstandingRequestsGetCancelled(t *testing.T) {
 				},
 			}},
 		})
-		MatchResponse(t, res2, MatchList(0, MatchV3Count(2), MatchV3Ops(
-			MatchV3InvalidateOp(0, 1),
-			MatchV3SyncOp(0, 1, []string{roomB, roomA}),
+		m.MatchResponse(t, res2, m.MatchList(0, m.MatchV3Count(2), m.MatchV3Ops(
+			m.MatchV3InvalidateOp(0, 1),
+			m.MatchV3SyncOp(0, 1, []string{roomB, roomA}),
 		)))
 		if time.Since(startTime) > time.Second {
 			t.Errorf("took >1s to process request which should have been processed instantly, took %v", time.Since(startTime))
@@ -171,7 +172,7 @@ func TestOutstandingRequestsGetCancelled(t *testing.T) {
 	if time.Since(startTime) > time.Second {
 		t.Errorf("took >1s to process request which should have been interrupted before timing out, took %v", time.Since(startTime))
 	}
-	MatchResponse(t, res, MatchList(0, MatchV3Count(2)), MatchNoV3Ops())
+	m.MatchResponse(t, res, m.MatchList(0, m.MatchV3Count(2)), m.MatchNoV3Ops())
 }
 
 // Regression test to ensure that ?timeout= isn't reset when live events come in.
@@ -218,8 +219,8 @@ func TestConnectionTimeoutNotReset(t *testing.T) {
 			},
 		}},
 	})
-	MatchResponse(t, res, MatchList(0, MatchV3Count(2), MatchV3Ops(
-		MatchV3SyncOp(0, 0, []string{roomA}),
+	m.MatchResponse(t, res, m.MatchList(0, m.MatchV3Count(2), m.MatchV3Ops(
+		m.MatchV3SyncOp(0, 0, []string{roomA}),
 	)))
 	// 2nd request with a 1s timeout
 	req := sync3.Request{
@@ -262,6 +263,6 @@ func TestConnectionTimeoutNotReset(t *testing.T) {
 	if dur > (1500 * time.Millisecond) { // 0.5s leeway
 		t.Fatalf("request took %v to complete, expected ~1s", dur)
 	}
-	MatchResponse(t, res, MatchList(0, MatchV3Count(2)), MatchNoV3Ops())
+	m.MatchResponse(t, res, m.MatchList(0, m.MatchV3Count(2)), m.MatchNoV3Ops())
 
 }

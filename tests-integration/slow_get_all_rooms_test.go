@@ -9,6 +9,7 @@ import (
 	"github.com/matrix-org/sync-v3/sync2"
 	"github.com/matrix-org/sync-v3/sync3"
 	"github.com/matrix-org/sync-v3/testutils"
+	"github.com/matrix-org/sync-v3/testutils/m"
 )
 
 // - Test that you can get all rooms initially for a list
@@ -26,7 +27,7 @@ func TestSlowGetAllRoomsInitial(t *testing.T) {
 	// make 20 rooms, last room is most recent, and send A,B,C into each room
 	allRooms := make([]roomEvents, 20)
 	allRoomIDs := make([]string, len(allRooms))
-	allRoomMatchers := make(map[string][]roomMatcher)
+	allRoomMatchers := make(map[string][]m.RoomMatcher)
 	latestTimestamp := time.Now()
 	for i := 0; i < len(allRooms); i++ {
 		ts := time.Now().Add(time.Duration(i) * time.Minute)
@@ -45,10 +46,10 @@ func TestSlowGetAllRoomsInitial(t *testing.T) {
 		if ts.After(latestTimestamp) {
 			latestTimestamp = ts.Add(10 * time.Second)
 		}
-		allRoomMatchers[allRooms[i].roomID] = []roomMatcher{
-			MatchRoomInitial(true),
-			MatchRoomName(allRooms[i].name),
-			MatchRoomTimelineMostRecent(numTimelineEventsPerRoom, allRooms[i].events),
+		allRoomMatchers[allRooms[i].roomID] = []m.RoomMatcher{
+			m.MatchRoomInitial(true),
+			m.MatchRoomName(allRooms[i].name),
+			m.MatchRoomTimelineMostRecent(numTimelineEventsPerRoom, allRooms[i].events),
 		}
 	}
 	v2.addAccount(alice, aliceToken)
@@ -69,9 +70,9 @@ func TestSlowGetAllRoomsInitial(t *testing.T) {
 			},
 		}},
 	})
-	MatchResponse(t, res, MatchList(0, MatchV3Count(len(allRooms)), MatchV3Ops(
-		MatchV3SyncOp(0, int64(len(allRooms)-1), allRoomIDs, true),
-	)), MatchRoomSubscriptionsStrict(allRoomMatchers))
+	m.MatchResponse(t, res, m.MatchList(0, m.MatchV3Count(len(allRooms)), m.MatchV3Ops(
+		m.MatchV3SyncOp(0, int64(len(allRooms)-1), allRoomIDs, true),
+	)), m.MatchRoomSubscriptionsStrict(allRoomMatchers))
 
 	// now redo this but with a room name filter
 	res = v3.mustDoV3Request(t, aliceToken, sync3.Request{
@@ -99,9 +100,9 @@ func TestSlowGetAllRoomsInitial(t *testing.T) {
 	for roomID := range allRoomMatchers {
 		roomIDs = append(roomIDs, roomID)
 	}
-	MatchResponse(t, res, MatchList(0, MatchV3Count(len(allRoomMatchers)), MatchV3Ops(
-		MatchV3SyncOp(0, int64(len(allRoomMatchers)-1), roomIDs, true),
-	)), MatchRoomSubscriptionsStrict(allRoomMatchers))
+	m.MatchResponse(t, res, m.MatchList(0, m.MatchV3Count(len(allRoomMatchers)), m.MatchV3Ops(
+		m.MatchV3SyncOp(0, int64(len(allRoomMatchers)-1), roomIDs, true),
+	)), m.MatchRoomSubscriptionsStrict(allRoomMatchers))
 
 	t.Run("Newly joined rooms get all state", func(t *testing.T) {
 		ts := latestTimestamp
@@ -126,11 +127,11 @@ func TestSlowGetAllRoomsInitial(t *testing.T) {
 		res = v3.mustDoV3RequestWithPos(t, aliceToken, res.Pos, sync3.Request{
 			Lists: []sync3.RequestList{{}},
 		})
-		MatchResponse(t, res, MatchList(0, MatchV3Count(len(allRoomMatchers)+1)), MatchNoV3Ops(), MatchRoomSubscriptionsStrict(map[string][]roomMatcher{
+		m.MatchResponse(t, res, m.MatchList(0, m.MatchV3Count(len(allRoomMatchers)+1)), m.MatchNoV3Ops(), m.MatchRoomSubscriptionsStrict(map[string][]m.RoomMatcher{
 			newRoom.roomID: {
-				MatchRoomInitial(true),
-				MatchRoomName(roomName),
-				MatchRoomTimelineMostRecent(numTimelineEventsPerRoom, newRoom.events),
+				m.MatchRoomInitial(true),
+				m.MatchRoomName(roomName),
+				m.MatchRoomTimelineMostRecent(numTimelineEventsPerRoom, newRoom.events),
 			},
 		}))
 	})
@@ -149,10 +150,10 @@ func TestSlowGetAllRoomsInitial(t *testing.T) {
 		res = v3.mustDoV3RequestWithPos(t, aliceToken, res.Pos, sync3.Request{
 			Lists: []sync3.RequestList{{}},
 		})
-		MatchResponse(t, res, MatchList(0, MatchV3Count(len(allRoomMatchers)+1)), MatchNoV3Ops(), MatchRoomSubscriptionsStrict(map[string][]roomMatcher{
+		m.MatchResponse(t, res, m.MatchList(0, m.MatchV3Count(len(allRoomMatchers)+1)), m.MatchNoV3Ops(), m.MatchRoomSubscriptionsStrict(map[string][]m.RoomMatcher{
 			allRooms[11].roomID: {
-				MatchRoomInitial(false),
-				MatchRoomTimelineMostRecent(1, []json.RawMessage{newEvent}),
+				m.MatchRoomInitial(false),
+				m.MatchRoomTimelineMostRecent(1, []json.RawMessage{newEvent}),
 			},
 		}))
 	})

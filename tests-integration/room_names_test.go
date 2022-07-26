@@ -9,6 +9,7 @@ import (
 	"github.com/matrix-org/sync-v3/sync2"
 	"github.com/matrix-org/sync-v3/sync3"
 	"github.com/matrix-org/sync-v3/testutils"
+	"github.com/matrix-org/sync-v3/testutils/m"
 )
 
 // Test that room names come through sanely. Additional testing to ensure we copy hero slices correctly.
@@ -79,15 +80,15 @@ func TestRoomNames(t *testing.T) {
 				},
 			}},
 		})
-		MatchResponse(t, res, MatchList(0, MatchV3Count(len(allRooms)), MatchV3Ops(
-			MatchV3SyncOpFn(func(op *sync3.ResponseOpRange) error {
+		m.MatchResponse(t, res, m.MatchList(0, m.MatchV3Count(len(allRooms)), m.MatchV3Ops(
+			m.MatchV3SyncOpFn(func(op *sync3.ResponseOpRange) error {
 				if len(op.RoomIDs) != len(allRooms) {
 					return fmt.Errorf("want %d rooms, got %d", len(allRooms), len(op.RoomIDs))
 				}
 				for i := range allRooms {
 					err := allRooms[i].MatchRoom(op.RoomIDs[i],
 						res.Rooms[op.RoomIDs[i]],
-						MatchRoomName(allRooms[i].name),
+						m.MatchRoomName(allRooms[i].name),
 					)
 					if err != nil {
 						return err
@@ -117,17 +118,17 @@ func TestRoomNames(t *testing.T) {
 				},
 			}},
 		})
-		matchers := make(map[string][]roomMatcher, len(wantRooms))
+		matchers := make(map[string][]m.RoomMatcher, len(wantRooms))
 		wantRoomIDs := make([]string, len(wantRooms))
 		for i := range wantRooms {
 			wantRoomIDs[i] = wantRooms[i].roomID
-			matchers[wantRooms[i].roomID] = []roomMatcher{
-				MatchRoomName(wantRooms[i].name),
+			matchers[wantRooms[i].roomID] = []m.RoomMatcher{
+				m.MatchRoomName(wantRooms[i].name),
 			}
 		}
-		MatchResponse(t, res, MatchList(0, MatchV3Count(len(wantRooms)), MatchV3Ops(
-			MatchV3SyncOp(0, int64(len(allRooms)-1), wantRoomIDs),
-		)), MatchRoomSubscriptions(matchers))
+		m.MatchResponse(t, res, m.MatchList(0, m.MatchV3Count(len(wantRooms)), m.MatchV3Ops(
+			m.MatchV3SyncOp(0, int64(len(allRooms)-1), wantRoomIDs),
+		)), m.MatchRoomSubscriptions(matchers))
 	}
 	// case-insensitive matching
 	checkRoomNameFilter("my room name", []roomEvents{allRooms[1]})

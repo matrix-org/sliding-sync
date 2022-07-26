@@ -9,6 +9,7 @@ import (
 	"github.com/matrix-org/sync-v3/sync2"
 	"github.com/matrix-org/sync-v3/sync3"
 	"github.com/matrix-org/sync-v3/testutils"
+	"github.com/matrix-org/sync-v3/testutils/m"
 )
 
 // Test that sort operations that favour notif counts always appear at the start of the list.
@@ -65,8 +66,8 @@ func TestNotificationsOnTop(t *testing.T) {
 		}},
 	}
 	res := v3.mustDoV3Request(t, aliceToken, syncRequestBody)
-	MatchResponse(t, res, MatchList(0, MatchV3Count(len(allRooms)), MatchV3Ops(
-		MatchV3SyncOpFn(func(op *sync3.ResponseOpRange) error {
+	m.MatchResponse(t, res, m.MatchList(0, m.MatchV3Count(len(allRooms)), m.MatchV3Ops(
+		m.MatchV3SyncOpFn(func(op *sync3.ResponseOpRange) error {
 			if len(op.RoomIDs) != len(allRooms) {
 				return fmt.Errorf("want %d rooms, got %d", len(allRooms), len(op.RoomIDs))
 			}
@@ -102,8 +103,8 @@ func TestNotificationsOnTop(t *testing.T) {
 	})
 	v2.waitUntilEmpty(t, alice)
 	res = v3.mustDoV3RequestWithPos(t, aliceToken, res.Pos, syncRequestBody)
-	MatchResponse(t, res, MatchList(0, MatchV3Count(len(allRooms)),
-		MatchV3Ops(MatchV3DeleteOp(1), MatchV3InsertOp(0, bingRoomID)),
+	m.MatchResponse(t, res, m.MatchList(0, m.MatchV3Count(len(allRooms)),
+		m.MatchV3Ops(m.MatchV3DeleteOp(1), m.MatchV3InsertOp(0, bingRoomID)),
 	))
 
 	// send a message into the nobing room, it's position must not change due to our sort order
@@ -123,8 +124,8 @@ func TestNotificationsOnTop(t *testing.T) {
 	})
 	v2.waitUntilEmpty(t, alice)
 	res = v3.mustDoV3RequestWithPos(t, aliceToken, res.Pos, syncRequestBody)
-	MatchResponse(t, res, MatchList(0, MatchV3Count(len(allRooms))),
-		MatchNoV3Ops(),
+	m.MatchResponse(t, res, m.MatchList(0, m.MatchV3Count(len(allRooms))),
+		m.MatchNoV3Ops(),
 	)
 
 	// restart the server and sync from fresh again, it should still have the bing room on top
@@ -141,25 +142,25 @@ func TestNotificationsOnTop(t *testing.T) {
 			Sort: []string{sync3.SortByHighlightCount, sync3.SortByNotificationCount, sync3.SortByRecency},
 		}},
 	})
-	MatchResponse(t, res, MatchList(0, MatchV3Count(len(allRooms)), MatchV3Ops(
-		MatchV3SyncOpFn(func(op *sync3.ResponseOpRange) error {
+	m.MatchResponse(t, res, m.MatchList(0, m.MatchV3Count(len(allRooms)), m.MatchV3Ops(
+		m.MatchV3SyncOpFn(func(op *sync3.ResponseOpRange) error {
 			if len(op.RoomIDs) != len(allRooms) {
 				return fmt.Errorf("want %d rooms, got %d", len(allRooms), len(op.RoomIDs))
 			}
 			err := allRooms[1].MatchRoom(op.RoomIDs[0],
 				res.Rooms[op.RoomIDs[0]], // bing room is first
-				MatchRoomHighlightCount(1),
-				MatchRoomNotificationCount(0),
-				MatchRoomTimelineMostRecent(1, []json.RawMessage{bingEvent}),
+				m.MatchRoomHighlightCount(1),
+				m.MatchRoomNotificationCount(0),
+				m.MatchRoomTimelineMostRecent(1, []json.RawMessage{bingEvent}),
 			)
 			if err != nil {
 				return err
 			}
 			err = allRooms[0].MatchRoom(op.RoomIDs[1],
 				res.Rooms[op.RoomIDs[1]], // no bing room is second
-				MatchRoomHighlightCount(0),
-				MatchRoomNotificationCount(0),
-				MatchRoomTimelineMostRecent(1, []json.RawMessage{noBingEvent}),
+				m.MatchRoomHighlightCount(0),
+				m.MatchRoomNotificationCount(0),
+				m.MatchRoomTimelineMostRecent(1, []json.RawMessage{noBingEvent}),
 			)
 			if err != nil {
 				return err

@@ -9,6 +9,7 @@ import (
 	"github.com/matrix-org/sync-v3/sync2"
 	"github.com/matrix-org/sync-v3/sync3"
 	"github.com/matrix-org/sync-v3/testutils"
+	"github.com/matrix-org/sync-v3/testutils/m"
 )
 
 // Test that multiple lists can be independently scrolled through
@@ -85,17 +86,17 @@ func TestMultipleLists(t *testing.T) {
 		},
 	})
 
-	MatchResponse(t, res,
-		MatchLists([]listMatcher{
-			MatchV3Count(len(encryptedRooms)),
-			MatchV3Ops(MatchV3SyncOpFn(func(op *sync3.ResponseOpRange) error {
+	m.MatchResponse(t, res,
+		m.MatchLists([]m.ListMatcher{
+			m.MatchV3Count(len(encryptedRooms)),
+			m.MatchV3Ops(m.MatchV3SyncOpFn(func(op *sync3.ResponseOpRange) error {
 				// first 3 encrypted rooms
 				return checkRoomList(res, op, encryptedRooms[:3])
 			}),
 			),
-		}, []listMatcher{
-			MatchV3Count(len(unencryptedRooms)),
-			MatchV3Ops(MatchV3SyncOpFn(func(op *sync3.ResponseOpRange) error {
+		}, []m.ListMatcher{
+			m.MatchV3Count(len(unencryptedRooms)),
+			m.MatchV3Ops(m.MatchV3SyncOpFn(func(op *sync3.ResponseOpRange) error {
 				// first 3 unencrypted rooms
 				return checkRoomList(res, op, unencryptedRooms[:3])
 			})),
@@ -118,12 +119,12 @@ func TestMultipleLists(t *testing.T) {
 			},
 		},
 	})
-	MatchResponse(t, res, MatchLists([]listMatcher{
-		MatchV3Count(len(encryptedRooms)),
-	}, []listMatcher{
-		MatchV3Count(len(unencryptedRooms)),
-		MatchV3Ops(
-			MatchV3SyncOpFn(func(op *sync3.ResponseOpRange) error {
+	m.MatchResponse(t, res, m.MatchLists([]m.ListMatcher{
+		m.MatchV3Count(len(encryptedRooms)),
+	}, []m.ListMatcher{
+		m.MatchV3Count(len(unencryptedRooms)),
+		m.MatchV3Ops(
+			m.MatchV3SyncOpFn(func(op *sync3.ResponseOpRange) error {
 				return checkRoomList(res, op, unencryptedRooms[3:6])
 			}),
 		),
@@ -171,14 +172,14 @@ func TestMultipleLists(t *testing.T) {
 	})
 	// We are tracking the first few encrypted rooms so we expect list 0 to update
 	// However we do not track old unencrypted rooms so we expect no change in list 1
-	MatchResponse(t, res, MatchLists([]listMatcher{
-		MatchV3Count(len(encryptedRooms)),
-		MatchV3Ops(
-			MatchV3DeleteOp(2),
-			MatchV3InsertOp(0, encryptedRooms[0].roomID),
+	m.MatchResponse(t, res, m.MatchLists([]m.ListMatcher{
+		m.MatchV3Count(len(encryptedRooms)),
+		m.MatchV3Ops(
+			m.MatchV3DeleteOp(2),
+			m.MatchV3InsertOp(0, encryptedRooms[0].roomID),
 		),
-	}, []listMatcher{
-		MatchV3Count(len(unencryptedRooms)),
+	}, []m.ListMatcher{
+		m.MatchV3Count(len(unencryptedRooms)),
 	}))
 }
 
@@ -263,15 +264,15 @@ func TestMultipleListsDMUpdate(t *testing.T) {
 		},
 	})
 
-	MatchResponse(t, res, MatchLists([]listMatcher{
-		MatchV3Count(len(dmRooms)),
-		MatchV3Ops(MatchV3SyncOpFn(func(op *sync3.ResponseOpRange) error {
+	m.MatchResponse(t, res, m.MatchLists([]m.ListMatcher{
+		m.MatchV3Count(len(dmRooms)),
+		m.MatchV3Ops(m.MatchV3SyncOpFn(func(op *sync3.ResponseOpRange) error {
 			// first 3 DM rooms
 			return checkRoomList(res, op, dmRooms[:3])
 		})),
-	}, []listMatcher{
-		MatchV3Count(len(groupRooms)),
-		MatchV3Ops(MatchV3SyncOpFn(func(op *sync3.ResponseOpRange) error {
+	}, []m.ListMatcher{
+		m.MatchV3Count(len(groupRooms)),
+		m.MatchV3Ops(m.MatchV3SyncOpFn(func(op *sync3.ResponseOpRange) error {
 			// first 3 group rooms
 			return checkRoomList(res, op, groupRooms[:3])
 		})),
@@ -315,15 +316,15 @@ func TestMultipleListsDMUpdate(t *testing.T) {
 			},
 		},
 	})
-	MatchResponse(t, res, MatchLists([]listMatcher{
-		MatchV3Count(len(dmRooms)),
-		MatchV3Ops(
-			MatchV3DeleteOp(2),
-			MatchV3InsertOp(0, dmRooms[0].roomID),
+	m.MatchResponse(t, res, m.MatchLists([]m.ListMatcher{
+		m.MatchV3Count(len(dmRooms)),
+		m.MatchV3Ops(
+			m.MatchV3DeleteOp(2),
+			m.MatchV3InsertOp(0, dmRooms[0].roomID),
 		),
-	}, []listMatcher{
-		MatchV3Count(len(groupRooms)),
-	}), MatchRoomSubscription(dmRooms[0].roomID, MatchRoomHighlightCount(1), MatchRoomTimelineMostRecent(1, dmRooms[0].events)))
+	}, []m.ListMatcher{
+		m.MatchV3Count(len(groupRooms)),
+	}), m.MatchRoomSubscription(dmRooms[0].roomID, m.MatchRoomHighlightCount(1), m.MatchRoomTimelineMostRecent(1, dmRooms[0].events)))
 }
 
 // Test that a new list can be added mid-connection
@@ -357,7 +358,7 @@ func TestNewListMidConnection(t *testing.T) {
 		Lists: []sync3.RequestList{},
 	})
 
-	MatchResponse(t, res, MatchLists())
+	m.MatchResponse(t, res, m.MatchLists())
 
 	// now add a list
 	res = v3.mustDoV3RequestWithPos(t, aliceToken, res.Pos, sync3.Request{
@@ -372,8 +373,8 @@ func TestNewListMidConnection(t *testing.T) {
 			},
 		},
 	})
-	MatchResponse(t, res, MatchList(0, MatchV3Count(len(allRooms)), MatchV3Ops(
-		MatchV3SyncOpFn(func(op *sync3.ResponseOpRange) error {
+	m.MatchResponse(t, res, m.MatchList(0, m.MatchV3Count(len(allRooms)), m.MatchV3Ops(
+		m.MatchV3SyncOpFn(func(op *sync3.ResponseOpRange) error {
 			return checkRoomList(res, op, allRooms[0:3])
 		}),
 	)))
@@ -482,70 +483,70 @@ func TestMultipleOverlappingLists(t *testing.T) {
 		},
 	})
 
-	MatchResponse(t, res,
-		MatchList(0, MatchV3Ops(MatchV3SyncOp(0, 4, encryptedRoomIDs[:5]))),
-		MatchList(1, MatchV3Ops(MatchV3SyncOp(0, 4, dmRoomIDs[:5]))),
-		MatchRoomSubscriptions(map[string][]roomMatcher{
+	m.MatchResponse(t, res,
+		m.MatchList(0, m.MatchV3Ops(m.MatchV3SyncOp(0, 4, encryptedRoomIDs[:5]))),
+		m.MatchList(1, m.MatchV3Ops(m.MatchV3SyncOp(0, 4, dmRoomIDs[:5]))),
+		m.MatchRoomSubscriptions(map[string][]m.RoomMatcher{
 			// encrypted rooms just come from the encrypted only list
 			encryptedRoomIDs[0]: {
-				MatchRoomInitial(true),
-				MatchRoomRequiredState([]json.RawMessage{
+				m.MatchRoomInitial(true),
+				m.MatchRoomRequiredState([]json.RawMessage{
 					encryptedRooms[0].getStateEvent("m.room.join_rules", ""),
 				}),
-				MatchRoomTimelineMostRecent(3, encryptedRooms[0].events),
+				m.MatchRoomTimelineMostRecent(3, encryptedRooms[0].events),
 			},
 			encryptedRoomIDs[1]: {
-				MatchRoomInitial(true),
-				MatchRoomRequiredState([]json.RawMessage{
+				m.MatchRoomInitial(true),
+				m.MatchRoomRequiredState([]json.RawMessage{
 					encryptedRooms[1].getStateEvent("m.room.join_rules", ""),
 				}),
-				MatchRoomTimelineMostRecent(3, encryptedRooms[1].events),
+				m.MatchRoomTimelineMostRecent(3, encryptedRooms[1].events),
 			},
 			encryptedRoomIDs[2]: {
-				MatchRoomInitial(true),
-				MatchRoomRequiredState([]json.RawMessage{
+				m.MatchRoomInitial(true),
+				m.MatchRoomRequiredState([]json.RawMessage{
 					encryptedRooms[2].getStateEvent("m.room.join_rules", ""),
 				}),
-				MatchRoomTimelineMostRecent(3, encryptedRooms[2].events),
+				m.MatchRoomTimelineMostRecent(3, encryptedRooms[2].events),
 			},
 			// overlapping with DM rooms
 			encryptedRoomIDs[3]: {
-				MatchRoomInitial(true),
-				MatchRoomRequiredState([]json.RawMessage{
+				m.MatchRoomInitial(true),
+				m.MatchRoomRequiredState([]json.RawMessage{
 					encryptedRooms[3].getStateEvent("m.room.join_rules", ""),
 					encryptedRooms[3].getStateEvent("m.room.power_levels", ""),
 				}),
-				MatchRoomTimelineMostRecent(3, encryptedRooms[3].events),
+				m.MatchRoomTimelineMostRecent(3, encryptedRooms[3].events),
 			},
 			encryptedRoomIDs[4]: {
-				MatchRoomInitial(true),
-				MatchRoomRequiredState([]json.RawMessage{
+				m.MatchRoomInitial(true),
+				m.MatchRoomRequiredState([]json.RawMessage{
 					encryptedRooms[4].getStateEvent("m.room.join_rules", ""),
 					encryptedRooms[4].getStateEvent("m.room.power_levels", ""),
 				}),
-				MatchRoomTimelineMostRecent(3, encryptedRooms[4].events),
+				m.MatchRoomTimelineMostRecent(3, encryptedRooms[4].events),
 			},
 			// DM only rooms
 			dmRoomIDs[2]: {
-				MatchRoomInitial(true),
-				MatchRoomRequiredState([]json.RawMessage{
+				m.MatchRoomInitial(true),
+				m.MatchRoomRequiredState([]json.RawMessage{
 					dmRooms[2].getStateEvent("m.room.power_levels", ""),
 				}),
-				MatchRoomTimelineMostRecent(1, dmRooms[2].events),
+				m.MatchRoomTimelineMostRecent(1, dmRooms[2].events),
 			},
 			dmRoomIDs[3]: {
-				MatchRoomInitial(true),
-				MatchRoomRequiredState([]json.RawMessage{
+				m.MatchRoomInitial(true),
+				m.MatchRoomRequiredState([]json.RawMessage{
 					dmRooms[3].getStateEvent("m.room.power_levels", ""),
 				}),
-				MatchRoomTimelineMostRecent(1, dmRooms[3].events),
+				m.MatchRoomTimelineMostRecent(1, dmRooms[3].events),
 			},
 			dmRoomIDs[4]: {
-				MatchRoomInitial(true),
-				MatchRoomRequiredState([]json.RawMessage{
+				m.MatchRoomInitial(true),
+				m.MatchRoomRequiredState([]json.RawMessage{
 					dmRooms[4].getStateEvent("m.room.power_levels", ""),
 				}),
-				MatchRoomTimelineMostRecent(1, dmRooms[4].events),
+				m.MatchRoomTimelineMostRecent(1, dmRooms[4].events),
 			},
 		}),
 	)
@@ -560,7 +561,7 @@ func checkRoomList(res *sync3.Response, op *sync3.ResponseOpRange, wantRooms []r
 	for i := range wantRooms {
 		err := wantRooms[i].MatchRoom(op.RoomIDs[i],
 			res.Rooms[op.RoomIDs[i]],
-			MatchRoomTimelineMostRecent(1, wantRooms[i].events),
+			m.MatchRoomTimelineMostRecent(1, wantRooms[i].events),
 		)
 		if err != nil {
 			return err

@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/matrix-org/sync-v3/sync3"
+	"github.com/matrix-org/sync-v3/testutils/m"
 )
 
 // Test that filters work initially and whilst streamed.
@@ -45,17 +46,17 @@ func TestFiltersEncryption(t *testing.T) {
 			},
 		},
 	})
-	MatchResponse(t, res, MatchLists(
-		[]listMatcher{
-			MatchV3Count(1),
-			MatchV3Ops(
-				MatchV3SyncOp(0, 1, []string{encryptedRoomID}),
+	m.MatchResponse(t, res, m.MatchLists(
+		[]m.ListMatcher{
+			m.MatchV3Count(1),
+			m.MatchV3Ops(
+				m.MatchV3SyncOp(0, 1, []string{encryptedRoomID}),
 			),
 		},
-		[]listMatcher{
-			MatchV3Count(1),
-			MatchV3Ops(
-				MatchV3SyncOp(0, 1, []string{unencryptedRoomID}),
+		[]m.ListMatcher{
+			m.MatchV3Count(1),
+			m.MatchV3Ops(
+				m.MatchV3SyncOp(0, 1, []string{unencryptedRoomID}),
 			),
 		},
 	))
@@ -80,17 +81,17 @@ func TestFiltersEncryption(t *testing.T) {
 			},
 		},
 	})
-	MatchResponse(t, res, MatchLists(
-		[]listMatcher{
-			MatchV3Count(2),
-			MatchV3Ops(
-				MatchV3DeleteOp(1), MatchV3InsertOp(0, unencryptedRoomID),
+	m.MatchResponse(t, res, m.MatchLists(
+		[]m.ListMatcher{
+			m.MatchV3Count(2),
+			m.MatchV3Ops(
+				m.MatchV3DeleteOp(1), m.MatchV3InsertOp(0, unencryptedRoomID),
 			),
 		},
-		[]listMatcher{
-			MatchV3Count(0),
-			MatchV3Ops(
-				MatchV3DeleteOp(0),
+		[]m.ListMatcher{
+			m.MatchV3Count(0),
+			m.MatchV3Ops(
+				m.MatchV3DeleteOp(0),
 			),
 		},
 	))
@@ -106,11 +107,11 @@ func TestFiltersEncryption(t *testing.T) {
 			},
 		}},
 	})
-	MatchResponse(t, res, MatchLists(
-		[]listMatcher{
-			MatchV3Count(2),
-			MatchV3Ops(
-				MatchV3SyncOp(0, 1, []string{unencryptedRoomID, encryptedRoomID}),
+	m.MatchResponse(t, res, m.MatchLists(
+		[]m.ListMatcher{
+			m.MatchV3Count(2),
+			m.MatchV3Ops(
+				m.MatchV3SyncOp(0, 1, []string{unencryptedRoomID, encryptedRoomID}),
 			),
 		},
 	))
@@ -126,9 +127,9 @@ func TestFiltersEncryption(t *testing.T) {
 			},
 		}},
 	})
-	MatchResponse(t, res, MatchLists(
-		[]listMatcher{
-			MatchV3Count(0),
+	m.MatchResponse(t, res, m.MatchLists(
+		[]m.ListMatcher{
+			m.MatchV3Count(0),
 		},
 	))
 }
@@ -167,15 +168,15 @@ func TestFiltersInvite(t *testing.T) {
 			},
 		},
 	})
-	MatchResponse(t, res, MatchLists(
-		[]listMatcher{
-			MatchV3Count(1),
-			MatchV3Ops(
-				MatchV3SyncOp(0, 20, []string{roomID}),
+	m.MatchResponse(t, res, m.MatchLists(
+		[]m.ListMatcher{
+			m.MatchV3Count(1),
+			m.MatchV3Ops(
+				m.MatchV3SyncOp(0, 20, []string{roomID}),
 			),
 		},
-		[]listMatcher{
-			MatchV3Count(0),
+		[]m.ListMatcher{
+			m.MatchV3Count(0),
 		},
 	))
 
@@ -200,17 +201,17 @@ func TestFiltersInvite(t *testing.T) {
 		},
 	})
 	// the room swaps from the invite list to the join list
-	MatchResponse(t, res, MatchLists(
-		[]listMatcher{
-			MatchV3Count(0),
-			MatchV3Ops(
-				MatchV3DeleteOp(0),
+	m.MatchResponse(t, res, m.MatchLists(
+		[]m.ListMatcher{
+			m.MatchV3Count(0),
+			m.MatchV3Ops(
+				m.MatchV3DeleteOp(0),
 			),
 		},
-		[]listMatcher{
-			MatchV3Count(1),
-			MatchV3Ops(
-				MatchV3InsertOp(0, roomID),
+		[]m.ListMatcher{
+			m.MatchV3Count(1),
+			m.MatchV3Ops(
+				m.MatchV3InsertOp(0, roomID),
 			),
 		},
 	))
@@ -264,11 +265,11 @@ func TestFiltersRoomName(t *testing.T) {
 			},
 		},
 	})
-	MatchResponse(t, res, MatchLists(
-		[]listMatcher{
-			MatchV3Count(5),
-			MatchV3Ops(
-				MatchV3SyncOp(0, 20, []string{
+	m.MatchResponse(t, res, m.MatchLists(
+		[]m.ListMatcher{
+			m.MatchV3Count(5),
+			m.MatchV3Ops(
+				m.MatchV3SyncOp(0, 20, []string{
 					ridApple, ridPear, ridOrange, ridPineapple, ridBanana,
 				}, true),
 			),
@@ -288,12 +289,12 @@ func TestFiltersRoomName(t *testing.T) {
 			},
 		},
 	})
-	MatchResponse(t, res, MatchLists(
-		[]listMatcher{
-			MatchV3Count(2),
-			MatchV3Ops(
-				MatchV3InvalidateOp(0, 20),
-				MatchV3SyncOp(0, 20, []string{
+	m.MatchResponse(t, res, m.MatchLists(
+		[]m.ListMatcher{
+			m.MatchV3Count(2),
+			m.MatchV3Ops(
+				m.MatchV3InvalidateOp(0, 20),
+				m.MatchV3SyncOp(0, 20, []string{
 					ridApple, ridPineapple,
 				}, true),
 			),
