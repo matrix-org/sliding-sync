@@ -114,6 +114,7 @@ type SyncReq struct {
 
 type CSAPI struct {
 	UserID      string
+	Localpart   string
 	AccessToken string
 	DeviceID    string
 	BaseURL     string
