@@ -27,7 +27,9 @@ func TestRoomsTable(t *testing.T) {
 		t.Fatalf("Failed to start txn: %s", err)
 	}
 	roomID := "!1:localhost"
-	if err = table.UpdateCurrentAfterSnapshotID(txn, roomID, 100, 1, false, false); err != nil {
+	if err = table.Upsert(txn, RoomInfo{
+		ID: roomID,
+	}, 100, 1); err != nil {
 		t.Fatalf("Failed to update current snapshot ID: %s", err)
 	}
 
@@ -41,7 +43,9 @@ func TestRoomsTable(t *testing.T) {
 	}
 
 	// Update to 101
-	if table.UpdateCurrentAfterSnapshotID(txn, roomID, 101, 1, false, false); err != nil {
+	if table.Upsert(txn, RoomInfo{
+		ID: roomID,
+	}, 101, 1); err != nil {
 		t.Fatalf("Failed to update current snapshot ID: %s", err)
 	}
 
@@ -56,12 +60,17 @@ func TestRoomsTable(t *testing.T) {
 
 	// add encrypted room
 	encryptedRoomID := "!encrypted:localhost"
-	if err = table.UpdateCurrentAfterSnapshotID(txn, encryptedRoomID, 200, 1, true, false); err != nil {
+	if err = table.Upsert(txn, RoomInfo{
+		ID:          encryptedRoomID,
+		IsEncrypted: true,
+	}, 200, 1); err != nil {
 		t.Fatalf("Failed to update current snapshot ID: %s", err)
 	}
 	// add unencrypted room
 	unencryptedRoomID := "!unencrypted:localhost"
-	if err = table.UpdateCurrentAfterSnapshotID(txn, unencryptedRoomID, 201, 1, false, false); err != nil {
+	if err = table.Upsert(txn, RoomInfo{
+		ID: unencryptedRoomID,
+	}, 201, 1); err != nil {
 		t.Fatalf("Failed to update current snapshot ID: %s", err)
 	}
 	// verify encrypted status
@@ -73,7 +82,10 @@ func TestRoomsTable(t *testing.T) {
 	}
 
 	// now flip unencrypted room
-	if err = table.UpdateCurrentAfterSnapshotID(txn, unencryptedRoomID, 202, 1, true, false); err != nil {
+	if err = table.Upsert(txn, RoomInfo{
+		ID:          unencryptedRoomID,
+		IsEncrypted: true,
+	}, 202, 1); err != nil {
 		t.Fatalf("Failed to update current snapshot ID: %s", err)
 	}
 	// re-verify encrypted status
@@ -82,7 +94,10 @@ func TestRoomsTable(t *testing.T) {
 	}
 
 	// now trying to flip it to false does nothing to the encrypted status, but does update the snapshot id
-	if err = table.UpdateCurrentAfterSnapshotID(txn, unencryptedRoomID, 203, 1, false, false); err != nil {
+	if err = table.Upsert(txn, RoomInfo{
+		ID:          unencryptedRoomID,
+		IsEncrypted: false,
+	}, 203, 1); err != nil {
 		t.Fatalf("Failed to update current snapshot ID: %s", err)
 	}
 	id, err = table.CurrentAfterSnapshotID(txn, unencryptedRoomID)
@@ -99,12 +114,18 @@ func TestRoomsTable(t *testing.T) {
 	// now check tombstones in the same way (TODO: dedupe)
 	// add tombstoned room
 	tombstonedRoomID := "!tombstoned:localhost"
-	if err = table.UpdateCurrentAfterSnapshotID(txn, tombstonedRoomID, 300, 1001, false, true); err != nil {
+	if err = table.Upsert(txn, RoomInfo{
+		ID:           tombstonedRoomID,
+		IsTombstoned: true,
+	}, 300, 1001); err != nil {
 		t.Fatalf("Failed to update current snapshot ID: %s", err)
 	}
 	// add untombstoned room
 	untombstonedRoomID := "!untombstoned:localhost"
-	if err = table.UpdateCurrentAfterSnapshotID(txn, untombstonedRoomID, 301, 1002, false, false); err != nil {
+	if err = table.Upsert(txn, RoomInfo{
+		ID:           untombstonedRoomID,
+		IsTombstoned: false,
+	}, 301, 1002); err != nil {
 		t.Fatalf("Failed to update current snapshot ID: %s", err)
 	}
 	// verify tombstone status
@@ -116,7 +137,10 @@ func TestRoomsTable(t *testing.T) {
 	}
 
 	// now flip tombstone
-	if err = table.UpdateCurrentAfterSnapshotID(txn, untombstonedRoomID, 302, 1003, false, true); err != nil {
+	if err = table.Upsert(txn, RoomInfo{
+		ID:           untombstonedRoomID,
+		IsTombstoned: true,
+	}, 302, 1003); err != nil {
 		t.Fatalf("Failed to update current snapshot ID: %s", err)
 	}
 	// re-verify tombstone status
@@ -126,8 +150,30 @@ func TestRoomsTable(t *testing.T) {
 
 	// check encrypted and tombstone can be set at once
 	both := "!both:localhost"
-	if err = table.UpdateCurrentAfterSnapshotID(txn, both, 303, 1, true, true); err != nil {
+	if err = table.Upsert(txn, RoomInfo{
+		ID:           both,
+		IsEncrypted:  true,
+		IsTombstoned: true,
+	}, 303, 1); err != nil {
 		t.Fatalf("Failed to update current snapshot ID: %s", err)
+	}
+	info := getRoomInfo(t, txn, table, both)
+	if !info.IsEncrypted || !info.IsTombstoned {
+		t.Fatalf("Setting both tombstone/encrypted did not work, got: %+v", info)
+	}
+
+	// check type can be set
+	spaceRoomID := "!space:localhost"
+	spaceType := "m.space"
+	if err = table.Upsert(txn, RoomInfo{
+		ID:   spaceRoomID,
+		Type: &spaceType,
+	}, 999, 1); err != nil {
+		t.Fatalf("Failed to update current snapshot ID: %s", err)
+	}
+	info = getRoomInfo(t, txn, table, spaceRoomID)
+	if info.Type == nil || *info.Type != spaceType {
+		t.Fatalf("set type to %s but retrieved %v", spaceType, info.Type)
 	}
 
 	// check LatestNIDs

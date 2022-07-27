@@ -38,24 +38,36 @@ func (t *RoomsTable) SelectRoomInfos(txn *sqlx.Tx) (infos []RoomInfo, err error)
 	return
 }
 
-func (t *RoomsTable) UpdateCurrentAfterSnapshotID(txn *sqlx.Tx, roomID string, snapshotID, latestNID int64, isEncrypted, isTombstoned bool) (err error) {
+func (t *RoomsTable) Upsert(txn *sqlx.Tx, info RoomInfo, snapshotID, latestNID int64) (err error) {
 	// This is a bit of a wonky query to ensure that you cannot set is_encrypted=false after it has been
 	// set to true.
 	cols := "room_id, current_snapshot_id, latest_nid"
 	vals := "$1, $2, $3"
 	doUpdate := "ON CONFLICT (room_id) DO UPDATE SET current_snapshot_id = $2, latest_nid = $3"
-	if isEncrypted {
+	if info.IsEncrypted {
 		cols += ", is_encrypted"
 		vals += ", true"
 		doUpdate += ", is_encrypted = true" // flip it to true.
 	}
-	if isTombstoned {
+	if info.IsTombstoned {
 		cols += ", is_tombstoned"
 		vals += ", true"
 		doUpdate += ", is_tombstoned = true" // flip it to true.
 	}
+	if info.Type != nil {
+		// by default we insert NULL which means no type, so we only need to set it when this is non-nil.
+		// This also neatly handles the case where we issue updates which will have the Type set to nil
+		// as we don't pull out the create event for incremental updates.
+		cols += ", type"
+		vals += ", $4"
+		doUpdate += ", type = $4" // should never be updated but you never know...
+	}
 	insertQuery := fmt.Sprintf(`INSERT INTO syncv3_rooms(%s) VALUES(%s) %s`, cols, vals, doUpdate)
-	_, err = txn.Exec(insertQuery, roomID, snapshotID, latestNID)
+	if info.Type == nil {
+		_, err = txn.Exec(insertQuery, info.ID, snapshotID, latestNID)
+	} else {
+		_, err = txn.Exec(insertQuery, info.ID, snapshotID, latestNID, info.Type)
+	}
 	return err
 }
 

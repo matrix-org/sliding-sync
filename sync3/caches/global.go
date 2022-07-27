@@ -200,6 +200,13 @@ func (c *GlobalCache) OnNewEvent(
 		if ed.StateKey != nil && *ed.StateKey == "" {
 			metadata.CanonicalAlias = ed.Content.Get("alias").Str
 		}
+	case "m.room.create":
+		if ed.StateKey != nil && *ed.StateKey == "" {
+			roomType := ed.Content.Get("type")
+			if roomType.Exists() && roomType.Type == gjson.String {
+				metadata.RoomType = &roomType.Str
+			}
+		}
 	case "m.room.member":
 		if ed.StateKey != nil {
 			membership := ed.Content.Get("membership").Str

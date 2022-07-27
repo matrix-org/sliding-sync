@@ -90,9 +90,17 @@ func (r *testRig) SetupV2RoomsForUser(t *testing.T, v2UserID string, f FlushEnum
 					t, userID,
 				))
 			}
+			var stateBlock []json.RawMessage
+			if descriptor.RoomType != "" {
+				stateBlock = createRoomStateWithCreateEvent(t, creator,
+					testutils.NewStateEvent(t, "m.room.create", "", creator, map[string]interface{}{"creator": creator, "type": descriptor.RoomType}, testutils.WithTimestamp(timestamp)),
+					timestamp)
+			} else {
+				stateBlock = createRoomState(t, creator, timestamp)
+			}
 			joinRooms[roomID] = sync2.SyncV2JoinResponse{
 				State: sync2.EventsResponse{
-					Events: createRoomState(t, creator, timestamp),
+					Events: stateBlock,
 				},
 				Timeline: sync2.TimelineResponse{
 					Events: timeline,
@@ -167,6 +175,7 @@ type RoomDescriptor struct {
 	InvitedUsers       []string
 	MembershipOfSyncer string
 	IsEncrypted        bool
+	RoomType           string
 	Name               string
 }
 

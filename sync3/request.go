@@ -416,12 +416,14 @@ func (r *Request) GetTimelineLimit(listIndex int, roomID string) int64 {
 }
 
 type RequestFilters struct {
-	Spaces         []string `json:"spaces"`
-	IsDM           *bool    `json:"is_dm"`
-	IsEncrypted    *bool    `json:"is_encrypted"`
-	IsInvite       *bool    `json:"is_invite"`
-	IsTombstoned   *bool    `json:"is_tombstoned"`
-	RoomNameFilter string   `json:"room_name_like"`
+	Spaces         []string  `json:"spaces"`
+	IsDM           *bool     `json:"is_dm"`
+	IsEncrypted    *bool     `json:"is_encrypted"`
+	IsInvite       *bool     `json:"is_invite"`
+	IsTombstoned   *bool     `json:"is_tombstoned"`
+	RoomTypes      []*string `json:"room_types"`
+	NotRoomTypes   []*string `json:"not_room_types"`
+	RoomNameFilter string    `json:"room_name_like"`
 	// TODO options to control which events should be live-streamed e.g not_types, types from sync v2
 }
 
@@ -440,6 +442,14 @@ func (rf *RequestFilters) Include(r *RoomConnMetadata) bool {
 	}
 	if rf.RoomNameFilter != "" && !strings.Contains(strings.ToLower(internal.CalculateRoomName(&r.RoomMetadata, 5)), strings.ToLower(rf.RoomNameFilter)) {
 		return false
+	}
+	// read not_room_types first as it takes priority
+	if nullableStringExists(rf.NotRoomTypes, r.RoomType) {
+		return false // explicitly excluded
+	}
+	if len(rf.RoomTypes) > 0 {
+		// either explicitly included or implicitly excluded
+		return nullableStringExists(rf.RoomTypes, r.RoomType)
 	}
 	return true
 }
@@ -499,4 +509,23 @@ func (rs RoomSubscription) RequiredStateMap() *internal.RequiredStateMap {
 		}
 	}
 	return internal.NewRequiredStateMap(eventTypesWithWildcardStateKeys, stateKeysForWildcardEventType, result, false)
+}
+
+// helper to find `null` or literal string matches
+func nullableStringExists(arr []*string, input *string) bool {
+	if len(arr) == 0 {
+		return false
+	}
+	for _, a := range arr {
+		if input == nil {
+			if a == nil {
+				return true
+			}
+		} else {
+			if a != nil && *a == *input {
+				return true
+			}
+		}
+	}
+	return false
 }

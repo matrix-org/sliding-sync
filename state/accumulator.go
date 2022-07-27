@@ -183,15 +183,22 @@ func (a *Accumulator) Initialise(roomID string, state []json.RawMessage) (bool, 
 			}
 		}
 
-		// check for an encryption event
+		// check for metadata events
 		isEncrypted := false
 		isTombstoned := false
+		var roomType *string
 		for _, ev := range events {
 			if ev.Type == "m.room.encryption" && ev.StateKey == "" {
 				isEncrypted = true
 			}
 			if ev.Type == "m.room.tombstone" && ev.StateKey == "" {
 				isTombstoned = true
+			}
+			if ev.Type == "m.room.create" && ev.StateKey == "" {
+				contentType := gjson.GetBytes(ev.JSON, "content.type")
+				if contentType.Exists() && contentType.Type == gjson.String {
+					roomType = &contentType.Str
+				}
 			}
 		}
 
@@ -200,7 +207,12 @@ func (a *Accumulator) Initialise(roomID string, state []json.RawMessage) (bool, 
 		// will have an associated state snapshot ID on the event.
 
 		// Set the snapshot ID as the current state
-		return a.roomsTable.UpdateCurrentAfterSnapshotID(txn, roomID, snapshot.SnapshotID, latestNID, isEncrypted, isTombstoned)
+		return a.roomsTable.Upsert(txn, RoomInfo{
+			ID:           roomID,
+			IsEncrypted:  isEncrypted,
+			IsTombstoned: isTombstoned,
+			Type:         roomType,
+		}, snapshot.SnapshotID, latestNID)
 	})
 	return addedEvents, err
 }
@@ -296,6 +308,7 @@ func (a *Accumulator) Accumulate(roomID string, prevBatch string, timeline []jso
 		// check if these new events enable encryption / tombstone the room
 		isEncrypted := false
 		isTombstoned := false
+		var roomType *string
 
 		// Given a timeline of [E1, E2, S3, E4, S5, S6, E7] (E=message event, S=state event)
 		// And a prior state snapshot of SNAP0 then the BEFORE snapshot IDs are grouped as:
@@ -351,6 +364,13 @@ func (a *Accumulator) Accumulate(roomID string, prevBatch string, timeline []jso
 				if newStateEvent.Type == "m.room.tombstone" && newStateEvent.StateKey == "" {
 					isTombstoned = true
 				}
+				// handle cases where the create event is in the timeline
+				if newStateEvent.Type == "m.room.create" && newStateEvent.StateKey == "" {
+					contentType := ev.JSON.Get("content.type")
+					if contentType.Exists() && contentType.Type == gjson.String {
+						roomType = &contentType.Str
+					}
+				}
 			}
 			if err := a.eventsTable.UpdateBeforeSnapshotID(txn, ev.NID, beforeSnapID, replacesNID); err != nil {
 				return err
@@ -358,7 +378,12 @@ func (a *Accumulator) Accumulate(roomID string, prevBatch string, timeline []jso
 		}
 
 		// the last fetched snapshot ID is the current one
-		if err = a.roomsTable.UpdateCurrentAfterSnapshotID(txn, roomID, snapID, latestNID, isEncrypted, isTombstoned); err != nil {
+		if err = a.roomsTable.Upsert(txn, RoomInfo{
+			ID:           roomID,
+			IsEncrypted:  isEncrypted,
+			IsTombstoned: isTombstoned,
+			Type:         roomType,
+		}, snapID, latestNID); err != nil {
 			return fmt.Errorf("failed to UpdateCurrentSnapshotID to %d: %w", snapID, err)
 		}
 		return nil

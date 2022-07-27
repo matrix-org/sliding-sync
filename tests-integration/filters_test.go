@@ -301,3 +301,109 @@ func TestFiltersRoomName(t *testing.T) {
 		},
 	))
 }
+
+func TestFiltersRoomTypes(t *testing.T) {
+	rig := NewTestRig(t)
+	defer rig.Finish()
+	spaceRoomID := "!spaceRoomID:localhost"
+	otherRoomID := "!other:localhost"
+	roomID := "!roomID:localhost"
+	roomType := "m.space"
+	otherRoomType := "something_else"
+	invalid := "lalalalaala"
+	rig.SetupV2RoomsForUser(t, alice, NoFlush, map[string]RoomDescriptor{
+		spaceRoomID: {
+			MembershipOfSyncer: "join",
+			RoomType:           roomType,
+		},
+		roomID: {
+			MembershipOfSyncer: "join",
+		},
+		otherRoomID: {
+			MembershipOfSyncer: "join",
+			RoomType:           otherRoomType,
+		},
+	})
+	aliceToken := rig.Token(alice)
+
+	// make sure the room_types and not_room_types filters works
+	res := rig.V3.mustDoV3Request(t, aliceToken, sync3.Request{
+		Lists: []sync3.RequestList{
+			// returns spaceRoomID only due to direct match
+			{
+				Ranges: sync3.SliceRanges{
+					[2]int64{0, 20}, // all rooms
+				},
+				Filters: &sync3.RequestFilters{
+					RoomTypes: []*string{&roomType},
+				},
+			},
+			// returns roomID only due to direct match (null = things without a room type)
+			{
+				Ranges: sync3.SliceRanges{
+					[2]int64{0, 20}, // all rooms
+				},
+				Filters: &sync3.RequestFilters{
+					RoomTypes: []*string{nil},
+				},
+			},
+			// returns roomID and otherRoomID due to exclusion
+			{
+				Ranges: sync3.SliceRanges{
+					[2]int64{0, 20}, // all rooms
+				},
+				Filters: &sync3.RequestFilters{
+					NotRoomTypes: []*string{&roomType},
+				},
+			},
+			// returns otherRoomID due to otherRoomType inclusive, roomType is excluded (override)
+			{
+				Ranges: sync3.SliceRanges{
+					[2]int64{0, 20}, // all rooms
+				},
+				Filters: &sync3.RequestFilters{
+					RoomTypes:    []*string{&roomType, &otherRoomType},
+					NotRoomTypes: []*string{&roomType},
+				},
+			},
+			// returns no rooms as filtered room type isn't set on any rooms
+			{
+				Ranges: sync3.SliceRanges{
+					[2]int64{0, 20}, // all rooms
+				},
+				Filters: &sync3.RequestFilters{
+					RoomTypes: []*string{&invalid},
+				},
+			},
+			// returns all rooms as filtered not room type isn't set on any rooms
+			{
+				Ranges: sync3.SliceRanges{
+					[2]int64{0, 20}, // all rooms
+				},
+				Filters: &sync3.RequestFilters{
+					NotRoomTypes: []*string{&invalid},
+				},
+			},
+		},
+	})
+	m.MatchResponse(t, res, m.MatchLists(
+		[]m.ListMatcher{
+			m.MatchV3Count(1), m.MatchV3Ops(m.MatchV3SyncOp(0, 20, []string{spaceRoomID})),
+		},
+		[]m.ListMatcher{
+			m.MatchV3Count(1), m.MatchV3Ops(m.MatchV3SyncOp(0, 20, []string{roomID})),
+		},
+		[]m.ListMatcher{
+			m.MatchV3Count(2), m.MatchV3Ops(m.MatchV3SyncOp(0, 20, []string{roomID, otherRoomID}, true)),
+		},
+		[]m.ListMatcher{
+			m.MatchV3Count(1), m.MatchV3Ops(m.MatchV3SyncOp(0, 20, []string{otherRoomID})),
+		},
+		[]m.ListMatcher{
+			m.MatchV3Count(0),
+		},
+		[]m.ListMatcher{
+			m.MatchV3Count(3), m.MatchV3Ops(m.MatchV3SyncOp(0, 20, []string{roomID, otherRoomID, spaceRoomID}, true)),
+		},
+	))
+}
