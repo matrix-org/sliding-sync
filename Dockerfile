@@ -16,4 +16,4 @@ ENV SYNCV3_BINDADDR="0.0.0.0:8008"
 EXPOSE 8008
 
 WORKDIR /usr/bin
-ENTRYPOINT /usr/bin/syncv3 -server "${SYNCV3_SERVER}" -db "${SYNCV3_DB}" -port "${SYNCV3_BINDADDR}"
+ENTRYPOINT /usr/bin/syncv3
