@@ -224,28 +224,18 @@ func (s *Storage) MetadataForAllRooms() (map[string]internal.RoomMetadata, error
 	}
 
 	tx := s.accumulator.db.MustBegin()
-	encrypted, err := s.accumulator.roomsTable.SelectEncryptedRooms(tx)
+	roomInfos, err := s.accumulator.roomsTable.SelectRoomInfos(tx)
 	tx.Commit()
 	if err != nil {
-		return nil, fmt.Errorf("failed to select encrypted rooms: %s", err)
+		return nil, fmt.Errorf("failed to select room infos: %s", err)
 	}
-	for _, encryptedRoomID := range encrypted {
-		metadata := result[encryptedRoomID]
-		metadata.Encrypted = true
-		result[encryptedRoomID] = metadata
+	for _, info := range roomInfos {
+		metadata := result[info.ID]
+		metadata.Encrypted = info.IsEncrypted
+		metadata.Tombstoned = info.IsTombstoned
+		metadata.RoomType = info.Type
+		result[info.ID] = metadata
 	}
-	tx = s.accumulator.db.MustBegin()
-	tombstoned, err := s.accumulator.roomsTable.SelectTombstonedRooms(tx)
-	tx.Commit()
-	if err != nil {
-		return nil, fmt.Errorf("failed to select tombstoned rooms: %s", err)
-	}
-	for _, tombstonedRoomID := range tombstoned {
-		metadata := result[tombstonedRoomID]
-		metadata.Tombstoned = true
-		result[tombstonedRoomID] = metadata
-	}
-
 	return result, nil
 }
 

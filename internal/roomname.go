@@ -16,6 +16,7 @@ type RoomMetadata struct {
 	LastMessageTimestamp uint64
 	Encrypted            bool
 	Tombstoned           bool
+	RoomType             *string
 }
 
 func (m *RoomMetadata) RemoveHero(userID string) {

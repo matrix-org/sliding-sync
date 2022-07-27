@@ -8,6 +8,13 @@ import (
 	"github.com/lib/pq"
 )
 
+type RoomInfo struct {
+	ID           string  `db:"room_id"`
+	IsEncrypted  bool    `db:"is_encrypted"`
+	IsTombstoned bool    `db:"is_tombstoned"`
+	Type         *string `db:"type"`
+}
+
 // RoomsTable stores the current snapshot for a room.
 type RoomsTable struct{}
 
@@ -18,20 +25,16 @@ func NewRoomsTable(db *sqlx.DB) *RoomsTable {
 		room_id TEXT NOT NULL PRIMARY KEY,
 		current_snapshot_id BIGINT NOT NULL,
 		is_encrypted BOOL NOT NULL DEFAULT FALSE,
-		is_tombstoned BOOL NOT NULL DEFAULT FALSE
+		is_tombstoned BOOL NOT NULL DEFAULT FALSE,
+		latest_nid BIGINT NOT NULL DEFAULT 0,
+		type TEXT -- nullable
 	);
-	ALTER TABLE syncv3_rooms ADD COLUMN IF NOT EXISTS latest_nid BIGINT NOT NULL DEFAULT 0;
 	`)
 	return &RoomsTable{}
 }
 
-func (t *RoomsTable) SelectTombstonedRooms(txn *sqlx.Tx) (tombstones []string, err error) {
-	err = txn.Select(&tombstones, `SELECT room_id FROM syncv3_rooms WHERE is_tombstoned=TRUE`)
-	return
-}
-
-func (t *RoomsTable) SelectEncryptedRooms(txn *sqlx.Tx) (encrypted []string, err error) {
-	err = txn.Select(&encrypted, `SELECT room_id FROM syncv3_rooms WHERE is_encrypted=TRUE`)
+func (t *RoomsTable) SelectRoomInfos(txn *sqlx.Tx) (infos []RoomInfo, err error) {
+	err = txn.Select(&infos, `SELECT room_id, is_encrypted, is_tombstoned, type FROM syncv3_rooms`)
 	return
 }
 

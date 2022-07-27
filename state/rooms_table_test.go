@@ -1,8 +1,6 @@
 package state
 
 import (
-	"reflect"
-	"sort"
 	"testing"
 
 	"github.com/jmoiron/sqlx"
@@ -67,16 +65,21 @@ func TestRoomsTable(t *testing.T) {
 		t.Fatalf("Failed to update current snapshot ID: %s", err)
 	}
 	// verify encrypted status
-	encryptedRoomIDs, err := table.SelectEncryptedRooms(txn)
-	assertStringsAnyOrder(t, txn, encryptedRoomIDs, []string{encryptedRoomID}, err)
+	if !getRoomInfo(t, txn, table, encryptedRoomID).IsEncrypted {
+		t.Fatalf("room %s is not encrypted when it should be", encryptedRoomID)
+	}
+	if getRoomInfo(t, txn, table, unencryptedRoomID).IsEncrypted {
+		t.Fatalf("room %s is encrypted when it should not be", unencryptedRoomID)
+	}
 
 	// now flip unencrypted room
 	if err = table.UpdateCurrentAfterSnapshotID(txn, unencryptedRoomID, 202, 1, true, false); err != nil {
 		t.Fatalf("Failed to update current snapshot ID: %s", err)
 	}
 	// re-verify encrypted status
-	encryptedRoomIDs, err = table.SelectEncryptedRooms(txn)
-	assertStringsAnyOrder(t, txn, encryptedRoomIDs, []string{encryptedRoomID, unencryptedRoomID}, err)
+	if !getRoomInfo(t, txn, table, unencryptedRoomID).IsEncrypted {
+		t.Fatalf("room %s is not encrypted when it should be", unencryptedRoomID)
+	}
 
 	// now trying to flip it to false does nothing to the encrypted status, but does update the snapshot id
 	if err = table.UpdateCurrentAfterSnapshotID(txn, unencryptedRoomID, 203, 1, false, false); err != nil {
@@ -89,8 +92,9 @@ func TestRoomsTable(t *testing.T) {
 	if id != 203 {
 		t.Fatalf("current snapshot id mismatch, got %d want %d", id, 203)
 	}
-	encryptedRoomIDs, err = table.SelectEncryptedRooms(txn)
-	assertStringsAnyOrder(t, txn, encryptedRoomIDs, []string{encryptedRoomID, unencryptedRoomID}, err)
+	if !getRoomInfo(t, txn, table, unencryptedRoomID).IsEncrypted {
+		t.Fatalf("room %s is not encrypted when it should be", unencryptedRoomID)
+	}
 
 	// now check tombstones in the same way (TODO: dedupe)
 	// add tombstoned room
@@ -104,16 +108,21 @@ func TestRoomsTable(t *testing.T) {
 		t.Fatalf("Failed to update current snapshot ID: %s", err)
 	}
 	// verify tombstone status
-	tombstoneRoomIDs, err := table.SelectTombstonedRooms(txn)
-	assertStringsAnyOrder(t, txn, tombstoneRoomIDs, []string{tombstonedRoomID}, err)
+	if getRoomInfo(t, txn, table, untombstonedRoomID).IsTombstoned {
+		t.Fatalf("room %s is tombstoned when it shouldn't be", untombstonedRoomID)
+	}
+	if !getRoomInfo(t, txn, table, tombstonedRoomID).IsTombstoned {
+		t.Fatalf("room %s is not tombstoned when it should be", tombstonedRoomID)
+	}
 
 	// now flip tombstone
 	if err = table.UpdateCurrentAfterSnapshotID(txn, untombstonedRoomID, 302, 1003, false, true); err != nil {
 		t.Fatalf("Failed to update current snapshot ID: %s", err)
 	}
 	// re-verify tombstone status
-	tombstoneRoomIDs, err = table.SelectTombstonedRooms(txn)
-	assertStringsAnyOrder(t, txn, tombstoneRoomIDs, []string{tombstonedRoomID, untombstonedRoomID}, err)
+	if !getRoomInfo(t, txn, table, untombstonedRoomID).IsTombstoned {
+		t.Fatalf("room %s is not tombstoned when it should be", untombstonedRoomID)
+	}
 
 	// check encrypted and tombstone can be set at once
 	both := "!both:localhost"
@@ -132,17 +141,19 @@ func TestRoomsTable(t *testing.T) {
 	if nidMap[untombstonedRoomID] != 1003 { // not 1002 as it should be updated by the subsequent update
 		t.Errorf("LatestNIDs: got %v want 1003", nidMap[untombstonedRoomID])
 	}
-
 }
 
-func assertStringsAnyOrder(t *testing.T, txn *sqlx.Tx, gots, wants []string, err error) {
+func getRoomInfo(t *testing.T, txn *sqlx.Tx, table *RoomsTable, roomID string) RoomInfo {
 	t.Helper()
+	infos, err := table.SelectRoomInfos(txn)
 	if err != nil {
-		t.Fatalf("Failed to SelectEncryptedRooms: %s", err)
+		t.Fatalf("SelectRoomInfos: %s", err)
 	}
-	sort.Strings(gots)
-	sort.Strings(wants)
-	if !reflect.DeepEqual(gots, wants) {
-		t.Errorf("assertStringsAnyOrder: got %v want %v", gots, wants)
+	for _, inf := range infos {
+		if inf.ID == roomID {
+			return inf
+		}
 	}
+	t.Fatalf("failed to find RoomInfo for room ID: %s", roomID)
+	return RoomInfo{}
 }
