@@ -97,8 +97,7 @@ func (t *EventTable) SelectHighestNID() (highest int64, err error) {
 	return
 }
 
-// Insert events into the event table. Returns the number of rows added. If the number of rows is >0,
-// and the list of events is in sync stream order, it can be inferred that the last element(s) are new.
+// Insert events into the event table. Returns a map of event ID to NID for new events only.
 func (t *EventTable) Insert(txn *sqlx.Tx, events []Event, checkFields bool) (map[string]int, error) {
 	if checkFields {
 		ensureFieldsSet(events)
@@ -114,6 +113,7 @@ func (t *EventTable) Insert(txn *sqlx.Tx, events []Event, checkFields bool) (map
 		if err != nil {
 			return nil, err
 		}
+		defer rows.Close()
 		for rows.Next() {
 			if err := rows.Scan(&eventID, &eventNID); err != nil {
 				return nil, err
