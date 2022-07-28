@@ -232,6 +232,7 @@ func TestHandleSpaceUpdates(t *testing.T) {
 	table := NewSpacesTable(db)
 
 	parentRoomID := "!parent"
+	parentRoomID2 := "!parent2"
 	childRoomID1 := "!child1"
 	childRoomID2 := "!child2"
 
@@ -413,6 +414,45 @@ func TestHandleSpaceUpdates(t *testing.T) {
 		Parent:   parentRoomID,
 		Child:    childRoomID2,
 		Relation: RelationMSpaceParent,
+	}})
+
+	// can get multiple spaces
+	e9 := Event{
+		JSON: serialise(t, map[string]interface{}{
+			"event_id":  "$9",
+			"type":      "m.space.child",
+			"room_id":   parentRoomID2,
+			"state_key": childRoomID2,
+			"content": map[string]interface{}{
+				"via":      []string{"example.com"},
+				"ordering": "qwerty2",
+			},
+		}),
+	}
+	noError(t, e9.ensureFieldsSetOnEvent())
+	noError(t, table.HandleSpaceUpdates(txn, []Event{e9}))
+	result, err = table.SelectChildren(txn, []string{parentRoomID, parentRoomID2})
+	noError(t, err)
+	matchAnyOrder(t, result[parentRoomID], []SpaceRelation{{
+		Parent:   parentRoomID,
+		Child:    childRoomID1,
+		Relation: RelationMSpaceChild,
+		Ordering: "abc",
+	}, {
+		Parent:   parentRoomID,
+		Child:    childRoomID2,
+		Relation: RelationMSpaceChild,
+		Ordering: "qwerty",
+	}, {
+		Parent:   parentRoomID,
+		Child:    childRoomID2,
+		Relation: RelationMSpaceParent,
+	}})
+	matchAnyOrder(t, result[parentRoomID2], []SpaceRelation{{
+		Parent:   parentRoomID2,
+		Child:    childRoomID2,
+		Relation: RelationMSpaceChild,
+		Ordering: "qwerty2",
 	}})
 
 }
