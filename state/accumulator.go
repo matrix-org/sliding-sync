@@ -100,10 +100,6 @@ func (a *Accumulator) calculateNewSnapshot(old StrippedEvents, new Event) (Strip
 	return result, replacedNID, nil
 }
 
-func (a *Accumulator) handleSpaceUpdates(txn *sqlx.Tx, roomID string, events []Event) error {
-	return nil // TODO
-}
-
 // roomInfoDelta calculates what the RoomInfo should be given a list of new events.
 func (a *Accumulator) roomInfoDelta(roomID string, events []Event) RoomInfo {
 	isEncrypted := false
@@ -216,8 +212,8 @@ func (a *Accumulator) Initialise(roomID string, state []json.RawMessage) (bool, 
 			}
 		}
 
-		if err = a.handleSpaceUpdates(txn, roomID, events); err != nil {
-			return fmt.Errorf("handleSpaceUpdates: %s", err)
+		if err = a.spacesTable.HandleSpaceUpdates(txn, events); err != nil {
+			return fmt.Errorf("HandleSpaceUpdates: %s", err)
 		}
 
 		// check for metadata events
@@ -257,7 +253,7 @@ func (a *Accumulator) Accumulate(roomID string, prevBatch string, timeline []jso
 				JSON:   timeline[i],
 				RoomID: roomID,
 			}
-			if err := ensureFieldsSetOnEvent(&e); err != nil {
+			if err := e.ensureFieldsSetOnEvent(); err != nil {
 				return fmt.Errorf("event malformed: %s", err)
 			}
 			if _, ok := seenEvents[e.ID]; ok {
@@ -352,8 +348,8 @@ func (a *Accumulator) Accumulate(roomID string, prevBatch string, timeline []jso
 			}
 		}
 
-		if err = a.handleSpaceUpdates(txn, roomID, newEvents); err != nil {
-			return fmt.Errorf("handleSpaceUpdates: %s", err)
+		if err = a.spacesTable.HandleSpaceUpdates(txn, newEvents); err != nil {
+			return fmt.Errorf("HandleSpaceUpdates: %s", err)
 		}
 
 		// the last fetched snapshot ID is the current one

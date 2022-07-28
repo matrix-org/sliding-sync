@@ -37,6 +37,49 @@ type Event struct {
 	JSON []byte `db:"event"`
 }
 
+func (ev *Event) ensureFieldsSetOnEvent() error {
+	evJSON := gjson.ParseBytes(ev.JSON)
+	if ev.RoomID == "" {
+		roomIDResult := evJSON.Get("room_id")
+		if !roomIDResult.Exists() || roomIDResult.Str == "" {
+			return fmt.Errorf("event missing room_id key")
+		}
+		ev.RoomID = roomIDResult.Str
+	}
+	if ev.ID == "" {
+		eventIDResult := evJSON.Get("event_id")
+		if !eventIDResult.Exists() || eventIDResult.Str == "" {
+			return fmt.Errorf("event JSON missing event_id key")
+		}
+		ev.ID = eventIDResult.Str
+	}
+	if ev.Type == "" {
+		typeResult := evJSON.Get("type")
+		if !typeResult.Exists() || typeResult.Str == "" {
+			return fmt.Errorf("event JSON missing type key")
+		}
+		ev.Type = typeResult.Str
+	}
+	if ev.StateKey == "" {
+		// valid for this to be "" on message events
+		ev.StateKey = evJSON.Get("state_key").Str
+	}
+	if ev.StateKey != "" && ev.Type == "m.room.member" {
+		membershipResult := evJSON.Get("content.membership")
+		if !membershipResult.Exists() || membershipResult.Str == "" {
+			return fmt.Errorf("membership event missing membership key")
+		}
+		// genuine changes mark the membership event
+		if internal.IsMembershipChange(evJSON) {
+			ev.Membership = membershipResult.Str
+		} else {
+			// profile changes have _ prefix.
+			ev.Membership = "_" + membershipResult.Str
+		}
+	}
+	return nil
+}
+
 type StrippedEvents []Event
 
 func (se StrippedEvents) NIDs() (result []int64) {
@@ -332,54 +375,11 @@ func (c EventChunker) Subslice(i, j int) sqlutil.Chunker {
 	return c[i:j]
 }
 
-func ensureFieldsSetOnEvent(ev *Event) error {
-	evJSON := gjson.ParseBytes(ev.JSON)
-	if ev.RoomID == "" {
-		roomIDResult := evJSON.Get("room_id")
-		if !roomIDResult.Exists() || roomIDResult.Str == "" {
-			return fmt.Errorf("event missing room_id key")
-		}
-		ev.RoomID = roomIDResult.Str
-	}
-	if ev.ID == "" {
-		eventIDResult := evJSON.Get("event_id")
-		if !eventIDResult.Exists() || eventIDResult.Str == "" {
-			return fmt.Errorf("event JSON missing event_id key")
-		}
-		ev.ID = eventIDResult.Str
-	}
-	if ev.Type == "" {
-		typeResult := evJSON.Get("type")
-		if !typeResult.Exists() || typeResult.Str == "" {
-			return fmt.Errorf("event JSON missing type key")
-		}
-		ev.Type = typeResult.Str
-	}
-	if ev.StateKey == "" {
-		// valid for this to be "" on message events
-		ev.StateKey = evJSON.Get("state_key").Str
-	}
-	if ev.StateKey != "" && ev.Type == "m.room.member" {
-		membershipResult := evJSON.Get("content.membership")
-		if !membershipResult.Exists() || membershipResult.Str == "" {
-			return fmt.Errorf("membership event missing membership key")
-		}
-		// genuine changes mark the membership event
-		if internal.IsMembershipChange(evJSON) {
-			ev.Membership = membershipResult.Str
-		} else {
-			// profile changes have _ prefix.
-			ev.Membership = "_" + membershipResult.Str
-		}
-	}
-	return nil
-}
-
 func ensureFieldsSet(events []Event) error {
 	// ensure fields are set
 	for i := range events {
 		ev := events[i]
-		if err := ensureFieldsSetOnEvent(&ev); err != nil {
+		if err := ev.ensureFieldsSetOnEvent(); err != nil {
 			return err
 		}
 		events[i] = ev
