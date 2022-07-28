@@ -381,6 +381,40 @@ func TestHandleSpaceUpdates(t *testing.T) {
 		Child:    childRoomID2,
 		Relation: RelationMSpaceParent,
 	}})
+
+	// can upsert ordering value
+	e8 := Event{
+		JSON: serialise(t, map[string]interface{}{
+			"event_id":  "$8",
+			"type":      "m.space.child",
+			"room_id":   parentRoomID,
+			"state_key": childRoomID2,
+			"content": map[string]interface{}{
+				"via":      []string{"example.com"},
+				"ordering": "qwerty",
+			},
+		}),
+	}
+	noError(t, e8.ensureFieldsSetOnEvent())
+	noError(t, table.HandleSpaceUpdates(txn, []Event{e8}))
+	result, err = table.SelectChildren(txn, []string{parentRoomID})
+	noError(t, err)
+	matchAnyOrder(t, result[parentRoomID], []SpaceRelation{{
+		Parent:   parentRoomID,
+		Child:    childRoomID1,
+		Relation: RelationMSpaceChild,
+		Ordering: "abc",
+	}, {
+		Parent:   parentRoomID,
+		Child:    childRoomID2,
+		Relation: RelationMSpaceChild,
+		Ordering: "qwerty",
+	}, {
+		Parent:   parentRoomID,
+		Child:    childRoomID2,
+		Relation: RelationMSpaceParent,
+	}})
+
 }
 
 func serialise(t *testing.T, j map[string]interface{}) json.RawMessage {
