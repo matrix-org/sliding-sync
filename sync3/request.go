@@ -451,6 +451,15 @@ func (rf *RequestFilters) Include(r *RoomConnMetadata) bool {
 		// either explicitly included or implicitly excluded
 		return nullableStringExists(rf.RoomTypes, r.RoomType)
 	}
+	if len(rf.Spaces) > 0 {
+		// ensure this room is a member of one of these spaces
+		for _, s := range rf.Spaces {
+			if _, ok := r.UserRoomData.Spaces[s]; ok {
+				return true
+			}
+		}
+		return false
+	}
 	return true
 }
 

@@ -195,7 +195,7 @@ func TestStorageJoinedRoomsAfterPosition(t *testing.T) {
 	// also test MetadataForAllRooms
 	roomIDToMetadata, err := store.MetadataForAllRooms()
 	if err != nil {
-		t.Fatalf("HeroInfoForAllRooms: %s", err)
+		t.Fatalf("MetadataForAllRooms: %s", err)
 	}
 	wantHeroInfos := map[string]internal.RoomMetadata{
 		joinedRoomID: {

@@ -66,6 +66,10 @@ func NewGlobalCache(store *state.Storage) *GlobalCache {
 	}
 }
 
+func (c *GlobalCache) OnRegistered(_ int64) error {
+	return nil
+}
+
 // Load the current room metadata for the given room IDs. Races unless you call this in a dispatcher loop.
 // Always returns copies of the room metadata so ownership can be passed to other threads.
 // Keeps the ordering of the room IDs given.
@@ -205,6 +209,15 @@ func (c *GlobalCache) OnNewEvent(
 			roomType := ed.Content.Get("type")
 			if roomType.Exists() && roomType.Type == gjson.String {
 				metadata.RoomType = &roomType.Str
+			}
+		}
+	case "m.space.child": // only track space child changes for now, not parents
+		if ed.StateKey != nil {
+			isDeleted := ed.Content.Get("via").IsArray()
+			if isDeleted {
+				delete(metadata.ChildSpaceRooms, *ed.StateKey)
+			} else {
+				metadata.ChildSpaceRooms[*ed.StateKey] = struct{}{}
 			}
 		}
 	case "m.room.member":

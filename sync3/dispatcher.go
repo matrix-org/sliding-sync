@@ -19,6 +19,7 @@ const DispatcherAllUsers = "-"
 
 type Receiver interface {
 	OnNewEvent(event *caches.EventData)
+	OnRegistered(latestPos int64) error
 }
 
 // Dispatches live events to caches
@@ -26,6 +27,7 @@ type Dispatcher struct {
 	jrt              *JoinedRoomsTracker
 	userToReceiver   map[string]Receiver
 	userToReceiverMu *sync.RWMutex
+	latestPos        int64
 }
 
 func NewDispatcher() *Dispatcher {
@@ -33,6 +35,7 @@ func NewDispatcher() *Dispatcher {
 		jrt:              NewJoinedRoomsTracker(),
 		userToReceiver:   make(map[string]Receiver),
 		userToReceiverMu: &sync.RWMutex{},
+		latestPos:        0,
 	}
 }
 
@@ -58,13 +61,14 @@ func (d *Dispatcher) Unregister(userID string) {
 	delete(d.userToReceiver, userID)
 }
 
-func (d *Dispatcher) Register(userID string, r Receiver) {
+func (d *Dispatcher) Register(userID string, r Receiver) error {
 	d.userToReceiverMu.Lock()
 	defer d.userToReceiverMu.Unlock()
 	if _, ok := d.userToReceiver[userID]; ok {
 		logger.Warn().Str("user", userID).Msg("Dispatcher.Register: receiver already registered")
 	}
 	d.userToReceiver[userID] = r
+	return r.OnRegistered(d.latestPos)
 }
 
 // Called by v2 pollers when we receive new events
@@ -79,6 +83,11 @@ func (d *Dispatcher) OnNewEvents(
 func (d *Dispatcher) onNewEvent(
 	roomID string, event json.RawMessage, latestPos int64,
 ) {
+	// keep track of the latest position. We don't care about it, but Receivers do if they want
+	// to atomically load from the global cache and receive updates.
+	if latestPos > d.latestPos {
+		d.latestPos = latestPos
+	}
 	// parse the event to pull out fields we care about
 	var stateKey *string
 	ev := gjson.ParseBytes(event)

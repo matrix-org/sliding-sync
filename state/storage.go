@@ -45,6 +45,7 @@ func NewStorage(postgresURI string) *Storage {
 		roomsTable:    NewRoomsTable(db),
 		eventsTable:   NewEventTable(db),
 		snapshotTable: NewSnapshotsTable(db),
+		spacesTable:   NewSpacesTable(db),
 		entityName:    "server",
 	}
 	return &Storage{
@@ -224,17 +225,37 @@ func (s *Storage) MetadataForAllRooms() (map[string]internal.RoomMetadata, error
 	}
 
 	tx := s.accumulator.db.MustBegin()
+	defer tx.Commit()
 	roomInfos, err := s.accumulator.roomsTable.SelectRoomInfos(tx)
-	tx.Commit()
 	if err != nil {
 		return nil, fmt.Errorf("failed to select room infos: %s", err)
 	}
+	var spaceRoomIDs []string
 	for _, info := range roomInfos {
 		metadata := result[info.ID]
 		metadata.Encrypted = info.IsEncrypted
 		metadata.Tombstoned = info.IsTombstoned
 		metadata.RoomType = info.Type
 		result[info.ID] = metadata
+		if metadata.IsSpace() {
+			spaceRoomIDs = append(spaceRoomIDs, info.ID)
+		}
+	}
+
+	// select space children
+	spaceRoomToRelations, err := s.accumulator.spacesTable.SelectChildren(tx, spaceRoomIDs)
+	if err != nil {
+		return nil, fmt.Errorf("failed to select space children: %s", err)
+	}
+	for roomID, relations := range spaceRoomToRelations {
+		metadata := result[roomID]
+		metadata.ChildSpaceRooms = make(map[string]struct{}, len(relations))
+		for _, r := range relations {
+			// For now we only honour child state events, but we store all the mappings just in case.
+			if r.Relation == RelationMSpaceChild {
+				metadata.ChildSpaceRooms[r.Child] = struct{}{}
+			}
+		}
 	}
 	return result, nil
 }

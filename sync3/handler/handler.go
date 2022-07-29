@@ -355,8 +355,13 @@ func (h *SyncLiveHandler) userCache(userID string) (*caches.UserCache, error) {
 	actualUC, loaded := h.userCaches.LoadOrStore(userID, uc)
 	uc = actualUC.(*caches.UserCache)
 	if !loaded { // we actually inserted the cache, so register with the dispatcher.
-		h.Dispatcher.Register(userID, uc)
+		if err = h.Dispatcher.Register(userID, uc); err != nil {
+			h.Dispatcher.Unregister(userID)
+			h.userCaches.Delete(userID)
+			return nil, fmt.Errorf("failed to register user cache with dispatcher: %s", err)
+		}
 	}
+
 	return uc, nil
 }
 

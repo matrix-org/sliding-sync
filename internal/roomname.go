@@ -17,6 +17,8 @@ type RoomMetadata struct {
 	Encrypted            bool
 	Tombstoned           bool
 	RoomType             *string
+	// if this room is a space, which rooms are m.space.child state events. This is the same for all users hence is global.
+	ChildSpaceRooms map[string]struct{}
 }
 
 func (m *RoomMetadata) RemoveHero(userID string) {
@@ -26,6 +28,10 @@ func (m *RoomMetadata) RemoveHero(userID string) {
 			return
 		}
 	}
+}
+
+func (m *RoomMetadata) IsSpace() bool {
+	return m.RoomType != nil && *m.RoomType == "m.space"
 }
 
 type Hero struct {

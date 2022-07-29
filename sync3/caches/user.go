@@ -2,6 +2,7 @@ package caches
 
 import (
 	"encoding/json"
+	"fmt"
 	"sync"
 
 	lru "github.com/hashicorp/golang-lru"
@@ -27,12 +28,16 @@ type UserRoomData struct {
 	PrevBatches *lru.Cache
 	Timeline    []json.RawMessage
 	Invite      *InviteData
+	// Set of spaces this room is a part of, from the perspective of this user. This is NOT global room data
+	// as the set of spaces may be different for different users.
+	Spaces map[string]struct{}
 }
 
 func NewUserRoomData() UserRoomData {
 	l, _ := lru.New(64) // 64 tokens least recently used evicted
 	return UserRoomData{
 		PrevBatches: l,
+		Spaces:      make(map[string]struct{}),
 	}
 }
 
@@ -161,6 +166,7 @@ type UserCache struct {
 	store                *state.Storage
 	globalCache          *GlobalCache
 	txnIDs               sync2.TransactionIDFetcher
+	latestPos            int64
 }
 
 func NewUserCache(userID string, globalCache *GlobalCache, store *state.Storage, txnIDs sync2.TransactionIDFetcher) *UserCache {
@@ -190,6 +196,58 @@ func (c *UserCache) Unsubscribe(id int) {
 	c.listenersMu.Lock()
 	defer c.listenersMu.Unlock()
 	delete(c.listeners, id)
+}
+
+func (c *UserCache) OnRegistered(_ int64) error {
+	// select all spaces the user is a part of to seed the cache correctly. This has to be done in
+	// the OnRegistered callback which has locking guarantees. This is why...
+	latestPos, joinedRooms, err := c.globalCache.LoadJoinedRooms(c.UserID)
+	if err != nil {
+		return fmt.Errorf("failed to load joined rooms: %s", err)
+	}
+
+	// There is a race condition here as the global cache is a snapshot in time. If you register
+	// AFTER querying the global cache, this happens:
+	//
+	//  UserCache         GlobalCache        Dispatcher
+	//    |-loadJoinedRooms->|                    |
+	//    |<----pos,rooms----|                    |
+	//    |                  |<---new space event-|  THIS UPDATE GOES MISSING
+	//    |--------------------register---------->|
+	//
+	// If you register BEFORE querying the global cache, this happens:
+	//
+	//  UserCache         GlobalCache        Dispatcher
+	//    |--------------------register---------->|
+	//    |                  |<---new space event-|  THIS UPDATE GET PROCESSED TWICE
+	//    |<--------new space event---------------|
+	//    |-loadJoinedRooms->|                    |
+	//    |<----pos,rooms----|                    |
+	//
+	// Ideally we would atomically register with the dispatcher and assign the position in the stream so we can
+	// guarantee exactly once processing, which is why we do this in the OnRegistered callback:
+	//
+	//  UserCache         GlobalCache        Dispatcher
+	//    |--------------------register---------->| LOCK
+	//    |<------OnRegistered(pos)---------------|
+	//    |-loadJoinedRooms->|                    |
+	//    |<----pos,rooms----|                    |
+	//    |                  |                    | UNLOCK
+	//    |                  |<---new space event-|  GENUINE NEW EVENT
+	//    |<--------new space event---------------|
+	//
+
+	// the db pos is _always_ equal to or ahead of the dispatcher, so we will discard any position less than this.
+	c.latestPos = latestPos
+	for _, room := range joinedRooms {
+		// inject space children events
+		if room.IsSpace() {
+			for childRoomID := range room.ChildSpaceRooms {
+				c.OnSpaceUpdate(room.RoomID, childRoomID, false, 0)
+			}
+		}
+	}
+	return nil
 }
 
 func (c *UserCache) LazyLoadTimelines(loadPos int64, roomIDs []string, maxTimelineEvents int) map[string]UserRoomData {
@@ -391,6 +449,22 @@ func (c *UserCache) OnUnreadCounts(roomID string, highlightCount, notifCount *in
 	}
 }
 
+func (c *UserCache) OnSpaceUpdate(parentRoomID, childRoomID string, isDeleted bool, latestPos int64) {
+	if latestPos > 0 && latestPos < c.latestPos {
+		// this is possible when we race when seeding spaces on init with live data
+		return
+	}
+	childURD := c.LoadRoomData(childRoomID)
+	if isDeleted {
+		delete(childURD.Spaces, parentRoomID)
+	} else {
+		childURD.Spaces[parentRoomID] = struct{}{}
+	}
+	c.roomToDataMu.Lock()
+	c.roomToData[childRoomID] = childURD
+	c.roomToDataMu.Unlock()
+}
+
 func (c *UserCache) OnNewEvent(eventData *EventData) {
 	// add this to our tracked timelines if we have one
 	urd := c.LoadRoomData(eventData.RoomID)
@@ -404,6 +478,12 @@ func (c *UserCache) OnNewEvent(eventData *EventData) {
 		if !urd.IsInvite {
 			urd.HighlightCount = 0
 		}
+	}
+	if eventData.EventType == "m.space.child" && eventData.StateKey != nil {
+		// the children for a space we are a part of have changed. Find the room that was affected and update our cache value.
+		childRoomID := *eventData.StateKey
+		isDeleted := !eventData.Content.Get("via").IsArray()
+		c.OnSpaceUpdate(eventData.RoomID, childRoomID, isDeleted, eventData.LatestPos)
 	}
 	c.roomToDataMu.Lock()
 	c.roomToData[eventData.RoomID] = urd
