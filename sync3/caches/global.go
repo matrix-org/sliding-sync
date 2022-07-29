@@ -111,7 +111,6 @@ func (c *GlobalCache) LoadJoinedRooms(userID string) (pos int64, joinedRooms map
 	}
 	// TODO: no guarantee that this state is the same as latest unless called in a dispatcher loop
 	rooms := c.LoadRooms(joinedRoomIDs...)
-
 	return initialLoadPosition, rooms, nil
 }
 
@@ -184,7 +183,8 @@ func (c *GlobalCache) OnNewEvent(
 	metadata := c.roomIDToMetadata[ed.RoomID]
 	if metadata == nil {
 		metadata = &internal.RoomMetadata{
-			RoomID: ed.RoomID,
+			RoomID:          ed.RoomID,
+			ChildSpaceRooms: make(map[string]struct{}),
 		}
 	}
 	switch ed.EventType {
@@ -213,7 +213,7 @@ func (c *GlobalCache) OnNewEvent(
 		}
 	case "m.space.child": // only track space child changes for now, not parents
 		if ed.StateKey != nil {
-			isDeleted := ed.Content.Get("via").IsArray()
+			isDeleted := !ed.Content.Get("via").IsArray()
 			if isDeleted {
 				delete(metadata.ChildSpaceRooms, *ed.StateKey)
 			} else {

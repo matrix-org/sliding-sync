@@ -256,6 +256,7 @@ func (s *Storage) MetadataForAllRooms() (map[string]internal.RoomMetadata, error
 				metadata.ChildSpaceRooms[r.Child] = struct{}{}
 			}
 		}
+		result[roomID] = metadata
 	}
 	return result, nil
 }

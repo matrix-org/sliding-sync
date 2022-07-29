@@ -489,6 +489,12 @@ func (c *UserCache) OnNewEvent(eventData *EventData) {
 	c.roomToData[eventData.RoomID] = urd
 	c.roomToDataMu.Unlock()
 
+	if eventData.LatestPos == 0 {
+		// this event is from a state block in v2, do not tell user caches else we can churn them
+		// for events which they don't care about (they never appear in the timeline section)
+		return
+	}
+
 	roomUpdate := &RoomEventUpdate{
 		RoomUpdate: c.newRoomUpdate(eventData.RoomID),
 		EventData:  eventData,

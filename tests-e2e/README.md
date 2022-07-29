@@ -25,5 +25,7 @@ Keep it running. Then run the tests on a fresh postgres database (run in the roo
 export SYNCV3_SERVER=http://localhost:8008
 export SYNCV3_DB="user=$(whoami) dbname=syncv3_test sslmode=disable"
 export SYNCV3_SECRET=secret
-(dropdb syncv3_test && createdb syncv3_test && cd tests-e2e && ./run-tests.sh)
+(dropdb syncv3_test && createdb syncv3_test && cd tests-e2e && ./run-tests.sh .)
 ```
+
+All args after `run-test.sh` are passed to `go test` so you can set timeouts/run individual tests that way, hence the `.` in the above example as that translated to `go test .`.

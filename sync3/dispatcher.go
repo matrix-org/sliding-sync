@@ -139,12 +139,6 @@ func (d *Dispatcher) onNewEvent(
 		listener.OnNewEvent(ed)
 	}
 
-	if latestPos == 0 {
-		// this event is from a state block in v2, do not tell user caches else we can churn them
-		// for events which they don't care about (they never appear in the timeline section)
-		return
-	}
-
 	// per-user listeners
 	notifiedTarget := false
 	for _, userID := range userIDs {

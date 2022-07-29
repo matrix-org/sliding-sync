@@ -99,7 +99,7 @@ jobs:
             - name: Build
               run: go build ./cmd/syncv3
             - name: Run end-to-end tests
-              run: (cd tests-e2e && ./run-tests.sh)
+              run: (cd tests-e2e && ./run-tests.sh .)
               env:
                   SYNCV3_DB: user=postgres dbname=syncv3 sslmode=disable password=postgres host=localhost
                   SYNCV3_SERVER: http://localhost:8008
