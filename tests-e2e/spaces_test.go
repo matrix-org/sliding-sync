@@ -33,19 +33,15 @@ func TestSpacesFilter(t *testing.T) {
 	})
 	roomB := alice.CreateRoom(t, map[string]interface{}{
 		"preset": "public_chat",
-		"type":   "m.space",
 	})
 	roomC := alice.CreateRoom(t, map[string]interface{}{
 		"preset": "public_chat",
-		"type":   "m.space",
 	})
 	roomE := alice.CreateRoom(t, map[string]interface{}{
 		"preset": "public_chat",
-		"type":   "m.space",
 	})
 	roomF := alice.CreateRoom(t, map[string]interface{}{
 		"preset": "public_chat",
-		"type":   "m.space",
 	})
 	t.Logf("A: %s B: %s C: %s D: %s E: %s F: %s", parentA, roomB, roomC, parentD, roomE, roomF)
 	alice.SendEventSynced(t, parentA, Event{

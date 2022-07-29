@@ -150,6 +150,9 @@ func TestSecurityRoomSubscriptionLeak(t *testing.T) {
 		"preset": "private_chat",
 	})
 
+	// seed the proxy with alice's data
+	alice.SlidingSync(t, sync3.Request{})
+
 	// start sync streams for Eve, with a room subscription to alice's private room
 	eveRes := eve.SlidingSync(t, sync3.Request{
 		Lists: []sync3.RequestList{{
@@ -191,4 +194,113 @@ func TestSecurityRoomSubscriptionLeak(t *testing.T) {
 
 	// Assert that Eve doesn't see anything
 	m.MatchResponse(t, eveRes, m.MatchList(0, m.MatchV3Count(1)), m.MatchNoV3Ops(), m.MatchRoomSubscriptionsStrict(map[string][]m.RoomMatcher{}))
+}
+
+// Test that events do not leak via direct space subscriptions.
+// Rationale: Unlike sync v2, in v3 clients can subscribe to any room ID they want as a space.
+// We need to make sure that the user is allowed to see events in that room before delivering those events.
+// Attack vector:
+//  - Alice is using the sync server and is in space !A with room !B.
+//  - Eve works out the room ID !A (this isn't sensitive information).
+//  - Eve starts using the sync server and makes a request for !A as the space filter.
+//  - Ensure that Eve does not see any events in !A or !B.
+func TestSecuritySpaceDataLeak(t *testing.T) {
+	alice := registerNewUser(t)
+	eve := registerNewUser(t)
+
+	roomA := alice.CreateRoom(t, map[string]interface{}{
+		"preset": "public_chat",
+		"creation_content": map[string]string{
+			"type": "m.space",
+		},
+	})
+	roomB := alice.CreateRoom(t, map[string]interface{}{
+		"preset": "private_chat",
+	})
+	alice.SendEventSynced(t, roomA, Event{
+		Type:     "m.space.child",
+		StateKey: &roomB,
+		Content: map[string]interface{}{
+			"via": []string{"example.com"},
+		},
+	})
+	// seed the proxy with alice's data
+	alice.SlidingSync(t, sync3.Request{})
+
+	// ensure eve sees nothing
+	res := eve.SlidingSync(t, sync3.Request{
+		Lists: []sync3.RequestList{
+			{
+				Ranges: [][2]int64{{0, 20}},
+				Filters: &sync3.RequestFilters{
+					Spaces: []string{roomA},
+				},
+			},
+		},
+	})
+	m.MatchResponse(t, res, m.MatchNoV3Ops(), m.MatchRoomSubscriptionsStrict(nil))
+}
+
+// Test that knowledge of a room being in a hidden space does not leak via direct space subscriptions.
+// Rationale: Unlike sync v2, in v3 clients can subscribe to any room ID they want as a space.
+// We need to make sure that if a user is in a room in multiple spaces (only 1 of them the user is joined to)
+// then they cannot see the room if they apply a filter for a parent space they are not joined to.
+// Attack vector:
+//  - Alice is using the sync server and is in space !A with room !B.
+//  - Eve is using the sync server and is in space !C with room !B as well.
+//  - Eve works out the room ID !A (this isn't sensitive information).
+//  - Eve starts using the sync server and makes a request for !A as the space filter.
+//  - Ensure that Eve does not see anything, even though they are joined to !B and the proxy knows it.
+func TestSecuritySpaceMetadataLeak(t *testing.T) {
+	alice := registerNewUser(t)
+	eve := registerNewUser(t)
+
+	roomA := alice.CreateRoom(t, map[string]interface{}{
+		"preset": "public_chat",
+		"creation_content": map[string]string{
+			"type": "m.space",
+		},
+	})
+	roomB := alice.CreateRoom(t, map[string]interface{}{
+		"preset": "public_chat",
+	})
+	// Alice has a space A -> B
+	alice.SendEventSynced(t, roomA, Event{
+		Type:     "m.space.child",
+		StateKey: &roomB,
+		Content: map[string]interface{}{
+			"via": []string{"example.com"},
+		},
+	})
+	// seed the proxy with alice's data
+	alice.SlidingSync(t, sync3.Request{})
+
+	// now Eve also has a space... C -> B
+	roomC := eve.CreateRoom(t, map[string]interface{}{
+		"preset": "public_chat",
+		"creation_content": map[string]string{
+			"type": "m.space",
+		},
+	})
+	eve.JoinRoom(t, roomB, nil)
+	eve.SendEventSynced(t, roomC, Event{
+		Type:     "m.space.child",
+		StateKey: &roomB,
+		Content: map[string]interface{}{
+			"via": []string{"example.com"},
+		},
+	})
+
+	// ensure eve sees nothing
+	res := eve.SlidingSync(t, sync3.Request{
+		Lists: []sync3.RequestList{
+			{
+				Ranges: [][2]int64{{0, 20}},
+				Filters: &sync3.RequestFilters{
+					Spaces: []string{roomA},
+				},
+			},
+		},
+	})
+	m.MatchResponse(t, res, m.MatchNoV3Ops(), m.MatchRoomSubscriptionsStrict(nil))
 }
