@@ -243,7 +243,12 @@ func (c *UserCache) OnRegistered(_ int64) error {
 		// inject space children events
 		if room.IsSpace() {
 			for childRoomID := range room.ChildSpaceRooms {
-				c.OnSpaceUpdate(room.RoomID, childRoomID, false, 0)
+				c.OnSpaceUpdate(room.RoomID, childRoomID, false, &EventData{
+					RoomID:    room.RoomID,
+					EventType: "m.space.child",
+					StateKey:  &childRoomID,
+					LatestPos: 0,
+				})
 			}
 		}
 	}
@@ -449,8 +454,8 @@ func (c *UserCache) OnUnreadCounts(roomID string, highlightCount, notifCount *in
 	}
 }
 
-func (c *UserCache) OnSpaceUpdate(parentRoomID, childRoomID string, isDeleted bool, latestPos int64) {
-	if latestPos > 0 && latestPos < c.latestPos {
+func (c *UserCache) OnSpaceUpdate(parentRoomID, childRoomID string, isDeleted bool, eventData *EventData) {
+	if eventData.LatestPos > 0 && eventData.LatestPos < c.latestPos {
 		// this is possible when we race when seeding spaces on init with live data
 		return
 	}
@@ -463,6 +468,16 @@ func (c *UserCache) OnSpaceUpdate(parentRoomID, childRoomID string, isDeleted bo
 	c.roomToDataMu.Lock()
 	c.roomToData[childRoomID] = childURD
 	c.roomToDataMu.Unlock()
+
+	// now we need to notify connections for the _child_
+	roomUpdate := &RoomEventUpdate{
+		RoomUpdate: c.newRoomUpdate(childRoomID),
+		EventData:  eventData,
+	}
+
+	for _, l := range c.listeners {
+		l.OnRoomUpdate(roomUpdate)
+	}
 }
 
 func (c *UserCache) OnNewEvent(eventData *EventData) {
@@ -483,17 +498,11 @@ func (c *UserCache) OnNewEvent(eventData *EventData) {
 		// the children for a space we are a part of have changed. Find the room that was affected and update our cache value.
 		childRoomID := *eventData.StateKey
 		isDeleted := !eventData.Content.Get("via").IsArray()
-		c.OnSpaceUpdate(eventData.RoomID, childRoomID, isDeleted, eventData.LatestPos)
+		c.OnSpaceUpdate(eventData.RoomID, childRoomID, isDeleted, eventData)
 	}
 	c.roomToDataMu.Lock()
 	c.roomToData[eventData.RoomID] = urd
 	c.roomToDataMu.Unlock()
-
-	if eventData.LatestPos == 0 {
-		// this event is from a state block in v2, do not tell user caches else we can churn them
-		// for events which they don't care about (they never appear in the timeline section)
-		return
-	}
 
 	roomUpdate := &RoomEventUpdate{
 		RoomUpdate: c.newRoomUpdate(eventData.RoomID),

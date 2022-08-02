@@ -82,6 +82,7 @@ func NewSync3Handler(v2Client sync2.Client, postgresDBURI, secret string, debug 
 	if err != nil {
 		return nil, fmt.Errorf("could not get metadata for all rooms: %s", err)
 	}
+
 	if err := sh.GlobalCache.Startup(roomIDToMetadata); err != nil {
 		return nil, fmt.Errorf("failed to populate global cache: %s", err)
 	}

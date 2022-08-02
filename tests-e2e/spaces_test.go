@@ -65,6 +65,34 @@ func TestSpacesFilter(t *testing.T) {
 			"via": []string{"example.com"},
 		},
 	})
+
+	doSpacesListRequest := func(spaces, wantRoomIDs []string, pos *string, listMatchers ...m.ListMatcher) *sync3.Response {
+		var opts []RequestOpt
+		if pos != nil {
+			opts = append(opts, WithPos(*pos))
+		}
+		res := alice.SlidingSync(t, sync3.Request{
+			Lists: []sync3.RequestList{
+				{
+					Ranges: [][2]int64{{0, 20}},
+					Filters: &sync3.RequestFilters{
+						Spaces: spaces,
+					},
+				},
+			},
+		}, opts...)
+		m.MatchResponse(t, res, m.MatchList(0, listMatchers...))
+		return res
+	}
+
+	doInitialSpacesListRequest := func(spaces, wantRoomIDs []string) *sync3.Response {
+		return doSpacesListRequest(spaces, wantRoomIDs, nil, m.MatchV3Count(len(wantRoomIDs)), m.MatchV3Ops(
+			m.MatchV3SyncOp(
+				0, 20, wantRoomIDs, true,
+			),
+		))
+	}
+
 	//  spaces[A] => B,C
 	//  spaces[D] => E
 	//  spaces[A,B] => B,C,E
@@ -77,21 +105,7 @@ func TestSpacesFilter(t *testing.T) {
 		{Spaces: []string{parentA, parentD}, WantRoomIDs: []string{roomB, roomC, roomE}},
 	}
 	for _, tc := range testCases {
-		res := alice.SlidingSync(t, sync3.Request{
-			Lists: []sync3.RequestList{
-				{
-					Ranges: [][2]int64{{0, 20}},
-					Filters: &sync3.RequestFilters{
-						Spaces: tc.Spaces,
-					},
-				},
-			},
-		})
-		m.MatchResponse(t, res, m.MatchList(0, m.MatchV3Count(len(tc.WantRoomIDs)), m.MatchV3Ops(
-			m.MatchV3SyncOp(
-				0, 20, tc.WantRoomIDs, true,
-			),
-		)))
+		doInitialSpacesListRequest(tc.Spaces, tc.WantRoomIDs)
 	}
 
 	// now move F into D and re-query D
@@ -102,22 +116,7 @@ func TestSpacesFilter(t *testing.T) {
 			"via": []string{"example.com"},
 		},
 	})
-	res := alice.SlidingSync(t, sync3.Request{
-		Lists: []sync3.RequestList{
-			{
-				Ranges: [][2]int64{{0, 20}},
-				Filters: &sync3.RequestFilters{
-					Spaces: []string{parentD},
-				},
-			},
-		},
-	})
-	wantRooms := []string{roomF, roomE}
-	m.MatchResponse(t, res, m.MatchList(0, m.MatchV3Count(len(wantRooms)), m.MatchV3Ops(
-		m.MatchV3SyncOp(
-			0, 20, wantRooms, true,
-		),
-	)))
+	doInitialSpacesListRequest([]string{parentD}, []string{roomF, roomE})
 
 	// now remove B and re-query A
 	alice.SendEventSynced(t, parentA, Event{
@@ -125,21 +124,19 @@ func TestSpacesFilter(t *testing.T) {
 		StateKey: &roomB,
 		Content:  map[string]interface{}{},
 	})
-	res = alice.SlidingSync(t, sync3.Request{
-		Lists: []sync3.RequestList{
-			{
-				Ranges: [][2]int64{{0, 20}},
-				Filters: &sync3.RequestFilters{
-					Spaces: []string{parentA},
-				},
-			},
+	res := doInitialSpacesListRequest([]string{parentA}, []string{roomC})
+
+	// now live stream an update to ensure it gets added
+	alice.SendEventSynced(t, parentA, Event{
+		Type:     "m.space.child",
+		StateKey: &roomB,
+		Content: map[string]interface{}{
+			"via": []string{"example.com"},
 		},
 	})
-	wantRooms = []string{roomC}
-	m.MatchResponse(t, res, m.MatchList(0, m.MatchV3Count(len(wantRooms)), m.MatchV3Ops(
-		m.MatchV3SyncOp(
-			0, 20, wantRooms, true,
+	doSpacesListRequest([]string{parentA}, []string{roomB, roomC}, &res.Pos,
+		m.MatchV3Count(2), m.MatchV3Ops(
+			m.MatchV3InsertOp(1, roomB),
 		),
-	)))
-
+	)
 }
