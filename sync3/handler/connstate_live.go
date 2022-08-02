@@ -106,8 +106,11 @@ func (s *connStateLive) processLiveUpdate(ctx context.Context, up caches.Update,
 	internal.Assert("processLiveUpdate: response list length != internal list length", s.lists.Len() == len(response.Lists))
 	internal.Assert("processLiveUpdate: request list length != internal list length", s.lists.Len() == len(s.muxedReq.Lists))
 
+	// for initial rooms e.g a room comes into the window or a subscription now exists
+	builder := NewRoomsBuilder()
+
 	// do global connection updates (e.g adding/removing rooms from allRooms)
-	s.processGlobalUpdates(ctx, up)
+	s.processGlobalUpdates(ctx, builder, up)
 
 	// process room subscriptions
 	roomUpdate, ok := up.(*caches.RoomEventUpdate)
@@ -117,8 +120,6 @@ func (s *connStateLive) processLiveUpdate(ctx context.Context, up caches.Update,
 			hasUpdates = true
 		}
 	}
-
-	builder := NewRoomsBuilder() // for initial rooms e.g a room comes into the window
 
 	// do per-list updates (e.g resorting, adding/removing rooms which no longer match filter)
 	s.lists.ForEach(func(index int, list *sync3.FilteredSortableRooms) {
@@ -152,13 +153,23 @@ func (s *connStateLive) processLiveUpdate(ctx context.Context, up caches.Update,
 }
 
 // this function does any updates which apply to the connection, regardless of which lists/subs exist.
-func (s *connStateLive) processGlobalUpdates(ctx context.Context, up caches.Update) {
-	// TODO: joins and leave?
+func (s *connStateLive) processGlobalUpdates(ctx context.Context, builder *RoomsBuilder, up caches.Update) {
 	switch update := up.(type) {
 	case *caches.RoomEventUpdate:
 		// keep track of the latest stream position
 		if update.EventData.LatestPos > s.loadPosition {
 			s.loadPosition = update.EventData.LatestPos
+			// newly joined rooms will be flagged correctly in lists, but not subscriptions, so check them now.
+			if _, exists := s.roomSubscriptions[update.EventData.RoomID]; exists {
+				break // this room exists as a subscription so we'll handle it correctly
+			}
+			_, ok := s.muxedReq.RoomSubscriptions[update.EventData.RoomID]
+			if !ok {
+				break // the client does not want a subscription to this room, so do nothing.
+			}
+			// the user does not have a subscription to this room yet but wants one, try to add it.
+			// this will do join checks for us.
+			s.buildRoomSubscriptions(builder, []string{update.EventData.RoomID}, nil)
 		}
 	case *caches.InviteUpdate:
 		if update.Retired {
