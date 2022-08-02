@@ -66,7 +66,7 @@ func TestSpacesFilter(t *testing.T) {
 		},
 	})
 
-	doSpacesListRequest := func(spaces, wantRoomIDs []string, pos *string, listMatchers ...m.ListMatcher) *sync3.Response {
+	doSpacesListRequest := func(spaces []string, pos *string, listMatchers ...m.ListMatcher) *sync3.Response {
 		var opts []RequestOpt
 		if pos != nil {
 			opts = append(opts, WithPos(*pos))
@@ -86,7 +86,7 @@ func TestSpacesFilter(t *testing.T) {
 	}
 
 	doInitialSpacesListRequest := func(spaces, wantRoomIDs []string) *sync3.Response {
-		return doSpacesListRequest(spaces, wantRoomIDs, nil, m.MatchV3Count(len(wantRoomIDs)), m.MatchV3Ops(
+		return doSpacesListRequest(spaces, nil, m.MatchV3Count(len(wantRoomIDs)), m.MatchV3Ops(
 			m.MatchV3SyncOp(
 				0, 20, wantRoomIDs, true,
 			),
@@ -134,9 +134,17 @@ func TestSpacesFilter(t *testing.T) {
 			"via": []string{"example.com"},
 		},
 	})
-	doSpacesListRequest([]string{parentA}, []string{roomB, roomC}, &res.Pos,
+	res = doSpacesListRequest([]string{parentA}, &res.Pos,
 		m.MatchV3Count(2), m.MatchV3Ops(
 			m.MatchV3InsertOp(1, roomB),
+		),
+	)
+
+	// now completely change the space filter and ensure we see the right rooms
+	doSpacesListRequest([]string{parentD}, &res.Pos,
+		m.MatchV3Count(2), m.MatchV3Ops(
+			m.MatchV3InvalidateOp(0, 20),
+			m.MatchV3SyncOp(0, 20, []string{roomF, roomE}, true),
 		),
 	)
 }
