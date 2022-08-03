@@ -266,3 +266,49 @@ func TestConnectionTimeoutNotReset(t *testing.T) {
 	m.MatchResponse(t, res, m.MatchList(0, m.MatchV3Count(2)), m.MatchNoV3Ops())
 
 }
+
+// Test that the txn_id is echoed back
+func TestTxnIDEcho(t *testing.T) {
+	pqString := testutils.PrepareDBConnectionString()
+	// setup code
+	v2 := runTestV2Server(t)
+	v3 := runTestServer(t, v2, pqString)
+	defer v2.close()
+	defer v3.close()
+	roomID := "!a:localhost"
+	txnID := "hi"
+	v2.addAccount(alice, aliceToken)
+	v2.queueResponse(alice, sync2.SyncResponse{})
+
+	res := v3.mustDoV3Request(t, aliceToken, sync3.Request{
+		TxnID: txnID,
+		RoomSubscriptions: map[string]sync3.RoomSubscription{
+			roomID: {
+				TimelineLimit: 5,
+			},
+		},
+	})
+	m.MatchResponse(t, res, m.MatchTxnID(txnID))
+
+	txnID2 := "goodbyte"
+	res = v3.mustDoV3RequestWithPos(t, aliceToken, res.Pos, sync3.Request{
+		TxnID: txnID2,
+		RoomSubscriptions: map[string]sync3.RoomSubscription{
+			roomID: {
+				TimelineLimit: 15,
+			},
+		},
+	})
+	m.MatchResponse(t, res, m.MatchTxnID(txnID2))
+
+	// retry same request
+	res = v3.mustDoV3RequestWithPos(t, aliceToken, res.Pos, sync3.Request{
+		TxnID: txnID2,
+		RoomSubscriptions: map[string]sync3.RoomSubscription{
+			roomID: {
+				TimelineLimit: 15,
+			},
+		},
+	})
+	m.MatchResponse(t, res, m.MatchTxnID(txnID2))
+}

@@ -21,6 +21,7 @@ var (
 )
 
 type Request struct {
+	TxnID             string                      `json:"txn_id"`
 	Lists             []RequestList               `json:"lists"`
 	RoomSubscriptions map[string]RoomSubscription `json:"room_subscriptions"`
 	UnsubscribeRooms  []string                    `json:"unsubscribe_rooms"`

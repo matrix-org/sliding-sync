@@ -22,6 +22,7 @@ type Response struct {
 	Extensions extensions.Response `json:"extensions"`
 
 	Pos     string `json:"pos"`
+	TxnID   string `json:"txn_id,omitempty"`
 	Session string `json:"session_id,omitempty"`
 }
 
@@ -56,6 +57,7 @@ func (r *Response) UnmarshalJSON(b []byte) error {
 		Extensions extensions.Response `json:"extensions"`
 
 		Pos     string `json:"pos"`
+		TxnID   string `json:"txn_id,omitempty"`
 		Session string `json:"session_id,omitempty"`
 	}{}
 	if err := json.Unmarshal(b, &temporary); err != nil {
@@ -63,6 +65,7 @@ func (r *Response) UnmarshalJSON(b []byte) error {
 	}
 	r.Rooms = temporary.Rooms
 	r.Pos = temporary.Pos
+	r.TxnID = temporary.TxnID
 	r.Session = temporary.Session
 	r.Extensions = temporary.Extensions
 	r.Lists = make([]ResponseList, len(temporary.Lists))

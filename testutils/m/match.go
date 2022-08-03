@@ -387,6 +387,15 @@ func CheckList(i int, res sync3.ResponseList, matchers ...ListMatcher) error {
 	return nil
 }
 
+func MatchTxnID(txnID string) RespMatcher {
+	return func(res *sync3.Response) error {
+		if txnID != res.TxnID {
+			return fmt.Errorf("MatchTxnID: got %v want %v", res.TxnID, txnID)
+		}
+		return nil
+	}
+}
+
 func MatchList(i int, matchers ...ListMatcher) RespMatcher {
 	return func(res *sync3.Response) error {
 		if i >= len(res.Lists) {

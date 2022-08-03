@@ -129,6 +129,7 @@ func (c *Conn) OnIncomingRequest(ctx context.Context, req *Request) (resp *Respo
 		}
 	}
 	resp.Pos = fmt.Sprintf("%d", posInt+1)
+	resp.TxnID = req.TxnID
 	c.lastServerResponse = *resp
 
 	return resp, nil
