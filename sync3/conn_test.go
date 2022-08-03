@@ -157,17 +157,56 @@ func TestConnRetries(t *testing.T) {
 	assertInt(t, resp.Lists[0].Count, 20)
 	assertInt(t, callCount, 2) // this doesn't increment
 	assertNoError(t, err)
-	// retry! but with modified request body, so should invoke handler again
+	// retry! but with modified request body, so should invoke handler again but return older data (buffered)
 	resp, err = c.OnIncomingRequest(ctx, &Request{
 		pos: 1, Lists: []RequestList{
 			{
 				Sort: []string{SortByName},
 			},
 		}})
-	assertPos(t, resp.Pos, 3)
+	assertPos(t, resp.Pos, 2)
 	assertInt(t, resp.Lists[0].Count, 20)
-	assertInt(t, callCount, 3)
+	assertInt(t, callCount, 3) // this doesn't increment
 	assertNoError(t, err)
+}
+
+func TestConnBufferRes(t *testing.T) {
+	ctx := context.Background()
+	connID := ConnID{
+		DeviceID: "d",
+	}
+	callCount := 0
+	c := NewConn(connID, &connHandlerMock{func(ctx context.Context, cid ConnID, req *Request, init bool) (*Response, error) {
+		callCount += 1
+		return &Response{Lists: []ResponseList{
+			{
+				Count: callCount,
+			},
+		}}, nil
+	}})
+	resp, err := c.OnIncomingRequest(ctx, &Request{})
+	assertNoError(t, err)
+	assertPos(t, resp.Pos, 1)
+	assertInt(t, resp.Lists[0].Count, 1)
+	assertInt(t, callCount, 1)
+	resp, err = c.OnIncomingRequest(ctx, &Request{pos: 1})
+	assertNoError(t, err)
+	assertPos(t, resp.Pos, 2)
+	assertInt(t, resp.Lists[0].Count, 2)
+	assertInt(t, callCount, 2)
+	// retry with modified request data, should invoke handler again!
+	resp, err = c.OnIncomingRequest(ctx, &Request{pos: 1, TxnID: "a"})
+	assertNoError(t, err)
+	assertPos(t, resp.Pos, 2)
+	assertInt(t, resp.Lists[0].Count, 2)
+	assertInt(t, callCount, 3) // this DOES increment, the response is buffered and not returned yet.
+	// retry with same request body, so should NOT invoke handler again and return buffered response
+	resp, err = c.OnIncomingRequest(ctx, &Request{pos: 2, TxnID: "a"})
+	assertNoError(t, err)
+	assertPos(t, resp.Pos, 3)
+	assertInt(t, resp.Lists[0].Count, 3)
+	assertInt(t, callCount, 3)
+
 }
 
 func TestConnErrors(t *testing.T) {

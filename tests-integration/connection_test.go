@@ -139,9 +139,26 @@ func TestOutstandingRequestsGetCancelled(t *testing.T) {
 	pos := res.Pos
 	waitTimeMS := 3000
 	startTime := time.Now()
+	var wg sync.WaitGroup
+	wg.Add(1)
 	go func() {
+		defer wg.Done()
 		time.Sleep(100 * time.Millisecond)
 		res2 := v3.mustDoV3RequestWithPos(t, aliceToken, pos, sync3.Request{
+			Lists: []sync3.RequestList{{
+				Ranges: sync3.SliceRanges{
+					[2]int64{0, 1},
+				},
+				Sort: []string{sync3.SortByRecency}, // B,A
+				RoomSubscription: sync3.RoomSubscription{
+					TimelineLimit: 1,
+				},
+			}},
+		})
+		// this will be the response for the cancelled request initially
+		m.MatchResponse(t, res2, m.MatchNoV3Ops())
+		// retry request with new pos and we should see the new data
+		res2 = v3.mustDoV3RequestWithPos(t, aliceToken, res2.Pos, sync3.Request{
 			Lists: []sync3.RequestList{{
 				Ranges: sync3.SliceRanges{
 					[2]int64{0, 1},
@@ -173,6 +190,7 @@ func TestOutstandingRequestsGetCancelled(t *testing.T) {
 		t.Errorf("took >1s to process request which should have been interrupted before timing out, took %v", time.Since(startTime))
 	}
 	m.MatchResponse(t, res, m.MatchList(0, m.MatchV3Count(2)), m.MatchNoV3Ops())
+	wg.Wait()
 }
 
 // Regression test to ensure that ?timeout= isn't reset when live events come in.
@@ -311,4 +329,114 @@ func TestTxnIDEcho(t *testing.T) {
 		},
 	})
 	m.MatchResponse(t, res, m.MatchTxnID(txnID2))
+}
+
+// Test that we implement https://github.com/matrix-org/matrix-spec-proposals/blob/kegan/sync-v3/proposals/3575-sync.md#sticky-request-parameters
+// correctly server-side. We do this by:
+// - Create rooms A, B and C.
+// - Send a request with room_name_like = C. Get back pos=1
+// - Send a request with pos=1 to filter for room_name_like = A . Discard the response.
+// - Send a request with pos=1 to filter for room_name_like = B. Ensure we see both A,B and the txn_id is set correctly for both.
+func TestTxnIDResponseBuffering(t *testing.T) {
+	pqString := testutils.PrepareDBConnectionString()
+	// setup code
+	v2 := runTestV2Server(t)
+	v3 := runTestServer(t, v2, pqString)
+	defer v2.close()
+	defer v3.close()
+	roomA := "!a:localhost"
+	roomB := "!b:localhost"
+	roomC := "!c:localhost"
+	v2.addAccount(alice, aliceToken)
+	v2.queueResponse(alice, sync2.SyncResponse{
+		Rooms: sync2.SyncRoomsResponse{
+			Join: v2JoinTimeline(roomEvents{
+				roomID: roomA,
+				state:  createRoomState(t, alice, time.Now()),
+				events: []json.RawMessage{
+					testutils.NewStateEvent(t, "m.room.name", "", alice, map[string]interface{}{"name": "A"}),
+				},
+			},
+				roomEvents{
+					roomID: roomB,
+					state:  createRoomState(t, alice, time.Now()),
+					events: []json.RawMessage{
+						testutils.NewStateEvent(t, "m.room.name", "", alice, map[string]interface{}{"name": "B"}),
+					},
+				},
+				roomEvents{
+					roomID: roomC,
+					state:  createRoomState(t, alice, time.Now()),
+					events: []json.RawMessage{
+						testutils.NewStateEvent(t, "m.room.name", "", alice, map[string]interface{}{"name": "C"}),
+					},
+				}),
+		},
+	})
+	// Send a request with room_name_like = C. Get back pos=1
+	res := v3.mustDoV3Request(t, aliceToken, sync3.Request{
+		TxnID: "c",
+		Lists: []sync3.RequestList{{
+			Ranges: sync3.SliceRanges{
+				[2]int64{0, 10},
+			},
+			Sort: []string{sync3.SortByName},
+			RoomSubscription: sync3.RoomSubscription{
+				TimelineLimit: 1,
+			},
+			Filters: &sync3.RequestFilters{
+				RoomNameFilter: "C",
+			},
+		}},
+	})
+	m.MatchResponse(t, res, m.MatchTxnID("c"), m.MatchList(0, m.MatchV3Count(1), m.MatchV3Ops(
+		m.MatchV3SyncOp(0, 10, []string{roomC}),
+	)))
+	// Send a request with pos=1 to filter for room_name_like = A . Discard the response.
+	v3.mustDoV3RequestWithPos(t, aliceToken, res.Pos, sync3.Request{
+		TxnID: "a",
+		Lists: []sync3.RequestList{{
+			Ranges: sync3.SliceRanges{
+				[2]int64{0, 10},
+			},
+			Sort: []string{sync3.SortByName},
+			RoomSubscription: sync3.RoomSubscription{
+				TimelineLimit: 1,
+			},
+			Filters: &sync3.RequestFilters{
+				RoomNameFilter: "A",
+			},
+		}},
+	})
+
+	// Send a request with pos=1 to filter for room_name_like = B. Ensure we see both A,B and the txn_id is set correctly for both.
+	res = v3.mustDoV3RequestWithPos(t, aliceToken, res.Pos, sync3.Request{
+		TxnID: "b",
+		Lists: []sync3.RequestList{{
+			Ranges: sync3.SliceRanges{
+				[2]int64{0, 10},
+			},
+			Sort: []string{sync3.SortByName},
+			RoomSubscription: sync3.RoomSubscription{
+				TimelineLimit: 1,
+			},
+			Filters: &sync3.RequestFilters{
+				RoomNameFilter: "B",
+			},
+		}},
+	})
+	// this response should be the one for A
+	m.MatchResponse(t, res, m.MatchTxnID("a"), m.MatchList(0, m.MatchV3Count(1), m.MatchV3Ops(
+		m.MatchV3InvalidateOp(0, 10),
+		m.MatchV3SyncOp(0, 10, []string{roomA}),
+	)))
+
+	// poll again
+	res = v3.mustDoV3RequestWithPos(t, aliceToken, res.Pos, sync3.Request{})
+
+	// now we get the response for B
+	m.MatchResponse(t, res, m.MatchTxnID("b"), m.MatchList(0, m.MatchV3Count(1), m.MatchV3Ops(
+		m.MatchV3InvalidateOp(0, 10),
+		m.MatchV3SyncOp(0, 10, []string{roomB}),
+	)))
 }

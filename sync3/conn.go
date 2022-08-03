@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"runtime/debug"
-	"strconv"
 	"sync"
 
 	"github.com/matrix-org/sync-v3/internal"
@@ -39,9 +38,11 @@ type Conn struct {
 	// The position/data in the stream last sent by the client
 	lastClientRequest Request
 
-	// A buffer of the last response sent to the client.
-	// Can be resent as-is if the server response was lost
-	lastServerResponse Response
+	// A buffer of the last responses sent to the client.
+	// Can be resent as-is if the server response was lost.
+	// We always send back [0]
+	serverResponses []Response
+	lastPos         int64
 
 	// ensure only 1 incoming request is handled per connection
 	mu                       *sync.Mutex
@@ -83,25 +84,66 @@ func (c *Conn) OnIncomingRequest(ctx context.Context, req *Request) (resp *Respo
 	// as it guarantees linearisation of data within a single connection
 	defer c.mu.Unlock()
 
-	if req.pos != 0 && c.lastClientRequest.pos == req.pos {
-		// if the request bodies match up then this is a retry, else it could be the client modifying
-		// their filter params, so fallthrough
-		if c.lastClientRequest.Same(req) {
-			// this is the 2nd+ time we've seen this request, meaning the client likely retried this
-			// request. Send the response we sent before.
-			logger.Trace().Int64("pos", req.pos).Msg("returning cached response for pos")
-			return &c.lastServerResponse, nil
-		}
-	}
+	isFirstRequest := req.pos == 0
+	isRetransmit := !isFirstRequest && c.lastClientRequest.pos == req.pos
+	acksOldestResponse := len(c.serverResponses) > 0 && req.pos == c.serverResponses[0].PosInt()
+	acksLatestResponse := c.lastPos != 0 && c.lastPos == req.pos
+	isSameRequest := !isFirstRequest && c.lastClientRequest.Same(req)
+
 	// if there is a position and it isn't something we've told the client nor a retransmit, they
 	// are playing games
-	if req.pos != 0 && req.pos != c.lastServerResponse.PosInt() && c.lastClientRequest.pos != req.pos {
+	if !isFirstRequest && !acksLatestResponse && !acksOldestResponse && !isRetransmit {
 		// the client made up a position, reject them
 		logger.Trace().Int64("pos", req.pos).Msg("unknown pos")
 		return nil, &internal.HandlerError{
 			StatusCode: 400,
 			Err:        fmt.Errorf("unknown position: %d", req.pos),
 		}
+	}
+
+	// purge the response buffer based on the client's new position. Higher pos values are later.
+	delIndex := -1
+	for i := range c.serverResponses {
+		if req.pos >= c.serverResponses[i].PosInt() {
+			// the client has sent this pos ergo they have seen this response before, so forget it.
+			delIndex = i
+		} else {
+			break
+		}
+	}
+	c.serverResponses = c.serverResponses[delIndex+1:] // slice out the first delIndex+1 elements
+
+	defer func() {
+		l := logger.Trace().Int("num_res_acks", delIndex+1).Bool("is_retransmit", isRetransmit).Bool("acks_oldest", acksOldestResponse).Bool(
+			"acks_newest", acksLatestResponse,
+		).Bool("is_first", isFirstRequest).Bool("is_same", isSameRequest).Int64("pos", req.pos).Str("user", c.handler.UserID())
+		if len(c.serverResponses) > 0 {
+			l.Int64("new_pos", c.serverResponses[0].PosInt())
+		}
+
+		l.Msg("OnIncomingRequest")
+	}()
+
+	if !isFirstRequest {
+		if isRetransmit {
+			// if the request bodies match up then this is a retry, else it could be the client modifying
+			// their filter params, so fallthrough
+			if isSameRequest {
+				// this is the 2nd+ time we've seen this request, meaning the client likely retried this
+				// request. Send the response we sent before.
+				logger.Trace().Int64("pos", req.pos).Msg("returning cached response for pos")
+				return &c.serverResponses[0], nil
+			} else {
+				logger.Info().Int64("pos", req.pos).Msg("client has resent this pos with different request data")
+				// we need to fallthrough to process this request as the client will not resend this request data,
+			}
+		}
+	}
+
+	// if the client has no new data for us but we still have buffered responses, return that rather than
+	// invoking the handler.
+	if isSameRequest && len(c.serverResponses) > 0 {
+		return &c.serverResponses[0], nil
 	}
 
 	resp, err := c.tryRequest(ctx, req)
@@ -118,19 +160,13 @@ func (c *Conn) OnIncomingRequest(ctx context.Context, req *Request) (resp *Respo
 	// assign the last client request now _after_ we have processed the request so we don't incorrectly
 	// cache errors or panics and result in getting wedged or tightlooping.
 	c.lastClientRequest = *req
-	var posInt int
-	if c.lastServerResponse.Pos != "" {
-		posInt, err = strconv.Atoi(c.lastServerResponse.Pos)
-		if err != nil {
-			return nil, &internal.HandlerError{
-				StatusCode: 500,
-				Err:        err,
-			}
-		}
-	}
-	resp.Pos = fmt.Sprintf("%d", posInt+1)
+	// this position is the highest stored pos +1
+	resp.Pos = fmt.Sprintf("%d", c.lastPos+1)
 	resp.TxnID = req.TxnID
-	c.lastServerResponse = *resp
+	// buffer it
+	c.serverResponses = append(c.serverResponses, *resp)
+	c.lastPos = resp.PosInt()
 
-	return resp, nil
+	// return the oldest value
+	return &c.serverResponses[0], nil
 }
