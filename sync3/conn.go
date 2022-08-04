@@ -121,7 +121,7 @@ func (c *Conn) OnIncomingRequest(ctx context.Context, req *Request) (resp *Respo
 			l.Int64("new_pos", c.serverResponses[0].PosInt())
 		}
 
-		l.Msg("OnIncomingRequest")
+		l.Msg("OnIncomingRequest finished")
 	}()
 
 	if !isFirstRequest {
@@ -142,8 +142,15 @@ func (c *Conn) OnIncomingRequest(ctx context.Context, req *Request) (resp *Respo
 
 	// if the client has no new data for us but we still have buffered responses, return that rather than
 	// invoking the handler.
-	if isSameRequest && len(c.serverResponses) > 0 {
-		return &c.serverResponses[0], nil
+	if len(c.serverResponses) > 0 {
+		if isSameRequest {
+			return &c.serverResponses[0], nil
+		}
+		// we have buffered responses but we cannot return it else we'll ignore the data in this request,
+		// so we need to wait for this incoming request to be processed _before_ we can return the data.
+		// To ensure this doesn't take too long, be cheeky and inject a low timeout value to ensure we
+		// don't needlessly block.
+		req.SetTimeoutMSecs(1)
 	}
 
 	resp, err := c.tryRequest(ctx, req)
