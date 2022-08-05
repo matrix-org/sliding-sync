@@ -40,7 +40,11 @@ type Conn struct {
 
 	// A buffer of the last responses sent to the client.
 	// Can be resent as-is if the server response was lost.
-	// We always send back [0]
+	// This array has 3 categories: ACKed messages, the ACKed message, unACKed messages e.g
+	// [ACK, ACK, ACKing, NACK, NACK]
+	// - The ACKing message is always the response with the same pos as req.pos
+	// - Everything before it is old and can be deleted
+	// - Everything after that is new and unseen, and the first element is the one we want to return.
 	serverResponses []Response
 	lastPos         int64
 
@@ -72,6 +76,15 @@ func (c *Conn) tryRequest(ctx context.Context, req *Request) (res *Response, err
 	return c.handler.OnIncomingRequest(ctx, c.ConnID, req, req.pos == 0)
 }
 
+func (c *Conn) isOutstanding(pos int64) bool {
+	for _, r := range c.serverResponses {
+		if r.PosInt() == pos {
+			return true
+		}
+	}
+	return false
+}
+
 // OnIncomingRequest advances the clients position in the stream, returning the response position and data.
 func (c *Conn) OnIncomingRequest(ctx context.Context, req *Request) (resp *Response, herr *internal.HandlerError) {
 	if c.cancelOutstandingRequest != nil {
@@ -86,13 +99,11 @@ func (c *Conn) OnIncomingRequest(ctx context.Context, req *Request) (resp *Respo
 
 	isFirstRequest := req.pos == 0
 	isRetransmit := !isFirstRequest && c.lastClientRequest.pos == req.pos
-	acksOldestResponse := len(c.serverResponses) > 0 && req.pos == c.serverResponses[0].PosInt()
-	acksLatestResponse := c.lastPos != 0 && c.lastPos == req.pos
 	isSameRequest := !isFirstRequest && c.lastClientRequest.Same(req)
 
 	// if there is a position and it isn't something we've told the client nor a retransmit, they
 	// are playing games
-	if !isFirstRequest && !acksLatestResponse && !acksOldestResponse && !isRetransmit {
+	if !isFirstRequest && !isRetransmit && !c.isOutstanding(req.pos) {
 		// the client made up a position, reject them
 		logger.Trace().Int64("pos", req.pos).Msg("unknown pos")
 		return nil, &internal.HandlerError{
@@ -102,23 +113,25 @@ func (c *Conn) OnIncomingRequest(ctx context.Context, req *Request) (resp *Respo
 	}
 
 	// purge the response buffer based on the client's new position. Higher pos values are later.
+	var nextUnACKedResponse *Response
 	delIndex := -1
-	for i := range c.serverResponses {
-		if req.pos >= c.serverResponses[i].PosInt() {
-			// the client has sent this pos ergo they have seen this response before, so forget it.
+	for i := range c.serverResponses { // sorted so low pos are first
+		if req.pos > c.serverResponses[i].PosInt() {
+			// the client has advanced _beyond_ this position so it is safe to delete it, we won't
+			// see it again as a retransmit
 			delIndex = i
-		} else {
+		} else if req.pos < c.serverResponses[i].PosInt() {
+			// the client has not seen this response before, so we'll send it to them next no matter what.
+			nextUnACKedResponse = &c.serverResponses[i]
 			break
 		}
 	}
 	c.serverResponses = c.serverResponses[delIndex+1:] // slice out the first delIndex+1 elements
 
 	defer func() {
-		l := logger.Trace().Int("num_res_acks", delIndex+1).Bool("is_retransmit", isRetransmit).Bool("acks_oldest", acksOldestResponse).Bool(
-			"acks_newest", acksLatestResponse,
-		).Bool("is_first", isFirstRequest).Bool("is_same", isSameRequest).Int64("pos", req.pos).Str("user", c.handler.UserID())
-		if len(c.serverResponses) > 0 {
-			l.Int64("new_pos", c.serverResponses[0].PosInt())
+		l := logger.Trace().Int("num_res_acks", delIndex+1).Bool("is_retransmit", isRetransmit).Bool("is_first", isFirstRequest).Bool("is_same", isSameRequest).Int64("pos", req.pos).Str("user", c.handler.UserID())
+		if nextUnACKedResponse != nil {
+			l.Int64("new_pos", nextUnACKedResponse.PosInt())
 		}
 
 		l.Msg("OnIncomingRequest finished")
@@ -132,7 +145,7 @@ func (c *Conn) OnIncomingRequest(ctx context.Context, req *Request) (resp *Respo
 				// this is the 2nd+ time we've seen this request, meaning the client likely retried this
 				// request. Send the response we sent before.
 				logger.Trace().Int64("pos", req.pos).Msg("returning cached response for pos")
-				return &c.serverResponses[0], nil
+				return nextUnACKedResponse, nil
 			} else {
 				logger.Info().Int64("pos", req.pos).Msg("client has resent this pos with different request data")
 				// we need to fallthrough to process this request as the client will not resend this request data,
@@ -142,9 +155,9 @@ func (c *Conn) OnIncomingRequest(ctx context.Context, req *Request) (resp *Respo
 
 	// if the client has no new data for us but we still have buffered responses, return that rather than
 	// invoking the handler.
-	if len(c.serverResponses) > 0 {
+	if nextUnACKedResponse != nil {
 		if isSameRequest {
-			return &c.serverResponses[0], nil
+			return nextUnACKedResponse, nil
 		}
 		// we have buffered responses but we cannot return it else we'll ignore the data in this request,
 		// so we need to wait for this incoming request to be processed _before_ we can return the data.
@@ -173,7 +186,10 @@ func (c *Conn) OnIncomingRequest(ctx context.Context, req *Request) (resp *Respo
 	// buffer it
 	c.serverResponses = append(c.serverResponses, *resp)
 	c.lastPos = resp.PosInt()
+	if nextUnACKedResponse == nil {
+		nextUnACKedResponse = resp
+	}
 
 	// return the oldest value
-	return &c.serverResponses[0], nil
+	return nextUnACKedResponse, nil
 }

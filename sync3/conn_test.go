@@ -206,7 +206,6 @@ func TestConnBufferRes(t *testing.T) {
 	assertPos(t, resp.Pos, 3)
 	assertInt(t, resp.Lists[0].Count, 3)
 	assertInt(t, callCount, 3)
-
 }
 
 func TestConnErrors(t *testing.T) {
@@ -268,6 +267,99 @@ func TestConnErrorsNoCache(t *testing.T) {
 	_, herr = c.OnIncomingRequest(ctx, &Request{pos: resp.PosInt()})
 	if herr != nil {
 		t.Fatalf("expected no error, got %+v", herr)
+	}
+}
+
+// Regression test to ensure that the Conn remembers which responses it has sent to the client, rather
+// than just the latest (highest pos) response. We test this by creating a long buffer of outstanding responses,
+// then ack a few of them, then do a retry which will fail as the pos the retry represents is unknown.
+func TestConnBufferRememberInflight(t *testing.T) {
+	ctx := context.Background()
+	connID := ConnID{
+		DeviceID: "d",
+	}
+	callCount := 0
+	c := NewConn(connID, &connHandlerMock{func(ctx context.Context, cid ConnID, req *Request, init bool) (*Response, error) {
+		callCount += 1
+		return &Response{Lists: []ResponseList{
+			{
+				Count: callCount,
+			},
+		}}, nil
+	}})
+	steps := []struct {
+		req           *Request
+		wantErr       bool
+		wantResPos    int
+		wantResCount  int
+		wantCallCount int
+	}{
+		{ // initial request
+			req:           &Request{},
+			wantResPos:    1,
+			wantResCount:  1,
+			wantCallCount: 1,
+		},
+		{ // happy path, keep syncing
+			req:           &Request{pos: 1},
+			wantResPos:    2,
+			wantResCount:  2,
+			wantCallCount: 2,
+		},
+		{ // lost HTTP response, cancelled request, new params, returns buffered response but does execute handler
+			req:           &Request{pos: 1, TxnID: "a"},
+			wantResPos:    2,
+			wantResCount:  2,
+			wantCallCount: 3,
+		},
+		{ // lost HTTP response, cancelled request, new params, returns same buffered response but does execute handler again
+			req:           &Request{pos: 1, TxnID: "b"},
+			wantResPos:    2,
+			wantResCount:  2,
+			wantCallCount: 4,
+		},
+		{ // lost HTTP response, cancelled request, new params, returns same buffered response but does execute handler again
+			req:           &Request{pos: 1, TxnID: "c"},
+			wantResPos:    2,
+			wantResCount:  2,
+			wantCallCount: 5,
+		},
+		{ // response returned, params same now, begin consuming buffer..
+			req:           &Request{pos: 2, TxnID: "c"},
+			wantResPos:    3,
+			wantResCount:  3,
+			wantCallCount: 5,
+		},
+		{ // response returned, params same now, begin consuming buffer..
+			req:           &Request{pos: 3, TxnID: "c"},
+			wantResPos:    4,
+			wantResCount:  4,
+			wantCallCount: 5,
+		},
+		{ // response returned, params same now, begin consuming buffer..
+			req:           &Request{pos: 4, TxnID: "c"},
+			wantResPos:    5,
+			wantResCount:  5,
+			wantCallCount: 5,
+		},
+		{ // response lost, should send buffered response if it isn't just doing the latest one (which is pos=5)
+			req:           &Request{pos: 4, TxnID: "c"},
+			wantResPos:    5,
+			wantResCount:  5,
+			wantCallCount: 5,
+		},
+	}
+	var resp *Response
+	var err *internal.HandlerError
+	for i, step := range steps {
+		t.Logf("Executing step %d", i)
+		resp, err = c.OnIncomingRequest(ctx, step.req)
+		if !step.wantErr {
+			assertNoError(t, err)
+		}
+		assertPos(t, resp.Pos, step.wantResPos)
+		assertInt(t, resp.Lists[0].Count, step.wantResCount)
+		assertInt(t, callCount, step.wantCallCount)
 	}
 }
 
