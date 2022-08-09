@@ -99,7 +99,8 @@ type SyncResponse struct {
 		Changed []string `json:"changed,omitempty"`
 		Left    []string `json:"left,omitempty"`
 	} `json:"device_lists"`
-	DeviceListsOTKCount map[string]int `json:"device_one_time_keys_count,omitempty"`
+	DeviceListsOTKCount          map[string]int `json:"device_one_time_keys_count,omitempty"`
+	DeviceUnusedFallbackKeyTypes []string       `json:"device_unused_fallback_key_types,omitempty"`
 }
 
 type SyncRoomsResponse struct {

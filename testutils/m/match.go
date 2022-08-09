@@ -210,6 +210,18 @@ func MatchOTKCounts(otkCounts map[string]int) RespMatcher {
 	}
 }
 
+func MatchFallbackKeyTypes(fallbackKeyTypes []string) RespMatcher {
+	return func(res *sync3.Response) error {
+		if res.Extensions.E2EE == nil {
+			return fmt.Errorf("MatchFallbackKeyTypes: no E2EE extension present")
+		}
+		if !reflect.DeepEqual(res.Extensions.E2EE.FallbackKeyTypes, fallbackKeyTypes) {
+			return fmt.Errorf("MatchFallbackKeyTypes: got %v want %v", res.Extensions.E2EE.FallbackKeyTypes, fallbackKeyTypes)
+		}
+		return nil
+	}
+}
+
 func MatchDeviceLists(changed, left []string) RespMatcher {
 	return func(res *sync3.Response) error {
 		if res.Extensions.E2EE == nil {

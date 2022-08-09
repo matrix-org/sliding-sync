@@ -31,7 +31,7 @@ type V2DataReceiver interface {
 
 // Fetcher which PollerMap satisfies used by the E2EE extension
 type E2EEFetcher interface {
-	LatestE2EEData(deviceID string) (otkCounts map[string]int, changed, left []string)
+	LatestE2EEData(deviceID string) (otkCounts map[string]int, fallbackKeyTypes, changed, left []string)
 }
 
 type TransactionIDFetcher interface {
@@ -88,7 +88,7 @@ func (h *PollerMap) TransactionIDForEvent(userID, eventID string) string {
 
 // LatestE2EEData pulls the latest device_lists and device_one_time_keys_count values from the poller.
 // These bits of data are ephemeral and do not need to be persisted.
-func (h *PollerMap) LatestE2EEData(deviceID string) (otkCounts map[string]int, changed, left []string) {
+func (h *PollerMap) LatestE2EEData(deviceID string) (otkCounts map[string]int, fallbackKeyTypes, changed, left []string) {
 	h.pollerMu.Lock()
 	poller := h.Pollers[deviceID]
 	h.pollerMu.Unlock()
@@ -98,6 +98,7 @@ func (h *PollerMap) LatestE2EEData(deviceID string) (otkCounts map[string]int, c
 		return
 	}
 	otkCounts = poller.OTKCounts()
+	fallbackKeyTypes = poller.FallbackKeyTypes()
 	changed, left = poller.DeviceListChanges()
 	return
 }
@@ -245,6 +246,7 @@ type Poller struct {
 
 	// E2EE fields
 	e2eeMu            *sync.Mutex
+	fallbackKeyTypes  []string
 	otkCounts         map[string]int
 	deviceListChanges map[string]string // latest user_id -> state e.g "@alice" -> "left"
 
@@ -330,6 +332,9 @@ func (p *Poller) OTKCounts() map[string]int {
 	defer p.e2eeMu.Unlock()
 	return p.otkCounts
 }
+func (p *Poller) FallbackKeyTypes() []string {
+	return p.fallbackKeyTypes
+}
 
 func (p *Poller) DeviceListChanges() (changed, left []string) {
 	p.e2eeMu.Lock()
@@ -363,6 +368,9 @@ func (p *Poller) parseE2EEData(res *SyncResponse) {
 	// Poller.DeviceListChanges() and Poller.OTKCounts()
 	if res.DeviceListsOTKCount != nil {
 		p.otkCounts = res.DeviceListsOTKCount
+	}
+	if len(res.DeviceUnusedFallbackKeyTypes) > 0 {
+		p.fallbackKeyTypes = res.DeviceUnusedFallbackKeyTypes
 	}
 	for _, userID := range res.DeviceLists.Changed {
 		p.deviceListChanges[userID] = "changed"

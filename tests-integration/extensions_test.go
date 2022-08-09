@@ -24,14 +24,16 @@ func TestExtensionE2EE(t *testing.T) {
 	defer v2.close()
 	defer v3.close()
 
-	// check that OTK counts go through
+	// check that OTK counts / fallback key types go through
 	otkCounts := map[string]int{
 		"curve25519":        10,
 		"signed_curve25519": 100,
 	}
+	fallbackKeyTypes := []string{"signed_curve25519"}
 	v2.addAccount(alice, aliceToken)
 	v2.queueResponse(alice, sync2.SyncResponse{
-		DeviceListsOTKCount: otkCounts,
+		DeviceListsOTKCount:          otkCounts,
+		DeviceUnusedFallbackKeyTypes: fallbackKeyTypes,
 	})
 	res := v3.mustDoV3Request(t, aliceToken, sync3.Request{
 		Lists: []sync3.RequestList{{
@@ -46,9 +48,9 @@ func TestExtensionE2EE(t *testing.T) {
 			},
 		},
 	})
-	m.MatchResponse(t, res, m.MatchOTKCounts(otkCounts))
+	m.MatchResponse(t, res, m.MatchOTKCounts(otkCounts), m.MatchFallbackKeyTypes(fallbackKeyTypes))
 
-	// check that OTK counts remain constant when they aren't included in the v2 response.
+	// check that OTK counts / fallback key types remain constant when they aren't included in the v2 response.
 	// Do this by feeding in a new joined room
 	v2.queueResponse(alice, sync2.SyncResponse{
 		Rooms: sync2.SyncRoomsResponse{
@@ -67,9 +69,10 @@ func TestExtensionE2EE(t *testing.T) {
 		}},
 		// skip enabled: true as it should be sticky
 	})
-	m.MatchResponse(t, res, m.MatchOTKCounts(otkCounts))
+	m.MatchResponse(t, res, m.MatchOTKCounts(otkCounts), m.MatchFallbackKeyTypes(fallbackKeyTypes))
 
 	// check that OTK counts update when they are included in the v2 response
+	// check fallback key types persist when not included
 	otkCounts = map[string]int{
 		"curve25519":        99,
 		"signed_curve25519": 999,
@@ -91,7 +94,7 @@ func TestExtensionE2EE(t *testing.T) {
 			},
 		},
 	})
-	m.MatchResponse(t, res, m.MatchOTKCounts(otkCounts))
+	m.MatchResponse(t, res, m.MatchOTKCounts(otkCounts), m.MatchFallbackKeyTypes(fallbackKeyTypes))
 
 	// check that changed|left get passed to v3
 	wantChanged := []string{"bob"}
