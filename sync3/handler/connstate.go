@@ -401,8 +401,10 @@ func (s *ConnState) OnRoomUpdate(up caches.RoomUpdate) {
 				return
 			}
 		}
+		internal.Assert("missing global room metadata", update.GlobalRoomMetadata() != nil)
 		s.live.onUpdate(update)
 	case caches.RoomUpdate:
+		internal.Assert("missing global room metadata", update.GlobalRoomMetadata() != nil)
 		s.live.onUpdate(update)
 	default:
 		logger.Warn().Str("room_id", up.RoomID()).Msg("OnRoomUpdate unknown update type")

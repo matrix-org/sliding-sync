@@ -63,6 +63,13 @@ func NewJoinEvent(t TestBenchInterface, userID string, modifiers ...eventMockMod
 	}, modifiers...)
 }
 
+func NewMessageEvent(t TestBenchInterface, userID, text string) json.RawMessage {
+	return NewEvent(t, "m.room.message", userID, map[string]interface{}{
+		"msgtype": "m.text",
+		"body":    text,
+	})
+}
+
 func NewStateEvent(t TestBenchInterface, evType, stateKey, sender string, content interface{}, modifiers ...eventMockModifier) json.RawMessage {
 	t.Helper()
 	e := &eventMock{

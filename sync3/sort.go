@@ -206,6 +206,7 @@ func (f *FilteredSortableRooms) Add(r RoomConnMetadata) bool {
 }
 
 func (f *FilteredSortableRooms) UpdateGlobalRoomMetadata(r *internal.RoomMetadata) int {
+	internal.Assert("missing room metadata", r != nil)
 	index, ok := f.SortableRooms.IndexOf(r.RoomID)
 	if !ok {
 		return -1

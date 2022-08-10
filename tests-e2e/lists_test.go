@@ -502,3 +502,49 @@ func TestMultipleOverlappingLists(t *testing.T) {
 		}),
 	)
 }
+
+// Regression test for a panic when new rooms were live-streamed to the client in Element-Web
+func TestNot500OnNewRooms(t *testing.T) {
+	boolTrue := true
+	boolFalse := false
+	mSpace := "m.space"
+	alice := registerNewUser(t)
+	res := alice.SlidingSync(t, sync3.Request{
+		Lists: []sync3.RequestList{
+			{
+				SlowGetAllRooms: &boolTrue,
+				Filters: &sync3.RequestFilters{
+					RoomTypes: []*string{&mSpace},
+				},
+			},
+		},
+	})
+	alice.CreateRoom(t, map[string]interface{}{"preset": "public_chat"})
+	alice.SlidingSync(t, sync3.Request{
+		Lists: []sync3.RequestList{
+			{
+				SlowGetAllRooms: &boolTrue,
+				Filters: &sync3.RequestFilters{
+					RoomTypes: []*string{&mSpace},
+				},
+			},
+			{
+				Filters: &sync3.RequestFilters{
+					IsDM: &boolFalse,
+				},
+				Ranges: sync3.SliceRanges{{0, 20}},
+			},
+		},
+	}, WithPos(res.Pos))
+	alice.CreateRoom(t, map[string]interface{}{"preset": "public_chat"})
+	alice.SlidingSync(t, sync3.Request{
+		Lists: []sync3.RequestList{
+			{
+				SlowGetAllRooms: &boolTrue,
+			},
+			{
+				Ranges: sync3.SliceRanges{{0, 20}},
+			},
+		},
+	}, WithPos(res.Pos))
+}
