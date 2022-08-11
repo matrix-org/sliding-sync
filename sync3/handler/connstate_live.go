@@ -112,6 +112,7 @@ func (s *connStateLive) processLiveUpdate(ctx context.Context, up caches.Update,
 	// do global connection updates (e.g adding/removing rooms from allRooms)
 	s.processGlobalUpdates(ctx, builder, up)
 
+	var roomNameUpdated bool
 	// process room subscriptions
 	roomUpdate, ok := up.(*caches.RoomEventUpdate)
 	if ok {
@@ -119,6 +120,8 @@ func (s *connStateLive) processLiveUpdate(ctx context.Context, up caches.Update,
 			// there is a subscription for this room
 			hasUpdates = true
 		}
+		sameRoomName := s.lists.UpdateRoom(roomUpdate.GlobalRoomMetadata())
+		roomNameUpdated = !sameRoomName
 	}
 
 	// do per-list updates (e.g resorting, adding/removing rooms which no longer match filter)
@@ -148,6 +151,16 @@ func (s *connStateLive) processLiveUpdate(ctx context.Context, up caches.Update,
 	rooms := s.buildRooms(ctx, builder.BuildSubscriptions())
 	for roomID, room := range rooms {
 		response.Rooms[roomID] = room
+	}
+	if roomNameUpdated && roomUpdate != nil {
+		// try to find this room in the response. If it's there, then we need to inject a new room name.
+		// there's no guarantees that the room will be in the response if say the event caused it to move
+		// off a list.
+		room, exists := response.Rooms[roomUpdate.RoomID()]
+		if exists {
+			room.Name = internal.CalculateRoomName(roomUpdate.GlobalRoomMetadata(), 5) // TODO: customisable?
+		}
+		response.Rooms[roomUpdate.RoomID()] = room
 	}
 	return hasUpdates
 }

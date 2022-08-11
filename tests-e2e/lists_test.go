@@ -2,6 +2,7 @@ package syncv3_test
 
 import (
 	"fmt"
+	"sync"
 	"testing"
 	"time"
 
@@ -547,4 +548,85 @@ func TestNot500OnNewRooms(t *testing.T) {
 			},
 		},
 	}, WithPos(res.Pos))
+}
+
+// Regression test for room name calculations, which could be incorrect for new rooms due to caches
+// not being populated yet e.g "and 1 others" or "Empty room" when a room name has been set.
+func TestNewRoomNameCalculations(t *testing.T) {
+	alice := registerNewUser(t)
+	res := alice.SlidingSync(t, sync3.Request{
+		Lists: []sync3.RequestList{
+			{
+				SlowGetAllRooms: &boolTrue,
+			},
+		},
+	})
+	m.MatchResponse(t, res, m.MatchList(0, m.MatchV3Count(0)))
+
+	// create 10 room in parallel and at the same time spam sliding sync to ensure we get bits of
+	// rooms before they are fully loaded.
+	numRooms := 10
+	ch := make(chan int, numRooms)
+	var roomIDToName sync.Map
+
+	// start the goroutines
+	for i := 0; i < numRooms; i++ {
+		go func() {
+			for i := range ch {
+				roomName := fmt.Sprintf("room %d", i)
+				roomID := alice.CreateRoom(t, map[string]interface{}{"preset": "public_chat", "name": roomName})
+				roomIDToName.Store(roomID, roomName)
+			}
+		}()
+	}
+	// inject the work
+	for i := 0; i < numRooms; i++ {
+		ch <- i
+	}
+	close(ch)
+	seenRoomNames := make(map[string]string)
+	start := time.Now()
+	var err error
+	for {
+		res = alice.SlidingSync(t, sync3.Request{
+			Lists: []sync3.RequestList{
+				{
+					SlowGetAllRooms: &boolTrue,
+				},
+			},
+		}, WithPos(res.Pos))
+		for roomID, sub := range res.Rooms {
+			if sub.Name != "" {
+				seenRoomNames[roomID] = sub.Name
+			}
+		}
+		if time.Since(start) > 5*time.Second {
+			t.Errorf("timed out, did not see all rooms, seen %d/%d", len(seenRoomNames), numRooms)
+			break
+		}
+		// do assertions and bail if they all pass
+		err = nil
+		seenRooms := 0
+		roomIDToName.Range(func(key, value interface{}) bool {
+			seenRooms++
+			createRoomID := key.(string)
+			name := value.(string)
+			gotName := seenRoomNames[createRoomID]
+			if name != gotName {
+				err = fmt.Errorf("[%s: got %s want %s] %w", createRoomID, gotName, name, err)
+			}
+			return true
+		})
+		if seenRooms != numRooms {
+			continue // wait for all /createRoom calls to return
+		}
+		if err == nil {
+			t.Logf("%+v\n", seenRoomNames)
+			break // we saw all the rooms with the right names
+		}
+	}
+	if err != nil {
+		// we didn't see all the right room names after timeout secs
+		t.Errorf(err.Error())
+	}
 }

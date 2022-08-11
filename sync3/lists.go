@@ -13,36 +13,33 @@ var (
 // JSON 'lists'. It contains all the internal metadata for rooms and controls access and updatings of said
 // lists.
 type InternalRequestLists struct {
-	allRooms []RoomConnMetadata // TODO: should this be a map?
+	allRooms map[string]RoomConnMetadata
 	lists    []*FilteredSortableRooms
 }
 
+func NewInternalRequestLists() *InternalRequestLists {
+	return &InternalRequestLists{
+		allRooms: make(map[string]RoomConnMetadata, 10),
+	}
+}
+
 func (s *InternalRequestLists) AddRooms(rooms []RoomConnMetadata) {
-	s.allRooms = append(s.allRooms, rooms...)
+	for _, r := range rooms {
+		s.allRooms[r.RoomID] = r
+	}
+
 }
 
 func (s *InternalRequestLists) AddRoomIfNotExists(room RoomConnMetadata) {
-	exists := false
-	for _, r := range s.allRooms {
-		if r.RoomID == room.RoomID {
-			exists = true
-			break
-		}
-	}
+	_, exists := s.allRooms[room.RoomID]
 	if !exists {
-		s.allRooms = append(s.allRooms, room)
+		s.allRooms[room.RoomID] = room
 	}
 }
 
 // Remove a room from all lists e.g retired an invite, left a room
 func (s *InternalRequestLists) RemoveRoom(roomID string) {
-	for i, r := range s.allRooms {
-		if r.RoomID == roomID {
-			// delete the room
-			s.allRooms[i] = s.allRooms[len(s.allRooms)-1]
-			s.allRooms = s.allRooms[:len(s.allRooms)-1]
-		}
-	}
+	delete(s.allRooms, roomID)
 	// TODO: update lists?
 }
 
@@ -52,6 +49,19 @@ func (s *InternalRequestLists) ForEach(fn func(index int, fsr *FilteredSortableR
 	for i, l := range s.lists {
 		fn(i, l)
 	}
+}
+
+// Update the room metadata entry for this room. If the room name is the same with the new metadata, returns true.
+func (s *InternalRequestLists) UpdateRoom(metadata *internal.RoomMetadata) (sameRoomName bool) {
+	// find the room
+	existing, exists := s.allRooms[metadata.RoomID]
+	if !exists {
+		return false
+	}
+	sameRoomName = existing.SameRoomName(metadata)
+	existing.RoomMetadata = *metadata
+	s.allRooms[metadata.RoomID] = existing
+	return
 }
 
 func (s *InternalRequestLists) DeleteList(index int) {

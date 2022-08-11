@@ -21,6 +21,32 @@ type RoomMetadata struct {
 	ChildSpaceRooms map[string]struct{}
 }
 
+// SameRoomName checks if the fields relevant for room names have changed between the two metadatas.
+// Returns true if there are no changes.
+func (m *RoomMetadata) SameRoomName(other *RoomMetadata) bool {
+	return (m.RoomID == other.RoomID &&
+		m.NameEvent == other.NameEvent &&
+		m.CanonicalAlias == other.CanonicalAlias &&
+		m.JoinCount == other.JoinCount &&
+		m.InviteCount == other.InviteCount &&
+		sameHeroes(m.Heroes, other.Heroes))
+}
+
+func sameHeroes(a, b []Hero) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i].ID != b[i].ID {
+			return false
+		}
+		if a[i].Name != b[i].Name {
+			return false
+		}
+	}
+	return true
+}
+
 func (m *RoomMetadata) RemoveHero(userID string) {
 	for i, h := range m.Heroes {
 		if h.ID == userID {

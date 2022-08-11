@@ -182,7 +182,7 @@ type FilteredSortableRooms struct {
 	filter *RequestFilters
 }
 
-func NewFilteredSortableRooms(rooms []RoomConnMetadata, filter *RequestFilters) *FilteredSortableRooms {
+func NewFilteredSortableRooms(rooms map[string]RoomConnMetadata, filter *RequestFilters) *FilteredSortableRooms {
 	var filteredRooms []RoomConnMetadata
 	if filter == nil {
 		filter = &RequestFilters{}

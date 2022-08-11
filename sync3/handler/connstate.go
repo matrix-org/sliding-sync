@@ -25,9 +25,6 @@ type ConnState struct {
 	muxedReq *sync3.Request
 	lists    *sync3.InternalRequestLists
 
-	// TODO XXX: fix moveRoom and resort
-	// AFTER: Allow `ops` to be turned off for a list.
-
 	// Confirmed room subscriptions. Entries in this list have been checked for things like
 	// "is the user joined to this room?" whereas subscriptions in muxedReq are untrusted.
 	roomSubscriptions map[string]sync3.RoomSubscription // room_id -> subscription
@@ -55,7 +52,7 @@ func NewConnState(
 		userID:            userID,
 		deviceID:          deviceID,
 		roomSubscriptions: make(map[string]sync3.RoomSubscription),
-		lists:             &sync3.InternalRequestLists{},
+		lists:             sync3.NewInternalRequestLists(),
 		extensionsHandler: ex,
 		joinChecker:       joinChecker,
 	}
