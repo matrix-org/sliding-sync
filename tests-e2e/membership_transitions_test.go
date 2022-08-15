@@ -102,5 +102,106 @@ func TestRoomStateTransitions(t *testing.T) {
 		}),
 		m.MatchRoomInitial(true),
 		m.MatchRoomHighlightCount(0)))
+}
 
+func TestInviteRejection(t *testing.T) {
+	alice := registerNewUser(t)
+	bob := registerNewUser(t)
+
+	// ensure that invite state correctly propagates. One room will already be in 'invite' state
+	// prior to the first proxy sync, whereas the 2nd will transition.
+	firstInviteRoomID := alice.CreateRoom(t, map[string]interface{}{"preset": "private_chat", "name": "First"})
+	alice.InviteRoom(t, firstInviteRoomID, bob.UserID)
+	secondInviteRoomID := alice.CreateRoom(t, map[string]interface{}{"preset": "private_chat", "name": "Second"})
+	t.Logf("first %s second %s", firstInviteRoomID, secondInviteRoomID)
+
+	// sync as bob, we should see 1 invite
+	res := bob.SlidingSync(t, sync3.Request{
+		Lists: []sync3.RequestList{
+			{
+				Ranges: sync3.SliceRanges{{0, 20}},
+				Filters: &sync3.RequestFilters{
+					IsInvite: &boolTrue,
+				},
+			},
+		},
+	})
+	m.MatchResponse(t, res, m.MatchList(0, m.MatchV3Count(1), m.MatchV3Ops(
+		m.MatchV3SyncOp(0, 20, []string{firstInviteRoomID}),
+	)), m.MatchRoomSubscriptionsStrict(map[string][]m.RoomMatcher{
+		firstInviteRoomID: {
+			m.MatchRoomInitial(true),
+			MatchRoomInviteState([]Event{
+				{
+					Type:     "m.room.name",
+					StateKey: ptr(""),
+					Content: map[string]interface{}{
+						"name": "First",
+					},
+				},
+			}, true),
+		},
+	}))
+
+	_, since := bob.MustSync(t, SyncReq{})
+	// now invite bob
+	alice.InviteRoom(t, secondInviteRoomID, bob.UserID)
+	since = bob.MustSyncUntil(t, SyncReq{Since: since}, SyncInvitedTo(bob.UserID, secondInviteRoomID))
+
+	res = bob.SlidingSync(t, sync3.Request{
+		Lists: []sync3.RequestList{
+			{
+				Ranges: sync3.SliceRanges{{0, 20}},
+			},
+		},
+	}, WithPos(res.Pos))
+	m.MatchResponse(t, res, m.MatchList(0, m.MatchV3Count(2), m.MatchV3Ops(
+		m.MatchV3DeleteOp(1),
+		m.MatchV3InsertOp(0, secondInviteRoomID),
+	)), m.MatchRoomSubscriptionsStrict(map[string][]m.RoomMatcher{
+		secondInviteRoomID: {
+			m.MatchRoomInitial(true),
+			MatchRoomInviteState([]Event{
+				{
+					Type:     "m.room.name",
+					StateKey: ptr(""),
+					Content: map[string]interface{}{
+						"name": "Second",
+					},
+				},
+			}, true),
+		},
+	}))
+
+	// now reject the invites
+
+	bob.LeaveRoom(t, firstInviteRoomID)
+	bob.LeaveRoom(t, secondInviteRoomID)
+	bob.MustSyncUntil(t, SyncReq{Since: since}, SyncLeftFrom(bob.UserID, secondInviteRoomID))
+
+	// the list should be purged
+	res = bob.SlidingSync(t, sync3.Request{
+		Lists: []sync3.RequestList{
+			{
+				Ranges: sync3.SliceRanges{{0, 20}},
+			},
+		},
+	}, WithPos(res.Pos))
+	m.MatchResponse(t, res, m.MatchList(0, m.MatchV3Count(0), m.MatchV3Ops(
+		m.MatchV3DeleteOp(1),
+		m.MatchV3DeleteOp(0),
+	)))
+
+	// fresh sync -> no invites
+	res = bob.SlidingSync(t, sync3.Request{
+		Lists: []sync3.RequestList{
+			{
+				Ranges: sync3.SliceRanges{{0, 20}},
+				Filters: &sync3.RequestFilters{
+					IsInvite: &boolTrue,
+				},
+			},
+		},
+	})
+	m.MatchResponse(t, res, m.MatchNoV3Ops(), m.MatchRoomSubscriptionsStrict(nil), m.MatchList(0, m.MatchV3Count(0)))
 }

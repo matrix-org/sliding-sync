@@ -340,11 +340,15 @@ func (s *connStateLive) resort(
 		logger.Err(err).Msg("cannot sort list")
 	}
 	toIndex, _ := intList.IndexOf(roomID)
+	if newlyAdded {
+		wasInsideRange = false // can't be inside the range if this is a new room
+	}
 
 	listFromTos, ok := reqList.CalculateMoveIndexes(fromIndex, toIndex)
 	if !ok || len(listFromTos) == 0 {
 		return nil, false
 	}
+
 	for _, listFromTo := range listFromTos {
 		listFromIndex := listFromTo[0]
 		listToIndex := listFromTo[1]
@@ -360,16 +364,28 @@ func (s *connStateLive) resort(
 		}
 
 		swapOp := reqList.WriteSwapOp(roomID, listFromIndex, listToIndex)
+		ops = append(ops, swapOp...)
 
-		if swapOp == nil && wasUpdatedRoomInserted && newlyAdded {
-			// we inserted this room and it is a new room, so there is no swap operation
-			// as we aren't _swapping_ anything, we're just appending it to the list. Write an insert
-			// op to ensure we see the room
+		if wasUpdatedRoomInserted && newlyAdded {
+			// we inserted this room and it is a new room, so send the entire room data.
 			subID := builder.AddSubscription(reqList.RoomSubscription)
 			builder.AddRoomsToSubscription(subID, []string{roomID})
-			ops = append(ops, reqList.WriteInsertOp(toIndex, roomID))
-		} else {
-			ops = append(ops, swapOp...)
+
+			// The client needs to know which item in the list to delete to know which direction to
+			// shift items (left or right). This means the vast majority of BRAND NEW rooms will result
+			// in a swap op even though you could argue that an INSERT[0] or something is sufficient
+			// (though bear in mind that we don't always insert to [0]). The one edge case is when
+			// there are no items in the list at all. In this case, there is no swap op as there is
+			// nothing to swap, but we still need to tell clients about the operation, hence a lone
+			// INSERT op.
+			// This can be intuitively explained by saying that "if there is a room at this toIndex
+			// then we need a DELETE to tell the client whether the room being replaced should shift
+			// left or shift right". In absence of a room being there, we just INSERT, which plays
+			// nicely with the logic of "if there is nothing at this index position, insert, else expect
+			// a delete op to have happened before".
+			if swapOp == nil {
+				ops = append(ops, reqList.WriteInsertOp(toIndex, roomID))
+			}
 		}
 
 	}

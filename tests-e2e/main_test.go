@@ -117,6 +117,28 @@ func MatchRoomRequiredState(events []Event) m.RoomMatcher {
 	}
 }
 
+func MatchRoomInviteState(events []Event, partial bool) m.RoomMatcher {
+	return func(r sync3.Room) error {
+		if !partial && len(r.InviteState) != len(events) {
+			return fmt.Errorf("MatchRoomInviteState: length mismatch, got %d want %d", len(r.InviteState), len(events))
+		}
+		// allow any ordering for state
+		for _, want := range events {
+			found := false
+			for _, got := range r.InviteState {
+				if err := eventsEqual([]Event{want}, []json.RawMessage{got}); err == nil {
+					found = true
+					break
+				}
+			}
+			if !found {
+				return fmt.Errorf("MatchRoomInviteState: want event %+v but it does not exist", want)
+			}
+		}
+		return nil
+	}
+}
+
 func registerNewUser(t *testing.T) *CSAPI {
 	// create user
 	httpClient := NewLoggedClient(t, "localhost", nil)
