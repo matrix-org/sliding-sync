@@ -237,6 +237,13 @@ func (c *GlobalCache) OnNewEvent(
 
 				if eventJSON.Get("unsigned.prev_content.membership").Str == "invite" {
 					metadata.InviteCount -= 1
+					if membership == "join" {
+						// invite -> join, retire any outstanding invites
+						err := c.store.InvitesTable.RemoveInvite(*ed.StateKey, ed.RoomID)
+						if err != nil {
+							logger.Err(err).Str("user", *ed.StateKey).Str("room", ed.RoomID).Msg("failed to remove accepted invite")
+						}
+					}
 				}
 			}
 			if len(metadata.Heroes) < 6 && (membership == "join" || membership == "invite") {
