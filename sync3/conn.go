@@ -61,6 +61,10 @@ func NewConn(connID ConnID, h ConnHandler) *Conn {
 	}
 }
 
+func (c *Conn) UserID() string {
+	return c.handler.UserID()
+}
+
 func (c *Conn) Alive() bool {
 	return c.handler.Alive()
 }

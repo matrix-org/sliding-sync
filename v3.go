@@ -5,9 +5,11 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/gorilla/mux"
+	"github.com/matrix-org/sync-v3/internal"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/hlog"
 )
@@ -16,6 +18,7 @@ var logger = zerolog.New(os.Stdout).With().Timestamp().Logger().Output(zerolog.C
 	Out:        os.Stderr,
 	TimeFormat: "15:04:05",
 })
+var Version string
 
 type server struct {
 	chain []func(next http.Handler) http.Handler
@@ -51,8 +54,12 @@ func RunSyncV3Server(h http.Handler, bindAddr, destV2Server string) {
 	r.Handle("/_matrix/client/unstable/org.matrix.msc3575/sync", allowCORS(h))
 
 	serverJSON, _ := json.Marshal(struct {
-		Server string `json:"server"`
-	}{destV2Server})
+		Server  string `json:"server"`
+		Version string `json:"version"`
+	}{
+		Server:  destV2Server,
+		Version: Version,
+	})
 	r.Handle("/client/server.json", allowCORS(http.HandlerFunc(func(rw http.ResponseWriter, r *http.Request) {
 		rw.Header().Set("Content-Type", "application/json")
 		rw.WriteHeader(200)
@@ -67,19 +74,25 @@ func RunSyncV3Server(h http.Handler, bindAddr, destV2Server string) {
 	srv := &server{
 		chain: []func(next http.Handler) http.Handler{
 			hlog.NewHandler(logger),
+			func(next http.Handler) http.Handler {
+				return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					r = r.WithContext(internal.RequestContext(r.Context()))
+					next.ServeHTTP(w, r)
+				})
+			},
 			hlog.AccessHandler(func(r *http.Request, status, size int, duration time.Duration) {
 				if r.Method == "OPTIONS" {
 					return
 				}
-				hlog.FromRequest(r).Info().
-					Str("method", r.Method).
-					Int("status", status).
+				entry := internal.DecorateLogger(r.Context(), hlog.FromRequest(r).Info())
+				if !strings.HasSuffix(r.URL.Path, "/sync") {
+					entry.Str("path", r.URL.Path)
+				}
+				entry.Int("status", status).
 					Int("size", size).
 					Dur("duration", duration).
-					Str("path", r.URL.Path).
 					Msg("")
 			}),
-			hlog.RemoteAddrHandler("ip"),
 		},
 		final: r,
 	}

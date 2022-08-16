@@ -170,13 +170,14 @@ func (h *SyncLiveHandler) serve(w http.ResponseWriter, req *http.Request) error 
 		hlog.FromRequest(req).Err(err).Msg("failed to get or create Conn")
 		return err
 	}
-	log := hlog.FromRequest(req).With().Str("conn_id", conn.ConnID.String()).Logger()
 	// set pos and timeout if specified
 	cpos, herr := parseIntFromQuery(req.URL, "pos")
 	if herr != nil {
 		return herr
 	}
 	requestBody.SetPos(cpos)
+	internal.SetRequestContextUserID(req.Context(), conn.UserID())
+	log := hlog.FromRequest(req).With().Str("user", conn.UserID()).Int64("pos", cpos).Logger()
 
 	var timeout int
 	if req.URL.Query().Get("timeout") == "" {
@@ -190,13 +191,16 @@ func (h *SyncLiveHandler) serve(w http.ResponseWriter, req *http.Request) error 
 	}
 
 	requestBody.SetTimeoutMSecs(timeout)
-	log.Trace().Int64("pos", cpos).Int("timeout", timeout).Msg("recv")
+	log.Trace().Int("timeout", timeout).Msg("recv")
 
 	resp, herr := conn.OnIncomingRequest(req.Context(), &requestBody)
 	if herr != nil {
 		log.Err(herr).Msg("failed to OnIncomingRequest")
 		return herr
 	}
+	// for logging
+	internal.SetRequestContextResponseInfo(req.Context(), cpos, resp.PosInt(), len(resp.Rooms), requestBody.TxnID)
+
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(200)
 	if err := json.NewEncoder(w).Encode(resp); err != nil {
@@ -312,9 +316,9 @@ func (h *SyncLiveHandler) setupConnection(req *http.Request, syncReq *sync3.Requ
 		return NewConnState(v2device.UserID, v2device.DeviceID, userCache, h.GlobalCache, h.Extensions, h.Dispatcher)
 	})
 	if created {
-		log.Info().Str("conn_id", conn.ConnID.String()).Msg("created new connection")
+		log.Info().Str("user", v2device.UserID).Str("conn_id", conn.ConnID.String()).Msg("created new connection")
 	} else {
-		log.Info().Str("conn_id", conn.ConnID.String()).Msg("using existing connection")
+		log.Info().Str("user", v2device.UserID).Str("conn_id", conn.ConnID.String()).Msg("using existing connection")
 	}
 	return conn, nil
 }

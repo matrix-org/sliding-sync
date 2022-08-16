@@ -40,6 +40,7 @@ func defaulting(in, dft string) string {
 
 func main() {
 	fmt.Printf("Sync v3 [%s] (%s)\n", version, GitCommit)
+	syncv3.Version = fmt.Sprintf("%s (%s)", version, GitCommit)
 	flagDestinationServer := os.Getenv(EnvServer)
 	flagPostgres := os.Getenv(EnvDB)
 	flagSecret := os.Getenv(EnvSecret)
