@@ -161,3 +161,55 @@ func TestSortByMultipleOperations(t *testing.T) {
 		}
 	}
 }
+
+// Test that if you remove a room, it updates the lookup map.
+func TestSortableRoomsRemove(t *testing.T) {
+	room1 := "!1:localhost"
+	room2 := "!2:localhost"
+	rooms := []RoomConnMetadata{
+		{
+			RoomMetadata: internal.RoomMetadata{
+				RoomID:               room1,
+				LastMessageTimestamp: 700,
+			},
+			UserRoomData: caches.UserRoomData{
+				HighlightCount:    1,
+				NotificationCount: 1,
+			},
+			CanonicalisedName: "foo",
+		},
+		{
+			RoomMetadata: internal.RoomMetadata{
+				RoomID:               room2,
+				LastMessageTimestamp: 600,
+			},
+			UserRoomData: caches.UserRoomData{
+				HighlightCount:    2,
+				NotificationCount: 2,
+			},
+			CanonicalisedName: "foo2",
+		},
+	}
+	sr := NewSortableRooms(rooms)
+	if err := sr.Sort([]string{SortByRecency}); err != nil { // room 1 is first, then room 2
+		t.Fatalf("Sort: %s", err)
+	}
+	if i, ok := sr.IndexOf(room1); i != 0 || !ok {
+		t.Errorf("IndexOf room 1 returned %v %v", i, ok)
+	}
+	if i, ok := sr.IndexOf(room2); i != 1 || !ok {
+		t.Errorf("IndexOf room 2 returned %v %v", i, ok)
+	}
+	// Remove room 1, so room 2 should take its place.
+	rmIndex := sr.Remove(room1)
+	if rmIndex != 0 {
+		t.Fatalf("Remove: return removed index %v want 0", rmIndex)
+	}
+	// check
+	if i, ok := sr.IndexOf(room1); ok { // should be !ok
+		t.Errorf("IndexOf room 1 returned %v %v", i, ok)
+	}
+	if i, ok := sr.IndexOf(room2); i != 0 || !ok {
+		t.Errorf("IndexOf room 2 returned %v %v", i, ok)
+	}
+}

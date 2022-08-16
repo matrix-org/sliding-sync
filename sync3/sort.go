@@ -81,6 +81,10 @@ func (s *SortableRooms) Remove(roomID string) int {
 	delete(s.roomIDToIndex, roomID)
 	// splice out index
 	s.rooms = append(s.rooms[:index], s.rooms[index+1:]...)
+	// re-update the map
+	for i := index; i < len(s.rooms); i++ {
+		s.roomIDToIndex[s.rooms[i].RoomID] = i
+	}
 	return index
 }
 
