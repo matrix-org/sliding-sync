@@ -1,5 +1,6 @@
 #!/bin/bash -eu
 export SYNCV3_BINDADDR=0.0.0.0:8844
+export SYNCV3_DEBUG=1
 
 # Run the binary and stop it afterwards.
 ../syncv3 &

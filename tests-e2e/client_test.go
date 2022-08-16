@@ -354,6 +354,7 @@ func (c *CSAPI) MustSyncUntil(t *testing.T, syncReq SyncReq, checks ...SyncCheck
 		}
 		if len(checkers) == 0 {
 			// every checker has passed!
+			time.Sleep(10 * time.Millisecond) // sleep a very small amount to give the proxy time to process data
 			return syncReq.Since
 		}
 	}
