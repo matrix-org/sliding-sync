@@ -85,24 +85,25 @@ func (s *ConnState) load() error {
 	for _, metadata := range joinedRooms {
 		metadata.RemoveHero(s.userID)
 		urd := s.userCache.LoadRoomData(metadata.RoomID)
+		// TODO: move to user cache?
+		urd.CanonicalisedName = strings.ToLower(
+			strings.Trim(internal.CalculateRoomName(metadata, 5), "#!():_@"),
+		)
 		rooms[i] = sync3.RoomConnMetadata{
 			RoomMetadata: *metadata,
 			UserRoomData: urd,
-			CanonicalisedName: strings.ToLower(
-				strings.Trim(internal.CalculateRoomName(metadata, 5), "#!():_@"),
-			),
 		}
 		i++
 	}
 	invites := s.userCache.Invites()
 	for _, urd := range invites {
 		metadata := urd.Invite.RoomMetadata()
+		urd.CanonicalisedName = strings.ToLower(
+			strings.Trim(internal.CalculateRoomName(metadata, 5), "#!():_@"),
+		)
 		rooms = append(rooms, sync3.RoomConnMetadata{
 			RoomMetadata: *metadata,
 			UserRoomData: urd,
-			CanonicalisedName: strings.ToLower(
-				strings.Trim(internal.CalculateRoomName(metadata, 5), "#!():_@"),
-			),
 		})
 	}
 

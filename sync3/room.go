@@ -22,6 +22,4 @@ type Room struct {
 type RoomConnMetadata struct {
 	internal.RoomMetadata
 	caches.UserRoomData
-
-	CanonicalisedName string // stripped leading symbols like #, all in lower case
 }

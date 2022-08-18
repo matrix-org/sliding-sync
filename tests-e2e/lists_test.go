@@ -630,3 +630,86 @@ func TestNewRoomNameCalculations(t *testing.T) {
 		t.Errorf(err.Error())
 	}
 }
+
+// Regression test for when you swap from sorting by recency to sorting by name and it didn't take effect.
+func TestChangeSortOrder(t *testing.T) {
+	alice := registerNewUser(t)
+
+	res := alice.SlidingSync(t, sync3.Request{
+		Lists: []sync3.RequestList{
+			{
+				Ranges: sync3.SliceRanges{{0, 20}},
+				Sort:   []string{sync3.SortByRecency},
+				RoomSubscription: sync3.RoomSubscription{
+					RequiredState: [][2]string{{"m.room.name", ""}},
+				},
+			},
+		},
+	})
+	m.MatchResponse(t, res, m.MatchRoomSubscriptionsStrict(nil), m.MatchNoV3Ops())
+	roomNames := []string{
+		"Kiwi", "Lemon", "Apple", "Orange",
+	}
+	roomIDs := make([]string, len(roomNames))
+	gotNameToIDs := make(map[string]string)
+
+	waitFor := func(roomID, roomName string) {
+		start := time.Now()
+		for {
+			if time.Since(start) > time.Second {
+				t.Fatalf("didn't see room name '%s' for room %s", roomName, roomID)
+				break
+			}
+			res = alice.SlidingSync(t, sync3.Request{
+				Lists: []sync3.RequestList{
+					{
+						Ranges: sync3.SliceRanges{{0, 20}},
+					},
+				},
+			}, WithPos(res.Pos))
+			for roomID, sub := range res.Rooms {
+				gotNameToIDs[sub.Name] = roomID
+			}
+			if gotNameToIDs[roomName] == roomID {
+				break
+			}
+			time.Sleep(10 * time.Millisecond)
+		}
+	}
+
+	for i, name := range roomNames {
+		roomIDs[i] = alice.CreateRoom(t, map[string]interface{}{
+			"name": name,
+		})
+		// we cannot guarantee we will see the right state yet, so just keep track of the room names
+		waitFor(roomIDs[i], name)
+	}
+
+	// now change the sort order: first send the request up then keep hitting sliding sync until
+	// we see the txn ID confirming it has been applied
+	txnID := "a"
+	res = alice.SlidingSync(t, sync3.Request{
+		TxnID: "a",
+		Lists: []sync3.RequestList{
+			{
+				Ranges: sync3.SliceRanges{{0, 20}},
+				Sort:   []string{sync3.SortByName},
+			},
+		},
+	}, WithPos(res.Pos))
+	for res.TxnID != txnID {
+		res = alice.SlidingSync(t, sync3.Request{
+			Lists: []sync3.RequestList{
+				{
+					Ranges: sync3.SliceRanges{{0, 20}},
+				},
+			},
+		}, WithPos(res.Pos))
+	}
+
+	m.MatchResponse(t, res, m.MatchList(0, m.MatchV3Count(4), m.MatchV3Ops(
+		m.MatchV3InvalidateOp(0, 20),
+		m.MatchV3SyncOp(0, 20, []string{gotNameToIDs["Apple"], gotNameToIDs["Kiwi"], gotNameToIDs["Lemon"], gotNameToIDs["Orange"]}),
+	)))
+
+}

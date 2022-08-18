@@ -25,9 +25,10 @@ type UserRoomData struct {
 	// (event_id, last_event_id) -> closest prev_batch
 	// We mux in last_event_id so we can invalidate prev batch tokens for the same event ID when a new timeline event
 	// comes in, without having to do a SQL query.
-	PrevBatches *lru.Cache
-	Timeline    []json.RawMessage
-	Invite      *InviteData
+	PrevBatches       *lru.Cache
+	Timeline          []json.RawMessage
+	Invite            *InviteData
+	CanonicalisedName string // stripped leading symbols like #, all in lower case
 	// Set of spaces this room is a part of, from the perspective of this user. This is NOT global room data
 	// as the set of spaces may be different for different users.
 	Spaces map[string]struct{}

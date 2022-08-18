@@ -21,8 +21,8 @@ func TestSortBySingleOperation(t *testing.T) {
 			UserRoomData: caches.UserRoomData{
 				HighlightCount:    3,
 				NotificationCount: 12,
+				CanonicalisedName: "foo",
 			},
-			CanonicalisedName: "foo",
 		},
 		{
 			RoomMetadata: internal.RoomMetadata{
@@ -32,8 +32,8 @@ func TestSortBySingleOperation(t *testing.T) {
 			UserRoomData: caches.UserRoomData{
 				HighlightCount:    0,
 				NotificationCount: 3,
+				CanonicalisedName: "koo",
 			},
-			CanonicalisedName: "koo",
 		},
 		{
 			RoomMetadata: internal.RoomMetadata{
@@ -43,8 +43,8 @@ func TestSortBySingleOperation(t *testing.T) {
 			UserRoomData: caches.UserRoomData{
 				HighlightCount:    2,
 				NotificationCount: 7,
+				CanonicalisedName: "yoo",
 			},
-			CanonicalisedName: "yoo",
 		},
 		{
 			RoomMetadata: internal.RoomMetadata{
@@ -54,8 +54,8 @@ func TestSortBySingleOperation(t *testing.T) {
 			UserRoomData: caches.UserRoomData{
 				HighlightCount:    1,
 				NotificationCount: 1,
+				CanonicalisedName: "boo",
 			},
-			CanonicalisedName: "boo",
 		},
 	}
 	// name: 4,1,2,3
@@ -97,8 +97,8 @@ func TestSortByMultipleOperations(t *testing.T) {
 			UserRoomData: caches.UserRoomData{
 				HighlightCount:    1,
 				NotificationCount: 1,
+				CanonicalisedName: "foo",
 			},
-			CanonicalisedName: "foo",
 		},
 		{
 			RoomMetadata: internal.RoomMetadata{
@@ -108,8 +108,8 @@ func TestSortByMultipleOperations(t *testing.T) {
 			UserRoomData: caches.UserRoomData{
 				HighlightCount:    1,
 				NotificationCount: 5,
+				CanonicalisedName: "koo",
 			},
-			CanonicalisedName: "koo",
 		},
 		{
 			RoomMetadata: internal.RoomMetadata{
@@ -119,8 +119,8 @@ func TestSortByMultipleOperations(t *testing.T) {
 			UserRoomData: caches.UserRoomData{
 				HighlightCount:    0,
 				NotificationCount: 0,
+				CanonicalisedName: "yoo",
 			},
-			CanonicalisedName: "yoo",
 		},
 		{
 			RoomMetadata: internal.RoomMetadata{
@@ -130,8 +130,8 @@ func TestSortByMultipleOperations(t *testing.T) {
 			UserRoomData: caches.UserRoomData{
 				HighlightCount:    0,
 				NotificationCount: 0,
+				CanonicalisedName: "boo",
 			},
-			CanonicalisedName: "boo",
 		},
 	}
 	testCases := []struct {
@@ -175,8 +175,8 @@ func TestSortableRoomsRemove(t *testing.T) {
 			UserRoomData: caches.UserRoomData{
 				HighlightCount:    1,
 				NotificationCount: 1,
+				CanonicalisedName: "foo",
 			},
-			CanonicalisedName: "foo",
 		},
 		{
 			RoomMetadata: internal.RoomMetadata{
@@ -186,8 +186,8 @@ func TestSortableRoomsRemove(t *testing.T) {
 			UserRoomData: caches.UserRoomData{
 				HighlightCount:    2,
 				NotificationCount: 2,
+				CanonicalisedName: "foo2",
 			},
-			CanonicalisedName: "foo2",
 		},
 	}
 	sr := NewSortableRooms(rooms)

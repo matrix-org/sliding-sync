@@ -122,6 +122,14 @@ func (s *connStateLive) processLiveUpdate(ctx context.Context, up caches.Update,
 		}
 		sameRoomName := s.lists.UpdateRoom(roomUpdate.GlobalRoomMetadata())
 		roomNameUpdated = !sameRoomName
+		if roomNameUpdated {
+			// update the canonicalised name for this room so we can sort it correctly
+			// TODO: this should probably be done in UserCache tbh...
+			urd := roomUpdate.UserRoomMetadata()
+			urd.CanonicalisedName = strings.ToLower(
+				strings.Trim(internal.CalculateRoomName(roomUpdate.GlobalRoomMetadata(), 5), "#!():_@"),
+			)
+		}
 	}
 
 	// do per-list updates (e.g resorting, adding/removing rooms which no longer match filter)
@@ -191,12 +199,13 @@ func (s *connStateLive) processGlobalUpdates(ctx context.Context, builder *Rooms
 			s.lists.RemoveRoom(update.RoomID())
 		} else {
 			metadata := update.InviteData.RoomMetadata()
+			urd := *update.UserRoomMetadata()
+			urd.CanonicalisedName = strings.ToLower(
+				strings.Trim(internal.CalculateRoomName(metadata, 5), "#!():_@"),
+			)
 			s.lists.AddRoomIfNotExists(sync3.RoomConnMetadata{
 				RoomMetadata: *metadata,
-				UserRoomData: *update.UserRoomMetadata(),
-				CanonicalisedName: strings.ToLower(
-					strings.Trim(internal.CalculateRoomName(metadata, 5), "#!():_@"),
-				),
+				UserRoomData: urd,
 			})
 		}
 	}
@@ -292,12 +301,13 @@ func (s *connStateLive) processIncomingEventForList(
 		fromIndex = int(intList.Len())
 		roomMetadata := update.GlobalRoomMetadata()
 		roomMetadata.RemoveHero(s.userID)
+		urd := *update.UserRoomMetadata()
+		urd.CanonicalisedName = strings.ToLower(
+			strings.Trim(internal.CalculateRoomName(roomMetadata, 5), "#!():_@"),
+		)
 		newRoomConn := sync3.RoomConnMetadata{
 			RoomMetadata: *roomMetadata,
-			UserRoomData: *update.UserRoomMetadata(),
-			CanonicalisedName: strings.ToLower(
-				strings.Trim(internal.CalculateRoomName(roomMetadata, 5), "#!():_@"),
-			),
+			UserRoomData: urd,
 		}
 		if !intList.Add(newRoomConn) {
 			// we didn't add this room to the list so we don't need to resort
