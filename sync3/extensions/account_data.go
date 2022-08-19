@@ -27,7 +27,7 @@ func (r *AccountDataResponse) HasData(isInitial bool) bool {
 	if isInitial {
 		return true
 	}
-	return len(r.Rooms) > 0
+	return len(r.Rooms) > 0 || len(r.Global) > 0
 }
 
 func accountEventsAsJSON(events []state.AccountData) []json.RawMessage {
