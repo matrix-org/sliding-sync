@@ -36,7 +36,13 @@ func (m *ConnMap) Conn(cid ConnID) *Conn {
 	if cint == nil {
 		return nil
 	}
-	return cint.(*Conn)
+	conn := cint.(*Conn)
+	if conn.Alive() {
+		return conn
+	}
+	// e.g buffer exceeded, close it and remove it from the cache
+	m.closeConn(conn)
+	return nil
 }
 
 // Atomically gets or creates a connection with this connection ID. Calls newConn if a new connection is required.
