@@ -521,4 +521,31 @@ func TestFiltersTags(t *testing.T) {
 	)), m.MatchList(1, m.MatchV3Ops()), m.MatchList(2, m.MatchV3Count(4), m.MatchV3Ops(
 		m.MatchV3DeleteOp(0),
 	)))
+
+	// check not_tags works
+	res = rig.V3.mustDoV3Request(t, aliceToken, sync3.Request{
+		Lists: []sync3.RequestList{
+			{
+				Ranges: sync3.SliceRanges{
+					[2]int64{0, 20},
+				},
+				Filters: &sync3.RequestFilters{
+					Tags: []string{tagFav},
+				},
+			},
+			{
+				Ranges: sync3.SliceRanges{
+					[2]int64{0, 20},
+				},
+				Filters: &sync3.RequestFilters{
+					NotTags: []string{tagFav},
+				},
+			},
+		},
+	})
+	m.MatchResponse(t, res, m.MatchList(0, m.MatchV3Count(2), m.MatchV3Ops(
+		m.MatchV3SyncOp(0, 20, []string{fav2RoomID, favAndLowRoomID}, true),
+	)), m.MatchList(1, m.MatchV3Count(3), m.MatchV3Ops(
+		m.MatchV3SyncOp(0, 20, []string{low1RoomID, low2RoomID, fav1RoomID}, true),
+	)))
 }
