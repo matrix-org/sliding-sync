@@ -346,6 +346,15 @@ func (h *SyncLiveHandler) userCache(userID string) (*caches.UserCache, error) {
 		uc.OnAccountData([]state.AccountData{*directEvent})
 	}
 
+	// select all room tag account data and set it
+	tagEvents, err := h.Storage.RoomAccountDatasWithType(userID, "m.tag")
+	if err != nil {
+		return nil, fmt.Errorf("failed to load room tags %s", err)
+	}
+	if len(tagEvents) > 0 {
+		uc.OnAccountData(tagEvents)
+	}
+
 	// select outstanding invites
 	invites, err := h.Storage.InvitesTable.SelectAllInvitesForUser(userID)
 	if err != nil {

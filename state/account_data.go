@@ -73,6 +73,12 @@ func (t *AccountDataTable) Select(txn *sqlx.Tx, userID, eventType, roomID string
 	return &acc, err
 }
 
+func (t *AccountDataTable) SelectWithType(txn *sqlx.Tx, userID, evType string) (datas []AccountData, err error) {
+	err = txn.Select(&datas, `SELECT user_id, room_id, type, data FROM syncv3_account_data
+	WHERE user_id=$1 AND type=$2 AND room_id != ''`, userID, evType)
+	return
+}
+
 func (t *AccountDataTable) SelectMany(txn *sqlx.Tx, userID string, roomIDs ...string) (datas []AccountData, err error) {
 	if len(roomIDs) == 0 {
 		err = txn.Select(&datas, `SELECT user_id, room_id, type, data FROM syncv3_account_data

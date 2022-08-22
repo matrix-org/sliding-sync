@@ -106,6 +106,21 @@ func (r *testRig) SetupV2RoomsForUser(t *testing.T, v2UserID string, f FlushEnum
 					Events: timeline,
 				},
 			}
+			if len(descriptor.Tags) > 0 {
+				tagContent := make(map[string]interface{})
+				for tagName, order := range descriptor.Tags {
+					tagContent[tagName] = map[string]interface{}{
+						"order": order,
+					}
+				}
+				jr := joinRooms[roomID]
+				jr.AccountData = sync2.EventsResponse{
+					Events: []json.RawMessage{testutils.NewAccountData(
+						t, "m.tag", tagContent,
+					)},
+				}
+				joinRooms[roomID] = jr
+			}
 		default:
 			t.Fatalf("unknown value for descriptor.MembershipOfSyncer")
 		}
@@ -177,6 +192,7 @@ type RoomDescriptor struct {
 	IsEncrypted        bool
 	RoomType           string
 	Name               string
+	Tags               map[string]float64
 }
 
 type TestRoom struct {

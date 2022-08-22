@@ -75,6 +75,14 @@ func (s *Storage) AccountData(userID, roomID, eventType string) (data *AccountDa
 	return
 }
 
+func (s *Storage) RoomAccountDatasWithType(userID, eventType string) (data []AccountData, err error) {
+	err = sqlutil.WithTransaction(s.accumulator.db, func(txn *sqlx.Tx) error {
+		data, err = s.AccountDataTable.SelectWithType(txn, userID, eventType)
+		return err
+	})
+	return
+}
+
 // Pull out all account data for this user. If roomIDs is empty, global account data is returned.
 // If roomIDs is non-empty, all account data for these rooms are extracted.
 func (s *Storage) AccountDatas(userID string, roomIDs ...string) (datas []AccountData, err error) {

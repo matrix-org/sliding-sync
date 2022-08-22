@@ -140,4 +140,16 @@ func TestAccountData(t *testing.T) {
 		t.Fatalf("SelectMany: got %d account data, want 0", len(gotDatas))
 	}
 
+	// Select all room account data matching eventType
+	gotDatas, err = table.SelectWithType(txn, alice, eventType)
+	if err != nil {
+		t.Fatalf("SelectWithType: %v", err)
+	}
+	wantDatas = []AccountData{
+		accountData[1], accountData[6],
+	}
+	if !accountDatasEqual(gotDatas, wantDatas) {
+		t.Fatalf("SelectWithType: got %v want %v", gotDatas, wantDatas)
+	}
+
 }

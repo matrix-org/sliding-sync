@@ -425,6 +425,7 @@ type RequestFilters struct {
 	RoomTypes      []*string `json:"room_types"`
 	NotRoomTypes   []*string `json:"not_room_types"`
 	RoomNameFilter string    `json:"room_name_like"`
+	Tags           []string  `json:"tags"`
 	// TODO options to control which events should be live-streamed e.g not_types, types from sync v2
 }
 
@@ -443,6 +444,18 @@ func (rf *RequestFilters) Include(r *RoomConnMetadata) bool {
 	}
 	if rf.RoomNameFilter != "" && !strings.Contains(strings.ToLower(internal.CalculateRoomName(&r.RoomMetadata, 5)), strings.ToLower(rf.RoomNameFilter)) {
 		return false
+	}
+	if len(rf.Tags) > 0 {
+		tagExists := false
+		for _, t := range rf.Tags {
+			if _, ok := r.Tags[t]; ok {
+				tagExists = true
+				break
+			}
+		}
+		if !tagExists {
+			return false
+		}
 	}
 	// read not_room_types first as it takes priority
 	if nullableStringExists(rf.NotRoomTypes, r.RoomType) {

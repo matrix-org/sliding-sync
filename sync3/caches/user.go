@@ -32,6 +32,9 @@ type UserRoomData struct {
 	// Set of spaces this room is a part of, from the perspective of this user. This is NOT global room data
 	// as the set of spaces may be different for different users.
 	Spaces map[string]struct{}
+	// Map of tag to order float.
+	// See https://spec.matrix.org/latest/client-server-api/#room-tagging
+	Tags map[string]float64
 }
 
 func NewUserRoomData() UserRoomData {
@@ -39,6 +42,7 @@ func NewUserRoomData() UserRoomData {
 	return UserRoomData{
 		PrevBatches: l,
 		Spaces:      make(map[string]struct{}),
+		Tags:        make(map[string]float64),
 	}
 }
 
@@ -574,6 +578,8 @@ func (c *UserCache) OnRetireInvite(roomID string) {
 
 func (c *UserCache) OnAccountData(datas []state.AccountData) {
 	roomUpdates := make(map[string][]state.AccountData)
+	// room_id -> tag_id -> order
+	tagUpdates := make(map[string]map[string]float64)
 	for _, d := range datas {
 		up := roomUpdates[d.RoomID]
 		up = append(up, d)
@@ -603,8 +609,29 @@ func (c *UserCache) OnAccountData(datas []state.AccountData) {
 				c.roomToData[dmRoomID] = u
 			}
 			c.roomToDataMu.Unlock()
+		} else if d.Type == "m.tag" {
+			content := gjson.ParseBytes(d.Data).Get("content")
+			if tagUpdates[d.RoomID] == nil {
+				tagUpdates[d.RoomID] = make(map[string]float64)
+			}
+			content.ForEach(func(k, v gjson.Result) bool {
+				tagUpdates[d.RoomID][k.Str] = v.Get("order").Float()
+				return true
+			})
 		}
-
+	}
+	if len(tagUpdates) > 0 {
+		c.roomToDataMu.Lock()
+		// bulk assign tag updates
+		for roomID, tags := range tagUpdates {
+			urd, ok := c.roomToData[roomID]
+			if !ok {
+				urd = NewUserRoomData()
+			}
+			urd.Tags = tags
+			c.roomToData[roomID] = urd
+		}
+		c.roomToDataMu.Unlock()
 	}
 	// bucket account data updates per-room and globally then invoke listeners
 	for roomID, updates := range roomUpdates {
