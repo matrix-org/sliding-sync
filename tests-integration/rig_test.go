@@ -116,7 +116,9 @@ func (r *testRig) SetupV2RoomsForUser(t *testing.T, v2UserID string, f FlushEnum
 				jr := joinRooms[roomID]
 				jr.AccountData = sync2.EventsResponse{
 					Events: []json.RawMessage{testutils.NewAccountData(
-						t, "m.tag", tagContent,
+						t, "m.tag", map[string]interface{}{
+							"tags": tagContent,
+						},
 					)},
 				}
 				joinRooms[roomID] = jr

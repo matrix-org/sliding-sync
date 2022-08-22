@@ -610,7 +610,7 @@ func (c *UserCache) OnAccountData(datas []state.AccountData) {
 			}
 			c.roomToDataMu.Unlock()
 		} else if d.Type == "m.tag" {
-			content := gjson.ParseBytes(d.Data).Get("content")
+			content := gjson.ParseBytes(d.Data).Get("content.tags")
 			if tagUpdates[d.RoomID] == nil {
 				tagUpdates[d.RoomID] = make(map[string]float64)
 			}
