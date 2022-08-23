@@ -232,6 +232,13 @@ func (s *connStateLive) processLiveUpdateForList(
 	}
 
 	switch update := up.(type) {
+	case *caches.RoomAccountDataUpdate:
+		logger.Trace().Str("user", s.userID).Msg("received room account data update")
+		ops, didUpdate := s.processIncomingEventForList(ctx, builder, update, reqList, intList)
+		if didUpdate {
+			hasUpdates = true
+		}
+		resList.Ops = append(resList.Ops, ops...)
 	case *caches.RoomEventUpdate:
 		logger.Trace().Str("user", s.userID).Str("type", update.EventData.EventType).Msg("received event update")
 		ops, didUpdate := s.processIncomingEventForList(ctx, builder, update, reqList, intList)
@@ -292,7 +299,7 @@ func (s *connStateLive) processUnreadCountUpdateForList(
 }
 
 func (s *connStateLive) processIncomingEventForList(
-	ctx context.Context, builder *RoomsBuilder, update *caches.RoomEventUpdate, reqList *sync3.RequestList, intList *sync3.FilteredSortableRooms,
+	ctx context.Context, builder *RoomsBuilder, update caches.RoomUpdate, reqList *sync3.RequestList, intList *sync3.FilteredSortableRooms,
 ) (ops []sync3.ResponseOp, didUpdate bool) {
 	fromIndex, ok := intList.IndexOf(update.RoomID())
 	newlyAdded := false
@@ -316,7 +323,8 @@ func (s *connStateLive) processIncomingEventForList(
 		logger.Info().Str("room", update.RoomID()).Msg("room added")
 		newlyAdded = true
 	}
-	if update.EventData.ForceInitial {
+	roomEventUpdate, ok := update.(*caches.RoomEventUpdate)
+	if ok && roomEventUpdate.EventData.ForceInitial {
 		// add room to sub: this applies for when we track all rooms too as we want joins/etc to come through with initial data
 		subID := builder.AddSubscription(reqList.RoomSubscription)
 		builder.AddRoomsToSubscription(subID, []string{update.RoomID()})

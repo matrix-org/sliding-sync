@@ -548,4 +548,49 @@ func TestFiltersTags(t *testing.T) {
 	)), m.MatchList(1, m.MatchV3Count(3), m.MatchV3Ops(
 		m.MatchV3SyncOp(0, 20, []string{low1RoomID, low2RoomID, fav1RoomID}, true),
 	)))
+
+	// remove a fav, it should move to the other list
+	rig.V2.queueResponse(alice, sync2.SyncResponse{
+		Rooms: sync2.SyncRoomsResponse{
+			Join: map[string]sync2.SyncV2JoinResponse{
+				fav2RoomID: {
+					AccountData: sync2.EventsResponse{
+						Events: []json.RawMessage{
+							testutils.NewAccountData(t, "m.tag", map[string]interface{}{
+								"tags": map[string]interface{}{},
+							}),
+						},
+					},
+				},
+			},
+		},
+	})
+	rig.V2.waitUntilEmpty(t, alice)
+	res = rig.V3.mustDoV3RequestWithPos(t, aliceToken, res.Pos, sync3.Request{
+		Lists: []sync3.RequestList{
+			{
+				Ranges: sync3.SliceRanges{
+					[2]int64{0, 20},
+				},
+			},
+			{
+				Ranges: sync3.SliceRanges{
+					[2]int64{0, 20},
+				},
+			},
+		},
+	})
+	// Room ordering is: (recent first)
+	// FAV1, LOW2, LOW1, FAVLOW, FAV2
+	// so lists before were:
+	// FAVLOW, FAV2
+	// FAV1, LOW2, LOW1
+	// now we have removed fav tag on FAV2 so new lists are:
+	// FAVLOW
+	// FAV1, LOW2, LOW1, FAV2
+	m.MatchResponse(t, res, m.MatchList(0, m.MatchV3Count(1), m.MatchV3Ops(
+		m.MatchV3DeleteOp(1),
+	)), m.MatchList(1, m.MatchV3Count(4), m.MatchV3Ops(
+		m.MatchV3InsertOp(3, fav2RoomID),
+	)))
 }

@@ -2,6 +2,7 @@ package syncv3
 
 import (
 	"encoding/json"
+	"sort"
 	"testing"
 	"time"
 
@@ -41,7 +42,16 @@ func (r *testRig) SetupV2RoomsForUser(t *testing.T, v2UserID string, f FlushEnum
 	}
 	inviteRooms := make(map[string]sync2.SyncV2InviteResponse)
 	joinRooms := make(map[string]sync2.SyncV2JoinResponse)
-	for roomID, descriptor := range data {
+	roomIDs := make([]string, len(data))
+	i := 0
+	for roomID := range data {
+		roomIDs[i] = roomID
+		i++
+	}
+	sort.Strings(roomIDs) // ensure we always create rooms deterministically
+	for _, roomID := range roomIDs {
+		time.Sleep(time.Millisecond)
+		descriptor := data[roomID]
 		if descriptor.MembershipOfSyncer == "" {
 			descriptor.MembershipOfSyncer = "join"
 		}
