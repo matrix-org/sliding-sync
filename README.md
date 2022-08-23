@@ -15,6 +15,8 @@ Proxy version to MSC API specification:
     -   Reworked where lists and ops are situated in the response JSON. Added new filters like `room_name_like`. Added `slow_get_all_rooms`. Standardised on env vars for configuring the proxy. Persist access tokens, encrypted with `SYNCV3_SECRET`.
 -   Version 0.3.x: [2022/08/05](https://github.com/matrix-org/matrix-spec-proposals/blob/61decae837b5448b073fc5c718172f9b4d1e5e18/proposals/3575-sync.md)
     -   Spaces support, `txn_id` support.
+-   Version 0.4.x [2022/08/23](https://github.com/matrix-org/matrix-spec-proposals/blob/59c83a857b4cf3cf6aca593c34efb44709b10d17/proposals/3575-sync.md)
+    -   Support for `tags` and `not_tags`.
 
 ## Usage
 
