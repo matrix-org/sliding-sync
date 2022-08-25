@@ -12,7 +12,7 @@ func TestSortBySingleOperation(t *testing.T) {
 	room2 := "!2:localhost"
 	room3 := "!3:localhost"
 	room4 := "!4:localhost"
-	rooms := []RoomConnMetadata{
+	rooms := []*RoomConnMetadata{
 		{
 			RoomMetadata: internal.RoomMetadata{
 				RoomID:               room1,
@@ -88,7 +88,7 @@ func TestSortByMultipleOperations(t *testing.T) {
 	room2 := "!2:localhost"
 	room3 := "!3:localhost"
 	room4 := "!4:localhost"
-	rooms := []RoomConnMetadata{
+	rooms := []*RoomConnMetadata{
 		{
 			RoomMetadata: internal.RoomMetadata{
 				RoomID:               room1,
@@ -166,7 +166,7 @@ func TestSortByMultipleOperations(t *testing.T) {
 func TestSortableRoomsRemove(t *testing.T) {
 	room1 := "!1:localhost"
 	room2 := "!2:localhost"
-	rooms := []RoomConnMetadata{
+	rooms := []*RoomConnMetadata{
 		{
 			RoomMetadata: internal.RoomMetadata{
 				RoomID:               room1,

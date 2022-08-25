@@ -11,11 +11,11 @@ import (
 // SortableRooms represents a list of rooms which can be sorted and updated. Maintains mappings of
 // room IDs to current index positions after sorting.
 type SortableRooms struct {
-	rooms         []RoomConnMetadata
+	rooms         []*RoomConnMetadata
 	roomIDToIndex map[string]int // room_id -> index in rooms
 }
 
-func NewSortableRooms(rooms []RoomConnMetadata) *SortableRooms {
+func NewSortableRooms(rooms []*RoomConnMetadata) *SortableRooms {
 	return &SortableRooms{
 		rooms:         rooms,
 		roomIDToIndex: make(map[string]int),
@@ -58,7 +58,7 @@ func (s *SortableRooms) RoomIDs() []string {
 }
 
 // Add a room to the list. Returns true if the room was added.
-func (s *SortableRooms) Add(r RoomConnMetadata) bool {
+func (s *SortableRooms) Add(r *RoomConnMetadata) bool {
 	_, exists := s.roomIDToIndex[r.RoomID]
 	if exists {
 		return false
@@ -68,7 +68,7 @@ func (s *SortableRooms) Add(r RoomConnMetadata) bool {
 	return true
 }
 
-func (s *SortableRooms) Get(index int) RoomConnMetadata {
+func (s *SortableRooms) Get(index int) *RoomConnMetadata {
 	internal.Assert("index is within len(rooms)", index < len(s.rooms))
 	return s.rooms[index]
 }
@@ -187,13 +187,14 @@ type FilteredSortableRooms struct {
 }
 
 func NewFilteredSortableRooms(rooms map[string]RoomConnMetadata, filter *RequestFilters) *FilteredSortableRooms {
-	var filteredRooms []RoomConnMetadata
+	var filteredRooms []*RoomConnMetadata
 	if filter == nil {
 		filter = &RequestFilters{}
 	}
-	for _, r := range rooms {
+	for roomID := range rooms {
+		r := rooms[roomID]
 		if filter.Include(&r) {
-			filteredRooms = append(filteredRooms, r)
+			filteredRooms = append(filteredRooms, &r)
 		}
 	}
 	return &FilteredSortableRooms{
@@ -202,8 +203,8 @@ func NewFilteredSortableRooms(rooms map[string]RoomConnMetadata, filter *Request
 	}
 }
 
-func (f *FilteredSortableRooms) Add(r RoomConnMetadata) bool {
-	if !f.filter.Include(&r) {
+func (f *FilteredSortableRooms) Add(r *RoomConnMetadata) bool {
+	if !f.filter.Include(r) {
 		return false
 	}
 	return f.SortableRooms.Add(r)
@@ -218,7 +219,7 @@ func (f *FilteredSortableRooms) UpdateGlobalRoomMetadata(r *internal.RoomMetadat
 	// Get must return a copy as we are modifying it eagerly to pass to the filter
 	room := f.SortableRooms.Get(index)
 	room.RoomMetadata = *r
-	if !f.filter.Include(&room) {
+	if !f.filter.Include(room) {
 		return f.Remove(r.RoomID)
 	}
 	return f.SortableRooms.UpdateGlobalRoomMetadata(r)
@@ -232,7 +233,7 @@ func (f *FilteredSortableRooms) UpdateUserRoomMetadata(roomID string, userEvent 
 	// Get must return a copy as we are modifying it eagerly to pass to the filter
 	room := f.SortableRooms.Get(index)
 	room.UserRoomData = *userEvent
-	if !f.filter.Include(&room) {
+	if !f.filter.Include(room) {
 		return f.Remove(roomID)
 	}
 	return f.SortableRooms.UpdateUserRoomMetadata(roomID, userEvent)

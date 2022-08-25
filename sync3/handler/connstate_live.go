@@ -316,7 +316,7 @@ func (s *connStateLive) processIncomingEventForList(
 			RoomMetadata: *roomMetadata,
 			UserRoomData: urd,
 		}
-		if !intList.Add(newRoomConn) {
+		if !intList.Add(&newRoomConn) {
 			// we didn't add this room to the list so we don't need to resort
 			return nil, false
 		}
