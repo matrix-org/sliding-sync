@@ -245,6 +245,30 @@ func TestRangeClosestInDirection(t *testing.T) {
 			towardsZero:      false,
 			wantClosestIndex: 40,
 		},
+		{
+			ranges:           [][2]int64{{0, 0}},
+			i:                0,
+			towardsZero:      true,
+			wantClosestIndex: 0,
+		},
+		{
+			ranges:           [][2]int64{{0, 0}},
+			i:                0,
+			towardsZero:      false,
+			wantClosestIndex: 0,
+		},
+		{
+			ranges:           [][2]int64{{10, 10}},
+			i:                10,
+			towardsZero:      false,
+			wantClosestIndex: 10,
+		},
+		{
+			ranges:           [][2]int64{{10, 10}},
+			i:                10,
+			towardsZero:      true,
+			wantClosestIndex: 10,
+		},
 	}
 	for _, tc := range testCases {
 		gotClosest := tc.ranges.ClosestInDirection(tc.i, tc.towardsZero)

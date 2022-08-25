@@ -902,6 +902,16 @@ func TestRequestList_CalculateMoveIndexes(t *testing.T) {
 			wantFromTos: [][2]int{{10, 0}, {20, 11}},
 			wantOk:      true,
 		},
+		{ // regression test
+			name: "move from outside range to inside range single element",
+			rl: RequestList{
+				Ranges: [][2]int64{{0, 0}},
+			},
+			from:        1,
+			to:          0,
+			wantFromTos: [][2]int{{0, 0}},
+			wantOk:      true,
+		},
 	}
 	for _, tc := range testCases {
 		gots, gotOk := tc.rl.CalculateMoveIndexes(tc.from, tc.to)

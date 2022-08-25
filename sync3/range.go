@@ -54,6 +54,9 @@ func (r SliceRanges) ClosestInDirection(i int64, towardsZero bool) (closestIndex
 		for j := range indexes {
 			if indexes[j] >= i {
 				if j == 0 {
+					if indexes[j] == i {
+						return indexes[j]
+					}
 					return -1
 				}
 				return indexes[j-1]
@@ -65,6 +68,9 @@ func (r SliceRanges) ClosestInDirection(i int64, towardsZero bool) (closestIndex
 		for j := len(indexes) - 1; j >= 0; j-- {
 			if indexes[j] <= i {
 				if j == len(indexes)-1 {
+					if indexes[j] == i {
+						return indexes[j]
+					}
 					return -1
 				}
 				return indexes[j+1]
