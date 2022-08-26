@@ -1,6 +1,10 @@
 package sync3
 
-import "github.com/matrix-org/sync-v3/internal"
+import (
+	"strings"
+
+	"github.com/matrix-org/sync-v3/internal"
+)
 
 type OverwriteVal bool
 
@@ -8,6 +12,10 @@ var (
 	DoNotOverwrite OverwriteVal = false
 	Overwrite      OverwriteVal = true
 )
+
+type RoomDelta struct {
+	RoomNameChanged bool
+}
 
 // InternalRequestLists is a list of lists which matches each index position in the request
 // JSON 'lists'. It contains all the internal metadata for rooms and controls access and updatings of said
@@ -23,11 +31,19 @@ func NewInternalRequestLists() *InternalRequestLists {
 	}
 }
 
-func (s *InternalRequestLists) AddRooms(rooms []RoomConnMetadata) {
-	for _, r := range rooms {
-		s.allRooms[r.RoomID] = r
+func (s *InternalRequestLists) SetRoom(r RoomConnMetadata) (delta RoomDelta) {
+	existing, exists := s.allRooms[r.RoomID]
+	if exists {
+		delta.RoomNameChanged = !existing.SameRoomName(&r.RoomMetadata)
+		if delta.RoomNameChanged {
+			// update the canonical name to allow room name sorting to continue to work
+			r.CanonicalisedName = strings.ToLower(
+				strings.Trim(internal.CalculateRoomName(&r.RoomMetadata, 5), "#!():_@"),
+			)
+		}
 	}
-
+	s.allRooms[r.RoomID] = r
+	return delta
 }
 
 func (s *InternalRequestLists) AddRoomIfNotExists(room RoomConnMetadata) {
@@ -51,21 +67,13 @@ func (s *InternalRequestLists) ForEach(fn func(index int, fsr *FilteredSortableR
 	}
 }
 
-// Update the room metadata entry for this room. If the room name is the same with the new metadata, returns true.
-func (s *InternalRequestLists) UpdateRoom(metadata *internal.RoomMetadata) (sameRoomName bool) {
-	// find the room
-	existing, exists := s.allRooms[metadata.RoomID]
-	if !exists {
-		return false
-	}
-	sameRoomName = existing.SameRoomName(metadata)
-	existing.RoomMetadata = *metadata
-	s.allRooms[metadata.RoomID] = existing
-	return
-}
-
 func (s *InternalRequestLists) DeleteList(index int) {
 	// TODO
+}
+
+func (s *InternalRequestLists) Room(roomID string) *RoomConnMetadata {
+	r := s.allRooms[roomID]
+	return &r
 }
 
 // Assign a new list at the given index. If Overwrite, any existing list is replaced. If DoNotOverwrite, the existing
@@ -75,7 +83,14 @@ func (s *InternalRequestLists) AssignList(index int, filters *RequestFilters, so
 	if shouldOverwrite == DoNotOverwrite && index < len(s.lists) {
 		return s.lists[index], false
 	}
-	roomList := NewFilteredSortableRooms(s.allRooms, filters)
+	roomIDs := make([]string, len(s.allRooms))
+	i := 0
+	for roomID := range s.allRooms {
+		roomIDs[i] = roomID
+		i++
+	}
+
+	roomList := NewFilteredSortableRooms(s, roomIDs, filters)
 	if sort != nil {
 		err := roomList.Sort(sort)
 		if err != nil {

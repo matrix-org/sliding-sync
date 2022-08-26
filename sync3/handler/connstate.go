@@ -107,7 +107,9 @@ func (s *ConnState) load() error {
 		})
 	}
 
-	s.lists.AddRooms(rooms)
+	for _, r := range rooms {
+		s.lists.SetRoom(r)
+	}
 	s.loadPosition = initialLoadPosition
 	return nil
 }

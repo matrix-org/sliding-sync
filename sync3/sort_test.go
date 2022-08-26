@@ -7,6 +7,28 @@ import (
 	"github.com/matrix-org/sync-v3/sync3/caches"
 )
 
+type finder struct {
+	rooms   map[string]*RoomConnMetadata
+	roomIDs []string
+}
+
+func (f finder) Room(roomID string) *RoomConnMetadata {
+	return f.rooms[roomID]
+}
+
+func newFinder(rooms []*RoomConnMetadata) finder {
+	m := make(map[string]*RoomConnMetadata)
+	ids := make([]string, len(rooms))
+	for i := range rooms {
+		ids[i] = rooms[i].RoomID
+		m[ids[i]] = rooms[i]
+	}
+	return finder{
+		rooms:   m,
+		roomIDs: ids,
+	}
+}
+
 func TestSortBySingleOperation(t *testing.T) {
 	room1 := "!1:localhost"
 	room2 := "!2:localhost"
@@ -68,12 +90,13 @@ func TestSortBySingleOperation(t *testing.T) {
 		SortByHighlightCount:    {room1, room3, room4, room2},
 		SortByNotificationCount: {room1, room3, room2, room4},
 	}
-	sr := NewSortableRooms(rooms)
+	f := newFinder(rooms)
+	sr := NewSortableRooms(f, f.roomIDs)
 	for sortBy, wantOrder := range wantMap {
 		sr.Sort([]string{sortBy})
 		var gotRoomIDs []string
-		for i := range sr.rooms {
-			gotRoomIDs = append(gotRoomIDs, sr.rooms[i].RoomID)
+		for i := range sr.roomIDs {
+			gotRoomIDs = append(gotRoomIDs, sr.roomIDs[i])
 		}
 		for i := range wantOrder {
 			if wantOrder[i] != gotRoomIDs[i] {
@@ -147,12 +170,13 @@ func TestSortByMultipleOperations(t *testing.T) {
 			WantRooms: []string{room1, room2, room4, room3},
 		},
 	}
-	sr := NewSortableRooms(rooms)
+	f := newFinder(rooms)
+	sr := NewSortableRooms(f, f.roomIDs)
 	for _, tc := range testCases {
 		sr.Sort(tc.SortBy)
 		var gotRoomIDs []string
-		for i := range sr.rooms {
-			gotRoomIDs = append(gotRoomIDs, sr.rooms[i].RoomID)
+		for i := range sr.roomIDs {
+			gotRoomIDs = append(gotRoomIDs, sr.roomIDs[i])
 		}
 		for i := range tc.WantRooms {
 			if tc.WantRooms[i] != gotRoomIDs[i] {
@@ -190,7 +214,8 @@ func TestSortableRoomsRemove(t *testing.T) {
 			},
 		},
 	}
-	sr := NewSortableRooms(rooms)
+	f := newFinder(rooms)
+	sr := NewSortableRooms(f, f.roomIDs)
 	if err := sr.Sort([]string{SortByRecency}); err != nil { // room 1 is first, then room 2
 		t.Fatalf("Sort: %s", err)
 	}

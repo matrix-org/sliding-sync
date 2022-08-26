@@ -5,43 +5,26 @@ import (
 	"sort"
 
 	"github.com/matrix-org/sync-v3/internal"
-	"github.com/matrix-org/sync-v3/sync3/caches"
 )
+
+type RoomFinder interface {
+	Room(roomID string) *RoomConnMetadata
+}
 
 // SortableRooms represents a list of rooms which can be sorted and updated. Maintains mappings of
 // room IDs to current index positions after sorting.
 type SortableRooms struct {
-	rooms         []*RoomConnMetadata
+	finder        RoomFinder
+	roomIDs       []string
 	roomIDToIndex map[string]int // room_id -> index in rooms
 }
 
-func NewSortableRooms(rooms []*RoomConnMetadata) *SortableRooms {
+func NewSortableRooms(finder RoomFinder, rooms []string) *SortableRooms {
 	return &SortableRooms{
-		rooms:         rooms,
+		roomIDs:       rooms,
+		finder:        finder,
 		roomIDToIndex: make(map[string]int),
 	}
-}
-
-func (s *SortableRooms) UpdateGlobalRoomMetadata(roomMeta *internal.RoomMetadata) int {
-	pos, ok := s.roomIDToIndex[roomMeta.RoomID]
-	if !ok {
-		return -1
-	}
-	meta := s.rooms[pos]
-	meta.RoomMetadata = *roomMeta
-	s.rooms[pos] = meta
-	return -1
-}
-
-func (s *SortableRooms) UpdateUserRoomMetadata(roomID string, userEvent *caches.UserRoomData) int {
-	index, ok := s.roomIDToIndex[roomID]
-	if !ok {
-		return -1
-	}
-	meta := s.rooms[index]
-	meta.UserRoomData = *userEvent
-	s.rooms[index] = meta
-	return -1
 }
 
 func (s *SortableRooms) IndexOf(roomID string) (int, bool) {
@@ -50,27 +33,27 @@ func (s *SortableRooms) IndexOf(roomID string) (int, bool) {
 }
 
 func (s *SortableRooms) RoomIDs() []string {
-	roomIDs := make([]string, len(s.rooms))
-	for i := range s.rooms {
-		roomIDs[i] = s.rooms[i].RoomID
+	roomIDs := make([]string, len(s.roomIDs))
+	for i := range s.roomIDs {
+		roomIDs[i] = s.roomIDs[i]
 	}
 	return roomIDs
 }
 
 // Add a room to the list. Returns true if the room was added.
-func (s *SortableRooms) Add(r *RoomConnMetadata) bool {
-	_, exists := s.roomIDToIndex[r.RoomID]
+func (s *SortableRooms) Add(roomID string) bool {
+	_, exists := s.roomIDToIndex[roomID]
 	if exists {
 		return false
 	}
-	s.rooms = append(s.rooms, r)
-	s.roomIDToIndex[r.RoomID] = len(s.rooms) - 1
+	s.roomIDs = append(s.roomIDs, roomID)
+	s.roomIDToIndex[roomID] = len(s.roomIDs) - 1
 	return true
 }
 
-func (s *SortableRooms) Get(index int) *RoomConnMetadata {
-	internal.Assert("index is within len(rooms)", index < len(s.rooms))
-	return s.rooms[index]
+func (s *SortableRooms) Get(index int) string {
+	internal.Assert("index is within len(rooms)", index < len(s.roomIDs))
+	return s.roomIDs[index]
 }
 
 func (s *SortableRooms) Remove(roomID string) int {
@@ -80,21 +63,21 @@ func (s *SortableRooms) Remove(roomID string) int {
 	}
 	delete(s.roomIDToIndex, roomID)
 	// splice out index
-	s.rooms = append(s.rooms[:index], s.rooms[index+1:]...)
+	s.roomIDs = append(s.roomIDs[:index], s.roomIDs[index+1:]...)
 	// re-update the map
-	for i := index; i < len(s.rooms); i++ {
-		s.roomIDToIndex[s.rooms[i].RoomID] = i
+	for i := index; i < len(s.roomIDs); i++ {
+		s.roomIDToIndex[s.roomIDs[i]] = i
 	}
 	return index
 }
 
 func (s *SortableRooms) Len() int64 {
-	return int64(len(s.rooms))
+	return int64(len(s.roomIDs))
 }
 func (s *SortableRooms) Subslice(i, j int64) Subslicer {
-	internal.Assert("i < j and are within len(rooms)", i < j && i < int64(len(s.rooms)) && j <= int64(len(s.rooms)))
+	internal.Assert("i < j and are within len(rooms)", i < j && i < int64(len(s.roomIDs)) && j <= int64(len(s.roomIDs)))
 	return &SortableRooms{
-		rooms:         s.rooms[i:j],
+		roomIDs:       s.roomIDs[i:j],
 		roomIDToIndex: s.roomIDToIndex,
 	}
 }
@@ -116,7 +99,7 @@ func (s *SortableRooms) Sort(sortBy []string) error {
 			return fmt.Errorf("unknown sort order: %s", sort)
 		}
 	}
-	sort.SliceStable(s.rooms, func(i, j int) bool {
+	sort.SliceStable(s.roomIDs, func(i, j int) bool {
 		for _, fn := range comparators {
 			val := fn(i, j)
 			if val == 1 {
@@ -129,9 +112,8 @@ func (s *SortableRooms) Sort(sortBy []string) error {
 		// the two items are identical
 		return false
 	})
-
-	for i := range s.rooms {
-		s.roomIDToIndex[s.rooms[i].RoomID] = i
+	for i := range s.roomIDs {
+		s.roomIDToIndex[s.roomIDs[i]] = i
 	}
 
 	return nil
@@ -139,41 +121,51 @@ func (s *SortableRooms) Sort(sortBy []string) error {
 
 // Comparator functions: -1 = false, +1 = true, 0 = match
 
+func (s *SortableRooms) resolveRooms(i, j int) (ri, rj *RoomConnMetadata) {
+	ri = s.finder.Room(s.roomIDs[i])
+	rj = s.finder.Room(s.roomIDs[j])
+	return
+}
+
 func (s *SortableRooms) comparatorSortByName(i, j int) int {
-	if s.rooms[i].CanonicalisedName == s.rooms[j].CanonicalisedName {
+	ri, rj := s.resolveRooms(i, j)
+	if ri.CanonicalisedName == rj.CanonicalisedName {
 		return 0
 	}
-	if s.rooms[i].CanonicalisedName < s.rooms[j].CanonicalisedName {
+	if ri.CanonicalisedName < rj.CanonicalisedName {
 		return 1
 	}
 	return -1
 }
 
 func (s *SortableRooms) comparatorSortByRecency(i, j int) int {
-	if s.rooms[i].LastMessageTimestamp == s.rooms[j].LastMessageTimestamp {
+	ri, rj := s.resolveRooms(i, j)
+	if ri.LastMessageTimestamp == rj.LastMessageTimestamp {
 		return 0
 	}
-	if s.rooms[i].LastMessageTimestamp > s.rooms[j].LastMessageTimestamp {
+	if ri.LastMessageTimestamp > rj.LastMessageTimestamp {
 		return 1
 	}
 	return -1
 }
 
 func (s *SortableRooms) comparatorSortByHighlightCount(i, j int) int {
-	if s.rooms[i].HighlightCount == s.rooms[j].HighlightCount {
+	ri, rj := s.resolveRooms(i, j)
+	if ri.HighlightCount == rj.HighlightCount {
 		return 0
 	}
-	if s.rooms[i].HighlightCount > s.rooms[j].HighlightCount {
+	if ri.HighlightCount > rj.HighlightCount {
 		return 1
 	}
 	return -1
 }
 
 func (s *SortableRooms) comparatorSortByNotificationCount(i, j int) int {
-	if s.rooms[i].NotificationCount == s.rooms[j].NotificationCount {
+	ri, rj := s.resolveRooms(i, j)
+	if ri.NotificationCount == rj.NotificationCount {
 		return 0
 	}
-	if s.rooms[i].NotificationCount > s.rooms[j].NotificationCount {
+	if ri.NotificationCount > rj.NotificationCount {
 		return 1
 	}
 	return -1
@@ -186,55 +178,52 @@ type FilteredSortableRooms struct {
 	filter *RequestFilters
 }
 
-func NewFilteredSortableRooms(rooms map[string]RoomConnMetadata, filter *RequestFilters) *FilteredSortableRooms {
-	var filteredRooms []*RoomConnMetadata
+func NewFilteredSortableRooms(finder RoomFinder, roomIDs []string, filter *RequestFilters) *FilteredSortableRooms {
+	var filteredRooms []string
 	if filter == nil {
 		filter = &RequestFilters{}
 	}
-	for roomID := range rooms {
-		r := rooms[roomID]
-		if filter.Include(&r) {
-			filteredRooms = append(filteredRooms, &r)
+	for _, roomID := range roomIDs {
+		r := finder.Room(roomID)
+		if filter.Include(r) {
+			filteredRooms = append(filteredRooms, roomID)
 		}
 	}
 	return &FilteredSortableRooms{
-		SortableRooms: NewSortableRooms(filteredRooms),
+		SortableRooms: NewSortableRooms(finder, filteredRooms),
 		filter:        filter,
 	}
 }
 
-func (f *FilteredSortableRooms) Add(r *RoomConnMetadata) bool {
+func (f *FilteredSortableRooms) Add(roomID string) bool {
+	r := f.finder.Room(roomID)
 	if !f.filter.Include(r) {
 		return false
 	}
-	return f.SortableRooms.Add(r)
+	return f.SortableRooms.Add(roomID)
 }
 
-func (f *FilteredSortableRooms) UpdateGlobalRoomMetadata(r *internal.RoomMetadata) int {
+func (f *FilteredSortableRooms) UpdateGlobalRoomMetadata(roomID string) int {
+	r := f.finder.Room(roomID)
 	internal.Assert("missing room metadata", r != nil)
-	index, ok := f.SortableRooms.IndexOf(r.RoomID)
+	_, ok := f.SortableRooms.IndexOf(r.RoomID)
 	if !ok {
 		return -1
 	}
-	// Get must return a copy as we are modifying it eagerly to pass to the filter
-	room := f.SortableRooms.Get(index)
-	room.RoomMetadata = *r
-	if !f.filter.Include(room) {
+	if !f.filter.Include(r) {
 		return f.Remove(r.RoomID)
 	}
-	return f.SortableRooms.UpdateGlobalRoomMetadata(r)
+	return -1
 }
 
-func (f *FilteredSortableRooms) UpdateUserRoomMetadata(roomID string, userEvent *caches.UserRoomData) int {
-	index, ok := f.SortableRooms.IndexOf(roomID)
+func (f *FilteredSortableRooms) UpdateUserRoomMetadata(roomID string) int {
+	r := f.finder.Room(roomID)
+	_, ok := f.SortableRooms.IndexOf(roomID)
 	if !ok {
 		return -1
 	}
-	// Get must return a copy as we are modifying it eagerly to pass to the filter
-	room := f.SortableRooms.Get(index)
-	room.UserRoomData = *userEvent
-	if !f.filter.Include(room) {
+	if !f.filter.Include(r) {
 		return f.Remove(roomID)
 	}
-	return f.SortableRooms.UpdateUserRoomMetadata(roomID, userEvent)
+	return -1
 }

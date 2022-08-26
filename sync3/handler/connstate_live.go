@@ -110,25 +110,14 @@ func (s *connStateLive) processLiveUpdate(ctx context.Context, up caches.Update,
 	builder := NewRoomsBuilder()
 
 	// do global connection updates (e.g adding/removing rooms from allRooms)
-	s.processGlobalUpdates(ctx, builder, up)
+	delta := s.processGlobalUpdates(ctx, builder, up)
 
-	var roomNameUpdated bool
 	// process room subscriptions
 	roomUpdate, ok := up.(*caches.RoomEventUpdate)
 	if ok {
 		if _, ok = s.roomSubscriptions[roomUpdate.RoomID()]; ok {
 			// there is a subscription for this room
 			hasUpdates = true
-		}
-		sameRoomName := s.lists.UpdateRoom(roomUpdate.GlobalRoomMetadata())
-		roomNameUpdated = !sameRoomName
-		if roomNameUpdated {
-			// update the canonicalised name for this room so we can sort it correctly
-			// TODO: this should probably be done in UserCache tbh...
-			urd := roomUpdate.UserRoomMetadata()
-			urd.CanonicalisedName = strings.ToLower(
-				strings.Trim(internal.CalculateRoomName(roomUpdate.GlobalRoomMetadata(), 5), "#!():_@"),
-			)
 		}
 	}
 
@@ -160,7 +149,7 @@ func (s *connStateLive) processLiveUpdate(ctx context.Context, up caches.Update,
 	for roomID, room := range rooms {
 		response.Rooms[roomID] = room
 	}
-	if roomNameUpdated && roomUpdate != nil {
+	if delta.RoomNameChanged && roomUpdate != nil {
 		// try to find this room in the response. If it's there, then we need to inject a new room name.
 		// there's no guarantees that the room will be in the response if say the event caused it to move
 		// off a list.
@@ -174,7 +163,14 @@ func (s *connStateLive) processLiveUpdate(ctx context.Context, up caches.Update,
 }
 
 // this function does any updates which apply to the connection, regardless of which lists/subs exist.
-func (s *connStateLive) processGlobalUpdates(ctx context.Context, builder *RoomsBuilder, up caches.Update) {
+func (s *connStateLive) processGlobalUpdates(ctx context.Context, builder *RoomsBuilder, up caches.Update) (delta sync3.RoomDelta) {
+	rup, ok := up.(caches.RoomUpdate)
+	if ok {
+		delta = s.lists.SetRoom(sync3.RoomConnMetadata{
+			RoomMetadata: *rup.GlobalRoomMetadata(),
+			UserRoomData: *rup.UserRoomMetadata(),
+		})
+	}
 	switch update := up.(type) {
 	case *caches.RoomEventUpdate:
 		// keep track of the latest stream position
@@ -209,6 +205,7 @@ func (s *connStateLive) processGlobalUpdates(ctx context.Context, builder *Rooms
 			})
 		}
 	}
+	return
 }
 
 func (s *connStateLive) processLiveUpdateForList(
@@ -217,14 +214,14 @@ func (s *connStateLive) processLiveUpdateForList(
 	roomUpdate, ok := up.(caches.RoomUpdate)
 	if ok { // update the internal lists - this may remove rooms if the room no longer matches a filter
 		// see if the latest room metadata means we delete a room, else update our state
-		deletedIndex := intList.UpdateGlobalRoomMetadata(roomUpdate.GlobalRoomMetadata())
+		deletedIndex := intList.UpdateGlobalRoomMetadata(roomUpdate.RoomID())
 		if op := reqList.WriteDeleteOp(deletedIndex); op != nil {
 			resList.Ops = append(resList.Ops, op)
 			hasUpdates = true
 		}
 		// see if the latest user room metadata means we delete a room (e.g it transition from dm to non-dm)
 		// modify notification counts, DM-ness, etc
-		deletedIndex = intList.UpdateUserRoomMetadata(roomUpdate.RoomID(), roomUpdate.UserRoomMetadata())
+		deletedIndex = intList.UpdateUserRoomMetadata(roomUpdate.RoomID())
 		if op := reqList.WriteDeleteOp(deletedIndex); op != nil {
 			resList.Ops = append(resList.Ops, op)
 			hasUpdates = true
@@ -316,7 +313,7 @@ func (s *connStateLive) processIncomingEventForList(
 			RoomMetadata: *roomMetadata,
 			UserRoomData: urd,
 		}
-		if !intList.Add(&newRoomConn) {
+		if !intList.Add(newRoomConn.RoomID) {
 			// we didn't add this room to the list so we don't need to resort
 			return nil, false
 		}
@@ -371,8 +368,7 @@ func (s *connStateLive) resort(
 		listFromIndex := listFromTo[0]
 		listToIndex := listFromTo[1]
 		wasUpdatedRoomInserted := listToIndex == toIndex
-		toRoom := intList.Get(listToIndex)
-		roomID = toRoom.RoomID
+		roomID := intList.Get(listToIndex)
 
 		// if a different room is being inserted or the room wasn't previously inside a range, send
 		// the entire room data
