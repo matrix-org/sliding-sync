@@ -13,8 +13,26 @@ var (
 	Overwrite      OverwriteVal = true
 )
 
+// ListOp represents the possible operations on a list
+type ListOp uint8
+
+var (
+	// The room is added to the list
+	ListOpAdd ListOp = 1
+	// The room is removed from the list
+	ListOpDel ListOp = 2
+	// The room may change position in the list
+	ListOpChange ListOp = 3
+)
+
+type RoomListDelta struct {
+	ListIndex int
+	Op        ListOp
+}
+
 type RoomDelta struct {
 	RoomNameChanged bool
+	Lists           []RoomListDelta
 }
 
 // InternalRequestLists is a list of lists which matches each index position in the request
@@ -42,6 +60,31 @@ func (s *InternalRequestLists) SetRoom(r RoomConnMetadata) (delta RoomDelta) {
 			)
 		}
 	}
+	for i := range s.lists {
+		_, alreadyExists := s.lists[i].roomIDToIndex[r.RoomID]
+		shouldExist := s.lists[i].filter.Include(&r)
+		// weird nesting ensures we handle all 4 cases
+		if alreadyExists {
+			if shouldExist { // could be a change
+				delta.Lists = append(delta.Lists, RoomListDelta{
+					ListIndex: i,
+					Op:        ListOpChange,
+				})
+			} else { // removal
+				delta.Lists = append(delta.Lists, RoomListDelta{
+					ListIndex: i,
+					Op:        ListOpDel,
+				})
+			}
+		} else {
+			if shouldExist { // addition
+				delta.Lists = append(delta.Lists, RoomListDelta{
+					ListIndex: i,
+					Op:        ListOpAdd,
+				})
+			} // else it doesn't exist and it shouldn't exist, so do nothing e.g room isn't relevant to this list
+		}
+	}
 	s.allRooms[r.RoomID] = r
 	return delta
 }
@@ -59,14 +102,6 @@ func (s *InternalRequestLists) RemoveRoom(roomID string) {
 	// TODO: update lists?
 }
 
-// Call the given function for each list. Useful when there is a live update and you don't know
-// which list may be updated.
-func (s *InternalRequestLists) ForEach(fn func(index int, fsr *FilteredSortableRooms)) {
-	for i, l := range s.lists {
-		fn(i, l)
-	}
-}
-
 func (s *InternalRequestLists) DeleteList(index int) {
 	// TODO
 }
@@ -74,6 +109,10 @@ func (s *InternalRequestLists) DeleteList(index int) {
 func (s *InternalRequestLists) Room(roomID string) *RoomConnMetadata {
 	r := s.allRooms[roomID]
 	return &r
+}
+
+func (s *InternalRequestLists) Get(listIndex int) *FilteredSortableRooms {
+	return s.lists[listIndex]
 }
 
 // Assign a new list at the given index. If Overwrite, any existing list is replaced. If DoNotOverwrite, the existing

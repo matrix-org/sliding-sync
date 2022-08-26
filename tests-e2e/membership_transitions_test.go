@@ -114,7 +114,7 @@ func TestInviteRejection(t *testing.T) {
 	firstInviteRoomID := alice.CreateRoom(t, map[string]interface{}{"preset": "private_chat", "name": "First"})
 	alice.InviteRoom(t, firstInviteRoomID, bob.UserID)
 	secondInviteRoomID := alice.CreateRoom(t, map[string]interface{}{"preset": "private_chat", "name": "Second"})
-	t.Logf("first %s second %s", firstInviteRoomID, secondInviteRoomID)
+	t.Logf("TestInviteRejection first %s second %s", firstInviteRoomID, secondInviteRoomID)
 
 	// sync as bob, we should see 1 invite
 	res := bob.SlidingSync(t, sync3.Request{
@@ -179,6 +179,8 @@ func TestInviteRejection(t *testing.T) {
 	bob.LeaveRoom(t, firstInviteRoomID)
 	bob.LeaveRoom(t, secondInviteRoomID)
 	bob.MustSyncUntil(t, SyncReq{Since: since}, SyncLeftFrom(bob.UserID, secondInviteRoomID))
+	// TODO: proxy needs to have processed this event enough for it to be waiting for us
+	time.Sleep(100 * time.Millisecond)
 
 	// the list should be purged
 	res = bob.SlidingSync(t, sync3.Request{
@@ -250,6 +252,8 @@ func TestInviteAcceptance(t *testing.T) {
 	// now invite bob
 	alice.InviteRoom(t, secondInviteRoomID, bob.UserID)
 	since = bob.MustSyncUntil(t, SyncReq{Since: since}, SyncInvitedTo(bob.UserID, secondInviteRoomID))
+	// TODO: proxy needs to have processed this event enough for it to be waiting for us
+	time.Sleep(100 * time.Millisecond)
 
 	res = bob.SlidingSync(t, sync3.Request{
 		Lists: []sync3.RequestList{

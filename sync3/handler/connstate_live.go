@@ -120,15 +120,16 @@ func (s *connStateLive) processLiveUpdate(ctx context.Context, up caches.Update,
 			hasUpdates = true
 		}
 	}
-
 	// do per-list updates (e.g resorting, adding/removing rooms which no longer match filter)
-	s.lists.ForEach(func(index int, list *sync3.FilteredSortableRooms) {
+	for _, listDelta := range delta.Lists {
+		index := listDelta.ListIndex
+		list := s.lists.Get(index)
 		reqList := s.muxedReq.Lists[index]
 		updates := s.processLiveUpdateForList(ctx, builder, up, &reqList, list, &response.Lists[index])
 		if updates {
 			hasUpdates = true
 		}
-	})
+	}
 
 	if hasUpdates && roomUpdate != nil {
 		// include this update in the rooms response TODO: filters on event type?
