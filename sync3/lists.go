@@ -89,13 +89,6 @@ func (s *InternalRequestLists) SetRoom(r RoomConnMetadata) (delta RoomDelta) {
 	return delta
 }
 
-func (s *InternalRequestLists) AddRoomIfNotExists(room RoomConnMetadata) {
-	_, exists := s.allRooms[room.RoomID]
-	if !exists {
-		s.allRooms[room.RoomID] = room
-	}
-}
-
 // Remove a room from all lists e.g retired an invite, left a room
 func (s *InternalRequestLists) RemoveRoom(roomID string) {
 	delete(s.allRooms, roomID)

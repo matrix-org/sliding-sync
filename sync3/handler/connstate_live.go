@@ -102,7 +102,6 @@ func (s *connStateLive) liveUpdate(
 }
 
 func (s *connStateLive) processLiveUpdate(ctx context.Context, up caches.Update, response *sync3.Response) bool {
-	hasUpdates := false // true if this update results in a response
 	internal.Assert("processLiveUpdate: response list length != internal list length", s.lists.Len() == len(response.Lists))
 	internal.Assert("processLiveUpdate: request list length != internal list length", s.lists.Len() == len(s.muxedReq.Lists))
 
@@ -113,13 +112,8 @@ func (s *connStateLive) processLiveUpdate(ctx context.Context, up caches.Update,
 	delta := s.processGlobalUpdates(ctx, builder, up)
 
 	// process room subscriptions
-	roomUpdate, ok := up.(*caches.RoomEventUpdate)
-	if ok {
-		if _, ok = s.roomSubscriptions[roomUpdate.RoomID()]; ok {
-			// there is a subscription for this room
-			hasUpdates = true
-		}
-	}
+	hasUpdates := s.processUpdatesForSubscriptions(builder, up)
+
 	// do per-list updates (e.g resorting, adding/removing rooms which no longer match filter)
 	for _, listDelta := range delta.Lists {
 		index := listDelta.ListIndex
@@ -131,15 +125,19 @@ func (s *connStateLive) processLiveUpdate(ctx context.Context, up caches.Update,
 		}
 	}
 
+	roomUpdate, _ := up.(caches.RoomUpdate)
+
+	// TODO: find a better way to determine if the triggering event should be included e.g ask the lists?
 	if hasUpdates && roomUpdate != nil {
 		// include this update in the rooms response TODO: filters on event type?
 		userRoomData := roomUpdate.UserRoomMetadata()
 		r := response.Rooms[roomUpdate.RoomID()]
 		r.HighlightCount = int64(userRoomData.HighlightCount)
 		r.NotificationCount = int64(userRoomData.NotificationCount)
-		if roomUpdate.EventData.Event != nil {
+		roomEventUpdate, _ := up.(*caches.RoomEventUpdate)
+		if roomEventUpdate != nil && roomEventUpdate.EventData.Event != nil {
 			r.Timeline = append(r.Timeline, s.userCache.AnnotateWithTransactionIDs([]json.RawMessage{
-				roomUpdate.EventData.Event,
+				roomEventUpdate.EventData.Event,
 			})...)
 		}
 		response.Rooms[roomUpdate.RoomID()] = r
@@ -150,7 +148,7 @@ func (s *connStateLive) processLiveUpdate(ctx context.Context, up caches.Update,
 	for roomID, room := range rooms {
 		response.Rooms[roomID] = room
 	}
-	if delta.RoomNameChanged && roomUpdate != nil {
+	if delta.RoomNameChanged {
 		// try to find this room in the response. If it's there, then we need to inject a new room name.
 		// there's no guarantees that the room will be in the response if say the event caused it to move
 		// off a list.
@@ -163,6 +161,29 @@ func (s *connStateLive) processLiveUpdate(ctx context.Context, up caches.Update,
 	return hasUpdates
 }
 
+func (s *connStateLive) processUpdatesForSubscriptions(builder *RoomsBuilder, up caches.Update) (hasUpdates bool) {
+	rup, ok := up.(caches.RoomUpdate)
+	if !ok {
+		return false
+	}
+	// if we have an existing confirmed subscription for this room, then there's nothing to do.
+	if _, exists := s.roomSubscriptions[rup.RoomID()]; exists {
+		return true // this room exists as a subscription so we'll handle it correctly
+	}
+	// did the client ask to subscribe to this room?
+	_, ok = s.muxedReq.RoomSubscriptions[rup.RoomID()]
+	if !ok {
+		return false // the client does not want a subscription to this room, so do nothing.
+	}
+	// the user does not have a subscription to this room yet but wants one, try to add it.
+	// this will do join checks for us.
+	s.buildRoomSubscriptions(builder, []string{rup.RoomID()}, nil)
+
+	// if we successfully made the subscription, it will now exist in the confirmed subscriptions map
+	_, exists := s.roomSubscriptions[rup.RoomID()]
+	return exists
+}
+
 // this function does any updates which apply to the connection, regardless of which lists/subs exist.
 func (s *connStateLive) processGlobalUpdates(ctx context.Context, builder *RoomsBuilder, up caches.Update) (delta sync3.RoomDelta) {
 	rup, ok := up.(caches.RoomUpdate)
@@ -172,40 +193,14 @@ func (s *connStateLive) processGlobalUpdates(ctx context.Context, builder *Rooms
 			UserRoomData: *rup.UserRoomMetadata(),
 		})
 	}
-	switch update := up.(type) {
-	case *caches.RoomEventUpdate:
-		// if this update is in the past then ignore it
-		if update.EventData.LatestPos <= s.loadPosition {
-			return
+
+	roomEventUpdate, ok := up.(*caches.RoomEventUpdate)
+	if ok {
+		// TODO: we should do this check before lists.SetRoom
+		if roomEventUpdate.EventData.LatestPos <= s.loadPosition {
+			return // if this update is in the past then ignore it
 		}
-		s.loadPosition = update.EventData.LatestPos
-		// newly joined rooms will be flagged correctly in lists, but not subscriptions, so check them now.
-		if _, exists := s.roomSubscriptions[update.EventData.RoomID]; exists {
-			break // this room exists as a subscription so we'll handle it correctly
-		}
-		_, ok := s.muxedReq.RoomSubscriptions[update.EventData.RoomID]
-		if !ok {
-			break // the client does not want a subscription to this room, so do nothing.
-		}
-		// the user does not have a subscription to this room yet but wants one, try to add it.
-		// this will do join checks for us.
-		s.buildRoomSubscriptions(builder, []string{update.EventData.RoomID}, nil)
-	case *caches.InviteUpdate:
-		if update.Retired {
-			// remove the room from all rooms
-			logger.Trace().Str("user", s.userID).Str("room", update.RoomID()).Msg("processGlobalUpdates: room was retired")
-			s.lists.RemoveRoom(update.RoomID())
-		} else {
-			metadata := update.InviteData.RoomMetadata()
-			urd := *update.UserRoomMetadata()
-			urd.CanonicalisedName = strings.ToLower(
-				strings.Trim(internal.CalculateRoomName(metadata, 5), "#!():_@"),
-			)
-			s.lists.AddRoomIfNotExists(sync3.RoomConnMetadata{
-				RoomMetadata: *metadata,
-				UserRoomData: urd,
-			})
-		}
+		s.loadPosition = roomEventUpdate.EventData.LatestPos
 	}
 	return
 }
