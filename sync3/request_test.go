@@ -744,7 +744,6 @@ func TestRequestList_CalculateMoveIndexes(t *testing.T) {
 		from        int
 		to          int
 		wantFromTos [][2]int
-		wantOk      bool
 	}{
 		{
 			name: "move from inside range to inside range",
@@ -754,7 +753,6 @@ func TestRequestList_CalculateMoveIndexes(t *testing.T) {
 			from:        5,
 			to:          0,
 			wantFromTos: [][2]int{{5, 0}},
-			wantOk:      true,
 		},
 		{
 			name: "move from outside range to inside range",
@@ -764,7 +762,6 @@ func TestRequestList_CalculateMoveIndexes(t *testing.T) {
 			from:        15,
 			to:          0,
 			wantFromTos: [][2]int{{10, 0}},
-			wantOk:      true,
 		},
 		{
 			name: "move from inside range to outside range",
@@ -774,16 +771,14 @@ func TestRequestList_CalculateMoveIndexes(t *testing.T) {
 			from:        5,
 			to:          20,
 			wantFromTos: [][2]int{{5, 10}},
-			wantOk:      true,
 		},
 		{
 			name: "move from outside range to outside range",
 			rl: RequestList{
 				Ranges: [][2]int64{{0, 10}},
 			},
-			from:   50,
-			to:     20,
-			wantOk: false,
+			from: 50,
+			to:   20,
 		},
 		{
 			name: "move from outside range to outside range, 1 jump",
@@ -793,7 +788,6 @@ func TestRequestList_CalculateMoveIndexes(t *testing.T) {
 			from:        50,
 			to:          2,
 			wantFromTos: [][2]int{{20, 10}},
-			wantOk:      true,
 		},
 		{
 			name: "move from between two ranges to inside first range",
@@ -803,7 +797,6 @@ func TestRequestList_CalculateMoveIndexes(t *testing.T) {
 			from:        15,
 			to:          2,
 			wantFromTos: [][2]int{{10, 2}},
-			wantOk:      true,
 		},
 		{
 			name: "move from between two ranges to inside second range",
@@ -819,7 +812,6 @@ func TestRequestList_CalculateMoveIndexes(t *testing.T) {
 			// which creates a gap in 15 causing an insert on 25, but we are not tracking 15,
 			// so instead 20 gets deleted.
 			wantFromTos: [][2]int{{20, 25}},
-			wantOk:      true,
 		},
 		{
 			name: "move from between two ranges to outside range",
@@ -829,7 +821,6 @@ func TestRequestList_CalculateMoveIndexes(t *testing.T) {
 			from:        15,
 			to:          45,
 			wantFromTos: [][2]int{{20, 30}},
-			wantOk:      true,
 		},
 		// multiple range fun
 		{
@@ -840,7 +831,6 @@ func TestRequestList_CalculateMoveIndexes(t *testing.T) {
 			from:        50,
 			to:          5,
 			wantFromTos: [][2]int{{20, 10}, {40, 30}},
-			wantOk:      true,
 		},
 		{
 			name: "jump over 2 ranges towards infinity",
@@ -850,7 +840,6 @@ func TestRequestList_CalculateMoveIndexes(t *testing.T) {
 			from:        5,
 			to:          50,
 			wantFromTos: [][2]int{{10, 20}, {30, 40}},
-			wantOk:      true,
 		},
 		{
 			name: "jump over 2 ranges towards zero into a 3rd range",
@@ -860,7 +849,6 @@ func TestRequestList_CalculateMoveIndexes(t *testing.T) {
 			from:        50,
 			to:          2,
 			wantFromTos: [][2]int{{5, 2}, {20, 10}, {40, 30}},
-			wantOk:      true,
 		},
 		{
 			name: "jump over 2 ranges towards infinity into a 3rd range",
@@ -870,7 +858,6 @@ func TestRequestList_CalculateMoveIndexes(t *testing.T) {
 			from:        0,
 			to:          35,
 			wantFromTos: [][2]int{{3, 5}, {10, 20}, {30, 35}},
-			wantOk:      true,
 		},
 		{
 			name: "move from inside range to jump over 2 ranges towards zero into a 4th range",
@@ -880,7 +867,6 @@ func TestRequestList_CalculateMoveIndexes(t *testing.T) {
 			from:        55,
 			to:          2,
 			wantFromTos: [][2]int{{5, 2}, {20, 10}, {40, 30}, {55, 50}},
-			wantOk:      true,
 		},
 		{
 			name: "move from inside range to jump over 2 ranges towards infinity into a 4th range",
@@ -890,7 +876,6 @@ func TestRequestList_CalculateMoveIndexes(t *testing.T) {
 			from:        2,
 			to:          55,
 			wantFromTos: [][2]int{{2, 5}, {10, 20}, {30, 40}, {50, 55}},
-			wantOk:      true,
 		},
 		{
 			name: "move across ranges which are next to each other",
@@ -900,7 +885,6 @@ func TestRequestList_CalculateMoveIndexes(t *testing.T) {
 			from:        25,
 			to:          0,
 			wantFromTos: [][2]int{{10, 0}, {20, 11}},
-			wantOk:      true,
 		},
 		{ // regression test
 			name: "move from outside range to inside range single element",
@@ -910,21 +894,15 @@ func TestRequestList_CalculateMoveIndexes(t *testing.T) {
 			from:        1,
 			to:          0,
 			wantFromTos: [][2]int{{0, 0}},
-			wantOk:      true,
 		},
 	}
 	for _, tc := range testCases {
-		gots, gotOk := tc.rl.CalculateMoveIndexes(tc.from, tc.to)
-		if gotOk != tc.wantOk {
-			t.Errorf("%s: ok: got %v want %v", tc.name, gotOk, tc.wantOk)
-		}
-		if gotOk && tc.wantOk {
-			sort.Slice(gots, func(i, j int) bool {
-				return gots[i][0] < gots[j][0]
-			})
-			if !reflect.DeepEqual(gots, tc.wantFromTos) {
-				t.Errorf("%s: from/tos: got %v want %v", tc.name, gots, tc.wantFromTos)
-			}
+		gots := tc.rl.CalculateMoveIndexes(tc.from, tc.to)
+		sort.Slice(gots, func(i, j int) bool {
+			return gots[i][0] < gots[j][0]
+		})
+		if !reflect.DeepEqual(gots, tc.wantFromTos) {
+			t.Errorf("%s: from/tos: got %v want %v", tc.name, gots, tc.wantFromTos)
 		}
 	}
 }

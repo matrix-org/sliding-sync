@@ -365,8 +365,8 @@ func (s *connStateLive) resort(
 		wasInsideRange = false // can't be inside the range if this is a new room
 	}
 
-	listFromTos, ok := reqList.CalculateMoveIndexes(fromIndex, toIndex)
-	if !ok || len(listFromTos) == 0 {
+	listFromTos := reqList.CalculateMoveIndexes(fromIndex, toIndex)
+	if len(listFromTos) == 0 {
 		return nil, false
 	}
 

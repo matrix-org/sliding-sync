@@ -112,9 +112,8 @@ func (rl *RequestList) WriteDeleteOp(deletedIndex int) *ResponseOpSingle {
 }
 
 // Calculate the real from -> to index positions for the two input index positions. This takes into
-// account the ranges on the list. Return ok=false if move indexes are not valid e.g the index being
-// moved from/to is outside all ranges and doesn't go over slices.
-func (rl *RequestList) CalculateMoveIndexes(fromIndex, toIndex int) (fromTos [][2]int, ok bool) {
+// account the ranges on the list.
+func (rl *RequestList) CalculateMoveIndexes(fromIndex, toIndex int) (fromTos [][2]int) {
 	// Given a range like the following there are several cases to consider:
 	// 0  1  2  3  4  5  6  7  8  9  10
 	//    |--------|        |-----|        [1,4],[7,9]                                           RESULT
@@ -146,14 +145,14 @@ func (rl *RequestList) CalculateMoveIndexes(fromIndex, toIndex int) (fromTos [][
 	fromRng, isFromInsideRange := rl.Ranges.Inside(int64(fromIndex))
 	toRng, isToInsideRange := rl.Ranges.Inside(int64(toIndex))
 	if isFromInsideRange && isToInsideRange && fromRng == toRng { // case A
-		return [][2]int{{fromIndex, toIndex}}, true
+		return [][2]int{{fromIndex, toIndex}}
 	}
 	if !isFromInsideRange && !isToInsideRange { // case C
 		// jumping over multiple range
 		// work out which ranges are jumped over
 		jumpedOverRanges := rl.jumpedOverRanges(fromIndex, toIndex)
 		if len(jumpedOverRanges) == 0 {
-			return nil, false
+			return nil
 		}
 		// handle multiple ranges
 		for _, jumpedOverRange := range jumpedOverRanges {
@@ -163,7 +162,7 @@ func (rl *RequestList) CalculateMoveIndexes(fromIndex, toIndex int) (fromTos [][
 				fromTos = append(fromTos, [2]int{int(jumpedOverRange[0]), int(jumpedOverRange[1])})
 			}
 		}
-		return fromTos, true
+		return fromTos
 	}
 
 	// case B
@@ -190,7 +189,7 @@ func (rl *RequestList) CalculateMoveIndexes(fromIndex, toIndex int) (fromTos [][
 		}
 	}
 
-	return fromTos, true
+	return fromTos
 }
 
 func (rl *RequestList) jumpedOverRanges(fromIndex, toIndex int) (jumpedOverRanges [][2]int64) {
