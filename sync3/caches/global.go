@@ -25,6 +25,12 @@ type EventData struct {
 	Content   gjson.Result
 	Timestamp uint64
 
+	// the number of joined users in this room. Use this value and don't try to work it out as you
+	// may get it wrong due to Synapse sending duplicate join events(!) This value has them de-duped
+	// correctly.
+	JoinCount   int
+	InviteCount int
+
 	// the absolute latest position for this event data. The NID for this event is guaranteed to
 	// be <= this value. See PosAlwaysProcess and PosDoNotProcess for things outside the event timeline
 	// e.g invites
@@ -225,24 +231,18 @@ func (c *GlobalCache) OnNewEvent(
 			membership := ed.Content.Get("membership").Str
 			eventJSON := gjson.ParseBytes(ed.Event)
 			if internal.IsMembershipChange(eventJSON) {
-				if membership == "invite" {
-					metadata.InviteCount += 1
-				} else if membership == "join" {
-					metadata.JoinCount += 1
-				} else if membership == "leave" || membership == "ban" {
-					metadata.JoinCount -= 1
+				metadata.JoinCount = ed.JoinCount
+				metadata.InviteCount = ed.InviteCount
+				if membership == "leave" || membership == "ban" {
 					// remove this user as a hero
 					metadata.RemoveHero(*ed.StateKey)
 				}
 
-				if eventJSON.Get("unsigned.prev_content.membership").Str == "invite" {
-					metadata.InviteCount -= 1
-					if membership == "join" {
-						// invite -> join, retire any outstanding invites
-						err := c.store.InvitesTable.RemoveInvite(*ed.StateKey, ed.RoomID)
-						if err != nil {
-							logger.Err(err).Str("user", *ed.StateKey).Str("room", ed.RoomID).Msg("failed to remove accepted invite")
-						}
+				if membership == "join" && eventJSON.Get("unsigned.prev_content.membership").Str == "invite" {
+					// invite -> join, retire any outstanding invites
+					err := c.store.InvitesTable.RemoveInvite(*ed.StateKey, ed.RoomID)
+					if err != nil {
+						logger.Err(err).Str("user", *ed.StateKey).Str("room", ed.RoomID).Msg("failed to remove accepted invite")
 					}
 				}
 			}

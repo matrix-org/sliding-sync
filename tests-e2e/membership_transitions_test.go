@@ -132,6 +132,8 @@ func TestInviteRejection(t *testing.T) {
 	)), m.MatchRoomSubscriptionsStrict(map[string][]m.RoomMatcher{
 		firstInviteRoomID: {
 			m.MatchRoomInitial(true),
+			m.MatchInviteCount(1),
+			m.MatchJoinCount(1),
 			MatchRoomInviteState([]Event{
 				{
 					Type:     "m.room.name",
@@ -236,6 +238,8 @@ func TestInviteAcceptance(t *testing.T) {
 	)), m.MatchRoomSubscriptionsStrict(map[string][]m.RoomMatcher{
 		firstInviteRoomID: {
 			m.MatchRoomInitial(true),
+			m.MatchInviteCount(1),
+			m.MatchJoinCount(1),
 			MatchRoomInviteState([]Event{
 				{
 					Type:     "m.room.name",
@@ -268,6 +272,8 @@ func TestInviteAcceptance(t *testing.T) {
 	)), m.MatchRoomSubscriptionsStrict(map[string][]m.RoomMatcher{
 		secondInviteRoomID: {
 			m.MatchRoomInitial(true),
+			m.MatchInviteCount(1),
+			m.MatchJoinCount(1),
 			MatchRoomInviteState([]Event{
 				{
 					Type:     "m.room.name",
@@ -313,4 +319,124 @@ func TestInviteAcceptance(t *testing.T) {
 		},
 	})
 	m.MatchResponse(t, res, m.MatchNoV3Ops(), m.MatchRoomSubscriptionsStrict(nil), m.MatchList(0, m.MatchV3Count(0)))
+}
+
+// test invite/join counts update and are accurate
+func TestMemberCounts(t *testing.T) {
+	alice := registerNewUser(t)
+	bob := registerNewUser(t)
+	charlie := registerNewUser(t)
+
+	firstRoomID := alice.CreateRoom(t, map[string]interface{}{"preset": "public_chat", "name": "First"})
+	alice.InviteRoom(t, firstRoomID, bob.UserID)
+	secondRoomID := alice.CreateRoom(t, map[string]interface{}{"preset": "public_chat", "name": "Second"})
+	alice.InviteRoom(t, secondRoomID, bob.UserID)
+	charlie.JoinRoom(t, secondRoomID, nil)
+	t.Logf("first %s second %s", firstRoomID, secondRoomID)
+
+	// sync as bob, we should see 2 invited rooms with the same join counts so as not to leak join counts
+	res := bob.SlidingSync(t, sync3.Request{
+		Lists: []sync3.RequestList{
+			{
+				Ranges: sync3.SliceRanges{{0, 20}},
+			},
+		},
+	})
+	m.MatchResponse(t, res, m.MatchList(0, m.MatchV3Count(2), m.MatchV3Ops(
+		m.MatchV3SyncOp(0, 20, []string{firstRoomID, secondRoomID}, true),
+	)), m.MatchRoomSubscriptionsStrict(map[string][]m.RoomMatcher{
+		firstRoomID: {
+			m.MatchRoomInitial(true),
+			m.MatchInviteCount(1),
+			m.MatchJoinCount(1),
+			MatchRoomInviteState([]Event{
+				{
+					Type:     "m.room.name",
+					StateKey: ptr(""),
+					Content: map[string]interface{}{
+						"name": "First",
+					},
+				},
+			}, true),
+		},
+		secondRoomID: {
+			m.MatchRoomInitial(true),
+			m.MatchInviteCount(1),
+			m.MatchJoinCount(1),
+			MatchRoomInviteState([]Event{
+				{
+					Type:     "m.room.name",
+					StateKey: ptr(""),
+					Content: map[string]interface{}{
+						"name": "Second",
+					},
+				},
+			}, true),
+		},
+	}))
+
+	// join both rooms, the counts should now reflect reality
+	bob.JoinRoom(t, firstRoomID, nil)
+	bob.JoinRoom(t, secondRoomID, nil)
+	bob.MustSyncUntil(t, SyncReq{}, SyncJoinedTo(bob.UserID, firstRoomID), SyncJoinedTo(bob.UserID, secondRoomID))
+	time.Sleep(100 * time.Millisecond) // let the proxy process the joins
+
+	res = bob.SlidingSync(t, sync3.Request{
+		Lists: []sync3.RequestList{
+			{
+				Ranges: sync3.SliceRanges{{0, 20}},
+			},
+		},
+	}, WithPos(res.Pos))
+	m.MatchResponse(t, res, m.MatchRoomSubscriptionsStrict(map[string][]m.RoomMatcher{
+		firstRoomID: {
+			m.MatchRoomInitial(true),
+			m.MatchInviteCount(0),
+			m.MatchJoinCount(2),
+		},
+		secondRoomID: {
+			m.MatchRoomInitial(true),
+			m.MatchInviteCount(0),
+			m.MatchJoinCount(3),
+		},
+	}))
+
+	// sending a message shouldn't update the count as it wastes bandwidth
+	charlie.SendEventSynced(t, secondRoomID, Event{
+		Type:    "m.room.message",
+		Content: map[string]interface{}{"body": "ping", "msgtype": "m.text"},
+	})
+	res = bob.SlidingSync(t, sync3.Request{
+		Lists: []sync3.RequestList{
+			{
+				Ranges: sync3.SliceRanges{{0, 20}},
+			},
+		},
+	}, WithPos(res.Pos))
+	m.MatchResponse(t, res, m.MatchRoomSubscriptionsStrict(map[string][]m.RoomMatcher{
+		secondRoomID: {
+			m.MatchRoomInitial(false),
+			m.MatchInviteCount(0),
+			m.MatchJoinCount(0), // omitempty
+		},
+	}))
+
+	// leaving a room should update the count
+	charlie.LeaveRoom(t, secondRoomID)
+	bob.MustSyncUntil(t, SyncReq{}, SyncLeftFrom(charlie.UserID, secondRoomID))
+
+	res = bob.SlidingSync(t, sync3.Request{
+		Lists: []sync3.RequestList{
+			{
+				Ranges: sync3.SliceRanges{{0, 20}},
+			},
+		},
+	}, WithPos(res.Pos))
+	m.MatchResponse(t, res, m.MatchRoomSubscriptionsStrict(map[string][]m.RoomMatcher{
+		secondRoomID: {
+			m.MatchRoomInitial(false),
+			m.MatchInviteCount(0),
+			m.MatchJoinCount(2),
+		},
+	}))
 }

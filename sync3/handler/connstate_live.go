@@ -148,15 +148,24 @@ func (s *connStateLive) processLiveUpdate(ctx context.Context, up caches.Update,
 	for roomID, room := range rooms {
 		response.Rooms[roomID] = room
 	}
-	if delta.RoomNameChanged {
-		// try to find this room in the response. If it's there, then we need to inject a new room name.
+
+	if roomUpdate != nil {
+		// try to find this room in the response. If it's there, then we may need to update some fields.
 		// there's no guarantees that the room will be in the response if say the event caused it to move
 		// off a list.
-		room, exists := response.Rooms[roomUpdate.RoomID()]
+		thisRoom, exists := response.Rooms[roomUpdate.RoomID()]
 		if exists {
-			room.Name = internal.CalculateRoomName(roomUpdate.GlobalRoomMetadata(), 5) // TODO: customisable?
+			if delta.RoomNameChanged {
+				thisRoom.Name = internal.CalculateRoomName(roomUpdate.GlobalRoomMetadata(), 5) // TODO: customisable?
+			}
+			if delta.InviteCountChanged {
+				thisRoom.InvitedCount = roomUpdate.GlobalRoomMetadata().InviteCount
+			}
+			if delta.JoinCountChanged {
+				thisRoom.JoinedCount = roomUpdate.GlobalRoomMetadata().JoinCount
+			}
+			response.Rooms[roomUpdate.RoomID()] = thisRoom
 		}
-		response.Rooms[roomUpdate.RoomID()] = room
 	}
 	return hasUpdates
 }

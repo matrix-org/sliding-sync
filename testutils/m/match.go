@@ -27,6 +27,25 @@ func MatchRoomName(name string) RoomMatcher {
 		return nil
 	}
 }
+
+func MatchJoinCount(count int) RoomMatcher {
+	return func(r sync3.Room) error {
+		if r.JoinedCount != count {
+			return fmt.Errorf("MatchJoinCount: got %v want %v", r.JoinedCount, count)
+		}
+		return nil
+	}
+}
+
+func MatchInviteCount(count int) RoomMatcher {
+	return func(r sync3.Room) error {
+		if r.InvitedCount != count {
+			return fmt.Errorf("MatchInviteCount: got %v want %v", r.InvitedCount, count)
+		}
+		return nil
+	}
+}
+
 func MatchRoomRequiredState(events []json.RawMessage) RoomMatcher {
 	return func(r sync3.Room) error {
 		if len(r.RequiredState) != len(events) {

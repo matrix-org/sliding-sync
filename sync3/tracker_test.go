@@ -26,6 +26,26 @@ func TestTracker(t *testing.T) {
 	jrt.UserLeftRoom("alice", "unknown")
 	jrt.UserLeftRoom("unknown", "unknown2")
 	assertEqualSlices(t, jrt.JoinedRoomsForUser("alice"), []string{"room2"})
+
+	jrt.UserInvitedToRoom("alice", "room4")
+	assertNumEquals(t, jrt.NumInvitedUsersForRoom("room4"), 1)
+	jrt.UserJoinedRoom("alice", "room4")
+	assertNumEquals(t, jrt.NumInvitedUsersForRoom("room4"), 0)
+	jrt.UserJoinedRoom("alice", "room4") // dupe joins don't bother it
+	assertNumEquals(t, jrt.NumInvitedUsersForRoom("room4"), 0)
+	jrt.UserInvitedToRoom("bob", "room4")
+	assertNumEquals(t, jrt.NumInvitedUsersForRoom("room4"), 1)
+	jrt.UserInvitedToRoom("bob", "room4") // dupe invites don't bother it
+	assertNumEquals(t, jrt.NumInvitedUsersForRoom("room4"), 1)
+	jrt.UserLeftRoom("bob", "room4")
+	assertNumEquals(t, jrt.NumInvitedUsersForRoom("room4"), 0)
+}
+
+func assertNumEquals(t *testing.T, got, want int) {
+	t.Helper()
+	if got != want {
+		t.Errorf("wrong number: got %v want %v", got, want)
+	}
 }
 
 func assertEqualSlices(t *testing.T, got, want []string) {

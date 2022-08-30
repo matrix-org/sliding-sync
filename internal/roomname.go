@@ -32,6 +32,14 @@ func (m *RoomMetadata) SameRoomName(other *RoomMetadata) bool {
 		sameHeroes(m.Heroes, other.Heroes))
 }
 
+func (m *RoomMetadata) SameJoinCount(other *RoomMetadata) bool {
+	return m.JoinCount == other.JoinCount
+}
+
+func (m *RoomMetadata) SameInviteCount(other *RoomMetadata) bool {
+	return m.InviteCount == other.InviteCount
+}
+
 func sameHeroes(a, b []Hero) bool {
 	if len(a) != len(b) {
 		return false

@@ -15,14 +15,18 @@ type JoinedRoomsTracker struct {
 	// map of room_id to joined user IDs.
 	roomIDToJoinedUsers map[string]set
 	userIDToJoinedRooms map[string]set
-	mu                  *sync.RWMutex
+	// not for security, just to track invite counts correctly as Synapse can send dupe invite->join events
+	// so increment +-1 counts don't work.
+	roomIDToInvitedUsers map[string]set
+	mu                   *sync.RWMutex
 }
 
 func NewJoinedRoomsTracker() *JoinedRoomsTracker {
 	return &JoinedRoomsTracker{
-		roomIDToJoinedUsers: make(map[string]set),
-		userIDToJoinedRooms: make(map[string]set),
-		mu:                  &sync.RWMutex{},
+		roomIDToJoinedUsers:  make(map[string]set),
+		userIDToJoinedRooms:  make(map[string]set),
+		roomIDToInvitedUsers: make(map[string]set),
+		mu:                   &sync.RWMutex{},
 	}
 }
 
@@ -57,10 +61,13 @@ func (t *JoinedRoomsTracker) UserJoinedRoom(userID, roomID string) bool {
 	if joinedUsers == nil {
 		joinedUsers = make(set)
 	}
+	invitedUsers := t.roomIDToInvitedUsers[roomID]
+	delete(invitedUsers, userID)
 	joinedRooms[roomID] = struct{}{}
 	joinedUsers[userID] = struct{}{}
 	t.userIDToJoinedRooms[userID] = joinedRooms
 	t.roomIDToJoinedUsers[roomID] = joinedUsers
+	t.roomIDToInvitedUsers[roomID] = invitedUsers
 	return !wasJoined
 }
 
@@ -71,8 +78,11 @@ func (t *JoinedRoomsTracker) UserLeftRoom(userID, roomID string) {
 	delete(joinedRooms, roomID)
 	joinedUsers := t.roomIDToJoinedUsers[roomID]
 	delete(joinedUsers, userID)
+	invitedUsers := t.roomIDToInvitedUsers[roomID]
+	delete(invitedUsers, userID)
 	t.userIDToJoinedRooms[userID] = joinedRooms
 	t.roomIDToJoinedUsers[roomID] = joinedUsers
+	t.roomIDToInvitedUsers[roomID] = invitedUsers
 }
 func (t *JoinedRoomsTracker) JoinedRoomsForUser(userID string) []string {
 	t.mu.RLock()
@@ -105,4 +115,22 @@ func (t *JoinedRoomsTracker) JoinedUsersForRoom(roomID string) []string {
 		i++
 	}
 	return result
+}
+
+// Returns the new invite count
+func (t *JoinedRoomsTracker) UserInvitedToRoom(userID, roomID string) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	users := t.roomIDToInvitedUsers[roomID]
+	if users == nil {
+		users = make(set)
+	}
+	users[userID] = struct{}{}
+	t.roomIDToInvitedUsers[roomID] = users
+}
+
+func (t *JoinedRoomsTracker) NumInvitedUsersForRoom(roomID string) int {
+	t.mu.RLock()
+	defer t.mu.RUnlock()
+	return len(t.roomIDToInvitedUsers[roomID])
 }

@@ -112,9 +112,11 @@ func (d *Dispatcher) onNewEvent(
 	shouldForceInitial := false
 	if ed.EventType == "m.room.member" && ed.StateKey != nil {
 		targetUser = *ed.StateKey
-		// TODO: de-dupe joins in jrt else profile changes will results in 2x room IDs
 		membership = ed.Content.Get("membership").Str
 		switch membership {
+		case "invite":
+			// we only do this to track invite counts correctly.
+			d.jrt.UserInvitedToRoom(targetUser, ed.RoomID)
 		case "join":
 			if d.jrt.UserJoinedRoom(targetUser, ed.RoomID) {
 				shouldForceInitial = true
@@ -124,10 +126,12 @@ func (d *Dispatcher) onNewEvent(
 		case "leave":
 			d.jrt.UserLeftRoom(targetUser, ed.RoomID)
 		}
+		ed.InviteCount = d.jrt.NumInvitedUsersForRoom(ed.RoomID)
 	}
 
 	// notify all people in this room
 	userIDs := d.jrt.JoinedUsersForRoom(ed.RoomID)
+	ed.JoinCount = len(userIDs)
 
 	// invoke listeners
 	d.userToReceiverMu.RLock()

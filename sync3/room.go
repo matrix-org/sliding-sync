@@ -16,6 +16,8 @@ type Room struct {
 	HighlightCount    int64             `json:"highlight_count"`
 	Initial           bool              `json:"initial,omitempty"`
 	IsDM              bool              `json:"is_dm,omitempty"`
+	JoinedCount       int               `json:"joined_count,omitempty"`
+	InvitedCount      int               `json:"invited_count,omitempty"`
 	PrevBatch         string            `json:"prev_batch,omitempty"`
 }
 
