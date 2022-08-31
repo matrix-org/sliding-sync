@@ -202,28 +202,3 @@ func (f *FilteredSortableRooms) Add(roomID string) bool {
 	}
 	return f.SortableRooms.Add(roomID)
 }
-
-func (f *FilteredSortableRooms) UpdateGlobalRoomMetadata(roomID string) int {
-	r := f.finder.Room(roomID)
-	internal.Assert("missing room metadata", r != nil)
-	_, ok := f.SortableRooms.IndexOf(r.RoomID)
-	if !ok {
-		return -1
-	}
-	if !f.filter.Include(r) {
-		return f.Remove(r.RoomID)
-	}
-	return -1
-}
-
-func (f *FilteredSortableRooms) UpdateUserRoomMetadata(roomID string) int {
-	r := f.finder.Room(roomID)
-	_, ok := f.SortableRooms.IndexOf(roomID)
-	if !ok {
-		return -1
-	}
-	if !f.filter.Include(r) {
-		return f.Remove(roomID)
-	}
-	return -1
-}

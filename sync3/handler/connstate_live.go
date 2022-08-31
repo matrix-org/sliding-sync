@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"runtime/trace"
-	"strings"
 	"time"
 
 	"github.com/matrix-org/sync-v3/internal"
@@ -119,7 +118,7 @@ func (s *connStateLive) processLiveUpdate(ctx context.Context, up caches.Update,
 		index := listDelta.ListIndex
 		list := s.lists.Get(index)
 		reqList := s.muxedReq.Lists[index]
-		updates := s.processLiveUpdateForList(ctx, builder, up, &reqList, list, &response.Lists[index])
+		updates := s.processLiveUpdateForList(ctx, builder, up, listDelta.Op, &reqList, list, &response.Lists[index])
 		if updates {
 			hasUpdates = true
 		}
@@ -215,36 +214,20 @@ func (s *connStateLive) processGlobalUpdates(ctx context.Context, builder *Rooms
 }
 
 func (s *connStateLive) processLiveUpdateForList(
-	ctx context.Context, builder *RoomsBuilder, up caches.Update, reqList *sync3.RequestList, intList *sync3.FilteredSortableRooms, resList *sync3.ResponseList,
+	ctx context.Context, builder *RoomsBuilder, up caches.Update, listOp sync3.ListOp,
+	reqList *sync3.RequestList, intList *sync3.FilteredSortableRooms, resList *sync3.ResponseList,
 ) (hasUpdates bool) {
-	roomUpdate, ok := up.(caches.RoomUpdate)
-	if ok { // update the internal lists - this may remove rooms if the room no longer matches a filter
-		// see if the latest room metadata means we delete a room, else update our state
-		deletedIndex := intList.UpdateGlobalRoomMetadata(roomUpdate.RoomID())
-		if op := reqList.WriteDeleteOp(deletedIndex); op != nil {
-			resList.Ops = append(resList.Ops, op)
-			hasUpdates = true
-		}
-		// see if the latest user room metadata means we delete a room (e.g it transition from dm to non-dm)
-		// modify notification counts, DM-ness, etc
-		deletedIndex = intList.UpdateUserRoomMetadata(roomUpdate.RoomID())
-		if op := reqList.WriteDeleteOp(deletedIndex); op != nil {
-			resList.Ops = append(resList.Ops, op)
-			hasUpdates = true
-		}
-	}
-
 	switch update := up.(type) {
 	case *caches.RoomAccountDataUpdate:
 		logger.Trace().Str("user", s.userID).Msg("received room account data update")
-		ops, didUpdate := s.processIncomingEventForList(ctx, builder, update, reqList, intList)
+		ops, didUpdate := s.processIncomingEventForList(ctx, builder, update, listOp, reqList, intList)
 		if didUpdate {
 			hasUpdates = true
 		}
 		resList.Ops = append(resList.Ops, ops...)
 	case *caches.RoomEventUpdate:
 		logger.Trace().Str("user", s.userID).Str("type", update.EventData.EventType).Msg("received event update")
-		ops, didUpdate := s.processIncomingEventForList(ctx, builder, update, reqList, intList)
+		ops, didUpdate := s.processIncomingEventForList(ctx, builder, update, listOp, reqList, intList)
 		if didUpdate {
 			hasUpdates = true
 		}
@@ -270,7 +253,7 @@ func (s *connStateLive) processLiveUpdateForList(
 				RoomUpdate: update.RoomUpdate,
 				EventData:  update.InviteData.InviteEvent,
 			}
-			ops, didUpdate := s.processIncomingEventForList(ctx, builder, roomUpdate, reqList, intList)
+			ops, didUpdate := s.processIncomingEventForList(ctx, builder, roomUpdate, listOp, reqList, intList)
 			resList.Ops = append(resList.Ops, ops...)
 			if didUpdate {
 				hasUpdates = true
@@ -293,47 +276,21 @@ func (s *connStateLive) processUnreadCountUpdateForList(
 		// do nothing. We only care to notify the user when the counts decrease.
 		return nil, false
 	}
-
-	fromIndex, ok := intList.IndexOf(up.RoomID())
-	if !ok {
-		return nil, false
-	}
-	return s.resort(ctx, builder, reqList, intList, up.RoomID(), fromIndex, false)
+	return s.resort(ctx, builder, reqList, intList, up.RoomID(), sync3.ListOpChange)
 }
 
 func (s *connStateLive) processIncomingEventForList(
-	ctx context.Context, builder *RoomsBuilder, update caches.RoomUpdate, reqList *sync3.RequestList, intList *sync3.FilteredSortableRooms,
+	ctx context.Context, builder *RoomsBuilder, update caches.RoomUpdate, listOp sync3.ListOp, reqList *sync3.RequestList, intList *sync3.FilteredSortableRooms,
 ) (ops []sync3.ResponseOp, didUpdate bool) {
-	fromIndex, ok := intList.IndexOf(update.RoomID())
-	newlyAdded := false
-	if !ok {
-		// the user may have just joined the room hence not have an entry in this list yet.
-		fromIndex = int(intList.Len())
-		roomMetadata := update.GlobalRoomMetadata()
-		roomMetadata.RemoveHero(s.userID)
-		urd := *update.UserRoomMetadata()
-		urd.CanonicalisedName = strings.ToLower(
-			strings.Trim(internal.CalculateRoomName(roomMetadata, 5), "#!():_@"),
-		)
-		newRoomConn := sync3.RoomConnMetadata{
-			RoomMetadata: *roomMetadata,
-			UserRoomData: urd,
-		}
-		if !intList.Add(newRoomConn.RoomID) {
-			// we didn't add this room to the list so we don't need to resort
-			return nil, false
-		}
-		logger.Info().Str("room", update.RoomID()).Msg("room added")
-		newlyAdded = true
-	}
 	roomEventUpdate, ok := update.(*caches.RoomEventUpdate)
 	if ok && roomEventUpdate.EventData.ForceInitial {
 		// add room to sub: this applies for when we track all rooms too as we want joins/etc to come through with initial data
 		subID := builder.AddSubscription(reqList.RoomSubscription)
 		builder.AddRoomsToSubscription(subID, []string{update.RoomID()})
 	}
+
 	return s.resort(
-		ctx, builder, reqList, intList, update.RoomID(), fromIndex, newlyAdded,
+		ctx, builder, reqList, intList, update.RoomID(), listOp,
 	)
 }
 
@@ -341,73 +298,37 @@ func (s *connStateLive) processIncomingEventForList(
 func (s *connStateLive) resort(
 	ctx context.Context, builder *RoomsBuilder,
 	reqList *sync3.RequestList, intList *sync3.FilteredSortableRooms, roomID string,
-	fromIndex int, newlyAdded bool,
+	listOp sync3.ListOp,
 ) (ops []sync3.ResponseOp, didUpdate bool) {
 	if reqList.ShouldGetAllRooms() {
 		// no need to sort this list as we get all rooms
 		// no need to calculate ops as we get all rooms
 		// no need to send initial state for some rooms as we already sent initial state for all rooms
-		if newlyAdded {
+		if listOp == sync3.ListOpAdd {
+			intList.Add(roomID)
 			// ensure we send data when the user joins a new room
 			subID := builder.AddSubscription(reqList.RoomSubscription)
 			builder.AddRoomsToSubscription(subID, []string{roomID})
+		} else if listOp == sync3.ListOpDel {
+			intList.Remove(roomID)
 		}
 		return nil, true
 	}
 
-	_, wasInsideRange := reqList.Ranges.Inside(int64(fromIndex))
-	// this should only move exactly 1 room at most as this is called for every single update
-	if err := intList.Sort(reqList.Sort); err != nil {
-		logger.Err(err).Msg("cannot sort list")
-	}
-	toIndex, _ := intList.IndexOf(roomID)
-	if newlyAdded {
-		wasInsideRange = false // can't be inside the range if this is a new room
+	ops, subs := sync3.CalculateListOps(reqList, intList, roomID, listOp)
+	if len(subs) > 0 { // handle rooms which have just come into the window
+		subID := builder.AddSubscription(reqList.RoomSubscription)
+		builder.AddRoomsToSubscription(subID, subs)
 	}
 
-	listFromTos := reqList.CalculateMoveIndexes(fromIndex, toIndex)
-	if len(listFromTos) == 0 {
-		return nil, false
-	}
-
-	for _, listFromTo := range listFromTos {
-		listFromIndex := listFromTo[0]
-		listToIndex := listFromTo[1]
-		wasUpdatedRoomInserted := listToIndex == toIndex
-		roomID := intList.Get(listToIndex)
-
-		// if a different room is being inserted or the room wasn't previously inside a range, send
-		// the entire room data
-		if !wasUpdatedRoomInserted || !wasInsideRange {
-			subID := builder.AddSubscription(reqList.RoomSubscription)
-			builder.AddRoomsToSubscription(subID, []string{roomID})
+	// there are updates if we have ops, new subs or if the triggering room is inside the range still
+	hasUpdates := len(ops) > 0 || len(subs) > 0
+	if !hasUpdates {
+		roomIndex, ok := intList.IndexOf(roomID)
+		if ok {
+			_, isInside := reqList.Ranges.Inside(int64(roomIndex))
+			hasUpdates = isInside
 		}
-
-		swapOp := reqList.WriteSwapOp(roomID, listFromIndex, listToIndex)
-		ops = append(ops, swapOp...)
-
-		if wasUpdatedRoomInserted && newlyAdded {
-			// we inserted this room and it is a new room, so send the entire room data.
-			subID := builder.AddSubscription(reqList.RoomSubscription)
-			builder.AddRoomsToSubscription(subID, []string{roomID})
-
-			// The client needs to know which item in the list to delete to know which direction to
-			// shift items (left or right). This means the vast majority of BRAND NEW rooms will result
-			// in a swap op even though you could argue that an INSERT[0] or something is sufficient
-			// (though bear in mind that we don't always insert to [0]). The one edge case is when
-			// there are no items in the list at all. In this case, there is no swap op as there is
-			// nothing to swap, but we still need to tell clients about the operation, hence a lone
-			// INSERT op.
-			// This can be intuitively explained by saying that "if there is a room at this toIndex
-			// then we need a DELETE to tell the client whether the room being replaced should shift
-			// left or shift right". In absence of a room being there, we just INSERT, which plays
-			// nicely with the logic of "if there is nothing at this index position, insert, else expect
-			// a delete op to have happened before".
-			if swapOp == nil {
-				ops = append(ops, reqList.WriteInsertOp(toIndex, roomID))
-			}
-		}
-
 	}
-	return ops, true
+	return ops, hasUpdates
 }

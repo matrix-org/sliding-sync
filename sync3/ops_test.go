@@ -1,0 +1,272 @@
+package sync3
+
+import (
+	"bytes"
+	"encoding/json"
+	"testing"
+)
+
+func TestCalculateListOps_BasicOperations(t *testing.T) {
+	testCases := []struct {
+		name     string
+		before   []string
+		after    []string
+		ranges   SliceRanges
+		roomID   string
+		listOp   ListOp
+		wantOps  []ResponseOp
+		wantSubs []string
+	}{
+		{
+			name:   "basic move from bottom to top of list",
+			before: []string{"a", "b", "c", "d"},
+			after:  []string{"d", "a", "b", "c"},
+			ranges: SliceRanges{{0, 20}},
+			roomID: "d",
+			listOp: ListOpChange, // e.g new message
+			wantOps: []ResponseOp{
+				&ResponseOpSingle{Operation: OpDelete, Index: ptr(3)},
+				&ResponseOpSingle{Operation: OpInsert, Index: ptr(0), RoomID: "d"},
+			},
+		},
+		{
+			name:   "basic move from top to bottom of list",
+			before: []string{"a", "b", "c", "d"},
+			after:  []string{"b", "c", "d", "a"},
+			ranges: SliceRanges{{0, 20}},
+			roomID: "a",
+			listOp: ListOpChange, // e.g new message
+			wantOps: []ResponseOp{
+				&ResponseOpSingle{Operation: OpDelete, Index: ptr(0)},
+				&ResponseOpSingle{Operation: OpInsert, Index: ptr(3), RoomID: "a"},
+			},
+		},
+		{
+			name:    "no-op move",
+			before:  []string{"a", "b", "c", "d"},
+			after:   []string{"a", "b", "c", "d"},
+			ranges:  SliceRanges{{0, 20}},
+			roomID:  "b",
+			listOp:  ListOpChange, // e.g new message
+			wantOps: nil,
+		},
+		{
+			name:   "basic addition to middle of list",
+			before: []string{"a", "b", "c", "d"},
+			after:  []string{"a", "b", "bc", "c", "d"},
+			ranges: SliceRanges{{0, 20}},
+			roomID: "bc",
+			listOp: ListOpAdd,
+			wantOps: []ResponseOp{
+				&ResponseOpSingle{Operation: OpDelete, Index: ptr(4)},
+				&ResponseOpSingle{Operation: OpInsert, Index: ptr(2), RoomID: "bc"},
+			},
+			wantSubs: []string{"bc"},
+		},
+		{
+			name:   "basic deletion from  middle of list",
+			before: []string{"a", "b", "c", "d"},
+			after:  []string{"a", "c", "d"},
+			ranges: SliceRanges{{0, 20}},
+			roomID: "b",
+			listOp: ListOpDel,
+			wantOps: []ResponseOp{
+				&ResponseOpSingle{Operation: OpDelete, Index: ptr(1)},
+			},
+		},
+		{
+			name:   "basic deletion from end of list",
+			before: []string{"a", "b", "c", "d"},
+			after:  []string{"a", "b", "c"},
+			ranges: SliceRanges{{0, 20}},
+			roomID: "d",
+			listOp: ListOpDel,
+			wantOps: []ResponseOp{
+				&ResponseOpSingle{Operation: OpDelete, Index: ptr(3)},
+			},
+		},
+		{
+			name:   "basic addition from end of list",
+			before: []string{"a", "b", "c"},
+			after:  []string{"a", "b", "c", "d"},
+			ranges: SliceRanges{{0, 20}},
+			roomID: "d",
+			listOp: ListOpAdd,
+			wantOps: []ResponseOp{
+				&ResponseOpSingle{Operation: OpInsert, Index: ptr(3), RoomID: "d"},
+			},
+			wantSubs: []string{"d"},
+		},
+		{
+			name:   "one element swap",
+			before: []string{"a", "b", "c", "d"},
+			after:  []string{"b", "a", "c", "d"},
+			ranges: SliceRanges{{0, 20}},
+			roomID: "b",
+			listOp: ListOpChange, // e.g new message
+			wantOps: []ResponseOp{
+				&ResponseOpSingle{Operation: OpDelete, Index: ptr(1)},
+				&ResponseOpSingle{Operation: OpInsert, Index: ptr(0), RoomID: "b"},
+			},
+		},
+	}
+	for _, tc := range testCases {
+		sl := newStringList(tc.before)
+		sl.sortedRoomIDs = tc.after
+		gotOps, gotSubs := CalculateListOps(&RequestList{
+			Ranges: tc.ranges,
+		}, sl, tc.roomID, tc.listOp)
+		assertEqualOps(t, tc.name, gotOps, tc.wantOps)
+		assertEqualSlices(t, tc.name, gotSubs, tc.wantSubs)
+	}
+}
+
+func TestCalculateListOps_SingleWindowOperations(t *testing.T) {
+	testCases := []struct {
+		name     string
+		before   []string
+		after    []string
+		ranges   SliceRanges
+		roomID   string
+		listOp   ListOp
+		wantOps  []ResponseOp
+		wantSubs []string
+	}{
+		{
+			name:   "basic move into a window",
+			before: []string{"a", "b", "c", "d", "e", "f"},
+			after:  []string{"f", "a", "b", "c", "d", "e"},
+			ranges: SliceRanges{{0, 2}},
+			roomID: "f",
+			listOp: ListOpChange,
+			wantOps: []ResponseOp{
+				&ResponseOpSingle{Operation: OpDelete, Index: ptr(2)},
+				&ResponseOpSingle{Operation: OpInsert, Index: ptr(0), RoomID: "f"},
+			},
+			wantSubs: []string{"f"},
+		},
+		{
+			name:   "basic move out of a window",
+			before: []string{"a", "b", "c", "d", "e", "f"},
+			after:  []string{"b", "c", "d", "e", "a", "f"},
+			ranges: SliceRanges{{0, 2}},
+			roomID: "a",
+			listOp: ListOpChange,
+			wantOps: []ResponseOp{
+				&ResponseOpSingle{Operation: OpDelete, Index: ptr(0)},
+				&ResponseOpSingle{Operation: OpInsert, Index: ptr(2), RoomID: "d"},
+			},
+			wantSubs: []string{"d"},
+		},
+		{
+			name:   "basic move over a window",
+			before: []string{"a", "b", "c", "d", "e", "f"},
+			after:  []string{"b", "c", "d", "e", "a", "f"},
+			ranges: SliceRanges{{1, 3}},
+			roomID: "a",
+			listOp: ListOpChange,
+			wantOps: []ResponseOp{
+				&ResponseOpSingle{Operation: OpDelete, Index: ptr(1)},
+				&ResponseOpSingle{Operation: OpInsert, Index: ptr(3), RoomID: "e"},
+			},
+			wantSubs: []string{"e"},
+		}, /*
+			{
+				name:   "basic deletion in front of a window",
+				before: []string{"a", "b", "c", "d", "e", "f"},
+				after:  []string{"b", "c", "d", "e", "f"},
+				ranges: SliceRanges{{1, 3}},
+				roomID: "a",
+				listOp: ListOpDel,
+				wantOps: []ResponseOp{
+					&ResponseOpSingle{Operation: OpDelete, Index: ptr(1)},
+					&ResponseOpSingle{Operation: OpInsert, Index: ptr(3), RoomID: "e"},
+				},
+			}, */
+	}
+	for _, tc := range testCases {
+		sl := newStringList(tc.before)
+		sl.sortedRoomIDs = tc.after
+		gotOps, gotSubs := CalculateListOps(&RequestList{
+			Ranges: tc.ranges,
+		}, sl, tc.roomID, tc.listOp)
+		assertEqualOps(t, tc.name, gotOps, tc.wantOps)
+		assertEqualSlices(t, tc.name, gotSubs, tc.wantSubs)
+	}
+}
+
+func assertEqualOps(t *testing.T, name string, gotOps, wantOps []ResponseOp) {
+	t.Helper()
+	got, err := json.Marshal(gotOps)
+	want, err2 := json.Marshal(wantOps)
+	if err != nil || err2 != nil {
+		t.Fatalf("%s: failed to marshal response ops: %v %v", name, err, err2)
+	}
+	if !bytes.Equal(got, want) {
+		t.Fatalf("%s: assertEqualOps, got != want\n%s\n%s", name, string(got), string(want))
+	}
+}
+
+type stringList struct {
+	roomIDs       []string
+	roomIDToIndex map[string]int
+	sortedRoomIDs []string
+}
+
+func newStringList(roomIDs []string) *stringList {
+	s := &stringList{
+		sortedRoomIDs: roomIDs,
+	}
+	s.Sort(nil)
+	return s
+}
+
+func ptr(i int) *int {
+	return &i
+}
+
+func (s *stringList) IndexOf(roomID string) (int, bool) {
+	i, ok := s.roomIDToIndex[roomID]
+	return i, ok
+}
+func (s *stringList) Len() int64 {
+	return int64(len(s.roomIDs))
+}
+func (s *stringList) Sort(sortBy []string) error {
+	s.roomIDToIndex = make(map[string]int, len(s.sortedRoomIDs))
+	s.roomIDs = s.sortedRoomIDs
+	for i := range s.roomIDs {
+		s.roomIDToIndex[s.roomIDs[i]] = i
+	}
+	return nil
+}
+func (s *stringList) Add(roomID string) bool {
+	_, ok := s.roomIDToIndex[roomID]
+	if ok {
+		return false
+	}
+	s.roomIDToIndex[roomID] = len(s.roomIDs)
+	s.roomIDs = append(s.roomIDs, roomID)
+	return true
+}
+func (s *stringList) Remove(roomID string) int {
+	i, ok := s.roomIDToIndex[roomID]
+	if !ok {
+		return -1
+	}
+	gotRoomID := s.roomIDs[i]
+	if gotRoomID != roomID {
+		panic("roomIDToIndex|roomIDs out of sync, got " + gotRoomID + " want " + roomID)
+	}
+	delete(s.roomIDToIndex, roomID)
+	// splice out index
+	s.roomIDs = append(s.roomIDs[:i], s.roomIDs[i+1:]...)
+	// re-update the map
+	for index := i; index < len(s.roomIDs); index++ {
+		s.roomIDToIndex[s.roomIDs[index]] = index
+	}
+	return i
+}
+func (s *stringList) Get(index int) string {
+	return s.roomIDs[index]
+}
