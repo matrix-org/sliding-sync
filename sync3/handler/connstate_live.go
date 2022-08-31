@@ -232,12 +232,6 @@ func (s *connStateLive) processLiveUpdateForList(
 			// do nothing. We only care to notify the user when the counts decrease.
 			return false
 		}
-	case *caches.InviteUpdate:
-		logger.Trace().Str("user", s.userID).Str("room", update.RoomID()).Msg("received invite update")
-		up = &caches.RoomEventUpdate{
-			RoomUpdate: update.RoomUpdate,
-			EventData:  update.InviteData.InviteEvent,
-		}
 	}
 
 	// only room updates can cause the rooms to reshuffle e.g events, room account data, tags
