@@ -214,6 +214,7 @@ func TestFiltersInvite(t *testing.T) {
 		[]m.ListMatcher{
 			m.MatchV3Count(1),
 			m.MatchV3Ops(
+				m.MatchV3DeleteOp(0),
 				m.MatchV3InsertOp(0, roomID),
 			),
 		},
@@ -591,6 +592,7 @@ func TestFiltersTags(t *testing.T) {
 	m.MatchResponse(t, res, m.MatchList(0, m.MatchV3Count(1), m.MatchV3Ops(
 		m.MatchV3DeleteOp(1),
 	)), m.MatchList(1, m.MatchV3Count(4), m.MatchV3Ops(
+		m.MatchV3DeleteOp(3),
 		m.MatchV3InsertOp(3, fav2RoomID),
 	)))
 }

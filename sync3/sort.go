@@ -52,7 +52,7 @@ func (s *SortableRooms) Add(roomID string) bool {
 }
 
 func (s *SortableRooms) Get(index int) string {
-	internal.Assert("index is within len(rooms)", index < len(s.roomIDs))
+	internal.Assert(fmt.Sprintf("index is within len(rooms) %v < %v", index, len(s.roomIDs)), index < len(s.roomIDs))
 	return s.roomIDs[index]
 }
 

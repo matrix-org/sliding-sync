@@ -18,6 +18,30 @@ func TestCalculateListOps_BasicOperations(t *testing.T) {
 		wantSubs []string
 	}{
 		{
+			name:   "basic addition from nothing",
+			before: []string{},
+			after:  []string{"a"},
+			ranges: SliceRanges{{0, 20}},
+			roomID: "a",
+			listOp: ListOpAdd,
+			wantOps: []ResponseOp{
+				&ResponseOpSingle{Operation: OpDelete, Index: ptr(0)},
+				&ResponseOpSingle{Operation: OpInsert, Index: ptr(0), RoomID: "a"},
+			},
+			wantSubs: []string{"a"},
+		},
+		{
+			name:   "basic deletion to nothing",
+			before: []string{"a"},
+			after:  []string{},
+			ranges: SliceRanges{{0, 20}},
+			roomID: "a",
+			listOp: ListOpDel,
+			wantOps: []ResponseOp{
+				&ResponseOpSingle{Operation: OpDelete, Index: ptr(0)},
+			},
+		},
+		{
 			name:   "basic move from bottom to top of list",
 			before: []string{"a", "b", "c", "d"},
 			after:  []string{"d", "a", "b", "c"},
@@ -86,13 +110,14 @@ func TestCalculateListOps_BasicOperations(t *testing.T) {
 			},
 		},
 		{
-			name:   "basic addition from end of list",
+			name:   "basic addition to end of list",
 			before: []string{"a", "b", "c"},
 			after:  []string{"a", "b", "c", "d"},
 			ranges: SliceRanges{{0, 20}},
 			roomID: "d",
 			listOp: ListOpAdd,
 			wantOps: []ResponseOp{
+				&ResponseOpSingle{Operation: OpDelete, Index: ptr(3)},
 				&ResponseOpSingle{Operation: OpInsert, Index: ptr(3), RoomID: "d"},
 			},
 			wantSubs: []string{"d"},
@@ -170,19 +195,105 @@ func TestCalculateListOps_SingleWindowOperations(t *testing.T) {
 				&ResponseOpSingle{Operation: OpInsert, Index: ptr(3), RoomID: "e"},
 			},
 			wantSubs: []string{"e"},
-		}, /*
-			{
-				name:   "basic deletion in front of a window",
-				before: []string{"a", "b", "c", "d", "e", "f"},
-				after:  []string{"b", "c", "d", "e", "f"},
-				ranges: SliceRanges{{1, 3}},
-				roomID: "a",
-				listOp: ListOpDel,
-				wantOps: []ResponseOp{
-					&ResponseOpSingle{Operation: OpDelete, Index: ptr(1)},
-					&ResponseOpSingle{Operation: OpInsert, Index: ptr(3), RoomID: "e"},
-				},
-			}, */
+		},
+		{
+			name:   "basic deletion in front of a window",
+			before: []string{"a", "b", "c", "d", "e", "f"},
+			after:  []string{"b", "c", "d", "e", "f"},
+			ranges: SliceRanges{{1, 3}},
+			roomID: "a",
+			listOp: ListOpDel,
+			wantOps: []ResponseOp{
+				&ResponseOpSingle{Operation: OpDelete, Index: ptr(1)},
+				&ResponseOpSingle{Operation: OpInsert, Index: ptr(3), RoomID: "e"},
+			},
+			wantSubs: []string{"e"},
+		},
+		{
+			name:   "basic deletion at start of a window",
+			before: []string{"a", "b", "c", "d", "e", "f"},
+			after:  []string{"a", "c", "d", "e", "f"},
+			ranges: SliceRanges{{1, 3}},
+			roomID: "b",
+			listOp: ListOpDel,
+			wantOps: []ResponseOp{
+				&ResponseOpSingle{Operation: OpDelete, Index: ptr(1)},
+				&ResponseOpSingle{Operation: OpInsert, Index: ptr(3), RoomID: "e"},
+			},
+			wantSubs: []string{"e"},
+		},
+		{
+			name:   "basic deletion at end of a window",
+			before: []string{"a", "b", "c", "d", "e", "f"},
+			after:  []string{"a", "b", "c", "e", "f"},
+			ranges: SliceRanges{{1, 3}},
+			roomID: "d",
+			listOp: ListOpDel,
+			wantOps: []ResponseOp{
+				&ResponseOpSingle{Operation: OpDelete, Index: ptr(3)},
+				&ResponseOpSingle{Operation: OpInsert, Index: ptr(3), RoomID: "e"},
+			},
+			wantSubs: []string{"e"},
+		},
+		{
+			name:     "basic deletion in behind a window",
+			before:   []string{"a", "b", "c", "d", "e", "f"},
+			after:    []string{"a", "b", "c", "d", "f"},
+			ranges:   SliceRanges{{1, 3}},
+			roomID:   "e",
+			listOp:   ListOpDel,
+			wantOps:  nil,
+			wantSubs: nil,
+		},
+		{
+			name:   "basic addition in front of a window",
+			before: []string{"a", "b", "c", "d", "e", "f"},
+			after:  []string{"a", "ab", "b", "c", "d", "e", "f"},
+			ranges: SliceRanges{{2, 4}},
+			roomID: "ab",
+			listOp: ListOpAdd,
+			wantOps: []ResponseOp{
+				&ResponseOpSingle{Operation: OpDelete, Index: ptr(4)},
+				&ResponseOpSingle{Operation: OpInsert, Index: ptr(2), RoomID: "b"},
+			},
+			wantSubs: []string{"b"},
+		},
+		{
+			name:   "basic addition at start of a window",
+			before: []string{"a", "b", "c", "d", "e", "f"},
+			after:  []string{"a", "ab", "b", "c", "d", "e", "f"},
+			ranges: SliceRanges{{1, 3}},
+			roomID: "ab",
+			listOp: ListOpAdd,
+			wantOps: []ResponseOp{
+				&ResponseOpSingle{Operation: OpDelete, Index: ptr(3)},
+				&ResponseOpSingle{Operation: OpInsert, Index: ptr(1), RoomID: "ab"},
+			},
+			wantSubs: []string{"ab"},
+		},
+		{
+			name:   "basic addition at end of a window",
+			before: []string{"a", "b", "c", "d", "e", "f"},
+			after:  []string{"a", "b", "c", "cd", "d", "e", "f"},
+			ranges: SliceRanges{{1, 3}},
+			roomID: "cd",
+			listOp: ListOpAdd,
+			wantOps: []ResponseOp{
+				&ResponseOpSingle{Operation: OpDelete, Index: ptr(3)},
+				&ResponseOpSingle{Operation: OpInsert, Index: ptr(3), RoomID: "cd"},
+			},
+			wantSubs: []string{"cd"},
+		},
+		{
+			name:     "basic addition behind a window",
+			before:   []string{"a", "b", "c", "d", "e", "f"},
+			after:    []string{"a", "b", "c", "d", "e", "f", "g"},
+			ranges:   SliceRanges{{2, 4}},
+			roomID:   "g",
+			listOp:   ListOpAdd,
+			wantOps:  nil,
+			wantSubs: nil,
+		},
 	}
 	for _, tc := range testCases {
 		sl := newStringList(tc.before)

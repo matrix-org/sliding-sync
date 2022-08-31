@@ -17,8 +17,8 @@ type List interface {
 //    `----`    `----`         <-- RequestList.Ranges
 //    DEL E | ADD J | CHANGE C <-- ListOp RoomID
 // returns:
-//    [ {op:DELETE, index:2}, {op:INSERT, index:0, room_id:A} ] <--- ResponseOp
-//    [ "A" ] <--- new room subscription, if it wasn't in the window before
+//    [ {op:DELETE, index:2}, {op:INSERT, index:0, room_id:A} ] <--- []ResponseOp
+//    [ "A" ] <--- []string, new room subscriptions, if it wasn't in the window before
 //
 // This function will modify List to Add/Delete/Sort appropriately.
 func CalculateListOps(reqList *RequestList, list List, roomID string, listOp ListOp) (ops []ResponseOp, subs []string) {
@@ -27,31 +27,42 @@ func CalculateListOps(reqList *RequestList, list List, roomID string, listOp Lis
 		if listOp == ListOpAdd {
 			fromIndex = int(list.Len())
 		} else {
+			// room doesn't exist and we aren't adding it, nothing to do.
 			return
 		}
 	}
-
-	newlyAdded := listOp == ListOpAdd
-	if listOp == ListOpAdd {
-		list.Add(roomID)
-	} else if listOp == ListOpDel {
-		delIndex := list.Remove(roomID)
-		if delIndex >= 0 {
-			ops = append(ops, reqList.WriteDeleteOp(delIndex))
-			return
-		}
-	}
-
 	_, wasInsideRange := reqList.Ranges.Inside(int64(fromIndex))
-	if newlyAdded {
-		wasInsideRange = false // can't be inside the range if this is a new room
-	}
 
-	// this should only move exactly 1 room at most as this is called for every single update
-	if err := list.Sort(reqList.Sort); err != nil {
-		logger.Err(err).Msg("cannot sort list")
+	var toIndex int
+	// modify the list
+	switch listOp {
+	case ListOpAdd:
+		wasInsideRange = false // can't be inside the range if this is a new room
+		list.Add(roomID)
+		// this should only move exactly 1 room at most as this is called for every single update
+		if err := list.Sort(reqList.Sort); err != nil {
+			logger.Err(err).Msg("cannot sort list")
+		}
+		// find the new position of this room
+		toIndex, _ = list.IndexOf(roomID)
+	case ListOpDel:
+		list.Remove(roomID)
+		// no need to resort here, everything is in the right order already and just needs a shift
+		// there will be no toIndex, set it to the end of the array
+		toIndex = int(list.Len()) - 1
+		if toIndex == -1 {
+			// we are removing the last element of the list
+			ops = append(ops, reqList.WriteDeleteOp(0))
+			return
+		}
+	case ListOpChange:
+		// this should only move exactly 1 room at most as this is called for every single update
+		if err := list.Sort(reqList.Sort); err != nil {
+			logger.Err(err).Msg("cannot sort list")
+		}
+		// find the new position of this room
+		toIndex, _ = list.IndexOf(roomID)
 	}
-	toIndex, _ := list.IndexOf(roomID)
 
 	listFromTos := reqList.CalculateMoveIndexes(fromIndex, toIndex)
 	if len(listFromTos) == 0 {
@@ -62,22 +73,32 @@ func CalculateListOps(reqList *RequestList, list List, roomID string, listOp Lis
 		listFromIndex := listFromTo[0]
 		listToIndex := listFromTo[1]
 		wasUpdatedRoomInserted := listToIndex == toIndex
-		roomID := list.Get(listToIndex)
+		toRoomID := list.Get(listToIndex)
+		if toRoomID == roomID && listFromIndex == listToIndex && listOp == ListOpChange {
+			continue // no-op move
+		}
 
-		swapOp := reqList.WriteSwapOp(roomID, listFromIndex, listToIndex)
+		if wasUpdatedRoomInserted && listOp == ListOpDel {
+			// ignore this insert, as deletions algorithmically just jump to the end of the array.
+			// we do this so we can calculate jumps over ranges using the same codepaths as moves.
+			ops = append(ops, reqList.WriteDeleteOp(listFromIndex))
+			continue
+		}
+
+		swapOp := reqList.WriteSwapOp(toRoomID, listFromIndex, listToIndex)
 		ops = append(ops, swapOp...)
 
 		addedSub := false
 		// if a different room is being inserted or the room wasn't previously inside a range, send
 		// the entire room data
 		if !wasUpdatedRoomInserted || !wasInsideRange {
-			subs = append(subs, roomID)
+			subs = append(subs, toRoomID)
 			addedSub = true
 		}
 
-		if wasUpdatedRoomInserted && newlyAdded {
+		if wasUpdatedRoomInserted && listOp == ListOpAdd {
 			if !addedSub {
-				subs = append(subs, roomID)
+				subs = append(subs, toRoomID)
 			}
 			// The client needs to know which item in the list to delete to know which direction to
 			// shift items (left or right). This means the vast majority of BRAND NEW rooms will result
@@ -92,7 +113,7 @@ func CalculateListOps(reqList *RequestList, list List, roomID string, listOp Lis
 			// nicely with the logic of "if there is nothing at this index position, insert, else expect
 			// a delete op to have happened before".
 			if swapOp == nil {
-				ops = append(ops, reqList.WriteInsertOp(toIndex, roomID))
+				ops = append(ops, reqList.WriteInsertOp(toIndex, toRoomID))
 			}
 		}
 	}

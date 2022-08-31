@@ -218,10 +218,6 @@ func (rl *RequestList) jumpedOverRanges(fromIndex, toIndex int) (jumpedOverRange
 func (rl *RequestList) WriteSwapOp(
 	roomID string, fromIndex, toIndex int,
 ) []ResponseOp {
-	if fromIndex == toIndex {
-		return nil // we only care to notify clients about moves in the list
-	}
-
 	return []ResponseOp{
 		&ResponseOpSingle{
 			Operation: OpDelete,

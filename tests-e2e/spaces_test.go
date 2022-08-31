@@ -67,10 +67,12 @@ func TestSpacesFilter(t *testing.T) {
 	})
 
 	doSpacesListRequest := func(spaces []string, pos *string, listMatchers ...m.ListMatcher) *sync3.Response {
+		t.Helper()
 		var opts []RequestOpt
 		if pos != nil {
 			opts = append(opts, WithPos(*pos))
 		}
+		t.Logf("requesting rooms in spaces %v", spaces)
 		res := alice.SlidingSync(t, sync3.Request{
 			Lists: []sync3.RequestList{
 				{
@@ -86,6 +88,8 @@ func TestSpacesFilter(t *testing.T) {
 	}
 
 	doInitialSpacesListRequest := func(spaces, wantRoomIDs []string) *sync3.Response {
+		t.Helper()
+		t.Logf("requesting initial rooms in spaces %v expecting %v", spaces, wantRoomIDs)
 		return doSpacesListRequest(spaces, nil, m.MatchV3Count(len(wantRoomIDs)), m.MatchV3Ops(
 			m.MatchV3SyncOp(
 				0, 20, wantRoomIDs, true,
@@ -136,6 +140,7 @@ func TestSpacesFilter(t *testing.T) {
 	})
 	res = doSpacesListRequest([]string{parentA}, &res.Pos,
 		m.MatchV3Count(2), m.MatchV3Ops(
+			m.MatchV3DeleteOp(1),
 			m.MatchV3InsertOp(1, roomB),
 		),
 	)
