@@ -81,8 +81,16 @@ func CalculateListOps(reqList *RequestList, list List, roomID string, listOp Lis
 		if wasUpdatedRoomInserted && listOp == ListOpDel {
 			// ignore this insert, as deletions algorithmically just jump to the end of the array.
 			// we do this so we can calculate jumps over ranges using the same codepaths as moves.
-			ops = append(ops, reqList.WriteDeleteOp(listFromIndex))
-			continue
+			isInsertingDeletedRoom := toRoomID == roomID
+			// The algorithm needs to know if it should issue an INSERT for the `to` room. The whole
+			// "treat deletes as inserts at the end of the array" thing makes it hard to know if it
+			// should or should not. This check ensures that we only skip the INSERT if the to-be shifted
+			// room was not already sent to the client.
+			_, isShiftedRoomAlreadySent := reqList.Ranges.Inside(list.Len())
+			if isInsertingDeletedRoom || (listToIndex == int(list.Len()-1) && isShiftedRoomAlreadySent) {
+				ops = append(ops, reqList.WriteDeleteOp(listFromIndex))
+				continue
+			}
 		}
 
 		swapOp := reqList.WriteSwapOp(toRoomID, listFromIndex, listToIndex)

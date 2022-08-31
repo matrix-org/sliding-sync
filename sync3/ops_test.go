@@ -89,8 +89,8 @@ func TestCalculateListOps_BasicOperations(t *testing.T) {
 		},
 		{
 			name:   "basic deletion from  middle of list",
-			before: []string{"a", "b", "c", "d"},
-			after:  []string{"a", "c", "d"},
+			before: []string{"a", "b", "c", "d", "e"},
+			after:  []string{"a", "c", "d", "e"},
 			ranges: SliceRanges{{0, 20}},
 			roomID: "b",
 			listOp: ListOpDel,
@@ -293,6 +293,190 @@ func TestCalculateListOps_SingleWindowOperations(t *testing.T) {
 			listOp:   ListOpAdd,
 			wantOps:  nil,
 			wantSubs: nil,
+		},
+	}
+	for _, tc := range testCases {
+		sl := newStringList(tc.before)
+		sl.sortedRoomIDs = tc.after
+		gotOps, gotSubs := CalculateListOps(&RequestList{
+			Ranges: tc.ranges,
+		}, sl, tc.roomID, tc.listOp)
+		assertEqualOps(t, tc.name, gotOps, tc.wantOps)
+		assertEqualSlices(t, tc.name, gotSubs, tc.wantSubs)
+	}
+}
+
+func TestCalculateListOps_MultipleWindowOperations(t *testing.T) {
+	testCases := []struct {
+		name     string
+		before   []string
+		after    []string
+		ranges   SliceRanges
+		roomID   string
+		listOp   ListOp
+		wantOps  []ResponseOp
+		wantSubs []string
+	}{
+		{
+			name:   "move within lower window",
+			before: []string{"a", "b", "c", "d", "e", "f", "g", "h", "i"},
+			after:  []string{"a", "c", "b", "d", "e", "f", "g", "h", "i"},
+			ranges: SliceRanges{{0, 2}, {5, 7}},
+			roomID: "c",
+			listOp: ListOpChange,
+			wantOps: []ResponseOp{
+				&ResponseOpSingle{Operation: OpDelete, Index: ptr(2)},
+				&ResponseOpSingle{Operation: OpInsert, Index: ptr(1), RoomID: "c"},
+			},
+		},
+		{
+			name:   "move within upper window",
+			before: []string{"a", "b", "c", "d", "e", "f", "g", "h", "i"},
+			after:  []string{"a", "b", "c", "d", "e", "f", "h", "g", "i"},
+			ranges: SliceRanges{{0, 2}, {5, 7}},
+			roomID: "h",
+			listOp: ListOpChange,
+			wantOps: []ResponseOp{
+				&ResponseOpSingle{Operation: OpDelete, Index: ptr(7)},
+				&ResponseOpSingle{Operation: OpInsert, Index: ptr(6), RoomID: "h"},
+			},
+		},
+		{
+			name:    "move in the gap between windows",
+			before:  []string{"a", "b", "c", "d", "e", "f", "g", "h", "i"},
+			after:   []string{"a", "b", "c", "e", "d", "f", "g", "h", "i"},
+			ranges:  SliceRanges{{0, 2}, {5, 7}},
+			roomID:  "e",
+			listOp:  ListOpChange,
+			wantOps: nil,
+		},
+		{
+			name: "move from upper window to lower window",
+			//                0    1    2    3    4    5    6    7    8
+			before: []string{"a", "b", "c", "d", "e", "f", "g", "h", "i"},
+			after:  []string{"a", "g", "b", "c", "d", "e", "f", "h", "i"},
+			ranges: SliceRanges{{0, 2}, {5, 7}},
+			roomID: "g",
+			listOp: ListOpChange,
+			wantOps: []ResponseOp{
+				&ResponseOpSingle{Operation: OpDelete, Index: ptr(6)},
+				&ResponseOpSingle{Operation: OpInsert, Index: ptr(5), RoomID: "e"},
+				&ResponseOpSingle{Operation: OpDelete, Index: ptr(2)},
+				&ResponseOpSingle{Operation: OpInsert, Index: ptr(1), RoomID: "g"},
+			},
+			wantSubs: []string{"e"},
+		},
+		{
+			name: "move from lower window to upper window",
+			//                0    1    2    3    4    5    6    7    8
+			before: []string{"a", "b", "c", "d", "e", "f", "g", "h", "i"},
+			after:  []string{"a", "c", "d", "e", "f", "g", "b", "h", "i"},
+			ranges: SliceRanges{{0, 2}, {5, 7}},
+			roomID: "b",
+			listOp: ListOpChange,
+			wantOps: []ResponseOp{
+				&ResponseOpSingle{Operation: OpDelete, Index: ptr(1)},
+				&ResponseOpSingle{Operation: OpInsert, Index: ptr(2), RoomID: "d"},
+				&ResponseOpSingle{Operation: OpDelete, Index: ptr(5)},
+				&ResponseOpSingle{Operation: OpInsert, Index: ptr(6), RoomID: "b"},
+			},
+			wantSubs: []string{"d"},
+		},
+		{
+			name: "jump over multiple windows to lower",
+			//                0    1    2    3    4    5    6    7    8
+			before: []string{"a", "b", "c", "d", "e", "f", "g", "h", "i"},
+			after:  []string{"i", "a", "b", "c", "d", "e", "f", "g", "h"},
+			ranges: SliceRanges{{1, 3}, {5, 7}},
+			roomID: "i",
+			listOp: ListOpChange,
+			wantOps: []ResponseOp{
+				&ResponseOpSingle{Operation: OpDelete, Index: ptr(3)},
+				&ResponseOpSingle{Operation: OpInsert, Index: ptr(1), RoomID: "a"},
+				&ResponseOpSingle{Operation: OpDelete, Index: ptr(7)},
+				&ResponseOpSingle{Operation: OpInsert, Index: ptr(5), RoomID: "e"},
+			},
+			wantSubs: []string{"a", "e"},
+		},
+		{
+			name: "jump over multiple windows to upper",
+			//                0    1    2    3    4    5    6    7    8
+			before: []string{"a", "b", "c", "d", "e", "f", "g", "h", "i"},
+			after:  []string{"b", "c", "d", "e", "f", "g", "h", "i", "a"},
+			ranges: SliceRanges{{1, 3}, {5, 7}},
+			roomID: "a",
+			listOp: ListOpChange,
+			wantOps: []ResponseOp{
+				&ResponseOpSingle{Operation: OpDelete, Index: ptr(1)},
+				&ResponseOpSingle{Operation: OpInsert, Index: ptr(3), RoomID: "e"},
+				&ResponseOpSingle{Operation: OpDelete, Index: ptr(5)},
+				&ResponseOpSingle{Operation: OpInsert, Index: ptr(7), RoomID: "i"},
+			},
+			wantSubs: []string{"i", "e"},
+		},
+		{
+			name: "jump from upper window over lower window",
+			//                0    1    2    3    4    5    6    7    8
+			before: []string{"a", "b", "c", "d", "e", "f", "g", "h", "i"},
+			after:  []string{"g", "a", "b", "c", "d", "e", "f", "h", "i"},
+			ranges: SliceRanges{{1, 3}, {5, 7}},
+			roomID: "g",
+			listOp: ListOpChange,
+			wantOps: []ResponseOp{
+				&ResponseOpSingle{Operation: OpDelete, Index: ptr(6)},
+				&ResponseOpSingle{Operation: OpInsert, Index: ptr(5), RoomID: "e"},
+				&ResponseOpSingle{Operation: OpDelete, Index: ptr(3)},
+				&ResponseOpSingle{Operation: OpInsert, Index: ptr(1), RoomID: "a"},
+			},
+			wantSubs: []string{"a", "e"},
+		},
+		{
+			name: "addition moving multiple windows",
+			//                0    1    2    3    4    5    6    7    8
+			before: []string{"a", "b", "c", "d", "e", "f", "g", "h", "i"},
+			after:  []string{"_", "a", "b", "c", "d", "e", "f", "g", "h", "i"},
+			ranges: SliceRanges{{1, 3}, {5, 7}},
+			roomID: "_",
+			listOp: ListOpAdd,
+			wantOps: []ResponseOp{
+				&ResponseOpSingle{Operation: OpDelete, Index: ptr(3)},
+				&ResponseOpSingle{Operation: OpInsert, Index: ptr(1), RoomID: "a"},
+				&ResponseOpSingle{Operation: OpDelete, Index: ptr(7)},
+				&ResponseOpSingle{Operation: OpInsert, Index: ptr(5), RoomID: "e"},
+			},
+			wantSubs: []string{"a", "e"},
+		},
+		{
+			name: "deletion moving multiple windows",
+			//                0    1    2    3    4    5    6    7    8
+			before: []string{"a", "b", "c", "d", "e", "f", "g", "h", "i", "j"},
+			after:  []string{"b", "c", "d", "e", "f", "g", "h", "i", "j"},
+			ranges: SliceRanges{{1, 3}, {5, 7}},
+			roomID: "a",
+			listOp: ListOpDel,
+			wantOps: []ResponseOp{
+				&ResponseOpSingle{Operation: OpDelete, Index: ptr(1)},
+				&ResponseOpSingle{Operation: OpInsert, Index: ptr(3), RoomID: "e"},
+				&ResponseOpSingle{Operation: OpDelete, Index: ptr(5)},
+				&ResponseOpSingle{Operation: OpInsert, Index: ptr(7), RoomID: "i"},
+			},
+			wantSubs: []string{"i", "e"},
+		},
+		{
+			name: "deletion moving multiple windows window matches end of list",
+			//                0    1    2    3    4    5    6    7    8
+			before: []string{"a", "b", "c", "d", "e", "f", "g", "h", "i"},
+			after:  []string{"b", "c", "d", "e", "f", "g", "h", "i"},
+			ranges: SliceRanges{{1, 3}, {5, 7}},
+			roomID: "a",
+			listOp: ListOpDel,
+			wantOps: []ResponseOp{
+				&ResponseOpSingle{Operation: OpDelete, Index: ptr(5)},
+				&ResponseOpSingle{Operation: OpInsert, Index: ptr(7), RoomID: "i"},
+				&ResponseOpSingle{Operation: OpDelete, Index: ptr(1)},
+				&ResponseOpSingle{Operation: OpInsert, Index: ptr(3), RoomID: "e"},
+			},
+			wantSubs: []string{"i", "e"},
 		},
 	}
 	for _, tc := range testCases {
