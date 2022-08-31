@@ -461,7 +461,8 @@ func (h *SyncLiveHandler) OnInvite(userID, roomID string, inviteState []json.Raw
 	userCache.(*caches.UserCache).OnInvite(roomID, inviteState)
 }
 
-func (h *SyncLiveHandler) OnRetireInvite(userID, roomID string) {
+func (h *SyncLiveHandler) OnLeftRoom(userID, roomID string) {
+	// remove any invites for this user if they are rejecting an invite
 	err := h.Storage.InvitesTable.RemoveInvite(userID, roomID)
 	if err != nil {
 		logger.Err(err).Str("user", userID).Str("room", roomID).Msg("failed to retire invite")
@@ -470,7 +471,7 @@ func (h *SyncLiveHandler) OnRetireInvite(userID, roomID string) {
 	if !ok {
 		return
 	}
-	userCache.(*caches.UserCache).OnRetireInvite(roomID)
+	userCache.(*caches.UserCache).OnLeftRoom(roomID)
 }
 
 func (h *SyncLiveHandler) OnAccountData(userID, roomID string, events []json.RawMessage) {

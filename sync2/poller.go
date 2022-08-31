@@ -26,7 +26,7 @@ type V2DataReceiver interface {
 
 	OnAccountData(userID, roomID string, events []json.RawMessage)
 	OnInvite(userID, roomID string, inviteState []json.RawMessage)
-	OnRetireInvite(userID, roomID string)
+	OnLeftRoom(userID, roomID string)
 }
 
 // Fetcher which PollerMap satisfies used by the E2EE extension
@@ -196,11 +196,11 @@ func (h *PollerMap) OnInvite(userID, roomID string, inviteState []json.RawMessag
 	wg.Wait()
 }
 
-func (h *PollerMap) OnRetireInvite(userID, roomID string) {
+func (h *PollerMap) OnLeftRoom(userID, roomID string) {
 	var wg sync.WaitGroup
 	wg.Add(1)
 	h.executor <- func() {
-		h.callbacks.OnRetireInvite(userID, roomID)
+		h.callbacks.OnLeftRoom(userID, roomID)
 		wg.Done()
 	}
 	wg.Wait()
@@ -441,11 +441,10 @@ func (p *Poller) parseRoomsResponse(res *SyncResponse) {
 	}
 	for roomID, roomData := range res.Rooms.Leave {
 		// TODO: do we care about state?
-
 		if len(roomData.Timeline.Events) > 0 {
 			p.receiver.Accumulate(roomID, roomData.Timeline.PrevBatch, roomData.Timeline.Events)
 		}
-		p.receiver.OnRetireInvite(p.userID, roomID)
+		p.receiver.OnLeftRoom(p.userID, roomID)
 	}
 	for roomID, roomData := range res.Rooms.Invite {
 		p.receiver.OnInvite(p.userID, roomID, roomData.InviteState.Events)

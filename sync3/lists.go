@@ -67,6 +67,9 @@ func (s *InternalRequestLists) SetRoom(r RoomConnMetadata) (delta RoomDelta) {
 	for i := range s.lists {
 		_, alreadyExists := s.lists[i].roomIDToIndex[r.RoomID]
 		shouldExist := s.lists[i].filter.Include(&r)
+		if shouldExist && r.HasLeft {
+			shouldExist = false
+		}
 		// weird nesting ensures we handle all 4 cases
 		if alreadyExists {
 			if shouldExist { // could be a change

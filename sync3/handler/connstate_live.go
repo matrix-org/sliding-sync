@@ -218,80 +218,44 @@ func (s *connStateLive) processLiveUpdateForList(
 	reqList *sync3.RequestList, intList *sync3.FilteredSortableRooms, resList *sync3.ResponseList,
 ) (hasUpdates bool) {
 	switch update := up.(type) {
-	case *caches.RoomAccountDataUpdate:
-		logger.Trace().Str("user", s.userID).Msg("received room account data update")
-		ops, didUpdate := s.processIncomingEventForList(ctx, builder, update, listOp, reqList, intList)
-		if didUpdate {
-			hasUpdates = true
-		}
-		resList.Ops = append(resList.Ops, ops...)
 	case *caches.RoomEventUpdate:
 		logger.Trace().Str("user", s.userID).Str("type", update.EventData.EventType).Msg("received event update")
-		ops, didUpdate := s.processIncomingEventForList(ctx, builder, update, listOp, reqList, intList)
-		if didUpdate {
-			hasUpdates = true
+		if update.EventData.ForceInitial {
+			// add room to sub: this applies for when we track all rooms too as we want joins/etc to come through with initial data
+			subID := builder.AddSubscription(reqList.RoomSubscription)
+			builder.AddRoomsToSubscription(subID, []string{update.RoomID()})
 		}
-		resList.Ops = append(resList.Ops, ops...)
 	case *caches.UnreadCountUpdate:
 		logger.Trace().Str("user", s.userID).Str("room", update.RoomID()).Msg("received unread count update")
-		ops, didUpdate := s.processUnreadCountUpdateForList(ctx, builder, update, reqList, intList)
-		if didUpdate {
-			hasUpdates = true
+		if !update.HasCountDecreased {
+			// if the count increases then we'll notify the user for the event which increases the count, hence
+			// do nothing. We only care to notify the user when the counts decrease.
+			return false
 		}
-		resList.Ops = append(resList.Ops, ops...)
 	case *caches.InviteUpdate:
 		logger.Trace().Str("user", s.userID).Str("room", update.RoomID()).Msg("received invite update")
-		if update.Retired {
-			// remove the room from this list if need be
-			deletedIndex := intList.Remove(update.RoomID())
-			if op := reqList.WriteDeleteOp(deletedIndex); op != nil {
-				resList.Ops = append(resList.Ops, op)
-				hasUpdates = true
-			}
-		} else {
-			roomUpdate := &caches.RoomEventUpdate{
-				RoomUpdate: update.RoomUpdate,
-				EventData:  update.InviteData.InviteEvent,
-			}
-			ops, didUpdate := s.processIncomingEventForList(ctx, builder, roomUpdate, listOp, reqList, intList)
-			resList.Ops = append(resList.Ops, ops...)
-			if didUpdate {
-				hasUpdates = true
-			}
+		up = &caches.RoomEventUpdate{
+			RoomUpdate: update.RoomUpdate,
+			EventData:  update.InviteData.InviteEvent,
 		}
 	}
+
+	// only room updates can cause the rooms to reshuffle e.g events, room account data, tags
+	// because we need a room ID to move.
+	rup, ok := up.(caches.RoomUpdate)
+	if !ok {
+		return false
+	}
+	ops, hasUpdates := s.resort(
+		ctx, builder, reqList, intList, rup.RoomID(), listOp,
+	)
+	resList.Ops = append(resList.Ops, ops...)
 
 	if !hasUpdates {
 		hasUpdates = len(resList.Ops) > 0
 	}
 
 	return hasUpdates
-}
-
-func (s *connStateLive) processUnreadCountUpdateForList(
-	ctx context.Context, builder *RoomsBuilder, up *caches.UnreadCountUpdate, reqList *sync3.RequestList, intList *sync3.FilteredSortableRooms,
-) (ops []sync3.ResponseOp, didUpdate bool) {
-	if !up.HasCountDecreased {
-		// if the count increases then we'll notify the user for the event which increases the count, hence
-		// do nothing. We only care to notify the user when the counts decrease.
-		return nil, false
-	}
-	return s.resort(ctx, builder, reqList, intList, up.RoomID(), sync3.ListOpChange)
-}
-
-func (s *connStateLive) processIncomingEventForList(
-	ctx context.Context, builder *RoomsBuilder, update caches.RoomUpdate, listOp sync3.ListOp, reqList *sync3.RequestList, intList *sync3.FilteredSortableRooms,
-) (ops []sync3.ResponseOp, didUpdate bool) {
-	roomEventUpdate, ok := update.(*caches.RoomEventUpdate)
-	if ok && roomEventUpdate.EventData.ForceInitial {
-		// add room to sub: this applies for when we track all rooms too as we want joins/etc to come through with initial data
-		subID := builder.AddSubscription(reqList.RoomSubscription)
-		builder.AddRoomsToSubscription(subID, []string{update.RoomID()})
-	}
-
-	return s.resort(
-		ctx, builder, reqList, intList, update.RoomID(), listOp,
-	)
 }
 
 // Resort should be called after a specific room has been modified in `intList`.

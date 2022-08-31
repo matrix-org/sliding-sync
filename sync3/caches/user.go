@@ -20,6 +20,7 @@ const (
 type UserRoomData struct {
 	IsDM              bool
 	IsInvite          bool
+	HasLeft           bool
 	NotificationCount int
 	HighlightCount    int
 	// (event_id, last_event_id) -> closest prev_batch
@@ -550,16 +551,17 @@ func (c *UserCache) OnInvite(roomID string, inviteStateEvents []json.RawMessage)
 	}
 }
 
-func (c *UserCache) OnRetireInvite(roomID string) {
+func (c *UserCache) OnLeftRoom(roomID string) {
 	urd := c.LoadRoomData(roomID)
 	urd.IsInvite = false
+	urd.HasLeft = true
 	urd.Invite = nil
 	urd.HighlightCount = 0
 	c.roomToDataMu.Lock()
 	c.roomToData[roomID] = urd
 	c.roomToDataMu.Unlock()
 
-	up := &InviteUpdate{
+	up := &LeftRoomUpdate{
 		RoomUpdate: &roomUpdateCache{
 			roomID: roomID,
 			// do NOT pull from the global cache as it is a snapshot of the room at the point of
@@ -569,7 +571,6 @@ func (c *UserCache) OnRetireInvite(roomID string) {
 			},
 			userRoomData: &urd,
 		},
-		Retired: true,
 	}
 	for _, l := range c.listeners {
 		l.OnRoomUpdate(up)
