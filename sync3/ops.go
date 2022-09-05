@@ -74,7 +74,7 @@ func CalculateListOps(reqList *RequestList, list List, roomID string, listOp Lis
 		listToIndex := listFromTo[1]
 		wasUpdatedRoomInserted := listToIndex == toIndex
 		toRoomID := list.Get(listToIndex)
-		if toRoomID == roomID && listFromIndex == listToIndex && listOp == ListOpChange {
+		if toRoomID == roomID && listFromIndex == listToIndex && listOp == ListOpChange && wasInsideRange {
 			continue // no-op move
 		}
 

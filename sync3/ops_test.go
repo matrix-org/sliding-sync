@@ -3,7 +3,10 @@ package sync3
 import (
 	"bytes"
 	"encoding/json"
+	"math/rand"
 	"testing"
+
+	"github.com/matrix-org/sync-v3/testutils"
 )
 
 func TestCalculateListOps_BasicOperations(t *testing.T) {
@@ -487,6 +490,77 @@ func TestCalculateListOps_MultipleWindowOperations(t *testing.T) {
 		}, sl, tc.roomID, tc.listOp)
 		assertEqualOps(t, tc.name, gotOps, tc.wantOps)
 		assertEqualSlices(t, tc.name, gotSubs, tc.wantSubs)
+	}
+}
+
+func TestCalculateListOps_TortureSingleWindow_Move(t *testing.T) {
+	rand.Seed(42)
+	ranges := SliceRanges{{0, 5}}
+	inRangeIDs := map[string]bool{
+		"a": true, "b": true, "c": true, "d": true, "e": true, "f": true,
+	}
+	for i := 0; i < 10000; i++ {
+		before := []string{"a", "b", "c", "d", "e", "f", "g", "h", "i"}
+		after, roomID, fromIndex, toIndex := testutils.MoveRandomElement(before)
+		t.Logf("move %s from %v to %v -> %v", roomID, fromIndex, toIndex, after)
+
+		sl := newStringList(before)
+		sl.sortedRoomIDs = after
+		gotOps, gotSubs := CalculateListOps(&RequestList{
+			Ranges: ranges,
+		}, sl, roomID, ListOpChange)
+
+		for _, sub := range gotSubs {
+			if inRangeIDs[sub] {
+				t.Errorf("CalculateListOps: got sub %v but it was already in the range", sub)
+			}
+		}
+		if int64(fromIndex) > ranges[0][1] && int64(toIndex) > ranges[0][1] {
+			// the swap happens outside the range, so we expect nothing
+			if len(gotOps) != 0 {
+				t.Errorf("CalculateLisOps: swap outside range got ops wanted none: %+v", gotOps)
+			}
+			continue
+		}
+		if fromIndex == toIndex {
+			// we want 0 ops
+			if len(gotOps) > 0 {
+				t.Errorf("CalculateLisOps: from==to got ops wanted none: %+v", gotOps)
+			}
+			continue
+		}
+		if len(gotOps) != 2 {
+			t.Fatalf("CalculateLisOps: wanted 2 ops, got %+v", gotOps)
+			continue
+		}
+		if int64(fromIndex) > ranges[0][1] {
+			// should inject a different room at the start of the range
+			fromIndex = int(ranges[0][1])
+		}
+		assertSingleOp(t, gotOps[0], "DELETE", fromIndex, "")
+		if int64(toIndex) > ranges[0][1] {
+			// should inject a different room at the end of the range
+			toIndex = int(ranges[0][1])
+			roomID = after[toIndex]
+		}
+		assertSingleOp(t, gotOps[1], "INSERT", toIndex, roomID)
+	}
+}
+
+func assertSingleOp(t *testing.T, op ResponseOp, opName string, index int, optRoomID string) {
+	t.Helper()
+	singleOp, ok := op.(*ResponseOpSingle)
+	if !ok {
+		t.Errorf("op was not a single operation, got %+v", op)
+	}
+	if singleOp.Operation != opName {
+		t.Errorf("op name got %v want %v", singleOp.Operation, opName)
+	}
+	if *singleOp.Index != index {
+		t.Errorf("op index got %v want %v", *singleOp.Index, index)
+	}
+	if optRoomID != "" && singleOp.RoomID != optRoomID {
+		t.Errorf("op room ID got %v want %v", singleOp.RoomID, optRoomID)
 	}
 }
 
