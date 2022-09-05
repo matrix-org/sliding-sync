@@ -39,6 +39,8 @@ func (r SliceRanges) Inside(i int64) ([2]int64, bool) {
 //   [0,20] i=25,towardsZero=false => -1
 //   [0,20],[40,60] i=25,towardsZero=true => 20
 //   [0,20],[40,60] i=25,towardsZero=false => 40
+//   [0,20],[40,60] i=40,towardsZero=true => 40
+//   [20,40] i=40,towardsZero=true => 20
 func (r SliceRanges) ClosestInDirection(i int64, towardsZero bool) (closestIndex int64) {
 	// sort all range boundaries in ascending order
 	indexes := make([]int64, 0, len(r)*2)
@@ -59,7 +61,12 @@ func (r SliceRanges) ClosestInDirection(i int64, towardsZero bool) (closestIndex
 					}
 					return -1
 				}
-				return indexes[j-1]
+				// if the start of the window IS the index value, return the start of the window range, NOT an earlier range
+				if j%2 == 0 && indexes[j] == i {
+					return indexes[j]
+				} else {
+					return indexes[j-1]
+				}
 			}
 		}
 		return indexes[len(indexes)-1] // all values are lower than i, choose the highest
@@ -73,7 +80,12 @@ func (r SliceRanges) ClosestInDirection(i int64, towardsZero bool) (closestIndex
 					}
 					return -1
 				}
-				return indexes[j+1]
+				// if the end of the window IS the index value, return the end of the window range, NOT a later range
+				if j%2 == 1 && indexes[j] == i {
+					return indexes[j]
+				} else {
+					return indexes[j+1]
+				}
 			}
 		}
 		return indexes[0] // all values are higher than i, choose the lowest

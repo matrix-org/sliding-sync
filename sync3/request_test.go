@@ -833,6 +833,22 @@ func TestRequestList_CalculateMoveIndexes(t *testing.T) {
 			wantFromTos: [][2]int{{20, 10}, {40, 30}},
 		},
 		{
+			name: "jump from outside range edge to inside range edge",
+			rl: RequestList{
+				Ranges: [][2]int64{{10, 20}, {30, 40}},
+			},
+			from: 30,
+			to:   10,
+			// Moving from x to y:
+			// [10y...20]   [30x....40]
+			// means the timeline is now:
+			// [30, 10, 11...19] 20, 21 ... 28, [29,31...40]
+			// from a window perspective, this means we lost element 20@i=20 and gained element 30@i=10
+			// AND
+			// we lost element 30@i=30 and gained element 29@i=30.
+			wantFromTos: [][2]int{{20, 10}, {30, 30}},
+		},
+		{
 			name: "jump over 2 ranges towards infinity",
 			rl: RequestList{
 				Ranges: [][2]int64{{10, 20}, {30, 40}},

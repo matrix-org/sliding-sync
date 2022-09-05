@@ -434,6 +434,22 @@ func TestCalculateListOps_MultipleWindowOperations(t *testing.T) {
 			wantSubs: []string{"a", "e"},
 		},
 		{
+			name: "jump from lower window edge to upper window edge",
+			//                0    1    2    3    4    5    6    7    8
+			before: []string{"a", "b", "c", "d", "e", "f", "g", "h", "i"},
+			after:  []string{"a", "f", "b", "c", "d", "e", "g", "h", "i"},
+			ranges: SliceRanges{{1, 3}, {5, 7}},
+			roomID: "f",
+			listOp: ListOpChange,
+			wantOps: []ResponseOp{
+				&ResponseOpSingle{Operation: OpDelete, Index: ptr(5)},
+				&ResponseOpSingle{Operation: OpInsert, Index: ptr(5), RoomID: "e"},
+				&ResponseOpSingle{Operation: OpDelete, Index: ptr(3)},
+				&ResponseOpSingle{Operation: OpInsert, Index: ptr(1), RoomID: "f"},
+			},
+			wantSubs: []string{"e"},
+		},
+		{
 			name: "addition moving multiple windows",
 			//                0    1    2    3    4    5    6    7    8
 			before: []string{"a", "b", "c", "d", "e", "f", "g", "h", "i"},
@@ -633,6 +649,94 @@ func TestCalculateListOps_TortureSingleWindowMiddle_Move(t *testing.T) {
 		assertSingleOp(t, gotOps[1], "INSERT", toIndex, roomID)
 	}
 }
+
+/*
+func TestCalculateListOps_TortureMultipleWindows_Move(t *testing.T) {
+	rand.Seed(41)
+	ranges := SliceRanges{{0, 5}, {9, 11}}
+	inRangeIDs := map[string]bool{
+		"a": true, "b": true, "c": true, "d": true, "e": true, "f": true, "j": true, "k": true, "l": true,
+	}
+	for i := 0; i < 10000; i++ {
+		before := []string{"a", "b", "c", "d", "e", "f", "g", "h", "i", "j", "k", "l", "m", "n"}
+		after, roomID, fromIndex, toIndex := testutils.MoveRandomElement(before)
+		t.Logf("move %s from %v to %v -> %v", roomID, fromIndex, toIndex, after)
+
+		sl := newStringList(before)
+		sl.sortedRoomIDs = after
+		gotOps, gotSubs := CalculateListOps(&RequestList{
+			Ranges: ranges,
+		}, sl, roomID, ListOpChange)
+		b, _ := json.Marshal(gotOps)
+		fmt.Println(string(b))
+		for _, sub := range gotSubs {
+			if inRangeIDs[sub] {
+				t.Fatalf("CalculateListOps: got sub %v but it was already in the range", sub)
+			}
+		}
+		// if there is a swap between the middle of the window OR at the end of the window, we expect no ops
+		isSwapInBetweenWindows := (fromIndex > int(ranges[0][1]) && fromIndex < int(ranges[1][0]) &&
+			toIndex > int(ranges[0][1]) && toIndex < int(ranges[1][0]))
+		isSwapEndOfWindow := (fromIndex > int(ranges[1][1])) && (toIndex > int(ranges[1][1]))
+		if isSwapInBetweenWindows || isSwapEndOfWindow {
+			// the swap happens outside the range, so we expect nothing
+			if len(gotOps) != 0 {
+				t.Errorf("CalculateLisOps: swap outside range got ops wanted none: %+v", gotOps)
+			}
+			continue
+		}
+		if fromIndex == toIndex {
+			// we want 0 ops
+			if len(gotOps) > 0 {
+				t.Errorf("CalculateLisOps: from==to got ops wanted none: %+v", gotOps)
+			}
+			continue
+		}
+		// if the swap occurs over multiple windows we expect 4 ops, not 2
+		insideFirstWindow := fromIndex <= int(ranges[0][1]) || toIndex <= int(ranges[0][1])
+		insideSecondWindow := (fromIndex >= int(ranges[1][0])) || (toIndex >= int(ranges[1][0]))
+		wantOps := 2
+		if insideFirstWindow && insideSecondWindow {
+			wantOps = 4
+		}
+		if len(gotOps) != wantOps {
+			t.Fatalf("CalculateListOps: wanted %v ops, got %+v", wantOps, gotOps)
+			continue
+		}
+
+			if int64(fromIndex) > ranges[0][1] {
+				// should inject a different room at the start of the range
+				fromIndex = int(ranges[0][1])
+			} else if int64(fromIndex) < ranges[0][0] {
+				// should inject a different room at the start of the range
+				fromIndex = int(ranges[0][0])
+			}
+			assertSingleOp(t, gotOps[0], "DELETE", fromIndex, "")
+			if int64(toIndex) > ranges[0][1] {
+				// should inject a different room at the end of the range
+				toIndex = int(ranges[0][1])
+				roomID = after[toIndex]
+			} else if int64(toIndex) < ranges[0][0] {
+				// should inject a different room at the end of the range
+				toIndex = int(ranges[0][0])
+				roomID = after[toIndex]
+			}
+			if !inRangeIDs[roomID] {
+				// it should now be in-range
+				inRange := false
+				for _, sub := range gotSubs {
+					if sub == roomID {
+						inRange = true
+						break
+					}
+				}
+				if !inRange {
+					t.Errorf("got subs %v missing room %v", gotSubs, roomID)
+				}
+			}
+			assertSingleOp(t, gotOps[1], "INSERT", toIndex, roomID)
+	}
+} */
 
 func assertSingleOp(t *testing.T, op ResponseOp, opName string, index int, optRoomID string) {
 	t.Helper()
