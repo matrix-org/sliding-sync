@@ -598,6 +598,7 @@ func TestCalculateListOps_TortureSingleWindowMiddle_Move(t *testing.T) {
 				t.Errorf("CalculateListOps: got sub %v but it was already in the range", sub)
 			}
 		}
+
 		if (int64(fromIndex) > ranges[0][1] && int64(toIndex) > ranges[0][1]) || (int64(fromIndex) < ranges[0][0] && int64(toIndex) < ranges[0][0]) {
 			// the swap happens outside the range, so we expect nothing
 			if len(gotOps) != 0 {
@@ -650,9 +651,8 @@ func TestCalculateListOps_TortureSingleWindowMiddle_Move(t *testing.T) {
 	}
 }
 
-/*
-func TestCalculateListOps_TortureMultipleWindows_Move(t *testing.T) {
-	rand.Seed(41)
+func TestCalculateListOpsTortureMultipleWindowsMove(t *testing.T) {
+	rand.Seed(40)
 	ranges := SliceRanges{{0, 5}, {9, 11}}
 	inRangeIDs := map[string]bool{
 		"a": true, "b": true, "c": true, "d": true, "e": true, "f": true, "j": true, "k": true, "l": true,
@@ -667,8 +667,6 @@ func TestCalculateListOps_TortureMultipleWindows_Move(t *testing.T) {
 		gotOps, gotSubs := CalculateListOps(&RequestList{
 			Ranges: ranges,
 		}, sl, roomID, ListOpChange)
-		b, _ := json.Marshal(gotOps)
-		fmt.Println(string(b))
 		for _, sub := range gotSubs {
 			if inRangeIDs[sub] {
 				t.Fatalf("CalculateListOps: got sub %v but it was already in the range", sub)
@@ -704,39 +702,48 @@ func TestCalculateListOps_TortureMultipleWindows_Move(t *testing.T) {
 			continue
 		}
 
-			if int64(fromIndex) > ranges[0][1] {
-				// should inject a different room at the start of the range
-				fromIndex = int(ranges[0][1])
-			} else if int64(fromIndex) < ranges[0][0] {
-				// should inject a different room at the start of the range
-				fromIndex = int(ranges[0][0])
-			}
-			assertSingleOp(t, gotOps[0], "DELETE", fromIndex, "")
-			if int64(toIndex) > ranges[0][1] {
-				// should inject a different room at the end of the range
-				toIndex = int(ranges[0][1])
-				roomID = after[toIndex]
-			} else if int64(toIndex) < ranges[0][0] {
-				// should inject a different room at the end of the range
-				toIndex = int(ranges[0][0])
-				roomID = after[toIndex]
-			}
-			if !inRangeIDs[roomID] {
-				// it should now be in-range
-				inRange := false
-				for _, sub := range gotSubs {
-					if sub == roomID {
-						inRange = true
-						break
-					}
+		if wantOps == 4 {
+			continue // TODO: find a way to check multi DELETE/INSERT
+		}
+		rng := ranges[0]
+		if insideSecondWindow {
+			rng = ranges[1]
+		}
+
+		if int64(fromIndex) > rng[1] {
+			// should inject a different room at the start of the range
+			fromIndex = int(rng[1])
+		} else if int64(fromIndex) < rng[0] {
+			// should inject a different room at the start of the range
+			fromIndex = int(rng[0])
+		}
+		assertSingleOp(t, gotOps[0], "DELETE", fromIndex, "")
+
+		if int64(toIndex) > rng[1] {
+			// should inject a different room at the end of the range
+			toIndex = int(rng[1])
+			roomID = after[toIndex]
+		} else if int64(toIndex) < rng[0] {
+			// should inject a different room at the end of the range
+			toIndex = int(rng[0])
+			roomID = after[toIndex]
+		}
+		if !inRangeIDs[roomID] {
+			// it should now be in-range
+			inRange := false
+			for _, sub := range gotSubs {
+				if sub == roomID {
+					inRange = true
+					break
 				}
-				if !inRange {
-					t.Errorf("got subs %v missing room %v", gotSubs, roomID)
-				}
 			}
-			assertSingleOp(t, gotOps[1], "INSERT", toIndex, roomID)
+			if !inRange {
+				t.Errorf("got subs %v missing room %v", gotSubs, roomID)
+			}
+		}
+		assertSingleOp(t, gotOps[1], "INSERT", toIndex, roomID)
 	}
-} */
+}
 
 func assertSingleOp(t *testing.T, op ResponseOp, opName string, index int, optRoomID string) {
 	t.Helper()
