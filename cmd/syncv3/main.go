@@ -14,7 +14,7 @@ import (
 
 var GitCommit string
 
-const version = "0.4.0"
+const version = "0.4.1"
 
 const (
 	EnvServer   = "SYNCV3_SERVER"
