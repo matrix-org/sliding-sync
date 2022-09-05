@@ -543,6 +543,93 @@ func TestCalculateListOps_TortureSingleWindow_Move(t *testing.T) {
 			toIndex = int(ranges[0][1])
 			roomID = after[toIndex]
 		}
+		if !inRangeIDs[roomID] {
+			// it should now be in-range
+			inRange := false
+			for _, sub := range gotSubs {
+				if sub == roomID {
+					inRange = true
+					break
+				}
+			}
+			if !inRange {
+				t.Errorf("got subs %v missing room %v", gotSubs, roomID)
+			}
+		}
+		assertSingleOp(t, gotOps[1], "INSERT", toIndex, roomID)
+	}
+}
+
+func TestCalculateListOps_TortureSingleWindowMiddle_Move(t *testing.T) {
+	rand.Seed(41)
+	ranges := SliceRanges{{2, 5}}
+	inRangeIDs := map[string]bool{
+		"c": true, "d": true, "e": true, "f": true,
+	}
+	for i := 0; i < 10000; i++ {
+		before := []string{"a", "b", "c", "d", "e", "f", "g", "h", "i"}
+		after, roomID, fromIndex, toIndex := testutils.MoveRandomElement(before)
+		t.Logf("move %s from %v to %v -> %v", roomID, fromIndex, toIndex, after)
+
+		sl := newStringList(before)
+		sl.sortedRoomIDs = after
+		gotOps, gotSubs := CalculateListOps(&RequestList{
+			Ranges: ranges,
+		}, sl, roomID, ListOpChange)
+
+		for _, sub := range gotSubs {
+			if inRangeIDs[sub] {
+				t.Errorf("CalculateListOps: got sub %v but it was already in the range", sub)
+			}
+		}
+		if (int64(fromIndex) > ranges[0][1] && int64(toIndex) > ranges[0][1]) || (int64(fromIndex) < ranges[0][0] && int64(toIndex) < ranges[0][0]) {
+			// the swap happens outside the range, so we expect nothing
+			if len(gotOps) != 0 {
+				t.Errorf("CalculateLisOps: swap outside range got ops wanted none: %+v", gotOps)
+			}
+			continue
+		}
+		if fromIndex == toIndex {
+			// we want 0 ops
+			if len(gotOps) > 0 {
+				t.Errorf("CalculateLisOps: from==to got ops wanted none: %+v", gotOps)
+			}
+			continue
+		}
+		if len(gotOps) != 2 {
+			t.Fatalf("CalculateListOps: wanted 2 ops, got %+v", gotOps)
+			continue
+		}
+		if int64(fromIndex) > ranges[0][1] {
+			// should inject a different room at the start of the range
+			fromIndex = int(ranges[0][1])
+		} else if int64(fromIndex) < ranges[0][0] {
+			// should inject a different room at the start of the range
+			fromIndex = int(ranges[0][0])
+		}
+		assertSingleOp(t, gotOps[0], "DELETE", fromIndex, "")
+		if int64(toIndex) > ranges[0][1] {
+			// should inject a different room at the end of the range
+			toIndex = int(ranges[0][1])
+			roomID = after[toIndex]
+		} else if int64(toIndex) < ranges[0][0] {
+			// should inject a different room at the end of the range
+			toIndex = int(ranges[0][0])
+			roomID = after[toIndex]
+		}
+		if !inRangeIDs[roomID] {
+			// it should now be in-range
+			inRange := false
+			for _, sub := range gotSubs {
+				if sub == roomID {
+					inRange = true
+					break
+				}
+			}
+			if !inRange {
+				t.Errorf("got subs %v missing room %v", gotSubs, roomID)
+			}
+		}
 		assertSingleOp(t, gotOps[1], "INSERT", toIndex, roomID)
 	}
 }
