@@ -429,7 +429,7 @@ func (rf *RequestFilters) Include(r *RoomConnMetadata) bool {
 	if rf.IsEncrypted != nil && *rf.IsEncrypted != r.Encrypted {
 		return false
 	}
-	if rf.IsTombstoned != nil && *rf.IsTombstoned != r.Tombstoned {
+	if rf.IsTombstoned != nil && *rf.IsTombstoned != (r.UpgradedRoomID != nil) {
 		return false
 	}
 	if rf.IsDM != nil && *rf.IsDM != r.IsDM {

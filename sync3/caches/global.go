@@ -164,9 +164,13 @@ func (c *GlobalCache) Startup(roomIDToMetadata map[string]internal.RoomMetadata)
 	sort.Strings(roomIDs)
 	for _, roomID := range roomIDs {
 		metadata := roomIDToMetadata[roomID]
+		var upgradedRoomID string
+		if metadata.UpgradedRoomID != nil {
+			upgradedRoomID = *metadata.UpgradedRoomID
+		}
 		logger.Debug().Str("room", roomID).Interface(
 			"recent", gomatrixserverlib.Timestamp(metadata.LastMessageTimestamp).Time(),
-		).Bool("encrypted", metadata.Encrypted).Bool("tombstoned", metadata.Tombstoned).Int("joins", metadata.JoinCount).Msg(
+		).Bool("encrypted", metadata.Encrypted).Str("tombstone", upgradedRoomID).Int("joins", metadata.JoinCount).Msg(
 			"",
 		)
 		internal.Assert("room ID is set", metadata.RoomID != "")
@@ -204,7 +208,12 @@ func (c *GlobalCache) OnNewEvent(
 		}
 	case "m.room.tombstone":
 		if ed.StateKey != nil && *ed.StateKey == "" {
-			metadata.Tombstoned = true
+			newRoomID := ed.Content.Get("replacement_room").Str
+			if newRoomID == "" {
+				metadata.UpgradedRoomID = nil
+			} else {
+				metadata.UpgradedRoomID = &newRoomID
+			}
 		}
 	case "m.room.canonical_alias":
 		if ed.StateKey != nil && *ed.StateKey == "" {

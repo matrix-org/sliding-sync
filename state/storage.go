@@ -242,7 +242,7 @@ func (s *Storage) MetadataForAllRooms() (map[string]internal.RoomMetadata, error
 	for _, info := range roomInfos {
 		metadata := result[info.ID]
 		metadata.Encrypted = info.IsEncrypted
-		metadata.Tombstoned = info.UpgradedRoomID != nil
+		metadata.UpgradedRoomID = info.UpgradedRoomID
 		metadata.RoomType = info.Type
 		result[info.ID] = metadata
 		if metadata.IsSpace() {

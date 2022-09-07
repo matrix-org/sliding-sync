@@ -146,7 +146,6 @@ func (i *InviteData) RoomMetadata() *internal.RoomMetadata {
 		JoinCount:            1,
 		LastMessageTimestamp: i.LastMessageTimestamp,
 		Encrypted:            i.Encrypted,
-		Tombstoned:           false,
 	}
 }
 

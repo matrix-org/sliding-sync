@@ -15,7 +15,7 @@ type RoomMetadata struct {
 	InviteCount          int
 	LastMessageTimestamp uint64
 	Encrypted            bool
-	Tombstoned           bool
+	UpgradedRoomID       *string
 	RoomType             *string
 	// if this room is a space, which rooms are m.space.child state events. This is the same for all users hence is global.
 	ChildSpaceRooms map[string]struct{}
