@@ -137,3 +137,62 @@ func TestRoomNames(t *testing.T) {
 	// multiple matches
 	checkRoomNameFilter("bob", []roomEvents{allRooms[0], allRooms[3]})
 }
+
+// Tests that rooms have their names updated when events come in
+func TestRoomNameUpdates(t *testing.T) {
+	rig := NewTestRig(t)
+	defer rig.Finish()
+	roomID := "!a:localhost"
+	rig.SetupV2RoomsForUser(t, alice, NoFlush, map[string]RoomDescriptor{
+		roomID: {},
+	})
+	aliceToken := rig.Token(alice)
+
+	res := rig.V3.mustDoV3Request(t, aliceToken, sync3.Request{
+		RoomSubscriptions: map[string]sync3.RoomSubscription{
+			roomID: {
+				TimelineLimit: 0,
+			},
+		},
+	})
+	m.MatchResponse(t, res, m.MatchRoomSubscriptionsStrict(map[string][]m.RoomMatcher{
+		roomID: {
+			m.MatchJoinCount(1),
+			m.MatchRoomName("Empty Room"),
+		},
+	}))
+	// Test hero calculation
+	rig.FlushEvent(t, alice, roomID, testutils.NewStateEvent(t, "m.room.member", bob, bob, map[string]interface{}{
+		"membership":  "join",
+		"displayname": "Bob",
+	}))
+	res = rig.V3.mustDoV3RequestWithPos(t, aliceToken, res.Pos, sync3.Request{})
+	m.MatchResponse(t, res, m.MatchRoomSubscriptionsStrict(map[string][]m.RoomMatcher{
+		roomID: {
+			m.MatchJoinCount(2),
+			m.MatchRoomName("Bob"),
+		},
+	}))
+
+	// Test canonical alias
+	rig.FlushEvent(t, alice, roomID, testutils.NewStateEvent(t, "m.room.canonical_alias", "", alice, map[string]interface{}{
+		"alias": "#alias:example.com",
+	}))
+	res = rig.V3.mustDoV3RequestWithPos(t, aliceToken, res.Pos, sync3.Request{})
+	m.MatchResponse(t, res, m.MatchRoomSubscriptionsStrict(map[string][]m.RoomMatcher{
+		roomID: {
+			m.MatchRoomName("#alias:example.com"),
+		},
+	}))
+
+	// Test room name
+	rig.FlushEvent(t, alice, roomID, testutils.NewStateEvent(t, "m.room.name", "", alice, map[string]interface{}{
+		"name": "My Room Name",
+	}))
+	res = rig.V3.mustDoV3RequestWithPos(t, aliceToken, res.Pos, sync3.Request{})
+	m.MatchResponse(t, res, m.MatchRoomSubscriptionsStrict(map[string][]m.RoomMatcher{
+		roomID: {
+			m.MatchRoomName("My Room Name"),
+		},
+	}))
+}
