@@ -9,10 +9,10 @@ import (
 )
 
 type RoomInfo struct {
-	ID           string  `db:"room_id"`
-	IsEncrypted  bool    `db:"is_encrypted"`
-	IsTombstoned bool    `db:"is_tombstoned"`
-	Type         *string `db:"type"`
+	ID             string  `db:"room_id"`
+	IsEncrypted    bool    `db:"is_encrypted"`
+	UpgradedRoomID *string `db:"upgraded_room_id"`
+	Type           *string `db:"type"`
 }
 
 // RoomsTable stores the current snapshot for a room.
@@ -25,7 +25,7 @@ func NewRoomsTable(db *sqlx.DB) *RoomsTable {
 		room_id TEXT NOT NULL PRIMARY KEY,
 		current_snapshot_id BIGINT NOT NULL,
 		is_encrypted BOOL NOT NULL DEFAULT FALSE,
-		is_tombstoned BOOL NOT NULL DEFAULT FALSE,
+		upgraded_room_id TEXT,
 		latest_nid BIGINT NOT NULL DEFAULT 0,
 		type TEXT -- nullable
 	);
@@ -34,7 +34,7 @@ func NewRoomsTable(db *sqlx.DB) *RoomsTable {
 }
 
 func (t *RoomsTable) SelectRoomInfos(txn *sqlx.Tx) (infos []RoomInfo, err error) {
-	err = txn.Select(&infos, `SELECT room_id, is_encrypted, is_tombstoned, type FROM syncv3_rooms`)
+	err = txn.Select(&infos, `SELECT room_id, is_encrypted, upgraded_room_id, type FROM syncv3_rooms`)
 	return
 }
 
@@ -43,31 +43,39 @@ func (t *RoomsTable) Upsert(txn *sqlx.Tx, info RoomInfo, snapshotID, latestNID i
 	// set to true.
 	cols := "room_id, current_snapshot_id, latest_nid"
 	vals := "$1, $2, $3"
+	n := 4
 	doUpdate := "ON CONFLICT (room_id) DO UPDATE SET current_snapshot_id = $2, latest_nid = $3"
 	if info.IsEncrypted {
 		cols += ", is_encrypted"
 		vals += ", true"
 		doUpdate += ", is_encrypted = true" // flip it to true.
 	}
-	if info.IsTombstoned {
-		cols += ", is_tombstoned"
-		vals += ", true"
-		doUpdate += ", is_tombstoned = true" // flip it to true.
+	if info.UpgradedRoomID != nil {
+		cols += ", upgraded_room_id"
+		vals += fmt.Sprintf(", $%d", n)
+		doUpdate += fmt.Sprintf(", upgraded_room_id = $%d", n)
+		n++
 	}
 	if info.Type != nil {
 		// by default we insert NULL which means no type, so we only need to set it when this is non-nil.
 		// This also neatly handles the case where we issue updates which will have the Type set to nil
 		// as we don't pull out the create event for incremental updates.
 		cols += ", type"
-		vals += ", $4"
-		doUpdate += ", type = $4" // should never be updated but you never know...
+		vals += fmt.Sprintf(", $%d", n)
+		doUpdate += fmt.Sprintf(", type = $%d", n) // should never be updated but you never know...
+		n++
 	}
 	insertQuery := fmt.Sprintf(`INSERT INTO syncv3_rooms(%s) VALUES(%s) %s`, cols, vals, doUpdate)
-	if info.Type == nil {
-		_, err = txn.Exec(insertQuery, info.ID, snapshotID, latestNID)
-	} else {
-		_, err = txn.Exec(insertQuery, info.ID, snapshotID, latestNID, info.Type)
+	args := []interface{}{
+		info.ID, snapshotID, latestNID,
 	}
+	if info.UpgradedRoomID != nil {
+		args = append(args, info.UpgradedRoomID)
+	}
+	if info.Type != nil {
+		args = append(args, info.Type)
+	}
+	_, err = txn.Exec(insertQuery, args...)
 	return err
 }
 

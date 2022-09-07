@@ -103,14 +103,17 @@ func (a *Accumulator) calculateNewSnapshot(old StrippedEvents, new Event) (Strip
 // roomInfoDelta calculates what the RoomInfo should be given a list of new events.
 func (a *Accumulator) roomInfoDelta(roomID string, events []Event) RoomInfo {
 	isEncrypted := false
-	isTombstoned := false
+	var upgradedRoomID *string
 	var roomType *string
 	for _, ev := range events {
 		if ev.Type == "m.room.encryption" && ev.StateKey == "" {
 			isEncrypted = true
 		}
 		if ev.Type == "m.room.tombstone" && ev.StateKey == "" {
-			isTombstoned = true
+			contentType := gjson.GetBytes(ev.JSON, "content.replacement_room")
+			if contentType.Exists() && contentType.Type == gjson.String {
+				upgradedRoomID = &contentType.Str
+			}
 		}
 		if ev.Type == "m.room.create" && ev.StateKey == "" {
 			contentType := gjson.GetBytes(ev.JSON, "content.type")
@@ -120,10 +123,10 @@ func (a *Accumulator) roomInfoDelta(roomID string, events []Event) RoomInfo {
 		}
 	}
 	return RoomInfo{
-		ID:           roomID,
-		IsEncrypted:  isEncrypted,
-		IsTombstoned: isTombstoned,
-		Type:         roomType,
+		ID:             roomID,
+		IsEncrypted:    isEncrypted,
+		UpgradedRoomID: upgradedRoomID,
+		Type:           roomType,
 	}
 }
 

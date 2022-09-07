@@ -114,51 +114,52 @@ func TestRoomsTable(t *testing.T) {
 	// now check tombstones in the same way (TODO: dedupe)
 	// add tombstoned room
 	tombstonedRoomID := "!tombstoned:localhost"
+	upgradedRoomID := "!upgraded:localhost"
 	if err = table.Upsert(txn, RoomInfo{
-		ID:           tombstonedRoomID,
-		IsTombstoned: true,
+		ID:             tombstonedRoomID,
+		UpgradedRoomID: &upgradedRoomID,
 	}, 300, 1001); err != nil {
 		t.Fatalf("Failed to update current snapshot ID: %s", err)
 	}
 	// add untombstoned room
 	untombstonedRoomID := "!untombstoned:localhost"
 	if err = table.Upsert(txn, RoomInfo{
-		ID:           untombstonedRoomID,
-		IsTombstoned: false,
+		ID: untombstonedRoomID,
 	}, 301, 1002); err != nil {
 		t.Fatalf("Failed to update current snapshot ID: %s", err)
 	}
 	// verify tombstone status
-	if getRoomInfo(t, txn, table, untombstonedRoomID).IsTombstoned {
+	if getRoomInfo(t, txn, table, untombstonedRoomID).UpgradedRoomID != nil {
 		t.Fatalf("room %s is tombstoned when it shouldn't be", untombstonedRoomID)
 	}
-	if !getRoomInfo(t, txn, table, tombstonedRoomID).IsTombstoned {
+	if ri := getRoomInfo(t, txn, table, tombstonedRoomID); ri.UpgradedRoomID == nil || *ri.UpgradedRoomID != upgradedRoomID {
 		t.Fatalf("room %s is not tombstoned when it should be", tombstonedRoomID)
 	}
 
 	// now flip tombstone
+	upgradedRoomID2 := "!upgraded2:localhost"
 	if err = table.Upsert(txn, RoomInfo{
-		ID:           untombstonedRoomID,
-		IsTombstoned: true,
+		ID:             untombstonedRoomID,
+		UpgradedRoomID: &upgradedRoomID2,
 	}, 302, 1003); err != nil {
 		t.Fatalf("Failed to update current snapshot ID: %s", err)
 	}
 	// re-verify tombstone status
-	if !getRoomInfo(t, txn, table, untombstonedRoomID).IsTombstoned {
+	if getRoomInfo(t, txn, table, untombstonedRoomID).UpgradedRoomID == nil {
 		t.Fatalf("room %s is not tombstoned when it should be", untombstonedRoomID)
 	}
 
 	// check encrypted and tombstone can be set at once
 	both := "!both:localhost"
 	if err = table.Upsert(txn, RoomInfo{
-		ID:           both,
-		IsEncrypted:  true,
-		IsTombstoned: true,
+		ID:             both,
+		IsEncrypted:    true,
+		UpgradedRoomID: &upgradedRoomID2,
 	}, 303, 1); err != nil {
 		t.Fatalf("Failed to update current snapshot ID: %s", err)
 	}
 	info := getRoomInfo(t, txn, table, both)
-	if !info.IsEncrypted || !info.IsTombstoned {
+	if !info.IsEncrypted || info.UpgradedRoomID == nil {
 		t.Fatalf("Setting both tombstone/encrypted did not work, got: %+v", info)
 	}
 
