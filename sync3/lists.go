@@ -63,6 +63,11 @@ func (s *InternalRequestLists) SetRoom(r RoomConnMetadata) (delta RoomDelta) {
 				strings.Trim(internal.CalculateRoomName(&r.RoomMetadata, 5), "#!():_@"),
 			)
 		}
+	} else {
+		// set the canonical name to allow room name sorting to work
+		r.CanonicalisedName = strings.ToLower(
+			strings.Trim(internal.CalculateRoomName(&r.RoomMetadata, 5), "#!():_@"),
+		)
 	}
 	for i := range s.lists {
 		_, alreadyExists := s.lists[i].roomIDToIndex[r.RoomID]
