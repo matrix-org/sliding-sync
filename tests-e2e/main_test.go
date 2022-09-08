@@ -110,7 +110,7 @@ func MatchRoomRequiredState(events []Event) m.RoomMatcher {
 				}
 			}
 			if !found {
-				return fmt.Errorf("required state want event %+v but it does not exist", want)
+				return fmt.Errorf("required state want event %+v but did not find exact match", want)
 			}
 		}
 		return nil
