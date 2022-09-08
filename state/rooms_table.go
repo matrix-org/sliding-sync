@@ -9,10 +9,11 @@ import (
 )
 
 type RoomInfo struct {
-	ID             string  `db:"room_id"`
-	IsEncrypted    bool    `db:"is_encrypted"`
-	UpgradedRoomID *string `db:"upgraded_room_id"`
-	Type           *string `db:"type"`
+	ID                string  `db:"room_id"`
+	IsEncrypted       bool    `db:"is_encrypted"`
+	UpgradedRoomID    *string `db:"upgraded_room_id"`    // from the most recent valid tombstone event, or NULL
+	PredecessorRoomID *string `db:"predecessor_room_id"` // from the create event
+	Type              *string `db:"type"`
 }
 
 // RoomsTable stores the current snapshot for a room.
@@ -26,6 +27,7 @@ func NewRoomsTable(db *sqlx.DB) *RoomsTable {
 		current_snapshot_id BIGINT NOT NULL,
 		is_encrypted BOOL NOT NULL DEFAULT FALSE,
 		upgraded_room_id TEXT,
+		predecessor_room_id TEXT,
 		latest_nid BIGINT NOT NULL DEFAULT 0,
 		type TEXT -- nullable
 	);
@@ -34,7 +36,7 @@ func NewRoomsTable(db *sqlx.DB) *RoomsTable {
 }
 
 func (t *RoomsTable) SelectRoomInfos(txn *sqlx.Tx) (infos []RoomInfo, err error) {
-	err = txn.Select(&infos, `SELECT room_id, is_encrypted, upgraded_room_id, type FROM syncv3_rooms`)
+	err = txn.Select(&infos, `SELECT room_id, is_encrypted, upgraded_room_id, predecessor_room_id, type FROM syncv3_rooms`)
 	return
 }
 
@@ -65,6 +67,12 @@ func (t *RoomsTable) Upsert(txn *sqlx.Tx, info RoomInfo, snapshotID, latestNID i
 		doUpdate += fmt.Sprintf(", type = $%d", n) // should never be updated but you never know...
 		n++
 	}
+	if info.PredecessorRoomID != nil {
+		cols += ", predecessor_room_id"
+		vals += fmt.Sprintf(", $%d", n)
+		doUpdate += fmt.Sprintf(", predecessor_room_id = $%d", n)
+		n++
+	}
 	insertQuery := fmt.Sprintf(`INSERT INTO syncv3_rooms(%s) VALUES(%s) %s`, cols, vals, doUpdate)
 	args := []interface{}{
 		info.ID, snapshotID, latestNID,
@@ -74,6 +82,9 @@ func (t *RoomsTable) Upsert(txn *sqlx.Tx, info RoomInfo, snapshotID, latestNID i
 	}
 	if info.Type != nil {
 		args = append(args, info.Type)
+	}
+	if info.PredecessorRoomID != nil {
+		args = append(args, *info.PredecessorRoomID)
 	}
 	_, err = txn.Exec(insertQuery, args...)
 	return err

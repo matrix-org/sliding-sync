@@ -188,6 +188,29 @@ func TestRoomsTable(t *testing.T) {
 	if nidMap[untombstonedRoomID] != 1003 { // not 1002 as it should be updated by the subsequent update
 		t.Errorf("LatestNIDs: got %v want 1003", nidMap[untombstonedRoomID])
 	}
+
+	// check predecessor can be set
+	sucessorRoomID := "!sucessorRoomID:localhost"
+	predecessorRoomID := "!predecessor:localhost"
+	if err = table.Upsert(txn, RoomInfo{
+		ID:                sucessorRoomID,
+		PredecessorRoomID: &predecessorRoomID,
+		IsEncrypted:       true,
+	}, 2222, 1); err != nil {
+		t.Fatalf("Failed to update current snapshot ID: %s", err)
+	}
+	// verify
+	ri := getRoomInfo(t, txn, table, sucessorRoomID)
+	if !ri.IsEncrypted {
+		t.Errorf("upgraded room did not set encryption bit")
+	}
+	if ri.PredecessorRoomID == nil {
+		t.Errorf("predecessor room is nil")
+	}
+	if *ri.PredecessorRoomID == sucessorRoomID {
+		t.Errorf("predecessor room got %v want %v", *ri.PredecessorRoomID, predecessorRoomID)
+	}
+
 }
 
 func getRoomInfo(t *testing.T, txn *sqlx.Tx, table *RoomsTable, roomID string) RoomInfo {

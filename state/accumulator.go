@@ -105,6 +105,7 @@ func (a *Accumulator) roomInfoDelta(roomID string, events []Event) RoomInfo {
 	isEncrypted := false
 	var upgradedRoomID *string
 	var roomType *string
+	var pred *string
 	for _, ev := range events {
 		if ev.Type == "m.room.encryption" && ev.StateKey == "" {
 			isEncrypted = true
@@ -120,13 +121,19 @@ func (a *Accumulator) roomInfoDelta(roomID string, events []Event) RoomInfo {
 			if contentType.Exists() && contentType.Type == gjson.String {
 				roomType = &contentType.Str
 			}
+			predecessorRoomID := gjson.GetBytes(ev.JSON, "content.predecessor.room_id").Str
+			if predecessorRoomID != "" {
+				pred = &predecessorRoomID
+			}
+
 		}
 	}
 	return RoomInfo{
-		ID:             roomID,
-		IsEncrypted:    isEncrypted,
-		UpgradedRoomID: upgradedRoomID,
-		Type:           roomType,
+		ID:                roomID,
+		IsEncrypted:       isEncrypted,
+		UpgradedRoomID:    upgradedRoomID,
+		Type:              roomType,
+		PredecessorRoomID: pred,
 	}
 }
 
