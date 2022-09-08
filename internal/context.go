@@ -14,11 +14,13 @@ var (
 
 // logging metadata for a single request
 type data struct {
-	userID   string
-	since    int64
-	next     int64
-	numRooms int
-	txnID    string
+	userID               string
+	since                int64
+	next                 int64
+	numRooms             int
+	txnID                string
+	numToDeviceEvents    int
+	numGlobalAccountData int
 }
 
 // prepare a request context so it can contain syncv3 info
@@ -41,7 +43,7 @@ func SetRequestContextUserID(ctx context.Context, userID string) {
 	da.userID = userID
 }
 
-func SetRequestContextResponseInfo(ctx context.Context, since, next int64, numRooms int, txnID string) {
+func SetRequestContextResponseInfo(ctx context.Context, since, next int64, numRooms int, txnID string, numToDeviceEvents, numGlobalAccountData int) {
 	d := ctx.Value(ctxData)
 	if d == nil {
 		return
@@ -51,6 +53,8 @@ func SetRequestContextResponseInfo(ctx context.Context, since, next int64, numRo
 	da.next = next
 	da.numRooms = numRooms
 	da.txnID = txnID
+	da.numToDeviceEvents = numToDeviceEvents
+	da.numGlobalAccountData = numGlobalAccountData
 }
 
 func DecorateLogger(ctx context.Context, l *zerolog.Event) *zerolog.Event {
@@ -73,6 +77,12 @@ func DecorateLogger(ctx context.Context, l *zerolog.Event) *zerolog.Event {
 	}
 	if da.numRooms >= 0 {
 		l = l.Int("r", da.numRooms)
+	}
+	if da.numToDeviceEvents > 0 {
+		l = l.Int("d", da.numToDeviceEvents)
+	}
+	if da.numGlobalAccountData > 0 {
+		l = l.Int("ag", da.numGlobalAccountData)
 	}
 	return l
 }

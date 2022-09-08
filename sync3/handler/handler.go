@@ -199,7 +199,15 @@ func (h *SyncLiveHandler) serve(w http.ResponseWriter, req *http.Request) error 
 		return herr
 	}
 	// for logging
-	internal.SetRequestContextResponseInfo(req.Context(), cpos, resp.PosInt(), len(resp.Rooms), requestBody.TxnID)
+	var numToDeviceEvents int
+	if resp.Extensions.ToDevice != nil {
+		numToDeviceEvents = len(resp.Extensions.ToDevice.Events)
+	}
+	var numGlobalAccountData int
+	if resp.Extensions.AccountData != nil {
+		numGlobalAccountData = len(resp.Extensions.AccountData.Global)
+	}
+	internal.SetRequestContextResponseInfo(req.Context(), cpos, resp.PosInt(), len(resp.Rooms), requestBody.TxnID, numToDeviceEvents, numGlobalAccountData)
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(200)
