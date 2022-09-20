@@ -19,8 +19,8 @@ func (r AccountDataRequest) ApplyDelta(next *AccountDataRequest) *AccountDataReq
 
 // Server response
 type AccountDataResponse struct {
-	Global []json.RawMessage            `json:"global"`
-	Rooms  map[string][]json.RawMessage `json:"rooms"`
+	Global []json.RawMessage            `json:"global,omitempty"`
+	Rooms  map[string][]json.RawMessage `json:"rooms,omitempty"`
 }
 
 func (r *AccountDataResponse) HasData(isInitial bool) bool {

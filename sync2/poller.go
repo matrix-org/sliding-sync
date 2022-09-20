@@ -339,6 +339,8 @@ func (p *Poller) FallbackKeyTypes() []string {
 func (p *Poller) DeviceListChanges() (changed, left []string) {
 	p.e2eeMu.Lock()
 	defer p.e2eeMu.Unlock()
+	changed = make([]string, 0)
+	left = make([]string, 0)
 	for userID, state := range p.deviceListChanges {
 		switch state {
 		case "changed":
