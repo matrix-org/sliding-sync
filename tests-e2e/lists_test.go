@@ -345,6 +345,8 @@ func TestMultipleOverlappingLists(t *testing.T) {
 			Content: map[string]interface{}{"body": "ping", "msgtype": "m.text"},
 		})
 	}
+	lastEventID := roomToEventID[allRoomIDs[0]]
+	alice.SlidingSyncUntilEventID(t, "", allRoomIDs[0], lastEventID)
 
 	// request 2 lists: one DMs, one encrypted. The room subscriptions are different so they should be UNION'd correctly.
 	// We request 5 rooms to ensure there is some overlap but not total overlap:
@@ -600,7 +602,7 @@ func TestNewRoomNameCalculations(t *testing.T) {
 				seenRoomNames[roomID] = sub.Name
 			}
 		}
-		if time.Since(start) > 5*time.Second {
+		if time.Since(start) > 15*time.Second {
 			t.Errorf("timed out, did not see all rooms, seen %d/%d", len(seenRoomNames), numRooms)
 			break
 		}

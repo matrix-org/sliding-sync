@@ -10,6 +10,11 @@ import (
 
 	"github.com/gorilla/mux"
 	"github.com/matrix-org/sync-v3/internal"
+	"github.com/matrix-org/sync-v3/pubsub"
+	"github.com/matrix-org/sync-v3/state"
+	"github.com/matrix-org/sync-v3/sync2"
+	"github.com/matrix-org/sync-v3/sync2/handler2"
+	"github.com/matrix-org/sync-v3/sync3/handler"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/hlog"
 )
@@ -19,6 +24,14 @@ var logger = zerolog.New(os.Stdout).With().Timestamp().Logger().Output(zerolog.C
 	TimeFormat: "15:04:05",
 })
 var Version string
+
+type Opts struct {
+	Debug                bool
+	AddPrometheusMetrics bool
+	// if true, publishing messages will block until the consumer has consumed it.
+	// Assumes a single producer and a single consumer.
+	TestingSynchronousPubsub bool
+}
 
 type server struct {
 	chain []func(next http.Handler) http.Handler
@@ -44,6 +57,47 @@ func allowCORS(next http.Handler) http.HandlerFunc {
 		}
 		next.ServeHTTP(w, req)
 	}
+}
+
+// Setup the proxy
+func Setup(destHomeserver, postgresURI, secret string, opts Opts) (*handler2.Handler, *handler.SyncLiveHandler) {
+	// Setup shared DB and HTTP client
+	v2Client := &sync2.HTTPClient{
+		Client: &http.Client{
+			Timeout: 5 * time.Minute,
+		},
+		DestinationServer: destHomeserver,
+	}
+	store := state.NewStorage(postgresURI)
+	storev2 := sync2.NewStore(postgresURI, secret)
+	bufferSize := 50
+	if opts.TestingSynchronousPubsub {
+		bufferSize = 0
+	}
+	pubSub := pubsub.NewPubSub(bufferSize)
+
+	// create v2 handler
+	h2, err := handler2.NewHandler(postgresURI, sync2.NewPollerMap(v2Client, opts.AddPrometheusMetrics), storev2, store, v2Client, pubSub, pubSub, opts.AddPrometheusMetrics)
+	if err != nil {
+		panic(err)
+	}
+
+	// create v3 handler
+	h3, err := handler.NewSync3Handler(store, storev2, v2Client, postgresURI, secret, opts.Debug, pubSub, pubSub, opts.AddPrometheusMetrics)
+	if err != nil {
+		panic(err)
+	}
+	storeSnapshot, err := store.GlobalSnapshot()
+	if err != nil {
+		panic(err)
+	}
+	logger.Info().Msg("retrieved global snapshot from database")
+	h3.Startup(&storeSnapshot)
+
+	// begin consuming from these positions
+	h2.Listen()
+	h3.Listen()
+	return h2, h3
 }
 
 // RunSyncV3Server is the main entry point to the server

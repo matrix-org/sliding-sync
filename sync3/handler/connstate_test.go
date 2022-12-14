@@ -18,7 +18,7 @@ import (
 
 type NopExtensionHandler struct{}
 
-func (h *NopExtensionHandler) Handle(req extensions.Request, listRoomIDs map[string]struct{}, isInitial bool) (res extensions.Response) {
+func (h *NopExtensionHandler) Handle(req extensions.Request, listRoomIDs map[string][]string, isInitial bool) (res extensions.Response) {
 	return
 }
 
@@ -33,8 +33,8 @@ func (t *NopJoinTracker) IsUserJoined(userID, roomID string) bool {
 
 type NopTransactionFetcher struct{}
 
-func (t *NopTransactionFetcher) TransactionIDForEvent(userID, eventID string) (txnID string) {
-	return ""
+func (t *NopTransactionFetcher) TransactionIDForEvents(userID string, eventID []string) (eventIDToTxnID map[string]string) {
+	return
 }
 
 func newRoomMetadata(roomID string, lastMsgTimestamp gomatrixserverlib.Timestamp) internal.RoomMetadata {
@@ -104,7 +104,7 @@ func TestConnStateInitial(t *testing.T) {
 		}
 		return result
 	}
-	cs := NewConnState(userID, deviceID, userCache, globalCache, &NopExtensionHandler{}, &NopJoinTracker{})
+	cs := NewConnState(userID, deviceID, userCache, globalCache, &NopExtensionHandler{}, &NopJoinTracker{}, nil)
 	if userID != cs.UserID() {
 		t.Fatalf("UserID returned wrong value, got %v want %v", cs.UserID(), userID)
 	}
@@ -199,7 +199,7 @@ func TestConnStateInitial(t *testing.T) {
 	newEvent = testutils.NewEvent(t, "unimportant", "me", struct{}{}, testutils.WithTimestamp(timestampNow.Add(2*time.Second)))
 	dispatcher.OnNewEvents(roomA.RoomID, []json.RawMessage{
 		newEvent,
-	}, 1)
+	}, 2)
 	res, err = cs.OnIncomingRequest(context.Background(), ConnID, &sync3.Request{
 		Lists: []sync3.RequestList{{
 			Sort: []string{sync3.SortByRecency},
@@ -268,7 +268,7 @@ func TestConnStateMultipleRanges(t *testing.T) {
 	userCache.LazyRoomDataOverride = mockLazyRoomOverride
 	dispatcher.Register(userCache.UserID, userCache)
 	dispatcher.Register(sync3.DispatcherAllUsers, globalCache)
-	cs := NewConnState(userID, deviceID, userCache, globalCache, &NopExtensionHandler{}, &NopJoinTracker{})
+	cs := NewConnState(userID, deviceID, userCache, globalCache, &NopExtensionHandler{}, &NopJoinTracker{}, nil)
 
 	// request first page
 	res, err := cs.OnIncomingRequest(context.Background(), ConnID, &sync3.Request{
@@ -445,7 +445,7 @@ func TestBumpToOutsideRange(t *testing.T) {
 	userCache.LazyRoomDataOverride = mockLazyRoomOverride
 	dispatcher.Register(userCache.UserID, userCache)
 	dispatcher.Register(sync3.DispatcherAllUsers, globalCache)
-	cs := NewConnState(userID, deviceID, userCache, globalCache, &NopExtensionHandler{}, &NopJoinTracker{})
+	cs := NewConnState(userID, deviceID, userCache, globalCache, &NopExtensionHandler{}, &NopJoinTracker{}, nil)
 	// Ask for A,B
 	res, err := cs.OnIncomingRequest(context.Background(), ConnID, &sync3.Request{
 		Lists: []sync3.RequestList{{
@@ -553,7 +553,7 @@ func TestConnStateRoomSubscriptions(t *testing.T) {
 	}
 	dispatcher.Register(userCache.UserID, userCache)
 	dispatcher.Register(sync3.DispatcherAllUsers, globalCache)
-	cs := NewConnState(userID, deviceID, userCache, globalCache, &NopExtensionHandler{}, &NopJoinTracker{})
+	cs := NewConnState(userID, deviceID, userCache, globalCache, &NopExtensionHandler{}, &NopJoinTracker{}, nil)
 	// subscribe to room D
 	res, err := cs.OnIncomingRequest(context.Background(), ConnID, &sync3.Request{
 		RoomSubscriptions: map[string]sync3.RoomSubscription{

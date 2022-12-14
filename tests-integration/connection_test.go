@@ -11,6 +11,7 @@ import (
 	"github.com/matrix-org/sync-v3/sync3"
 	"github.com/matrix-org/sync-v3/testutils"
 	"github.com/matrix-org/sync-v3/testutils/m"
+	"github.com/tidwall/gjson"
 )
 
 // Test that if you hit /sync and give up, we only start 1 connection.
@@ -439,4 +440,123 @@ func TestTxnIDResponseBuffering(t *testing.T) {
 		m.MatchV3InvalidateOp(0, 10),
 		m.MatchV3SyncOp(0, 10, []string{roomB}),
 	)))
+}
+
+// Regression test to make sure that if Alice does an initial sync followed by Bob, that Bob actually
+// makes the request and can be serviced before Alice even though she was first. Early proxy impls had
+// this behaviour but it regressed when we converted to a pubsub model as a single goroutine would handle
+// EnsurePolling requests, rather than the HTTP goroutine.
+func TestEnsurePollingDoesntQueue(t *testing.T) {
+	pqString := testutils.PrepareDBConnectionString()
+	// setup code
+	v2 := runTestV2Server(t)
+	v2.timeToWaitForV2Response = 5 * time.Second
+	v3 := runTestServer(t, v2, pqString)
+	defer v2.close()
+	defer v3.close()
+	roomA := "!a:localhost"
+	roomB := "!b:localhost"
+	v2.addAccount(alice, aliceToken)
+	v2.addAccount(bob, bobToken)
+	v2.queueResponse(bob, sync2.SyncResponse{
+		Rooms: sync2.SyncRoomsResponse{
+			Join: v2JoinTimeline(roomEvents{
+				roomID: roomB,
+				state:  createRoomState(t, bob, time.Now()),
+				events: []json.RawMessage{
+					testutils.NewStateEvent(t, "m.room.name", "", bob, map[string]interface{}{"name": "B"}),
+				},
+			}),
+		},
+	})
+	var mu sync.Mutex
+	aliceReturned := false
+	// wait until alice makes the v2 /sync request, then start bob's v3 request
+	go func() {
+		t.Logf("waiting for alice's v2 poller to start")
+		v2.waitUntilEmpty(t, alice) // alice's poller is making the v2 request
+		t.Logf("alice's v2 poller is waiting, doing bob's v3 request")
+		startTime := time.Now()
+		res := v3.mustDoV3Request(t, bobToken, sync3.Request{ // start bob's v3 request
+			RoomSubscriptions: map[string]sync3.RoomSubscription{
+				roomB: {
+					TimelineLimit: 1,
+				},
+			},
+		})
+		t.Logf("bob's v3 response returned")
+		if time.Since(startTime) > 4*time.Second {
+			t.Errorf("took too long to process bob's v3 request, it probably stacked behind alice")
+		}
+		mu.Lock()
+		if aliceReturned {
+			t.Errorf("Alice's /sync request returned before Bob's, expected Bob's to return first")
+		}
+		mu.Unlock()
+		m.MatchResponse(t, res, m.MatchRoomSubscriptionsStrict(map[string][]m.RoomMatcher{
+			roomB: {
+				m.MatchJoinCount(1),
+				m.MatchRoomName("B"),
+			},
+		}))
+		// now send alice's response to unblock her
+		t.Logf("sending alice's v2 response")
+		v2.queueResponse(alice, sync2.SyncResponse{
+			Rooms: sync2.SyncRoomsResponse{
+				Join: v2JoinTimeline(roomEvents{
+					roomID: roomA,
+					state:  createRoomState(t, alice, time.Now()),
+					events: []json.RawMessage{
+						testutils.NewStateEvent(t, "m.room.name", "", alice, map[string]interface{}{"name": "A"}),
+					},
+				}),
+			},
+		})
+	}()
+	t.Logf("starting alice's v3 request")
+	res := v3.mustDoV3Request(t, aliceToken, sync3.Request{
+		RoomSubscriptions: map[string]sync3.RoomSubscription{
+			roomA: {
+				TimelineLimit: 1,
+			},
+		},
+	})
+	t.Logf("alice's v3 response returned")
+	mu.Lock()
+	aliceReturned = true
+	mu.Unlock()
+	m.MatchResponse(t, res, m.MatchRoomSubscriptionsStrict(map[string][]m.RoomMatcher{
+		roomA: {
+			m.MatchJoinCount(1),
+			m.MatchRoomName("A"),
+		},
+	}))
+}
+
+// Test to ensure that we send back a spec-compliant error message when the session is expired.
+func TestSessionExpiry(t *testing.T) {
+	pqString := testutils.PrepareDBConnectionString()
+	v2 := runTestV2Server(t)
+	v2.addAccount(alice, aliceToken)
+	v3 := runTestServer(t, v2, pqString)
+	roomID := "!doesnt:matter"
+	res1 := v3.mustDoV3Request(t, aliceToken, sync3.Request{
+		RoomSubscriptions: map[string]sync3.RoomSubscription{
+			roomID: {
+				TimelineLimit: 1,
+			},
+		},
+	})
+	req := sync3.Request{}
+	req.SetTimeoutMSecs(1)
+	res2 := v3.mustDoV3RequestWithPos(t, aliceToken, res1.Pos, req)
+	_ = v3.mustDoV3RequestWithPos(t, aliceToken, res2.Pos, req)
+	// now use an earlier ?pos= to expire the session
+	_, body, code := v3.doV3Request(t, context.Background(), aliceToken, res1.Pos, req)
+	if code != 400 {
+		t.Errorf("got HTTP %d want 400", code)
+	}
+	if gjson.ParseBytes(body).Get("errcode").Str != "M_UNKNOWN_POS" {
+		t.Errorf("got %v want errcode=M_UNKNOWN_POS", string(body))
+	}
 }

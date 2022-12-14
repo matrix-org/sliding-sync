@@ -199,6 +199,14 @@ func (c *CSAPI) JoinRoom(t *testing.T, roomIDOrAlias string, serverNames []strin
 	return GetJSONFieldStr(t, body, "room_id")
 }
 
+func (c *CSAPI) SendTyping(t *testing.T, roomID string, isTyping bool, durMs int) {
+	t.Helper()
+	c.MustDoFunc(t, "PUT", []string{"_matrix", "client", "v3", "rooms", roomID, "typing", c.UserID}, WithJSONBody(t, map[string]interface{}{
+		"timeout": durMs,
+		"typing":  isTyping,
+	}))
+}
+
 // LeaveRoom joins the room ID, else fails the test.
 func (c *CSAPI) LeaveRoom(t *testing.T, roomID string) {
 	t.Helper()
@@ -224,6 +232,10 @@ func (c *CSAPI) SetGlobalAccountData(t *testing.T, eventType string, content map
 	return c.MustDoFunc(t, "PUT", []string{"_matrix", "client", "v3", "user", c.UserID, "account_data", eventType}, WithJSONBody(t, content))
 }
 
+func (c *CSAPI) SetRoomAccountData(t *testing.T, roomID, eventType string, content map[string]interface{}) *http.Response {
+	return c.MustDoFunc(t, "PUT", []string{"_matrix", "client", "v3", "user", c.UserID, "rooms", roomID, "account_data", eventType}, WithJSONBody(t, content))
+}
+
 // SendEventSynced sends `e` into the room and waits for its event ID to come down /sync.
 // Returns the event ID of the sent event.
 func (c *CSAPI) SendEventSynced(t *testing.T, roomID string, e Event) string {
@@ -241,6 +253,12 @@ func (c *CSAPI) SendEventSynced(t *testing.T, roomID string, e Event) string {
 		return r.Get("event_id").Str == eventID
 	}))
 	return eventID
+}
+
+func (c *CSAPI) SendReceipt(t *testing.T, roomID, eventID, receiptType string) *http.Response {
+	return c.MustDoFunc(t, "POST", []string{"_matrix", "client", "v3", "rooms", roomID, "read_markers"}, WithJSONBody(t, map[string]interface{}{
+		receiptType: eventID,
+	}))
 }
 
 // Perform a single /sync request with the given request options. To sync until something happens,
@@ -280,24 +298,27 @@ func (c *CSAPI) MustSync(t *testing.T, syncReq SyncReq) (gjson.Result, string) {
 // check functions return no error. Returns the final/latest since token.
 //
 // Initial /sync example: (no since token)
-//   bob.InviteRoom(t, roomID, alice.UserID)
-//   alice.JoinRoom(t, roomID, nil)
-//   alice.MustSyncUntil(t, client.SyncReq{}, client.SyncJoinedTo(alice.UserID, roomID))
+//
+//	bob.InviteRoom(t, roomID, alice.UserID)
+//	alice.JoinRoom(t, roomID, nil)
+//	alice.MustSyncUntil(t, client.SyncReq{}, client.SyncJoinedTo(alice.UserID, roomID))
 //
 // Incremental /sync example: (test controls since token)
-//    since := alice.MustSyncUntil(t, client.SyncReq{TimeoutMillis: "0"}) // get a since token
-//    bob.InviteRoom(t, roomID, alice.UserID)
-//    since = alice.MustSyncUntil(t, client.SyncReq{Since: since}, client.SyncInvitedTo(alice.UserID, roomID))
-//    alice.JoinRoom(t, roomID, nil)
-//    alice.MustSyncUntil(t, client.SyncReq{Since: since}, client.SyncJoinedTo(alice.UserID, roomID))
+//
+//	since := alice.MustSyncUntil(t, client.SyncReq{TimeoutMillis: "0"}) // get a since token
+//	bob.InviteRoom(t, roomID, alice.UserID)
+//	since = alice.MustSyncUntil(t, client.SyncReq{Since: since}, client.SyncInvitedTo(alice.UserID, roomID))
+//	alice.JoinRoom(t, roomID, nil)
+//	alice.MustSyncUntil(t, client.SyncReq{Since: since}, client.SyncJoinedTo(alice.UserID, roomID))
 //
 // Checking multiple parts of /sync:
-//    alice.MustSyncUntil(
-//        t, client.SyncReq{},
-//        client.SyncJoinedTo(alice.UserID, roomID),
-//        client.SyncJoinedTo(alice.UserID, roomID2),
-//        client.SyncJoinedTo(alice.UserID, roomID3),
-//    )
+//
+//	alice.MustSyncUntil(
+//	    t, client.SyncReq{},
+//	    client.SyncJoinedTo(alice.UserID, roomID),
+//	    client.SyncJoinedTo(alice.UserID, roomID2),
+//	    client.SyncJoinedTo(alice.UserID, roomID3),
+//	)
 //
 // Check functions are unordered and independent. Once a check function returns true it is removed
 // from the list of checks and won't be called again.
@@ -360,7 +381,7 @@ func (c *CSAPI) MustSyncUntil(t *testing.T, syncReq SyncReq, checks ...SyncCheck
 	}
 }
 
-//RegisterUser will register the user with given parameters and
+// RegisterUser will register the user with given parameters and
 // return user ID & access token, and fail the test on network error
 func (c *CSAPI) RegisterUser(t *testing.T, localpart, password string) (userID, accessToken, deviceID string) {
 	t.Helper()
@@ -525,6 +546,17 @@ func (c *CSAPI) MustDoFunc(t *testing.T, method string, paths []string, opts ...
 	return res
 }
 
+func (c *CSAPI) SendToDevice(t *testing.T, eventType, userID, deviceID string, content map[string]interface{}) {
+	c.txnID++
+	c.MustDoFunc(t, "PUT", []string{"_matrix", "client", "v3", "sendToDevice", eventType, strconv.Itoa(c.txnID)}, WithJSONBody(t, map[string]interface{}{
+		"messages": map[string]interface{}{
+			userID: map[string]interface{}{
+				deviceID: content,
+			},
+		},
+	}))
+}
+
 // SlidingSync performs a single sliding sync request
 func (c *CSAPI) SlidingSync(t *testing.T, data sync3.Request, opts ...RequestOpt) (resBody *sync3.Response) {
 	t.Helper()
@@ -542,18 +574,91 @@ func (c *CSAPI) SlidingSync(t *testing.T, data sync3.Request, opts ...RequestOpt
 	return
 }
 
+func (c *CSAPI) SlidingSyncUntilEventID(t *testing.T, pos string, roomID string, eventID string) (res *sync3.Response) {
+	t.Helper()
+	return c.SlidingSyncUntilEvent(t, pos, sync3.Request{
+		RoomSubscriptions: map[string]sync3.RoomSubscription{
+			roomID: {
+				TimelineLimit: 10,
+			},
+		},
+	}, roomID, Event{ID: eventID})
+}
+
+func (c *CSAPI) SlidingSyncUntilMembership(t *testing.T, pos string, roomID string, target *CSAPI, membership string) (res *sync3.Response) {
+	t.Helper()
+	return c.SlidingSyncUntilEvent(t, pos, sync3.Request{
+		RoomSubscriptions: map[string]sync3.RoomSubscription{
+			roomID: {
+				TimelineLimit: 10,
+			},
+		},
+	}, roomID, Event{
+		Type:     "m.room.member",
+		StateKey: &target.UserID,
+		Content: map[string]interface{}{
+			"displayname": target.Localpart,
+			"membership":  membership,
+		},
+	})
+}
+
+func (c *CSAPI) SlidingSyncUntil(t *testing.T, pos string, data sync3.Request, check func(*sync3.Response) error) (res *sync3.Response) {
+	t.Helper()
+	start := time.Now()
+	for time.Since(start) < 10*time.Second {
+		qps := url.Values{
+			"timeout": []string{"500"},
+		}
+		if pos != "" {
+			qps["pos"] = []string{pos}
+		}
+		opts := []RequestOpt{
+			WithQueries(qps),
+		}
+		res := c.SlidingSync(t, data, opts...)
+		pos = res.Pos
+		err := check(res)
+		if err == nil {
+			return res
+		} else {
+			t.Logf("SlidingSyncUntil: tested response but it failed with: %v", err)
+		}
+	}
+	t.Fatalf("SlidingSyncUntil: timed out")
+	return nil
+}
+
+// SlidingSyncUntilEvent repeatedly calls sliding sync until the given Event is seen. The seen event can be matched
+// on the event ID, type and state_key, etc. A zero Event always passes.
+func (c *CSAPI) SlidingSyncUntilEvent(t *testing.T, pos string, data sync3.Request, roomID string, want Event) (res *sync3.Response) {
+	return c.SlidingSyncUntil(t, pos, data, func(r *sync3.Response) error {
+		room, ok := r.Rooms[roomID]
+		if !ok {
+			return fmt.Errorf("missing room %s", roomID)
+		}
+		for _, got := range room.Timeline {
+			if err := eventsEqual([]Event{want}, []json.RawMessage{got}); err == nil {
+				return nil
+			}
+		}
+		return fmt.Errorf("found room %s but missing event", roomID)
+	})
+}
+
 // DoFunc performs an arbitrary HTTP request to the server. This function supports RequestOpts to set
 // extra information on the request such as an HTTP request body, query parameters and content-type.
 // See all functions in this package starting with `With...`.
 //
 // Fails the test if an HTTP request could not be made or if there was a network error talking to the
 // server. To do assertions on the HTTP response, see the `must` package. For example:
-//    must.MatchResponse(t, res, match.HTTPResponse{
-//    	StatusCode: 400,
-//    	JSON: []match.JSON{
-//    		match.JSONKeyEqual("errcode", "M_INVALID_USERNAME"),
-//    	},
-//    })
+//
+//	must.MatchResponse(t, res, match.HTTPResponse{
+//		StatusCode: 400,
+//		JSON: []match.JSON{
+//			match.JSONKeyEqual("errcode", "M_INVALID_USERNAME"),
+//		},
+//	})
 func (c *CSAPI) DoFunc(t *testing.T, method string, paths []string, opts ...RequestOpt) *http.Response {
 	t.Helper()
 	isSlidingSync := false

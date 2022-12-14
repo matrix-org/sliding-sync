@@ -73,6 +73,9 @@ func TestRoomStateTransitions(t *testing.T) {
 	// now bob accepts the invite
 	bob.JoinRoom(t, inviteRoomID, nil)
 
+	// wait until the proxy has got this data
+	alice.SlidingSyncUntilMembership(t, "", inviteRoomID, bob, "join")
+
 	// the room should be updated with the initial flag set to replace what was in the invite state
 	bobRes = bob.SlidingSync(t, sync3.Request{
 		Lists: []sync3.RequestList{
@@ -102,7 +105,8 @@ func TestRoomStateTransitions(t *testing.T) {
 			},
 		}),
 		m.MatchRoomInitial(true),
-		m.MatchRoomHighlightCount(0)))
+		m.MatchRoomHighlightCount(0),
+	))
 }
 
 func TestInviteRejection(t *testing.T) {
@@ -252,12 +256,9 @@ func TestInviteAcceptance(t *testing.T) {
 		},
 	}))
 
-	_, since := bob.MustSync(t, SyncReq{})
 	// now invite bob
 	alice.InviteRoom(t, secondInviteRoomID, bob.UserID)
-	since = bob.MustSyncUntil(t, SyncReq{Since: since}, SyncInvitedTo(bob.UserID, secondInviteRoomID))
-	// TODO: proxy needs to have processed this event enough for it to be waiting for us
-	time.Sleep(100 * time.Millisecond)
+	alice.SlidingSyncUntilMembership(t, "", secondInviteRoomID, bob, "invite")
 
 	res = bob.SlidingSync(t, sync3.Request{
 		Lists: []sync3.RequestList{
@@ -289,10 +290,8 @@ func TestInviteAcceptance(t *testing.T) {
 	// now accept the invites
 	bob.JoinRoom(t, firstInviteRoomID, nil)
 	bob.JoinRoom(t, secondInviteRoomID, nil)
-	bob.MustSyncUntil(t, SyncReq{Since: since}, SyncJoinedTo(bob.UserID, firstInviteRoomID), SyncJoinedTo(bob.UserID, secondInviteRoomID))
-	// wait for the proxy to process the join response, no better way at present as we cannot introspect _when_ it's doing the next poll :/
-	// could do if this were an integration test though.
-	time.Sleep(100 * time.Millisecond)
+	alice.SlidingSyncUntilMembership(t, "", firstInviteRoomID, bob, "join")
+	alice.SlidingSyncUntilMembership(t, "", secondInviteRoomID, bob, "join")
 
 	// the list should be purged
 	res = bob.SlidingSync(t, sync3.Request{
@@ -378,8 +377,8 @@ func TestMemberCounts(t *testing.T) {
 	// join both rooms, the counts should now reflect reality
 	bob.JoinRoom(t, firstRoomID, nil)
 	bob.JoinRoom(t, secondRoomID, nil)
-	bob.MustSyncUntil(t, SyncReq{}, SyncJoinedTo(bob.UserID, firstRoomID), SyncJoinedTo(bob.UserID, secondRoomID))
-	time.Sleep(100 * time.Millisecond) // let the proxy process the joins
+	alice.SlidingSyncUntilMembership(t, "", firstRoomID, bob, "join")
+	alice.SlidingSyncUntilMembership(t, "", secondRoomID, bob, "join")
 
 	res = bob.SlidingSync(t, sync3.Request{
 		Lists: []sync3.RequestList{

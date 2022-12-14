@@ -58,9 +58,14 @@ func ProcessToDevice(store *state.Storage, userID, deviceID string, req *ToDevic
 		}
 	}
 
-	msgs, upTo, err := store.ToDeviceTable.Messages(deviceID, from, -1, int64(req.Limit))
+	msgs, upTo, err := store.ToDeviceTable.Messages(deviceID, from, int64(req.Limit))
 	if err != nil {
 		l.Err(err).Int64("from", from).Msg("cannot query to-device messages")
+		return nil
+	}
+	err = store.ToDeviceTable.SetUnackedPosition(deviceID, upTo)
+	if err != nil {
+		l.Err(err).Msg("cannot set unacked position")
 		return nil
 	}
 	res = &ToDeviceResponse{

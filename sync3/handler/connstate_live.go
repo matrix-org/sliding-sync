@@ -16,13 +16,16 @@ var (
 	// The max number of events the client is eligible to read (unfiltered) which we are willing to
 	// buffer on this connection. Too large and we consume lots of memory. Too small and busy accounts
 	// will trip the connection knifing.
-	MaxPendingEventUpdates = 200
+	MaxPendingEventUpdates = 2000
 )
 
 // Contains code for processing live updates. Split out from connstate because they concern different
 // code paths. Relies on ConnState for various list/sort/subscription operations.
 type connStateLive struct {
 	*ConnState
+
+	// roomID -> latest load pos
+	loadPositions map[string]int64
 
 	// A channel which the dispatcher uses to send updates to the conn goroutine
 	// Consumed when the conn is read. There is a limit to how many updates we will store before
@@ -124,28 +127,57 @@ func (s *connStateLive) processLiveUpdate(ctx context.Context, up caches.Update,
 		}
 	}
 
+	// add in initial rooms FIRST as we replace whatever is in the rooms key for these rooms.
+	// If we do it after appending live updates then we can lose updates because we replace what
+	// we accumulated.
+	rooms := s.buildRooms(ctx, builder.BuildSubscriptions())
+	for roomID, room := range rooms {
+		response.Rooms[roomID] = room
+		// remember what point we snapshotted this room, incase we see live events which we have
+		// already snapshotted here.
+		s.loadPositions[roomID] = s.loadPosition
+	}
+
 	roomUpdate, _ := up.(caches.RoomUpdate)
+	roomEventUpdate, _ := up.(*caches.RoomEventUpdate)
 
 	// TODO: find a better way to determine if the triggering event should be included e.g ask the lists?
-	if hasUpdates && roomUpdate != nil {
+	if hasUpdates && roomEventUpdate != nil {
 		// include this update in the rooms response TODO: filters on event type?
 		userRoomData := roomUpdate.UserRoomMetadata()
 		r := response.Rooms[roomUpdate.RoomID()]
 		r.HighlightCount = int64(userRoomData.HighlightCount)
 		r.NotificationCount = int64(userRoomData.NotificationCount)
-		roomEventUpdate, _ := up.(*caches.RoomEventUpdate)
 		if roomEventUpdate != nil && roomEventUpdate.EventData.Event != nil {
-			r.Timeline = append(r.Timeline, s.userCache.AnnotateWithTransactionIDs([]json.RawMessage{
-				roomEventUpdate.EventData.Event,
-			})...)
+			r.NumLive++
+			advancedPastEvent := false
+			if roomEventUpdate.EventData.LatestPos <= s.loadPositions[roomEventUpdate.RoomID()] {
+				// this update has been accounted for by the initial:true room snapshot
+				advancedPastEvent = true
+			}
+			s.loadPositions[roomEventUpdate.RoomID()] = roomEventUpdate.EventData.LatestPos
+			// we only append to the timeline if we haven't already got this event. This can happen when:
+			// - 2 live events for a room mid-connection
+			// - next request bumps a room from outside to inside the window
+			// - the initial:true room from BuildSubscriptions contains the latest live events in the timeline as it's pulled from the DB
+			// - we then process the live events in turn which adds them again.
+			if !advancedPastEvent {
+				r.Timeline = append(r.Timeline, s.userCache.AnnotateWithTransactionIDs([]json.RawMessage{
+					roomEventUpdate.EventData.Event,
+				})...)
+				roomID := roomEventUpdate.RoomID()
+				sender := roomEventUpdate.EventData.Sender
+				if s.lazyCache.IsLazyLoading(roomID) && !s.lazyCache.IsSet(roomID, sender) {
+					// load the state event
+					memberEvent := s.globalCache.LoadStateEvent(context.Background(), roomID, s.loadPosition, "m.room.member", sender)
+					if memberEvent != nil {
+						r.RequiredState = append(r.RequiredState, memberEvent)
+						s.lazyCache.AddUser(roomID, sender)
+					}
+				}
+			}
 		}
 		response.Rooms[roomUpdate.RoomID()] = r
-	}
-
-	// add in initial rooms
-	rooms := s.buildRooms(ctx, builder.BuildSubscriptions())
-	for roomID, room := range rooms {
-		response.Rooms[roomID] = room
 	}
 
 	if roomUpdate != nil {

@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/matrix-org/sync-v3/sync3"
+	"github.com/tidwall/gjson"
 )
 
 type RespMatcher func(res *sync3.Response) error
@@ -41,6 +42,15 @@ func MatchInviteCount(count int) RoomMatcher {
 	return func(r sync3.Room) error {
 		if r.InvitedCount != count {
 			return fmt.Errorf("MatchInviteCount: got %v want %v", r.InvitedCount, count)
+		}
+		return nil
+	}
+}
+
+func MatchNumLive(numLive int) RoomMatcher {
+	return func(r sync3.Room) error {
+		if r.NumLive != numLive {
+			return fmt.Errorf("MatchNumLive: got %v want %v", r.NumLive, numLive)
 		}
 		return nil
 	}
@@ -95,12 +105,12 @@ func MatchRoomTimelineMostRecent(n int, events []json.RawMessage) RoomMatcher {
 	subset := events[len(events)-n:]
 	return func(r sync3.Room) error {
 		if len(r.Timeline) < len(subset) {
-			return fmt.Errorf("timeline length mismatch: got %d want at least %d", len(r.Timeline), len(subset))
+			return fmt.Errorf("MatchRoomTimelineMostRecent: timeline length mismatch: got %d want at least %d", len(r.Timeline), len(subset))
 		}
 		gotSubset := r.Timeline[len(r.Timeline)-n:]
 		for i := range gotSubset {
 			if !bytes.Equal(gotSubset[i], subset[i]) {
-				return fmt.Errorf("timeline[%d]\ngot  %v \nwant %v", i, string(r.Timeline[i]), string(events[i]))
+				return fmt.Errorf("timeline[%d]\ngot  %v \nwant %v", i, string(gotSubset[i]), string(subset[i]))
 			}
 		}
 		return nil
@@ -177,7 +187,7 @@ func MatchRoomSubscriptionsStrict(wantSubs map[string][]RoomMatcher) RespMatcher
 			}
 			for _, m := range matchers {
 				if err := m(room); err != nil {
-					return fmt.Errorf("MatchRoomSubscriptionsStrict: %s", err)
+					return fmt.Errorf("MatchRoomSubscriptionsStrict[%s]: %s", roomID, err)
 				}
 			}
 		}
@@ -376,6 +386,85 @@ func MatchV3Ops(matchOps ...OpMatcher) ListMatcher {
 			if err := matchOps[i](op); err != nil {
 				return fmt.Errorf("MatchV3Ops: op[%d](%s) - %s", i, op.Op(), err)
 			}
+		}
+		return nil
+	}
+}
+
+func MatchTyping(roomID string, wantUserIDs []string) RespMatcher {
+	return func(res *sync3.Response) error {
+		if res.Extensions.Typing == nil {
+			return fmt.Errorf("MatchTyping: no typing extension")
+		}
+		if len(res.Extensions.Typing.Rooms) == 0 || res.Extensions.Typing.Rooms[roomID] == nil {
+			return fmt.Errorf("MatchTyping: missing room %s: got %+v", roomID, res.Extensions.Typing)
+		}
+		sort.Strings(wantUserIDs)
+		ev := res.Extensions.Typing.Rooms[roomID]
+		userIDs := gjson.ParseBytes(ev).Get("content.user_ids").Array()
+		gotUserIDs := make([]string, len(userIDs))
+		for i := range userIDs {
+			gotUserIDs[i] = userIDs[i].Str
+		}
+		sort.Strings(gotUserIDs)
+		if !reflect.DeepEqual(gotUserIDs, wantUserIDs) {
+			return fmt.Errorf("MatchTyping: mismatched typing users, got %v want %v", gotUserIDs, wantUserIDs)
+		}
+		return nil
+	}
+}
+
+type Receipt struct {
+	EventID  string
+	UserID   string
+	Type     string
+	ThreadID string
+}
+
+func sortReceipts(receipts []Receipt) {
+	sort.Slice(receipts, func(i, j int) bool {
+		keyi := receipts[i].EventID + receipts[i].UserID + receipts[i].Type + receipts[i].ThreadID
+		keyj := receipts[j].EventID + receipts[j].UserID + receipts[j].Type + receipts[j].ThreadID
+		return keyi < keyj
+	})
+}
+
+func MatchReceipts(roomID string, wantReceipts []Receipt) RespMatcher {
+	return func(res *sync3.Response) error {
+		if res.Extensions.Receipts == nil {
+			return fmt.Errorf("MatchReceipts: no receipts extension")
+		}
+		if len(res.Extensions.Receipts.Rooms) == 0 || res.Extensions.Receipts.Rooms[roomID] == nil {
+			if len(wantReceipts) == 0 {
+				return nil // want nothing
+			}
+			return fmt.Errorf("MatchReceipts: missing room %s: got %+v", roomID, res.Extensions.Receipts)
+		}
+		var gotReceipts []Receipt
+		ev := res.Extensions.Receipts.Rooms[roomID]
+		gjson.ParseBytes(ev).Get("content").ForEach(func(key, value gjson.Result) bool {
+			eventID := key.Str
+			value.ForEach(func(key, value gjson.Result) bool {
+				receiptType := key.Str
+				value.ForEach(func(key, value gjson.Result) bool {
+					userID := key.Str
+					threadID := value.Get("thread_id").Str
+					gotReceipts = append(gotReceipts, Receipt{
+						EventID:  eventID,
+						UserID:   userID,
+						Type:     receiptType,
+						ThreadID: threadID,
+					})
+					return true
+				})
+				return true
+			})
+			return true
+		})
+		sortReceipts(gotReceipts)
+		sortReceipts(wantReceipts)
+		if !reflect.DeepEqual(gotReceipts, wantReceipts) {
+			return fmt.Errorf("MatchReceipts: wrong receipts, got %v want %v", gotReceipts, wantReceipts)
 		}
 		return nil
 	}

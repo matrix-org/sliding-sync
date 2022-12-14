@@ -7,6 +7,8 @@ import (
 	"testing"
 
 	"github.com/jmoiron/sqlx"
+	"github.com/tidwall/gjson"
+
 	"github.com/matrix-org/sync-v3/sqlutil"
 	"github.com/matrix-org/sync-v3/testutils"
 )
@@ -822,4 +824,66 @@ func TestEventTablePrevBatch(t *testing.T) {
 
 	// 4: SelectClosestPrevBatch with an event without a prev_batch returns nothing if there are no newer events with a prev_batch
 	assertPrevBatch(roomID1, 8, "") // query event I, returns nothing
+}
+
+func TestRemoveUnsignedTXNID(t *testing.T) {
+	db, err := sqlx.Open("postgres", postgresConnectionString)
+	if err != nil {
+		t.Fatalf("failed to open SQL db: %s", err)
+	}
+	txn, err := db.Beginx()
+	if err != nil {
+		t.Fatalf("failed to start txn: %s", err)
+	}
+	defer txn.Rollback()
+	alice := "@TestRemoveUnsignedTXNID_alice:localhost"
+	roomID1 := "!1:localhost"
+
+	events := []Event{
+		{ // field should be removed
+			ID:     "$A",
+			RoomID: roomID1,
+			JSON: testutils.NewJoinEvent(t, alice,
+				testutils.WithUnsigned(map[string]interface{}{
+					"prev_content": map[string]interface{}{
+						"membership": "invite",
+					},
+					"txn_id": "randomTxnID",
+				}),
+			),
+		},
+		{ // non-existent field should not result in an error
+			ID:     "$B",
+			RoomID: roomID1,
+			JSON: testutils.NewJoinEvent(t, alice,
+				testutils.WithUnsigned(map[string]interface{}{
+					"prev_content": map[string]interface{}{
+						"membership": "join",
+					},
+				}),
+			),
+		},
+	}
+
+	table := NewEventTable(db)
+
+	// Insert the events
+	_, err = table.Insert(txn, events, false)
+	if err != nil {
+		t.Errorf("failed to insert event: %s", err)
+	}
+
+	// Get the inserted events
+	gotEvents, err := table.SelectByIDs(txn, false, []string{"$A", "$B"})
+	if err != nil {
+		t.Fatalf("failed to select events: %s", err)
+	}
+
+	// None of the events should have a `unsigned.txn_id` field
+	for _, ev := range gotEvents {
+		jsonTXNId := gjson.GetBytes(ev.JSON, "unsigned.txn_id")
+		if jsonTXNId.Exists() {
+			t.Fatalf("expected unsigned.txn_id to be removed, got '%s'", jsonTXNId.String())
+		}
+	}
 }

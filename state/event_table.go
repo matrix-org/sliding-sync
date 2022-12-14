@@ -7,9 +7,11 @@ import (
 
 	"github.com/jmoiron/sqlx"
 	"github.com/lib/pq"
+	"github.com/tidwall/gjson"
+	"github.com/tidwall/sjson"
+
 	"github.com/matrix-org/sync-v3/internal"
 	"github.com/matrix-org/sync-v3/sqlutil"
-	"github.com/tidwall/gjson"
 )
 
 const (
@@ -124,7 +126,7 @@ func NewEventTable(db *sqlx.DB) *EventTable {
 	-- index for querying membership deltas in particular rooms
 	CREATE INDEX IF NOT EXISTS syncv3_events_type_room_nid_idx ON syncv3_events(event_type, room_id, event_nid);
 	-- index for querying events in a given room
-	CREATE INDEX IF NOT EXISTS syncv3_nid_room_idx ON syncv3_events(event_nid, room_id, is_state);
+	CREATE INDEX IF NOT EXISTS syncv3_nid_room_state_idx ON syncv3_events(room_id, event_nid, is_state);
 	`)
 	return &EventTable{db}
 }
@@ -146,6 +148,16 @@ func (t *EventTable) Insert(txn *sqlx.Tx, events []Event, checkFields bool) (map
 		ensureFieldsSet(events)
 	}
 	result := make(map[string]int)
+	for i := range events {
+		if !gjson.GetBytes(events[i].JSON, "unsigned.txn_id").Exists() {
+			continue
+		}
+		js, err := sjson.DeleteBytes(events[i].JSON, "unsigned.txn_id")
+		if err != nil {
+			return nil, err
+		}
+		events[i].JSON = js
+	}
 	chunks := sqlutil.Chunkify(8, MaxPostgresParameters, EventChunker(events))
 	var eventID string
 	var eventNID int
@@ -281,9 +293,9 @@ func (t *EventTable) SelectLatestEventsBetween(txn *sqlx.Tx, roomID string, lowe
 	return events, err
 }
 
-func (t *EventTable) selectLatestEventInAllRooms() ([]Event, error) {
+func (t *EventTable) selectLatestEventInAllRooms(txn *sqlx.Tx) ([]Event, error) {
 	result := []Event{}
-	rows, err := t.db.Query(
+	rows, err := txn.Query(
 		`SELECT room_id, event FROM syncv3_events WHERE event_nid in (SELECT MAX(event_nid) FROM syncv3_events GROUP BY room_id)`,
 	)
 	if err != nil {

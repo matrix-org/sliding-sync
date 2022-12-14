@@ -30,6 +30,29 @@ func NewJoinedRoomsTracker() *JoinedRoomsTracker {
 	}
 }
 
+// Startup efficiently sets up the joined rooms tracker, but isn't safe to call with live traffic,
+// as it replaces all known in-memory state. Panics if called on a non-empty tracker.
+func (t *JoinedRoomsTracker) Startup(roomToJoinedUsers map[string][]string) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if len(t.roomIDToJoinedUsers) > 0 || len(t.userIDToJoinedRooms) > 0 {
+		panic("programming error: cannot call JoinedRoomsTracker.Startup with existing data already set!")
+	}
+	for roomID, userIDs := range roomToJoinedUsers {
+		userSet := make(set)
+		for _, u := range userIDs {
+			userSet[u] = struct{}{}
+			rooms := t.userIDToJoinedRooms[u]
+			if rooms == nil {
+				rooms = make(set)
+			}
+			rooms[roomID] = struct{}{}
+			t.userIDToJoinedRooms[u] = rooms
+		}
+		t.roomIDToJoinedUsers[roomID] = userSet
+	}
+}
+
 func (t *JoinedRoomsTracker) IsUserJoined(userID, roomID string) bool {
 	t.mu.RLock()
 	defer t.mu.RUnlock()
@@ -44,28 +67,45 @@ func (t *JoinedRoomsTracker) IsUserJoined(userID, roomID string) bool {
 
 // returns true if the state changed
 func (t *JoinedRoomsTracker) UserJoinedRoom(userID, roomID string) bool {
+	u := make([]string, 1, 1)
+	u[0] = userID
+	return t.UsersJoinedRoom(u, roomID)
+}
+
+// returns true if the state changed for any user in userIDs
+func (t *JoinedRoomsTracker) UsersJoinedRoom(userIDs []string, roomID string) bool {
 	t.mu.Lock()
 	defer t.mu.Unlock()
-	wasJoined := false
+	wasJoined := true
 	users := t.roomIDToJoinedUsers[roomID]
-	for u := range users {
-		if u == userID {
-			wasJoined = true
+	for _, newlyJoinedUser := range userIDs {
+		_, exists := users[newlyJoinedUser]
+		if !exists {
+			wasJoined = false
+			break
 		}
 	}
-	joinedRooms := t.userIDToJoinedRooms[userID]
-	if joinedRooms == nil {
-		joinedRooms = make(set)
-	}
+
+	// pull out room specific structs
 	joinedUsers := t.roomIDToJoinedUsers[roomID]
 	if joinedUsers == nil {
 		joinedUsers = make(set)
 	}
 	invitedUsers := t.roomIDToInvitedUsers[roomID]
-	delete(invitedUsers, userID)
-	joinedRooms[roomID] = struct{}{}
-	joinedUsers[userID] = struct{}{}
-	t.userIDToJoinedRooms[userID] = joinedRooms
+
+	// loop user specific structs
+	for _, newlyJoinedUser := range userIDs {
+		joinedRooms := t.userIDToJoinedRooms[newlyJoinedUser]
+		if joinedRooms == nil {
+			joinedRooms = make(set)
+		}
+
+		delete(invitedUsers, newlyJoinedUser)
+		joinedRooms[roomID] = struct{}{}
+		joinedUsers[newlyJoinedUser] = struct{}{}
+		t.userIDToJoinedRooms[newlyJoinedUser] = joinedRooms
+	}
+
 	t.roomIDToJoinedUsers[roomID] = joinedUsers
 	t.roomIDToInvitedUsers[roomID] = invitedUsers
 	return !wasJoined
@@ -100,32 +140,38 @@ func (t *JoinedRoomsTracker) JoinedRoomsForUser(userID string) []string {
 	}
 	return result
 }
-func (t *JoinedRoomsTracker) JoinedUsersForRoom(roomID string) []string {
+
+// JoinedUsersForRoom returns the joined users in the given room, filtered by the filter function if provided. If one is not
+// provided, all joined users are returned. Returns the join count at the time this function was called.
+func (t *JoinedRoomsTracker) JoinedUsersForRoom(roomID string, filter func(userID string) bool) (matchedUserIDs []string, joinCount int) {
 	t.mu.RLock()
 	defer t.mu.RUnlock()
 	users := t.roomIDToJoinedUsers[roomID]
 	if users == nil || len(users) == 0 {
-		return nil
+		return nil, 0
 	}
 	n := len(users)
-	i := 0
-	result := make([]string, n)
-	for userID := range users {
-		result[i] = userID
-		i++
+	if filter == nil {
+		filter = func(userID string) bool { return true }
 	}
-	return result
+	for userID := range users {
+		if filter(userID) {
+			matchedUserIDs = append(matchedUserIDs, userID)
+		}
+	}
+	return matchedUserIDs, n
 }
 
-// Returns the new invite count
-func (t *JoinedRoomsTracker) UserInvitedToRoom(userID, roomID string) {
+func (t *JoinedRoomsTracker) UsersInvitedToRoom(userIDs []string, roomID string) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	users := t.roomIDToInvitedUsers[roomID]
 	if users == nil {
 		users = make(set)
 	}
-	users[userID] = struct{}{}
+	for _, userID := range userIDs {
+		users[userID] = struct{}{}
+	}
 	t.roomIDToInvitedUsers[roomID] = users
 }
 

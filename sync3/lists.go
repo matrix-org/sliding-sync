@@ -69,9 +69,12 @@ func (s *InternalRequestLists) SetRoom(r RoomConnMetadata) (delta RoomDelta) {
 			strings.Trim(internal.CalculateRoomName(&r.RoomMetadata, 5), "#!():_@"),
 		)
 	}
+	// filter.Include may call on this room ID in the RoomFinder, so make sure it finds it.
+	s.allRooms[r.RoomID] = r
+
 	for i := range s.lists {
 		_, alreadyExists := s.lists[i].roomIDToIndex[r.RoomID]
-		shouldExist := s.lists[i].filter.Include(&r)
+		shouldExist := s.lists[i].filter.Include(&r, s)
 		if shouldExist && r.HasLeft {
 			shouldExist = false
 		}
@@ -97,7 +100,6 @@ func (s *InternalRequestLists) SetRoom(r RoomConnMetadata) (delta RoomDelta) {
 			} // else it doesn't exist and it shouldn't exist, so do nothing e.g room isn't relevant to this list
 		}
 	}
-	s.allRooms[r.RoomID] = r
 	return delta
 }
 

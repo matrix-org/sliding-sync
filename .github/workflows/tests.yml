@@ -104,3 +104,36 @@ jobs:
                   SYNCV3_DB: user=postgres dbname=syncv3 sslmode=disable password=postgres host=localhost
                   SYNCV3_SERVER: http://localhost:8008
                   SYNCV3_SECRET: itsasecret
+    element_web:
+        runs-on: ubuntu-latest
+        steps:
+            - uses: actions/checkout@v2
+            - name: "Build docker image"
+              run: docker build -f Dockerfile -t ghcr.io/matrix-org/sliding-sync-proxy:ci  .
+            - uses: actions/checkout@v2
+              with:
+                repository: matrix-org/matrix-react-sdk
+            - uses: actions/setup-node@v3
+              with:
+                cache: 'yarn'
+            - name: Fetch layered build
+              run: scripts/ci/layered.sh
+            - name: Copy config
+              run: cp element.io/develop/config.json config.json
+              working-directory: ./element-web
+            - name: Build
+              env:
+                CI_PACKAGE: true
+              run: yarn build
+              working-directory: ./element-web
+            - name: "Run cypress tests"
+              uses: cypress-io/github-action@v4.1.1
+              with:
+                browser: chrome
+                start: npx serve -p 8080 ./element-web/webapp
+                wait-on: 'http://localhost:8080'
+                spec: cypress/e2e/sliding-sync/*.ts
+              env:
+                PUPPETEER_SKIP_CHROMIUM_DOWNLOAD: true
+                TMPDIR: ${{ runner.temp }}
+                CYPRESS_SLIDING_SYNC_PROXY_TAG: 'ci'

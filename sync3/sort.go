@@ -95,6 +95,8 @@ func (s *SortableRooms) Sort(sortBy []string) error {
 			comparators = append(comparators, s.comparatorSortByName)
 		case SortByRecency:
 			comparators = append(comparators, s.comparatorSortByRecency)
+		case SortByNotificationLevel:
+			comparators = append(comparators, s.comparatorSortByNotificationLevel)
 		default:
 			return fmt.Errorf("unknown sort order: %s", sort)
 		}
@@ -160,6 +162,39 @@ func (s *SortableRooms) comparatorSortByHighlightCount(i, j int) int {
 	return -1
 }
 
+func (s *SortableRooms) comparatorSortByNotificationLevel(i, j int) int {
+	ri, rj := s.resolveRooms(i, j)
+	// highlight rooms come first
+	if ri.HighlightCount > 0 && rj.HighlightCount > 0 {
+		return 0
+	}
+	if ri.HighlightCount > 0 {
+		return 1
+	} else if rj.HighlightCount > 0 {
+		return -1
+	}
+
+	// then notification count
+	if ri.NotificationCount > 0 && rj.NotificationCount > 0 {
+		// when we are comparing rooms with notif counts, sort encrypted rooms above unencrypted rooms
+		// as the client needs to calculate highlight counts (so it's possible that notif counts are
+		// actually highlight counts!) - this is the "Lite" description in MSC3575
+		if ri.Encrypted && !rj.Encrypted {
+			return 1
+		} else if rj.Encrypted && !ri.Encrypted {
+			return -1
+		}
+		return 0
+	}
+	if ri.NotificationCount > 0 {
+		return 1
+	} else if rj.NotificationCount > 0 {
+		return -1
+	}
+	// no highlight or notifs get grouped together
+	return 0
+}
+
 func (s *SortableRooms) comparatorSortByNotificationCount(i, j int) int {
 	ri, rj := s.resolveRooms(i, j)
 	if ri.NotificationCount == rj.NotificationCount {
@@ -185,7 +220,7 @@ func NewFilteredSortableRooms(finder RoomFinder, roomIDs []string, filter *Reque
 	}
 	for _, roomID := range roomIDs {
 		r := finder.Room(roomID)
-		if filter.Include(r) {
+		if filter.Include(r, finder) {
 			filteredRooms = append(filteredRooms, roomID)
 		}
 	}
@@ -197,7 +232,7 @@ func NewFilteredSortableRooms(finder RoomFinder, roomIDs []string, filter *Reque
 
 func (f *FilteredSortableRooms) Add(roomID string) bool {
 	r := f.finder.Room(roomID)
-	if !f.filter.Include(r) {
+	if !f.filter.Include(r, f.finder) {
 		return false
 	}
 	return f.SortableRooms.Add(roomID)

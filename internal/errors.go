@@ -17,6 +17,7 @@ var logger = zerolog.New(os.Stdout).With().Timestamp().Logger().Output(zerolog.C
 type HandlerError struct {
 	StatusCode int
 	Err        error
+	ErrCode    string
 }
 
 func (e *HandlerError) Error() string {
@@ -24,13 +25,25 @@ func (e *HandlerError) Error() string {
 }
 
 type jsonError struct {
-	Err string `json:"error"`
+	Err  string `json:"error"`
+	Code string `json:"errcode,omitempty"`
 }
 
 func (e HandlerError) JSON() []byte {
-	je := jsonError{e.Error()}
+	je := jsonError{
+		Err:  e.Error(),
+		Code: e.ErrCode,
+	}
 	b, _ := json.Marshal(je)
 	return b
+}
+
+func ExpiredSessionError() *HandlerError {
+	return &HandlerError{
+		StatusCode: 400,
+		Err:        fmt.Errorf("session expired"),
+		ErrCode:    "M_UNKNOWN_POS",
+	}
 }
 
 // Assert that the expression is true, similar to assert() in C. If expr is false, print or panic.
@@ -44,9 +57,12 @@ func (e HandlerError) JSON() []byte {
 // whenever a programming or logic error occurs.
 //
 // The msg provided should be the expectation of the assert e.g:
-//   Assert("list is not empty", len(list) > 0)
+//
+//	Assert("list is not empty", len(list) > 0)
+//
 // Which then produces:
-//   assertion failed: list is not empty
+//
+//	assertion failed: list is not empty
 func Assert(msg string, expr bool) {
 	if expr {
 		return

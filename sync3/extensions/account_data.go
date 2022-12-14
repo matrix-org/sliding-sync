@@ -69,10 +69,10 @@ func ProcessLiveAccountData(up caches.Update, store *state.Storage, updateWillRe
 	return nil
 }
 
-func ProcessAccountData(store *state.Storage, listRoomIDs map[string]struct{}, userID string, isInitial bool, req *AccountDataRequest) (res *AccountDataResponse) {
-	roomIDs := make([]string, len(listRoomIDs))
+func ProcessAccountData(store *state.Storage, roomIDToTimeline map[string][]string, userID string, isInitial bool, req *AccountDataRequest) (res *AccountDataResponse) {
+	roomIDs := make([]string, len(roomIDToTimeline))
 	i := 0
-	for roomID := range listRoomIDs {
+	for roomID := range roomIDToTimeline {
 		roomIDs[i] = roomID
 		i++
 	}

@@ -2,6 +2,7 @@ package syncv3_test
 
 import (
 	"testing"
+	"time"
 
 	"github.com/matrix-org/sync-v3/sync3"
 	"github.com/matrix-org/sync-v3/testutils/m"
@@ -9,14 +10,15 @@ import (
 
 // Make this graph:
 //
-//      A       D      <-- parents
-//   .--`--.    |
-//   B     C    E   F  <-- children
+//	   A       D      <-- parents
+//	.--`--.    |
+//	B     C    E   F  <-- children
 //
 // and query:
-//  spaces[A] => B,C
-//  spaces[D] => E
-//  spaces[A,B] => B,C,E
+//
+//	spaces[A] => B,C
+//	spaces[D] => E
+//	spaces[A,B] => B,C,E
 func TestSpacesFilter(t *testing.T) {
 	alice := registerNewUser(t)
 	parentA := alice.CreateRoom(t, map[string]interface{}{
@@ -65,6 +67,7 @@ func TestSpacesFilter(t *testing.T) {
 			"via": []string{"example.com"},
 		},
 	})
+	time.Sleep(100 * time.Millisecond) // let the proxy process this
 
 	doSpacesListRequest := func(spaces []string, pos *string, listMatchers ...m.ListMatcher) *sync3.Response {
 		t.Helper()
@@ -120,6 +123,7 @@ func TestSpacesFilter(t *testing.T) {
 			"via": []string{"example.com"},
 		},
 	})
+	time.Sleep(100 * time.Millisecond) // let the proxy process this
 	doInitialSpacesListRequest([]string{parentD}, []string{roomF, roomE})
 
 	// now remove B and re-query A
@@ -128,6 +132,7 @@ func TestSpacesFilter(t *testing.T) {
 		StateKey: &roomB,
 		Content:  map[string]interface{}{},
 	})
+	time.Sleep(100 * time.Millisecond) // let the proxy process this
 	res := doInitialSpacesListRequest([]string{parentA}, []string{roomC})
 
 	// now live stream an update to ensure it gets added
@@ -138,6 +143,7 @@ func TestSpacesFilter(t *testing.T) {
 			"via": []string{"example.com"},
 		},
 	})
+	time.Sleep(100 * time.Millisecond) // let the proxy process this
 	res = doSpacesListRequest([]string{parentA}, &res.Pos,
 		m.MatchV3Count(2), m.MatchV3Ops(
 			m.MatchV3DeleteOp(1),

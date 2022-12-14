@@ -1,6 +1,7 @@
 package sync2
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -12,7 +13,184 @@ import (
 	"github.com/rs/zerolog"
 )
 
-var txnIDCache = NewTransactionIDCache()
+// Tests that EnsurePolling works in the happy case
+func TestPollerMapEnsurePolling(t *testing.T) {
+	nextSince := "next"
+	roomID := "!foo:bar"
+	roomState := []json.RawMessage{
+		json.RawMessage(`{"event":1}`),
+		json.RawMessage(`{"event":2}`),
+		json.RawMessage(`{"event":3}`),
+	}
+	initialResponse := &SyncResponse{
+		NextBatch: nextSince,
+		Rooms: struct {
+			Join   map[string]SyncV2JoinResponse   `json:"join"`
+			Invite map[string]SyncV2InviteResponse `json:"invite"`
+			Leave  map[string]SyncV2LeaveResponse  `json:"leave"`
+		}{
+			Join: map[string]SyncV2JoinResponse{
+				roomID: {
+					State: EventsResponse{
+						Events: roomState,
+					},
+				},
+			},
+		},
+	}
+	syncRequests := make(chan string)
+	syncResponses := make(chan *SyncResponse)
+	accumulator, client := newMocks(func(authHeader, since string) (*SyncResponse, int, error) {
+		syncRequests <- since
+		return <-syncResponses, 200, nil
+	})
+	accumulator.incomingProcess = make(chan struct{})
+	accumulator.unblockProcess = make(chan struct{})
+	pm := NewPollerMap(client, false)
+	pm.SetCallbacks(accumulator)
+
+	ensurePollingUnblocked := make(chan struct{})
+	go func() {
+		pm.EnsurePolling("access_token", "@alice:localhost", "FOOBAR", "", zerolog.New(os.Stderr))
+		close(ensurePollingUnblocked)
+	}()
+	ensureBlocking := func() {
+		select {
+		case <-ensurePollingUnblocked:
+			t.Fatalf("EnsurePolling unblocked")
+		default:
+		}
+	}
+
+	// wait until we get a /sync request
+	since := <-syncRequests
+	if since != "" {
+		t.Fatalf("/sync not made with empty since token, got %v", since)
+	}
+
+	// make sure we're still blocking
+	ensureBlocking()
+
+	// respond to the /sync request
+	syncResponses <- initialResponse
+
+	// make sure we're still blocking
+	ensureBlocking()
+
+	// wait until we are processing the state response
+	<-accumulator.incomingProcess
+
+	// make sure we're still blocking
+	ensureBlocking()
+
+	// finish processing
+	accumulator.unblockProcess <- struct{}{}
+
+	// make sure we unblock
+	select {
+	case <-ensurePollingUnblocked:
+	case <-time.After(time.Second):
+		t.Fatalf("EnsurePolling did not unblock after 1s")
+	}
+}
+
+func TestPollerMapEnsurePollingIdempotent(t *testing.T) {
+	nextSince := "next"
+	roomID := "!foo:bar"
+	roomState := []json.RawMessage{
+		json.RawMessage(`{"event":1}`),
+		json.RawMessage(`{"event":2}`),
+		json.RawMessage(`{"event":3}`),
+	}
+	initialResponse := &SyncResponse{
+		NextBatch: nextSince,
+		Rooms: struct {
+			Join   map[string]SyncV2JoinResponse   `json:"join"`
+			Invite map[string]SyncV2InviteResponse `json:"invite"`
+			Leave  map[string]SyncV2LeaveResponse  `json:"leave"`
+		}{
+			Join: map[string]SyncV2JoinResponse{
+				roomID: {
+					State: EventsResponse{
+						Events: roomState,
+					},
+				},
+			},
+		},
+	}
+	syncRequests := make(chan string)
+	syncResponses := make(chan *SyncResponse)
+	accumulator, client := newMocks(func(authHeader, since string) (*SyncResponse, int, error) {
+		syncRequests <- since
+		return <-syncResponses, 200, nil
+	})
+	accumulator.incomingProcess = make(chan struct{})
+	accumulator.unblockProcess = make(chan struct{})
+	pm := NewPollerMap(client, false)
+	pm.SetCallbacks(accumulator)
+
+	ensurePollingUnblocked := make(chan struct{})
+	var wg sync.WaitGroup
+	n := 3
+	wg.Add(n)
+	for i := 0; i < n; i++ {
+		go func() {
+			t.Logf("EnsurePolling")
+			pm.EnsurePolling("access_token", "@alice:localhost", "FOOBAR", "", zerolog.New(os.Stderr))
+			wg.Done()
+			t.Logf("EnsurePolling unblocked")
+		}()
+	}
+	go func() {
+		wg.Wait()
+		close(ensurePollingUnblocked)
+		t.Logf("EnsurePolling all unblocked")
+	}()
+	ensureBlocking := func() {
+		select {
+		case <-ensurePollingUnblocked:
+			t.Fatalf("EnsurePolling unblocked")
+		default:
+			t.Logf("EnsurePolling still blocking")
+		}
+	}
+
+	// wait until we get a /sync request
+	since := <-syncRequests
+	if since != "" {
+		t.Fatalf("/sync not made with empty since token, got %v", since)
+	}
+	t.Logf("Recv /sync request")
+
+	// make sure we're still blocking
+	ensureBlocking()
+
+	// respond to the /sync request
+	syncResponses <- initialResponse
+	t.Logf("Responded to /sync request")
+
+	// make sure we're still blocking
+	ensureBlocking()
+
+	// wait until we are processing the state response
+	<-accumulator.incomingProcess
+	t.Logf("Processing response...")
+
+	// make sure we're still blocking
+	ensureBlocking()
+
+	// finish processing
+	accumulator.unblockProcess <- struct{}{}
+	t.Logf("Processed response.")
+
+	// make sure we unblock
+	select {
+	case <-ensurePollingUnblocked:
+	case <-time.After(time.Second):
+		t.Fatalf("EnsurePolling did not unblock after 1s")
+	}
+	t.Logf("EnsurePolling unblocked")
+}
 
 // Check that a call to Poll starts polling and accumulating, and terminates on 401s.
 func TestPollerPollFromNothing(t *testing.T) {
@@ -46,7 +224,7 @@ func TestPollerPollFromNothing(t *testing.T) {
 	})
 	var wg sync.WaitGroup
 	wg.Add(1)
-	poller := NewPoller("@alice:localhost", "Authorization: hello world", deviceID, client, accumulator, txnIDCache, zerolog.New(os.Stderr))
+	poller := newPoller("@alice:localhost", "Authorization: hello world", deviceID, client, accumulator, zerolog.New(os.Stderr))
 	go func() {
 		defer wg.Done()
 		poller.Poll("")
@@ -129,7 +307,7 @@ func TestPollerPollFromExisting(t *testing.T) {
 	})
 	var wg sync.WaitGroup
 	wg.Add(1)
-	poller := NewPoller("@alice:localhost", "Authorization: hello world", deviceID, client, accumulator, txnIDCache, zerolog.New(os.Stderr))
+	poller := newPoller("@alice:localhost", "Authorization: hello world", deviceID, client, accumulator, zerolog.New(os.Stderr))
 	go func() {
 		defer wg.Done()
 		poller.Poll(since)
@@ -205,7 +383,7 @@ func TestPollerBackoff(t *testing.T) {
 	}
 	var wg sync.WaitGroup
 	wg.Add(1)
-	poller := NewPoller("@alice:localhost", "Authorization: hello world", deviceID, client, accumulator, txnIDCache, zerolog.New(os.Stderr))
+	poller := newPoller("@alice:localhost", "Authorization: hello world", deviceID, client, accumulator, zerolog.New(os.Stderr))
 	go func() {
 		defer wg.Done()
 		poller.Poll("some_since_value")
@@ -217,7 +395,6 @@ func TestPollerBackoff(t *testing.T) {
 	wg.Wait()
 	select {
 	case <-hasPolledSuccessfully:
-		t.Errorf("WaitUntilInitialSync fired incorrectly")
 	case <-time.After(100 * time.Millisecond):
 		break
 	}
@@ -226,11 +403,46 @@ func TestPollerBackoff(t *testing.T) {
 	}
 }
 
+// Regression test to make sure that if you start polling with an invalid token, we do end up unblocking WaitUntilInitialSync
+// and don't end up blocking forever.
+func TestPollerUnblocksIfTerminatedInitially(t *testing.T) {
+	deviceID := "FOOBAR"
+	accumulator, client := newMocks(func(authHeader, since string) (*SyncResponse, int, error) {
+		return nil, 401, fmt.Errorf("terminated")
+	})
+
+	pollUnblocked := make(chan struct{})
+	waitUntilInitialSyncUnblocked := make(chan struct{})
+	poller := newPoller("@alice:localhost", "Authorization: hello world", deviceID, client, accumulator, zerolog.New(os.Stderr))
+	go func() {
+		poller.Poll("")
+		close(pollUnblocked)
+	}()
+	go func() {
+		poller.WaitUntilInitialSync()
+		close(waitUntilInitialSyncUnblocked)
+	}()
+
+	select {
+	case <-pollUnblocked:
+		break
+	case <-time.After(time.Second):
+		t.Errorf("Poll() did not unblock")
+	}
+
+	select {
+	case <-waitUntilInitialSyncUnblocked:
+		break
+	case <-time.After(time.Second):
+		t.Errorf("WaitUntilInitialSync() did not unblock")
+	}
+}
+
 type mockClient struct {
 	fn func(authHeader, since string) (*SyncResponse, int, error)
 }
 
-func (c *mockClient) DoSyncV2(authHeader, since string, isFirst bool) (*SyncResponse, int, error) {
+func (c *mockClient) DoSyncV2(ctx context.Context, authHeader, since string, isFirst bool) (*SyncResponse, int, error) {
 	return c.fn(authHeader, since)
 }
 func (c *mockClient) WhoAmI(authHeader string) (string, error) {
@@ -241,15 +453,23 @@ type mockDataReceiver struct {
 	states          map[string][]json.RawMessage
 	timelines       map[string][]json.RawMessage
 	deviceIDToSince map[string]string
+	incomingProcess chan struct{}
+	unblockProcess  chan struct{}
 }
 
-func (a *mockDataReceiver) Accumulate(roomID, prevBatch string, timeline []json.RawMessage) {
+func (a *mockDataReceiver) Accumulate(userID, roomID, prevBatch string, timeline []json.RawMessage) {
 	a.timelines[roomID] = append(a.timelines[roomID], timeline...)
 }
 func (a *mockDataReceiver) Initialise(roomID string, state []json.RawMessage) {
 	a.states[roomID] = state
+	if a.incomingProcess != nil {
+		a.incomingProcess <- struct{}{}
+	}
+	if a.unblockProcess != nil {
+		<-a.unblockProcess
+	}
 }
-func (a *mockDataReceiver) SetTyping(roomID string, userIDs []string) {
+func (a *mockDataReceiver) SetTyping(roomID string, ephEvent json.RawMessage) {
 }
 func (s *mockDataReceiver) UpdateDeviceSince(deviceID, since string) {
 	s.deviceIDToSince[deviceID] = since
@@ -259,9 +479,13 @@ func (s *mockDataReceiver) AddToDeviceMessages(userID, deviceID string, msgs []j
 
 func (s *mockDataReceiver) UpdateUnreadCounts(roomID, userID string, highlightCount, notifCount *int) {
 }
-func (s *mockDataReceiver) OnAccountData(userID, roomID string, events []json.RawMessage) {}
-func (s *mockDataReceiver) OnInvite(userID, roomID string, inviteState []json.RawMessage) {}
-func (s *mockDataReceiver) OnLeftRoom(userID, roomID string)                              {}
+func (s *mockDataReceiver) OnAccountData(userID, roomID string, events []json.RawMessage)          {}
+func (s *mockDataReceiver) OnReceipt(userID, roomID, ephEvenType string, ephEvent json.RawMessage) {}
+func (s *mockDataReceiver) OnInvite(userID, roomID string, inviteState []json.RawMessage)          {}
+func (s *mockDataReceiver) OnLeftRoom(userID, roomID string)                                       {}
+func (s *mockDataReceiver) OnE2EEData(userID, deviceID string, otkCounts map[string]int, fallbackKeyTypes []string, deviceListChanges map[string]int) {
+}
+func (s *mockDataReceiver) OnTerminated(userID, deviceID string) {}
 
 func newMocks(doSyncV2 func(authHeader, since string) (*SyncResponse, int, error)) (*mockDataReceiver, *mockClient) {
 	client := &mockClient{

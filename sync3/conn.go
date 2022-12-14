@@ -110,10 +110,7 @@ func (c *Conn) OnIncomingRequest(ctx context.Context, req *Request) (resp *Respo
 	if !isFirstRequest && !isRetransmit && !c.isOutstanding(req.pos) {
 		// the client made up a position, reject them
 		logger.Trace().Int64("pos", req.pos).Msg("unknown pos")
-		return nil, &internal.HandlerError{
-			StatusCode: 400,
-			Err:        fmt.Errorf("unknown position: %d", req.pos),
-		}
+		return nil, internal.ExpiredSessionError()
 	}
 
 	// purge the response buffer based on the client's new position. Higher pos values are later.

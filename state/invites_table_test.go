@@ -58,6 +58,13 @@ func TestInviteTable(t *testing.T) {
 	if !reflect.DeepEqual(invites[roomA], inviteStateB) {
 		t.Errorf("room %s got %s want %s", roomA, jsonArrStr(invites[roomA]), jsonArrStr(inviteStateB))
 	}
+	bobInvite, err := table.SelectInviteState(bob, roomA)
+	if err != nil {
+		t.Fatalf("failed to SelectInviteState: %s", err)
+	}
+	if !reflect.DeepEqual(bobInvite, inviteStateB) {
+		t.Errorf("SelectInviteState: got %v want %v", bobInvite, inviteStateB)
+	}
 
 	// Assert no-ones invites
 	invites, err = table.SelectAllInvitesForUser("no one")

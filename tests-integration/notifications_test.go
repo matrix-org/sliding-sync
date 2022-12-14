@@ -61,26 +61,13 @@ func TestNotificationsOnTop(t *testing.T) {
 			RoomSubscription: sync3.RoomSubscription{
 				TimelineLimit: int64(100),
 			},
-			// prefer highlight count first, THEN eventually recency
-			Sort: []string{sync3.SortByHighlightCount, sync3.SortByNotificationCount, sync3.SortByRecency},
+			// prefer highlights/notifs/rest, and group them by recency not counts count first, THEN eventually recency
+			Sort: []string{sync3.SortByNotificationLevel, sync3.SortByRecency},
 		}},
 	}
 	res := v3.mustDoV3Request(t, aliceToken, syncRequestBody)
 	m.MatchResponse(t, res, m.MatchList(0, m.MatchV3Count(len(allRooms)), m.MatchV3Ops(
-		m.MatchV3SyncOpFn(func(op *sync3.ResponseOpRange) error {
-			if len(op.RoomIDs) != len(allRooms) {
-				return fmt.Errorf("want %d rooms, got %d", len(allRooms), len(op.RoomIDs))
-			}
-			for i := range allRooms {
-				err := allRooms[i].MatchRoom(op.RoomIDs[i],
-					res.Rooms[op.RoomIDs[i]],
-				)
-				if err != nil {
-					return err
-				}
-			}
-			return nil
-		}),
+		m.MatchV3SyncOp(0, int64(len(allRooms)-1), []string{noBingRoomID, bingRoomID}),
 	)))
 
 	// send a bing message into the bing room, make sure it comes through and is on top
@@ -139,7 +126,7 @@ func TestNotificationsOnTop(t *testing.T) {
 				TimelineLimit: int64(100),
 			},
 			// prefer highlight count first, THEN eventually recency
-			Sort: []string{sync3.SortByHighlightCount, sync3.SortByNotificationCount, sync3.SortByRecency},
+			Sort: []string{sync3.SortByNotificationLevel, sync3.SortByRecency},
 		}},
 	})
 	m.MatchResponse(t, res, m.MatchList(0, m.MatchV3Count(len(allRooms)), m.MatchV3Ops(

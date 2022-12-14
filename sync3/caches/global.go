@@ -24,6 +24,7 @@ type EventData struct {
 	StateKey  *string
 	Content   gjson.Result
 	Timestamp uint64
+	Sender    string
 
 	// the number of joined users in this room. Use this value and don't try to work it out as you
 	// may get it wrong due to Synapse sending duplicate join events(!) This value has them de-duped
@@ -120,8 +121,23 @@ func (c *GlobalCache) LoadJoinedRooms(userID string) (pos int64, joinedRooms map
 	return initialLoadPosition, rooms, nil
 }
 
+func (c *GlobalCache) LoadStateEvent(ctx context.Context, roomID string, loadPosition int64, evType, stateKey string) json.RawMessage {
+	roomIDToStateEvents, err := c.store.RoomStateAfterEventPosition(ctx, []string{roomID}, loadPosition, map[string][]string{
+		evType: {stateKey},
+	})
+	if err != nil {
+		logger.Err(err).Str("room", roomID).Int64("pos", loadPosition).Msg("failed to load room state")
+		return nil
+	}
+	events := roomIDToStateEvents[roomID]
+	if len(events) > 0 {
+		return events[0].JSON
+	}
+	return nil
+}
+
 // TODO: remove? Doesn't touch global cache fields
-func (c *GlobalCache) LoadRoomState(ctx context.Context, roomIDs []string, loadPosition int64, requiredStateMap *internal.RequiredStateMap) map[string][]json.RawMessage {
+func (c *GlobalCache) LoadRoomState(ctx context.Context, roomIDs []string, loadPosition int64, requiredStateMap *internal.RequiredStateMap, roomToUsersInTimeline map[string][]string) map[string][]json.RawMessage {
 	if c.store == nil {
 		return nil
 	}
@@ -136,6 +152,13 @@ func (c *GlobalCache) LoadRoomState(ctx context.Context, roomIDs []string, loadP
 		for _, ev := range stateEvents {
 			if requiredStateMap.Include(ev.Type, ev.StateKey) {
 				result = append(result, ev.JSON)
+			} else if requiredStateMap.IsLazyLoading() {
+				usersInTimeline := roomToUsersInTimeline[roomID]
+				for _, userID := range usersInTimeline {
+					if ev.StateKey == userID {
+						result = append(result, ev.JSON)
+					}
+				}
 			}
 		}
 		resultMap[roomID] = result
@@ -184,6 +207,25 @@ func (c *GlobalCache) Startup(roomIDToMetadata map[string]internal.RoomMetadata)
 // Listener function called by dispatcher below
 // =================================================
 
+func (c *GlobalCache) OnEphemeralEvent(roomID string, ephEvent json.RawMessage) {
+	evType := gjson.ParseBytes(ephEvent).Get("type").Str
+	c.roomIDToMetadataMu.Lock()
+	defer c.roomIDToMetadataMu.Unlock()
+	metadata := c.roomIDToMetadata[roomID]
+	if metadata == nil {
+		metadata = &internal.RoomMetadata{
+			RoomID:          roomID,
+			ChildSpaceRooms: make(map[string]struct{}),
+		}
+	}
+
+	switch evType {
+	case "m.typing":
+		metadata.TypingEvent = ephEvent
+	}
+	c.roomIDToMetadata[roomID] = metadata
+}
+
 func (c *GlobalCache) OnNewEvent(
 	ed *EventData,
 ) {
@@ -224,6 +266,10 @@ func (c *GlobalCache) OnNewEvent(
 			roomType := ed.Content.Get("type")
 			if roomType.Exists() && roomType.Type == gjson.String {
 				metadata.RoomType = &roomType.Str
+			}
+			predecessorRoomID := ed.Content.Get("predecessor.room_id").Str
+			if predecessorRoomID != "" {
+				metadata.PredecessorRoomID = &predecessorRoomID
 			}
 		}
 	case "m.space.child": // only track space child changes for now, not parents

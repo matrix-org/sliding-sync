@@ -3,6 +3,7 @@ package syncv3_test
 import (
 	"encoding/json"
 	"testing"
+	"time"
 
 	"github.com/matrix-org/sync-v3/sync3"
 	"github.com/matrix-org/sync-v3/testutils/m"
@@ -15,11 +16,11 @@ import (
 // the v3 server may still be receiving events in that room from other joined members. We need to
 // make sure these events don't find their way to the client.
 // Attack vector:
-//  - Alice is using the sync server and is in room !A.
-//  - Eve joins the room !A.
-//  - Alice kicks Eve.
-//  - Alice sends event $X in !A.
-//  - Ensure Eve does not see event $X.
+//   - Alice is using the sync server and is in room !A.
+//   - Eve joins the room !A.
+//   - Alice kicks Eve.
+//   - Alice sends event $X in !A.
+//   - Ensure Eve does not see event $X.
 func TestSecurityLiveStreamEventLeftLeak(t *testing.T) {
 	alice := registerNewUser(t)
 	eve := registerNewUser(t)
@@ -65,6 +66,7 @@ func TestSecurityLiveStreamEventLeftLeak(t *testing.T) {
 			"name": "I hate Eve",
 		},
 	})
+	time.Sleep(200 * time.Millisecond) // wait for the proxy to process it..
 
 	// Ensure Alice sees both events
 	aliceRes = alice.SlidingSync(t, sync3.Request{
@@ -132,10 +134,10 @@ func TestSecurityLiveStreamEventLeftLeak(t *testing.T) {
 // Rationale: Unlike sync v2, in v3 clients can subscribe to any room ID they want as a room_subscription.
 // We need to make sure that the user is allowed to see events in that room before delivering those events.
 // Attack vector:
-//  - Alice is using the sync server and is in room !A.
-//  - Eve works out the room ID !A (this isn't sensitive information).
-//  - Eve starts using the sync server and makes a room_subscription for !A.
-//  - Ensure that Eve does not see any events in !A.
+//   - Alice is using the sync server and is in room !A.
+//   - Eve works out the room ID !A (this isn't sensitive information).
+//   - Eve starts using the sync server and makes a room_subscription for !A.
+//   - Ensure that Eve does not see any events in !A.
 func TestSecurityRoomSubscriptionLeak(t *testing.T) {
 	alice := registerNewUser(t)
 	eve := registerNewUser(t)
@@ -200,10 +202,10 @@ func TestSecurityRoomSubscriptionLeak(t *testing.T) {
 // Rationale: Unlike sync v2, in v3 clients can subscribe to any room ID they want as a space.
 // We need to make sure that the user is allowed to see events in that room before delivering those events.
 // Attack vector:
-//  - Alice is using the sync server and is in space !A with room !B.
-//  - Eve works out the room ID !A (this isn't sensitive information).
-//  - Eve starts using the sync server and makes a request for !A as the space filter.
-//  - Ensure that Eve does not see any events in !A or !B.
+//   - Alice is using the sync server and is in space !A with room !B.
+//   - Eve works out the room ID !A (this isn't sensitive information).
+//   - Eve starts using the sync server and makes a request for !A as the space filter.
+//   - Ensure that Eve does not see any events in !A or !B.
 func TestSecuritySpaceDataLeak(t *testing.T) {
 	alice := registerNewUser(t)
 	eve := registerNewUser(t)
@@ -246,11 +248,11 @@ func TestSecuritySpaceDataLeak(t *testing.T) {
 // We need to make sure that if a user is in a room in multiple spaces (only 1 of them the user is joined to)
 // then they cannot see the room if they apply a filter for a parent space they are not joined to.
 // Attack vector:
-//  - Alice is using the sync server and is in space !A with room !B.
-//  - Eve is using the sync server and is in space !C with room !B as well.
-//  - Eve works out the room ID !A (this isn't sensitive information).
-//  - Eve starts using the sync server and makes a request for !A as the space filter.
-//  - Ensure that Eve does not see anything, even though they are joined to !B and the proxy knows it.
+//   - Alice is using the sync server and is in space !A with room !B.
+//   - Eve is using the sync server and is in space !C with room !B as well.
+//   - Eve works out the room ID !A (this isn't sensitive information).
+//   - Eve starts using the sync server and makes a request for !A as the space filter.
+//   - Ensure that Eve does not see anything, even though they are joined to !B and the proxy knows it.
 func TestSecuritySpaceMetadataLeak(t *testing.T) {
 	alice := registerNewUser(t)
 	eve := registerNewUser(t)

@@ -25,7 +25,6 @@ func TestTimelines(t *testing.T) {
 	defer v2.close()
 	defer v3.close()
 
-	alice := "@TestTimelines_alice:localhost"
 	// make 20 rooms, last room is most recent, and send A,B,C into each room
 	allRooms := make([]roomEvents, 20)
 	for i := 0; i < len(allRooms); i++ {
@@ -78,6 +77,7 @@ func TestTimelines(t *testing.T) {
 			},
 		},
 	}
+	v2.waitUntilEmpty(t, alice)
 	// add these live events to the global view of the timeline
 	allRooms[0].events = append(allRooms[0].events, liveEvents[0].events...)
 	allRooms[1].events = append(allRooms[1].events, liveEvents[1].events...)
@@ -386,8 +386,10 @@ func TestInitialFlag(t *testing.T) {
 }
 
 // Regression test for in-the-wild bug:
-//   ERR missing events in database!
-//   ERR V2: failed to accumulate room error="failed to extract nids from inserted events, asked for 9 got 8"
+//
+//	ERR missing events in database!
+//	ERR V2: failed to accumulate room error="failed to extract nids from inserted events, asked for 9 got 8"
+//
 // We should be able to gracefully handle duplicate events in the timeline.
 func TestDuplicateEventsInTimeline(t *testing.T) {
 	pqString := testutils.PrepareDBConnectionString()

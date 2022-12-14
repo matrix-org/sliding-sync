@@ -1,6 +1,7 @@
 package sync2
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
@@ -13,9 +14,11 @@ import (
 
 const AccountDataGlobalRoom = ""
 
+var ProxyVersion = ""
+
 type Client interface {
 	WhoAmI(accessToken string) (string, error)
-	DoSyncV2(accessToken, since string, isFirst bool) (*SyncResponse, int, error)
+	DoSyncV2(ctx context.Context, accessToken, since string, isFirst bool) (*SyncResponse, int, error)
 }
 
 // HTTPClient represents a Sync v2 Client.
@@ -30,7 +33,7 @@ func (v *HTTPClient) WhoAmI(accessToken string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	req.Header.Set("User-Agent", "sync-v3-proxy")
+	req.Header.Set("User-Agent", "sync-v3-proxy-"+ProxyVersion)
 	req.Header.Set("Authorization", "Bearer "+accessToken)
 	res, err := v.Client.Do(req)
 	if err != nil {
@@ -49,7 +52,7 @@ func (v *HTTPClient) WhoAmI(accessToken string) (string, error) {
 
 // DoSyncV2 performs a sync v2 request. Returns the sync response and the response status code
 // or an error. Set isFirst=true on the first sync to force a timeout=0 sync to ensure snapiness.
-func (v *HTTPClient) DoSyncV2(accessToken, since string, isFirst bool) (*SyncResponse, int, error) {
+func (v *HTTPClient) DoSyncV2(ctx context.Context, accessToken, since string, isFirst bool) (*SyncResponse, int, error) {
 	qps := "?"
 	if isFirst { // first time syncing in this process
 		qps += "timeout=0"
@@ -66,7 +69,7 @@ func (v *HTTPClient) DoSyncV2(accessToken, since string, isFirst bool) (*SyncRes
 	req, err := http.NewRequest(
 		"GET", v.DestinationServer+"/_matrix/client/r0/sync"+qps, nil,
 	)
-	req.Header.Set("User-Agent", "sync-v3-proxy")
+	req.Header.Set("User-Agent", "sync-v3-proxy-"+ProxyVersion)
 	req.Header.Set("Authorization", "Bearer "+accessToken)
 	if err != nil {
 		return nil, 0, fmt.Errorf("DoSyncV2: NewRequest failed: %w", err)

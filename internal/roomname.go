@@ -1,6 +1,7 @@
 package internal
 
 import (
+	"encoding/json"
 	"fmt"
 	"strings"
 )
@@ -15,10 +16,13 @@ type RoomMetadata struct {
 	InviteCount          int
 	LastMessageTimestamp uint64
 	Encrypted            bool
+	PredecessorRoomID    *string
 	UpgradedRoomID       *string
 	RoomType             *string
 	// if this room is a space, which rooms are m.space.child state events. This is the same for all users hence is global.
 	ChildSpaceRooms map[string]struct{}
+	// The latest m.typing ephemeral event for this room.
+	TypingEvent json.RawMessage
 }
 
 // SameRoomName checks if the fields relevant for room names have changed between the two metadatas.

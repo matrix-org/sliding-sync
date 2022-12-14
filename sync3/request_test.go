@@ -9,10 +9,14 @@ import (
 )
 
 func TestRoomSubscriptionUnion(t *testing.T) {
+	alice := "@alice:localhost"
+	bob := "@bob:localhost"
 	testCases := []struct {
 		name              string
 		a                 RoomSubscription
 		b                 *RoomSubscription
+		me                string
+		userInTimeline    func(userID string) bool
 		wantQueryStateMap map[string][]string
 		matches           [][2]string
 		noMatches         [][2]string
@@ -62,26 +66,38 @@ func TestRoomSubscriptionUnion(t *testing.T) {
 		},
 		{
 			name:              "all events *,*",
-			a:                 RoomSubscription{RequiredState: [][2]string{{"*", "*"}}},
+			a:                 RoomSubscription{RequiredState: [][2]string{{Wildcard, Wildcard}}},
 			wantQueryStateMap: make(map[string][]string),
 			matches:           [][2]string{{"m.room.name", ""}, {"m.room.name", "foo"}},
 		},
 		{
-			name:              "all events *,* with other event",
-			a:                 RoomSubscription{RequiredState: [][2]string{{"*", "*"}, {"m.room.name", ""}}},
+			name:              "all events *,* with other event -> filters",
+			a:                 RoomSubscription{RequiredState: [][2]string{{Wildcard, Wildcard}, {"m.specific.name", ""}}},
 			wantQueryStateMap: make(map[string][]string),
-			matches:           [][2]string{{"m.room.name", ""}, {"m.room.name", "foo"}, {"a", "b"}},
+			matches:           [][2]string{{"m.specific.name", ""}, {"other", "foo"}, {"a", ""}},
+			noMatches: [][2]string{
+				{"m.specific.name", "foo"},
+			},
 		},
 		{
 			name:              "all events *,* with other event UNION",
 			a:                 RoomSubscription{RequiredState: [][2]string{{"m.room.name", ""}}},
-			b:                 &RoomSubscription{RequiredState: [][2]string{{"*", "*"}}},
+			b:                 &RoomSubscription{RequiredState: [][2]string{{Wildcard, Wildcard}}},
 			wantQueryStateMap: make(map[string][]string),
-			matches:           [][2]string{{"m.room.name", ""}, {"m.room.name", "foo"}, {"a", "b"}},
+			matches:           [][2]string{{"m.room.name", ""}, {"a", "b"}},
+			noMatches:         [][2]string{{"m.room.name", "foo"}},
+		},
+		{
+			name:              "all events *,* with other events UNION",
+			a:                 RoomSubscription{RequiredState: [][2]string{{"m.room.name", ""}, {"m.room.topic", ""}}},
+			b:                 &RoomSubscription{RequiredState: [][2]string{{Wildcard, Wildcard}, {"m.room.alias", ""}}},
+			wantQueryStateMap: make(map[string][]string),
+			matches:           [][2]string{{"m.room.name", ""}, {"a", "b"}, {"m.room.topic", ""}, {"m.room.alias", ""}},
+			noMatches:         [][2]string{{"m.room.name", "foo"}, {"m.room.topic", "bar"}, {"m.room.alias", "baz"}},
 		},
 		{
 			name: "wildcard state keys with explicit state keys",
-			a:    RoomSubscription{RequiredState: [][2]string{{"m.room.name", "*"}, {"m.room.name", ""}}},
+			a:    RoomSubscription{RequiredState: [][2]string{{"m.room.name", Wildcard}, {"m.room.name", ""}}},
 			wantQueryStateMap: map[string][]string{
 				"m.room.name": nil,
 			},
@@ -90,7 +106,7 @@ func TestRoomSubscriptionUnion(t *testing.T) {
 		},
 		{
 			name:              "wildcard state keys with wildcard event types",
-			a:                 RoomSubscription{RequiredState: [][2]string{{"m.room.name", "*"}, {"*", "foo"}}},
+			a:                 RoomSubscription{RequiredState: [][2]string{{"m.room.name", Wildcard}, {Wildcard, "foo"}}},
 			wantQueryStateMap: make(map[string][]string),
 			matches: [][2]string{
 				{"m.room.name", ""}, {"m.room.name", "foo"}, {"name", "foo"},
@@ -101,8 +117,8 @@ func TestRoomSubscriptionUnion(t *testing.T) {
 		},
 		{
 			name:              "wildcard state keys with wildcard event types UNION",
-			a:                 RoomSubscription{RequiredState: [][2]string{{"m.room.name", "*"}}},
-			b:                 &RoomSubscription{RequiredState: [][2]string{{"*", "foo"}}},
+			a:                 RoomSubscription{RequiredState: [][2]string{{"m.room.name", Wildcard}}},
+			b:                 &RoomSubscription{RequiredState: [][2]string{{Wildcard, "foo"}}},
 			wantQueryStateMap: make(map[string][]string),
 			matches: [][2]string{
 				{"m.room.name", ""}, {"m.room.name", "foo"}, {"name", "foo"},
@@ -113,10 +129,42 @@ func TestRoomSubscriptionUnion(t *testing.T) {
 		},
 		{
 			name:              "wildcard event types with explicit state keys",
-			a:                 RoomSubscription{RequiredState: [][2]string{{"*", "foo"}, {"*", "bar"}, {"m.room.name", ""}}},
+			a:                 RoomSubscription{RequiredState: [][2]string{{Wildcard, "foo"}, {Wildcard, "bar"}, {"m.room.name", ""}}},
 			wantQueryStateMap: make(map[string][]string),
 			matches:           [][2]string{{"m.room.name", ""}, {"m.room.name", "foo"}, {"name", "foo"}, {"name", "bar"}},
 			noMatches:         [][2]string{{"name", "baz"}, {"name", ""}},
+		},
+		{
+			name: "event types with $ME state keys",
+			me:   alice,
+			a:    RoomSubscription{RequiredState: [][2]string{{"m.room.member", StateKeyMe}}},
+			wantQueryStateMap: map[string][]string{
+				"m.room.member": {alice},
+			},
+			matches:   [][2]string{{"m.room.member", alice}},
+			noMatches: [][2]string{{"name", "baz"}, {"name", ""}, {"name", StateKeyMe}, {"m.room.name", alice}},
+		},
+		{
+			name:              "wildcard event types with $ME state keys",
+			me:                alice,
+			a:                 RoomSubscription{RequiredState: [][2]string{{Wildcard, StateKeyMe}}},
+			wantQueryStateMap: make(map[string][]string),
+			matches:           [][2]string{{"m.room.member", alice}, {"m.room.name", alice}},
+			noMatches:         [][2]string{{"name", "baz"}, {"name", ""}, {"name", StateKeyMe}},
+		},
+		{
+			// this is what we expect clients to use, so check it works
+			name: "wildcard with $ME",
+			me:   alice,
+			a: RoomSubscription{RequiredState: [][2]string{
+				{"m.room.member", StateKeyMe},
+				{Wildcard, Wildcard},
+				// Include does not implement lazy loading, so we expect this to do nothing
+				{"m.room.member", StateKeyLazy},
+			}},
+			wantQueryStateMap: make(map[string][]string),
+			matches:           [][2]string{{"m.room.member", alice}, {"a", "b"}},
+			noMatches:         [][2]string{{"m.room.member", "@someone-else"}, {"m.room.member", ""}, {"m.room.member", bob}},
 		},
 	}
 	for _, tc := range testCases {
@@ -124,7 +172,7 @@ func TestRoomSubscriptionUnion(t *testing.T) {
 		if tc.b != nil {
 			sub = tc.a.Combine(*tc.b)
 		}
-		rsm := sub.RequiredStateMap()
+		rsm := sub.RequiredStateMap(tc.me)
 		got := rsm.QueryStateMap()
 		if !reflect.DeepEqual(got, tc.wantQueryStateMap) {
 			t.Errorf("%s: got query state map %+v want %+v", tc.name, got, tc.wantQueryStateMap)

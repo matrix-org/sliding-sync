@@ -1,6 +1,7 @@
 package extensions
 
 import (
+	"github.com/matrix-org/sync-v3/internal"
 	"github.com/matrix-org/sync-v3/sync2"
 )
 
@@ -16,7 +17,7 @@ func (r E2EERequest) ApplyDelta(next *E2EERequest) *E2EERequest {
 
 // Server response
 type E2EEResponse struct {
-	OTKCounts        map[string]int  `json:"device_one_time_keys_count"`
+	OTKCounts        map[string]int  `json:"device_one_time_keys_count,omitempty"`
 	DeviceLists      *E2EEDeviceList `json:"device_lists,omitempty"`
 	FallbackKeyTypes []string        `json:"device_unused_fallback_key_types,omitempty"`
 }
@@ -34,19 +35,25 @@ func (r *E2EEResponse) HasData(isInitial bool) bool {
 	return r.DeviceLists != nil
 }
 
-func ProcessE2EE(fetcher sync2.E2EEFetcher, userID, deviceID string, req *E2EERequest) (res *E2EEResponse) {
-	//  pull OTK counts and changed/left from v2 poller
-	otkCounts, fallbackKeyTypes, changed, left := fetcher.LatestE2EEData(deviceID)
-	res = &E2EEResponse{
-		OTKCounts:        otkCounts,
-		FallbackKeyTypes: fallbackKeyTypes,
+func ProcessE2EE(fetcher sync2.E2EEFetcher, userID, deviceID string, req *E2EERequest, isInitial bool) (res *E2EEResponse) {
+	//  pull OTK counts and changed/left from device data
+	dd := fetcher.DeviceData(userID, deviceID, isInitial)
+	res = &E2EEResponse{}
+	if dd == nil {
+		return res // unknown device?
 	}
+	if dd.FallbackKeyTypes != nil {
+		res.FallbackKeyTypes = dd.FallbackKeyTypes
+	}
+	if dd.OTKCounts != nil {
+		res.OTKCounts = dd.OTKCounts
+	}
+	changed, left := internal.DeviceListChangesArrays(dd.DeviceLists.Sent)
 	if len(changed) > 0 || len(left) > 0 {
 		res.DeviceLists = &E2EEDeviceList{
 			Changed: changed,
 			Left:    left,
 		}
-		logger.Info().Int("changed", len(changed)).Int("left", len(left)).Str("user", userID).Msg("E2EE extension: new data")
 	}
 	return
 }

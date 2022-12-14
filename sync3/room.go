@@ -19,6 +19,7 @@ type Room struct {
 	JoinedCount       int               `json:"joined_count,omitempty"`
 	InvitedCount      int               `json:"invited_count,omitempty"`
 	PrevBatch         string            `json:"prev_batch,omitempty"`
+	NumLive           int               `json:"num_live,omitempty"`
 }
 
 type RoomConnMetadata struct {

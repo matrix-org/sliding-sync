@@ -4,11 +4,14 @@ import (
 	"context"
 	"encoding/json"
 	"runtime/trace"
+	"time"
 
 	"github.com/matrix-org/sync-v3/internal"
 	"github.com/matrix-org/sync-v3/sync3"
 	"github.com/matrix-org/sync-v3/sync3/caches"
 	"github.com/matrix-org/sync-v3/sync3/extensions"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/tidwall/gjson"
 )
 
 type JoinChecker interface {
@@ -35,29 +38,34 @@ type ConnState struct {
 	globalCache *caches.GlobalCache
 	userCache   *caches.UserCache
 	userCacheID int
+	lazyCache   *LazyCache
 
 	joinChecker JoinChecker
 
-	extensionsHandler extensions.HandlerInterface
+	extensionsHandler   extensions.HandlerInterface
+	processHistogramVec *prometheus.HistogramVec
 }
 
 func NewConnState(
 	userID, deviceID string, userCache *caches.UserCache, globalCache *caches.GlobalCache,
-	ex extensions.HandlerInterface, joinChecker JoinChecker,
+	ex extensions.HandlerInterface, joinChecker JoinChecker, histVec *prometheus.HistogramVec,
 ) *ConnState {
 	cs := &ConnState{
-		globalCache:       globalCache,
-		userCache:         userCache,
-		userID:            userID,
-		deviceID:          deviceID,
-		roomSubscriptions: make(map[string]sync3.RoomSubscription),
-		lists:             sync3.NewInternalRequestLists(),
-		extensionsHandler: ex,
-		joinChecker:       joinChecker,
+		globalCache:         globalCache,
+		userCache:           userCache,
+		userID:              userID,
+		deviceID:            deviceID,
+		roomSubscriptions:   make(map[string]sync3.RoomSubscription),
+		lists:               sync3.NewInternalRequestLists(),
+		extensionsHandler:   ex,
+		joinChecker:         joinChecker,
+		lazyCache:           NewLazyCache(),
+		processHistogramVec: histVec,
 	}
 	cs.live = &connStateLive{
-		ConnState: cs,
-		updates:   make(chan caches.Update, MaxPendingEventUpdates), // TODO: customisable
+		ConnState:     cs,
+		loadPositions: make(map[string]int64),
+		updates:       make(chan caches.Update, MaxPendingEventUpdates), // TODO: customisable
 	}
 	cs.userCacheID = cs.userCache.Subsribe(cs)
 	return cs
@@ -108,7 +116,11 @@ func (s *ConnState) load() error {
 
 // OnIncomingRequest is guaranteed to be called sequentially (it's protected by a mutex in conn.go)
 func (s *ConnState) OnIncomingRequest(ctx context.Context, cid sync3.ConnID, req *sync3.Request, isInitial bool) (*sync3.Response, error) {
-	ctx, task := trace.NewTask(ctx, "OnIncomingRequest")
+	taskType := "OnIncomingRequest"
+	if isInitial {
+		taskType = "OnIncomingRequestInitial"
+	}
+	ctx, task := trace.NewTask(ctx, taskType)
 	defer task.End()
 	if s.loadPosition == 0 {
 		region := trace.StartRegion(ctx, "load")
@@ -122,6 +134,7 @@ func (s *ConnState) OnIncomingRequest(ctx context.Context, cid sync3.ConnID, req
 // be on their own goroutine, the requests are linearised for us by Conn so it is safe to modify ConnState without
 // additional locking mechanisms.
 func (s *ConnState) onIncomingRequest(ctx context.Context, req *sync3.Request, isInitial bool) (*sync3.Response, error) {
+	start := time.Now()
 	// ApplyDelta works fine if s.muxedReq is nil
 	var delta *sync3.RequestDelta
 	s.muxedReq, delta = s.muxedReq.ApplyDelta(req)
@@ -145,15 +158,28 @@ func (s *ConnState) onIncomingRequest(ctx context.Context, req *sync3.Request, i
 		Lists: respLists,
 	}
 
-	includedRoomIDs := make(map[string]struct{})
+	includedRoomIDs := make(map[string][]string)
 	for roomID := range response.Rooms {
-		includedRoomIDs[roomID] = struct{}{}
+		eventIDs := make([]string, len(response.Rooms[roomID].Timeline))
+		for i := range eventIDs {
+			eventIDs[i] = gjson.ParseBytes(response.Rooms[roomID].Timeline[i]).Get("event_id").Str
+		}
+		includedRoomIDs[roomID] = eventIDs
 	}
 	// Handle extensions AFTER processing lists as extensions may need to know which rooms the client
 	// is being notified about (e.g. for room account data)
 	region := trace.StartRegion(ctx, "extensions")
 	response.Extensions = s.extensionsHandler.Handle(ex, includedRoomIDs, isInitial)
 	region.End()
+
+	if response.ListOps() > 0 || len(response.Rooms) > 0 || response.Extensions.HasData(isInitial) {
+		// we're going to immediately return, so track how long this took. We don't do this for long
+		// polling requests as high numbers mean nothing. We need to check if we will block as otherwise
+		// we will have tons of fast requests logged (as they get tracked and then hit live streaming)
+		// In other words, this metric tracks the time it takes to process _changes_ in the client
+		// requests (initial connection, modifying index positions, etc) which should always be fast.
+		s.trackProcessDuration(time.Since(start), isInitial)
+	}
 
 	// do live tracking if we have nothing to tell the client yet
 	region = trace.StartRegion(ctx, "liveUpdate")
@@ -316,7 +342,37 @@ func (s *ConnState) buildRooms(ctx context.Context, builtSubs []BuiltSubscriptio
 	defer trace.StartRegion(ctx, "buildRooms").End()
 	result := make(map[string]sync3.Room)
 	for _, bs := range builtSubs {
-		rooms := s.getInitialRoomData(ctx, bs.RoomSubscription, bs.RoomIDs...)
+		roomIDs := bs.RoomIDs
+		if bs.RoomSubscription.IncludeOldRooms != nil {
+			var oldRoomIDs []string
+			for _, currRoomID := range bs.RoomIDs { // <- the list of subs we definitely are including
+				// append old rooms if we are joined to them
+				currRoom := s.lists.Room(currRoomID)
+				var prevRoomID *string
+				if currRoom != nil {
+					prevRoomID = currRoom.PredecessorRoomID
+				}
+				for prevRoomID != nil { // <- the chain of old rooms
+					// if not joined, bail
+					if !s.joinChecker.IsUserJoined(s.userID, *prevRoomID) {
+						break
+					}
+					oldRoomIDs = append(oldRoomIDs, *prevRoomID)
+					// keep checking
+					prevRoom := s.lists.Room(*prevRoomID)
+					if prevRoom != nil {
+						prevRoomID = prevRoom.PredecessorRoomID
+					}
+				}
+			}
+			// old rooms use a different subscription
+			oldRooms := s.getInitialRoomData(ctx, *bs.RoomSubscription.IncludeOldRooms, oldRoomIDs...)
+			for oldRoomID, oldRoom := range oldRooms {
+				result[oldRoomID] = oldRoom
+			}
+		}
+
+		rooms := s.getInitialRoomData(ctx, bs.RoomSubscription, roomIDs...)
 		for roomID, room := range rooms {
 			result[roomID] = room
 		}
@@ -329,7 +385,23 @@ func (s *ConnState) getInitialRoomData(ctx context.Context, roomSub sync3.RoomSu
 	// We want to grab the user room data and the room metadata for each room ID.
 	roomIDToUserRoomData := s.userCache.LazyLoadTimelines(s.loadPosition, roomIDs, int(roomSub.TimelineLimit))
 	roomMetadatas := s.globalCache.LoadRooms(roomIDs...)
-	roomIDToState := s.globalCache.LoadRoomState(ctx, roomIDs, s.loadPosition, roomSub.RequiredStateMap())
+	// prepare lazy loading data structures
+	roomToUsersInTimeline := make(map[string][]string, len(roomIDToUserRoomData))
+	for roomID, urd := range roomIDToUserRoomData {
+		set := make(map[string]struct{})
+		for _, ev := range urd.Timeline {
+			set[gjson.GetBytes(ev, "sender").Str] = struct{}{}
+		}
+		userIDs := make([]string, len(set))
+		i := 0
+		for userID := range set {
+			userIDs[i] = userID
+			i++
+		}
+		roomToUsersInTimeline[roomID] = userIDs
+	}
+	rsm := roomSub.RequiredStateMap(s.userID)
+	roomIDToState := s.globalCache.LoadRoomState(ctx, roomIDs, s.loadPosition, rsm, roomToUsersInTimeline)
 
 	for _, roomID := range roomIDs {
 		userRoomData, ok := roomIDToUserRoomData[roomID]
@@ -364,7 +436,24 @@ func (s *ConnState) getInitialRoomData(ctx context.Context, roomSub sync3.RoomSu
 			PrevBatch:         prevBatch,
 		}
 	}
+
+	if rsm.IsLazyLoading() {
+		for roomID, userIDs := range roomToUsersInTimeline {
+			s.lazyCache.Add(roomID, userIDs...)
+		}
+	}
 	return rooms
+}
+
+func (s *ConnState) trackProcessDuration(dur time.Duration, isInitial bool) {
+	if s.processHistogramVec == nil {
+		return
+	}
+	val := "0"
+	if isInitial {
+		val = "1"
+	}
+	s.processHistogramVec.WithLabelValues(val).Observe(float64(dur.Seconds()))
 }
 
 // Called when the connection is torn down

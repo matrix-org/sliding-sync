@@ -29,7 +29,7 @@ func TestGlobalCacheLoadState(t *testing.T) {
 		testutils.NewStateEvent(t, "m.room.name", "", alice, map[string]interface{}{"name": "The Room Name"}),
 		testutils.NewStateEvent(t, "m.room.name", "", alice, map[string]interface{}{"name": "The Updated Room Name"}),
 	}
-	moreEvents := []json.RawMessage{
+	eventsRoom2 := []json.RawMessage{
 		testutils.NewStateEvent(t, "m.room.create", "", alice, map[string]interface{}{"creator": alice}),
 		testutils.NewJoinEvent(t, alice),
 		testutils.NewStateEvent(t, "m.room.join_rules", "", alice, map[string]interface{}{"join_rule": "public"}),
@@ -38,20 +38,23 @@ func TestGlobalCacheLoadState(t *testing.T) {
 		testutils.NewStateEvent(t, "m.room.name", "", alice, map[string]interface{}{"name": "The Room Name"}),
 		testutils.NewStateEvent(t, "m.room.name", "", alice, map[string]interface{}{"name": "The Updated Room Name"}),
 	}
-	_, _, err := store.Accumulate(roomID2, "", moreEvents)
+	_, _, err := store.Accumulate(roomID2, "", eventsRoom2)
 	if err != nil {
 		t.Fatalf("Accumulate: %s", err)
 	}
 
-	_, latest, err := store.Accumulate(roomID, "", events)
+	_, latestNIDs, err := store.Accumulate(roomID, "", events)
 	if err != nil {
 		t.Fatalf("Accumulate: %s", err)
 	}
+	latest := latestNIDs[len(latestNIDs)-1]
 	globalCache := caches.NewGlobalCache(store)
 	testCases := []struct {
-		name          string
-		requiredState [][2]string
-		wantEvents    map[string][]json.RawMessage
+		name                  string
+		me                    string
+		requiredState         [][2]string
+		wantEvents            map[string][]json.RawMessage
+		roomToUsersInTimeline map[string][]string
 	}{
 		{
 			name: "single required state returns a single event",
@@ -150,7 +153,57 @@ func TestGlobalCacheLoadState(t *testing.T) {
 			},
 			wantEvents: map[string][]json.RawMessage{
 				roomID:  {events[3]},
-				roomID2: {moreEvents[3]},
+				roomID2: {eventsRoom2[3]},
+			},
+		},
+		{
+			name: "using $ME works",
+			me:   alice,
+			requiredState: [][2]string{
+				{"m.room.member", sync3.StateKeyMe},
+			},
+			wantEvents: map[string][]json.RawMessage{
+				roomID:  {events[1]},
+				roomID2: {eventsRoom2[1]},
+			},
+		},
+		{
+			name: "using $ME ignores other member events",
+			me:   "@bogus-user:example.com",
+			requiredState: [][2]string{
+				{"m.room.member", sync3.StateKeyMe},
+			},
+			wantEvents: nil,
+		},
+		{
+			name: "using $LAZY works",
+			me:   alice,
+			requiredState: [][2]string{
+				{"m.room.member", sync3.StateKeyLazy},
+			},
+			wantEvents: map[string][]json.RawMessage{
+				roomID:  {events[1], events[4]},
+				roomID2: {eventsRoom2[1], eventsRoom2[4]},
+			},
+			roomToUsersInTimeline: map[string][]string{
+				roomID:  {alice, charlie},
+				roomID2: {alice, charlie},
+			},
+		},
+		{
+			name: "using $LAZY and $ME works",
+			me:   alice,
+			requiredState: [][2]string{
+				{"m.room.member", sync3.StateKeyLazy},
+				{"m.room.member", sync3.StateKeyMe},
+			},
+			wantEvents: map[string][]json.RawMessage{
+				roomID:  {events[1], events[4]},
+				roomID2: {eventsRoom2[1], eventsRoom2[4]},
+			},
+			roomToUsersInTimeline: map[string][]string{
+				roomID:  {charlie},
+				roomID2: {charlie},
 			},
 		},
 	}
@@ -163,7 +216,7 @@ func TestGlobalCacheLoadState(t *testing.T) {
 			rs := sync3.RoomSubscription{
 				RequiredState: tc.requiredState,
 			}
-			gotMap := globalCache.LoadRoomState(ctx, roomIDs, latest, rs.RequiredStateMap())
+			gotMap := globalCache.LoadRoomState(ctx, roomIDs, latest, rs.RequiredStateMap(tc.me), tc.roomToUsersInTimeline)
 			for _, roomID := range roomIDs {
 				got := gotMap[roomID]
 				wantEvents := tc.wantEvents[roomID]

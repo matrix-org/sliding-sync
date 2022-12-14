@@ -140,16 +140,17 @@ func (a *Accumulator) roomInfoDelta(roomID string, events []Event) RoomInfo {
 // Initialise starts a new sync accumulator for the given room using the given state as a baseline.
 // This will only take effect if this is the first time the v3 server has seen this room, and it wasn't
 // possible to get all events up to the create event (e.g Matrix HQ). Returns true if this call actually
-// added new events
+// added new events, along with the snapshot NID.
 //
 // This function:
 // - Stores these events
 // - Sets up the current snapshot based on the state list given.
-func (a *Accumulator) Initialise(roomID string, state []json.RawMessage) (bool, error) {
+func (a *Accumulator) Initialise(roomID string, state []json.RawMessage) (bool, int64, error) {
 	if len(state) == 0 {
-		return false, nil
+		return false, 0, nil
 	}
 	addedEvents := false
+	var snapID int64
 	err := sqlutil.WithTransaction(a.db, func(txn *sqlx.Tx) error {
 		// Attempt to short-circuit. This has to be done inside a transaction to make sure
 		// we don't race with multiple calls to Initialise with the same room ID.
@@ -234,13 +235,15 @@ func (a *Accumulator) Initialise(roomID string, state []json.RawMessage) (bool, 
 		// will have an associated state snapshot ID on the event.
 
 		// Set the snapshot ID as the current state
+		snapID = snapshot.SnapshotID
 		return a.roomsTable.Upsert(txn, info, snapshot.SnapshotID, latestNID)
 	})
-	return addedEvents, err
+	return addedEvents, snapID, err
 }
 
 // Accumulate internal state from a user's sync response. The timeline order MUST be in the order
-// received from the server. Returns the number of new events in the timeline.
+// received from the server. Returns the number of new events in the timeline, the new timeline event NIDs
+// or an error.
 //
 // This function does several things:
 //   - It ensures all events are persisted in the database. This is shared amongst users.
@@ -249,9 +252,9 @@ func (a *Accumulator) Initialise(roomID string, state []json.RawMessage) (bool, 
 //     to exist in the database, and the sync stream is already linearised for us.
 //   - Else it creates a new room state snapshot if the timeline contains state events (as this now represents the current state)
 //   - It adds entries to the membership log for membership events.
-func (a *Accumulator) Accumulate(roomID string, prevBatch string, timeline []json.RawMessage) (numNew int, latestNID int64, err error) {
+func (a *Accumulator) Accumulate(roomID string, prevBatch string, timeline []json.RawMessage) (numNew int, timelineNIDs []int64, err error) {
 	if len(timeline) == 0 {
-		return 0, 0, nil
+		return 0, nil, nil
 	}
 	err = sqlutil.WithTransaction(a.db, func(txn *sqlx.Tx) error {
 		// Insert the events. Check for duplicates which can happen in the real world when joining
@@ -292,6 +295,7 @@ func (a *Accumulator) Accumulate(roomID string, prevBatch string, timeline []jso
 		}
 		numNew = len(eventIDToNID)
 
+		var latestNID int64
 		newEvents := make([]Event, 0, len(eventIDToNID))
 		for _, ev := range dedupedEvents {
 			nid, ok := eventIDToNID[ev.ID]
@@ -308,6 +312,7 @@ func (a *Accumulator) Accumulate(roomID string, prevBatch string, timeline []jso
 					latestNID = ev.NID
 				}
 				newEvents = append(newEvents, ev)
+				timelineNIDs = append(timelineNIDs, ev.NID)
 			}
 		}
 
@@ -369,7 +374,7 @@ func (a *Accumulator) Accumulate(roomID string, prevBatch string, timeline []jso
 		}
 		return nil
 	})
-	return numNew, latestNID, err
+	return numNew, timelineNIDs, err
 }
 
 // Delta returns a list of events of at most `limit` for the room not including `lastEventNID`.

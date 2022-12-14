@@ -16,19 +16,16 @@ import (
 )
 
 var (
-	proxyBaseURL      = "http://localhost"
+	proxyBaseURL      = os.Getenv("SYNCV3_ADDR")
 	homeserverBaseURL = os.Getenv("SYNCV3_SERVER")
 	userCounter       uint64
 )
 
 func TestMain(m *testing.M) {
-	listenAddr := os.Getenv("SYNCV3_BINDADDR")
-	if listenAddr == "" {
-		fmt.Println("SYNCV3_BINDADDR must be set")
+	if proxyBaseURL == "" {
+		fmt.Println("SYNCV3_ADDR must be set e.g 'http://localhost:8008'")
 		os.Exit(1)
 	}
-	segments := strings.Split(listenAddr, ":")
-	proxyBaseURL += ":" + segments[1]
 	fmt.Println("proxy located at", proxyBaseURL)
 	exitCode := m.Run()
 	os.Exit(exitCode)
@@ -92,6 +89,18 @@ func MatchRoomTimelineMostRecent(n int, events []Event) m.RoomMatcher {
 func MatchRoomTimeline(events []Event) m.RoomMatcher {
 	return func(r sync3.Room) error {
 		return eventsEqual(events, r.Timeline)
+	}
+}
+
+func MatchRoomTimelineContains(event Event) m.RoomMatcher {
+	return func(r sync3.Room) error {
+		var err error
+		for _, got := range r.Timeline {
+			if err = eventsEqual([]Event{event}, []json.RawMessage{got}); err == nil {
+				return nil
+			}
+		}
+		return err
 	}
 }
 

@@ -6,15 +6,19 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"reflect"
 	"strconv"
 	"sync"
+	"time"
 
 	"github.com/matrix-org/sync-v3/internal"
+	"github.com/matrix-org/sync-v3/pubsub"
 	"github.com/matrix-org/sync-v3/state"
 	"github.com/matrix-org/sync-v3/sync2"
 	"github.com/matrix-org/sync-v3/sync3"
 	"github.com/matrix-org/sync-v3/sync3/caches"
 	"github.com/matrix-org/sync-v3/sync3/extensions"
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/hlog"
 	"github.com/rs/zerolog/log"
@@ -33,7 +37,8 @@ type SyncLiveHandler struct {
 	V2         sync2.Client
 	Storage    *state.Storage
 	V2Store    *sync2.Storage
-	PollerMap  *sync2.PollerMap
+	V2Sub      *pubsub.V2Sub
+	V3Pub      *EnsurePoller
 	ConnMap    *sync3.ConnMap
 	Extensions *extensions.Handler
 
@@ -44,92 +49,107 @@ type SyncLiveHandler struct {
 	Dispatcher *sync3.Dispatcher
 
 	GlobalCache *caches.GlobalCache
+
+	numConns prometheus.Gauge
+	histVec  *prometheus.HistogramVec
 }
 
-func NewSync3Handler(v2Client sync2.Client, postgresDBURI, secret string, debug bool) (*SyncLiveHandler, error) {
+func NewSync3Handler(
+	store *state.Storage, storev2 *sync2.Storage, v2Client sync2.Client, postgresDBURI, secret string,
+	debug bool, pub pubsub.Notifier, sub pubsub.Listener, enablePrometheus bool,
+) (*SyncLiveHandler, error) {
+	logger.Info().Msg("creating handler")
 	if debug {
 		zerolog.SetGlobalLevel(zerolog.TraceLevel)
 	} else {
 		zerolog.SetGlobalLevel(zerolog.InfoLevel)
 	}
-	store := state.NewStorage(postgresDBURI)
 	sh := &SyncLiveHandler{
 		V2:          v2Client,
 		Storage:     store,
-		V2Store:     sync2.NewStore(postgresDBURI, secret),
+		V2Store:     storev2,
 		ConnMap:     sync3.NewConnMap(),
 		userCaches:  &sync.Map{},
 		Dispatcher:  sync3.NewDispatcher(),
 		GlobalCache: caches.NewGlobalCache(store),
 	}
-	sh.PollerMap = sync2.NewPollerMap(v2Client, sh)
 	sh.Extensions = &extensions.Handler{
 		Store:       store,
-		E2EEFetcher: sh.PollerMap,
-	}
-	roomToJoinedUsers, err := store.AllJoinedMembers()
-	if err != nil {
-		return nil, err
+		E2EEFetcher: sh,
+		GlobalCache: sh.GlobalCache,
 	}
 
-	if err := sh.Dispatcher.Startup(roomToJoinedUsers); err != nil {
-		return nil, fmt.Errorf("failed to load sync3.Dispatcher: %s", err)
-	}
-	sh.Dispatcher.Register(sync3.DispatcherAllUsers, sh.GlobalCache)
-
-	// every room will be present here
-	roomIDToMetadata, err := store.MetadataForAllRooms()
-	if err != nil {
-		return nil, fmt.Errorf("could not get metadata for all rooms: %s", err)
+	if enablePrometheus {
+		sh.addPrometheusMetrics()
+		pub = pubsub.NewPromNotifier(pub, "api")
 	}
 
-	if err := sh.GlobalCache.Startup(roomIDToMetadata); err != nil {
-		return nil, fmt.Errorf("failed to populate global cache: %s", err)
-	}
+	// set up pubsub mechanism to start from this point
+	sh.V3Pub = NewEnsurePoller(pub)
+	sh.V2Sub = pubsub.NewV2Sub(sub, sh)
 
 	return sh, nil
 }
 
-// used in tests to close postgres connections
-func (h *SyncLiveHandler) Teardown() {
-	h.Storage.Teardown()
+func (h *SyncLiveHandler) Startup(storeSnapshot *state.StartupSnapshot) error {
+	if err := h.Dispatcher.Startup(storeSnapshot.AllJoinedMembers); err != nil {
+		return fmt.Errorf("failed to load sync3.Dispatcher: %s", err)
+	}
+	h.Dispatcher.Register(sync3.DispatcherAllUsers, h.GlobalCache)
+	if err := h.GlobalCache.Startup(storeSnapshot.GlobalMetadata); err != nil {
+		return fmt.Errorf("failed to populate global cache: %s", err)
+	}
+	return nil
 }
 
-func (h *SyncLiveHandler) StartV2Pollers() {
-	devices, err := h.V2Store.AllDevices()
-	if err != nil {
-		logger.Err(err).Msg("StartV2Pollers: failed to query devices")
+// Listen starts all consumers
+func (h *SyncLiveHandler) Listen() {
+	go func() {
+		err := h.V2Sub.Listen()
+		if err != nil {
+			logger.Err(err).Msg("Failed to listen for v2 messages")
+		}
+	}()
+}
+
+// used in tests to close postgres connections
+func (h *SyncLiveHandler) Teardown() {
+	// tear down DB conns
+	h.Storage.Teardown()
+	h.V2Sub.Teardown()
+	h.V3Pub.Teardown()
+	h.ConnMap.Teardown()
+	if h.numConns != nil {
+		prometheus.Unregister(h.numConns)
+	}
+	if h.histVec != nil {
+		prometheus.Unregister(h.histVec)
+	}
+}
+
+func (h *SyncLiveHandler) updateMetrics() {
+	if h.numConns == nil {
 		return
 	}
-	logger.Info().Int("num_devices", len(devices)).Msg("StartV2Pollers")
-	// how many concurrent pollers to make at startup.
-	// Too high and this will flood the upstream server with sync requests at startup.
-	// Too low and this will take ages for the v2 pollers to startup.
-	numWorkers := 16
-	ch := make(chan sync2.Device, len(devices))
-	for _, d := range devices {
-		// if we fail to decrypt the access token, skip it.
-		if d.AccessToken == "" {
-			continue
-		}
-		ch <- d
-	}
-	close(ch)
-	var wg sync.WaitGroup
-	wg.Add(numWorkers)
-	for i := 0; i < numWorkers; i++ {
-		go func() {
-			defer wg.Done()
-			for d := range ch {
-				h.PollerMap.EnsurePolling(
-					d.AccessToken, d.UserID, d.DeviceID, d.Since,
-					logger.With().Str("user_id", d.UserID).Logger(),
-				)
-			}
-		}()
-	}
-	wg.Wait()
-	logger.Info().Msg("StartV2Pollers finished")
+	h.numConns.Set(float64(h.ConnMap.Len()))
+}
+
+func (h *SyncLiveHandler) addPrometheusMetrics() {
+	h.numConns = prometheus.NewGauge(prometheus.GaugeOpts{
+		Namespace: "sliding_sync",
+		Subsystem: "api",
+		Name:      "num_active_conns",
+		Help:      "Number of active sliding sync connections.",
+	})
+	h.histVec = prometheus.NewHistogramVec(prometheus.HistogramOpts{
+		Namespace: "sliding_sync",
+		Subsystem: "api",
+		Name:      "process_duration_secs",
+		Help:      "Time taken in seconds for the sliding sync response to calculated, excludes long polling",
+		Buckets:   []float64{0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10},
+	}, []string{"initial"})
+	prometheus.MustRegister(h.numConns)
+	prometheus.MustRegister(h.histVec)
 }
 
 func (h *SyncLiveHandler) ServeHTTP(w http.ResponseWriter, req *http.Request) {
@@ -146,6 +166,9 @@ func (h *SyncLiveHandler) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 				Err:        err,
 			}
 		}
+		// artificially wait a bit before sending back the error
+		// this guards against tightlooping when the client hammers the server with invalid requests
+		time.Sleep(time.Second)
 		w.WriteHeader(herr.StatusCode)
 		w.Write(herr.JSON())
 	}
@@ -161,6 +184,14 @@ func (h *SyncLiveHandler) serve(w http.ResponseWriter, req *http.Request) error 
 			return &internal.HandlerError{
 				StatusCode: 400,
 				Err:        err,
+			}
+		}
+	}
+	for i, l := range requestBody.Lists {
+		if l.Ranges != nil && !l.Ranges.Valid() {
+			return &internal.HandlerError{
+				StatusCode: 400,
+				Err:        fmt.Errorf("list[%d] invalid ranges %v", i, l.Ranges),
 			}
 		}
 	}
@@ -207,7 +238,15 @@ func (h *SyncLiveHandler) serve(w http.ResponseWriter, req *http.Request) error 
 	if resp.Extensions.AccountData != nil {
 		numGlobalAccountData = len(resp.Extensions.AccountData.Global)
 	}
-	internal.SetRequestContextResponseInfo(req.Context(), cpos, resp.PosInt(), len(resp.Rooms), requestBody.TxnID, numToDeviceEvents, numGlobalAccountData)
+	var numChangedDevices, numLeftDevices int
+	if resp.Extensions.E2EE != nil && resp.Extensions.E2EE.DeviceLists != nil {
+		numChangedDevices = len(resp.Extensions.E2EE.DeviceLists.Changed)
+		numLeftDevices = len(resp.Extensions.E2EE.DeviceLists.Left)
+	}
+	internal.SetRequestContextResponseInfo(
+		req.Context(), cpos, resp.PosInt(), len(resp.Rooms), requestBody.TxnID, numToDeviceEvents, numGlobalAccountData,
+		numChangedDevices, numLeftDevices,
+	)
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(200)
@@ -255,10 +294,7 @@ func (h *SyncLiveHandler) setupConnection(req *http.Request, syncReq *sync3.Requ
 			return conn, nil
 		}
 		// conn doesn't exist, we probably nuked it.
-		return nil, &internal.HandlerError{
-			StatusCode: 400,
-			Err:        fmt.Errorf("session expired"),
-		}
+		return nil, internal.ExpiredSessionError()
 	}
 
 	// We're going to make a new connection
@@ -287,10 +323,7 @@ func (h *SyncLiveHandler) setupConnection(req *http.Request, syncReq *sync3.Requ
 	}
 
 	log.Trace().Str("user", v2device.UserID).Msg("checking poller exists and is running")
-	h.PollerMap.EnsurePolling(
-		accessToken, v2device.UserID, v2device.DeviceID, v2device.Since,
-		hlog.FromRequest(req).With().Str("user_id", v2device.UserID).Logger(),
-	)
+	h.V3Pub.EnsurePolling(v2device.UserID, v2device.DeviceID)
 	log.Trace().Str("user", v2device.UserID).Msg("poller exists and is running")
 	// this may take a while so if the client has given up (e.g timed out) by this point, just stop.
 	// We'll be quicker next time as the poller will already exist.
@@ -313,6 +346,9 @@ func (h *SyncLiveHandler) setupConnection(req *http.Request, syncReq *sync3.Requ
 		}
 	}
 
+	// once we have the conn, make sure our metrics are correct
+	defer h.updateMetrics()
+
 	// Now the v2 side of things are running, we can make a v3 live sync conn
 	// NB: this isn't inherently racey (we did the check for an existing conn before EnsurePolling)
 	// because we *either* do the existing check *or* make a new conn. It's important for CreateConn
@@ -321,7 +357,7 @@ func (h *SyncLiveHandler) setupConnection(req *http.Request, syncReq *sync3.Requ
 	conn, created := h.ConnMap.CreateConn(sync3.ConnID{
 		DeviceID: deviceID,
 	}, func() sync3.ConnHandler {
-		return NewConnState(v2device.UserID, v2device.DeviceID, userCache, h.GlobalCache, h.Extensions, h.Dispatcher)
+		return NewConnState(v2device.UserID, v2device.DeviceID, userCache, h.GlobalCache, h.Extensions, h.Dispatcher, h.histVec)
 	})
 	if created {
 		log.Info().Str("user", v2device.UserID).Str("conn_id", conn.ConnID.String()).Msg("created new connection")
@@ -331,13 +367,21 @@ func (h *SyncLiveHandler) setupConnection(req *http.Request, syncReq *sync3.Requ
 	return conn, nil
 }
 
+func (h *SyncLiveHandler) CacheForUser(userID string) *caches.UserCache {
+	c, ok := h.userCaches.Load(userID)
+	if ok {
+		return c.(*caches.UserCache)
+	}
+	return nil
+}
+
 func (h *SyncLiveHandler) userCache(userID string) (*caches.UserCache, error) {
 	// bail if we already have a cache
 	c, ok := h.userCaches.Load(userID)
 	if ok {
 		return c.(*caches.UserCache), nil
 	}
-	uc := caches.NewUserCache(userID, h.GlobalCache, h.Storage, h.PollerMap)
+	uc := caches.NewUserCache(userID, h.GlobalCache, h.Storage, h)
 	// select all non-zero highlight or notif counts and set them, as this is less costly than looping every room/user pair
 	err := h.Storage.UnreadTable.SelectAllNonZeroCountsForUser(userID, func(roomID string, highlightCount, notificationCount int) {
 		uc.OnUnreadCounts(roomID, &highlightCount, &notificationCount)
@@ -346,12 +390,12 @@ func (h *SyncLiveHandler) userCache(userID string) (*caches.UserCache, error) {
 		return nil, fmt.Errorf("failed to load unread counts: %s", err)
 	}
 	// select the DM account data event and set DM room status
-	directEvent, err := h.Storage.AccountData(userID, sync2.AccountDataGlobalRoom, "m.direct")
+	directEvent, err := h.Storage.AccountData(userID, sync2.AccountDataGlobalRoom, []string{"m.direct"})
 	if err != nil {
 		return nil, fmt.Errorf("failed to load direct message status for rooms: %s", err)
 	}
-	if directEvent != nil {
-		uc.OnAccountData([]state.AccountData{*directEvent})
+	if len(directEvent) == 1 {
+		uc.OnAccountData([]state.AccountData{directEvent[0]})
 	}
 
 	// select all room tag account data and set it
@@ -387,109 +431,178 @@ func (h *SyncLiveHandler) userCache(userID string) (*caches.UserCache, error) {
 	return uc, nil
 }
 
-// Called from the v2 poller, implements V2DataReceiver
-func (h *SyncLiveHandler) UpdateDeviceSince(deviceID, since string) {
-	err := h.V2Store.UpdateDeviceSince(deviceID, since)
+// Implements E2EEFetcher
+// DeviceData returns the latest device data for this user. isInitial should be set if this is for
+// an initial /sync request.
+func (h *SyncLiveHandler) DeviceData(userID, deviceID string, isInitial bool) *internal.DeviceData {
+	// We have 2 sources of DeviceData:
+	// - pubsub updates stored in deviceDataMap
+	// - the database itself
+	// Most of the time we would like to pull from deviceDataMap and ignore the database entirely,
+	// however in most cases we need to do a database hit to atomically swap device lists over. Why?
+	//
+	// changed|left are much more important and special because:
+	//
+	// - sync v2 only sends deltas, rather than all of them unlike otk counts and fallback key types
+	// - we MUST guarantee that we send this to the client, as missing a user in `changed` can result in us having the wrong
+	//   device lists for that user resulting in encryption breaking when the client encrypts for known devices.
+	// - we MUST NOT continually send the same device list changes on each subsequent request i.e we need to delete them
+	//
+	// We accumulate device list deltas on the v2 poller side, upserting into the database and sending pubsub notifs for.
+	// The accumulated deltas are stored in DeviceData.DeviceLists.New
+	// To guarantee we send this to the client, we need to consider a few failure modes:
+	// - The response is lost and the request is retried to this proxy -> ConnMap caches will get it.
+	// - The response is lost and the client doesn't retry until the connection expires. They then retry ->
+	//   ConnMap cache miss, sends HTTP 400 due to invalid ?pos=
+	// - The response is received and the client sends the next request -> do not send deltas.
+
+	// To handle the case where responses are lost, we just need to see if this is an initial request
+	// and if so, return a "Read-Only" snapshot of the last sent device list changes. This means we may send
+	// duplicate device list changes if the response did in fact get to the client and the next request hit a
+	// new proxy, but that's better than losing updates. In this scenario, we do not delete any data.
+	// To ensure we delete device list updates over time, we now want to swap what was New to Sent and then
+	// send Sent. That means we forget what was originally in Sent and New is empty. We need to read and swap
+	// atomically else the v2 poller may insert a new update after the read but before the swap (DELETE on New)
+	// To ensure atomicity, we need to do this in a txn.
+	// Atomically move New to Sent so New is now empty and what was originally in Sent is forgotten.
+	shouldSwap := !isInitial
+
+	dd, err := h.Storage.DeviceDataTable.Select(userID, deviceID, shouldSwap)
 	if err != nil {
-		logger.Err(err).Str("device", deviceID).Str("since", since).Msg("V2: failed to persist since token")
+		logger.Err(err).Str("user", userID).Msg("failed to SelectAndSwap device data")
+		return nil
 	}
+
+	return dd
+}
+
+// Implements TransactionIDFetcher
+func (h *SyncLiveHandler) TransactionIDForEvents(userID string, eventIDs []string) (eventIDToTxnID map[string]string) {
+	eventIDToTxnID, err := h.Storage.TransactionsTable.Select(userID, eventIDs)
+	if err != nil {
+		logger.Warn().Str("err", err.Error()).Str("user", userID).Msg("failed to select txn IDs for events")
+	}
+	return
+}
+
+func (h *SyncLiveHandler) OnInitialSyncComplete(p *pubsub.V2InitialSyncComplete) {
+	h.V3Pub.OnInitialSyncComplete(p)
 }
 
 // Called from the v2 poller, implements V2DataReceiver
-func (h *SyncLiveHandler) Accumulate(roomID, prevBatch string, timeline []json.RawMessage) {
-	numNew, latestPos, err := h.Storage.Accumulate(roomID, prevBatch, timeline)
+func (h *SyncLiveHandler) Accumulate(p *pubsub.V2Accumulate) {
+	events, err := h.Storage.EventNIDs(p.EventNIDs)
 	if err != nil {
-		logger.Err(err).Int("timeline", len(timeline)).Str("room", roomID).Msg("V2: failed to accumulate room")
+		logger.Err(err).Str("room", p.RoomID).Msg("Accumulate: failed to EventNIDs")
 		return
 	}
-	if numNew == 0 {
-		// no new events
+	if len(events) == 0 {
 		return
 	}
-	newEvents := timeline[len(timeline)-numNew:]
-
 	// we have new events, notify active connections
-	h.Dispatcher.OnNewEvents(roomID, newEvents, latestPos)
+	h.Dispatcher.OnNewEvents(p.RoomID, events, p.EventNIDs[len(p.EventNIDs)-1])
 }
 
 // Called from the v2 poller, implements V2DataReceiver
-func (h *SyncLiveHandler) Initialise(roomID string, state []json.RawMessage) {
-	added, err := h.Storage.Initialise(roomID, state)
+func (h *SyncLiveHandler) Initialise(p *pubsub.V2Initialise) {
+	state, err := h.Storage.StateSnapshot(p.SnapshotNID)
 	if err != nil {
-		logger.Err(err).Int("state", len(state)).Str("room", roomID).Msg("V2: failed to initialise room")
-		return
-	}
-	if !added {
-		// no new events
+		logger.Err(err).Int64("snap", p.SnapshotNID).Str("room", p.RoomID).Msg("Initialise: failed to get StateSnapshot")
 		return
 	}
 	// we have new state, notify caches
-	h.Dispatcher.OnNewEvents(roomID, state, 0)
+	h.Dispatcher.OnNewInitialRoomState(p.RoomID, state)
 }
 
-// Called from the v2 poller, implements V2DataReceiver
-func (h *SyncLiveHandler) SetTyping(roomID string, userIDs []string) {
-	_, err := h.Storage.TypingTable.SetTyping(roomID, userIDs)
-	if err != nil {
-		logger.Err(err).Strs("users", userIDs).Str("room", roomID).Msg("V2: failed to store typing")
-	}
-}
-
-// Called from the v2 poller, implements V2DataReceiver
-// Add messages for this device. If an error is returned, the poll loop is terminated as continuing
-// would implicitly acknowledge these messages.
-func (h *SyncLiveHandler) AddToDeviceMessages(userID, deviceID string, msgs []json.RawMessage) {
-	_, err := h.Storage.ToDeviceTable.InsertMessages(deviceID, msgs)
-	if err != nil {
-		logger.Err(err).Str("user", userID).Str("device", deviceID).Int("msgs", len(msgs)).Msg("V2: failed to store to-device messages")
-	}
-}
-
-func (h *SyncLiveHandler) UpdateUnreadCounts(roomID, userID string, highlightCount, notifCount *int) {
-	err := h.Storage.UnreadTable.UpdateUnreadCounters(userID, roomID, highlightCount, notifCount)
-	if err != nil {
-		logger.Err(err).Str("user", userID).Str("room", roomID).Msg("failed to update unread counters")
-	}
-	userCache, ok := h.userCaches.Load(userID)
+func (h *SyncLiveHandler) OnUnreadCounts(p *pubsub.V2UnreadCounts) {
+	userCache, ok := h.userCaches.Load(p.UserID)
 	if !ok {
 		return
 	}
-	userCache.(*caches.UserCache).OnUnreadCounts(roomID, highlightCount, notifCount)
+	userCache.(*caches.UserCache).OnUnreadCounts(p.RoomID, p.HighlightCount, p.NotificationCount)
 }
 
-func (h *SyncLiveHandler) OnInvite(userID, roomID string, inviteState []json.RawMessage) {
-	err := h.Storage.InvitesTable.InsertInvite(userID, roomID, inviteState)
-	if err != nil {
-		logger.Err(err).Str("user", userID).Str("room", roomID).Msg("failed to insert invite")
-	}
-	userCache, ok := h.userCaches.Load(userID)
+// TODO: We don't eagerly push device data updates on waiting conns (otk counts, device list changes)
+// Do we need to?
+func (h *SyncLiveHandler) OnDeviceData(p *pubsub.V2DeviceData) {
+	// Do nothing for now
+}
+
+func (h *SyncLiveHandler) OnInvite(p *pubsub.V2InviteRoom) {
+	userCache, ok := h.userCaches.Load(p.UserID)
 	if !ok {
 		return
 	}
-	userCache.(*caches.UserCache).OnInvite(roomID, inviteState)
+	inviteState, err := h.Storage.InvitesTable.SelectInviteState(p.UserID, p.RoomID)
+	if err != nil {
+		logger.Err(err).Str("user", p.UserID).Str("room", p.RoomID).Msg("failed to get invite state")
+		return
+	}
+	userCache.(*caches.UserCache).OnInvite(p.RoomID, inviteState)
 }
 
-func (h *SyncLiveHandler) OnLeftRoom(userID, roomID string) {
-	// remove any invites for this user if they are rejecting an invite
-	err := h.Storage.InvitesTable.RemoveInvite(userID, roomID)
-	if err != nil {
-		logger.Err(err).Str("user", userID).Str("room", roomID).Msg("failed to retire invite")
-	}
-	userCache, ok := h.userCaches.Load(userID)
+func (h *SyncLiveHandler) OnLeftRoom(p *pubsub.V2LeaveRoom) {
+	userCache, ok := h.userCaches.Load(p.UserID)
 	if !ok {
 		return
 	}
-	userCache.(*caches.UserCache).OnLeftRoom(roomID)
+	userCache.(*caches.UserCache).OnLeftRoom(p.RoomID)
 }
 
-func (h *SyncLiveHandler) OnAccountData(userID, roomID string, events []json.RawMessage) {
-	data, err := h.Storage.InsertAccountData(userID, roomID, events)
-	if err != nil {
-		logger.Err(err).Str("user", userID).Str("room", roomID).Msg("failed to update account data")
+func (h *SyncLiveHandler) OnReceipt(p *pubsub.V2Receipt) {
+	// split receipts into public / private
+	userToPrivateReceipts := make(map[string][]internal.Receipt)
+	publicReceipts := make([]internal.Receipt, 0, len(p.Receipts))
+	for _, r := range p.Receipts {
+		if r.IsPrivate {
+			userToPrivateReceipts[r.UserID] = append(userToPrivateReceipts[r.UserID], r)
+		} else {
+			publicReceipts = append(publicReceipts, r)
+		}
+	}
+	// always send private receipts, directly to the connected user cache if one exists
+	for userID, privateReceipts := range userToPrivateReceipts {
+		userCache, ok := h.userCaches.Load(userID)
+		if !ok {
+			continue
+		}
+		ephEvent, err := state.PackReceiptsIntoEDU(privateReceipts)
+		if err != nil {
+			logger.Err(err).Str("room", p.RoomID).Str("user", userID).Msg("unable to pack private receipts into EDU")
+			continue
+		}
+		userCache.(*caches.UserCache).OnEphemeralEvent(p.RoomID, ephEvent)
+	}
+	if len(publicReceipts) == 0 {
 		return
 	}
-	userCache, ok := h.userCaches.Load(userID)
+	// inform the dispatcher of global receipts
+	ephEvent, err := state.PackReceiptsIntoEDU(publicReceipts)
+	if err != nil {
+		logger.Err(err).Str("room", p.RoomID).Msg("unable to pack receipts into EDU")
+		return
+	}
+	h.Dispatcher.OnEphemeralEvent(p.RoomID, ephEvent)
+}
+
+func (h *SyncLiveHandler) OnTyping(p *pubsub.V2Typing) {
+	rooms := h.GlobalCache.LoadRooms(p.RoomID)
+	if rooms[p.RoomID] != nil {
+		if reflect.DeepEqual(p.EphemeralEvent, rooms[p.RoomID].TypingEvent) {
+			return // it's a duplicate, which happens when 2+ users are in the same room
+		}
+	}
+	h.Dispatcher.OnEphemeralEvent(p.RoomID, p.EphemeralEvent)
+}
+
+func (h *SyncLiveHandler) OnAccountData(p *pubsub.V2AccountData) {
+	userCache, ok := h.userCaches.Load(p.UserID)
 	if !ok {
+		return
+	}
+	data, err := h.Storage.AccountData(p.UserID, p.RoomID, p.Types)
+	if err != nil {
+		logger.Err(err).Str("user", p.UserID).Str("room", p.RoomID).Msg("OnAccountData: failed to lookup")
 		return
 	}
 	userCache.(*caches.UserCache).OnAccountData(data)

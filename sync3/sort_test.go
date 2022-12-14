@@ -1,6 +1,8 @@
 package sync3
 
 import (
+	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/matrix-org/sync-v3/internal"
@@ -84,16 +86,18 @@ func TestSortBySingleOperation(t *testing.T) {
 	// recency: 3,4,2,1
 	// highlight: 1,3,4,2
 	// notif: 1,3,2,4
+	// level+recency: 3,4,1,2 as 3,4,1 have highlights then sorted by recency
 	wantMap := map[string][]string{
 		SortByName:              {room4, room1, room2, room3},
 		SortByRecency:           {room3, room4, room2, room1},
 		SortByHighlightCount:    {room1, room3, room4, room2},
 		SortByNotificationCount: {room1, room3, room2, room4},
+		SortByNotificationLevel + " " + SortByRecency: {room3, room4, room1, room2},
 	}
 	f := newFinder(rooms)
 	sr := NewSortableRooms(f, f.roomIDs)
 	for sortBy, wantOrder := range wantMap {
-		sr.Sort([]string{sortBy})
+		sr.Sort(strings.Split(sortBy, " "))
 		var gotRoomIDs []string
 		for i := range sr.roomIDs {
 			gotRoomIDs = append(gotRoomIDs, sr.roomIDs[i])
@@ -169,6 +173,14 @@ func TestSortByMultipleOperations(t *testing.T) {
 			SortBy:    []string{SortByHighlightCount, SortByName},
 			WantRooms: []string{room1, room2, room4, room3},
 		},
+		{
+			SortBy:    []string{SortByNotificationLevel, SortByName},
+			WantRooms: []string{room1, room2, room4, room3},
+		},
+		{
+			SortBy:    []string{SortByNotificationLevel, SortByRecency},
+			WantRooms: []string{room2, room1, room4, room3},
+		},
 	}
 	f := newFinder(rooms)
 	sr := NewSortableRooms(f, f.roomIDs)
@@ -236,5 +248,138 @@ func TestSortableRoomsRemove(t *testing.T) {
 	}
 	if i, ok := sr.IndexOf(room2); i != 0 || !ok {
 		t.Errorf("IndexOf room 2 returned %v %v", i, ok)
+	}
+}
+
+// dedicated test as it relies on multiple fields
+func TestSortByNotificationLevel(t *testing.T) {
+	// create the full set of possible sort variables, most recent message last
+	roomUnencHC := "!unencrypted-highlight-count:localhost"
+	roomUnencHCNC := "!unencrypted-highlight-and-notif-count:localhost"
+	roomUnencNC := "!unencrypted-notif-count:localhost"
+	roomUnenc := "!unencrypted:localhost"
+	roomEncHC := "!encrypted-highlight-count:localhost"
+	roomEncHCNC := "!encrypted-highlight-and-notif-count:localhost"
+	roomEncNC := "!encrypted-notif-count:localhost"
+	roomEnc := "!encrypted:localhost"
+	roomsMap := map[string]*RoomConnMetadata{
+		roomUnencHC: {
+			RoomMetadata: internal.RoomMetadata{
+				LastMessageTimestamp: 1,
+				Encrypted:            false,
+			},
+			UserRoomData: caches.UserRoomData{
+				HighlightCount:    1,
+				NotificationCount: 0,
+			},
+		},
+		roomUnencHCNC: {
+			RoomMetadata: internal.RoomMetadata{
+				LastMessageTimestamp: 2,
+				Encrypted:            false,
+			},
+			UserRoomData: caches.UserRoomData{
+				HighlightCount:    1,
+				NotificationCount: 1,
+			},
+		},
+		roomUnencNC: {
+			RoomMetadata: internal.RoomMetadata{
+				LastMessageTimestamp: 3,
+				Encrypted:            false,
+			},
+			UserRoomData: caches.UserRoomData{
+				HighlightCount:    0,
+				NotificationCount: 1,
+			},
+		},
+		roomUnenc: {
+			RoomMetadata: internal.RoomMetadata{
+				LastMessageTimestamp: 4,
+				Encrypted:            false,
+			},
+			UserRoomData: caches.UserRoomData{
+				HighlightCount:    0,
+				NotificationCount: 0,
+			},
+		},
+		roomEncHC: {
+			RoomMetadata: internal.RoomMetadata{
+				LastMessageTimestamp: 5,
+				Encrypted:            true,
+			},
+			UserRoomData: caches.UserRoomData{
+				HighlightCount:    1,
+				NotificationCount: 0,
+			},
+		},
+		roomEncHCNC: {
+			RoomMetadata: internal.RoomMetadata{
+				LastMessageTimestamp: 6,
+				Encrypted:            true,
+			},
+			UserRoomData: caches.UserRoomData{
+				HighlightCount:    1,
+				NotificationCount: 1,
+			},
+		},
+		roomEncNC: {
+			RoomMetadata: internal.RoomMetadata{
+				RoomID:               roomEncNC,
+				LastMessageTimestamp: 7,
+				Encrypted:            true,
+			},
+			UserRoomData: caches.UserRoomData{
+				HighlightCount:    0,
+				NotificationCount: 1,
+			},
+		},
+		roomEnc: {
+			RoomMetadata: internal.RoomMetadata{
+				RoomID:               roomEnc,
+				LastMessageTimestamp: 8,
+				Encrypted:            true,
+			},
+			UserRoomData: caches.UserRoomData{
+				HighlightCount:    0,
+				NotificationCount: 0,
+			},
+		},
+	}
+	roomIDs := make([]string, len(roomsMap))
+	rooms := make([]*RoomConnMetadata, len(roomsMap))
+	i := 0
+	for roomID, room := range roomsMap {
+		room.RoomMetadata.RoomID = roomID
+		roomIDs[i] = roomID
+		rooms[i] = room
+		i++
+	}
+	t.Logf("%v", roomIDs)
+	f := newFinder(rooms)
+	sr := NewSortableRooms(f, roomIDs)
+	if err := sr.Sort([]string{SortByNotificationLevel, SortByRecency}); err != nil {
+		t.Fatalf("Sort: %s", err)
+	}
+	var gotRoomIDs []string
+	for i := range sr.roomIDs {
+		gotRoomIDs = append(gotRoomIDs, sr.roomIDs[i])
+	}
+	// we expect the rooms to be grouped in this order:
+	// HIGHLIGHT COUNT > 0
+	// ENCRYPTED, NOTIF COUNT > 0
+	// UNENCRYPTED, NOTIF COUNT > 0
+	// REST
+	// Within each group, we expect recency sorting due to SortByRecency
+	wantRoomIDs := []string{
+		roomEncHCNC, roomEncHC, roomUnencHCNC, roomUnencHC, // in practice we don't expect to see this as encrypted rooms won't have highlight counts > 0
+		roomEncNC,
+		roomUnencNC,
+		roomEnc, roomUnenc,
+	}
+
+	if !reflect.DeepEqual(gotRoomIDs, wantRoomIDs) {
+		t.Errorf("got: %v", gotRoomIDs)
+		t.Errorf("want: %v", wantRoomIDs)
 	}
 }

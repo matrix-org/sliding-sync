@@ -19,6 +19,7 @@ const DispatcherAllUsers = "-"
 
 type Receiver interface {
 	OnNewEvent(event *caches.EventData)
+	OnEphemeralEvent(roomID string, ephEvent json.RawMessage)
 	OnRegistered(latestPos int64) error
 }
 
@@ -47,11 +48,7 @@ func (d *Dispatcher) IsUserJoined(userID, roomID string) bool {
 // MUST BE CALLED BEFORE V2 POLL LOOPS START.
 func (d *Dispatcher) Startup(roomToJoinedUsers map[string][]string) error {
 	// populate joined rooms tracker
-	for roomID, userIDs := range roomToJoinedUsers {
-		for _, userID := range userIDs {
-			d.jrt.UserJoinedRoom(userID, roomID)
-		}
-	}
+	d.jrt.Startup(roomToJoinedUsers)
 	return nil
 }
 
@@ -71,6 +68,76 @@ func (d *Dispatcher) Register(userID string, r Receiver) error {
 	return r.OnRegistered(d.latestPos)
 }
 
+func (d *Dispatcher) newEventData(event json.RawMessage, roomID string, latestPos int64) *caches.EventData {
+	// parse the event to pull out fields we care about
+	var stateKey *string
+	ev := gjson.ParseBytes(event)
+	if sk := ev.Get("state_key"); sk.Exists() {
+		stateKey = &sk.Str
+	}
+	eventType := ev.Get("type").Str
+
+	return &caches.EventData{
+		Event:     event,
+		RoomID:    roomID,
+		EventType: eventType,
+		StateKey:  stateKey,
+		Content:   ev.Get("content"),
+		LatestPos: latestPos,
+		Timestamp: ev.Get("origin_server_ts").Uint(),
+		Sender:    ev.Get("sender").Str,
+	}
+}
+
+// Called by v2 pollers when we receive an initial state block. Very similar to OnNewEvents but
+// done in bulk for speed.
+func (d *Dispatcher) OnNewInitialRoomState(roomID string, state []json.RawMessage) {
+	// sanity check
+	if _, jc := d.jrt.JoinedUsersForRoom(roomID, nil); jc > 0 {
+		logger.Warn().Int("join_count", jc).Str("room", roomID).Int("num_state", len(state)).Msg(
+			"OnNewInitialRoomState but have entries in JoinedRoomsTracker already, this should be impossible. Degrading to live events",
+		)
+		d.OnNewEvents(roomID, state, 0)
+		return
+	}
+	// create event datas for state
+	eventDatas := make([]*caches.EventData, len(state))
+	var joined, invited []string
+	for i, event := range state {
+		ed := d.newEventData(event, roomID, 0)
+		eventDatas[i] = ed
+		if ed.EventType == "m.room.member" && ed.StateKey != nil {
+			membership := ed.Content.Get("membership").Str
+			switch membership {
+			case "invite":
+				invited = append(invited, *ed.StateKey)
+			case "join":
+				joined = append(joined, *ed.StateKey)
+			}
+		}
+	}
+	// bulk update joined room tracker
+	forceInitial := d.jrt.UsersJoinedRoom(joined, roomID)
+	d.jrt.UsersInvitedToRoom(invited, roomID)
+	inviteCount := d.jrt.NumInvitedUsersForRoom(roomID)
+
+	// work out who to notify
+	userIDs, joinCount := d.jrt.JoinedUsersForRoom(roomID, func(userID string) bool {
+		if userID == DispatcherAllUsers {
+			return false // safety guard to prevent dupe global callbacks
+		}
+		_, exists := d.userToReceiver[userID]
+		return exists
+	})
+
+	// notify listeners
+	for _, ed := range eventDatas {
+		ed.InviteCount = inviteCount
+		ed.JoinCount = joinCount
+		d.notifyListeners(ed, userIDs, "", forceInitial, "")
+	}
+}
+
 // Called by v2 pollers when we receive new events
 func (d *Dispatcher) OnNewEvents(
 	roomID string, events []json.RawMessage, latestPos int64,
@@ -88,23 +155,7 @@ func (d *Dispatcher) onNewEvent(
 	if latestPos > d.latestPos {
 		d.latestPos = latestPos
 	}
-	// parse the event to pull out fields we care about
-	var stateKey *string
-	ev := gjson.ParseBytes(event)
-	if sk := ev.Get("state_key"); sk.Exists() {
-		stateKey = &sk.Str
-	}
-	eventType := ev.Get("type").Str
-
-	ed := &caches.EventData{
-		Event:     event,
-		RoomID:    roomID,
-		EventType: eventType,
-		StateKey:  stateKey,
-		Content:   ev.Get("content"),
-		LatestPos: latestPos,
-		Timestamp: ev.Get("origin_server_ts").Uint(),
-	}
+	ed := d.newEventData(event, roomID, latestPos)
 
 	// update the tracker
 	targetUser := ""
@@ -116,7 +167,7 @@ func (d *Dispatcher) onNewEvent(
 		switch membership {
 		case "invite":
 			// we only do this to track invite counts correctly.
-			d.jrt.UserInvitedToRoom(targetUser, ed.RoomID)
+			d.jrt.UsersInvitedToRoom([]string{targetUser}, ed.RoomID)
 		case "join":
 			if d.jrt.UserJoinedRoom(targetUser, ed.RoomID) {
 				shouldForceInitial = true
@@ -130,9 +181,46 @@ func (d *Dispatcher) onNewEvent(
 	}
 
 	// notify all people in this room
-	userIDs := d.jrt.JoinedUsersForRoom(ed.RoomID)
-	ed.JoinCount = len(userIDs)
+	userIDs, joinCount := d.jrt.JoinedUsersForRoom(ed.RoomID, func(userID string) bool {
+		if userID == DispatcherAllUsers {
+			return false // safety guard to prevent dupe global callbacks
+		}
+		_, exists := d.userToReceiver[userID]
+		return exists
+	})
+	ed.JoinCount = joinCount
+	d.notifyListeners(ed, userIDs, targetUser, shouldForceInitial, membership)
+}
 
+func (d *Dispatcher) OnEphemeralEvent(roomID string, ephEvent json.RawMessage) {
+	notifyUserIDs, _ := d.jrt.JoinedUsersForRoom(roomID, func(userID string) bool {
+		if userID == DispatcherAllUsers {
+			return false // safety guard to prevent dupe global callbacks
+		}
+		_, exists := d.userToReceiver[userID]
+		return exists
+	})
+
+	d.userToReceiverMu.RLock()
+	defer d.userToReceiverMu.RUnlock()
+
+	// global listeners (invoke before per-user listeners so caches can update)
+	listener := d.userToReceiver[DispatcherAllUsers]
+	if listener != nil {
+		listener.OnEphemeralEvent(roomID, ephEvent)
+	}
+
+	// poke user caches OnEphemeralEvent which then pokes ConnState
+	for _, userID := range notifyUserIDs {
+		l := d.userToReceiver[userID]
+		if l == nil {
+			continue
+		}
+		l.OnEphemeralEvent(roomID, ephEvent)
+	}
+}
+
+func (d *Dispatcher) notifyListeners(ed *caches.EventData, userIDs []string, targetUser string, shouldForceInitial bool, membership string) {
 	// invoke listeners
 	d.userToReceiverMu.RLock()
 	defer d.userToReceiverMu.RUnlock()

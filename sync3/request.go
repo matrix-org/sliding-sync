@@ -12,9 +12,14 @@ import (
 var (
 	SortByName              = "by_name"
 	SortByRecency           = "by_recency"
-	SortByNotificationCount = "by_notification_count"
-	SortByHighlightCount    = "by_highlight_count"
-	SortBy                  = []string{SortByHighlightCount, SortByName, SortByNotificationCount, SortByRecency}
+	SortByNotificationLevel = "by_notification_level"
+	SortByNotificationCount = "by_notification_count" // deprecated
+	SortByHighlightCount    = "by_highlight_count"    // deprecated
+	SortBy                  = []string{SortByHighlightCount, SortByName, SortByNotificationCount, SortByRecency, SortByNotificationLevel}
+
+	Wildcard     = "*"
+	StateKeyLazy = "$LAZY"
+	StateKeyMe   = "$ME"
 
 	DefaultTimelineLimit = int64(20)
 	DefaultTimeoutMSecs  = 10 * 1000 // 10s
@@ -209,11 +214,13 @@ func (rl *RequestList) jumpedOverRanges(fromIndex, toIndex int) (jumpedOverRange
 
 // Move a room from an absolute index position to another absolute position. These positions do not
 // need to be inside a valid range. Returns 0-2 operations. For example:
-//   1,2,3,4,5 tracking range [0,4]
-//   3 bumps to top -> 3,1,2,4,5 -> DELETE index=2, INSERT val=3 index=0
-//   7 bumps to top -> 7,1,2,3,4 -> DELETE index=4, INSERT val=7 index=0
-//   7 bumps to op again -> 7,1,2,3,4 -> no-op as from == to index
-//   new room 8 in i=5 -> 7,1,2,3,4,8 -> no-op as 8 is outside the range.
+//
+//	1,2,3,4,5 tracking range [0,4]
+//	3 bumps to top -> 3,1,2,4,5 -> DELETE index=2, INSERT val=3 index=0
+//	7 bumps to top -> 7,1,2,3,4 -> DELETE index=4, INSERT val=7 index=0
+//	7 bumps to op again -> 7,1,2,3,4 -> no-op as from == to index
+//	new room 8 in i=5 -> 7,1,2,3,4,8 -> no-op as 8 is outside the range.
+//
 // Returns the list of ops as well as the new toIndex if it wasn't inside a range.
 func (rl *RequestList) WriteSwapOp(
 	roomID string, fromIndex, toIndex int,
@@ -321,6 +328,10 @@ func (r *Request) ApplyDelta(nextReq *Request) (result *Request, delta *RequestD
 		if slowGetAllRooms == nil {
 			slowGetAllRooms = existingList.SlowGetAllRooms
 		}
+		includeOldRooms := nextList.IncludeOldRooms
+		if includeOldRooms == nil {
+			includeOldRooms = existingList.IncludeOldRooms
+		}
 
 		timelineLimit := nextList.TimelineLimit
 		if timelineLimit == 0 {
@@ -330,10 +341,12 @@ func (r *Request) ApplyDelta(nextReq *Request) (result *Request, delta *RequestD
 		if filters == nil {
 			filters = existingList.Filters
 		}
+
 		lists[i] = RequestList{
 			RoomSubscription: RoomSubscription{
-				RequiredState: reqState,
-				TimelineLimit: timelineLimit,
+				RequiredState:   reqState,
+				TimelineLimit:   timelineLimit,
+				IncludeOldRooms: includeOldRooms,
 			},
 			Ranges:          rooms,
 			Sort:            sort,
@@ -416,16 +429,26 @@ type RequestFilters struct {
 	IsDM           *bool     `json:"is_dm"`
 	IsEncrypted    *bool     `json:"is_encrypted"`
 	IsInvite       *bool     `json:"is_invite"`
-	IsTombstoned   *bool     `json:"is_tombstoned"`
+	IsTombstoned   *bool     `json:"is_tombstoned"` // deprecated
 	RoomTypes      []*string `json:"room_types"`
 	NotRoomTypes   []*string `json:"not_room_types"`
 	RoomNameFilter string    `json:"room_name_like"`
 	Tags           []string  `json:"tags"`
 	NotTags        []string  `json:"not_tags"`
+
 	// TODO options to control which events should be live-streamed e.g not_types, types from sync v2
 }
 
-func (rf *RequestFilters) Include(r *RoomConnMetadata) bool {
+func (rf *RequestFilters) Include(r *RoomConnMetadata, finder RoomFinder) bool {
+	// we always exclude old rooms from lists, but may include them in the `rooms` section if they opt-in
+	if r.UpgradedRoomID != nil {
+		// should we exclude this room? If we have _joined_ the successor room then yes because
+		// this room must therefore be old, else no.
+		nextRoom := finder.Room(*r.UpgradedRoomID)
+		if nextRoom != nil && !nextRoom.HasLeft && !nextRoom.IsInvite {
+			return false
+		}
+	}
 	if rf.IsEncrypted != nil && *rf.IsEncrypted != r.Encrypted {
 		return false
 	}
@@ -481,12 +504,27 @@ func (rf *RequestFilters) Include(r *RoomConnMetadata) bool {
 }
 
 type RoomSubscription struct {
-	RequiredState [][2]string `json:"required_state"`
-	TimelineLimit int64       `json:"timeline_limit"`
+	RequiredState   [][2]string       `json:"required_state"`
+	TimelineLimit   int64             `json:"timeline_limit"`
+	IncludeOldRooms *RoomSubscription `json:"include_old_rooms"`
+}
+
+func (rs RoomSubscription) LazyLoadMembers() bool {
+	for _, tuple := range rs.RequiredState {
+		if tuple[0] == "m.room.member" && tuple[1] == StateKeyLazy {
+			return true
+		}
+	}
+	return false
 }
 
 // Combine this subcription with another, returning a union of both as a copy.
 func (rs RoomSubscription) Combine(other RoomSubscription) RoomSubscription {
+	return rs.combineRecursive(other, true)
+}
+
+// Combine this subcription with another, returning a union of both as a copy.
+func (rs RoomSubscription) combineRecursive(other RoomSubscription, checkOldRooms bool) RoomSubscription {
 	var result RoomSubscription
 	// choose max value
 	if rs.TimelineLimit > other.TimelineLimit {
@@ -496,45 +534,66 @@ func (rs RoomSubscription) Combine(other RoomSubscription) RoomSubscription {
 	}
 	// combine together required_state fields, we'll union them later
 	result.RequiredState = append(rs.RequiredState, other.RequiredState...)
+
+	if checkOldRooms {
+		// set include_old_rooms if it is unset
+		if rs.IncludeOldRooms == nil {
+			result.IncludeOldRooms = other.IncludeOldRooms
+		} else if other.IncludeOldRooms != nil {
+			// 2 subs have include_old_rooms set, union them. Don't check them for old rooms though as that's silly
+			ior := rs.IncludeOldRooms.combineRecursive(*other.IncludeOldRooms, false)
+			result.IncludeOldRooms = &ior
+		}
+	}
 	return result
 }
 
 // Calculate the required state map for this room subscription. Given event types A,B,C and state keys
 // 1,2,3, the following Venn diagrams are possible:
-//  .---------[*,*]----------.
-//  |      .---------.       |
-//  |      |   A,2   | A,3   |
-//  | .----+--[B,*]--+-----. |
-//  | |    | .-----. |     | |
-//  | |B,1 | | B,2 | | B,3 | |
-//  | |    | `[B,2]` |     | |
-//  | `----+---------+-----` |
-//  |      |   C,2   | C,3   |
-//  |      `--[*,2]--`       |
-//  `------------------------`
+//
+//	.---------[*,*]----------.
+//	|      .---------.       |
+//	|      |   A,2   | A,3   |
+//	| .----+--[B,*]--+-----. |
+//	| |    | .-----. |     | |
+//	| |B,1 | | B,2 | | B,3 | |
+//	| |    | `[B,2]` |     | |
+//	| `----+---------+-----` |
+//	|      |   C,2   | C,3   |
+//	|      `--[*,2]--`       |
+//	`------------------------`
 //
 // The largest set will be used when returning the required state map.
 // For example, [B,2] + [B,*] = [B,*] because [B,*] encompasses [B,2]. This means [*,*] encompasses
 // everything.
-func (rs RoomSubscription) RequiredStateMap() *internal.RequiredStateMap {
+// 'userID' is the ID of the user performing this request, so $ME can be replaced.
+func (rs RoomSubscription) RequiredStateMap(userID string) *internal.RequiredStateMap {
 	result := make(map[string][]string)
 	eventTypesWithWildcardStateKeys := make(map[string]struct{})
 	var stateKeysForWildcardEventType []string
+	var allState bool
 	for _, tuple := range rs.RequiredState {
-		if tuple[0] == "*" {
-			if tuple[1] == "*" { // all state
-				return internal.NewRequiredStateMap(nil, nil, nil, true)
+		if tuple[1] == StateKeyMe {
+			tuple[1] = userID
+		}
+		if tuple[0] == Wildcard {
+			if tuple[1] == Wildcard { // all state
+				// we still need to parse required_state as now these filter the result set
+				allState = true
+				continue
 			}
 			stateKeysForWildcardEventType = append(stateKeysForWildcardEventType, tuple[1])
 			continue
 		}
-		if tuple[1] == "*" { // wildcard state key
+		if tuple[1] == Wildcard { // wildcard state key
 			eventTypesWithWildcardStateKeys[tuple[0]] = struct{}{}
 		} else {
 			result[tuple[0]] = append(result[tuple[0]], tuple[1])
 		}
 	}
-	return internal.NewRequiredStateMap(eventTypesWithWildcardStateKeys, stateKeysForWildcardEventType, result, false)
+	return internal.NewRequiredStateMap(
+		eventTypesWithWildcardStateKeys, stateKeysForWildcardEventType, result, allState, rs.LazyLoadMembers(),
+	)
 }
 
 // helper to find `null` or literal string matches

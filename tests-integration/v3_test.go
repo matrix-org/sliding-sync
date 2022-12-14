@@ -17,7 +17,9 @@ import (
 
 	"github.com/gorilla/mux"
 	"github.com/matrix-org/gomatrixserverlib"
+	syncv3 "github.com/matrix-org/sync-v3"
 	"github.com/matrix-org/sync-v3/sync2"
+	"github.com/matrix-org/sync-v3/sync2/handler2"
 	"github.com/matrix-org/sync-v3/sync3"
 	"github.com/matrix-org/sync-v3/sync3/handler"
 	"github.com/matrix-org/sync-v3/testutils"
@@ -35,11 +37,13 @@ const (
 )
 
 type testV2Server struct {
-	mu          *sync.Mutex
-	tokenToUser map[string]string
-	queues      map[string]chan sync2.SyncResponse
-	waiting     map[string]*sync.Cond // broadcasts when the server is about to read a blocking input
-	srv         *httptest.Server
+	mu                      *sync.Mutex
+	tokenToUser             map[string]string
+	queues                  map[string]chan sync2.SyncResponse
+	waiting                 map[string]*sync.Cond // broadcasts when the server is about to read a blocking input
+	srv                     *httptest.Server
+	invalidations           map[string]func() // token -> callback
+	timeToWaitForV2Response time.Duration
 }
 
 func (s *testV2Server) addAccount(userID, token string) {
@@ -50,6 +54,31 @@ func (s *testV2Server) addAccount(userID, token string) {
 	s.waiting[userID] = &sync.Cond{
 		L: &sync.Mutex{},
 	}
+}
+
+// remove the token and wait until the proxy sends a request with this token, then 401 it and return.
+func (s *testV2Server) invalidateToken(token string) {
+	var wg sync.WaitGroup
+	wg.Add(1)
+
+	// add callback and delete the token
+	s.mu.Lock()
+	s.invalidations[token] = func() {
+		wg.Done()
+	}
+	delete(s.tokenToUser, token)
+	s.mu.Unlock()
+
+	// kick over the connection so the next request 401s and wait till we get said request
+	s.srv.CloseClientConnections()
+	wg.Wait()
+
+	// cleanup the callback
+	s.mu.Lock()
+	delete(s.invalidations, token)
+	s.mu.Unlock()
+	// need to wait for the HTTP 401 response to be processed :(
+	time.Sleep(100 * time.Millisecond)
 }
 
 func (s *testV2Server) userID(token string) string {
@@ -64,7 +93,7 @@ func (s *testV2Server) queueResponse(userID string, resp sync2.SyncResponse) {
 	s.mu.Unlock()
 	ch <- resp
 	if !testutils.Quiet {
-		log.Printf("testV2Server: enqueued v2 response for %s", userID)
+		log.Printf("testV2Server: enqueued v2 response for %s (%d join rooms)", userID, len(resp.Rooms.Join))
 	}
 }
 
@@ -102,15 +131,13 @@ func (s *testV2Server) nextResponse(userID string) *sync2.SyncResponse {
 			)
 		}
 		return &data
-	case <-time.After(1 * time.Second):
+	case <-time.After(s.timeToWaitForV2Response):
 		if !testutils.Quiet {
-			log.Printf("testV2Server: nextResponse %s waited >1s for data, returning null", userID)
+			log.Printf("testV2Server: nextResponse %s waited >%v for data, returning null", userID, s.timeToWaitForV2Response)
 		}
 		return nil
 	}
 }
-
-// TODO: queueDeviceResponse(token string)
 
 func (s *testV2Server) url() string {
 	return s.srv.URL
@@ -123,25 +150,41 @@ func (s *testV2Server) close() {
 func runTestV2Server(t testutils.TestBenchInterface) *testV2Server {
 	t.Helper()
 	server := &testV2Server{
-		tokenToUser: make(map[string]string),
-		queues:      make(map[string]chan sync2.SyncResponse),
-		waiting:     make(map[string]*sync.Cond),
-		mu:          &sync.Mutex{},
+		tokenToUser:             make(map[string]string),
+		queues:                  make(map[string]chan sync2.SyncResponse),
+		waiting:                 make(map[string]*sync.Cond),
+		invalidations:           make(map[string]func()),
+		mu:                      &sync.Mutex{},
+		timeToWaitForV2Response: time.Second,
 	}
 	r := mux.NewRouter()
 	r.HandleFunc("/_matrix/client/r0/account/whoami", func(w http.ResponseWriter, req *http.Request) {
-		userID := server.userID(strings.TrimPrefix(req.Header.Get("Authorization"), "Bearer "))
+		token := strings.TrimPrefix(req.Header.Get("Authorization"), "Bearer ")
+		userID := server.userID(token)
 		if userID == "" {
-			w.WriteHeader(403)
+			w.WriteHeader(401)
+			server.mu.Lock()
+			fn := server.invalidations[token]
+			if fn != nil {
+				fn()
+			}
+			server.mu.Unlock()
 			return
 		}
 		w.WriteHeader(200)
 		w.Write([]byte(fmt.Sprintf(`{"user_id":"%s"}`, userID)))
 	})
 	r.HandleFunc("/_matrix/client/r0/sync", func(w http.ResponseWriter, req *http.Request) {
-		userID := server.userID(strings.TrimPrefix(req.Header.Get("Authorization"), "Bearer "))
+		token := strings.TrimPrefix(req.Header.Get("Authorization"), "Bearer ")
+		userID := server.userID(token)
 		if userID == "" {
-			w.WriteHeader(403)
+			w.WriteHeader(401)
+			server.mu.Lock()
+			fn := server.invalidations[token]
+			if fn != nil {
+				fn()
+			}
+			server.mu.Unlock()
 			return
 		}
 		resp := server.nextResponse(userID)
@@ -162,11 +205,13 @@ func runTestV2Server(t testutils.TestBenchInterface) *testV2Server {
 type testV3Server struct {
 	srv     *httptest.Server
 	handler *handler.SyncLiveHandler
+	h2      *handler2.Handler
 }
 
 func (s *testV3Server) close() {
 	s.srv.Close()
 	s.handler.Teardown()
+	s.h2.Teardown()
 }
 
 func (s *testV3Server) restart(t *testing.T, v2 *testV2Server, pq string) {
@@ -174,8 +219,12 @@ func (s *testV3Server) restart(t *testing.T, v2 *testV2Server, pq string) {
 	log.Printf("restarting server")
 	s.close()
 	ss := runTestServer(t, v2, pq)
+	// replace all the fields which will be close()d to ensure we don't leak
 	s.srv = ss.srv
-	v2.srv.CloseClientConnections() // kick-over v2 conns
+	s.h2 = ss.h2
+	s.handler = ss.handler
+	// kick over v2 conns
+	v2.srv.CloseClientConnections()
 }
 
 func (s *testV3Server) mustDoV3Request(t testutils.TestBenchInterface, token string, reqBody sync3.Request) (respBody *sync3.Response) {
@@ -232,27 +281,32 @@ func (s *testV3Server) doV3Request(t testutils.TestBenchInterface, ctx context.C
 	return &r, respBytes, resp.StatusCode
 }
 
-func runTestServer(t testutils.TestBenchInterface, v2Server *testV2Server, postgresConnectionString string) *testV3Server {
+func runTestServer(t testutils.TestBenchInterface, v2Server *testV2Server, postgresConnectionString string, enableProm ...bool) *testV3Server {
 	t.Helper()
 	if postgresConnectionString == "" {
 		postgresConnectionString = testutils.PrepareDBConnectionString()
 	}
-	h, err := handler.NewSync3Handler(&sync2.HTTPClient{
-		Client: &http.Client{
-			Timeout: 5 * time.Minute,
-		},
-		DestinationServer: v2Server.url(),
-	}, postgresConnectionString, os.Getenv("SYNCV3_SECRET"), true)
-	if err != nil {
-		t.Fatalf("cannot make v3 handler: %s", err)
+	metricsEnabled := false
+	if len(enableProm) > 0 && enableProm[0] {
+		metricsEnabled = true
 	}
+	h2, h3 := syncv3.Setup(v2Server.url(), postgresConnectionString, os.Getenv("SYNCV3_SECRET"), syncv3.Opts{
+		Debug:                    true,
+		TestingSynchronousPubsub: true, // critical to avoid flakey tests
+		AddPrometheusMetrics:     metricsEnabled,
+	})
+	// for ease of use we don't start v2 pollers at startup in tests
 	r := mux.NewRouter()
-	r.Handle("/_matrix/client/v3/sync", h)
-	r.Handle("/_matrix/client/unstable/org.matrix.msc3575/sync", h)
+	r.Handle("/_matrix/client/v3/sync", h3)
+	r.Handle("/_matrix/client/unstable/org.matrix.msc3575/sync", h3)
 	srv := httptest.NewServer(r)
+	if !testutils.Quiet {
+		t.Logf("v2 @ %s", v2Server.url())
+	}
 	return &testV3Server{
 		srv:     srv,
-		handler: h,
+		handler: h3,
+		h2:      h2,
 	}
 }
 

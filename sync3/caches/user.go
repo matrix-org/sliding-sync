@@ -17,6 +17,10 @@ const (
 	InvitesAreHighlightsValue = 1 // invite -> highlight count = 1
 )
 
+type CacheFinder interface {
+	CacheForUser(userID string) *UserCache
+}
+
 type UserRoomData struct {
 	IsDM              bool
 	IsInvite          bool
@@ -36,6 +40,8 @@ type UserRoomData struct {
 	// Map of tag to order float.
 	// See https://spec.matrix.org/latest/client-server-api/#room-tagging
 	Tags map[string]float64
+	// the load state of the timeline
+	LoadPos int64
 }
 
 func NewUserRoomData() UserRoomData {
@@ -268,7 +274,7 @@ func (c *UserCache) LazyLoadTimelines(loadPos int64, roomIDs []string, maxTimeli
 	var lazyRoomIDs []string
 	for _, roomID := range roomIDs {
 		urd := c.LoadRoomData(roomID)
-		if len(urd.Timeline) > 0 {
+		if len(urd.Timeline) > 0 && urd.LoadPos <= loadPos {
 			timeline := urd.Timeline
 			if len(timeline) > maxTimelineEvents {
 				timeline = timeline[len(timeline)-maxTimelineEvents:]
@@ -334,6 +340,7 @@ func (c *UserCache) LazyLoadTimelines(loadPos int64, roomIDs []string, maxTimeli
 			urd = NewUserRoomData()
 		}
 		urd.Timeline = events
+		urd.LoadPos = loadPos
 		if len(events) > 0 {
 			eventID := gjson.ParseBytes(events[0]).Get("event_id").Str
 			urd.SetPrevBatch(eventID, roomIDToPrevBatch[roomID])
@@ -414,16 +421,20 @@ func (c *UserCache) Invites() map[string]UserRoomData {
 // which would cause the transaction ID to be missing from the event. Instead, we always look for txn
 // IDs in the v2 poller, and then set them appropriately at request time.
 func (c *UserCache) AnnotateWithTransactionIDs(events []json.RawMessage) []json.RawMessage {
+	eventIDs := make([]string, len(events))
+	eventIDIndex := make(map[string]int, len(events))
 	for i := range events {
-		eventID := gjson.GetBytes(events[i], "event_id")
-		txnID := c.txnIDs.TransactionIDForEvent(c.UserID, eventID.Str)
-		if txnID != "" {
-			newJSON, err := sjson.SetBytes(events[i], "unsigned.transaction_id", txnID)
-			if err != nil {
-				logger.Err(err).Str("user", c.UserID).Msg("AnnotateWithTransactionIDs: sjson failed")
-			} else {
-				events[i] = newJSON
-			}
+		eventIDs[i] = gjson.GetBytes(events[i], "event_id").Str
+		eventIDIndex[eventIDs[i]] = i
+	}
+	eventIDToTxnID := c.txnIDs.TransactionIDForEvents(c.UserID, eventIDs)
+	for eventID, txnID := range eventIDToTxnID {
+		i := eventIDIndex[eventID]
+		newJSON, err := sjson.SetBytes(events[i], "unsigned.transaction_id", txnID)
+		if err != nil {
+			logger.Err(err).Str("user", c.UserID).Msg("AnnotateWithTransactionIDs: sjson failed")
+		} else {
+			events[i] = newJSON
 		}
 	}
 	return events
@@ -432,6 +443,29 @@ func (c *UserCache) AnnotateWithTransactionIDs(events []json.RawMessage) []json.
 // =================================================
 // Listener functions called by v2 pollers are below
 // =================================================
+
+func (c *UserCache) OnEphemeralEvent(roomID string, ephEvent json.RawMessage) {
+	var update RoomUpdate
+	evType := gjson.GetBytes(ephEvent, "type").Str
+	switch evType {
+	case "m.typing":
+		update = &TypingUpdate{
+			RoomUpdate: c.newRoomUpdate(roomID),
+		}
+	case "m.receipt":
+		update = &ReceiptUpdate{
+			RoomUpdate:     c.newRoomUpdate(roomID),
+			EphemeralEvent: ephEvent,
+		}
+	}
+	if update == nil {
+		return
+	}
+
+	for _, l := range c.listeners {
+		l.OnRoomUpdate(update)
+	}
+}
 
 func (c *UserCache) OnUnreadCounts(roomID string, highlightCount, notifCount *int) {
 	data := c.LoadRoomData(roomID)
@@ -492,6 +526,7 @@ func (c *UserCache) OnNewEvent(eventData *EventData) {
 	if len(urd.Timeline) > 0 {
 		// we're tracking timelines, add this message too
 		urd.Timeline = append(urd.Timeline, eventData.Event)
+		urd.LoadPos = eventData.LatestPos
 	}
 	// reset the IsInvite field when the user actually joins/rejects the invite
 	if urd.IsInvite && eventData.EventType == "m.room.member" && eventData.StateKey != nil && *eventData.StateKey == c.UserID {

@@ -21,6 +21,8 @@ type data struct {
 	txnID                string
 	numToDeviceEvents    int
 	numGlobalAccountData int
+	numChangedDevices    int
+	numLeftDevices       int
 }
 
 // prepare a request context so it can contain syncv3 info
@@ -43,7 +45,10 @@ func SetRequestContextUserID(ctx context.Context, userID string) {
 	da.userID = userID
 }
 
-func SetRequestContextResponseInfo(ctx context.Context, since, next int64, numRooms int, txnID string, numToDeviceEvents, numGlobalAccountData int) {
+func SetRequestContextResponseInfo(
+	ctx context.Context, since, next int64, numRooms int, txnID string, numToDeviceEvents, numGlobalAccountData int,
+	numChangedDevices, numLeftDevices int,
+) {
 	d := ctx.Value(ctxData)
 	if d == nil {
 		return
@@ -55,6 +60,8 @@ func SetRequestContextResponseInfo(ctx context.Context, since, next int64, numRo
 	da.txnID = txnID
 	da.numToDeviceEvents = numToDeviceEvents
 	da.numGlobalAccountData = numGlobalAccountData
+	da.numChangedDevices = numChangedDevices
+	da.numLeftDevices = numLeftDevices
 }
 
 func DecorateLogger(ctx context.Context, l *zerolog.Event) *zerolog.Event {
@@ -83,6 +90,12 @@ func DecorateLogger(ctx context.Context, l *zerolog.Event) *zerolog.Event {
 	}
 	if da.numGlobalAccountData > 0 {
 		l = l.Int("ag", da.numGlobalAccountData)
+	}
+	if da.numChangedDevices > 0 {
+		l = l.Int("dl-c", da.numChangedDevices)
+	}
+	if da.numLeftDevices > 0 {
+		l = l.Int("dl-l", da.numLeftDevices)
 	}
 	return l
 }

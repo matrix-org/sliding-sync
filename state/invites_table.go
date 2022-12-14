@@ -1,6 +1,7 @@
 package state
 
 import (
+	"database/sql"
 	"encoding/json"
 
 	"github.com/jmoiron/sqlx"
@@ -57,6 +58,20 @@ func (t *InvitesTable) InsertInvite(userID, roomID string, inviteRoomState []jso
 		userID, roomID, blob,
 	)
 	return err
+}
+
+func (t *InvitesTable) SelectInviteState(userID, roomID string) (inviteState []json.RawMessage, err error) {
+	var blob json.RawMessage
+	if err := t.db.QueryRow(`SELECT invite_state FROM syncv3_invites WHERE user_id=$1 AND room_id=$2`, userID, roomID).Scan(&blob); err != nil && err != sql.ErrNoRows {
+		return nil, err
+	}
+	if blob == nil {
+		return
+	}
+	if err := json.Unmarshal(blob, &inviteState); err != nil {
+		return nil, err
+	}
+	return inviteState, nil
 }
 
 // Select all invites for this user. Returns a map of room ID to invite_state (json array).

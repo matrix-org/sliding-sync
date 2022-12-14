@@ -28,10 +28,11 @@ func TestStorageRoomStateBeforeAndAfterEventPosition(t *testing.T) {
 		testutils.NewStateEvent(t, "m.room.join_rules", "", alice, map[string]interface{}{"join_rule": "invite"}),
 		testutils.NewStateEvent(t, "m.room.member", bob, alice, map[string]interface{}{"membership": "invite"}),
 	}
-	_, latest, err := store.Accumulate(roomID, "", events)
+	_, latestNIDs, err := store.Accumulate(roomID, "", events)
 	if err != nil {
 		t.Fatalf("Accumulate returned error: %s", err)
 	}
+	latest := latestNIDs[len(latestNIDs)-1]
 
 	testCases := []struct {
 		name       string
@@ -147,12 +148,14 @@ func TestStorageJoinedRoomsAfterPosition(t *testing.T) {
 		},
 	}
 	var latestPos int64
+	var latestNIDs []int64
 	var err error
 	for roomID, eventMap := range roomIDToEventMap {
-		_, latestPos, err = store.Accumulate(roomID, "", eventMap)
+		_, latestNIDs, err = store.Accumulate(roomID, "", eventMap)
 		if err != nil {
 			t.Fatalf("Accumulate on %s failed: %s", roomID, err)
 		}
+		latestPos = latestNIDs[len(latestNIDs)-1]
 	}
 	aliceJoinedRooms, err := store.JoinedRoomsAfterPosition(alice, latestPos)
 	if err != nil {
@@ -170,7 +173,8 @@ func TestStorageJoinedRoomsAfterPosition(t *testing.T) {
 	}
 
 	// also test currentStateEventsInAllRooms
-	roomIDToCreateEvents, err := store.currentStateEventsInAllRooms([]string{"m.room.create"})
+	txn := store.DB.MustBeginTx(context.Background(), nil)
+	roomIDToCreateEvents, err := store.currentStateEventsInAllRooms(txn, []string{"m.room.create"})
 	if err != nil {
 		t.Fatalf("CurrentStateEventsInAllRooms returned error: %s", err)
 	}
@@ -193,7 +197,8 @@ func TestStorageJoinedRoomsAfterPosition(t *testing.T) {
 	}
 
 	// also test MetadataForAllRooms
-	roomIDToMetadata, err := store.MetadataForAllRooms()
+	roomIDToMetadata, err := store.MetadataForAllRooms(txn)
+	txn.Commit()
 	if err != nil {
 		t.Fatalf("MetadataForAllRooms: %s", err)
 	}
@@ -259,7 +264,7 @@ func TestVisibleEventNIDsBetween(t *testing.T) {
 		},
 	}
 	for roomID, eventMap := range roomIDToEventMap {
-		_, err := store.Initialise(roomID, eventMap)
+		_, _, err := store.Initialise(roomID, eventMap)
 		if err != nil {
 			t.Fatalf("Initialise on %s failed: %s", roomID, err)
 		}
@@ -488,7 +493,7 @@ func TestStorageLatestEventsInRoomsPrevBatch(t *testing.T) {
 		},
 	}
 
-	_, err := store.Initialise(roomID, stateEvents)
+	_, _, err := store.Initialise(roomID, stateEvents)
 	if err != nil {
 		t.Fatalf("failed to initialise: %s", err)
 	}

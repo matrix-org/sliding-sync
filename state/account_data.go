@@ -1,7 +1,6 @@
 package state
 
 import (
-	"database/sql"
 	"fmt"
 
 	"github.com/jmoiron/sqlx"
@@ -63,14 +62,10 @@ func (t *AccountDataTable) Insert(txn *sqlx.Tx, accDatas []AccountData) ([]Accou
 	return dedupedAccountData, nil
 }
 
-func (t *AccountDataTable) Select(txn *sqlx.Tx, userID, eventType, roomID string) (*AccountData, error) {
-	var acc AccountData
-	err := txn.Get(&acc, `SELECT user_id, room_id, type, data FROM syncv3_account_data
-	WHERE user_id=$1 AND type=$2 AND room_id=$3`, userID, eventType, roomID)
-	if err == sql.ErrNoRows {
-		return nil, nil
-	}
-	return &acc, err
+func (t *AccountDataTable) Select(txn *sqlx.Tx, userID string, eventTypes []string, roomID string) (datas []AccountData, err error) {
+	err = txn.Select(&datas, `SELECT user_id, room_id, type, data FROM syncv3_account_data
+	WHERE user_id=$1 AND type=ANY($2) AND room_id=$3`, userID, pq.StringArray(eventTypes), roomID)
+	return
 }
 
 func (t *AccountDataTable) SelectWithType(txn *sqlx.Tx, userID, evType string) (datas []AccountData, err error) {

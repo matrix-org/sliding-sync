@@ -108,7 +108,7 @@ func TestSlowGetAllRoomsInitial(t *testing.T) {
 		ts := latestTimestamp
 		roomName := "My Room 111111"
 		newRoom := roomEvents{
-			roomID: fmt.Sprintf("!TestSlowGetAllRoomsInitial_%d:localhost", len(allRooms)),
+			roomID: fmt.Sprintf("!TestSlowGetAllRoomsInitial_%dNEW:localhost", len(allRooms)),
 			name:   roomName,
 			events: append(createRoomState(t, alice, ts), []json.RawMessage{
 				testutils.NewStateEvent(t, "m.room.name", "", alice, map[string]interface{}{"name": roomName}, testutils.WithTimestamp(ts.Add(3*time.Second))),

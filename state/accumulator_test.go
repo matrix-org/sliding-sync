@@ -26,7 +26,7 @@ func TestAccumulatorInitialise(t *testing.T) {
 		t.Fatalf("failed to open SQL db: %s", err)
 	}
 	accumulator := NewAccumulator(db)
-	added, err := accumulator.Initialise(roomID, roomEvents)
+	added, initSnapID, err := accumulator.Initialise(roomID, roomEvents)
 	if err != nil {
 		t.Fatalf("falied to Initialise accumulator: %s", err)
 	}
@@ -47,6 +47,9 @@ func TestAccumulatorInitialise(t *testing.T) {
 	}
 	if snapID == 0 {
 		t.Fatalf("Initialise did not store a current snapshot")
+	}
+	if snapID != initSnapID {
+		t.Fatalf("Initialise returned wrong snapshot ID, got %v want %v", initSnapID, snapID)
 	}
 
 	// this snapshot should have 3 events in it
@@ -73,7 +76,7 @@ func TestAccumulatorInitialise(t *testing.T) {
 	}
 
 	// Subsequent calls do nothing and are not an error
-	added, err = accumulator.Initialise(roomID, roomEvents)
+	added, _, err = accumulator.Initialise(roomID, roomEvents)
 	if err != nil {
 		t.Fatalf("falied to Initialise accumulator: %s", err)
 	}
@@ -94,7 +97,7 @@ func TestAccumulatorAccumulate(t *testing.T) {
 		t.Fatalf("failed to open SQL db: %s", err)
 	}
 	accumulator := NewAccumulator(db)
-	_, err = accumulator.Initialise(roomID, roomEvents)
+	_, _, err = accumulator.Initialise(roomID, roomEvents)
 	if err != nil {
 		t.Fatalf("failed to Initialise accumulator: %s", err)
 	}
@@ -109,8 +112,8 @@ func TestAccumulatorAccumulate(t *testing.T) {
 		[]byte(`{"event_id":"I", "type":"m.room.history_visibility", "state_key":"", "content":{"visibility":"public"}}`),
 	}
 	var numNew int
-	var gotLatestNID int64
-	if numNew, gotLatestNID, err = accumulator.Accumulate(roomID, "", newEvents); err != nil {
+	var latestNIDs []int64
+	if numNew, latestNIDs, err = accumulator.Accumulate(roomID, "", newEvents); err != nil {
 		t.Fatalf("failed to Accumulate: %s", err)
 	}
 	if numNew != len(newEvents) {
@@ -121,8 +124,8 @@ func TestAccumulatorAccumulate(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to check latest NID from Accumulate: %s", err)
 	}
-	if gotLatestNID != wantLatestNID {
-		t.Errorf("Accumulator.Accumulate returned latest nid %d, want %d", gotLatestNID, wantLatestNID)
+	if latestNIDs[len(latestNIDs)-1] != wantLatestNID {
+		t.Errorf("Accumulator.Accumulate returned latest nid %d, want %d", latestNIDs[len(latestNIDs)-1], wantLatestNID)
 	}
 
 	// Begin assertions
@@ -183,7 +186,7 @@ func TestAccumulatorDelta(t *testing.T) {
 		t.Fatalf("failed to open SQL db: %s", err)
 	}
 	accumulator := NewAccumulator(db)
-	_, err = accumulator.Initialise(roomID, nil)
+	_, _, err = accumulator.Initialise(roomID, nil)
 	if err != nil {
 		t.Fatalf("failed to Initialise accumulator: %s", err)
 	}
@@ -234,7 +237,7 @@ func TestAccumulatorMembershipLogs(t *testing.T) {
 		t.Fatalf("failed to open SQL db: %s", err)
 	}
 	accumulator := NewAccumulator(db)
-	_, err = accumulator.Initialise(roomID, nil)
+	_, _, err = accumulator.Initialise(roomID, nil)
 	if err != nil {
 		t.Fatalf("failed to Initialise accumulator: %s", err)
 	}
@@ -376,7 +379,7 @@ func TestAccumulatorDupeEvents(t *testing.T) {
 	}
 	accumulator := NewAccumulator(db)
 	roomID := "!buggy:localhost"
-	_, err = accumulator.Initialise(roomID, joinRoom.State.Events)
+	_, _, err = accumulator.Initialise(roomID, joinRoom.State.Events)
 	if err != nil {
 		t.Fatalf("failed to Initialise accumulator: %s", err)
 	}
@@ -418,7 +421,7 @@ func TestAccumulatorMisorderedGraceful(t *testing.T) {
 	accumulator := NewAccumulator(db)
 	roomID := "!TestAccumulatorStateReset:localhost"
 	// Create a room with initial state A,C
-	_, err = accumulator.Initialise(roomID, []json.RawMessage{
+	_, _, err = accumulator.Initialise(roomID, []json.RawMessage{
 		eventA, eventC,
 	})
 	if err != nil {
@@ -593,7 +596,9 @@ func TestCalculateNewSnapshotDupe(t *testing.T) {
 }
 
 func currentSnapshotNIDs(t *testing.T, snapshotTable *SnapshotTable, roomID string) []int64 {
-	roomToSnapshotEvents, err := snapshotTable.CurrentSnapshots()
+	txn := snapshotTable.db.MustBeginTx(context.Background(), nil)
+	defer txn.Commit()
+	roomToSnapshotEvents, err := snapshotTable.CurrentSnapshots(txn)
 	if err != nil {
 		t.Errorf("currentSnapshotNIDs: %s", err)
 	}

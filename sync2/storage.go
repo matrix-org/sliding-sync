@@ -64,6 +64,13 @@ func NewStore(postgresURI, secret string) *Storage {
 	}
 }
 
+func (s *Storage) Teardown() {
+	err := s.db.Close()
+	if err != nil {
+		panic("V2Storage.Teardown: " + err.Error())
+	}
+}
+
 func (s *Storage) encrypt(token string) string {
 	block, err := aes.NewCipher(s.key256)
 	if err != nil {

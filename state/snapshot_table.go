@@ -33,8 +33,8 @@ func NewSnapshotsTable(db *sqlx.DB) *SnapshotTable {
 	return &SnapshotTable{db}
 }
 
-func (t *SnapshotTable) CurrentSnapshots() (map[string][]int64, error) {
-	rows, err := t.db.Query(
+func (t *SnapshotTable) CurrentSnapshots(txn *sqlx.Tx) (map[string][]int64, error) {
+	rows, err := txn.Query(
 		`SELECT syncv3_rooms.room_id, events FROM syncv3_snapshots JOIN syncv3_rooms ON syncv3_snapshots.snapshot_id = syncv3_rooms.current_snapshot_id`,
 	)
 	if err != nil {

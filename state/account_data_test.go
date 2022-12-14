@@ -90,20 +90,20 @@ func TestAccountData(t *testing.T) {
 	}
 
 	// select the updated event
-	gotData, err := table.Select(txn, alice, eventType, roomA)
+	gotData, err := table.Select(txn, alice, []string{eventType}, roomA)
 	if err != nil {
 		t.Fatalf("Select: %s", err)
 	}
-	if !reflect.DeepEqual(*gotData, accountData[len(accountData)-1]) {
+	if !reflect.DeepEqual(gotData[0], accountData[len(accountData)-1]) {
 		t.Fatalf("Select: expected updated event to be returned but wasn't. Got %+v want %+v", gotData, accountData[len(accountData)-1])
 	}
 
 	// Select the global event
-	gotData, err = table.Select(txn, alice, eventType, sync2.AccountDataGlobalRoom)
+	gotData, err = table.Select(txn, alice, []string{eventType}, sync2.AccountDataGlobalRoom)
 	if err != nil {
 		t.Fatalf("Select: %s", err)
 	}
-	if !reflect.DeepEqual(*gotData, accountData[len(accountData)-3]) {
+	if !reflect.DeepEqual(gotData[0], accountData[len(accountData)-3]) {
 		t.Fatalf("Select: expected global event to be returned but wasn't. Got %+v want %+v", gotData, accountData[len(accountData)-3])
 	}
 
@@ -150,6 +150,18 @@ func TestAccountData(t *testing.T) {
 	}
 	if !accountDatasEqual(gotDatas, wantDatas) {
 		t.Fatalf("SelectWithType: got %v want %v", gotDatas, wantDatas)
+	}
+
+	// Select all types in this room
+	gotDatas, err = table.Select(txn, alice, []string{eventType, "dummy"}, roomB)
+	if err != nil {
+		t.Fatalf("SelectWithType: %v", err)
+	}
+	wantDatas = []AccountData{
+		accountData[1], accountData[2],
+	}
+	if !accountDatasEqual(gotDatas, wantDatas) {
+		t.Fatalf("Select(multi-types): got %v want %v", gotDatas, wantDatas)
 	}
 
 }

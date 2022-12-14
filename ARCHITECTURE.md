@@ -1,6 +1,6 @@
 ## Architecture
 
-_Current as of August 2022_
+_Current as of December 2022_
 
 At a high-level, clients (like Element) talk directly to their own homeserver (like Synapse) for every
 single CS API endpoint as usual. Clients which opt-in to sliding sync will no longer call `/sync`, and

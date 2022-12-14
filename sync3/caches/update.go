@@ -1,6 +1,8 @@
 package caches
 
 import (
+	"encoding/json"
+
 	"github.com/matrix-org/sync-v3/internal"
 	"github.com/matrix-org/sync-v3/state"
 )
@@ -27,6 +29,15 @@ type InviteUpdate struct {
 
 type LeftRoomUpdate struct {
 	RoomUpdate
+}
+
+type TypingUpdate struct {
+	RoomUpdate
+}
+
+type ReceiptUpdate struct {
+	RoomUpdate
+	EphemeralEvent json.RawMessage
 }
 
 type UnreadCountUpdate struct {

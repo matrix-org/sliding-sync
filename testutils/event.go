@@ -14,6 +14,7 @@ import (
 type TestBenchInterface interface {
 	Fatalf(s string, args ...interface{})
 	Errorf(s string, args ...interface{})
+	Logf(s string, args ...interface{})
 	Helper()
 	Name() string
 }

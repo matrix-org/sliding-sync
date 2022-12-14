@@ -30,6 +30,16 @@ func NewConnMap() *ConnMap {
 	return cm
 }
 
+func (m *ConnMap) Teardown() {
+	m.cache.Close()
+}
+
+func (m *ConnMap) Len() int {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return len(m.connIDToConn)
+}
+
 // Conn returns a connection with this ConnID. Returns nil if no connection exists.
 func (m *ConnMap) Conn(cid ConnID) *Conn {
 	cint, _ := m.cache.Get(cid.String())

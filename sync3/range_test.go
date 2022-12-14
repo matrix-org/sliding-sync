@@ -43,6 +43,30 @@ func TestRangeValid(t *testing.T) {
 			}),
 			valid: false,
 		},
+		{
+			input: SliceRanges([][2]int64{
+				{0, 20}, {20, 40}, // 20 overlaps
+			}),
+			valid: false,
+		},
+		{
+			input: SliceRanges([][2]int64{
+				{0, 20}, {40, 60}, {30, 35},
+			}),
+			valid: true,
+		},
+		{
+			input: SliceRanges([][2]int64{
+				{0, 20}, {40, 60}, {10, 15},
+			}),
+			valid: false,
+		},
+		{
+			input: SliceRanges([][2]int64{
+				{10, 15}, {40, 60}, {0, 20},
+			}),
+			valid: false,
+		},
 	}
 	for _, tc := range testCases {
 		gotValid := tc.input.Valid()
@@ -472,17 +496,161 @@ func TestRangeDelta(t *testing.T) {
 			wantAdded:   [][2]int64{},
 			wantRemoved: [][2]int64{},
 		},
+		// regression test, 1 element overlap
+		{
+			oldRange:    [][2]int64{{10, 20}},
+			newRange:    [][2]int64{{20, 30}},
+			wantSames:   [][2]int64{{20, 20}},
+			wantAdded:   [][2]int64{{21, 30}},
+			wantRemoved: [][2]int64{{10, 19}},
+		},
 	}
 	for _, tc := range testCases {
 		gotAdd, gotRm, gotSame := tc.oldRange.Delta(tc.newRange)
 		if tc.wantAdded != nil && !reflect.DeepEqual(gotAdd, tc.wantAdded) {
-			t.Errorf("%+v got added %+v", tc, gotAdd)
+			t.Errorf("%v -> %v got added %+v want %+v", tc.oldRange, tc.newRange, gotAdd, tc.wantAdded)
 		}
 		if tc.wantRemoved != nil && !reflect.DeepEqual(gotRm, tc.wantRemoved) {
-			t.Errorf("%+v got removed %+v", tc, gotRm)
+			t.Errorf("%v -> %v got remove %+v want %+v", tc.oldRange, tc.newRange, gotRm, tc.wantRemoved)
 		}
 		if tc.wantSames != nil && !reflect.DeepEqual(gotSame, tc.wantSames) {
-			t.Errorf("%+v got sames %+v", tc, gotSame)
+			t.Errorf("%v -> %v got same %+v want %+v", tc.oldRange, tc.newRange, gotSame, tc.wantSames)
+		}
+	}
+}
+
+func TestSortPoints(t *testing.T) {
+	testCases := []struct {
+		name  string
+		input []pointInfo
+		want  []pointInfo
+	}{
+		{
+			name: "two element",
+			input: []pointInfo{
+				{
+					x:          5,
+					isOldRange: true,
+					isOpen:     true,
+				},
+				{
+					x:          2,
+					isOldRange: true,
+					isOpen:     true,
+				},
+			},
+			want: []pointInfo{
+				{
+					x:          2,
+					isOldRange: true,
+					isOpen:     true,
+				},
+				{
+					x:          5,
+					isOldRange: true,
+					isOpen:     true,
+				},
+			},
+		},
+		{
+			name: "no dupes, sort by x",
+			input: []pointInfo{
+				{
+					x:          4,
+					isOldRange: true,
+					isOpen:     true,
+				},
+				{
+					x:          1,
+					isOldRange: true,
+					isOpen:     false,
+				},
+				{
+					x:          3,
+					isOldRange: false,
+					isOpen:     true,
+				},
+				{
+					x:          2,
+					isOldRange: false,
+					isOpen:     false,
+				},
+			},
+			want: []pointInfo{
+				{
+					x:          1,
+					isOldRange: true,
+					isOpen:     false,
+				},
+				{
+					x:          2,
+					isOldRange: false,
+					isOpen:     false,
+				},
+				{
+					x:          3,
+					isOldRange: false,
+					isOpen:     true,
+				},
+				{
+					x:          4,
+					isOldRange: true,
+					isOpen:     true,
+				},
+			},
+		},
+		{
+			name: "all dupes, sort by open(tie=old), close(tie=old)",
+			input: []pointInfo{
+				{
+					x:          4,
+					isOldRange: true,
+					isOpen:     true,
+				},
+				{
+					x:          4,
+					isOldRange: false,
+					isOpen:     true,
+				},
+				{
+					x:          4,
+					isOldRange: false,
+					isOpen:     false,
+				},
+				{
+					x:          4,
+					isOldRange: true,
+					isOpen:     false,
+				},
+			},
+			want: []pointInfo{
+				{
+					x:          4,
+					isOldRange: true,
+					isOpen:     true,
+				},
+				{
+					x:          4,
+					isOldRange: false,
+					isOpen:     true,
+				},
+				{
+					x:          4,
+					isOldRange: true,
+					isOpen:     false,
+				},
+				{
+					x:          4,
+					isOldRange: false,
+					isOpen:     false,
+				},
+			},
+		},
+	}
+	for _, tc := range testCases {
+		sortPoints(tc.input)
+		if !reflect.DeepEqual(tc.input, tc.want) {
+			t.Errorf("%s: got %+v\nwant %+v", tc.name, tc.input, tc.want)
 		}
 	}
 }
