@@ -65,8 +65,8 @@ jobs:
         runs-on: ubuntu-latest
         services:
             synapse:
-                # Custom image built from https://github.com/matrix-org/synapse/tree/v1.62.0/docker/complement with a dummy /complement/ca set
-                image: ghcr.io/matrix-org/synapse-service:v1.62.0
+                # Custom image built from https://github.com/matrix-org/synapse/tree/v1.72.0/docker/complement with a dummy /complement/ca set
+                image: ghcr.io/matrix-org/synapse-service:v1.72.0
                 env:
                     SYNAPSE_COMPLEMENT_DATABASE: sqlite
                     SERVER_NAME: synapse

@@ -184,7 +184,7 @@ func TestReceiptsPrivate(t *testing.T) {
 	})
 	// bob secretly reads this
 	bob.SendReceipt(t, roomID, eventID, "m.read.private")
-	time.Sleep(time.Second) // TODO: find a better way to wait until the proxy has processed this.
+	time.Sleep(300 * time.Millisecond) // TODO: find a better way to wait until the proxy has processed this.
 	// alice does sliding sync -> does not see private RR
 	res := alice.SlidingSync(t, sync3.Request{
 		RoomSubscriptions: map[string]sync3.RoomSubscription{
