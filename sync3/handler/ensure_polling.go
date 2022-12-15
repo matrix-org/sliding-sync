@@ -3,7 +3,7 @@ package handler
 import (
 	"sync"
 
-	"github.com/matrix-org/sync-v3/pubsub"
+	"github.com/matrix-org/sliding-sync/pubsub"
 )
 
 type pendingInfo struct {

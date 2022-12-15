@@ -6,7 +6,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/matrix-org/sync-v3/internal"
+	"github.com/matrix-org/sliding-sync/internal"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/rs/zerolog"
 	"github.com/tidwall/gjson"

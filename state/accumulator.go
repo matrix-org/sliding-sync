@@ -8,7 +8,7 @@ import (
 
 	"github.com/jmoiron/sqlx"
 	"github.com/lib/pq"
-	"github.com/matrix-org/sync-v3/sqlutil"
+	"github.com/matrix-org/sliding-sync/sqlutil"
 	"github.com/rs/zerolog"
 	"github.com/tidwall/gjson"
 )

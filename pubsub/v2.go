@@ -3,7 +3,7 @@ package pubsub
 import (
 	"encoding/json"
 
-	"github.com/matrix-org/sync-v3/internal"
+	"github.com/matrix-org/sliding-sync/internal"
 )
 
 // The channel which has V2* payloads

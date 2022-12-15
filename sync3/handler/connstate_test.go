@@ -9,11 +9,11 @@ import (
 	"time"
 
 	"github.com/matrix-org/gomatrixserverlib"
-	"github.com/matrix-org/sync-v3/internal"
-	"github.com/matrix-org/sync-v3/sync3"
-	"github.com/matrix-org/sync-v3/sync3/caches"
-	"github.com/matrix-org/sync-v3/sync3/extensions"
-	"github.com/matrix-org/sync-v3/testutils"
+	"github.com/matrix-org/sliding-sync/internal"
+	"github.com/matrix-org/sliding-sync/sync3"
+	"github.com/matrix-org/sliding-sync/sync3/caches"
+	"github.com/matrix-org/sliding-sync/sync3/extensions"
+	"github.com/matrix-org/sliding-sync/testutils"
 )
 
 type NopExtensionHandler struct{}
@@ -407,7 +407,7 @@ func TestConnStateMultipleRanges(t *testing.T) {
 	})
 }
 
-// Regression test for https://github.com/matrix-org/sync-v3/commit/732ea46f1ccde2b6a382e0f849bbd166b80900ed
+// Regression test
 func TestBumpToOutsideRange(t *testing.T) {
 	ConnID := sync3.ConnID{
 		DeviceID: "d",

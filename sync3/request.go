@@ -5,8 +5,8 @@ import (
 	"encoding/json"
 	"strings"
 
-	"github.com/matrix-org/sync-v3/internal"
-	"github.com/matrix-org/sync-v3/sync3/extensions"
+	"github.com/matrix-org/sliding-sync/internal"
+	"github.com/matrix-org/sliding-sync/sync3/extensions"
 )
 
 var (

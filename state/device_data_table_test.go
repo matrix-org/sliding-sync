@@ -5,7 +5,7 @@ import (
 	"testing"
 
 	"github.com/jmoiron/sqlx"
-	"github.com/matrix-org/sync-v3/internal"
+	"github.com/matrix-org/sliding-sync/internal"
 )
 
 func assertVal(t *testing.T, msg string, got, want interface{}) {

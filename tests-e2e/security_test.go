@@ -5,8 +5,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/matrix-org/sync-v3/sync3"
-	"github.com/matrix-org/sync-v3/testutils/m"
+	"github.com/matrix-org/sliding-sync/sync3"
+	"github.com/matrix-org/sliding-sync/testutils/m"
 )
 
 // The purpose of these tests is to ensure that events for one user cannot leak to another user.

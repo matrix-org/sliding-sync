@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/matrix-org/sync-v3/internal"
+	"github.com/matrix-org/sliding-sync/internal"
 )
 
 type connHandlerMock struct {

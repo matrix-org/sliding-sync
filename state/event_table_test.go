@@ -9,8 +9,8 @@ import (
 	"github.com/jmoiron/sqlx"
 	"github.com/tidwall/gjson"
 
-	"github.com/matrix-org/sync-v3/sqlutil"
-	"github.com/matrix-org/sync-v3/testutils"
+	"github.com/matrix-org/sliding-sync/sqlutil"
+	"github.com/matrix-org/sliding-sync/testutils"
 )
 
 func TestEventTable(t *testing.T) {

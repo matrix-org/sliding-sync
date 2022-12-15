@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"strconv"
 
-	"github.com/matrix-org/sync-v3/sync3/extensions"
+	"github.com/matrix-org/sliding-sync/sync3/extensions"
 	"github.com/tidwall/gjson"
 )
 

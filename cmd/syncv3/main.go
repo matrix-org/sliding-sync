@@ -7,8 +7,8 @@ import (
 	"os"
 	"strings"
 
-	syncv3 "github.com/matrix-org/sync-v3"
-	"github.com/matrix-org/sync-v3/sync2"
+	syncv3 "github.com/matrix-org/sliding-sync"
+	"github.com/matrix-org/sliding-sync/sync2"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 

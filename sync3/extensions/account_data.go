@@ -3,8 +3,8 @@ package extensions
 import (
 	"encoding/json"
 
-	"github.com/matrix-org/sync-v3/state"
-	"github.com/matrix-org/sync-v3/sync3/caches"
+	"github.com/matrix-org/sliding-sync/state"
+	"github.com/matrix-org/sliding-sync/sync3/caches"
 )
 
 // Client created request params

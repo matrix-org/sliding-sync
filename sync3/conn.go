@@ -6,7 +6,7 @@ import (
 	"runtime/debug"
 	"sync"
 
-	"github.com/matrix-org/sync-v3/internal"
+	"github.com/matrix-org/sliding-sync/internal"
 )
 
 type ConnID struct {

@@ -3,7 +3,7 @@ package sync3
 import (
 	"strings"
 
-	"github.com/matrix-org/sync-v3/internal"
+	"github.com/matrix-org/sliding-sync/internal"
 )
 
 type OverwriteVal bool

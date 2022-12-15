@@ -8,8 +8,8 @@ import (
 	"github.com/matrix-org/util"
 	"github.com/tidwall/gjson"
 
-	"github.com/matrix-org/sync-v3/sync3"
-	"github.com/matrix-org/sync-v3/sync3/extensions"
+	"github.com/matrix-org/sliding-sync/sync3"
+	"github.com/matrix-org/sliding-sync/sync3/extensions"
 )
 
 // Test that if you login to an account -> send a to-device message to this device -> initial proxy connection

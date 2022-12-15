@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"sort"
 
-	"github.com/matrix-org/sync-v3/internal"
-	"github.com/matrix-org/sync-v3/sync3"
+	"github.com/matrix-org/sliding-sync/internal"
+	"github.com/matrix-org/sliding-sync/sync3"
 )
 
 // RoomsBuilder gradually accumulates and mixes data required in order to populate the top-level rooms key

@@ -3,8 +3,8 @@ package caches
 import (
 	"encoding/json"
 
-	"github.com/matrix-org/sync-v3/internal"
-	"github.com/matrix-org/sync-v3/state"
+	"github.com/matrix-org/sliding-sync/internal"
+	"github.com/matrix-org/sliding-sync/state"
 )
 
 type Update interface {

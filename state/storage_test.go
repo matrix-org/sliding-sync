@@ -10,9 +10,9 @@ import (
 
 	"github.com/jmoiron/sqlx"
 	"github.com/matrix-org/gomatrixserverlib"
-	"github.com/matrix-org/sync-v3/internal"
-	"github.com/matrix-org/sync-v3/sqlutil"
-	"github.com/matrix-org/sync-v3/testutils"
+	"github.com/matrix-org/sliding-sync/internal"
+	"github.com/matrix-org/sliding-sync/sqlutil"
+	"github.com/matrix-org/sliding-sync/testutils"
 	"github.com/tidwall/gjson"
 )
 

@@ -1,4 +1,4 @@
-package syncv3
+package slidingsync
 
 import (
 	"encoding/json"
@@ -9,12 +9,12 @@ import (
 	"time"
 
 	"github.com/gorilla/mux"
-	"github.com/matrix-org/sync-v3/internal"
-	"github.com/matrix-org/sync-v3/pubsub"
-	"github.com/matrix-org/sync-v3/state"
-	"github.com/matrix-org/sync-v3/sync2"
-	"github.com/matrix-org/sync-v3/sync2/handler2"
-	"github.com/matrix-org/sync-v3/sync3/handler"
+	"github.com/matrix-org/sliding-sync/internal"
+	"github.com/matrix-org/sliding-sync/pubsub"
+	"github.com/matrix-org/sliding-sync/state"
+	"github.com/matrix-org/sliding-sync/sync2"
+	"github.com/matrix-org/sliding-sync/sync2/handler2"
+	"github.com/matrix-org/sliding-sync/sync3/handler"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/hlog"
 )

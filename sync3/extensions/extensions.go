@@ -3,9 +3,9 @@ package extensions
 import (
 	"os"
 
-	"github.com/matrix-org/sync-v3/state"
-	"github.com/matrix-org/sync-v3/sync2"
-	"github.com/matrix-org/sync-v3/sync3/caches"
+	"github.com/matrix-org/sliding-sync/state"
+	"github.com/matrix-org/sliding-sync/sync2"
+	"github.com/matrix-org/sliding-sync/sync3/caches"
 	"github.com/rs/zerolog"
 )
 

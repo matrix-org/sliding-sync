@@ -6,7 +6,7 @@ import (
 	"math/rand"
 	"testing"
 
-	"github.com/matrix-org/sync-v3/testutils"
+	"github.com/matrix-org/sliding-sync/testutils"
 )
 
 func TestCalculateListOps_BasicOperations(t *testing.T) {

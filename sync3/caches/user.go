@@ -6,9 +6,9 @@ import (
 	"sync"
 
 	lru "github.com/hashicorp/golang-lru"
-	"github.com/matrix-org/sync-v3/internal"
-	"github.com/matrix-org/sync-v3/state"
-	"github.com/matrix-org/sync-v3/sync2"
+	"github.com/matrix-org/sliding-sync/internal"
+	"github.com/matrix-org/sliding-sync/state"
+	"github.com/matrix-org/sliding-sync/sync2"
 	"github.com/tidwall/gjson"
 	"github.com/tidwall/sjson"
 )

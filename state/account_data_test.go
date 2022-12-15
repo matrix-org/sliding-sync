@@ -6,7 +6,7 @@ import (
 	"testing"
 
 	"github.com/jmoiron/sqlx"
-	"github.com/matrix-org/sync-v3/sync2"
+	"github.com/matrix-org/sliding-sync/sync2"
 )
 
 func accountDatasEqual(gots, wants []AccountData) bool {

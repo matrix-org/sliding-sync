@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"strconv"
 
-	"github.com/matrix-org/sync-v3/state"
+	"github.com/matrix-org/sliding-sync/state"
 )
 
 // Client created request params

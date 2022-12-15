@@ -6,10 +6,10 @@ import (
 	"encoding/json"
 	"testing"
 
-	"github.com/matrix-org/sync-v3/state"
-	"github.com/matrix-org/sync-v3/sync3"
-	"github.com/matrix-org/sync-v3/sync3/caches"
-	"github.com/matrix-org/sync-v3/testutils"
+	"github.com/matrix-org/sliding-sync/state"
+	"github.com/matrix-org/sliding-sync/sync3"
+	"github.com/matrix-org/sliding-sync/sync3/caches"
+	"github.com/matrix-org/sliding-sync/testutils"
 )
 
 func TestGlobalCacheLoadState(t *testing.T) {

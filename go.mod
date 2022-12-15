@@ -1,4 +1,4 @@
-module github.com/matrix-org/sync-v3
+module github.com/matrix-org/sliding-sync
 
 go 1.14
 

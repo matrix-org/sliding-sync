@@ -17,13 +17,13 @@ import (
 
 	"github.com/gorilla/mux"
 	"github.com/matrix-org/gomatrixserverlib"
-	syncv3 "github.com/matrix-org/sync-v3"
-	"github.com/matrix-org/sync-v3/sync2"
-	"github.com/matrix-org/sync-v3/sync2/handler2"
-	"github.com/matrix-org/sync-v3/sync3"
-	"github.com/matrix-org/sync-v3/sync3/handler"
-	"github.com/matrix-org/sync-v3/testutils"
-	"github.com/matrix-org/sync-v3/testutils/m"
+	syncv3 "github.com/matrix-org/sliding-sync"
+	"github.com/matrix-org/sliding-sync/sync2"
+	"github.com/matrix-org/sliding-sync/sync2/handler2"
+	"github.com/matrix-org/sliding-sync/sync3"
+	"github.com/matrix-org/sliding-sync/sync3/handler"
+	"github.com/matrix-org/sliding-sync/testutils"
+	"github.com/matrix-org/sliding-sync/testutils/m"
 	"github.com/tidwall/gjson"
 )
 

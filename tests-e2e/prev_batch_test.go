@@ -6,7 +6,7 @@ import (
 	"net/url"
 	"testing"
 
-	"github.com/matrix-org/sync-v3/sync3"
+	"github.com/matrix-org/sliding-sync/sync3"
 )
 
 func TestPrevBatch(t *testing.T) {

@@ -4,7 +4,7 @@ import (
 	"os"
 	"testing"
 
-	"github.com/matrix-org/sync-v3/testutils"
+	"github.com/matrix-org/sliding-sync/testutils"
 	"github.com/rs/zerolog"
 )
 
