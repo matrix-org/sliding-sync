@@ -52,8 +52,8 @@ let roomDomLists = activeLists.map((al, index) => {
             return;
         }
         // ensure we don't overlap with the 0,20 range
-        if (start < 20) {
-            start = 20;
+        if (start <= 20) {
+            start = 21;
         }
         // update the data model
         al.activeRanges[1] = [start, end];

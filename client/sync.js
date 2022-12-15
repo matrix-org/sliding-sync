@@ -293,117 +293,168 @@ export class SlidingSync {
             });
 
             resp.lists.forEach((list, listIndex) => {
-                // TODO: clear gapIndex immediately after next op to avoid a genuine DELETE shifting incorrectly e.g leaving a room
                 let gapIndex = -1;
                 list.ops = list.ops || [];
-
                 list.ops.forEach((op) => {
-                    if (op.op === "DELETE") {
-                        console.log("DELETE", listIndex, op.index, ";");
-                        delete this.lists[listIndex].roomIndexToRoomId[
-                            op.index
-                        ];
-                        gapIndex = op.index;
-                    } else if (op.op === "INSERT") {
-                        console.log(
-                            "INSERT",
-                            listIndex,
-                            op.index,
-                            op.room_id,
-                            ";"
-                        );
-                        if (this.lists[listIndex].roomIndexToRoomId[op.index]) {
-                            // something is in this space, shift items out of the way
-                            if (gapIndex < 0) {
-                                console.log(
-                                    "cannot work out where gap is, INSERT without previous DELETE! List: ",
-                                    listIndex
-                                );
-                                return;
+                    switch (op.op) {
+                        case "DELETE": {
+                            console.log("DELETE", listIndex, op.index, ";");
+                            delete this.lists[listIndex].roomIndexToRoomId[op.index];
+                            if (gapIndex !== -1) {
+                                // we already have a DELETE operation to process, so process it.
+                                this.removeEntry(listIndex, gapIndex);
                             }
-                            //  0,1,2,3  index
-                            // [A,B,C,D]
-                            //   DEL 3
-                            // [A,B,C,_]
-                            //   INSERT E 0
-                            // [E,A,B,C]
-                            // gapIndex=3, op.index=0
-                            if (gapIndex > op.index) {
-                                // the gap is further down the list, shift every element to the right
-                                // starting at the gap so we can just shift each element in turn:
-                                // [A,B,C,_] gapIndex=3, op.index=0
-                                // [A,B,C,C] i=3
-                                // [A,B,B,C] i=2
-                                // [A,A,B,C] i=1
-                                // Terminate. We'll assign into op.index next.
-                                for (let i = gapIndex; i > op.index; i--) {
-                                    if (indexInRange(listIndex, i)) {
-                                        this.lists[listIndex].roomIndexToRoomId[
-                                            i
-                                        ] =
-                                            this.lists[
-                                                listIndex
-                                            ].roomIndexToRoomId[i - 1];
-                                    }
-                                }
-                            } else if (gapIndex < op.index) {
-                                // the gap is further up the list, shift every element to the left
-                                // starting at the gap so we can just shift each element in turn
-                                for (let i = gapIndex; i < op.index; i++) {
-                                    if (indexInRange(listIndex, i)) {
-                                        this.lists[listIndex].roomIndexToRoomId[
-                                            i
-                                        ] =
-                                            this.lists[
-                                                listIndex
-                                            ].roomIndexToRoomId[i + 1];
-                                    }
-                                }
-                            }
+                            gapIndex = op.index;
+                            break;
                         }
-                        this.lists[listIndex].roomIndexToRoomId[op.index] =
-                            op.room_id;
-                    } else if (op.op === "SYNC") {
-                        let syncRooms = [];
-                        const startIndex = op.range[0];
-                        for (let i = startIndex; i <= op.range[1]; i++) {
-                            const r = op.room_ids[i - startIndex];
-                            if (!r) {
-                                break; // we are at the end of list
-                            }
-                            this.lists[listIndex].roomIndexToRoomId[i] = r;
-                            syncRooms.push(r);
-                        }
-                        console.log(
-                            "SYNC",
-                            listIndex,
-                            op.range[0],
-                            op.range[1],
-                            syncRooms.join(" "),
-                            ";"
-                        );
-                    } else if (op.op === "INVALIDATE") {
-                        let invalidRooms = [];
-                        const startIndex = op.range[0];
-                        for (let i = startIndex; i <= op.range[1]; i++) {
-                            invalidRooms.push(
-                                this.lists[listIndex].roomIndexToRoomId[i]
+                        case "INSERT": {
+                            console.log(
+                                "INSERT",
+                                listIndex,
+                                op.index,
+                                op.room_id,
+                                ";",
                             );
-                            delete this.lists[listIndex].roomIndexToRoomId[i];
+                            if (this.lists[listIndex].roomIndexToRoomId[op.index]) {
+                                // something is in this space, shift items out of the way
+                                if (gapIndex < 0) {
+                                    // we haven't been told where to shift from, so make way for a new room entry.
+                                    this.addEntry(listIndex, op.index);
+                                } else if (gapIndex > op.index) {
+                                    // the gap is further down the list, shift every element to the right
+                                    // starting at the gap so we can just shift each element in turn:
+                                    // [A,B,C,_] gapIndex=3, op.index=0
+                                    // [A,B,C,C] i=3
+                                    // [A,B,B,C] i=2
+                                    // [A,A,B,C] i=1
+                                    // Terminate. We'll assign into op.index next.
+                                    this.shiftRight(listIndex, gapIndex, op.index);
+                                } else if (gapIndex < op.index) {
+                                    // the gap is further up the list, shift every element to the left
+                                    // starting at the gap so we can just shift each element in turn
+                                    this.shiftLeft(listIndex, op.index, gapIndex);
+                                }
+                            }
+                            // forget the gap, we don't need it anymore. This is outside the check for
+                            // a room being present in this index position because INSERTs always universally
+                            // forget the gap, not conditionally based on the presence of a room in the INSERT
+                            // position. Without this, DELETE 0; INSERT 0; would do the wrong thing.
+                            gapIndex = -1;
+                            this.lists[listIndex].roomIndexToRoomId[op.index] = op.room_id;
+                            break;
                         }
-                        console.log(
-                            "INVALIDATE",
-                            listIndex,
-                            op.range[0],
-                            op.range[1],
-                            ";"
-                        );
+                        case "INVALIDATE": {
+                            const startIndex = op.range[0];
+                            for (let i = startIndex; i <= op.range[1]; i++) {
+                                delete this.lists[listIndex].roomIndexToRoomId[i];
+                            }
+                            console.log(
+                                "INVALIDATE",
+                                listIndex,
+                                op.range[0],
+                                op.range[1],
+                                ";",
+                            );
+                            break;
+                        }
+                        case "SYNC": {
+                            const startIndex = op.range[0];
+                            for (let i = startIndex; i <= op.range[1]; i++) {
+                                const roomId = op.room_ids[i - startIndex];
+                                if (!roomId) {
+                                    break; // we are at the end of list
+                                }
+                                this.lists[listIndex].roomIndexToRoomId[i] = roomId;
+                            }
+                            console.log(
+                                "SYNC",
+                                listIndex,
+                                op.range[0],
+                                op.range[1],
+                                (op.room_ids || []).join(" "),
+                                ";",
+                            );
+                            break;
+                        }
                     }
                 });
+                if (gapIndex !== -1) {
+                    // we already have a DELETE operation to process, so process it
+                    // Everything higher than the gap needs to be shifted left.
+                    this.removeEntry(listIndex, gapIndex);
+                }
             });
 
             this._invokeLifecycleListeners(LifecycleSyncComplete, resp);
         }
+    }
+
+    shiftRight(listIndex, hi, low) {
+        //     l   h
+        // 0,1,2,3,4 <- before
+        // 0,1,2,2,3 <- after, hi is deleted and low is duplicated
+        for (let i = hi; i > low; i--) {
+            if (this.isIndexInRange(this.lists[listIndex], i)) {
+                this.lists[listIndex].roomIndexToRoomId[i] =
+                    this.lists[listIndex].roomIndexToRoomId[
+                        i - 1
+                    ];
+            }
+        }
+    }
+
+    shiftLeft(listIndex, hi, low) {
+        //     l   h
+        // 0,1,2,3,4 <- before
+        // 0,1,3,4,4 <- after, low is deleted and hi is duplicated
+        for (let i = low; i < hi; i++) {
+            if (this.isIndexInRange(this.lists[listIndex], i)) {
+                this.lists[listIndex].roomIndexToRoomId[i] =
+                    this.lists[listIndex].roomIndexToRoomId[
+                        i + 1
+                    ];
+            }
+        }
+    }
+
+    removeEntry(listIndex, index) {
+        // work out the max index
+        let max = -1;
+        for (const n in this.lists[listIndex].roomIndexToRoomId) {
+            if (Number(n) > max) {
+                max = Number(n);
+            }
+        }
+        if (max < 0 || index > max) {
+            return;
+        }
+        // Everything higher than the gap needs to be shifted left.
+        this.shiftLeft(listIndex, max, index);
+        delete this.lists[listIndex].roomIndexToRoomId[max];
+    }
+
+    addEntry(listIndex, index) {
+        // work out the max index
+        let max = -1;
+        for (const n in this.lists[listIndex].roomIndexToRoomId) {
+            if (Number(n) > max) {
+                max = Number(n);
+            }
+        }
+        if (max < 0 || index > max) {
+            return;
+        }
+        // Everything higher than the gap needs to be shifted right, +1 so we don't delete the highest element
+        this.shiftRight(listIndex, max+1, index);
+    }
+
+    isIndexInRange(list, i) {
+        for (const r of list.activeRanges) {
+            if (r[0] <= i && i <= r[1]) {
+                return true;
+            }
+        }
+        return false;
     }
 }
 
