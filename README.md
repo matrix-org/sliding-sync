@@ -27,8 +27,16 @@ Requires Postgres 13+.
 ```bash
 $ createdb syncv3
 $ echo -n "$(openssl rand -hex 32)" > .secret # this MUST remain the same throughout the lifetime of the database created above.
+```
+
+Compiling from source and running:
+```
 $ go build ./cmd/syncv3
 $ SYNCV3_SECRET=$(cat .secret) SYNCV3_SERVER="https://matrix-client.matrix.org" SYNCV3_DB="user=$(whoami) dbname=syncv3 sslmode=disable" SYNCV3_BINDADDR=0.0.0.0:8008 ./syncv3
+```
+Using a Docker image:
+```
+docker run --rm -e "SYNCV3_SERVER=https://matrix-client.matrix.org" -e "SYNCV3_SECRET=$(cat .secret)" -e "SYNCV3_BINDADDR=:8008" -e "SYNCV3_DB=user=$(whoami) dbname=syncv3 sslmode=disable host=host.docker.internal" -p 8008:8008 ghcr.io/matrix-org/sliding-sync:v0.98.0
 ```
 
 Then visit http://localhost:8008/client/ (with trailing slash) and paste in the `access_token` for any account on `-server`.
