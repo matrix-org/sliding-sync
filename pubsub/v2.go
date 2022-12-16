@@ -27,7 +27,7 @@ type V2Initialise struct {
 	SnapshotNID int64
 }
 
-func (v V2Initialise) Type() string { return "s" }
+func (*V2Initialise) Type() string { return "V2Initialise" }
 
 type V2Accumulate struct {
 	RoomID    string
@@ -35,7 +35,7 @@ type V2Accumulate struct {
 	EventNIDs []int64
 }
 
-func (v V2Accumulate) Type() string { return "a" }
+func (*V2Accumulate) Type() string { return "V2Accumulate" }
 
 type V2UnreadCounts struct {
 	UserID            string
@@ -44,7 +44,7 @@ type V2UnreadCounts struct {
 	NotificationCount *int
 }
 
-func (v V2UnreadCounts) Type() string { return "u" }
+func (*V2UnreadCounts) Type() string { return "V2UnreadCounts" }
 
 type V2AccountData struct {
 	UserID string
@@ -52,48 +52,48 @@ type V2AccountData struct {
 	Types  []string
 }
 
-func (v V2AccountData) Type() string { return "c" }
+func (*V2AccountData) Type() string { return "V2AccountData" }
 
 type V2LeaveRoom struct {
 	UserID string
 	RoomID string
 }
 
-func (v V2LeaveRoom) Type() string { return "l" }
+func (*V2LeaveRoom) Type() string { return "V2LeaveRoom" }
 
 type V2InviteRoom struct {
 	UserID string
 	RoomID string
 }
 
-func (v V2InviteRoom) Type() string { return "i" }
+func (*V2InviteRoom) Type() string { return "V2InviteRoom" }
 
 type V2InitialSyncComplete struct {
 	UserID   string
 	DeviceID string
 }
 
-func (v V2InitialSyncComplete) Type() string { return "x" }
+func (*V2InitialSyncComplete) Type() string { return "V2InitialSyncComplete" }
 
 type V2DeviceData struct {
 	Pos int64
 }
 
-func (v V2DeviceData) Type() string { return "d" }
+func (*V2DeviceData) Type() string { return "V2DeviceData" }
 
 type V2Typing struct {
 	RoomID         string
 	EphemeralEvent json.RawMessage
 }
 
-func (v V2Typing) Type() string { return "t" }
+func (*V2Typing) Type() string { return "V2Typing" }
 
 type V2Receipt struct {
 	RoomID   string
 	Receipts []internal.Receipt
 }
 
-func (v V2Receipt) Type() string { return "r" }
+func (*V2Receipt) Type() string { return "V2Receipt" }
 
 type V2Sub struct {
 	listener Listener
@@ -112,27 +112,29 @@ func (v *V2Sub) Teardown() {
 }
 
 func (v *V2Sub) onMessage(p Payload) {
-	switch p.Type() {
-	case V2Receipt{}.Type():
-		v.receiver.OnReceipt(p.(*V2Receipt))
-	case V2Initialise{}.Type():
-		v.receiver.Initialise(p.(*V2Initialise))
-	case V2Accumulate{}.Type():
-		v.receiver.Accumulate(p.(*V2Accumulate))
-	case V2AccountData{}.Type():
-		v.receiver.OnAccountData(p.(*V2AccountData))
-	case V2InviteRoom{}.Type():
-		v.receiver.OnInvite(p.(*V2InviteRoom))
-	case V2LeaveRoom{}.Type():
-		v.receiver.OnLeftRoom(p.(*V2LeaveRoom))
-	case V2UnreadCounts{}.Type():
-		v.receiver.OnUnreadCounts(p.(*V2UnreadCounts))
-	case V2InitialSyncComplete{}.Type():
-		v.receiver.OnInitialSyncComplete(p.(*V2InitialSyncComplete))
-	case V2DeviceData{}.Type():
-		v.receiver.OnDeviceData(p.(*V2DeviceData))
-	case V2Typing{}.Type():
-		v.receiver.OnTyping(p.(*V2Typing))
+	switch pl := p.(type) {
+	case *V2Receipt:
+		v.receiver.OnReceipt(pl)
+	case *V2Initialise:
+		v.receiver.Initialise(pl)
+	case *V2Accumulate:
+		v.receiver.Accumulate(pl)
+	case *V2AccountData:
+		v.receiver.OnAccountData(pl)
+	case *V2InviteRoom:
+		v.receiver.OnInvite(pl)
+	case *V2LeaveRoom:
+		v.receiver.OnLeftRoom(pl)
+	case *V2UnreadCounts:
+		v.receiver.OnUnreadCounts(pl)
+	case *V2InitialSyncComplete:
+		v.receiver.OnInitialSyncComplete(pl)
+	case *V2DeviceData:
+		v.receiver.OnDeviceData(pl)
+	case *V2Typing:
+		v.receiver.OnTyping(pl)
+	default:
+		logger.Warn().Str("type", p.Type()).Msg("V2Sub: unhandled payload type")
 	}
 }
 

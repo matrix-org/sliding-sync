@@ -2,14 +2,21 @@ package pubsub
 
 import (
 	"fmt"
+	"os"
 	"sync"
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/rs/zerolog"
 )
 
-// Every payload needs a type to distinguish what kind of update it is.
+var logger = zerolog.New(os.Stdout).With().Timestamp().Logger().Output(zerolog.ConsoleWriter{
+	Out:        os.Stderr,
+	TimeFormat: "15:04:05",
+})
+
 type Payload interface {
+	// The type of payload; used mostly for logging and prometheus metrics
 	Type() string
 }
 

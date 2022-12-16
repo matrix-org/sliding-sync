@@ -12,7 +12,7 @@ type V3EnsurePolling struct {
 	DeviceID string
 }
 
-func (v V3EnsurePolling) Type() string { return "p" }
+func (*V3EnsurePolling) Type() string { return "V3EnsurePolling" }
 
 type V3Sub struct {
 	listener Listener
@@ -31,9 +31,11 @@ func (v *V3Sub) Teardown() {
 }
 
 func (v *V3Sub) onMessage(p Payload) {
-	switch p.Type() {
-	case V3EnsurePolling{}.Type():
-		v.receiver.EnsurePolling(p.(*V3EnsurePolling))
+	switch pl := p.(type) {
+	case *V3EnsurePolling:
+		v.receiver.EnsurePolling(pl)
+	default:
+		logger.Warn().Str("type", p.Type()).Msg("V3Sub: unhandled payload type")
 	}
 }
 

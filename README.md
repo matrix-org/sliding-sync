@@ -39,6 +39,42 @@ INF Poller: v2 poll loop started ip=::1 since= user_id=@kegan:matrix.org
 
 Wait for the first initial v2 sync to be processed (this can take minutes!) and then v3 APIs will be responsive.
 
+### Prometheus
+
+To enable metrics, pass `SYNCV3_PROM=:2112` to listen on that port and expose a scraping endpoint `GET /metrics`.
+If you want to hook this up to a prometheus, you can just define `prometheus.yml`:
+```yaml
+global:
+    scrape_interval: 30s
+    scrape_timeout: 10s
+scrape_configs:
+    - job_name: ss
+      static_configs:
+       - targets: ["host.docker.internal:2112"]
+```
+then run Prometheus in a docker container:
+```bash
+docker run -p 9090:9090 -v /path/to/prometheus.yml:/etc/prometheus/prometheus.yml prom/prometheus
+```
+to play with the data, use PromLens and point it at http://localhost:9090:
+```bash
+docker run -p 8080:8080 prom/promlens
+```
+Useful queries include:
+ - `rate(sliding_sync_poller_num_payloads{job="ss"}[5m])` : This shows the payload rate from pollers to API processes,
+   broken down by type. A stacked graph display is especially useful as the height then represents the total payload
+   rate. This can be used to highlight abnormal incoming data, such as excessive payload rates. It can also be used
+   to gauge how costly certain payload types are. In general, receipts and device data tend to be the most frequent
+   background noise. A full list of payload types are defined in the [pubsub directory](https://github.com/matrix-org/sliding-sync/blob/main/pubsub/v2.go).
+ - `sliding_sync_poller_num_pollers` : Absolute count of the number of /sync v2 pollers over time. Useful either as a single value,
+   or display over time. The higher this value, the more pressure is put on the upstream Homeserver.
+ - `sliding_sync_api_num_active_conns` : Absolute count of the number of active sliding sync connections. Useful either as a single value,
+   or display over time. The higher this value, the more pressure is put on the proxy API processes.
+ - `sum(increase(sliding_sync_poller_process_duration_secs_bucket[1m])) by (le)` : Useful heatmap to show how long /sync v2 responses take to process.
+   This can highlight database pressure as processing responses involves database writes and notifications over pubsub.
+ - `sum(increase(sliding_sync_api_process_duration_secs_bucket[1m])) by (le)` : Useful heatmap to show how long sliding sync responses take to calculate,
+   which excludes all long-polling requests. This can highlight slow sorting/database performance, as these requests should always be fast.
+
 ### How can I help?
 
 At present, the best way to help would be to run a local v3 server pointed at a busy account and just leave it and a client running in the background. Look at it occasionally and submit any issues you notice. You can save console logs by right-clicking -> Save As.
