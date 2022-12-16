@@ -1,11 +1,6 @@
-![GitHub branch checks state](https://img.shields.io/github/checks-status/matrix-org/sliding-sync/main)
+# Sliding Sync
 
-# sync-v3
-
-Run an experimental sync v3 server using an existing Matrix account. This is possible because, for the most part,
-v3 sync is a strict subset of v2 sync.
-
-An implementation of [MSC3575](https://github.com/matrix-org/matrix-doc/blob/kegan/sync-v3/proposals/3575-sync.md).
+Run a sliding sync proxy. An implementation of [MSC3575](https://github.com/matrix-org/matrix-doc/blob/kegan/sync-v3/proposals/3575-sync.md).
 
 Proxy version to MSC API specification:
 
@@ -17,6 +12,13 @@ Proxy version to MSC API specification:
     -   Spaces support, `txn_id` support.
 -   Version 0.4.x [2022/08/23](https://github.com/matrix-org/matrix-spec-proposals/blob/59c83a857b4cf3cf6aca593c34efb44709b10d17/proposals/3575-sync.md)
     -   Support for `tags` and `not_tags`.
+-   Version 0.98.x [2022/12/16](https://github.com/matrix-org/matrix-spec-proposals/blob/2538552705487ecef34abf1dd1afb61e25a06f28/proposals/3575-sync.md)
+    -   Preparing for major v1.x release: add Prometheus metrics, PPROF, etc.
+    -   Support `typing` and `receipts` extensions.
+    -   Support for `num_live`, `joined_count` and `invited_count`.
+    -   Support for `by_notification_level` and `include_old_rooms`.
+    -   Support for `$ME` and `$LAZY`.
+    -   Support for `errcode` when sessions expire.
 
 ## Usage
 
@@ -75,8 +77,39 @@ Useful queries include:
  - `sum(increase(sliding_sync_api_process_duration_secs_bucket[1m])) by (le)` : Useful heatmap to show how long sliding sync responses take to calculate,
    which excludes all long-polling requests. This can highlight slow sorting/database performance, as these requests should always be fast.
 
-### How can I help?
+### Profiling
 
-At present, the best way to help would be to run a local v3 server pointed at a busy account and just leave it and a client running in the background. Look at it occasionally and submit any issues you notice. You can save console logs by right-clicking -> Save As.
+To help debug performance issues, you can make the proxy listen for PPROF requests by passing `SYNCV3_PPROF=:6060` to listen on `:6060`.
+To debug **why a request is slow**:
+```
+wget -O 'trace.pprof' 'http://localhost:6060/debug/pprof/trace?seconds=20'
+```
+Then perform the slow request within 20 seconds. Send `trace.pprof` to someone who will then run `go tool trace trace.pprof` and look at "User-defined Tasks" for slow HTTP requests.
 
-Please run the server with `SYNCV3_DEBUG=1` set. This will force the server to panic when assertions fail rather than just log them.
+To debug **why the proxy is consuming lots of memory**, run:
+```
+wget -O 'heap.pprof' 'http://localhost:6060/debug/pprof/heap'
+```
+Then send `heap.pprof` to someone who will then run `go tool pprof heap.pprof` and probably type something like `top10`:
+```
+(pprof) top10
+Showing nodes accounting for 83.13MB, 100% of 83.13MB total
+Showing top 10 nodes out of 82
+      flat  flat%   sum%        cum   cum%
+   43.01MB 51.74% 51.74%    43.01MB 51.74%  github.com/tidwall/gjson.ParseBytes
+   31.85MB 38.31% 90.05%    31.85MB 38.31%  github.com/matrix-org/sliding-sync/sync3.(*JoinedRoomsTracker).Startup
+       4MB  4.82% 94.87%        4MB  4.82%  runtime.allocm
+    1.76MB  2.12% 96.99%     1.76MB  2.12%  compress/flate.NewWriter
+    0.50MB  0.61% 97.59%        1MB  1.21%  github.com/matrix-org/sliding-sync/sync3.(*SortableRooms).Sort
+    0.50MB   0.6% 98.20%     0.50MB   0.6%  runtime.malg
+    0.50MB   0.6% 98.80%     0.50MB   0.6%  github.com/matrix-org/sliding-sync/sync3.(*InternalRequestLists).Room
+    0.50MB   0.6% 99.40%     0.50MB   0.6%  github.com/matrix-org/sliding-sync/sync3.(*Dispatcher).notifyListeners
+    0.50MB   0.6%   100%     0.50MB   0.6%  runtime.acquireSudog
+         0     0%   100%     1.76MB  2.12%  bufio.(*Writer).Flush
+```
+
+To debug **why the proxy is using 100% CPU**, run:
+```
+wget -O 'profile.pprof' 'http://localhost:6060/debug/pprof/profile?seconds=10'
+```
+Then send `profile.pprof` to someone who will then run `go tool pprof -http :5656 profile.pprof` and typically view the flame graph: View -> Flame Graph.
