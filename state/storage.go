@@ -42,8 +42,6 @@ type Storage struct {
 	DeviceDataTable   *DeviceDataTable
 	ReceiptTable      *ReceiptTable
 	DB                *sqlx.DB
-	shutdownCh        chan struct{}
-	shutdown          bool
 }
 
 func NewStorage(postgresURI string) *Storage {
@@ -70,7 +68,6 @@ func NewStorage(postgresURI string) *Storage {
 		DeviceDataTable:   NewDeviceDataTable(db),
 		ReceiptTable:      NewReceiptTable(db),
 		DB:                db,
-		shutdownCh:        make(chan struct{}),
 	}
 }
 
@@ -807,9 +804,5 @@ func (s *Storage) Teardown() {
 	err := s.accumulator.db.Close()
 	if err != nil {
 		panic("Storage.Teardown: " + err.Error())
-	}
-	if !s.shutdown {
-		s.shutdown = true
-		close(s.shutdownCh)
 	}
 }
