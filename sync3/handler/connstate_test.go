@@ -109,7 +109,7 @@ func TestConnStateInitial(t *testing.T) {
 		t.Fatalf("UserID returned wrong value, got %v want %v", cs.UserID(), userID)
 	}
 	res, err := cs.OnIncomingRequest(context.Background(), ConnID, &sync3.Request{
-		Lists: []sync3.RequestList{{
+		Lists: map[string]sync3.RequestList{"a": {
 			Sort: []string{sync3.SortByRecency},
 			Ranges: sync3.SliceRanges([][2]int64{
 				{0, 9},
@@ -137,8 +137,8 @@ func TestConnStateInitial(t *testing.T) {
 				Timeline: []json.RawMessage{timeline[roomA.RoomID]},
 			},
 		},
-		Lists: []sync3.ResponseList{
-			{
+		Lists: map[string]sync3.ResponseList{
+			"a": {
 				Count: 3,
 				Ops: []sync3.ResponseOp{
 					&sync3.ResponseOpRange{
@@ -161,7 +161,7 @@ func TestConnStateInitial(t *testing.T) {
 
 	// request again for the diff
 	res, err = cs.OnIncomingRequest(context.Background(), ConnID, &sync3.Request{
-		Lists: []sync3.RequestList{{
+		Lists: map[string]sync3.RequestList{"a": {
 			Sort: []string{sync3.SortByRecency},
 			Ranges: sync3.SliceRanges([][2]int64{
 				{0, 9},
@@ -177,8 +177,8 @@ func TestConnStateInitial(t *testing.T) {
 				Timeline: []json.RawMessage{newEvent},
 			},
 		},
-		Lists: []sync3.ResponseList{
-			{
+		Lists: map[string]sync3.ResponseList{
+			"a": {
 				Count: 3,
 				Ops: []sync3.ResponseOp{
 					&sync3.ResponseOpSingle{
@@ -201,7 +201,7 @@ func TestConnStateInitial(t *testing.T) {
 		newEvent,
 	}, 2)
 	res, err = cs.OnIncomingRequest(context.Background(), ConnID, &sync3.Request{
-		Lists: []sync3.RequestList{{
+		Lists: map[string]sync3.RequestList{"a": {
 			Sort: []string{sync3.SortByRecency},
 			Ranges: sync3.SliceRanges([][2]int64{
 				{0, 9},
@@ -217,8 +217,8 @@ func TestConnStateInitial(t *testing.T) {
 				Timeline: []json.RawMessage{newEvent},
 			},
 		},
-		Lists: []sync3.ResponseList{
-			{
+		Lists: map[string]sync3.ResponseList{
+			"a": {
 				Count: 3,
 			},
 		},
@@ -272,7 +272,7 @@ func TestConnStateMultipleRanges(t *testing.T) {
 
 	// request first page
 	res, err := cs.OnIncomingRequest(context.Background(), ConnID, &sync3.Request{
-		Lists: []sync3.RequestList{{
+		Lists: map[string]sync3.RequestList{"a": {
 			Sort: []string{sync3.SortByRecency},
 			Ranges: sync3.SliceRanges([][2]int64{
 				{0, 2},
@@ -283,8 +283,8 @@ func TestConnStateMultipleRanges(t *testing.T) {
 		t.Fatalf("OnIncomingRequest returned error : %s", err)
 	}
 	checkResponse(t, true, res, &sync3.Response{
-		Lists: []sync3.ResponseList{
-			{
+		Lists: map[string]sync3.ResponseList{
+			"a": {
 				Count: len(rooms),
 				Ops: []sync3.ResponseOp{
 					&sync3.ResponseOpRange{
@@ -298,7 +298,7 @@ func TestConnStateMultipleRanges(t *testing.T) {
 	})
 	// add on a different non-overlapping range
 	res, err = cs.OnIncomingRequest(context.Background(), ConnID, &sync3.Request{
-		Lists: []sync3.RequestList{{
+		Lists: map[string]sync3.RequestList{"a": {
 			Sort: []string{sync3.SortByRecency},
 			Ranges: sync3.SliceRanges([][2]int64{
 				{0, 2}, {4, 6},
@@ -309,8 +309,8 @@ func TestConnStateMultipleRanges(t *testing.T) {
 		t.Fatalf("OnIncomingRequest returned error : %s", err)
 	}
 	checkResponse(t, true, res, &sync3.Response{
-		Lists: []sync3.ResponseList{
-			{
+		Lists: map[string]sync3.ResponseList{
+			"a": {
 				Count: len(rooms),
 				Ops: []sync3.ResponseOp{
 					&sync3.ResponseOpRange{
@@ -335,7 +335,7 @@ func TestConnStateMultipleRanges(t *testing.T) {
 	}, 1)
 
 	res, err = cs.OnIncomingRequest(context.Background(), ConnID, &sync3.Request{
-		Lists: []sync3.RequestList{{
+		Lists: map[string]sync3.RequestList{"a": {
 			Sort: []string{sync3.SortByRecency},
 			Ranges: sync3.SliceRanges([][2]int64{
 				{0, 2}, {4, 6},
@@ -346,8 +346,8 @@ func TestConnStateMultipleRanges(t *testing.T) {
 		t.Fatalf("OnIncomingRequest returned error : %s", err)
 	}
 	checkResponse(t, true, res, &sync3.Response{
-		Lists: []sync3.ResponseList{
-			{
+		Lists: map[string]sync3.ResponseList{
+			"a": {
 				Count: len(rooms),
 				Ops: []sync3.ResponseOp{
 					&sync3.ResponseOpSingle{
@@ -377,7 +377,7 @@ func TestConnStateMultipleRanges(t *testing.T) {
 	}, 1)
 	t.Logf("new event %s : %s", roomIDs[9], string(newEvent))
 	res, err = cs.OnIncomingRequest(context.Background(), ConnID, &sync3.Request{
-		Lists: []sync3.RequestList{{
+		Lists: map[string]sync3.RequestList{"a": {
 			Sort: []string{sync3.SortByRecency},
 			Ranges: sync3.SliceRanges([][2]int64{
 				{0, 2}, {4, 6},
@@ -388,8 +388,8 @@ func TestConnStateMultipleRanges(t *testing.T) {
 		t.Fatalf("OnIncomingRequest returned error : %s", err)
 	}
 	checkResponse(t, true, res, &sync3.Response{
-		Lists: []sync3.ResponseList{
-			{
+		Lists: map[string]sync3.ResponseList{
+			"a": {
 				Count: len(rooms),
 				Ops: []sync3.ResponseOp{
 					&sync3.ResponseOpSingle{
@@ -448,7 +448,7 @@ func TestBumpToOutsideRange(t *testing.T) {
 	cs := NewConnState(userID, deviceID, userCache, globalCache, &NopExtensionHandler{}, &NopJoinTracker{}, nil)
 	// Ask for A,B
 	res, err := cs.OnIncomingRequest(context.Background(), ConnID, &sync3.Request{
-		Lists: []sync3.RequestList{{
+		Lists: map[string]sync3.RequestList{"a": {
 			Sort: []string{sync3.SortByRecency},
 			Ranges: sync3.SliceRanges([][2]int64{
 				{0, 1},
@@ -459,8 +459,8 @@ func TestBumpToOutsideRange(t *testing.T) {
 		t.Fatalf("OnIncomingRequest returned error : %s", err)
 	}
 	checkResponse(t, true, res, &sync3.Response{
-		Lists: []sync3.ResponseList{
-			{
+		Lists: map[string]sync3.ResponseList{
+			"a": {
 				Count: 4,
 				Ops: []sync3.ResponseOp{
 					&sync3.ResponseOpRange{
@@ -485,7 +485,7 @@ func TestBumpToOutsideRange(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Millisecond)
 	defer cancel()
 	res, err = cs.OnIncomingRequest(ctx, ConnID, &sync3.Request{
-		Lists: []sync3.RequestList{{
+		Lists: map[string]sync3.RequestList{"a": {
 			Sort: []string{sync3.SortByRecency},
 			Ranges: sync3.SliceRanges([][2]int64{
 				{0, 1},
@@ -495,7 +495,7 @@ func TestBumpToOutsideRange(t *testing.T) {
 	if err != nil {
 		t.Fatalf("OnIncomingRequest returned error : %s", err)
 	}
-	if len(res.Lists[0].Ops) > 0 {
+	if len(res.Lists["a"].Ops) > 0 {
 		t.Errorf("response returned ops, expected none")
 	}
 }
@@ -561,7 +561,7 @@ func TestConnStateRoomSubscriptions(t *testing.T) {
 				TimelineLimit: 20,
 			},
 		},
-		Lists: []sync3.RequestList{{
+		Lists: map[string]sync3.RequestList{"a": {
 			Sort: []string{sync3.SortByRecency},
 			Ranges: sync3.SliceRanges([][2]int64{
 				{0, 1},
@@ -572,8 +572,8 @@ func TestConnStateRoomSubscriptions(t *testing.T) {
 		t.Fatalf("OnIncomingRequest returned error : %s", err)
 	}
 	checkResponse(t, false, res, &sync3.Response{
-		Lists: []sync3.ResponseList{
-			{
+		Lists: map[string]sync3.ResponseList{
+			"a": {
 				Count: len(roomIDs),
 				Ops: []sync3.ResponseOp{
 					&sync3.ResponseOpRange{
@@ -617,7 +617,7 @@ func TestConnStateRoomSubscriptions(t *testing.T) {
 	}, 1)
 	// we should get this message even though it's not in the range because we are subscribed to this room.
 	res, err = cs.OnIncomingRequest(context.Background(), ConnID, &sync3.Request{
-		Lists: []sync3.RequestList{{
+		Lists: map[string]sync3.RequestList{"a": {
 			Sort: []string{sync3.SortByRecency},
 			Ranges: sync3.SliceRanges([][2]int64{
 				{0, 1},
@@ -628,8 +628,8 @@ func TestConnStateRoomSubscriptions(t *testing.T) {
 		t.Fatalf("OnIncomingRequest returned error : %s", err)
 	}
 	checkResponse(t, false, res, &sync3.Response{
-		Lists: []sync3.ResponseList{
-			{
+		Lists: map[string]sync3.ResponseList{
+			"a": {
 				Count: len(roomIDs),
 			},
 		},
@@ -651,7 +651,7 @@ func TestConnStateRoomSubscriptions(t *testing.T) {
 			},
 		},
 		UnsubscribeRooms: []string{roomD.RoomID},
-		Lists: []sync3.RequestList{{
+		Lists: map[string]sync3.RequestList{"a": {
 			Sort: []string{sync3.SortByRecency},
 			Ranges: sync3.SliceRanges([][2]int64{
 				{0, 1},
@@ -662,8 +662,8 @@ func TestConnStateRoomSubscriptions(t *testing.T) {
 		t.Fatalf("OnIncomingRequest returned error : %s", err)
 	}
 	checkResponse(t, false, res, &sync3.Response{
-		Lists: []sync3.ResponseList{
-			{
+		Lists: map[string]sync3.ResponseList{
+			"a": {
 				Count: len(roomIDs),
 			},
 		},
@@ -684,11 +684,14 @@ func checkResponse(t *testing.T, checkRoomIDsOnly bool, got, want *sync3.Respons
 	if len(got.Lists) != len(want.Lists) {
 		t.Errorf("got %v lists, want %v", len(got.Lists), len(want.Lists))
 	}
-	for i := 0; i < len(want.Lists); i++ {
-		wl := want.Lists[i]
-		gl := got.Lists[i]
+	for listKey, wl := range want.Lists {
+		gl, exists := got.Lists[listKey]
+		if !exists {
+			t.Errorf("no response key for '%s'", listKey)
+			continue
+		}
 		if wl.Count > 0 && gl.Count != wl.Count {
-			t.Errorf("response list %d got count %d want %d", i, gl.Count, wl.Count)
+			t.Errorf("response list %v got count %d want %d", listKey, gl.Count, wl.Count)
 		}
 
 		if len(wl.Ops) > 0 {

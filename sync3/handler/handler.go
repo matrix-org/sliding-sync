@@ -187,11 +187,11 @@ func (h *SyncLiveHandler) serve(w http.ResponseWriter, req *http.Request) error 
 			}
 		}
 	}
-	for i, l := range requestBody.Lists {
+	for listKey, l := range requestBody.Lists {
 		if l.Ranges != nil && !l.Ranges.Valid() {
 			return &internal.HandlerError{
 				StatusCode: 400,
-				Err:        fmt.Errorf("list[%d] invalid ranges %v", i, l.Ranges),
+				Err:        fmt.Errorf("list[%v] invalid ranges %v", listKey, l.Ranges),
 			}
 		}
 	}

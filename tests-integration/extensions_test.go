@@ -36,7 +36,7 @@ func TestExtensionE2EE(t *testing.T) {
 		DeviceUnusedFallbackKeyTypes: fallbackKeyTypes,
 	})
 	res := v3.mustDoV3Request(t, aliceToken, sync3.Request{
-		Lists: []sync3.RequestList{{
+		Lists: map[string]sync3.RequestList{"a": {
 			Ranges: sync3.SliceRanges{
 				[2]int64{0, 10}, // doesn't matter
 			},
@@ -62,7 +62,7 @@ func TestExtensionE2EE(t *testing.T) {
 		},
 	})
 	res = v3.mustDoV3RequestWithPos(t, aliceToken, res.Pos, sync3.Request{
-		Lists: []sync3.RequestList{{
+		Lists: map[string]sync3.RequestList{"a": {
 			Ranges: sync3.SliceRanges{
 				[2]int64{0, 10}, // doesn't matter
 			},
@@ -82,7 +82,7 @@ func TestExtensionE2EE(t *testing.T) {
 	})
 	v2.waitUntilEmpty(t, alice)
 	res = v3.mustDoV3RequestWithPos(t, aliceToken, res.Pos, sync3.Request{
-		Lists: []sync3.RequestList{{
+		Lists: map[string]sync3.RequestList{"a": {
 			Ranges: sync3.SliceRanges{
 				[2]int64{0, 10}, // doesn't matter
 			},
@@ -111,7 +111,7 @@ func TestExtensionE2EE(t *testing.T) {
 	v2.waitUntilEmpty(t, alice)
 	lastPos := res.Pos
 	res = v3.mustDoV3RequestWithPos(t, aliceToken, res.Pos, sync3.Request{
-		Lists: []sync3.RequestList{{
+		Lists: map[string]sync3.RequestList{"a": {
 			Ranges: sync3.SliceRanges{
 				[2]int64{0, 10}, // doesn't matter
 			},
@@ -127,7 +127,7 @@ func TestExtensionE2EE(t *testing.T) {
 
 	// check that changed|left persist if requesting with the same v3 position
 	res = v3.mustDoV3RequestWithPos(t, aliceToken, lastPos, sync3.Request{
-		Lists: []sync3.RequestList{{
+		Lists: map[string]sync3.RequestList{"a": {
 			Ranges: sync3.SliceRanges{
 				[2]int64{0, 10}, // doesn't matter
 			},
@@ -153,7 +153,7 @@ func TestExtensionE2EE(t *testing.T) {
 		},
 	})
 	res = v3.mustDoV3RequestWithPos(t, aliceToken, res.Pos, sync3.Request{
-		Lists: []sync3.RequestList{{
+		Lists: map[string]sync3.RequestList{"a": {
 			Ranges: sync3.SliceRanges{
 				[2]int64{0, 10}, // doesn't matter
 			},
@@ -204,7 +204,7 @@ func TestExtensionToDevice(t *testing.T) {
 
 	// 1: check that a fresh sync returns to-device messages
 	res := v3.mustDoV3Request(t, aliceToken, sync3.Request{
-		Lists: []sync3.RequestList{{
+		Lists: map[string]sync3.RequestList{"a": {
 			Ranges: sync3.SliceRanges{
 				[2]int64{0, 10}, // doesn't matter
 			},
@@ -215,11 +215,11 @@ func TestExtensionToDevice(t *testing.T) {
 			},
 		},
 	})
-	m.MatchResponse(t, res, m.MatchList(0, m.MatchV3Count(0)), m.MatchToDeviceMessages(toDeviceMsgs))
+	m.MatchResponse(t, res, m.MatchList("a", m.MatchV3Count(0)), m.MatchToDeviceMessages(toDeviceMsgs))
 
 	// 2: repeating the fresh sync request returns the same messages (not deleted)
 	res = v3.mustDoV3Request(t, aliceToken, sync3.Request{
-		Lists: []sync3.RequestList{{
+		Lists: map[string]sync3.RequestList{"a": {
 			Ranges: sync3.SliceRanges{
 				[2]int64{0, 10}, // doesn't matter
 			},
@@ -230,11 +230,11 @@ func TestExtensionToDevice(t *testing.T) {
 			},
 		},
 	})
-	m.MatchResponse(t, res, m.MatchList(0, m.MatchV3Count(0)), m.MatchToDeviceMessages(toDeviceMsgs))
+	m.MatchResponse(t, res, m.MatchList("a", m.MatchV3Count(0)), m.MatchToDeviceMessages(toDeviceMsgs))
 
 	// 3: update the since token -> no new messages
 	res = v3.mustDoV3Request(t, aliceToken, sync3.Request{
-		Lists: []sync3.RequestList{{
+		Lists: map[string]sync3.RequestList{"a": {
 			Ranges: sync3.SliceRanges{
 				[2]int64{0, 10}, // doesn't matter
 			},
@@ -246,7 +246,7 @@ func TestExtensionToDevice(t *testing.T) {
 			},
 		},
 	})
-	m.MatchResponse(t, res, m.MatchList(0, m.MatchV3Count(0)), m.MatchToDeviceMessages([]json.RawMessage{}))
+	m.MatchResponse(t, res, m.MatchList("a", m.MatchV3Count(0)), m.MatchToDeviceMessages([]json.RawMessage{}))
 
 	// 4: inject live to-device messages -> receive them only.
 	sinceBeforeMsgs := res.Extensions.ToDevice.NextBatch
@@ -261,7 +261,7 @@ func TestExtensionToDevice(t *testing.T) {
 	})
 	v2.waitUntilEmpty(t, alice)
 	res = v3.mustDoV3RequestWithPos(t, aliceToken, res.Pos, sync3.Request{
-		Lists: []sync3.RequestList{{
+		Lists: map[string]sync3.RequestList{"a": {
 			Ranges: sync3.SliceRanges{
 				[2]int64{0, 10}, // doesn't matter
 			},
@@ -272,11 +272,11 @@ func TestExtensionToDevice(t *testing.T) {
 			},
 		},
 	})
-	m.MatchResponse(t, res, m.MatchList(0, m.MatchV3Count(0)), m.MatchToDeviceMessages(newToDeviceMsgs))
+	m.MatchResponse(t, res, m.MatchList("a", m.MatchV3Count(0)), m.MatchToDeviceMessages(newToDeviceMsgs))
 
 	// 5: repeating the previous sync request returns the same live to-device messages (retransmit)
 	res = v3.mustDoV3RequestWithPos(t, aliceToken, res.Pos, sync3.Request{
-		Lists: []sync3.RequestList{{
+		Lists: map[string]sync3.RequestList{"a": {
 			Ranges: sync3.SliceRanges{
 				[2]int64{0, 10}, // doesn't matter
 			},
@@ -287,11 +287,11 @@ func TestExtensionToDevice(t *testing.T) {
 			},
 		},
 	})
-	m.MatchResponse(t, res, m.MatchList(0, m.MatchV3Count(0)), m.MatchToDeviceMessages(newToDeviceMsgs))
+	m.MatchResponse(t, res, m.MatchList("a", m.MatchV3Count(0)), m.MatchToDeviceMessages(newToDeviceMsgs))
 
 	// ack the to-device messages
 	res = v3.mustDoV3RequestWithPos(t, aliceToken, res.Pos, sync3.Request{
-		Lists: []sync3.RequestList{{
+		Lists: map[string]sync3.RequestList{"a": {
 			Ranges: sync3.SliceRanges{
 				[2]int64{0, 10}, // doesn't matter
 			},
@@ -303,11 +303,11 @@ func TestExtensionToDevice(t *testing.T) {
 		},
 	})
 	// this response contains nothing
-	m.MatchResponse(t, res, m.MatchList(0, m.MatchV3Count(0)), m.MatchToDeviceMessages([]json.RawMessage{}))
+	m.MatchResponse(t, res, m.MatchList("a", m.MatchV3Count(0)), m.MatchToDeviceMessages([]json.RawMessage{}))
 
 	// 6: using an old since token does not return to-device messages anymore as they were deleted.
 	res = v3.mustDoV3RequestWithPos(t, aliceToken, res.Pos, sync3.Request{
-		Lists: []sync3.RequestList{{
+		Lists: map[string]sync3.RequestList{"a": {
 			Ranges: sync3.SliceRanges{
 				[2]int64{0, 10}, // doesn't matter
 			},
@@ -318,7 +318,7 @@ func TestExtensionToDevice(t *testing.T) {
 			},
 		},
 	})
-	m.MatchResponse(t, res, m.MatchList(0, m.MatchV3Count(0)), m.MatchToDeviceMessages([]json.RawMessage{}))
+	m.MatchResponse(t, res, m.MatchList("a", m.MatchV3Count(0)), m.MatchToDeviceMessages([]json.RawMessage{}))
 }
 
 // tests that the account data extension works:
@@ -399,7 +399,7 @@ func TestExtensionAccountData(t *testing.T) {
 				Enabled: true,
 			},
 		},
-		Lists: []sync3.RequestList{{
+		Lists: map[string]sync3.RequestList{"a": {
 			Ranges: sync3.SliceRanges{
 				[2]int64{0, 1}, // first two rooms A,B
 			},
@@ -419,7 +419,7 @@ func TestExtensionAccountData(t *testing.T) {
 
 	// 5- when the range changes, make sure room account data is sent
 	res = v3.mustDoV3RequestWithPos(t, aliceToken, res.Pos, sync3.Request{
-		Lists: []sync3.RequestList{{
+		Lists: map[string]sync3.RequestList{"a": {
 			Ranges: sync3.SliceRanges{
 				[2]int64{0, 2}, // A,B,C
 			},
@@ -473,7 +473,7 @@ func TestExtensionAccountData(t *testing.T) {
 				Enabled: true,
 			},
 		},
-		Lists: []sync3.RequestList{{
+		Lists: map[string]sync3.RequestList{"a": {
 			Ranges: sync3.SliceRanges{
 				[2]int64{0, 1}, // first two rooms A,B
 			},
@@ -500,7 +500,7 @@ func TestExtensionAccountData(t *testing.T) {
 	v2.waitUntilEmpty(t, alice)
 	// now we should get room account data for C
 	res = v3.mustDoV3RequestWithPos(t, aliceToken, res.Pos, sync3.Request{
-		Lists: []sync3.RequestList{{
+		Lists: map[string]sync3.RequestList{"a": {
 			Ranges: sync3.SliceRanges{
 				[2]int64{0, 1}, // first two rooms A,B
 			},

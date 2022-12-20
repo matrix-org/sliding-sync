@@ -81,8 +81,8 @@ func TestNumLive(t *testing.T) {
 	alice.SlidingSyncUntilMembership(t, "", roomID3, bob, "join")
 	// at this point, roomID is at the bottom, check.
 	res = bob.SlidingSync(t, sync3.Request{
-		Lists: []sync3.RequestList{
-			{
+		Lists: map[string]sync3.RequestList{
+			"a": {
 				Ranges: sync3.SliceRanges{{0, 1}}, // top 2 rooms
 				Sort:   []string{sync3.SortByRecency},
 				RoomSubscription: sync3.RoomSubscription{
@@ -91,7 +91,7 @@ func TestNumLive(t *testing.T) {
 			},
 		},
 	})
-	m.MatchResponse(t, res, m.MatchList(0, m.MatchV3Ops(
+	m.MatchResponse(t, res, m.MatchList("a", m.MatchV3Ops(
 		m.MatchV3SyncOp(0, 1, []string{roomID3, roomID2}),
 	)))
 	// now send 2 live events into roomID to bump it to the top
@@ -113,8 +113,8 @@ func TestNumLive(t *testing.T) {
 	alice.SlidingSyncUntilEventID(t, "", roomID, eventID4)
 	// now syncing with bob should see 2 live events
 	res = bob.SlidingSync(t, sync3.Request{
-		Lists: []sync3.RequestList{
-			{
+		Lists: map[string]sync3.RequestList{
+			"a": {
 				Ranges: sync3.SliceRanges{{0, 1}}, // top 2 rooms
 			},
 		},

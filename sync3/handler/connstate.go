@@ -187,16 +187,18 @@ func (s *ConnState) onIncomingRequest(ctx context.Context, req *sync3.Request, i
 	region.End()
 
 	// counts are AFTER events are applied, hence after liveUpdate
-	for i := range response.Lists {
-		response.Lists[i].Count = s.lists.Count(i)
+	for listKey := range response.Lists {
+		l := response.Lists[listKey]
+		l.Count = s.lists.Count(listKey)
+		response.Lists[listKey] = l
 	}
 
 	return response, nil
 }
 
-func (s *ConnState) onIncomingListRequest(ctx context.Context, builder *RoomsBuilder, listIndex int, prevReqList, nextReqList *sync3.RequestList) sync3.ResponseList {
+func (s *ConnState) onIncomingListRequest(ctx context.Context, builder *RoomsBuilder, listKey string, prevReqList, nextReqList *sync3.RequestList) sync3.ResponseList {
 	defer trace.StartRegion(ctx, "onIncomingListRequest").End()
-	roomList, overwritten := s.lists.AssignList(listIndex, nextReqList.Filters, nextReqList.Sort, sync3.DoNotOverwrite)
+	roomList, overwritten := s.lists.AssignList(listKey, nextReqList.Filters, nextReqList.Sort, sync3.DoNotOverwrite)
 
 	if nextReqList.ShouldGetAllRooms() {
 		if overwritten || prevReqList.FiltersChanged(nextReqList) {
@@ -251,11 +253,11 @@ func (s *ConnState) onIncomingListRequest(ctx context.Context, builder *RoomsBui
 		}
 		if filtersChanged {
 			// we need to re-create the list as the rooms may have completely changed
-			roomList, _ = s.lists.AssignList(listIndex, nextReqList.Filters, nextReqList.Sort, sync3.Overwrite)
+			roomList, _ = s.lists.AssignList(listKey, nextReqList.Filters, nextReqList.Sort, sync3.Overwrite)
 		}
 		// resort as either we changed the sort order or we added/removed a bunch of rooms
 		if err := roomList.Sort(nextReqList.Sort); err != nil {
-			logger.Err(err).Int("index", listIndex).Msg("cannot sort list")
+			logger.Err(err).Str("key", listKey).Msg("cannot sort list")
 		}
 		addedRanges = nextReqList.Ranges
 		removedRanges = nil
@@ -300,17 +302,17 @@ func (s *ConnState) onIncomingListRequest(ctx context.Context, builder *RoomsBui
 	}
 }
 
-func (s *ConnState) buildListSubscriptions(ctx context.Context, builder *RoomsBuilder, listDeltas []sync3.RequestListDelta) []sync3.ResponseList {
-	result := make([]sync3.ResponseList, len(s.muxedReq.Lists))
+func (s *ConnState) buildListSubscriptions(ctx context.Context, builder *RoomsBuilder, listDeltas map[string]sync3.RequestListDelta) map[string]sync3.ResponseList {
+	result := make(map[string]sync3.ResponseList, len(s.muxedReq.Lists))
 	// loop each list and handle each independently
-	for i := range listDeltas {
-		if listDeltas[i].Curr == nil {
+	for listKey, list := range listDeltas {
+		if list.Curr == nil {
 			// they deleted this list
-			logger.Debug().Int("index", i).Msg("list deleted")
-			s.lists.DeleteList(i)
+			logger.Debug().Str("key", listKey).Msg("list deleted")
+			s.lists.DeleteList(listKey)
 			continue
 		}
-		result[i] = s.onIncomingListRequest(ctx, builder, i, listDeltas[i].Prev, listDeltas[i].Curr)
+		result[listKey] = s.onIncomingListRequest(ctx, builder, listKey, list.Prev, list.Curr)
 	}
 	return result
 }

@@ -60,34 +60,36 @@ func TestSlowGetAllRoomsInitial(t *testing.T) {
 	})
 	// fetch all the rooms!
 	res := v3.mustDoV3Request(t, aliceToken, sync3.Request{
-		Lists: []sync3.RequestList{{
-			Ranges: sync3.SliceRanges{
-				[2]int64{0, 3}, // these get ignored
-			},
-			SlowGetAllRooms: &boolTrue,
-			RoomSubscription: sync3.RoomSubscription{
-				TimelineLimit: int64(numTimelineEventsPerRoom),
-			},
-		}},
+		Lists: map[string]sync3.RequestList{
+			"a": {
+				Ranges: sync3.SliceRanges{
+					[2]int64{0, 3}, // these get ignored
+				},
+				SlowGetAllRooms: &boolTrue,
+				RoomSubscription: sync3.RoomSubscription{
+					TimelineLimit: int64(numTimelineEventsPerRoom),
+				},
+			}},
 	})
-	m.MatchResponse(t, res, m.MatchList(0, m.MatchV3Count(len(allRooms)), m.MatchV3Ops(
+	m.MatchResponse(t, res, m.MatchList("a", m.MatchV3Count(len(allRooms)), m.MatchV3Ops(
 		m.MatchV3SyncOp(0, int64(len(allRooms)-1), allRoomIDs, true),
 	)), m.MatchRoomSubscriptionsStrict(allRoomMatchers))
 
 	// now redo this but with a room name filter
 	res = v3.mustDoV3Request(t, aliceToken, sync3.Request{
-		Lists: []sync3.RequestList{{
-			Ranges: sync3.SliceRanges{
-				[2]int64{0, 3}, // these get ignored
-			},
-			SlowGetAllRooms: &boolTrue,
-			Filters: &sync3.RequestFilters{
-				RoomNameFilter: "My Room 1", // returns 1,10,11,12,13,14 etc
-			},
-			RoomSubscription: sync3.RoomSubscription{
-				TimelineLimit: int64(numTimelineEventsPerRoom),
-			},
-		}},
+		Lists: map[string]sync3.RequestList{
+			"a": {
+				Ranges: sync3.SliceRanges{
+					[2]int64{0, 3}, // these get ignored
+				},
+				SlowGetAllRooms: &boolTrue,
+				Filters: &sync3.RequestFilters{
+					RoomNameFilter: "My Room 1", // returns 1,10,11,12,13,14 etc
+				},
+				RoomSubscription: sync3.RoomSubscription{
+					TimelineLimit: int64(numTimelineEventsPerRoom),
+				},
+			}},
 	})
 	// remove rooms that don't have a leading 1 index as they should be filtered out
 	for i := 0; i < 10; i++ {
@@ -100,7 +102,7 @@ func TestSlowGetAllRoomsInitial(t *testing.T) {
 	for roomID := range allRoomMatchers {
 		roomIDs = append(roomIDs, roomID)
 	}
-	m.MatchResponse(t, res, m.MatchList(0, m.MatchV3Count(len(allRoomMatchers)), m.MatchV3Ops(
+	m.MatchResponse(t, res, m.MatchList("a", m.MatchV3Count(len(allRoomMatchers)), m.MatchV3Ops(
 		m.MatchV3SyncOp(0, int64(len(allRoomMatchers)-1), roomIDs, true),
 	)), m.MatchRoomSubscriptionsStrict(allRoomMatchers))
 
@@ -125,9 +127,9 @@ func TestSlowGetAllRoomsInitial(t *testing.T) {
 		v2.waitUntilEmpty(t, alice)
 		// reuse the position from the room name filter test, we should get this new room
 		res = v3.mustDoV3RequestWithPos(t, aliceToken, res.Pos, sync3.Request{
-			Lists: []sync3.RequestList{{}},
+			Lists: map[string]sync3.RequestList{},
 		})
-		m.MatchResponse(t, res, m.MatchList(0, m.MatchV3Count(len(allRoomMatchers)+1)), m.MatchNoV3Ops(), m.MatchRoomSubscriptionsStrict(map[string][]m.RoomMatcher{
+		m.MatchResponse(t, res, m.MatchList("a", m.MatchV3Count(len(allRoomMatchers)+1)), m.MatchNoV3Ops(), m.MatchRoomSubscriptionsStrict(map[string][]m.RoomMatcher{
 			newRoom.roomID: {
 				m.MatchRoomInitial(true),
 				m.MatchRoomName(roomName),
@@ -148,9 +150,9 @@ func TestSlowGetAllRoomsInitial(t *testing.T) {
 		})
 		v2.waitUntilEmpty(t, alice)
 		res = v3.mustDoV3RequestWithPos(t, aliceToken, res.Pos, sync3.Request{
-			Lists: []sync3.RequestList{{}},
+			Lists: map[string]sync3.RequestList{},
 		})
-		m.MatchResponse(t, res, m.MatchList(0, m.MatchV3Count(len(allRoomMatchers)+1)), m.MatchNoV3Ops(), m.MatchRoomSubscriptionsStrict(map[string][]m.RoomMatcher{
+		m.MatchResponse(t, res, m.MatchList("a", m.MatchV3Count(len(allRoomMatchers)+1)), m.MatchNoV3Ops(), m.MatchRoomSubscriptionsStrict(map[string][]m.RoomMatcher{
 			allRooms[11].roomID: {
 				m.MatchRoomInitial(false),
 				m.MatchRoomTimelineMostRecent(1, []json.RawMessage{newEvent}),

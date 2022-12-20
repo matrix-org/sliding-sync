@@ -30,8 +30,8 @@ func TestRoomStateTransitions(t *testing.T) {
 
 	// seed the proxy with Alice data
 	alice.SlidingSync(t, sync3.Request{
-		Lists: []sync3.RequestList{
-			{
+		Lists: map[string]sync3.RequestList{
+			"a": {
 				Ranges: sync3.SliceRanges{
 					{0, 100},
 				},
@@ -42,8 +42,8 @@ func TestRoomStateTransitions(t *testing.T) {
 
 	// bob should see the invited/joined rooms
 	bobRes := bob.SlidingSync(t, sync3.Request{
-		Lists: []sync3.RequestList{
-			{
+		Lists: map[string]sync3.RequestList{
+			"a": {
 				Ranges: sync3.SliceRanges{
 					{0, 100},
 				},
@@ -57,7 +57,7 @@ func TestRoomStateTransitions(t *testing.T) {
 			},
 		},
 	})
-	m.MatchResponse(t, bobRes, m.MatchList(0, m.MatchV3Count(2), m.MatchV3Ops(
+	m.MatchResponse(t, bobRes, m.MatchList("a", m.MatchV3Count(2), m.MatchV3Ops(
 		m.MatchV3SyncOp(0, 100, []string{inviteRoomID, joinRoomID}),
 	)), m.MatchRoomSubscriptions(map[string][]m.RoomMatcher{
 		inviteRoomID: {
@@ -78,15 +78,15 @@ func TestRoomStateTransitions(t *testing.T) {
 
 	// the room should be updated with the initial flag set to replace what was in the invite state
 	bobRes = bob.SlidingSync(t, sync3.Request{
-		Lists: []sync3.RequestList{
-			{
+		Lists: map[string]sync3.RequestList{
+			"a": {
 				Ranges: sync3.SliceRanges{
 					{0, 100},
 				},
 			},
 		},
 	}, WithPos(bobRes.Pos))
-	m.MatchResponse(t, bobRes, m.MatchNoV3Ops(), m.MatchList(0, m.MatchV3Count(2)), m.MatchRoomSubscription(inviteRoomID,
+	m.MatchResponse(t, bobRes, m.MatchNoV3Ops(), m.MatchList("a", m.MatchV3Count(2)), m.MatchRoomSubscription(inviteRoomID,
 		MatchRoomRequiredState([]Event{
 			{
 				Type:     "m.room.create",
@@ -122,8 +122,8 @@ func TestInviteRejection(t *testing.T) {
 
 	// sync as bob, we should see 1 invite
 	res := bob.SlidingSync(t, sync3.Request{
-		Lists: []sync3.RequestList{
-			{
+		Lists: map[string]sync3.RequestList{
+			"a": {
 				Ranges: sync3.SliceRanges{{0, 20}},
 				Filters: &sync3.RequestFilters{
 					IsInvite: &boolTrue,
@@ -131,7 +131,7 @@ func TestInviteRejection(t *testing.T) {
 			},
 		},
 	})
-	m.MatchResponse(t, res, m.MatchList(0, m.MatchV3Count(1), m.MatchV3Ops(
+	m.MatchResponse(t, res, m.MatchList("a", m.MatchV3Count(1), m.MatchV3Ops(
 		m.MatchV3SyncOp(0, 20, []string{firstInviteRoomID}),
 	)), m.MatchRoomSubscriptionsStrict(map[string][]m.RoomMatcher{
 		firstInviteRoomID: {
@@ -156,13 +156,13 @@ func TestInviteRejection(t *testing.T) {
 	since = bob.MustSyncUntil(t, SyncReq{Since: since}, SyncInvitedTo(bob.UserID, secondInviteRoomID))
 
 	res = bob.SlidingSync(t, sync3.Request{
-		Lists: []sync3.RequestList{
-			{
+		Lists: map[string]sync3.RequestList{
+			"a": {
 				Ranges: sync3.SliceRanges{{0, 20}},
 			},
 		},
 	}, WithPos(res.Pos))
-	m.MatchResponse(t, res, m.MatchList(0, m.MatchV3Count(2), m.MatchV3Ops(
+	m.MatchResponse(t, res, m.MatchList("a", m.MatchV3Count(2), m.MatchV3Ops(
 		m.MatchV3DeleteOp(1),
 		m.MatchV3InsertOp(0, secondInviteRoomID),
 	)), m.MatchRoomSubscriptionsStrict(map[string][]m.RoomMatcher{
@@ -190,21 +190,21 @@ func TestInviteRejection(t *testing.T) {
 
 	// the list should be purged
 	res = bob.SlidingSync(t, sync3.Request{
-		Lists: []sync3.RequestList{
-			{
+		Lists: map[string]sync3.RequestList{
+			"a": {
 				Ranges: sync3.SliceRanges{{0, 20}},
 			},
 		},
 	}, WithPos(res.Pos))
-	m.MatchResponse(t, res, m.MatchList(0, m.MatchV3Count(0), m.MatchV3Ops(
+	m.MatchResponse(t, res, m.MatchList("a", m.MatchV3Count(0), m.MatchV3Ops(
 		m.MatchV3DeleteOp(1),
 		m.MatchV3DeleteOp(0),
 	)))
 
 	// fresh sync -> no invites
 	res = bob.SlidingSync(t, sync3.Request{
-		Lists: []sync3.RequestList{
-			{
+		Lists: map[string]sync3.RequestList{
+			"a": {
 				Ranges: sync3.SliceRanges{{0, 20}},
 				Filters: &sync3.RequestFilters{
 					IsInvite: &boolTrue,
@@ -212,7 +212,7 @@ func TestInviteRejection(t *testing.T) {
 			},
 		},
 	})
-	m.MatchResponse(t, res, m.MatchNoV3Ops(), m.MatchRoomSubscriptionsStrict(nil), m.MatchList(0, m.MatchV3Count(0)))
+	m.MatchResponse(t, res, m.MatchNoV3Ops(), m.MatchRoomSubscriptionsStrict(nil), m.MatchList("a", m.MatchV3Count(0)))
 }
 
 func TestInviteAcceptance(t *testing.T) {
@@ -228,8 +228,8 @@ func TestInviteAcceptance(t *testing.T) {
 
 	// sync as bob, we should see 1 invite
 	res := bob.SlidingSync(t, sync3.Request{
-		Lists: []sync3.RequestList{
-			{
+		Lists: map[string]sync3.RequestList{
+			"a": {
 				Ranges: sync3.SliceRanges{{0, 20}},
 				Filters: &sync3.RequestFilters{
 					IsInvite: &boolTrue,
@@ -237,7 +237,7 @@ func TestInviteAcceptance(t *testing.T) {
 			},
 		},
 	})
-	m.MatchResponse(t, res, m.MatchList(0, m.MatchV3Count(1), m.MatchV3Ops(
+	m.MatchResponse(t, res, m.MatchList("a", m.MatchV3Count(1), m.MatchV3Ops(
 		m.MatchV3SyncOp(0, 20, []string{firstInviteRoomID}),
 	)), m.MatchRoomSubscriptionsStrict(map[string][]m.RoomMatcher{
 		firstInviteRoomID: {
@@ -261,13 +261,13 @@ func TestInviteAcceptance(t *testing.T) {
 	alice.SlidingSyncUntilMembership(t, "", secondInviteRoomID, bob, "invite")
 
 	res = bob.SlidingSync(t, sync3.Request{
-		Lists: []sync3.RequestList{
-			{
+		Lists: map[string]sync3.RequestList{
+			"a": {
 				Ranges: sync3.SliceRanges{{0, 20}},
 			},
 		},
 	}, WithPos(res.Pos))
-	m.MatchResponse(t, res, m.MatchList(0, m.MatchV3Count(2), m.MatchV3Ops(
+	m.MatchResponse(t, res, m.MatchList("a", m.MatchV3Count(2), m.MatchV3Ops(
 		m.MatchV3DeleteOp(1),
 		m.MatchV3InsertOp(0, secondInviteRoomID),
 	)), m.MatchRoomSubscriptionsStrict(map[string][]m.RoomMatcher{
@@ -295,21 +295,21 @@ func TestInviteAcceptance(t *testing.T) {
 
 	// the list should be purged
 	res = bob.SlidingSync(t, sync3.Request{
-		Lists: []sync3.RequestList{
-			{
+		Lists: map[string]sync3.RequestList{
+			"a": {
 				Ranges: sync3.SliceRanges{{0, 20}},
 			},
 		},
 	}, WithPos(res.Pos))
-	m.MatchResponse(t, res, m.MatchList(0, m.MatchV3Count(0), m.MatchV3Ops(
+	m.MatchResponse(t, res, m.MatchList("a", m.MatchV3Count(0), m.MatchV3Ops(
 		m.MatchV3DeleteOp(1),
 		m.MatchV3DeleteOp(0),
 	)))
 
 	// fresh sync -> no invites
 	res = bob.SlidingSync(t, sync3.Request{
-		Lists: []sync3.RequestList{
-			{
+		Lists: map[string]sync3.RequestList{
+			"a": {
 				Ranges: sync3.SliceRanges{{0, 20}},
 				Filters: &sync3.RequestFilters{
 					IsInvite: &boolTrue,
@@ -317,7 +317,7 @@ func TestInviteAcceptance(t *testing.T) {
 			},
 		},
 	})
-	m.MatchResponse(t, res, m.MatchNoV3Ops(), m.MatchRoomSubscriptionsStrict(nil), m.MatchList(0, m.MatchV3Count(0)))
+	m.MatchResponse(t, res, m.MatchNoV3Ops(), m.MatchRoomSubscriptionsStrict(nil), m.MatchList("a", m.MatchV3Count(0)))
 }
 
 // test invite/join counts update and are accurate
@@ -335,13 +335,13 @@ func TestMemberCounts(t *testing.T) {
 
 	// sync as bob, we should see 2 invited rooms with the same join counts so as not to leak join counts
 	res := bob.SlidingSync(t, sync3.Request{
-		Lists: []sync3.RequestList{
-			{
+		Lists: map[string]sync3.RequestList{
+			"a": {
 				Ranges: sync3.SliceRanges{{0, 20}},
 			},
 		},
 	})
-	m.MatchResponse(t, res, m.MatchList(0, m.MatchV3Count(2), m.MatchV3Ops(
+	m.MatchResponse(t, res, m.MatchList("a", m.MatchV3Count(2), m.MatchV3Ops(
 		m.MatchV3SyncOp(0, 20, []string{firstRoomID, secondRoomID}, true),
 	)), m.MatchRoomSubscriptionsStrict(map[string][]m.RoomMatcher{
 		firstRoomID: {
@@ -381,8 +381,8 @@ func TestMemberCounts(t *testing.T) {
 	alice.SlidingSyncUntilMembership(t, "", secondRoomID, bob, "join")
 
 	res = bob.SlidingSync(t, sync3.Request{
-		Lists: []sync3.RequestList{
-			{
+		Lists: map[string]sync3.RequestList{
+			"a": {
 				Ranges: sync3.SliceRanges{{0, 20}},
 			},
 		},
@@ -406,8 +406,8 @@ func TestMemberCounts(t *testing.T) {
 		Content: map[string]interface{}{"body": "ping", "msgtype": "m.text"},
 	})
 	res = bob.SlidingSync(t, sync3.Request{
-		Lists: []sync3.RequestList{
-			{
+		Lists: map[string]sync3.RequestList{
+			"a": {
 				Ranges: sync3.SliceRanges{{0, 20}},
 			},
 		},
@@ -425,8 +425,8 @@ func TestMemberCounts(t *testing.T) {
 	bob.MustSyncUntil(t, SyncReq{}, SyncLeftFrom(charlie.UserID, secondRoomID))
 
 	res = bob.SlidingSync(t, sync3.Request{
-		Lists: []sync3.RequestList{
-			{
+		Lists: map[string]sync3.RequestList{
+			"a": {
 				Ranges: sync3.SliceRanges{{0, 20}},
 			},
 		},

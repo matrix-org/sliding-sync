@@ -60,14 +60,15 @@ func benchNumV2Rooms(numRooms int, b *testing.B) {
 	})
 	// do the initial request
 	v3.mustDoV3Request(b, aliceToken, sync3.Request{
-		Lists: []sync3.RequestList{{
-			Ranges: sync3.SliceRanges{
-				[2]int64{0, 20}, // first few rooms
-			},
-			RoomSubscription: sync3.RoomSubscription{
-				TimelineLimit: 3,
-			},
-		}},
+		Lists: map[string]sync3.RequestList{
+			"a": {
+				Ranges: sync3.SliceRanges{
+					[2]int64{0, 20}, // first few rooms
+				},
+				RoomSubscription: sync3.RoomSubscription{
+					TimelineLimit: 3,
+				},
+			}},
 	})
 
 	b.ResetTimer() // don't count setup code
@@ -75,25 +76,26 @@ func benchNumV2Rooms(numRooms int, b *testing.B) {
 	// these should all take roughly the same amount of time, regardless of the value of `numRooms`
 	for n := 0; n < b.N; n++ {
 		v3.mustDoV3Request(b, aliceToken, sync3.Request{
-			Lists: []sync3.RequestList{{
-				// always use a fixed range else we will scale O(n) with the number of rooms
-				Ranges: sync3.SliceRanges{
-					[2]int64{0, 20}, // first few rooms
-				},
-				// include a filter to ensure we loop over rooms
-				Filters: &sync3.RequestFilters{
-					IsEncrypted: &boolFalse,
-				},
-				// include a few required state events to force us to query the database
-				// include a few timeline events to force us to query the database
-				RoomSubscription: sync3.RoomSubscription{
-					TimelineLimit: 3,
-					RequiredState: [][2]string{
-						{"m.room.create", ""},
-						{"m.room.member", alice},
+			Lists: map[string]sync3.RequestList{
+				"a": {
+					// always use a fixed range else we will scale O(n) with the number of rooms
+					Ranges: sync3.SliceRanges{
+						[2]int64{0, 20}, // first few rooms
 					},
-				},
-			}},
+					// include a filter to ensure we loop over rooms
+					Filters: &sync3.RequestFilters{
+						IsEncrypted: &boolFalse,
+					},
+					// include a few required state events to force us to query the database
+					// include a few timeline events to force us to query the database
+					RoomSubscription: sync3.RoomSubscription{
+						TimelineLimit: 3,
+						RequiredState: [][2]string{
+							{"m.room.create", ""},
+							{"m.room.member", alice},
+						},
+					},
+				}},
 		})
 	}
 }

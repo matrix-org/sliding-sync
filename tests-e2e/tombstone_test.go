@@ -17,8 +17,8 @@ func TestIncludeOldRooms(t *testing.T) {
 	roomID := client.CreateRoom(t, map[string]interface{}{})
 
 	res := client.SlidingSync(t, sync3.Request{
-		Lists: []sync3.RequestList{
-			{
+		Lists: map[string]sync3.RequestList{
+			"a": {
 				Ranges: [][2]int64{{0, 1}},
 				RoomSubscription: sync3.RoomSubscription{
 					RequiredState: [][2]string{{"m.room.create", ""}},
@@ -26,7 +26,7 @@ func TestIncludeOldRooms(t *testing.T) {
 			},
 		},
 	})
-	m.MatchResponse(t, res, m.MatchList(0, m.MatchV3Count(1), m.MatchV3Ops(
+	m.MatchResponse(t, res, m.MatchList("a", m.MatchV3Count(1), m.MatchV3Ops(
 		m.MatchV3SyncOp(0, 1, []string{roomID}),
 	)))
 	newRoomID := upgradeRoom(t, client, roomID)
@@ -34,15 +34,15 @@ func TestIncludeOldRooms(t *testing.T) {
 	time.Sleep(100 * time.Millisecond) // let the proxy process it
 
 	res = client.SlidingSync(t, sync3.Request{
-		Lists: []sync3.RequestList{
-			{
+		Lists: map[string]sync3.RequestList{
+			"a": {
 				Ranges: [][2]int64{{0, 1}},
 			},
 		},
 	}, WithPos(res.Pos))
 	var tombstoneEventID string
 	// count is 1 as we are auto-joined to the upgraded room
-	m.MatchResponse(t, res, m.MatchList(0, m.MatchV3Count(1), m.MatchV3Ops(
+	m.MatchResponse(t, res, m.MatchList("a", m.MatchV3Count(1), m.MatchV3Ops(
 		m.MatchV3DeleteOp(1),
 		m.MatchV3InsertOp(0, newRoomID), // insert new room
 		m.MatchV3DeleteOp(1),            // remove old room
@@ -86,8 +86,8 @@ func TestIncludeOldRooms(t *testing.T) {
 
 	// now fresh sync with old rooms enabled
 	res = client.SlidingSync(t, sync3.Request{
-		Lists: []sync3.RequestList{
-			{
+		Lists: map[string]sync3.RequestList{
+			"a": {
 				Ranges: [][2]int64{{0, 2}},
 				RoomSubscription: sync3.RoomSubscription{
 					RequiredState: [][2]string{{"m.room.member", client.UserID}},
@@ -98,7 +98,7 @@ func TestIncludeOldRooms(t *testing.T) {
 			},
 		},
 	})
-	m.MatchResponse(t, res, m.MatchList(0, m.MatchV3Count(1), m.MatchV3Ops(
+	m.MatchResponse(t, res, m.MatchList("a", m.MatchV3Count(1), m.MatchV3Ops(
 		m.MatchV3SyncOp(0, 2, []string{newRoomID}),
 	)), m.MatchRoomSubscriptionsStrict(map[string][]m.RoomMatcher{
 		newRoomID: {
@@ -126,8 +126,8 @@ func TestIncludeOldRooms(t *testing.T) {
 	// finally, a fresh sync without include_old_rooms -> newest room only
 	// now fresh sync with old rooms enabled
 	res = client.SlidingSync(t, sync3.Request{
-		Lists: []sync3.RequestList{
-			{
+		Lists: map[string]sync3.RequestList{
+			"a": {
 				Ranges: [][2]int64{{0, 2}},
 				RoomSubscription: sync3.RoomSubscription{
 					RequiredState: [][2]string{{"m.room.member", client.UserID}},
@@ -135,7 +135,7 @@ func TestIncludeOldRooms(t *testing.T) {
 			},
 		},
 	})
-	m.MatchResponse(t, res, m.MatchList(0, m.MatchV3Count(1), m.MatchV3Ops(
+	m.MatchResponse(t, res, m.MatchList("a", m.MatchV3Count(1), m.MatchV3Ops(
 		m.MatchV3SyncOp(0, 2, []string{newRoomID}),
 	)), m.MatchRoomSubscriptionsStrict(map[string][]m.RoomMatcher{
 		newRoomID: {
@@ -271,8 +271,8 @@ func TestIncludeOldRoomsSubscriptionUnion(t *testing.T) {
 
 	// should union to timeline_limit=2, req_state=create+member+tombstone
 	res := client.SlidingSync(t, sync3.Request{
-		Lists: []sync3.RequestList{
-			{
+		Lists: map[string]sync3.RequestList{
+			"a": {
 				Ranges: [][2]int64{{0, 1}},
 				RoomSubscription: sync3.RoomSubscription{
 					TimelineLimit: 0,
@@ -293,7 +293,7 @@ func TestIncludeOldRoomsSubscriptionUnion(t *testing.T) {
 			},
 		},
 	})
-	m.MatchResponse(t, res, m.MatchList(0, m.MatchV3Count(1), m.MatchV3Ops(
+	m.MatchResponse(t, res, m.MatchList("a", m.MatchV3Count(1), m.MatchV3Ops(
 		m.MatchV3SyncOp(0, 1, []string{roomB}),
 	)), m.MatchRoomSubscriptionsStrict(map[string][]m.RoomMatcher{
 		roomA: {

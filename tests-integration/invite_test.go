@@ -42,8 +42,8 @@ func TestStuckInvites(t *testing.T) {
 
 	// initial sync, should see the invite
 	res := v3.mustDoV3Request(t, aliceToken, sync3.Request{
-		Lists: []sync3.RequestList{
-			{
+		Lists: map[string]sync3.RequestList{
+			"a": {
 				Ranges: sync3.SliceRanges{{0, 10}},
 				Filters: &sync3.RequestFilters{
 					IsInvite: &boolTrue,
@@ -51,7 +51,7 @@ func TestStuckInvites(t *testing.T) {
 			},
 		},
 	})
-	m.MatchResponse(t, res, m.MatchList(0, m.MatchV3Count(1), m.MatchV3Ops(
+	m.MatchResponse(t, res, m.MatchList("a", m.MatchV3Count(1), m.MatchV3Ops(
 		m.MatchV3SyncOp(0, 10, []string{preSyncInviteRoomID}),
 	)))
 
@@ -74,13 +74,13 @@ func TestStuckInvites(t *testing.T) {
 	v2.waitUntilEmpty(t, alice)
 
 	res = v3.mustDoV3RequestWithPos(t, aliceToken, res.Pos, sync3.Request{
-		Lists: []sync3.RequestList{
-			{
+		Lists: map[string]sync3.RequestList{
+			"a": {
 				Ranges: sync3.SliceRanges{{0, 10}},
 			},
 		},
 	})
-	m.MatchResponse(t, res, m.MatchList(0, m.MatchV3Count(2), m.MatchV3Ops(
+	m.MatchResponse(t, res, m.MatchList("a", m.MatchV3Count(2), m.MatchV3Ops(
 		m.MatchV3DeleteOp(1),
 		m.MatchV3InsertOp(0, postSyncInviteRoomID),
 	)))
@@ -112,23 +112,23 @@ func TestStuckInvites(t *testing.T) {
 
 	// the entries are removed
 	res = v3.mustDoV3RequestWithPos(t, aliceToken, res.Pos, sync3.Request{
-		Lists: []sync3.RequestList{
-			{
+		Lists: map[string]sync3.RequestList{
+			"a": {
 				Ranges: sync3.SliceRanges{{0, 10}},
 			},
 		},
 	})
 	// not asserting the ops here as they could be DELETE 1, DELETE 0 or DELETE 0, DELETE 0 which is hard
 	// to assert.
-	m.MatchResponse(t, res, m.MatchList(0, m.MatchV3Count(0)))
+	m.MatchResponse(t, res, m.MatchList("a", m.MatchV3Count(0)))
 
 	// restart the server
 	v3.restart(t, v2, pqString)
 
 	// now query for invites: there should be none if we are clearing the DB correctly.
 	res = v3.mustDoV3Request(t, aliceToken, sync3.Request{
-		Lists: []sync3.RequestList{
-			{
+		Lists: map[string]sync3.RequestList{
+			"a": {
 				Ranges: sync3.SliceRanges{{0, 10}},
 				Filters: &sync3.RequestFilters{
 					IsInvite: &boolTrue,

@@ -16,7 +16,7 @@ const (
 )
 
 type Response struct {
-	Lists []ResponseList `json:"lists"`
+	Lists map[string]ResponseList `json:"lists"`
 
 	Rooms      map[string]Room     `json:"rooms"`
 	Extensions extensions.Response `json:"extensions"`
@@ -50,7 +50,7 @@ func (r *Response) ListOps() int {
 func (r *Response) UnmarshalJSON(b []byte) error {
 	temporary := struct {
 		Rooms map[string]Room `json:"rooms"`
-		Lists []struct {
+		Lists map[string]struct {
 			Ops   []json.RawMessage `json:"ops"`
 			Count int               `json:"count"`
 		} `json:"lists"`
@@ -68,10 +68,9 @@ func (r *Response) UnmarshalJSON(b []byte) error {
 	r.TxnID = temporary.TxnID
 	r.Session = temporary.Session
 	r.Extensions = temporary.Extensions
-	r.Lists = make([]ResponseList, len(temporary.Lists))
+	r.Lists = make(map[string]ResponseList, len(temporary.Lists))
 
-	for i := range temporary.Lists {
-		l := temporary.Lists[i]
+	for listKey, l := range temporary.Lists {
 		var list ResponseList
 		list.Count = l.Count
 		for _, op := range l.Ops {
@@ -89,7 +88,7 @@ func (r *Response) UnmarshalJSON(b []byte) error {
 				list.Ops = append(list.Ops, &oper)
 			}
 		}
-		r.Lists[i] = list
+		r.Lists[listKey] = list
 	}
 
 	return nil
