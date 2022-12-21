@@ -233,7 +233,34 @@ func TestToDeviceTableNoDeleteUnacks(t *testing.T) {
 	}
 	bytesEqual(t, gotMsgs[0], reqEv)
 	bytesEqual(t, gotMsgs[1], cancelEv)
+}
 
+// Guard against possible message truncation?
+func TestToDeviceTableBytesInEqualBytesOut(t *testing.T) {
+	db, err := sqlx.Open("postgres", postgresConnectionString)
+	if err != nil {
+		t.Fatalf("failed to open SQL db: %s", err)
+	}
+	table := NewToDeviceTable(db)
+	testCases := []json.RawMessage{
+		json.RawMessage(`{}`),
+		json.RawMessage(`{"foo":"bar"}`),
+		json.RawMessage(`{  "foo":   "bar" }`),
+		json.RawMessage(`{ not even valid json :D }`),
+	}
+	var pos int64
+	for _, msg := range testCases {
+		nextPos, err := table.InsertMessages("A", []json.RawMessage{msg})
+		if err != nil {
+			t.Fatalf("InsertMessages: %s", err)
+		}
+		got, _, err := table.Messages("A", pos, 1)
+		if err != nil {
+			t.Fatalf("Messages: %s", err)
+		}
+		bytesEqual(t, got[0], msg)
+		pos = nextPos
+	}
 }
 
 func bytesEqual(t *testing.T, got, want json.RawMessage) {
