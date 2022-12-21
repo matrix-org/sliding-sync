@@ -247,6 +247,7 @@ func TestToDeviceTableBytesInEqualBytesOut(t *testing.T) {
 		json.RawMessage(`{"foo":"bar"}`),
 		json.RawMessage(`{  "foo":   "bar" }`),
 		json.RawMessage(`{ not even valid json :D }`),
+		json.RawMessage(`{ "\~./.-$%_!@£?;'\[]= }`),
 	}
 	var pos int64
 	for _, msg := range testCases {
