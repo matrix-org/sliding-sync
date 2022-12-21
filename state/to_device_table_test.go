@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/jmoiron/sqlx"
+	"github.com/tidwall/gjson"
 )
 
 func TestToDeviceTable(t *testing.T) {
@@ -276,6 +277,30 @@ func TestToDeviceTableBytesInEqualBytesOut(t *testing.T) {
 	}
 	for i := range testCases {
 		bytesEqual(t, got[i], testCases[i])
+	}
+}
+
+func TestMsgID(t *testing.T) {
+	data := json.RawMessage(`{
+		"content": {
+		  "algorithm": "m.olm.v1.curve25519-aes-sha2",
+		  "ciphertext": {
+			"gMObR+/4dqL5T4DisRRRYBJpn+OjzFnkyCFOktP6Eyw": {
+			  "body": "AwogrdbTbG8VCW....slqU",
+			  "type": 0
+			}
+		  },
+		  "org.matrix.msgid": "6390a372-fd3c-4f56-b0d5-2f2ce39f2d56",
+		  "sender_key": "EWnYTm/yIQ1lStSIqO6fdVYvS69OfU2DzrX+q+1d+w8"
+		},
+		"type": "m.room.encrypted",
+		"sender": "@sample:localhost:8480"
+	  }`)
+	m := gjson.ParseBytes(data)
+	got := m.Get(`content.org\.matrix\.msgid`).Str
+	want := "6390a372-fd3c-4f56-b0d5-2f2ce39f2d56"
+	if got != want {
+		t.Fatalf("got %v want %v", got, want)
 	}
 }
 
