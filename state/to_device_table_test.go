@@ -261,6 +261,21 @@ func TestToDeviceTableBytesInEqualBytesOut(t *testing.T) {
 		bytesEqual(t, got[0], msg)
 		pos = nextPos
 	}
+	// and all at once
+	_, err = table.InsertMessages("B", testCases)
+	if err != nil {
+		t.Fatalf("InsertMessages: %s", err)
+	}
+	got, _, err := table.Messages("B", 0, 100)
+	if err != nil {
+		t.Fatalf("Messages: %s", err)
+	}
+	if len(got) != len(testCases) {
+		t.Fatalf("got %d messages, want %d", len(got), len(testCases))
+	}
+	for i := range testCases {
+		bytesEqual(t, got[i], testCases[i])
+	}
 }
 
 func bytesEqual(t *testing.T, got, want json.RawMessage) {
