@@ -522,10 +522,15 @@ func (h *SyncLiveHandler) OnUnreadCounts(p *pubsub.V2UnreadCounts) {
 	userCache.(*caches.UserCache).OnUnreadCounts(p.RoomID, p.HighlightCount, p.NotificationCount)
 }
 
-// TODO: We don't eagerly push device data updates on waiting conns (otk counts, device list changes)
-// Do we need to?
+// push device data updates on waiting conns (otk counts, device list changes)
 func (h *SyncLiveHandler) OnDeviceData(p *pubsub.V2DeviceData) {
-	// Do nothing for now
+	conn := h.ConnMap.Conn(sync3.ConnID{
+		DeviceID: p.DeviceID,
+	})
+	if conn == nil {
+		return
+	}
+	conn.OnUpdate(caches.DeviceDataUpdate{})
 }
 
 func (h *SyncLiveHandler) OnInvite(p *pubsub.V2InviteRoom) {

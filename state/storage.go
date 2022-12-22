@@ -47,7 +47,7 @@ type Storage struct {
 func NewStorage(postgresURI string) *Storage {
 	db, err := sqlx.Open("postgres", postgresURI)
 	if err != nil {
-		log.Panic().Err(err).Str("uri", postgresURI).Msg("failed to open SQL DB")
+		logger.Panic().Err(err).Str("uri", postgresURI).Msg("failed to open SQL DB")
 	}
 	acc := &Accumulator{
 		db:            db,

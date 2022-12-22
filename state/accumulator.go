@@ -4,19 +4,12 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
-	"os"
 
 	"github.com/jmoiron/sqlx"
 	"github.com/lib/pq"
 	"github.com/matrix-org/sliding-sync/sqlutil"
-	"github.com/rs/zerolog"
 	"github.com/tidwall/gjson"
 )
-
-var log = zerolog.New(os.Stdout).With().Timestamp().Logger().Output(zerolog.ConsoleWriter{
-	Out:        os.Stderr,
-	TimeFormat: "15:04:05",
-})
 
 // Accumulator tracks room state and timelines.
 //
@@ -77,7 +70,7 @@ func (a *Accumulator) calculateNewSnapshot(old StrippedEvents, new Event) (Strip
 			// ruh roh. This should be impossible, but it can happen if the v2 response sends the same
 			// event in both state and timeline. We need to alert the operator and whine badly as it means
 			// we have lost an event by now.
-			log.Warn().Str("new_event_id", new.ID).Str("old_event_id", e.ID).Str("room_id", new.RoomID).Str("type", new.Type).Str("state_key", new.StateKey).Msg(
+			logger.Warn().Str("new_event_id", new.ID).Str("old_event_id", e.ID).Str("room_id", new.RoomID).Str("type", new.Type).Str("state_key", new.StateKey).Msg(
 				"Detected different event IDs with the same NID when rolling forward state. This has resulted in data loss in this room (1 event). " +
 					"This can happen when the v2 /sync response sends the same event in both state and timeline sections. " +
 					"The event in this log line has been dropped!",
@@ -160,7 +153,7 @@ func (a *Accumulator) Initialise(roomID string, state []json.RawMessage) (bool, 
 		}
 		if snapshotID > 0 {
 			// we only initialise rooms once
-			log.Info().Str("room_id", roomID).Int64("snapshot_id", snapshotID).Msg("Accumulator.Initialise called but current snapshot already exists, bailing early")
+			logger.Info().Str("room_id", roomID).Int64("snapshot_id", snapshotID).Msg("Accumulator.Initialise called but current snapshot already exists, bailing early")
 			return nil
 		}
 
@@ -183,7 +176,7 @@ func (a *Accumulator) Initialise(roomID string, state []json.RawMessage) (bool, 
 		if len(eventIDToNID) == 0 {
 			// we don't have a current snapshot for this room but yet no events are new,
 			// no idea how this should be handled.
-			log.Error().Str("room_id", roomID).Msg(
+			logger.Error().Str("room_id", roomID).Msg(
 				"Accumulator.Initialise: room has no current snapshot but also no new inserted events, doing nothing. This is probably a bug.",
 			)
 			return nil
@@ -270,7 +263,7 @@ func (a *Accumulator) Accumulate(roomID string, prevBatch string, timeline []jso
 				return fmt.Errorf("event malformed: %s", err)
 			}
 			if _, ok := seenEvents[e.ID]; ok {
-				log.Warn().Str("event_id", e.ID).Str("room_id", roomID).Msg(
+				logger.Warn().Str("event_id", e.ID).Str("room_id", roomID).Msg(
 					"Accumulator.Accumulate: seen the same event ID twice, ignoring",
 				)
 				continue

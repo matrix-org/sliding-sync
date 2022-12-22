@@ -459,31 +459,29 @@ func (p *poller) parseToDeviceMessages(res *SyncResponse) {
 }
 
 func (p *poller) parseE2EEData(res *SyncResponse) {
-	hasE2EEChanges := false
+	var changedOTKCounts map[string]int
 	if res.DeviceListsOTKCount != nil && len(res.DeviceListsOTKCount) > 0 {
 		if len(p.otkCounts) != len(res.DeviceListsOTKCount) {
-			hasE2EEChanges = true
-		}
-		if !hasE2EEChanges && p.otkCounts != nil {
+			changedOTKCounts = res.DeviceListsOTKCount
+		} else if p.otkCounts != nil {
 			for k := range res.DeviceListsOTKCount {
 				if res.DeviceListsOTKCount[k] != p.otkCounts[k] {
-					hasE2EEChanges = true
+					changedOTKCounts = res.DeviceListsOTKCount
 					break
 				}
 			}
 		}
 		p.otkCounts = res.DeviceListsOTKCount
 	}
+	var changedFallbackTypes []string
 	if len(res.DeviceUnusedFallbackKeyTypes) > 0 {
-		if !hasE2EEChanges {
-			if len(p.fallbackKeyTypes) != len(res.DeviceUnusedFallbackKeyTypes) {
-				hasE2EEChanges = true
-			} else {
-				for i := range res.DeviceUnusedFallbackKeyTypes {
-					if res.DeviceUnusedFallbackKeyTypes[i] != p.fallbackKeyTypes[i] {
-						hasE2EEChanges = true
-						break
-					}
+		if len(p.fallbackKeyTypes) != len(res.DeviceUnusedFallbackKeyTypes) {
+			changedFallbackTypes = res.DeviceUnusedFallbackKeyTypes
+		} else {
+			for i := range res.DeviceUnusedFallbackKeyTypes {
+				if res.DeviceUnusedFallbackKeyTypes[i] != p.fallbackKeyTypes[i] {
+					changedFallbackTypes = res.DeviceUnusedFallbackKeyTypes
+					break
 				}
 			}
 		}
@@ -491,12 +489,9 @@ func (p *poller) parseE2EEData(res *SyncResponse) {
 	}
 
 	deviceListChanges := internal.ToDeviceListChangesMap(res.DeviceLists.Changed, res.DeviceLists.Left)
-	if deviceListChanges != nil {
-		hasE2EEChanges = true
-	}
 
-	if hasE2EEChanges {
-		p.receiver.OnE2EEData(p.userID, p.deviceID, p.otkCounts, p.fallbackKeyTypes, deviceListChanges)
+	if deviceListChanges != nil || changedFallbackTypes != nil || changedOTKCounts != nil {
+		p.receiver.OnE2EEData(p.userID, p.deviceID, changedOTKCounts, changedFallbackTypes, deviceListChanges)
 	}
 }
 

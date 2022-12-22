@@ -227,6 +227,15 @@ func MatchRoomSubscriptions(wantSubs map[string][]RoomMatcher) RespMatcher {
 	}
 }
 
+func MatchNoE2EEExtension() RespMatcher {
+	return func(res *sync3.Response) error {
+		if res.Extensions.E2EE != nil {
+			return fmt.Errorf("MatchNoE2EEExtension: got E2EE extension: %+v", res.Extensions.E2EE)
+		}
+		return nil
+	}
+}
+
 func MatchOTKCounts(otkCounts map[string]int) RespMatcher {
 	return func(res *sync3.Response) error {
 		if res.Extensions.E2EE == nil {

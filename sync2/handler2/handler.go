@@ -178,7 +178,8 @@ func (h *Handler) OnE2EEData(userID, deviceID string, otkCounts map[string]int, 
 		return
 	}
 	h.v2Pub.Notify(pubsub.ChanV2, &pubsub.V2DeviceData{
-		Pos: nextPos,
+		DeviceID: deviceID,
+		Pos:      nextPos,
 	})
 }
 

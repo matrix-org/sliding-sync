@@ -92,7 +92,7 @@ func (t *ToDeviceTable) Messages(deviceID string, from, limit int64) (msgs []jso
 		m := gjson.ParseBytes(msgs[i])
 		msgId := m.Get(`content.org\.matrix\.msgid`).Str
 		if msgId != "" {
-			log.Debug().Str("msgid", msgId).Str("device", deviceID).Msg("ToDeviceTable.Messages")
+			logger.Info().Str("msgid", msgId).Str("device", deviceID).Msg("ToDeviceTable.Messages")
 		}
 	}
 	upTo = rows[len(rows)-1].Position
@@ -125,7 +125,7 @@ func (t *ToDeviceTable) InsertMessages(deviceID string, msgs []json.RawMessage) 
 			}
 			msgId := m.Get(`content.org\.matrix\.msgid`).Str
 			if msgId != "" {
-				log.Debug().Str("msgid", msgId).Str("device", deviceID).Msg("ToDeviceTable.InsertMessages")
+				logger.Debug().Str("msgid", msgId).Str("device", deviceID).Msg("ToDeviceTable.InsertMessages")
 			}
 			switch rows[i].Type {
 			case "m.room_key_request":

@@ -54,6 +54,7 @@ type RoomAccountDataUpdate struct {
 	AccountData []state.AccountData
 }
 
-// Alerts result in changes to ops, subs or ext modifications
-// Alerts can update internal conn state
-// Dispatcher thread ultimately fires alerts OR poller thread e.g OnUnreadCounts
+type DeviceDataUpdate struct {
+	// no data; just wakes up the connection
+	// data comes via sidechannels e.g the database
+}

@@ -7,7 +7,6 @@ import (
 	"sort"
 	"sync"
 
-	"github.com/matrix-org/gomatrixserverlib"
 	"github.com/matrix-org/sliding-sync/internal"
 	"github.com/matrix-org/sliding-sync/state"
 	"github.com/rs/zerolog"
@@ -187,15 +186,6 @@ func (c *GlobalCache) Startup(roomIDToMetadata map[string]internal.RoomMetadata)
 	sort.Strings(roomIDs)
 	for _, roomID := range roomIDs {
 		metadata := roomIDToMetadata[roomID]
-		var upgradedRoomID string
-		if metadata.UpgradedRoomID != nil {
-			upgradedRoomID = *metadata.UpgradedRoomID
-		}
-		logger.Debug().Str("room", roomID).Interface(
-			"recent", gomatrixserverlib.Timestamp(metadata.LastMessageTimestamp).Time(),
-		).Bool("encrypted", metadata.Encrypted).Str("tombstone", upgradedRoomID).Int("joins", metadata.JoinCount).Msg(
-			"",
-		)
 		internal.Assert("room ID is set", metadata.RoomID != "")
 		internal.Assert("last message timestamp exists", metadata.LastMessageTimestamp > 1)
 		c.roomIDToMetadata[roomID] = &metadata

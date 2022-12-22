@@ -4,6 +4,20 @@ import (
 	"sync"
 )
 
+const (
+	bitOTKCount int = iota
+	bitFallbackKeyTypes
+)
+
+func setBit(n int, bit int) int {
+	n |= (1 << bit)
+	return n
+}
+func isBitSet(n int, bit int) bool {
+	val := n & (1 << bit)
+	return val > 0
+}
+
 // DeviceData contains useful data for this user's device. This list can be expanded without prompting
 // schema changes. These values are upserted into the database and persisted forever.
 type DeviceData struct {
@@ -16,8 +30,27 @@ type DeviceData struct {
 
 	DeviceLists DeviceLists `json:"dl"`
 
+	// bitset for which device data changes are present. They accumulate until they get swapped over
+	// when they get reset
+	ChangedBits int `json:"c"`
+
 	UserID   string
 	DeviceID string
+}
+
+func (dd *DeviceData) SetOTKCountChanged() {
+	dd.ChangedBits = setBit(dd.ChangedBits, bitOTKCount)
+}
+
+func (dd *DeviceData) SetFallbackKeysChanged() {
+	dd.ChangedBits = setBit(dd.ChangedBits, bitFallbackKeyTypes)
+}
+
+func (dd *DeviceData) OTKCountChanged() bool {
+	return isBitSet(dd.ChangedBits, bitOTKCount)
+}
+func (dd *DeviceData) FallbackKeysChanged() bool {
+	return isBitSet(dd.ChangedBits, bitFallbackKeyTypes)
 }
 
 type UserDeviceKey struct {

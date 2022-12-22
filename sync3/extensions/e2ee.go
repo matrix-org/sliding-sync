@@ -3,6 +3,7 @@ package extensions
 import (
 	"github.com/matrix-org/sliding-sync/internal"
 	"github.com/matrix-org/sliding-sync/sync2"
+	"github.com/matrix-org/sliding-sync/sync3/caches"
 )
 
 // Client created request params
@@ -31,8 +32,15 @@ func (r *E2EEResponse) HasData(isInitial bool) bool {
 	if isInitial {
 		return true // ensure we send OTK counts immediately
 	}
-	// OTK counts aren't enough to make /sync return early as we send them liberally, not just on change
-	return r.DeviceLists != nil
+	return r.DeviceLists != nil || len(r.FallbackKeyTypes) > 0 || len(r.OTKCounts) > 0
+}
+
+func ProcessLiveE2EE(up caches.Update, fetcher sync2.E2EEFetcher, userID, deviceID string, req *E2EERequest) (res *E2EEResponse) {
+	_, ok := up.(caches.DeviceDataUpdate)
+	if !ok {
+		return nil
+	}
+	return ProcessE2EE(fetcher, userID, deviceID, req, false)
 }
 
 func ProcessE2EE(fetcher sync2.E2EEFetcher, userID, deviceID string, req *E2EERequest, isInitial bool) (res *E2EEResponse) {
@@ -42,10 +50,10 @@ func ProcessE2EE(fetcher sync2.E2EEFetcher, userID, deviceID string, req *E2EERe
 	if dd == nil {
 		return res // unknown device?
 	}
-	if dd.FallbackKeyTypes != nil {
+	if dd.FallbackKeyTypes != nil && (dd.FallbackKeysChanged() || isInitial) {
 		res.FallbackKeyTypes = dd.FallbackKeyTypes
 	}
-	if dd.OTKCounts != nil {
+	if dd.OTKCounts != nil && (dd.OTKCountChanged() || isInitial) {
 		res.OTKCounts = dd.OTKCounts
 	}
 	changed, left := internal.DeviceListChangesArrays(dd.DeviceLists.Sent)
