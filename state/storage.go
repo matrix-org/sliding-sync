@@ -122,17 +122,11 @@ func (s *Storage) InsertAccountData(userID, roomID string, events []json.RawMess
 // in a single transaction.
 func (s *Storage) GlobalSnapshot() (ss StartupSnapshot, err error) {
 	err = sqlutil.WithTransaction(s.accumulator.db, func(txn *sqlx.Tx) error {
-		ss.AllJoinedMembers, err = s.AllJoinedMembers(txn)
+		var metadata map[string]internal.RoomMetadata
+		ss.AllJoinedMembers, metadata, err = s.AllJoinedMembers(txn)
 		if err != nil {
 			return err
 		}
-		metadata := make(map[string]internal.RoomMetadata)
-		for roomID, joinedMembers := range ss.AllJoinedMembers {
-			metadata[roomID] = internal.RoomMetadata{
-				JoinCount: len(joinedMembers),
-			}
-		}
-
 		err = s.MetadataForAllRooms(txn, metadata)
 		if err != nil {
 			return err
@@ -727,14 +721,14 @@ func (s *Storage) RoomMembershipDelta(roomID string, from, to int64, limit int) 
 	return
 }
 
-func (s *Storage) AllJoinedMembers(txn *sqlx.Tx) (result map[string][]string, err error) {
+func (s *Storage) AllJoinedMembers(txn *sqlx.Tx) (result map[string][]string, metadata map[string]internal.RoomMetadata, err error) {
 	rows, err := txn.Query(
 		`SELECT room_id, state_key from syncv3_events WHERE (membership='join' OR membership='_join') AND event_nid IN (
 			SELECT UNNEST(events) FROM syncv3_snapshots JOIN syncv3_rooms ON syncv3_snapshots.snapshot_id = syncv3_rooms.current_snapshot_id
 		) ORDER BY event_nid ASC`,
 	)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	defer rows.Close()
 	result = make(map[string][]string)
@@ -742,13 +736,19 @@ func (s *Storage) AllJoinedMembers(txn *sqlx.Tx) (result map[string][]string, er
 	var joinedUserID string
 	for rows.Next() {
 		if err := rows.Scan(&roomID, &joinedUserID); err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 		users := result[roomID]
 		users = append(users, joinedUserID)
 		result[roomID] = users
 	}
-	return
+	metadata = make(map[string]internal.RoomMetadata)
+	for roomID, joinedMembers := range result {
+		metadata[roomID] = internal.RoomMetadata{
+			JoinCount: len(joinedMembers),
+		}
+	}
+	return result, metadata, nil
 }
 
 func (s *Storage) JoinedRoomsAfterPosition(userID string, pos int64) ([]string, error) {
