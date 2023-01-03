@@ -713,5 +713,130 @@ func TestChangeSortOrder(t *testing.T) {
 		m.MatchV3InvalidateOp(0, 20),
 		m.MatchV3SyncOp(0, 20, []string{gotNameToIDs["Apple"], gotNameToIDs["Kiwi"], gotNameToIDs["Lemon"], gotNameToIDs["Orange"]}),
 	)))
+}
 
+// Regression test that a window can be shrunk and the INVALIDATE appears correctly for the low/high ends of the range
+func TestShrinkRange(t *testing.T) {
+	alice := registerNewUser(t)
+	var roomIDs []string // most recent first
+	for i := 0; i < 10; i++ {
+		time.Sleep(time.Millisecond) // ensure creation timestamp changes
+		roomIDs = append([]string{alice.CreateRoom(t, map[string]interface{}{
+			"preset": "public_chat",
+			"name":   fmt.Sprintf("Room %d", i),
+		})}, roomIDs...)
+	}
+	res := alice.SlidingSync(t, sync3.Request{
+		Lists: []sync3.RequestList{
+			{
+				Ranges: sync3.SliceRanges{{0, 20}},
+			},
+		},
+	})
+	m.MatchResponse(t, res, m.MatchList(0, m.MatchV3Count(10), m.MatchV3Ops(
+		m.MatchV3SyncOp(0, 20, roomIDs),
+	)))
+	// now shrink the window on both ends
+	res = alice.SlidingSync(t, sync3.Request{
+		Lists: []sync3.RequestList{
+			{
+				Ranges: sync3.SliceRanges{{2, 6}},
+			},
+		},
+	}, WithPos(res.Pos))
+	m.MatchResponse(t, res, m.MatchList(0, m.MatchV3Count(10), m.MatchV3Ops(
+		m.MatchV3InvalidateOp(0, 1),
+		m.MatchV3InvalidateOp(7, 20),
+	)))
+}
+
+// Regression test that you can expand a window without it causing problems. Previously, it would cause
+// a spurious {"op":"SYNC","range":[11,20],"room_ids":["!jHVHDxEWqTIcbDYoah:synapse"]} op for a bad index
+func TestExpandRange(t *testing.T) {
+	alice := registerNewUser(t)
+	var roomIDs []string // most recent first
+	for i := 0; i < 10; i++ {
+		time.Sleep(time.Millisecond) // ensure creation timestamp changes
+		roomIDs = append([]string{alice.CreateRoom(t, map[string]interface{}{
+			"preset": "public_chat",
+			"name":   fmt.Sprintf("Room %d", i),
+		})}, roomIDs...)
+	}
+	res := alice.SlidingSync(t, sync3.Request{
+		Lists: []sync3.RequestList{
+			{
+				Ranges: sync3.SliceRanges{{0, 10}},
+			},
+		},
+	})
+	m.MatchResponse(t, res, m.MatchList(0, m.MatchV3Count(10), m.MatchV3Ops(
+		m.MatchV3SyncOp(0, 10, roomIDs),
+	)))
+	// now expand the window
+	res = alice.SlidingSync(t, sync3.Request{
+		Lists: []sync3.RequestList{
+			{
+				Ranges: sync3.SliceRanges{{0, 20}},
+			},
+		},
+	}, WithPos(res.Pos))
+	m.MatchResponse(t, res, m.MatchList(0, m.MatchV3Count(10), m.MatchV3Ops()))
+}
+
+// Regression test for Element X which has 2 identical lists and then changes the ranges in weird ways,
+// causing the proxy to send back bad data. The request data here matches what EX sent.
+func TestMultipleSameList(t *testing.T) {
+	alice := registerNewUser(t)
+	// the account had 16 rooms, so do this now
+	var roomIDs []string // most recent first
+	for i := 0; i < 16; i++ {
+		time.Sleep(time.Millisecond) // ensure creation timestamp changes
+		roomIDs = append([]string{alice.CreateRoom(t, map[string]interface{}{
+			"preset": "public_chat",
+			"name":   fmt.Sprintf("Room %d", i),
+		})}, roomIDs...)
+	}
+	firstList := sync3.RequestList{
+		Sort:   []string{sync3.SortByRecency, sync3.SortByName},
+		Ranges: sync3.SliceRanges{{0, 20}},
+		RoomSubscription: sync3.RoomSubscription{
+			RequiredState: [][2]string{{"m.room.avatar", ""}, {"m.room.encryption", ""}},
+			TimelineLimit: 10,
+		},
+	}
+	secondList := sync3.RequestList{
+		Sort:   []string{sync3.SortByRecency, sync3.SortByName},
+		Ranges: sync3.SliceRanges{{0, 16}},
+		RoomSubscription: sync3.RoomSubscription{
+			RequiredState: [][2]string{{"m.room.avatar", ""}, {"m.room.encryption", ""}},
+		},
+	}
+	res := alice.SlidingSync(t, sync3.Request{
+		Lists: []sync3.RequestList{
+			firstList, secondList,
+		},
+	})
+	m.MatchResponse(t, res,
+		m.MatchList(0, m.MatchV3Count(16), m.MatchV3Ops(
+			m.MatchV3SyncOp(0, 20, roomIDs, false),
+		)),
+		m.MatchList(1, m.MatchV3Count(16), m.MatchV3Ops(
+			m.MatchV3SyncOp(0, 16, roomIDs, false),
+		)),
+	)
+	// now change both list ranges in a valid but strange way, and get back bad responses
+	firstList.Ranges = sync3.SliceRanges{{2, 15}}  // from [0,20]
+	secondList.Ranges = sync3.SliceRanges{{0, 20}} // from [0,16]
+	res = alice.SlidingSync(t, sync3.Request{
+		Lists: []sync3.RequestList{
+			firstList, secondList,
+		},
+	}, WithPos(res.Pos))
+	m.MatchResponse(t, res,
+		m.MatchList(0, m.MatchV3Count(16), m.MatchV3Ops(
+			m.MatchV3InvalidateOp(0, 1),
+			m.MatchV3InvalidateOp(16, 20),
+		)),
+		m.MatchList(1, m.MatchV3Count(16), m.MatchV3Ops()),
+	)
 }

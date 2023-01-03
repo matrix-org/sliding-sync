@@ -260,6 +260,9 @@ func (r SliceRanges) SliceInto(slice Subslicer) []Subslicer {
 			// empty slices subslice into themselves
 			continue
 		}
+		if sr[0] >= sliceLen && sr[1] >= sliceLen {
+			continue
+		}
 		if sr[0] >= sliceLen {
 			sr[0] = sliceLen - 1
 		}

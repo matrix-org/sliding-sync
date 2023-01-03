@@ -108,12 +108,19 @@ func TestRange(t *testing.T) {
 				alphabet[0:1], alphabet[1:2],
 			},
 		},
+		{
+			input: SliceRanges([][2]int64{
+				{30, 99},
+			}),
+			want: [][]string{},
+		},
 	}
 
 	for _, tc := range testCases {
 		result := tc.input.SliceInto(stringSlice(alphabet))
 		if len(result) != len(tc.want) {
-			t.Errorf("%+v subslice mismatch: got %v want %v", tc, len(result), len(tc.want))
+			t.Errorf("%+v subslice mismatch: got %v want %v \ngot:  %+v\nwant: %+v\n", tc, len(result), len(tc.want), result, tc.want)
+			continue
 		}
 		for i := range result {
 			got := result[i].(stringSlice)

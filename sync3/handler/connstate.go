@@ -265,10 +265,10 @@ func (s *ConnState) onIncomingListRequest(ctx context.Context, builder *RoomsBui
 	if len(removedRanges) > 0 {
 		logger.Trace().Interface("range", removedRanges).Msg("INVALIDATEing because ranges were removed")
 	}
-	for _, r := range removedRanges {
+	for i := range removedRanges {
 		responseOperations = append(responseOperations, &sync3.ResponseOpRange{
 			Operation: sync3.OpInvalidate,
-			Range:     r[:],
+			Range:     removedRanges[i][:],
 		})
 	}
 
