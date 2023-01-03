@@ -10,7 +10,6 @@ import (
 
 	"github.com/jmoiron/sqlx"
 	"github.com/lib/pq"
-	"github.com/matrix-org/gomatrixserverlib"
 	"github.com/matrix-org/sliding-sync/internal"
 	"github.com/matrix-org/sliding-sync/sqlutil"
 	"github.com/rs/zerolog"
@@ -119,8 +118,8 @@ func (s *Storage) InsertAccountData(userID, roomID string, events []json.RawMess
 }
 
 // GlobalSnapshot snapshots the entire database for the purposes of initialising
-// a sliding sync HTTP API instance. It will atomically grab metadata for all rooms, all joined members
-// and the latest pubsub position in a single transaction.
+// a sliding sync instance. It will atomically grab metadata for all rooms and all joined members
+// in a single transaction.
 func (s *Storage) GlobalSnapshot() (ss StartupSnapshot, err error) {
 	err = sqlutil.WithTransaction(s.accumulator.db, func(txn *sqlx.Tx) error {
 		ss.GlobalMetadata, err = s.MetadataForAllRooms(txn)
@@ -741,29 +740,28 @@ func (s *Storage) RoomMembershipDelta(roomID string, from, to int64, limit int) 
 	return
 }
 
-func (s *Storage) AllJoinedMembers(txn *sqlx.Tx) (map[string][]string, error) {
-	roomIDToEventNIDs, err := s.accumulator.snapshotTable.CurrentSnapshots(txn)
+func (s *Storage) AllJoinedMembers(txn *sqlx.Tx) (result map[string][]string, err error) {
+	rows, err := txn.Query(
+		`SELECT room_id, state_key from syncv3_events WHERE (membership='join' OR membership='_join') AND event_nid IN (
+			SELECT UNNEST(events) FROM syncv3_snapshots JOIN syncv3_rooms ON syncv3_snapshots.snapshot_id = syncv3_rooms.current_snapshot_id
+		) ORDER BY event_nid ASC`,
+	)
 	if err != nil {
 		return nil, err
 	}
-	result := make(map[string][]string)
-	for roomID, eventNIDs := range roomIDToEventNIDs {
-		events, err := s.accumulator.eventsTable.SelectByNIDs(txn, true, eventNIDs)
-		if err != nil {
-			return nil, fmt.Errorf("failed to select events in room %s: %s", roomID, err)
+	defer rows.Close()
+	result = make(map[string][]string)
+	var roomID string
+	var joinedUserID string
+	for rows.Next() {
+		if err := rows.Scan(&roomID, &joinedUserID); err != nil {
+			return nil, err
 		}
-		for _, ev := range events {
-			evj := gjson.ParseBytes(ev.JSON)
-			if evj.Get("type").Str != gomatrixserverlib.MRoomMember {
-				continue
-			}
-			if evj.Get("content.membership").Str != gomatrixserverlib.Join {
-				continue
-			}
-			result[roomID] = append(result[roomID], evj.Get("state_key").Str)
-		}
+		users := result[roomID]
+		users = append(users, joinedUserID)
+		result[roomID] = users
 	}
-	return result, nil
+	return
 }
 
 func (s *Storage) JoinedRoomsAfterPosition(userID string, pos int64) ([]string, error) {
