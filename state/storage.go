@@ -122,44 +122,31 @@ func (s *Storage) InsertAccountData(userID, roomID string, events []json.RawMess
 // in a single transaction.
 func (s *Storage) GlobalSnapshot() (ss StartupSnapshot, err error) {
 	err = sqlutil.WithTransaction(s.accumulator.db, func(txn *sqlx.Tx) error {
-		ss.GlobalMetadata, err = s.MetadataForAllRooms(txn)
-		if err != nil {
-			return err
-		}
 		ss.AllJoinedMembers, err = s.AllJoinedMembers(txn)
 		if err != nil {
 			return err
 		}
+		metadata := make(map[string]internal.RoomMetadata)
+		for roomID, joinedMembers := range ss.AllJoinedMembers {
+			metadata[roomID] = internal.RoomMetadata{
+				JoinCount: len(joinedMembers),
+			}
+		}
+
+		err = s.MetadataForAllRooms(txn, metadata)
+		if err != nil {
+			return err
+		}
+		ss.GlobalMetadata = metadata
 		return err
 	})
 	return
 }
 
 // Extract hero info for all rooms.
-func (s *Storage) MetadataForAllRooms(txn *sqlx.Tx) (map[string]internal.RoomMetadata, error) {
-	// Select the joined member counts
-	// sub-select all current state, filter on m.room.member and then join membership
+func (s *Storage) MetadataForAllRooms(txn *sqlx.Tx, result map[string]internal.RoomMetadata) error {
+	// Select the invited member counts
 	rows, err := txn.Query(`
-	SELECT room_id, count(state_key) FROM syncv3_events
-		WHERE (membership='_join' OR membership = 'join') AND event_type='m.room.member' AND event_nid IN (
-			SELECT unnest(events) FROM syncv3_snapshots WHERE syncv3_snapshots.snapshot_id IN (
-				SELECT current_snapshot_id FROM syncv3_rooms
-			)
-		) GROUP BY room_id`)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	result := make(map[string]internal.RoomMetadata)
-	for rows.Next() {
-		var metadata internal.RoomMetadata
-		if err := rows.Scan(&metadata.RoomID, &metadata.JoinCount); err != nil {
-			return nil, err
-		}
-		result[metadata.RoomID] = metadata
-	}
-	// Select the invited member counts using the same style of query
-	rows, err = txn.Query(`
 	SELECT room_id, count(state_key) FROM syncv3_events
 		WHERE (membership='_invite' OR membership = 'invite') AND event_type='m.room.member' AND event_nid IN (
 			SELECT unnest(events) FROM syncv3_snapshots WHERE syncv3_snapshots.snapshot_id IN (
@@ -167,14 +154,14 @@ func (s *Storage) MetadataForAllRooms(txn *sqlx.Tx) (map[string]internal.RoomMet
 			)
 		) GROUP BY room_id`)
 	if err != nil {
-		return nil, err
+		return err
 	}
 	defer rows.Close()
 	for rows.Next() {
 		var roomID string
 		var inviteCount int
 		if err := rows.Scan(&roomID, &inviteCount); err != nil {
-			return nil, err
+			return err
 		}
 		metadata := result[roomID]
 		metadata.InviteCount = inviteCount
@@ -184,7 +171,7 @@ func (s *Storage) MetadataForAllRooms(txn *sqlx.Tx) (map[string]internal.RoomMet
 	// work out latest timestamps
 	events, err := s.accumulator.eventsTable.selectLatestEventInAllRooms(txn)
 	if err != nil {
-		return nil, err
+		return err
 	}
 	for _, ev := range events {
 		metadata := result[ev.RoomID]
@@ -200,7 +187,7 @@ func (s *Storage) MetadataForAllRooms(txn *sqlx.Tx) (map[string]internal.RoomMet
 		"m.room.name", "m.room.canonical_alias",
 	})
 	if err != nil {
-		return nil, fmt.Errorf("failed to load state events for all rooms: %s", err)
+		return fmt.Errorf("failed to load state events for all rooms: %s", err)
 	}
 	for roomID, stateEvents := range roomIDToStateEvents {
 		metadata := result[roomID]
@@ -231,7 +218,7 @@ func (s *Storage) MetadataForAllRooms(txn *sqlx.Tx) (map[string]internal.RoomMet
 		)
 	) rf WHERE rank <= 6`)
 	if err != nil {
-		return nil, fmt.Errorf("failed to query heroes: %s", err)
+		return fmt.Errorf("failed to query heroes: %s", err)
 	}
 	defer rows.Close()
 	seen := map[string]bool{}
@@ -240,7 +227,7 @@ func (s *Storage) MetadataForAllRooms(txn *sqlx.Tx) (map[string]internal.RoomMet
 		var event json.RawMessage
 		var rank int
 		if err := rows.Scan(&roomID, &event, &rank); err != nil {
-			return nil, err
+			return err
 		}
 		ev := gjson.ParseBytes(event)
 		targetUser := ev.Get("state_key").Str
@@ -258,7 +245,7 @@ func (s *Storage) MetadataForAllRooms(txn *sqlx.Tx) (map[string]internal.RoomMet
 	}
 	roomInfos, err := s.accumulator.roomsTable.SelectRoomInfos(txn)
 	if err != nil {
-		return nil, fmt.Errorf("failed to select room infos: %s", err)
+		return fmt.Errorf("failed to select room infos: %s", err)
 	}
 	var spaceRoomIDs []string
 	for _, info := range roomInfos {
@@ -276,7 +263,7 @@ func (s *Storage) MetadataForAllRooms(txn *sqlx.Tx) (map[string]internal.RoomMet
 	// select space children
 	spaceRoomToRelations, err := s.accumulator.spacesTable.SelectChildren(txn, spaceRoomIDs)
 	if err != nil {
-		return nil, fmt.Errorf("failed to select space children: %s", err)
+		return fmt.Errorf("failed to select space children: %s", err)
 	}
 	for roomID, relations := range spaceRoomToRelations {
 		metadata := result[roomID]
@@ -289,7 +276,7 @@ func (s *Storage) MetadataForAllRooms(txn *sqlx.Tx) (map[string]internal.RoomMet
 		}
 		result[roomID] = metadata
 	}
-	return result, nil
+	return nil
 }
 
 // Returns all current state events matching the event types given in all rooms. Returns a map of

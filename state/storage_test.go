@@ -197,7 +197,21 @@ func TestStorageJoinedRoomsAfterPosition(t *testing.T) {
 	}
 
 	// also test MetadataForAllRooms
-	roomIDToMetadata, err := store.MetadataForAllRooms(txn)
+	roomIDToMetadata := map[string]internal.RoomMetadata{
+		joinedRoomID: {
+			JoinCount: 1,
+		},
+		invitedRoomID: {
+			JoinCount: 1,
+		},
+		banRoomID: {
+			JoinCount: 1,
+		},
+		bobJoinedRoomID: {
+			JoinCount: 2,
+		},
+	}
+	err = store.MetadataForAllRooms(txn, roomIDToMetadata)
 	txn.Commit()
 	if err != nil {
 		t.Fatalf("MetadataForAllRooms: %s", err)
