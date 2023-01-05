@@ -51,7 +51,7 @@ func TestPollerMapEnsurePolling(t *testing.T) {
 
 	ensurePollingUnblocked := make(chan struct{})
 	go func() {
-		pm.EnsurePolling("access_token", "@alice:localhost", "FOOBAR", "", zerolog.New(os.Stderr))
+		pm.EnsurePolling("access_token", "@alice:localhost", "FOOBAR", "", false, zerolog.New(os.Stderr))
 		close(ensurePollingUnblocked)
 	}()
 	ensureBlocking := func() {
@@ -136,7 +136,7 @@ func TestPollerMapEnsurePollingIdempotent(t *testing.T) {
 	for i := 0; i < n; i++ {
 		go func() {
 			t.Logf("EnsurePolling")
-			pm.EnsurePolling("access_token", "@alice:localhost", "FOOBAR", "", zerolog.New(os.Stderr))
+			pm.EnsurePolling("access_token", "@alice:localhost", "FOOBAR", "", false, zerolog.New(os.Stderr))
 			wg.Done()
 			t.Logf("EnsurePolling unblocked")
 		}()
@@ -224,7 +224,7 @@ func TestPollerPollFromNothing(t *testing.T) {
 	})
 	var wg sync.WaitGroup
 	wg.Add(1)
-	poller := newPoller("@alice:localhost", "Authorization: hello world", deviceID, client, accumulator, zerolog.New(os.Stderr))
+	poller := newPoller("@alice:localhost", "Authorization: hello world", deviceID, client, accumulator, zerolog.New(os.Stderr), false)
 	go func() {
 		defer wg.Done()
 		poller.Poll("")
@@ -307,7 +307,7 @@ func TestPollerPollFromExisting(t *testing.T) {
 	})
 	var wg sync.WaitGroup
 	wg.Add(1)
-	poller := newPoller("@alice:localhost", "Authorization: hello world", deviceID, client, accumulator, zerolog.New(os.Stderr))
+	poller := newPoller("@alice:localhost", "Authorization: hello world", deviceID, client, accumulator, zerolog.New(os.Stderr), false)
 	go func() {
 		defer wg.Done()
 		poller.Poll(since)
@@ -383,7 +383,7 @@ func TestPollerBackoff(t *testing.T) {
 	}
 	var wg sync.WaitGroup
 	wg.Add(1)
-	poller := newPoller("@alice:localhost", "Authorization: hello world", deviceID, client, accumulator, zerolog.New(os.Stderr))
+	poller := newPoller("@alice:localhost", "Authorization: hello world", deviceID, client, accumulator, zerolog.New(os.Stderr), false)
 	go func() {
 		defer wg.Done()
 		poller.Poll("some_since_value")
@@ -413,7 +413,7 @@ func TestPollerUnblocksIfTerminatedInitially(t *testing.T) {
 
 	pollUnblocked := make(chan struct{})
 	waitUntilInitialSyncUnblocked := make(chan struct{})
-	poller := newPoller("@alice:localhost", "Authorization: hello world", deviceID, client, accumulator, zerolog.New(os.Stderr))
+	poller := newPoller("@alice:localhost", "Authorization: hello world", deviceID, client, accumulator, zerolog.New(os.Stderr), false)
 	go func() {
 		poller.Poll("")
 		close(pollUnblocked)
@@ -442,7 +442,7 @@ type mockClient struct {
 	fn func(authHeader, since string) (*SyncResponse, int, error)
 }
 
-func (c *mockClient) DoSyncV2(ctx context.Context, authHeader, since string, isFirst bool) (*SyncResponse, int, error) {
+func (c *mockClient) DoSyncV2(ctx context.Context, authHeader, since string, isFirst, toDeviceOnly bool) (*SyncResponse, int, error) {
 	return c.fn(authHeader, since)
 }
 func (c *mockClient) WhoAmI(authHeader string) (string, error) {

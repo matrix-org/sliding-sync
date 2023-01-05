@@ -142,9 +142,8 @@ func (h *PollerMap) NumPollers() (count int) {
 // Note that we will immediately return if there is a poller for the same user but a different device.
 // We do this to allow for logins on clients to be snappy fast, even though they won't yet have the
 // to-device msgs to decrypt E2EE roms.
-func (h *PollerMap) EnsurePolling(accessToken, userID, deviceID, v2since string, logger zerolog.Logger) {
+func (h *PollerMap) EnsurePolling(accessToken, userID, deviceID, v2since string, isStartup bool, logger zerolog.Logger) {
 	h.pollerMu.Lock()
-	logger.Info().Str("device", deviceID).Msg("EnsurePolling lock acquired")
 	if !h.executorRunning {
 		h.executorRunning = true
 		go h.execute()
@@ -158,12 +157,6 @@ func (h *PollerMap) EnsurePolling(accessToken, userID, deviceID, v2since string,
 		poller.WaitUntilInitialSync()
 		return
 	}
-	// replace the poller
-	poller = newPoller(userID, accessToken, deviceID, h.v2Client, h, logger)
-	poller.processHistogramVec = h.processHistogramVec
-	go poller.Poll(v2since)
-	h.Pollers[deviceID] = poller
-
 	// check if we need to wait at all: we don't need to if this user is already syncing on a different device
 	// This is O(n) so we may want to map this if we get a lot of users...
 	needToWait := true
@@ -175,6 +168,13 @@ func (h *PollerMap) EnsurePolling(accessToken, userID, deviceID, v2since string,
 			needToWait = false
 		}
 	}
+
+	// replace the poller. If we don't need to wait, then we just want to nab to-device events initially.
+	// We don't do that on startup though as we cannot be sure that other pollers will not be using expired tokens.
+	poller = newPoller(userID, accessToken, deviceID, h.v2Client, h, logger, !needToWait && !isStartup)
+	poller.processHistogramVec = h.processHistogramVec
+	go poller.Poll(v2since)
+	h.Pollers[deviceID] = poller
 
 	h.pollerMu.Unlock()
 	if needToWait {
@@ -299,6 +299,8 @@ type poller struct {
 	receiver    V2DataReceiver
 	logger      zerolog.Logger
 
+	initialToDeviceOnly bool
+
 	// E2EE fields: we keep them so we only send callbacks on deltas not all the time
 	fallbackKeyTypes []string
 	otkCounts        map[string]int
@@ -312,19 +314,20 @@ type poller struct {
 	processHistogramVec *prometheus.HistogramVec
 }
 
-func newPoller(userID, accessToken, deviceID string, client Client, receiver V2DataReceiver, logger zerolog.Logger) *poller {
+func newPoller(userID, accessToken, deviceID string, client Client, receiver V2DataReceiver, logger zerolog.Logger, initialToDeviceOnly bool) *poller {
 	var wg sync.WaitGroup
 	wg.Add(1)
 	return &poller{
-		accessToken: accessToken,
-		userID:      userID,
-		deviceID:    deviceID,
-		client:      client,
-		receiver:    receiver,
-		Terminated:  false,
-		terminateCh: make(chan struct{}),
-		logger:      logger,
-		wg:          &wg,
+		accessToken:         accessToken,
+		userID:              userID,
+		deviceID:            deviceID,
+		client:              client,
+		receiver:            receiver,
+		Terminated:          false,
+		terminateCh:         make(chan struct{}),
+		logger:              logger,
+		wg:                  &wg,
+		initialToDeviceOnly: initialToDeviceOnly,
 	}
 }
 
@@ -375,7 +378,7 @@ func (p *poller) Poll(since string) {
 			break
 		}
 		start := time.Now()
-		resp, statusCode, err := p.client.DoSyncV2(context.Background(), p.accessToken, since, firstTime)
+		resp, statusCode, err := p.client.DoSyncV2(context.Background(), p.accessToken, since, firstTime, p.initialToDeviceOnly)
 		p.trackRequestDuration(time.Since(start), since == "", firstTime)
 		if p.isTerminated() {
 			break
@@ -395,6 +398,7 @@ func (p *poller) Poll(since string) {
 		if since == "" {
 			p.logger.Info().Msg("Poller: valid initial sync response received")
 		}
+		p.initialToDeviceOnly = false
 		start = time.Now()
 		failCount = 0
 		p.parseE2EEData(resp)

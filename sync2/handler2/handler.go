@@ -117,7 +117,7 @@ func (h *Handler) StartV2Pollers() {
 			defer wg.Done()
 			for d := range ch {
 				h.pMap.EnsurePolling(
-					d.AccessToken, d.UserID, d.DeviceID, d.Since,
+					d.AccessToken, d.UserID, d.DeviceID, d.Since, true,
 					logger.With().Str("user_id", d.UserID).Logger(),
 				)
 				h.v2Pub.Notify(pubsub.ChanV2, &pubsub.V2InitialSyncComplete{
@@ -360,7 +360,7 @@ func (h *Handler) EnsurePolling(p *pubsub.V3EnsurePolling) {
 	go func() {
 		// blocks until an initial sync is done
 		h.pMap.EnsurePolling(
-			dev.AccessToken, dev.UserID, dev.DeviceID, dev.Since,
+			dev.AccessToken, dev.UserID, dev.DeviceID, dev.Since, false,
 			logger.With().Str("user_id", dev.UserID).Logger(),
 		)
 		h.updateMetrics()
