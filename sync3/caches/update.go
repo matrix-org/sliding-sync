@@ -58,3 +58,8 @@ type DeviceDataUpdate struct {
 	// no data; just wakes up the connection
 	// data comes via sidechannels e.g the database
 }
+
+type DeviceEventsUpdate struct {
+	// no data; just wakes up the connection
+	// data comes via sidechannels e.g the database
+}

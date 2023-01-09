@@ -341,6 +341,37 @@ func TestExtensionToDevice(t *testing.T) {
 		},
 	})
 	m.MatchResponse(t, res, m.MatchList(0, m.MatchV3Count(0)), m.MatchToDeviceMessages([]json.RawMessage{}))
+
+	// live stream and block, then send a to-device msg which should go through immediately
+	start := time.Now()
+	go func() {
+		time.Sleep(500 * time.Millisecond)
+		t.Logf("sending to-device msgs %v", time.Now())
+		v2.queueResponse(alice, sync2.SyncResponse{
+			ToDevice: sync2.EventsResponse{
+				Events: newToDeviceMsgs,
+			},
+		})
+	}()
+	req := sync3.Request{
+		Lists: []sync3.RequestList{{
+			Ranges: sync3.SliceRanges{
+				[2]int64{0, 10}, // doesn't matter
+			},
+		}},
+		Extensions: extensions.Request{
+			ToDevice: &extensions.ToDeviceRequest{
+				Since: sinceBeforeMsgs,
+			},
+		},
+	}
+	req.SetTimeoutMSecs(1000)
+	t.Logf("sending sync request %v", time.Now())
+	res = v3.mustDoV3RequestWithPos(t, aliceToken, res.Pos, req)
+	if time.Since(start) >= time.Second {
+		t.Fatalf("new to-device msg did not unblock sync request, took: %v", time.Since(start))
+	}
+	m.MatchResponse(t, res, m.MatchList(0, m.MatchV3Count(0)), m.MatchToDeviceMessages(newToDeviceMsgs))
 }
 
 // tests that the account data extension works:

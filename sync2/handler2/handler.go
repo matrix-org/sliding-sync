@@ -261,12 +261,15 @@ func (h *Handler) OnReceipt(userID, roomID, ephEventType string, ephEvent json.R
 	})
 }
 
-// Send nothing, the v3 API will pull from the DB directly; no in-memory shenanigans
 func (h *Handler) AddToDeviceMessages(userID, deviceID string, msgs []json.RawMessage) {
 	_, err := h.Store.ToDeviceTable.InsertMessages(deviceID, msgs)
 	if err != nil {
 		logger.Err(err).Str("user", userID).Str("device", deviceID).Int("msgs", len(msgs)).Msg("V2: failed to store to-device messages")
 	}
+	h.v2Pub.Notify(pubsub.ChanV2, &pubsub.V2DeviceMessages{
+		UserID:   userID,
+		DeviceID: deviceID,
+	})
 }
 
 func (h *Handler) UpdateUnreadCounts(roomID, userID string, highlightCount, notifCount *int) {

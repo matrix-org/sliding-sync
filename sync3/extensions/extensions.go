@@ -78,6 +78,9 @@ func (h *Handler) HandleLiveUpdate(update caches.Update, req Request, res *Respo
 	if req.Receipts != nil && req.Receipts.Enabled {
 		res.Receipts = ProcessLiveReceipts(update, updateWillReturnResponse, req.UserID, req.Receipts)
 	}
+	if req.ToDevice != nil && req.ToDevice.Enabled != nil && *req.ToDevice.Enabled {
+		res.ToDevice = ProcessLiveToDeviceEvents(update, h.Store, req.UserID, req.DeviceID, req.ToDevice)
+	}
 	// only process 'live' e2ee when we aren't going to return data as we need to ensure that we don't calculate this twice
 	// e.g once on incoming request then again due to wakeup
 	if req.E2EE != nil && req.E2EE.Enabled {

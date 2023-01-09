@@ -7,6 +7,7 @@ import (
 	"sync"
 
 	"github.com/matrix-org/sliding-sync/state"
+	"github.com/matrix-org/sliding-sync/sync3/caches"
 )
 
 // used to remember since positions to warn when they are not incremented. This can happen
@@ -44,6 +45,14 @@ type ToDeviceResponse struct {
 
 func (r *ToDeviceResponse) HasData(isInitial bool) bool {
 	return len(r.Events) > 0
+}
+
+func ProcessLiveToDeviceEvents(up caches.Update, store *state.Storage, userID, deviceID string, req *ToDeviceRequest) (res *ToDeviceResponse) {
+	_, ok := up.(caches.DeviceEventsUpdate)
+	if !ok {
+		return nil
+	}
+	return ProcessToDevice(store, userID, deviceID, req, false)
 }
 
 func ProcessToDevice(store *state.Storage, userID, deviceID string, req *ToDeviceRequest, isInitial bool) (res *ToDeviceResponse) {

@@ -533,6 +533,16 @@ func (h *SyncLiveHandler) OnDeviceData(p *pubsub.V2DeviceData) {
 	conn.OnUpdate(caches.DeviceDataUpdate{})
 }
 
+func (h *SyncLiveHandler) OnDeviceMessages(p *pubsub.V2DeviceMessages) {
+	conn := h.ConnMap.Conn(sync3.ConnID{
+		DeviceID: p.DeviceID,
+	})
+	if conn == nil {
+		return
+	}
+	conn.OnUpdate(caches.DeviceEventsUpdate{})
+}
+
 func (h *SyncLiveHandler) OnInvite(p *pubsub.V2InviteRoom) {
 	userCache, ok := h.userCaches.Load(p.UserID)
 	if !ok {
