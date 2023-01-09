@@ -11,6 +11,7 @@ import (
 const AccountDataGlobalRoom = ""
 
 type AccountData struct {
+	ID     int64  `db:"id"`
 	UserID string `db:"user_id"`
 	RoomID string `db:"room_id"`
 	Type   string `db:"type"`
@@ -23,7 +24,9 @@ type AccountDataTable struct{}
 func NewAccountDataTable(db *sqlx.DB) *AccountDataTable {
 	// make sure tables are made
 	db.MustExec(`
+	CREATE SEQUENCE IF NOT EXISTS syncv3_account_data_seq;
 	CREATE TABLE IF NOT EXISTS syncv3_account_data (
+		id BIGINT NOT NULL DEFAULT nextval('syncv3_account_data_seq'),
 		user_id TEXT NOT NULL,
 		room_id TEXT NOT NULL, -- optional if global
 		type TEXT NOT NULL,
@@ -54,7 +57,7 @@ func (t *AccountDataTable) Insert(txn *sqlx.Tx, accDatas []AccountData) ([]Accou
 	for _, chunk := range chunks {
 		_, err := txn.NamedExec(`
 		INSERT INTO syncv3_account_data (user_id, room_id, type, data)
-        VALUES (:user_id, :room_id, :type, :data) ON CONFLICT (user_id, room_id, type) DO UPDATE SET data = EXCLUDED.data`, chunk)
+        VALUES (:user_id, :room_id, :type, :data) ON CONFLICT (user_id, room_id, type) DO UPDATE SET data = EXCLUDED.data, id=nextval('syncv3_account_data_seq')`, chunk)
 		if err != nil {
 			return nil, err
 		}
@@ -63,24 +66,24 @@ func (t *AccountDataTable) Insert(txn *sqlx.Tx, accDatas []AccountData) ([]Accou
 }
 
 func (t *AccountDataTable) Select(txn *sqlx.Tx, userID string, eventTypes []string, roomID string) (datas []AccountData, err error) {
-	err = txn.Select(&datas, `SELECT user_id, room_id, type, data FROM syncv3_account_data
+	err = txn.Select(&datas, `SELECT id, user_id, room_id, type, data FROM syncv3_account_data
 	WHERE user_id=$1 AND type=ANY($2) AND room_id=$3`, userID, pq.StringArray(eventTypes), roomID)
 	return
 }
 
 func (t *AccountDataTable) SelectWithType(txn *sqlx.Tx, userID, evType string) (datas []AccountData, err error) {
-	err = txn.Select(&datas, `SELECT user_id, room_id, type, data FROM syncv3_account_data
+	err = txn.Select(&datas, `SELECT id, user_id, room_id, type, data FROM syncv3_account_data
 	WHERE user_id=$1 AND type=$2 AND room_id != ''`, userID, evType)
 	return
 }
 
 func (t *AccountDataTable) SelectMany(txn *sqlx.Tx, userID string, roomIDs ...string) (datas []AccountData, err error) {
 	if len(roomIDs) == 0 {
-		err = txn.Select(&datas, `SELECT user_id, room_id, type, data FROM syncv3_account_data
+		err = txn.Select(&datas, `SELECT id, user_id, room_id, type, data FROM syncv3_account_data
 		WHERE user_id=$1 AND room_id = $2`, userID, AccountDataGlobalRoom)
 		return
 	}
-	err = txn.Select(&datas, `SELECT user_id, room_id, type, data FROM syncv3_account_data
+	err = txn.Select(&datas, `SELECT id, user_id, room_id, type, data FROM syncv3_account_data
 	WHERE user_id=$1 AND room_id=ANY($2)`, userID, pq.StringArray(roomIDs))
 	return
 }
