@@ -10,6 +10,7 @@ import (
 	"github.com/matrix-org/sliding-sync/sync3"
 	"github.com/matrix-org/sliding-sync/sync3/caches"
 	"github.com/matrix-org/sliding-sync/sync3/extensions"
+	"github.com/tidwall/gjson"
 )
 
 var (
@@ -196,6 +197,22 @@ func (s *connStateLive) processLiveUpdate(ctx context.Context, up caches.Update,
 			}
 			if delta.JoinCountChanged {
 				thisRoom.JoinedCount = roomUpdate.GlobalRoomMetadata().JoinCount
+			}
+
+			if s.lazyCache.IsLazyLoading(roomUpdate.RoomID()) && roomUpdate.GlobalRoomMetadata().TypingEvent != nil {
+				typingUsers := gjson.GetBytes(roomUpdate.GlobalRoomMetadata().TypingEvent, "content.user_ids")
+				for _, typingUserID := range typingUsers.Array() {
+					if s.lazyCache.IsSet(roomUpdate.RoomID(), typingUserID.Str) {
+						// client should already know about this member
+						continue
+					}
+					// load the state event
+					memberEvent := s.globalCache.LoadStateEvent(context.Background(), roomUpdate.RoomID(), s.loadPosition, "m.room.member", typingUserID.Str)
+					if memberEvent != nil {
+						thisRoom.RequiredState = append(thisRoom.RequiredState, memberEvent)
+						s.lazyCache.AddUser(roomUpdate.RoomID(), typingUserID.Str)
+					}
+				}
 			}
 			response.Rooms[roomUpdate.RoomID()] = thisRoom
 		}
