@@ -44,7 +44,6 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
           context: .
-          target: sliding-sync
           platforms: ${{ env.PLATFORMS }}
           push: true
           tags: |
