@@ -84,9 +84,13 @@ func (ev *Event) ensureFieldsSetOnEvent() error {
 
 type StrippedEvents []Event
 
-func (se StrippedEvents) NIDs() (result []int64) {
+func (se StrippedEvents) NIDs() (membershipNIDs, otherNIDs []int64) {
 	for _, s := range se {
-		result = append(result, s.NID)
+		if s.Type == "m.room.member" {
+			membershipNIDs = append(membershipNIDs, s.NID)
+		} else {
+			otherNIDs = append(otherNIDs, s.NID)
+		}
 	}
 	return
 }
@@ -127,6 +131,8 @@ func NewEventTable(db *sqlx.DB) *EventTable {
 	CREATE INDEX IF NOT EXISTS syncv3_events_type_room_nid_idx ON syncv3_events(event_type, room_id, event_nid);
 	-- index for querying events in a given room
 	CREATE INDEX IF NOT EXISTS syncv3_nid_room_state_idx ON syncv3_events(room_id, event_nid, is_state);
+
+	CREATE UNIQUE INDEX IF NOT EXISTS syncv3_events_room_event_nid_type_skey_idx ON syncv3_events(event_nid, event_type, state_key);
 	`)
 	return &EventTable{db}
 }

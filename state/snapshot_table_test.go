@@ -22,8 +22,9 @@ func TestSnapshotTable(t *testing.T) {
 
 	// Insert a snapshot
 	want := &SnapshotRow{
-		RoomID: "A",
-		Events: pq.Int64Array{1, 2, 3, 4, 5, 6, 7},
+		RoomID:           "A",
+		OtherEvents:      pq.Int64Array{1, 3, 5, 7},
+		MembershipEvents: pq.Int64Array{2, 4, 6},
 	}
 	err = table.Insert(txn, want)
 	if err != nil {
@@ -44,8 +45,11 @@ func TestSnapshotTable(t *testing.T) {
 	if got.RoomID != want.RoomID {
 		t.Errorf("mismatched room IDs, got %v want %v", got.RoomID, want.RoomID)
 	}
-	if !reflect.DeepEqual(got.Events, want.Events) {
-		t.Errorf("mismatched events, got: %+v want: %+v", got.Events, want.Events)
+	if !reflect.DeepEqual(got.MembershipEvents, want.MembershipEvents) {
+		t.Errorf("mismatched membership events, got: %+v want: %+v", got.MembershipEvents, want.MembershipEvents)
+	}
+	if !reflect.DeepEqual(got.OtherEvents, want.OtherEvents) {
+		t.Errorf("mismatched other events, got: %+v want: %+v", got.OtherEvents, want.OtherEvents)
 	}
 
 	// Delete the snapshot

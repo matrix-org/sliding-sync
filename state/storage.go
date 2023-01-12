@@ -143,7 +143,7 @@ func (s *Storage) MetadataForAllRooms(txn *sqlx.Tx, result map[string]internal.R
 	rows, err := txn.Query(`
 	SELECT room_id, count(state_key) FROM syncv3_events
 		WHERE (membership='_invite' OR membership = 'invite') AND event_type='m.room.member' AND event_nid IN (
-			SELECT unnest(events) FROM syncv3_snapshots WHERE syncv3_snapshots.snapshot_id IN (
+			SELECT unnest(membership_events) FROM syncv3_snapshots WHERE syncv3_snapshots.snapshot_id IN (
 				SELECT current_snapshot_id FROM syncv3_rooms
 			)
 		) GROUP BY room_id`)
@@ -177,7 +177,7 @@ func (s *Storage) MetadataForAllRooms(txn *sqlx.Tx, result map[string]internal.R
 	}
 
 	// Select the name / canonical alias for all rooms
-	roomIDToStateEvents, err := s.currentStateEventsInAllRooms(txn, []string{
+	roomIDToStateEvents, err := s.currentNotMembershipStateEventsInAllRooms(txn, []string{
 		"m.room.name", "m.room.canonical_alias",
 	})
 	if err != nil {
@@ -206,7 +206,7 @@ func (s *Storage) MetadataForAllRooms(txn *sqlx.Tx, result map[string]internal.R
 		) FROM syncv3_events WHERE (
 			membership='join' OR membership='invite' OR membership='_join'
 		) AND event_type='m.room.member' AND event_nid IN (
-			SELECT unnest(events) FROM syncv3_snapshots WHERE syncv3_snapshots.snapshot_id IN (
+			SELECT unnest(membership_events) FROM syncv3_snapshots WHERE syncv3_snapshots.snapshot_id IN (
 				SELECT current_snapshot_id FROM syncv3_rooms
 			)
 		)
@@ -273,9 +273,9 @@ func (s *Storage) MetadataForAllRooms(txn *sqlx.Tx, result map[string]internal.R
 	return nil
 }
 
-// Returns all current state events matching the event types given in all rooms. Returns a map of
+// Returns all current NOT MEMBERSHIP state events matching the event types given in all rooms. Returns a map of
 // room ID to events in that room.
-func (s *Storage) currentStateEventsInAllRooms(txn *sqlx.Tx, eventTypes []string) (map[string][]Event, error) {
+func (s *Storage) currentNotMembershipStateEventsInAllRooms(txn *sqlx.Tx, eventTypes []string) (map[string][]Event, error) {
 	query, args, err := sqlx.In(
 		`SELECT syncv3_events.room_id, syncv3_events.event_type, syncv3_events.state_key, syncv3_events.event FROM syncv3_events
 		WHERE syncv3_events.event_type IN (?)
@@ -329,7 +329,7 @@ func (s *Storage) StateSnapshot(snapID int64) (state []json.RawMessage, err erro
 		if err != nil {
 			return err
 		}
-		events, err := s.accumulator.eventsTable.SelectByNIDs(txn, true, snapshotRow.Events)
+		events, err := s.accumulator.eventsTable.SelectByNIDs(txn, true, append(snapshotRow.MembershipEvents, snapshotRow.OtherEvents...))
 		if err != nil {
 			return fmt.Errorf("failed to select state snapshot %v: %s", snapID, err)
 		}
@@ -402,14 +402,15 @@ func (s *Storage) RoomStateAfterEventPosition(ctx context.Context, roomIDs []str
 				if err != nil {
 					return err
 				}
+				allStateEventNIDs := append(snapshotRow.MembershipEvents, snapshotRow.OtherEvents...)
 				// we need to roll forward if this event is state
 				if gjson.ParseBytes(ev.JSON).Get("state_key").Exists() {
 					if ev.ReplacesNID != 0 {
 						// we determined at insert time of this event that this event replaces a nid in the snapshot.
 						// find it and replace it
-						for j := range snapshotRow.Events {
-							if snapshotRow.Events[j] == ev.ReplacesNID {
-								snapshotRow.Events[j] = ev.NID
+						for j := range allStateEventNIDs {
+							if allStateEventNIDs[j] == ev.ReplacesNID {
+								allStateEventNIDs[j] = ev.NID
 								break
 							}
 						}
@@ -417,18 +418,18 @@ func (s *Storage) RoomStateAfterEventPosition(ctx context.Context, roomIDs []str
 						// the event is still state, but it doesn't replace anything, so just add it onto the snapshot,
 						// but only if we haven't already
 						alreadyExists := false
-						for _, nid := range snapshotRow.Events {
+						for _, nid := range allStateEventNIDs {
 							if nid == ev.NID {
 								alreadyExists = true
 								break
 							}
 						}
 						if !alreadyExists {
-							snapshotRow.Events = append(snapshotRow.Events, ev.NID)
+							allStateEventNIDs = append(allStateEventNIDs, ev.NID)
 						}
 					}
 				}
-				events, err := s.accumulator.eventsTable.SelectByNIDs(txn, true, snapshotRow.Events)
+				events, err := s.accumulator.eventsTable.SelectByNIDs(txn, true, allStateEventNIDs)
 				if err != nil {
 					return fmt.Errorf("failed to select state snapshot %v for room %v: %s", ev.BeforeStateSnapshotID, ev.RoomID, err)
 				}
@@ -438,7 +439,14 @@ func (s *Storage) RoomStateAfterEventPosition(ctx context.Context, roomIDs []str
 			// do an optimised query to pull out only the event types and state keys we care about.
 			var args []interface{} // event type, state key, event type, state key, ....
 			var wheres []string
+			hasMembershipFilter := false
+			hasOtherFilter := false
 			for evType, skeys := range eventTypesToStateKeys {
+				if evType == "m.room.member" {
+					hasMembershipFilter = true
+				} else {
+					hasOtherFilter = true
+				}
 				for _, skey := range skeys {
 					args = append(args, evType, skey)
 					wheres = append(wheres, "(syncv3_events.event_type = ? AND syncv3_events.state_key = ?)")
@@ -453,11 +461,22 @@ func (s *Storage) RoomStateAfterEventPosition(ctx context.Context, roomIDs []str
 				snapIDs[i] = latestEvents[i].BeforeStateSnapshotID
 			}
 			args = append(args, pq.Int64Array(snapIDs))
+
+			// figure out which state events to look at - if there is no m.room.member filter we can be super fast
+			nidcols := "unnest(array_cat(events, membership_events))"
+			if hasMembershipFilter && !hasOtherFilter {
+				nidcols = "unnest(membership_events)"
+			} else if !hasMembershipFilter && hasOtherFilter {
+				nidcols = "unnest(events)"
+			}
+			// it's not possible for there to be no membership filter and no other filter, we wouldn't be executing this code
+			// it is possible to have both, so neither if will execute.
+
 			// Similar to CurrentStateEventsInAllRooms
 			query, args, err := sqlx.In(
 				`SELECT syncv3_events.event_nid, syncv3_events.room_id, syncv3_events.event_type, syncv3_events.state_key, syncv3_events.event FROM syncv3_events
 				WHERE (`+strings.Join(wheres, " OR ")+`) AND syncv3_events.event_nid IN (
-					SELECT unnest(events) FROM syncv3_snapshots WHERE syncv3_snapshots.snapshot_id = ANY(?)
+					SELECT `+nidcols+` FROM syncv3_snapshots WHERE syncv3_snapshots.snapshot_id = ANY(?)
 				) ORDER BY syncv3_events.event_nid ASC`,
 				args...,
 			)
