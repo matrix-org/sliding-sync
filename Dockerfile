@@ -9,7 +9,7 @@ RUN --mount=target=. \
   GIT_COMMIT=$(git rev-list -1 HEAD) && \
   go build -ldflags "-X main.GitCommit=$GIT_COMMIT" -trimpath -o /out/ ./cmd/syncv3
 
-FROM alpine:3.17 AS sliding-sync
+FROM alpine:3.17
 
 RUN apk --update --no-cache add curl
 COPY --from=base /out/* /usr/bin/
