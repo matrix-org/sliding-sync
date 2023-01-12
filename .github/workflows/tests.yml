@@ -109,7 +109,9 @@ jobs:
         steps:
             - uses: actions/checkout@v2
             - name: "Build docker image"
-              run: docker build -f Dockerfile -t ghcr.io/matrix-org/sliding-sync-proxy:ci  .
+              env:
+                DOCKER_BUILDKIT: 1
+              run: docker build -f Dockerfile --target=sliding-sync -t ghcr.io/matrix-org/sliding-sync-proxy:ci  .
             - uses: actions/checkout@v2
               with:
                 repository: matrix-org/matrix-react-sdk
