@@ -132,6 +132,65 @@ func TestTypingNoUpdate(t *testing.T) {
 	m.MatchResponse(t, res, m.MatchRoomSubscriptionsStrict(nil))
 }
 
+// Test that members that have not yet been lazy loaded get lazy loaded when they are sending typing events
+func TestTypingLazyLoad(t *testing.T) {
+	alice := registerNewUser(t)
+	bob := registerNewUser(t)
+	roomID := alice.CreateRoom(t, map[string]interface{}{
+		"preset": "public_chat",
+	})
+	bob.JoinRoom(t, roomID, nil)
+
+	alice.SendEventSynced(t, roomID, Event{
+		Type: "m.room.message",
+		Content: map[string]interface{}{
+			"body":    "hello world!",
+			"msgtype": "m.text",
+		},
+	})
+	alice.SendEventSynced(t, roomID, Event{
+		Type: "m.room.message",
+		Content: map[string]interface{}{
+			"body":    "hello world!",
+			"msgtype": "m.text",
+		},
+	})
+
+	// Initial sync request with lazy loading and typing enabled
+	syncResp := alice.SlidingSync(t, sync3.Request{
+		Extensions: extensions.Request{
+			Typing: &extensions.TypingRequest{Enabled: true},
+		},
+		RoomSubscriptions: map[string]sync3.RoomSubscription{
+			roomID: {
+				TimelineLimit: 1,
+				RequiredState: [][2]string{
+					{"m.room.member", "$LAZY"},
+					{"m.room.member", "$ME"},
+				},
+			},
+		},
+	})
+
+	// There should only be Alice lazy loaded
+	m.MatchResponse(t, syncResp, m.MatchRoomSubscriptionsStrict(map[string][]m.RoomMatcher{
+		roomID: {
+			MatchRoomRequiredState([]Event{{Type: "m.room.member", StateKey: &alice.UserID}}),
+		},
+	}))
+
+	// Bob starts typing
+	bob.SendTyping(t, roomID, true, 5000)
+
+	// Alice should now see Bob typing and Bob should be lazy loaded
+	syncResp = waitUntilTypingData(t, alice, roomID, []string{bob.UserID})
+	m.MatchResponse(t, syncResp, m.MatchRoomSubscriptionsStrict(map[string][]m.RoomMatcher{
+		roomID: {
+			MatchRoomRequiredState([]Event{{Type: "m.room.member", StateKey: &bob.UserID}}),
+		},
+	}))
+}
+
 func waitUntilTypingData(t *testing.T, client *CSAPI, roomID string, wantUserIDs []string) *sync3.Response {
 	t.Helper()
 	sort.Strings(wantUserIDs)
@@ -144,6 +203,10 @@ func waitUntilTypingData(t *testing.T, client *CSAPI, roomID string, wantUserIDs
 		RoomSubscriptions: map[string]sync3.RoomSubscription{
 			roomID: {
 				TimelineLimit: 1,
+				RequiredState: [][2]string{
+					{"m.room.member", "$LAZY"},
+					{"m.room.member", "$ME"},
+				},
 			},
 		},
 	}, func(r *sync3.Response) error {

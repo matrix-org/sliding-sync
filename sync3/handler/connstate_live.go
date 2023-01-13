@@ -10,6 +10,7 @@ import (
 	"github.com/matrix-org/sliding-sync/sync3"
 	"github.com/matrix-org/sliding-sync/sync3/caches"
 	"github.com/matrix-org/sliding-sync/sync3/extensions"
+	"github.com/tidwall/gjson"
 )
 
 var (
@@ -97,10 +98,43 @@ func (s *connStateLive) liveUpdate(
 				}
 				s.extensionsHandler.HandleLiveUpdate(update, ex, &response.Extensions, updateWillReturnResponse, isInitial)
 			}
+			// Add membership events for users sending typing notifications
+			if response.Extensions.Typing != nil && response.Extensions.Typing.HasData(isInitial) {
+				s.lazyLoadTypingMembers(ctx, response)
+			}
 		}
 	}
 	logger.Trace().Str("user", s.userID).Int("subs", len(response.Rooms)).Msg("liveUpdate: returning")
 	// TODO: op consolidation
+}
+
+func (s *connStateLive) lazyLoadTypingMembers(ctx context.Context, response *sync3.Response) {
+	for roomID, typingEvent := range response.Extensions.Typing.Rooms {
+		if !s.lazyCache.IsLazyLoading(roomID) {
+			continue
+		}
+		room, ok := response.Rooms[roomID]
+		if !ok {
+			room = sync3.Room{}
+		}
+		typingUsers := gjson.GetBytes(typingEvent, "content.user_ids")
+		for _, typingUserID := range typingUsers.Array() {
+			if s.lazyCache.IsSet(roomID, typingUserID.Str) {
+				// client should already know about this member
+				continue
+			}
+			// load the state event
+			memberEvent := s.globalCache.LoadStateEvent(ctx, roomID, s.loadPosition, "m.room.member", typingUserID.Str)
+			if memberEvent != nil {
+				room.RequiredState = append(room.RequiredState, memberEvent)
+				s.lazyCache.AddUser(roomID, typingUserID.Str)
+			}
+		}
+		// only add the room if we have membership events
+		if len(room.RequiredState) > 0 {
+			response.Rooms[roomID] = room
+		}
+	}
 }
 
 func (s *connStateLive) processLiveUpdate(ctx context.Context, up caches.Update, response *sync3.Response) bool {
@@ -197,6 +231,7 @@ func (s *connStateLive) processLiveUpdate(ctx context.Context, up caches.Update,
 			if delta.JoinCountChanged {
 				thisRoom.JoinedCount = roomUpdate.GlobalRoomMetadata().JoinCount
 			}
+
 			response.Rooms[roomUpdate.RoomID()] = thisRoom
 		}
 	}
