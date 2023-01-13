@@ -43,7 +43,7 @@ func (a *Accumulator) strippedEventsForSnapshot(txn *sqlx.Tx, snapID int64) (Str
 		return nil, err
 	}
 	// pull stripped events as this may be huge (think Matrix HQ)
-	return a.eventsTable.SelectStrippedEventsByNIDs(txn, true, snapshot.Events)
+	return a.eventsTable.SelectStrippedEventsByNIDs(txn, true, append(snapshot.MembershipEvents, snapshot.OtherEvents...))
 }
 
 // calculateNewSnapshot works out the new snapshot by combining an old snapshot and a new state event. Events get replaced
@@ -184,8 +184,12 @@ func (a *Accumulator) Initialise(roomID string, state []json.RawMessage) (bool, 
 
 		// pull out the event NIDs we just inserted
 		eventIDs := make([]string, len(events))
+		membershipEventIDs := make(map[string]struct{}, len(events))
 		for i := range eventIDs {
 			eventIDs[i] = events[i].ID
+			if events[i].Type == "m.room.member" {
+				membershipEventIDs[events[i].ID] = struct{}{}
+			}
 		}
 		idToNIDs, err := a.eventsTable.SelectNIDsByIDs(txn, eventIDs)
 		if err != nil {
@@ -194,15 +198,21 @@ func (a *Accumulator) Initialise(roomID string, state []json.RawMessage) (bool, 
 		if len(idToNIDs) != len(eventIDs) {
 			return fmt.Errorf("missing events just inserted, asked for %v got %v", eventIDs, idToNIDs)
 		}
-		nids := make([]int64, 0, len(idToNIDs))
-		for _, nid := range idToNIDs {
-			nids = append(nids, nid)
+		memberNIDs := make([]int64, 0, len(idToNIDs))
+		otherNIDs := make([]int64, 0, len(idToNIDs))
+		for evID, nid := range idToNIDs {
+			if _, exists := membershipEventIDs[evID]; exists {
+				memberNIDs = append(memberNIDs, nid)
+			} else {
+				otherNIDs = append(otherNIDs, nid)
+			}
 		}
 
 		// Make a current snapshot
 		snapshot := &SnapshotRow{
-			RoomID: roomID,
-			Events: pq.Int64Array(nids),
+			RoomID:           roomID,
+			MembershipEvents: pq.Int64Array(memberNIDs),
+			OtherEvents:      pq.Int64Array(otherNIDs),
 		}
 		err = a.snapshotTable.Insert(txn, snapshot)
 		if err != nil {
@@ -210,7 +220,12 @@ func (a *Accumulator) Initialise(roomID string, state []json.RawMessage) (bool, 
 		}
 		addedEvents = true
 		latestNID := int64(0)
-		for _, nid := range nids {
+		for _, nid := range otherNIDs {
+			if nid > latestNID {
+				latestNID = nid
+			}
+		}
+		for _, nid := range memberNIDs {
 			if nid > latestNID {
 				latestNID = nid
 			}
@@ -342,9 +357,11 @@ func (a *Accumulator) Accumulate(roomID string, prevBatch string, timeline []jso
 					return fmt.Errorf("failed to calculateNewSnapshot: %s", err)
 				}
 				replacesNID = replacedNID
+				memNIDs, otherNIDs := newStripped.NIDs()
 				newSnapshot := &SnapshotRow{
-					RoomID: roomID,
-					Events: newStripped.NIDs(),
+					RoomID:           roomID,
+					MembershipEvents: memNIDs,
+					OtherEvents:      otherNIDs,
 				}
 				if err = a.snapshotTable.Insert(txn, newSnapshot); err != nil {
 					return fmt.Errorf("failed to insert new snapshot: %w", err)

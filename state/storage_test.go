@@ -172,9 +172,9 @@ func TestStorageJoinedRoomsAfterPosition(t *testing.T) {
 		t.Fatalf("JoinedRoomsAfterPosition for %s got %v rooms want %v", bob, len(bobJoinedRooms), 3)
 	}
 
-	// also test currentStateEventsInAllRooms
+	// also test currentNotMembershipStateEventsInAllRooms
 	txn := store.DB.MustBeginTx(context.Background(), nil)
-	roomIDToCreateEvents, err := store.currentStateEventsInAllRooms(txn, []string{"m.room.create"})
+	roomIDToCreateEvents, err := store.currentNotMembershipStateEventsInAllRooms(txn, []string{"m.room.create"})
 	if err != nil {
 		t.Fatalf("CurrentStateEventsInAllRooms returned error: %s", err)
 	}
