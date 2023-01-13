@@ -140,6 +140,9 @@ func (c *GlobalCache) LoadRoomState(ctx context.Context, roomIDs []string, loadP
 	if c.store == nil {
 		return nil
 	}
+	if requiredStateMap.Empty() {
+		return nil
+	}
 	resultMap := make(map[string][]json.RawMessage, len(roomIDs))
 	roomIDToStateEvents, err := c.store.RoomStateAfterEventPosition(ctx, roomIDs, loadPosition, requiredStateMap.QueryStateMap())
 	if err != nil {

@@ -405,7 +405,9 @@ func (s *ConnState) getInitialRoomData(ctx context.Context, roomSub sync3.RoomSu
 	}
 	rsm := roomSub.RequiredStateMap(s.userID)
 	roomIDToState := s.globalCache.LoadRoomState(ctx, roomIDs, s.loadPosition, rsm, roomToUsersInTimeline)
-
+	if roomIDToState == nil { // e.g no required_state
+		roomIDToState = make(map[string][]json.RawMessage)
+	}
 	for _, roomID := range roomIDs {
 		userRoomData, ok := roomIDToUserRoomData[roomID]
 		if !ok {
@@ -423,6 +425,9 @@ func (s *ConnState) getInitialRoomData(ctx context.Context, roomSub sync3.RoomSu
 		var requiredState []json.RawMessage
 		if !userRoomData.IsInvite {
 			requiredState = roomIDToState[roomID]
+			if requiredState == nil {
+				requiredState = make([]json.RawMessage, 0)
+			}
 		}
 		prevBatch, _ := userRoomData.PrevBatch()
 		rooms[roomID] = sync3.Room{
