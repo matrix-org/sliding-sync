@@ -16,7 +16,6 @@ env:
 
 jobs:
   slidingsync:
-    if: ${{ false }} # disable for now
     name: Sliding Sync image
     runs-on: ubuntu-latest
     permissions:
