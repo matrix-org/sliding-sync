@@ -234,6 +234,16 @@ func (s *connStateLive) processLiveUpdate(ctx context.Context, up caches.Update,
 
 			response.Rooms[roomUpdate.RoomID()] = thisRoom
 		}
+		if delta.HighlightCountChanged || delta.NotificationCountChanged {
+			if !exists {
+				// we need to make this room exist. Other deltas are caused by events so the room exists,
+				// but highlight/notif counts are silent
+				thisRoom = sync3.Room{}
+			}
+			thisRoom.NotificationCount = int64(roomUpdate.UserRoomMetadata().NotificationCount)
+			thisRoom.HighlightCount = int64(roomUpdate.UserRoomMetadata().HighlightCount)
+			response.Rooms[roomUpdate.RoomID()] = thisRoom
+		}
 	}
 	return hasUpdates
 }
