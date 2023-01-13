@@ -183,27 +183,12 @@ func TestTypingLazyLoad(t *testing.T) {
 	bob.SendTyping(t, roomID, true, 5000)
 
 	// Alice should now see Bob typing and Bob should be lazy loaded
-	syncResp = alice.SlidingSync(t, sync3.Request{}, WithPos(syncResp.Pos))
+	syncResp = waitUntilTypingData(t, alice, roomID, []string{bob.UserID})
 	m.MatchResponse(t, syncResp, m.MatchRoomSubscriptionsStrict(map[string][]m.RoomMatcher{
 		roomID: {
 			MatchRoomRequiredState([]Event{{Type: "m.room.member", StateKey: &bob.UserID}}),
 		},
 	}))
-	// Validate Bob is typing
-	if syncResp.Extensions.Typing == nil {
-		t.Fatal("expecting there to be typing events")
-	}
-	typingEvent := syncResp.Extensions.Typing.Rooms[roomID]
-	if typingEvent == nil {
-		t.Errorf("no typing event for room %s", roomID)
-	}
-	users := typingUsers(t, typingEvent)
-	if len(users) > 1 {
-		t.Errorf("expected one typing user, got %d", len(users))
-	}
-	if users[0] != bob.UserID {
-		t.Errorf("expected typing user to be %s, got %s", bob.UserID, users[0])
-	}
 }
 
 func waitUntilTypingData(t *testing.T, client *CSAPI, roomID string, wantUserIDs []string) *sync3.Response {
@@ -218,6 +203,10 @@ func waitUntilTypingData(t *testing.T, client *CSAPI, roomID string, wantUserIDs
 		RoomSubscriptions: map[string]sync3.RoomSubscription{
 			roomID: {
 				TimelineLimit: 1,
+				RequiredState: [][2]string{
+					{"m.room.member", "$LAZY"},
+					{"m.room.member", "$ME"},
+				},
 			},
 		},
 	}, func(r *sync3.Response) error {
