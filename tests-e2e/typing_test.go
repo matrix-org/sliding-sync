@@ -132,6 +132,80 @@ func TestTypingNoUpdate(t *testing.T) {
 	m.MatchResponse(t, res, m.MatchRoomSubscriptionsStrict(nil))
 }
 
+// Test that members that have not yet been lazy loaded get lazy loaded when they are sending typing events
+func TestTypingLazyLoad(t *testing.T) {
+	alice := registerNewUser(t)
+	bob := registerNewUser(t)
+	roomID := alice.CreateRoom(t, map[string]interface{}{
+		"preset": "public_chat",
+	})
+	bob.JoinRoom(t, roomID, nil)
+
+	alice.SendEventSynced(t, roomID, Event{
+		Type: "m.room.message",
+		Content: map[string]interface{}{
+			"body":    "hello world!",
+			"msgtype": "m.text",
+		},
+	})
+	alice.SendEventSynced(t, roomID, Event{
+		Type: "m.room.message",
+		Content: map[string]interface{}{
+			"body":    "hello world!",
+			"msgtype": "m.text",
+		},
+	})
+
+	// Initial sync request with lazy loading and typing enabled
+	syncResp := alice.SlidingSync(t, sync3.Request{
+		Extensions: extensions.Request{
+			Typing: &extensions.TypingRequest{Enabled: true},
+		},
+		RoomSubscriptions: map[string]sync3.RoomSubscription{
+			roomID: {
+				TimelineLimit: 1,
+				RequiredState: [][2]string{
+					{"m.room.member", "$LAZY"},
+					{"m.room.member", "$ME"},
+				},
+			},
+		},
+	})
+
+	// There should only be Alice lazy loaded
+	m.MatchResponse(t, syncResp, m.MatchRoomSubscriptionsStrict(map[string][]m.RoomMatcher{
+		roomID: {
+			MatchRoomRequiredState([]Event{{Type: "m.room.member", StateKey: &alice.UserID}}),
+		},
+	}))
+
+	// Bob starts typing
+	bob.SendTyping(t, roomID, true, 5000)
+
+	// Alice should now see Bob typing and Bob should be lazy loaded
+	syncResp = alice.SlidingSync(t, sync3.Request{}, WithPos(syncResp.Pos))
+	m.MatchResponse(t, syncResp, m.MatchRoomSubscriptionsStrict(map[string][]m.RoomMatcher{
+		roomID: {
+			MatchRoomRequiredState([]Event{{Type: "m.room.member", StateKey: &bob.UserID}}),
+		},
+	}))
+	// Validate Bob is typing
+	if syncResp.Extensions.Typing == nil {
+		t.Fatal("expecting there to be typing events")
+	}
+	typingEvent := syncResp.Extensions.Typing.Rooms[roomID]
+	if typingEvent == nil {
+		t.Errorf("no typing event for room %s", roomID)
+	}
+	users := typingUsers(t, typingEvent)
+	if len(users) > 1 {
+		t.Errorf("expected one typing user, got %d", len(users))
+	}
+	if users[0] != bob.UserID {
+		t.Errorf("expected typing user to be %s, got %s", bob.UserID, users[0])
+	}
+}
+
 func waitUntilTypingData(t *testing.T, client *CSAPI, roomID string, wantUserIDs []string) *sync3.Response {
 	t.Helper()
 	sort.Strings(wantUserIDs)
