@@ -1,7 +1,9 @@
 package extensions
 
 import (
+	"context"
 	"os"
+	"runtime/trace"
 
 	"github.com/matrix-org/sliding-sync/state"
 	"github.com/matrix-org/sliding-sync/sync2"
@@ -58,7 +60,7 @@ func (e Response) HasData(isInitial bool) bool {
 }
 
 type HandlerInterface interface {
-	Handle(req Request, roomIDToTimeline map[string][]string, isInitial bool) (res Response)
+	Handle(ctx context.Context, req Request, roomIDToTimeline map[string][]string, isInitial bool) (res Response)
 	HandleLiveUpdate(update caches.Update, req Request, res *Response, updateWillReturnResponse, isInitial bool)
 }
 
@@ -91,21 +93,31 @@ func (h *Handler) HandleLiveUpdate(update caches.Update, req Request, res *Respo
 	}
 }
 
-func (h *Handler) Handle(req Request, roomIDToTimeline map[string][]string, isInitial bool) (res Response) {
+func (h *Handler) Handle(ctx context.Context, req Request, roomIDToTimeline map[string][]string, isInitial bool) (res Response) {
 	if req.ToDevice != nil && req.ToDevice.Enabled != nil && *req.ToDevice.Enabled {
+		region := trace.StartRegion(ctx, "extension_to_device")
 		res.ToDevice = ProcessToDevice(h.Store, req.UserID, req.DeviceID, req.ToDevice, isInitial)
+		region.End()
 	}
 	if req.E2EE != nil && req.E2EE.Enabled {
+		region := trace.StartRegion(ctx, "extension_e2ee")
 		res.E2EE = ProcessE2EE(h.E2EEFetcher, req.UserID, req.DeviceID, req.E2EE, isInitial)
+		region.End()
 	}
 	if req.AccountData != nil && req.AccountData.Enabled {
+		region := trace.StartRegion(ctx, "extension_account_data")
 		res.AccountData = ProcessAccountData(h.Store, roomIDToTimeline, req.UserID, isInitial, req.AccountData)
+		region.End()
 	}
 	if req.Typing != nil && req.Typing.Enabled {
+		region := trace.StartRegion(ctx, "extension_typing")
 		res.Typing = ProcessTyping(h.GlobalCache, roomIDToTimeline, req.UserID, isInitial, req.Typing)
+		region.End()
 	}
 	if req.Receipts != nil && req.Receipts.Enabled {
+		region := trace.StartRegion(ctx, "extension_receipts")
 		res.Receipts = ProcessReceipts(h.Store, roomIDToTimeline, req.UserID, isInitial, req.Receipts)
+		region.End()
 	}
 	return
 }

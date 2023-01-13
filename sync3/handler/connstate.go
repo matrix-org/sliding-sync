@@ -148,7 +148,7 @@ func (s *ConnState) onIncomingRequest(ctx context.Context, req *sync3.Request, i
 	// for it to mix together
 	builder := NewRoomsBuilder()
 	// works out which rooms are subscribed to but doesn't pull room data
-	s.buildRoomSubscriptions(builder, delta.Subs, delta.Unsubs)
+	s.buildRoomSubscriptions(ctx, builder, delta.Subs, delta.Unsubs)
 	// works out how rooms get moved about but doesn't pull room data
 	respLists := s.buildListSubscriptions(ctx, builder, delta.Lists)
 
@@ -169,7 +169,7 @@ func (s *ConnState) onIncomingRequest(ctx context.Context, req *sync3.Request, i
 	// Handle extensions AFTER processing lists as extensions may need to know which rooms the client
 	// is being notified about (e.g. for room account data)
 	region := trace.StartRegion(ctx, "extensions")
-	response.Extensions = s.extensionsHandler.Handle(ex, includedRoomIDs, isInitial)
+	response.Extensions = s.extensionsHandler.Handle(ctx, ex, includedRoomIDs, isInitial)
 	region.End()
 
 	if response.ListOps() > 0 || len(response.Rooms) > 0 || response.Extensions.HasData(isInitial) {
@@ -301,6 +301,7 @@ func (s *ConnState) onIncomingListRequest(ctx context.Context, builder *RoomsBui
 }
 
 func (s *ConnState) buildListSubscriptions(ctx context.Context, builder *RoomsBuilder, listDeltas []sync3.RequestListDelta) []sync3.ResponseList {
+	defer trace.StartRegion(ctx, "buildListSubscriptions").End()
 	result := make([]sync3.ResponseList, len(s.muxedReq.Lists))
 	// loop each list and handle each independently
 	for i := range listDeltas {
@@ -315,7 +316,8 @@ func (s *ConnState) buildListSubscriptions(ctx context.Context, builder *RoomsBu
 	return result
 }
 
-func (s *ConnState) buildRoomSubscriptions(builder *RoomsBuilder, subs, unsubs []string) {
+func (s *ConnState) buildRoomSubscriptions(ctx context.Context, builder *RoomsBuilder, subs, unsubs []string) {
+	defer trace.StartRegion(ctx, "buildRoomSubscriptions").End()
 	for _, roomID := range subs {
 		// check that the user is allowed to see these rooms as they can set arbitrary room IDs
 		if !s.joinChecker.IsUserJoined(s.userID, roomID) {
@@ -381,6 +383,7 @@ func (s *ConnState) buildRooms(ctx context.Context, builtSubs []BuiltSubscriptio
 }
 
 func (s *ConnState) getInitialRoomData(ctx context.Context, roomSub sync3.RoomSubscription, roomIDs ...string) map[string]sync3.Room {
+	defer trace.StartRegion(ctx, "getInitialRoomData").End()
 	rooms := make(map[string]sync3.Room, len(roomIDs))
 	// We want to grab the user room data and the room metadata for each room ID.
 	roomIDToUserRoomData := s.userCache.LazyLoadTimelines(s.loadPosition, roomIDs, int(roomSub.TimelineLimit))

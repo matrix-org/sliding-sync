@@ -18,7 +18,7 @@ import (
 
 type NopExtensionHandler struct{}
 
-func (h *NopExtensionHandler) Handle(req extensions.Request, listRoomIDs map[string][]string, isInitial bool) (res extensions.Response) {
+func (h *NopExtensionHandler) Handle(ctx context.Context, req extensions.Request, listRoomIDs map[string][]string, isInitial bool) (res extensions.Response) {
 	return
 }
 

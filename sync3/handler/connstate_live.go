@@ -148,7 +148,7 @@ func (s *connStateLive) processLiveUpdate(ctx context.Context, up caches.Update,
 	delta := s.processGlobalUpdates(ctx, builder, up)
 
 	// process room subscriptions
-	hasUpdates := s.processUpdatesForSubscriptions(builder, up)
+	hasUpdates := s.processUpdatesForSubscriptions(ctx, builder, up)
 
 	// do per-list updates (e.g resorting, adding/removing rooms which no longer match filter)
 	for _, listDelta := range delta.Lists {
@@ -238,7 +238,7 @@ func (s *connStateLive) processLiveUpdate(ctx context.Context, up caches.Update,
 	return hasUpdates
 }
 
-func (s *connStateLive) processUpdatesForSubscriptions(builder *RoomsBuilder, up caches.Update) (hasUpdates bool) {
+func (s *connStateLive) processUpdatesForSubscriptions(ctx context.Context, builder *RoomsBuilder, up caches.Update) (hasUpdates bool) {
 	rup, ok := up.(caches.RoomUpdate)
 	if !ok {
 		return false
@@ -254,7 +254,7 @@ func (s *connStateLive) processUpdatesForSubscriptions(builder *RoomsBuilder, up
 	}
 	// the user does not have a subscription to this room yet but wants one, try to add it.
 	// this will do join checks for us.
-	s.buildRoomSubscriptions(builder, []string{rup.RoomID()}, nil)
+	s.buildRoomSubscriptions(ctx, builder, []string{rup.RoomID()}, nil)
 
 	// if we successfully made the subscription, it will now exist in the confirmed subscriptions map
 	_, exists := s.roomSubscriptions[rup.RoomID()]
