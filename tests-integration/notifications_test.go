@@ -92,7 +92,11 @@ func TestNotificationsOnTop(t *testing.T) {
 	res = v3.mustDoV3RequestWithPos(t, aliceToken, res.Pos, syncRequestBody)
 	m.MatchResponse(t, res, m.MatchList(0, m.MatchV3Count(len(allRooms)),
 		m.MatchV3Ops(m.MatchV3DeleteOp(1), m.MatchV3InsertOp(0, bingRoomID)),
-	))
+	), m.MatchRoomSubscriptionsStrict(map[string][]m.RoomMatcher{
+		bingRoomID: {
+			m.MatchRoomHighlightCount(1),
+		},
+	}))
 
 	// send a message into the nobing room, it's position must not change due to our sort order
 	noBingEvent := testutils.NewEvent(t, "m.room.message", bob, map[string]interface{}{"body": "no bing"}, testutils.WithTimestamp(latestTimestamp.Add(2*time.Minute)))

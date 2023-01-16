@@ -235,7 +235,7 @@ func (s *connStateLive) processLiveUpdate(ctx context.Context, up caches.Update,
 
 			response.Rooms[roomUpdate.RoomID()] = thisRoom
 		}
-		if delta.HighlightCountChanged || delta.NotificationCountChanged {
+		if delta.HighlightCountDecreased || delta.NotificationCountDecreased {
 			if !exists {
 				// we need to make this room exist. Other deltas are caused by events so the room exists,
 				// but highlight/notif counts are silent
@@ -306,7 +306,7 @@ func (s *connStateLive) processLiveUpdateForList(
 			builder.AddRoomsToSubscription(subID, []string{update.RoomID()})
 		}
 	case *caches.UnreadCountUpdate:
-		logger.Trace().Str("user", s.userID).Str("room", update.RoomID()).Msg("received unread count update")
+		logger.Trace().Str("user", s.userID).Str("room", update.RoomID()).Bool("count_decreased", update.HasCountDecreased).Msg("received unread count update")
 		if !update.HasCountDecreased {
 			// if the count increases then we'll notify the user for the event which increases the count, hence
 			// do nothing. We only care to notify the user when the counts decrease.
