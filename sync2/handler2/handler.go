@@ -183,7 +183,7 @@ func (h *Handler) OnE2EEData(userID, deviceID string, otkCounts map[string]int, 
 	})
 }
 
-func (h *Handler) Accumulate(userID, roomID, prevBatch string, timeline []json.RawMessage) {
+func (h *Handler) Accumulate(deviceID, roomID, prevBatch string, timeline []json.RawMessage) {
 	// Remember any transaction IDs that may be unique to this user
 	eventIDToTxnID := make(map[string]string, len(timeline)) // event_id -> txn_id
 	for _, e := range timeline {
@@ -196,9 +196,9 @@ func (h *Handler) Accumulate(userID, roomID, prevBatch string, timeline []json.R
 	}
 	if len(eventIDToTxnID) > 0 {
 		// persist the txn IDs
-		err := h.Store.TransactionsTable.Insert(userID, eventIDToTxnID)
+		err := h.Store.TransactionsTable.Insert(deviceID, eventIDToTxnID)
 		if err != nil {
-			logger.Err(err).Str("user", userID).Int("num_txns", len(eventIDToTxnID)).Msg("failed to persist txn IDs for user")
+			logger.Err(err).Str("device", deviceID).Int("num_txns", len(eventIDToTxnID)).Msg("failed to persist txn IDs for user")
 		}
 	}
 

@@ -388,8 +388,9 @@ func (s *ConnState) getInitialRoomData(ctx context.Context, roomSub sync3.RoomSu
 	// We want to grab the user room data and the room metadata for each room ID.
 	roomIDToUserRoomData := s.userCache.LazyLoadTimelines(s.loadPosition, roomIDs, int(roomSub.TimelineLimit))
 	roomMetadatas := s.globalCache.LoadRooms(roomIDs...)
-	// prepare lazy loading data structures
+	// prepare lazy loading data structures, txn IDs
 	roomToUsersInTimeline := make(map[string][]string, len(roomIDToUserRoomData))
+	roomToTimeline := make(map[string][]json.RawMessage)
 	for roomID, urd := range roomIDToUserRoomData {
 		set := make(map[string]struct{})
 		for _, ev := range urd.Timeline {
@@ -402,7 +403,9 @@ func (s *ConnState) getInitialRoomData(ctx context.Context, roomSub sync3.RoomSu
 			i++
 		}
 		roomToUsersInTimeline[roomID] = userIDs
+		roomToTimeline[roomID] = urd.Timeline
 	}
+	roomToTimeline = s.userCache.AnnotateWithTransactionIDs(s.deviceID, roomToTimeline)
 	rsm := roomSub.RequiredStateMap(s.userID)
 	roomIDToState := s.globalCache.LoadRoomState(ctx, roomIDs, s.loadPosition, rsm, roomToUsersInTimeline)
 	if roomIDToState == nil { // e.g no required_state
@@ -434,7 +437,7 @@ func (s *ConnState) getInitialRoomData(ctx context.Context, roomSub sync3.RoomSu
 			Name:              internal.CalculateRoomName(metadata, 5), // TODO: customisable?
 			NotificationCount: int64(userRoomData.NotificationCount),
 			HighlightCount:    int64(userRoomData.HighlightCount),
-			Timeline:          s.userCache.AnnotateWithTransactionIDs(userRoomData.Timeline),
+			Timeline:          roomToTimeline[roomID],
 			RequiredState:     requiredState,
 			InviteState:       inviteState,
 			Initial:           true,

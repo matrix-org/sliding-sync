@@ -196,9 +196,10 @@ func (s *connStateLive) processLiveUpdate(ctx context.Context, up caches.Update,
 			// - the initial:true room from BuildSubscriptions contains the latest live events in the timeline as it's pulled from the DB
 			// - we then process the live events in turn which adds them again.
 			if !advancedPastEvent {
-				r.Timeline = append(r.Timeline, s.userCache.AnnotateWithTransactionIDs([]json.RawMessage{
-					roomEventUpdate.EventData.Event,
-				})...)
+				roomIDtoTimeline := s.userCache.AnnotateWithTransactionIDs(s.deviceID, map[string][]json.RawMessage{
+					roomEventUpdate.RoomID(): []json.RawMessage{roomEventUpdate.EventData.Event},
+				})
+				r.Timeline = append(r.Timeline, roomIDtoTimeline[roomEventUpdate.RoomID()]...)
 				roomID := roomEventUpdate.RoomID()
 				sender := roomEventUpdate.EventData.Sender
 				if s.lazyCache.IsLazyLoading(roomID) && !s.lazyCache.IsSet(roomID, sender) {

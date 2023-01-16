@@ -21,7 +21,7 @@ type CacheFinder interface {
 }
 
 type TransactionIDFetcher interface {
-	TransactionIDForEvents(userID string, eventIDs []string) (eventIDToTxnID map[string]string)
+	TransactionIDForEvents(deviceID string, eventIDs []string) (eventIDToTxnID map[string]string)
 }
 
 type UserRoomData struct {
@@ -423,24 +423,42 @@ func (c *UserCache) Invites() map[string]UserRoomData {
 // events are globally scoped, so if Alice sends a message, Bob might receive it first on his v2 loop
 // which would cause the transaction ID to be missing from the event. Instead, we always look for txn
 // IDs in the v2 poller, and then set them appropriately at request time.
-func (c *UserCache) AnnotateWithTransactionIDs(events []json.RawMessage) []json.RawMessage {
-	eventIDs := make([]string, len(events))
-	eventIDIndex := make(map[string]int, len(events))
-	for i := range events {
-		eventIDs[i] = gjson.GetBytes(events[i], "event_id").Str
-		eventIDIndex[eventIDs[i]] = i
+func (c *UserCache) AnnotateWithTransactionIDs(deviceID string, roomIDToEvents map[string][]json.RawMessage) map[string][]json.RawMessage {
+	var eventIDs []string
+	eventIDToEvent := make(map[string]struct {
+		roomID string
+		i      int
+	})
+	for roomID, events := range roomIDToEvents {
+		for i, ev := range events {
+			evID := gjson.GetBytes(ev, "event_id").Str
+			eventIDs = append(eventIDs, evID)
+			eventIDToEvent[evID] = struct {
+				roomID string
+				i      int
+			}{
+				roomID: roomID,
+				i:      i,
+			}
+		}
 	}
-	eventIDToTxnID := c.txnIDs.TransactionIDForEvents(c.UserID, eventIDs)
+	eventIDToTxnID := c.txnIDs.TransactionIDForEvents(deviceID, eventIDs)
 	for eventID, txnID := range eventIDToTxnID {
-		i := eventIDIndex[eventID]
-		newJSON, err := sjson.SetBytes(events[i], "unsigned.transaction_id", txnID)
+		data, ok := eventIDToEvent[eventID]
+		if !ok {
+			continue
+		}
+		events := roomIDToEvents[data.roomID]
+		event := events[data.i]
+		newJSON, err := sjson.SetBytes(event, "unsigned.transaction_id", txnID)
 		if err != nil {
 			logger.Err(err).Str("user", c.UserID).Msg("AnnotateWithTransactionIDs: sjson failed")
 		} else {
-			events[i] = newJSON
+			events[data.i] = newJSON
+			roomIDToEvents[data.roomID] = events
 		}
 	}
-	return events
+	return roomIDToEvents
 }
 
 // =================================================

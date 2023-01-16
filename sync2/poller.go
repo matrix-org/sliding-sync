@@ -20,7 +20,7 @@ type V2DataReceiver interface {
 	// Update the since token for this device. Called AFTER all other data in this sync response has been processed.
 	UpdateDeviceSince(deviceID, since string)
 	// Accumulate data for this room. This means the timeline section of the v2 response.
-	Accumulate(userID, roomID, prevBatch string, timeline []json.RawMessage) // latest pos with event nids of timeline entries
+	Accumulate(deviceID, roomID, prevBatch string, timeline []json.RawMessage) // latest pos with event nids of timeline entries
 	// Initialise the room, if it hasn't been already. This means the state section of the v2 response.
 	Initialise(roomID string, state []json.RawMessage) // snapshot ID?
 	// SetTyping indicates which users are typing.
@@ -184,11 +184,11 @@ func (h *PollerMap) execute() {
 func (h *PollerMap) UpdateDeviceSince(deviceID, since string) {
 	h.callbacks.UpdateDeviceSince(deviceID, since)
 }
-func (h *PollerMap) Accumulate(userID, roomID, prevBatch string, timeline []json.RawMessage) {
+func (h *PollerMap) Accumulate(deviceID, roomID, prevBatch string, timeline []json.RawMessage) {
 	var wg sync.WaitGroup
 	wg.Add(1)
 	h.executor <- func() {
-		h.callbacks.Accumulate(userID, roomID, prevBatch, timeline)
+		h.callbacks.Accumulate(deviceID, roomID, prevBatch, timeline)
 		wg.Done()
 	}
 	wg.Wait()
@@ -532,13 +532,13 @@ func (p *poller) parseRoomsResponse(res *SyncResponse) {
 		}
 		if len(roomData.Timeline.Events) > 0 {
 			timelineCalls++
-			p.receiver.Accumulate(p.userID, roomID, roomData.Timeline.PrevBatch, roomData.Timeline.Events)
+			p.receiver.Accumulate(p.deviceID, roomID, roomData.Timeline.PrevBatch, roomData.Timeline.Events)
 		}
 	}
 	for roomID, roomData := range res.Rooms.Leave {
 		// TODO: do we care about state?
 		if len(roomData.Timeline.Events) > 0 {
-			p.receiver.Accumulate(p.userID, roomID, roomData.Timeline.PrevBatch, roomData.Timeline.Events)
+			p.receiver.Accumulate(p.deviceID, roomID, roomData.Timeline.PrevBatch, roomData.Timeline.Events)
 		}
 		p.receiver.OnLeftRoom(p.userID, roomID)
 	}
