@@ -6,7 +6,6 @@ import (
 	"runtime/trace"
 
 	"github.com/matrix-org/sliding-sync/state"
-	"github.com/matrix-org/sliding-sync/sync2"
 	"github.com/matrix-org/sliding-sync/sync3/caches"
 	"github.com/rs/zerolog"
 )
@@ -66,7 +65,7 @@ type HandlerInterface interface {
 
 type Handler struct {
 	Store       *state.Storage
-	E2EEFetcher sync2.E2EEFetcher
+	E2EEFetcher E2EEFetcher
 	GlobalCache *caches.GlobalCache
 }
 

@@ -43,15 +43,6 @@ type V2DataReceiver interface {
 	OnTerminated(userID, deviceID string)
 }
 
-// Fetcher used by the E2EE extension
-type E2EEFetcher interface {
-	DeviceData(userID, deviceID string, isInitial bool) *internal.DeviceData
-}
-
-type TransactionIDFetcher interface {
-	TransactionIDForEvents(userID string, eventIDs []string) (eventIDToTxnID map[string]string)
-}
-
 // PollerMap is a map of device ID to Poller
 type PollerMap struct {
 	v2Client            Client

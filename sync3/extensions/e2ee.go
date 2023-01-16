@@ -2,9 +2,13 @@ package extensions
 
 import (
 	"github.com/matrix-org/sliding-sync/internal"
-	"github.com/matrix-org/sliding-sync/sync2"
 	"github.com/matrix-org/sliding-sync/sync3/caches"
 )
+
+// Fetcher used by the E2EE extension
+type E2EEFetcher interface {
+	DeviceData(userID, deviceID string, isInitial bool) *internal.DeviceData
+}
 
 // Client created request params
 type E2EERequest struct {
@@ -35,7 +39,7 @@ func (r *E2EEResponse) HasData(isInitial bool) bool {
 	return r.DeviceLists != nil || len(r.FallbackKeyTypes) > 0 || len(r.OTKCounts) > 0
 }
 
-func ProcessLiveE2EE(up caches.Update, fetcher sync2.E2EEFetcher, userID, deviceID string, req *E2EERequest) (res *E2EEResponse) {
+func ProcessLiveE2EE(up caches.Update, fetcher E2EEFetcher, userID, deviceID string, req *E2EERequest) (res *E2EEResponse) {
 	_, ok := up.(caches.DeviceDataUpdate)
 	if !ok {
 		return nil
@@ -43,7 +47,7 @@ func ProcessLiveE2EE(up caches.Update, fetcher sync2.E2EEFetcher, userID, device
 	return ProcessE2EE(fetcher, userID, deviceID, req, false)
 }
 
-func ProcessE2EE(fetcher sync2.E2EEFetcher, userID, deviceID string, req *E2EERequest, isInitial bool) (res *E2EEResponse) {
+func ProcessE2EE(fetcher E2EEFetcher, userID, deviceID string, req *E2EERequest, isInitial bool) (res *E2EEResponse) {
 	//  pull OTK counts and changed/left from device data
 	dd := fetcher.DeviceData(userID, deviceID, isInitial)
 	res = &E2EEResponse{}

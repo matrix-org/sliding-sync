@@ -8,7 +8,6 @@ import (
 	lru "github.com/hashicorp/golang-lru"
 	"github.com/matrix-org/sliding-sync/internal"
 	"github.com/matrix-org/sliding-sync/state"
-	"github.com/matrix-org/sliding-sync/sync2"
 	"github.com/tidwall/gjson"
 	"github.com/tidwall/sjson"
 )
@@ -19,6 +18,10 @@ const (
 
 type CacheFinder interface {
 	CacheForUser(userID string) *UserCache
+}
+
+type TransactionIDFetcher interface {
+	TransactionIDForEvents(userID string, eventIDs []string) (eventIDToTxnID map[string]string)
 }
 
 type UserRoomData struct {
@@ -176,11 +179,11 @@ type UserCache struct {
 	id                   int
 	store                *state.Storage
 	globalCache          *GlobalCache
-	txnIDs               sync2.TransactionIDFetcher
+	txnIDs               TransactionIDFetcher
 	latestPos            int64
 }
 
-func NewUserCache(userID string, globalCache *GlobalCache, store *state.Storage, txnIDs sync2.TransactionIDFetcher) *UserCache {
+func NewUserCache(userID string, globalCache *GlobalCache, store *state.Storage, txnIDs TransactionIDFetcher) *UserCache {
 	uc := &UserCache{
 		UserID:       userID,
 		roomToDataMu: &sync.RWMutex{},
