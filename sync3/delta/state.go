@@ -55,6 +55,19 @@ type DeltaAccount struct {
 // AddAccountData to the delta struct
 func (d *State) AddAccountData(accountDatas []state.AccountData) (filteredAccountDatas []state.AccountData) {
 	d.Data.Position++
+	// AccountID becomes the max value, and we filter out everything < the current AccountID
+	curr := d.Data.Account.AccountID
+	max := curr
+	filteredAccountDatas = make([]state.AccountData, 0, len(accountDatas))
+	for i, ad := range accountDatas {
+		if ad.ID <= curr {
+			continue // client already has this
+		}
+		if ad.ID > max {
+			max = ad.ID
+		}
+		filteredAccountDatas = append(filteredAccountDatas, accountDatas[i])
+	}
 	return
 }
 
