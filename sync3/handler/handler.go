@@ -17,6 +17,7 @@ import (
 	"github.com/matrix-org/sliding-sync/sync2"
 	"github.com/matrix-org/sliding-sync/sync3"
 	"github.com/matrix-org/sliding-sync/sync3/caches"
+	"github.com/matrix-org/sliding-sync/sync3/delta"
 	"github.com/matrix-org/sliding-sync/sync3/extensions"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/rs/zerolog"
@@ -48,7 +49,8 @@ type SyncLiveHandler struct {
 	userCaches *sync.Map // map[user_id]*UserCache
 	Dispatcher *sync3.Dispatcher
 
-	GlobalCache *caches.GlobalCache
+	GlobalCache  *caches.GlobalCache
+	DeltaManager *delta.Manager
 
 	numConns prometheus.Gauge
 	histVec  *prometheus.HistogramVec
@@ -65,13 +67,14 @@ func NewSync3Handler(
 		zerolog.SetGlobalLevel(zerolog.InfoLevel)
 	}
 	sh := &SyncLiveHandler{
-		V2:          v2Client,
-		Storage:     store,
-		V2Store:     storev2,
-		ConnMap:     sync3.NewConnMap(),
-		userCaches:  &sync.Map{},
-		Dispatcher:  sync3.NewDispatcher(),
-		GlobalCache: caches.NewGlobalCache(store),
+		V2:           v2Client,
+		Storage:      store,
+		V2Store:      storev2,
+		ConnMap:      sync3.NewConnMap(),
+		userCaches:   &sync.Map{},
+		Dispatcher:   sync3.NewDispatcher(),
+		GlobalCache:  caches.NewGlobalCache(store),
+		DeltaManager: delta.NewManager(store),
 	}
 	sh.Extensions = &extensions.Handler{
 		Store:       store,
@@ -357,7 +360,7 @@ func (h *SyncLiveHandler) setupConnection(req *http.Request, syncReq *sync3.Requ
 	conn, created := h.ConnMap.CreateConn(sync3.ConnID{
 		DeviceID: deviceID,
 	}, func() sync3.ConnHandler {
-		return NewConnState(v2device.UserID, v2device.DeviceID, userCache, h.GlobalCache, h.Extensions, h.Dispatcher, h.histVec)
+		return NewConnState(v2device.UserID, v2device.DeviceID, userCache, h.GlobalCache, h.Extensions, h.Dispatcher, h.DeltaManager, h.histVec)
 	})
 	if created {
 		log.Info().Str("user", v2device.UserID).Str("conn_id", conn.ConnID.String()).Msg("created new connection")

@@ -9,6 +9,7 @@ import (
 	"github.com/matrix-org/sliding-sync/internal"
 	"github.com/matrix-org/sliding-sync/sync3"
 	"github.com/matrix-org/sliding-sync/sync3/caches"
+	"github.com/matrix-org/sliding-sync/sync3/delta"
 	"github.com/matrix-org/sliding-sync/sync3/extensions"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/tidwall/gjson"
@@ -40,7 +41,8 @@ type ConnState struct {
 	userCacheID int
 	lazyCache   *LazyCache
 
-	joinChecker JoinChecker
+	joinChecker  JoinChecker
+	deltaManager delta.ManagerInterface
 
 	extensionsHandler   extensions.HandlerInterface
 	processHistogramVec *prometheus.HistogramVec
@@ -48,7 +50,7 @@ type ConnState struct {
 
 func NewConnState(
 	userID, deviceID string, userCache *caches.UserCache, globalCache *caches.GlobalCache,
-	ex extensions.HandlerInterface, joinChecker JoinChecker, histVec *prometheus.HistogramVec,
+	ex extensions.HandlerInterface, joinChecker JoinChecker, deltaManager delta.ManagerInterface, histVec *prometheus.HistogramVec,
 ) *ConnState {
 	cs := &ConnState{
 		globalCache:         globalCache,
@@ -59,6 +61,7 @@ func NewConnState(
 		lists:               sync3.NewInternalRequestLists(),
 		extensionsHandler:   ex,
 		joinChecker:         joinChecker,
+		deltaManager:        deltaManager,
 		lazyCache:           NewLazyCache(),
 		processHistogramVec: histVec,
 	}
@@ -135,6 +138,10 @@ func (s *ConnState) OnIncomingRequest(ctx context.Context, cid sync3.ConnID, req
 // additional locking mechanisms.
 func (s *ConnState) onIncomingRequest(ctx context.Context, req *sync3.Request, isInitial bool) (*sync3.Response, error) {
 	start := time.Now()
+
+	// asyncly load the delta or make one if needed
+	deltaCh := s.deltaManager.AsyncLoadDeltaState(req.DeltaToken, req.CreateNewDeltaToken)
+
 	// ApplyDelta works fine if s.muxedReq is nil
 	var delta *sync3.RequestDelta
 	s.muxedReq, delta = s.muxedReq.ApplyDelta(req)
@@ -166,10 +173,14 @@ func (s *ConnState) onIncomingRequest(ctx context.Context, req *sync3.Request, i
 		}
 		includedRoomIDs[roomID] = eventIDs
 	}
+
+	// now we need the delta state
+	deltaState := s.deltaManager.WaitFor(deltaCh)
+
 	// Handle extensions AFTER processing lists as extensions may need to know which rooms the client
 	// is being notified about (e.g. for room account data)
 	region := trace.StartRegion(ctx, "extensions")
-	response.Extensions = s.extensionsHandler.Handle(ctx, ex, includedRoomIDs, isInitial)
+	response.Extensions = s.extensionsHandler.Handle(ctx, ex, deltaState, includedRoomIDs, isInitial)
 	region.End()
 
 	if response.ListOps() > 0 || len(response.Rooms) > 0 || response.Extensions.HasData(isInitial) {
@@ -183,7 +194,7 @@ func (s *ConnState) onIncomingRequest(ctx context.Context, req *sync3.Request, i
 
 	// do live tracking if we have nothing to tell the client yet
 	region = trace.StartRegion(ctx, "liveUpdate")
-	s.live.liveUpdate(ctx, req, ex, isInitial, response)
+	s.live.liveUpdate(ctx, req, ex, isInitial, deltaState, response)
 	region.End()
 
 	// counts are AFTER events are applied, hence after liveUpdate
@@ -407,7 +418,7 @@ func (s *ConnState) getInitialRoomData(ctx context.Context, roomSub sync3.RoomSu
 	}
 	roomToTimeline = s.userCache.AnnotateWithTransactionIDs(s.deviceID, roomToTimeline)
 	rsm := roomSub.RequiredStateMap(s.userID)
-	roomIDToState := s.globalCache.LoadRoomState(ctx, roomIDs, s.loadPosition, rsm, roomToUsersInTimeline)
+	roomIDToState, _ := s.globalCache.LoadRoomState(ctx, roomIDs, s.loadPosition, rsm, roomToUsersInTimeline)
 	if roomIDToState == nil { // e.g no required_state
 		roomIDToState = make(map[string][]json.RawMessage)
 	}

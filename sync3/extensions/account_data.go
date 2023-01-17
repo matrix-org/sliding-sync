@@ -5,6 +5,7 @@ import (
 
 	"github.com/matrix-org/sliding-sync/state"
 	"github.com/matrix-org/sliding-sync/sync3/caches"
+	"github.com/matrix-org/sliding-sync/sync3/delta"
 )
 
 // Client created request params
@@ -38,7 +39,9 @@ func accountEventsAsJSON(events []state.AccountData) []json.RawMessage {
 	return j
 }
 
-func ProcessLiveAccountData(up caches.Update, store *state.Storage, updateWillReturnResponse bool, userID string, req *AccountDataRequest) (res *AccountDataResponse) {
+func ProcessLiveAccountData(
+	up caches.Update, store *state.Storage, deltaData *delta.State, updateWillReturnResponse bool, userID string, req *AccountDataRequest,
+) (res *AccountDataResponse) {
 	switch update := up.(type) {
 	case *caches.AccountDataUpdate:
 		return &AccountDataResponse{
@@ -69,7 +72,7 @@ func ProcessLiveAccountData(up caches.Update, store *state.Storage, updateWillRe
 	return nil
 }
 
-func ProcessAccountData(store *state.Storage, roomIDToTimeline map[string][]string, userID string, isInitial bool, req *AccountDataRequest) (res *AccountDataResponse) {
+func ProcessAccountData(store *state.Storage, deltaData *delta.State, roomIDToTimeline map[string][]string, userID string, isInitial bool, req *AccountDataRequest) (res *AccountDataResponse) {
 	roomIDs := make([]string, len(roomIDToTimeline))
 	i := 0
 	for roomID := range roomIDToTimeline {
@@ -78,7 +81,6 @@ func ProcessAccountData(store *state.Storage, roomIDToTimeline map[string][]stri
 	}
 	res = &AccountDataResponse{}
 	// room account data needs to be sent every time the user scrolls the list to get new room IDs
-	// TODO: remember which rooms the client has been told about
 	if len(roomIDs) > 0 {
 		roomsAccountData, err := store.AccountDatas(userID, roomIDs...)
 		if err != nil {

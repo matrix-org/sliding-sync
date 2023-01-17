@@ -12,17 +12,18 @@ import (
 	"github.com/matrix-org/sliding-sync/internal"
 	"github.com/matrix-org/sliding-sync/sync3"
 	"github.com/matrix-org/sliding-sync/sync3/caches"
+	"github.com/matrix-org/sliding-sync/sync3/delta"
 	"github.com/matrix-org/sliding-sync/sync3/extensions"
 	"github.com/matrix-org/sliding-sync/testutils"
 )
 
 type NopExtensionHandler struct{}
 
-func (h *NopExtensionHandler) Handle(ctx context.Context, req extensions.Request, listRoomIDs map[string][]string, isInitial bool) (res extensions.Response) {
+func (h *NopExtensionHandler) Handle(ctx context.Context, req extensions.Request, deltaState *delta.State, listRoomIDs map[string][]string, isInitial bool) (res extensions.Response) {
 	return
 }
 
-func (h *NopExtensionHandler) HandleLiveUpdate(u caches.Update, req extensions.Request, res *extensions.Response, updateWillReturnResponse, isInitial bool) {
+func (h *NopExtensionHandler) HandleLiveUpdate(u caches.Update, req extensions.Request, res *extensions.Response, deltaState *delta.State, updateWillReturnResponse, isInitial bool) {
 }
 
 type NopJoinTracker struct{}
@@ -36,6 +37,13 @@ type NopTransactionFetcher struct{}
 func (t *NopTransactionFetcher) TransactionIDForEvents(userID string, eventID []string) (eventIDToTxnID map[string]string) {
 	return
 }
+
+type NopDeltaManager struct{}
+
+func (t *NopDeltaManager) AsyncLoadDeltaState(deltaToken string, createNewToken bool) <-chan *delta.State {
+	return nil
+}
+func (t *NopDeltaManager) WaitFor(asyncState <-chan *delta.State) *delta.State { return nil }
 
 func newRoomMetadata(roomID string, lastMsgTimestamp gomatrixserverlib.Timestamp) internal.RoomMetadata {
 	return internal.RoomMetadata{
@@ -104,7 +112,7 @@ func TestConnStateInitial(t *testing.T) {
 		}
 		return result
 	}
-	cs := NewConnState(userID, deviceID, userCache, globalCache, &NopExtensionHandler{}, &NopJoinTracker{}, nil)
+	cs := NewConnState(userID, deviceID, userCache, globalCache, &NopExtensionHandler{}, &NopJoinTracker{}, &NopDeltaManager{}, nil)
 	if userID != cs.UserID() {
 		t.Fatalf("UserID returned wrong value, got %v want %v", cs.UserID(), userID)
 	}
@@ -268,7 +276,7 @@ func TestConnStateMultipleRanges(t *testing.T) {
 	userCache.LazyRoomDataOverride = mockLazyRoomOverride
 	dispatcher.Register(userCache.UserID, userCache)
 	dispatcher.Register(sync3.DispatcherAllUsers, globalCache)
-	cs := NewConnState(userID, deviceID, userCache, globalCache, &NopExtensionHandler{}, &NopJoinTracker{}, nil)
+	cs := NewConnState(userID, deviceID, userCache, globalCache, &NopExtensionHandler{}, &NopJoinTracker{}, &NopDeltaManager{}, nil)
 
 	// request first page
 	res, err := cs.OnIncomingRequest(context.Background(), ConnID, &sync3.Request{
@@ -445,7 +453,7 @@ func TestBumpToOutsideRange(t *testing.T) {
 	userCache.LazyRoomDataOverride = mockLazyRoomOverride
 	dispatcher.Register(userCache.UserID, userCache)
 	dispatcher.Register(sync3.DispatcherAllUsers, globalCache)
-	cs := NewConnState(userID, deviceID, userCache, globalCache, &NopExtensionHandler{}, &NopJoinTracker{}, nil)
+	cs := NewConnState(userID, deviceID, userCache, globalCache, &NopExtensionHandler{}, &NopJoinTracker{}, &NopDeltaManager{}, nil)
 	// Ask for A,B
 	res, err := cs.OnIncomingRequest(context.Background(), ConnID, &sync3.Request{
 		Lists: []sync3.RequestList{{
@@ -553,7 +561,7 @@ func TestConnStateRoomSubscriptions(t *testing.T) {
 	}
 	dispatcher.Register(userCache.UserID, userCache)
 	dispatcher.Register(sync3.DispatcherAllUsers, globalCache)
-	cs := NewConnState(userID, deviceID, userCache, globalCache, &NopExtensionHandler{}, &NopJoinTracker{}, nil)
+	cs := NewConnState(userID, deviceID, userCache, globalCache, &NopExtensionHandler{}, &NopJoinTracker{}, &NopDeltaManager{}, nil)
 	// subscribe to room D
 	res, err := cs.OnIncomingRequest(context.Background(), ConnID, &sync3.Request{
 		RoomSubscriptions: map[string]sync3.RoomSubscription{

@@ -21,9 +21,10 @@ type Response struct {
 	Rooms      map[string]Room     `json:"rooms"`
 	Extensions extensions.Response `json:"extensions"`
 
-	Pos     string `json:"pos"`
-	TxnID   string `json:"txn_id,omitempty"`
-	Session string `json:"session_id,omitempty"`
+	Pos        string `json:"pos"`
+	TxnID      string `json:"txn_id,omitempty"`
+	DeltaToken string `json:"delta_token,omitempty"`
+	Session    string `json:"session_id,omitempty"`
 }
 
 type ResponseList struct {

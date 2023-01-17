@@ -9,6 +9,7 @@ import (
 	"github.com/matrix-org/sliding-sync/internal"
 	"github.com/matrix-org/sliding-sync/sync3"
 	"github.com/matrix-org/sliding-sync/sync3/caches"
+	"github.com/matrix-org/sliding-sync/sync3/delta"
 	"github.com/matrix-org/sliding-sync/sync3/extensions"
 	"github.com/tidwall/gjson"
 )
@@ -56,7 +57,7 @@ func (s *connStateLive) onUpdate(up caches.Update) {
 // live update waits for new data and populates the response given when new data arrives.
 func (s *connStateLive) liveUpdate(
 	ctx context.Context, req *sync3.Request, ex extensions.Request, isInitial bool,
-	response *sync3.Response,
+	deltaState *delta.State, response *sync3.Response,
 ) {
 	// we need to ensure that we keep consuming from the updates channel, even if they want a response
 	// immediately. If we have new list data we won't wait, but if we don't then we need to be able to
@@ -88,7 +89,7 @@ func (s *connStateLive) liveUpdate(
 			trace.Logf(ctx, "liveUpdate", "process live update")
 			updateWillReturnResponse := s.processLiveUpdate(ctx, update, response)
 			// pass event to extensions AFTER processing
-			s.extensionsHandler.HandleLiveUpdate(update, ex, &response.Extensions, updateWillReturnResponse, isInitial)
+			s.extensionsHandler.HandleLiveUpdate(update, ex, &response.Extensions, deltaState, updateWillReturnResponse, isInitial)
 			// if there's more updates and we don't have lots stacked up already, go ahead and process another
 			for len(s.updates) > 0 && response.ListOps() < 50 {
 				update = <-s.updates
@@ -96,7 +97,7 @@ func (s *connStateLive) liveUpdate(
 				if willReturn {
 					updateWillReturnResponse = true
 				}
-				s.extensionsHandler.HandleLiveUpdate(update, ex, &response.Extensions, updateWillReturnResponse, isInitial)
+				s.extensionsHandler.HandleLiveUpdate(update, ex, &response.Extensions, deltaState, updateWillReturnResponse, isInitial)
 			}
 			// Add membership events for users sending typing notifications
 			if response.Extensions.Typing != nil && response.Extensions.Typing.HasData(isInitial) {

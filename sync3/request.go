@@ -26,11 +26,13 @@ var (
 )
 
 type Request struct {
-	TxnID             string                      `json:"txn_id"`
-	Lists             []RequestList               `json:"lists"`
-	RoomSubscriptions map[string]RoomSubscription `json:"room_subscriptions"`
-	UnsubscribeRooms  []string                    `json:"unsubscribe_rooms"`
-	Extensions        extensions.Request          `json:"extensions"`
+	TxnID               string                      `json:"txn_id"`
+	CreateNewDeltaToken bool                        `json:"create_new_delta_token"`
+	DeltaToken          string                      `json:"delta_token"`
+	Lists               []RequestList               `json:"lists"`
+	RoomSubscriptions   map[string]RoomSubscription `json:"room_subscriptions"`
+	UnsubscribeRooms    []string                    `json:"unsubscribe_rooms"`
+	Extensions          extensions.Request          `json:"extensions"`
 
 	// set via query params or inferred
 	pos          int64

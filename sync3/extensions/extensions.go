@@ -7,6 +7,7 @@ import (
 
 	"github.com/matrix-org/sliding-sync/state"
 	"github.com/matrix-org/sliding-sync/sync3/caches"
+	"github.com/matrix-org/sliding-sync/sync3/delta"
 	"github.com/rs/zerolog"
 )
 
@@ -59,8 +60,8 @@ func (e Response) HasData(isInitial bool) bool {
 }
 
 type HandlerInterface interface {
-	Handle(ctx context.Context, req Request, roomIDToTimeline map[string][]string, isInitial bool) (res Response)
-	HandleLiveUpdate(update caches.Update, req Request, res *Response, updateWillReturnResponse, isInitial bool)
+	Handle(ctx context.Context, req Request, deltaData *delta.State, roomIDToTimeline map[string][]string, isInitial bool) (res Response)
+	HandleLiveUpdate(update caches.Update, req Request, res *Response, deltaData *delta.State, updateWillReturnResponse, isInitial bool)
 }
 
 type Handler struct {
@@ -69,9 +70,9 @@ type Handler struct {
 	GlobalCache *caches.GlobalCache
 }
 
-func (h *Handler) HandleLiveUpdate(update caches.Update, req Request, res *Response, updateWillReturnResponse, isInitial bool) {
+func (h *Handler) HandleLiveUpdate(update caches.Update, req Request, res *Response, deltaData *delta.State, updateWillReturnResponse, isInitial bool) {
 	if req.AccountData != nil && req.AccountData.Enabled {
-		res.AccountData = ProcessLiveAccountData(update, h.Store, updateWillReturnResponse, req.UserID, req.AccountData)
+		res.AccountData = ProcessLiveAccountData(update, h.Store, deltaData, updateWillReturnResponse, req.UserID, req.AccountData)
 	}
 	if req.Typing != nil && req.Typing.Enabled {
 		res.Typing = ProcessLiveTyping(update, updateWillReturnResponse, req.UserID, req.Typing)
@@ -92,7 +93,7 @@ func (h *Handler) HandleLiveUpdate(update caches.Update, req Request, res *Respo
 	}
 }
 
-func (h *Handler) Handle(ctx context.Context, req Request, roomIDToTimeline map[string][]string, isInitial bool) (res Response) {
+func (h *Handler) Handle(ctx context.Context, req Request, deltaData *delta.State, roomIDToTimeline map[string][]string, isInitial bool) (res Response) {
 	if req.ToDevice != nil && req.ToDevice.Enabled != nil && *req.ToDevice.Enabled {
 		region := trace.StartRegion(ctx, "extension_to_device")
 		res.ToDevice = ProcessToDevice(h.Store, req.UserID, req.DeviceID, req.ToDevice, isInitial)
@@ -105,7 +106,7 @@ func (h *Handler) Handle(ctx context.Context, req Request, roomIDToTimeline map[
 	}
 	if req.AccountData != nil && req.AccountData.Enabled {
 		region := trace.StartRegion(ctx, "extension_account_data")
-		res.AccountData = ProcessAccountData(h.Store, roomIDToTimeline, req.UserID, isInitial, req.AccountData)
+		res.AccountData = ProcessAccountData(h.Store, deltaData, roomIDToTimeline, req.UserID, isInitial, req.AccountData)
 		region.End()
 	}
 	if req.Typing != nil && req.Typing.Enabled {

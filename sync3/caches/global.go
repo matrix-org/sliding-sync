@@ -136,29 +136,42 @@ func (c *GlobalCache) LoadStateEvent(ctx context.Context, roomID string, loadPos
 }
 
 // TODO: remove? Doesn't touch global cache fields
-func (c *GlobalCache) LoadRoomState(ctx context.Context, roomIDs []string, loadPosition int64, requiredStateMap *internal.RequiredStateMap, roomToUsersInTimeline map[string][]string) map[string][]json.RawMessage {
+func (c *GlobalCache) LoadRoomState(ctx context.Context, roomIDs []string, loadPosition int64, requiredStateMap *internal.RequiredStateMap, roomToUsersInTimeline map[string][]string) (map[string][]json.RawMessage, []state.Event) {
 	if c.store == nil {
-		return nil
+		return nil, nil
 	}
 	if requiredStateMap.Empty() {
-		return nil
+		return nil, nil
 	}
 	resultMap := make(map[string][]json.RawMessage, len(roomIDs))
 	roomIDToStateEvents, err := c.store.RoomStateAfterEventPosition(ctx, roomIDs, loadPosition, requiredStateMap.QueryStateMap())
 	if err != nil {
 		logger.Err(err).Strs("rooms", roomIDs).Int64("pos", loadPosition).Msg("failed to load room state")
-		return nil
+		return nil, nil
 	}
+	var stateNIDs []state.Event
 	for roomID, stateEvents := range roomIDToStateEvents {
 		var result []json.RawMessage
 		for _, ev := range stateEvents {
 			if requiredStateMap.Include(ev.Type, ev.StateKey) {
 				result = append(result, ev.JSON)
+				stateNIDs = append(stateNIDs, state.Event{
+					NID:      ev.NID,
+					StateKey: ev.StateKey,
+					Type:     ev.Type,
+					RoomID:   roomID,
+				})
 			} else if requiredStateMap.IsLazyLoading() {
 				usersInTimeline := roomToUsersInTimeline[roomID]
 				for _, userID := range usersInTimeline {
 					if ev.StateKey == userID {
 						result = append(result, ev.JSON)
+						stateNIDs = append(stateNIDs, state.Event{
+							NID:      ev.NID,
+							StateKey: ev.StateKey,
+							Type:     ev.Type,
+							RoomID:   roomID,
+						})
 					}
 				}
 			}
@@ -166,7 +179,7 @@ func (c *GlobalCache) LoadRoomState(ctx context.Context, roomIDs []string, loadP
 		resultMap[roomID] = result
 	}
 	// TODO: cache?
-	return resultMap
+	return resultMap, stateNIDs
 }
 
 // Startup will populate the cache with the provided metadata.
