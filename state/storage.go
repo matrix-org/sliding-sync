@@ -40,6 +40,7 @@ type Storage struct {
 	TransactionsTable *TransactionsTable
 	DeviceDataTable   *DeviceDataTable
 	ReceiptTable      *ReceiptTable
+	DeltaTable        *DeltaTable
 	DB                *sqlx.DB
 }
 
@@ -66,6 +67,7 @@ func NewStorage(postgresURI string) *Storage {
 		TransactionsTable: NewTransactionsTable(db),
 		DeviceDataTable:   NewDeviceDataTable(db),
 		ReceiptTable:      NewReceiptTable(db),
+		DeltaTable:        NewDeltaTable(db),
 		DB:                db,
 	}
 }
