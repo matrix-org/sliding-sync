@@ -140,7 +140,7 @@ func (s *ConnState) onIncomingRequest(ctx context.Context, req *sync3.Request, i
 	start := time.Now()
 
 	// asyncly load the delta or make one if needed
-	deltaCh := s.deltaManager.AsyncLoadDeltaState(req.DeltaToken, req.CreateNewDeltaToken)
+	deltaCh := s.deltaManager.AsyncLoadDeltaState(s.deviceID, req.DeltaToken, req.CreateNewDeltaToken)
 
 	// ApplyDelta works fine if s.muxedReq is nil
 	var delta *sync3.RequestDelta

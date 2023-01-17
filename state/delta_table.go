@@ -12,6 +12,12 @@ type DeltaRow struct {
 	Data     []byte `db:"data"`
 }
 
+type DeltaTableInterface interface {
+	CreateDeltaState(deviceID string) (row *DeltaRow, err error)
+	Load(id int64, deviceID string) (row *DeltaRow, err error)
+	Update(row *DeltaRow) error
+}
+
 // DeltaTable stores client state for a device, to reduce the data we send back to clients.
 type DeltaTable struct {
 	db *sqlx.DB

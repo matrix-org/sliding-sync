@@ -40,7 +40,7 @@ func (t *NopTransactionFetcher) TransactionIDForEvents(userID string, eventID []
 
 type NopDeltaManager struct{}
 
-func (t *NopDeltaManager) AsyncLoadDeltaState(deltaToken string, createNewToken bool) <-chan *delta.State {
+func (t *NopDeltaManager) AsyncLoadDeltaState(deviceID, deltaToken string, createNewToken bool) <-chan *delta.State {
 	return nil
 }
 func (t *NopDeltaManager) WaitFor(asyncState <-chan *delta.State) *delta.State { return nil }

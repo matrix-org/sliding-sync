@@ -74,7 +74,7 @@ func NewSync3Handler(
 		userCaches:   &sync.Map{},
 		Dispatcher:   sync3.NewDispatcher(),
 		GlobalCache:  caches.NewGlobalCache(store),
-		DeltaManager: delta.NewManager(store),
+		DeltaManager: delta.NewManager(store.DeltaTable),
 	}
 	sh.Extensions = &extensions.Handler{
 		Store:       store,

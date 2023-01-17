@@ -4,6 +4,7 @@ go 1.14
 
 require (
 	github.com/ReneKroon/ttlcache/v2 v2.8.1
+	github.com/fxamacker/cbor/v2 v2.4.0 // indirect
 	github.com/gorilla/mux v1.8.0
 	github.com/hashicorp/golang-lru v0.5.4
 	github.com/jmoiron/sqlx v1.3.3
