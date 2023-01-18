@@ -200,7 +200,7 @@ func (c *GlobalCache) Startup(roomIDToMetadata map[string]internal.RoomMetadata)
 // Listener function called by dispatcher below
 // =================================================
 
-func (c *GlobalCache) OnEphemeralEvent(roomID string, ephEvent json.RawMessage) {
+func (c *GlobalCache) OnEphemeralEvent(ctx context.Context, roomID string, ephEvent json.RawMessage) {
 	evType := gjson.ParseBytes(ephEvent).Get("type").Str
 	c.roomIDToMetadataMu.Lock()
 	defer c.roomIDToMetadataMu.Unlock()
@@ -220,7 +220,7 @@ func (c *GlobalCache) OnEphemeralEvent(roomID string, ephEvent json.RawMessage) 
 }
 
 func (c *GlobalCache) OnNewEvent(
-	ed *EventData,
+	ctx context.Context, ed *EventData,
 ) {
 	// update global state
 	c.roomIDToMetadataMu.Lock()

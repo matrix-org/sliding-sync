@@ -1,6 +1,7 @@
 package caches
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"sync"
@@ -161,10 +162,10 @@ func (i *InviteData) RoomMetadata() *internal.RoomMetadata {
 type UserCacheListener interface {
 	// Called when there is an update affecting a room e.g new event, unread count update, room account data.
 	// Type-cast to find out what the update is about.
-	OnRoomUpdate(up RoomUpdate)
+	OnRoomUpdate(ctx context.Context, up RoomUpdate)
 	// Called when there is an update affecting this user but not in the room e.g global account data, presence.
 	// Type-cast to find out what the update is about.
-	OnUpdate(up Update)
+	OnUpdate(ctx context.Context, up Update)
 }
 
 // Tracks data specific to a given user. Specifically, this is the map of room ID to UserRoomData.
@@ -257,7 +258,7 @@ func (c *UserCache) OnRegistered(_ int64) error {
 		// inject space children events
 		if room.IsSpace() {
 			for childRoomID := range room.ChildSpaceRooms {
-				c.OnSpaceUpdate(room.RoomID, childRoomID, false, &EventData{
+				c.OnSpaceUpdate(context.Background(), room.RoomID, childRoomID, false, &EventData{
 					RoomID:    room.RoomID,
 					EventType: "m.space.child",
 					StateKey:  &childRoomID,
@@ -465,7 +466,7 @@ func (c *UserCache) AnnotateWithTransactionIDs(deviceID string, roomIDToEvents m
 // Listener functions called by v2 pollers are below
 // =================================================
 
-func (c *UserCache) OnEphemeralEvent(roomID string, ephEvent json.RawMessage) {
+func (c *UserCache) OnEphemeralEvent(ctx context.Context, roomID string, ephEvent json.RawMessage) {
 	var update RoomUpdate
 	evType := gjson.GetBytes(ephEvent, "type").Str
 	switch evType {
@@ -484,11 +485,11 @@ func (c *UserCache) OnEphemeralEvent(roomID string, ephEvent json.RawMessage) {
 	}
 
 	for _, l := range c.listeners {
-		l.OnRoomUpdate(update)
+		l.OnRoomUpdate(ctx, update)
 	}
 }
 
-func (c *UserCache) OnUnreadCounts(roomID string, highlightCount, notifCount *int) {
+func (c *UserCache) OnUnreadCounts(ctx context.Context, roomID string, highlightCount, notifCount *int) {
 	data := c.LoadRoomData(roomID)
 	hasCountDecreased := false
 	if highlightCount != nil {
@@ -511,11 +512,11 @@ func (c *UserCache) OnUnreadCounts(roomID string, highlightCount, notifCount *in
 	}
 
 	for _, l := range c.listeners {
-		l.OnRoomUpdate(roomUpdate)
+		l.OnRoomUpdate(ctx, roomUpdate)
 	}
 }
 
-func (c *UserCache) OnSpaceUpdate(parentRoomID, childRoomID string, isDeleted bool, eventData *EventData) {
+func (c *UserCache) OnSpaceUpdate(ctx context.Context, parentRoomID, childRoomID string, isDeleted bool, eventData *EventData) {
 	if eventData.LatestPos > 0 && eventData.LatestPos < c.latestPos {
 		// this is possible when we race when seeding spaces on init with live data
 		return
@@ -537,11 +538,11 @@ func (c *UserCache) OnSpaceUpdate(parentRoomID, childRoomID string, isDeleted bo
 	}
 
 	for _, l := range c.listeners {
-		l.OnRoomUpdate(roomUpdate)
+		l.OnRoomUpdate(ctx, roomUpdate)
 	}
 }
 
-func (c *UserCache) OnNewEvent(eventData *EventData) {
+func (c *UserCache) OnNewEvent(ctx context.Context, eventData *EventData) {
 	// add this to our tracked timelines if we have one
 	urd := c.LoadRoomData(eventData.RoomID)
 	if len(urd.Timeline) > 0 {
@@ -560,7 +561,7 @@ func (c *UserCache) OnNewEvent(eventData *EventData) {
 		// the children for a space we are a part of have changed. Find the room that was affected and update our cache value.
 		childRoomID := *eventData.StateKey
 		isDeleted := !eventData.Content.Get("via").IsArray()
-		c.OnSpaceUpdate(eventData.RoomID, childRoomID, isDeleted, eventData)
+		c.OnSpaceUpdate(ctx, eventData.RoomID, childRoomID, isDeleted, eventData)
 	}
 	c.roomToDataMu.Lock()
 	c.roomToData[eventData.RoomID] = urd
@@ -572,11 +573,11 @@ func (c *UserCache) OnNewEvent(eventData *EventData) {
 	}
 
 	for _, l := range c.listeners {
-		l.OnRoomUpdate(roomUpdate)
+		l.OnRoomUpdate(ctx, roomUpdate)
 	}
 }
 
-func (c *UserCache) OnInvite(roomID string, inviteStateEvents []json.RawMessage) {
+func (c *UserCache) OnInvite(ctx context.Context, roomID string, inviteStateEvents []json.RawMessage) {
 	inviteData := NewInviteData(c.UserID, roomID, inviteStateEvents)
 	if inviteData == nil {
 		return // malformed invite
@@ -602,11 +603,11 @@ func (c *UserCache) OnInvite(roomID string, inviteStateEvents []json.RawMessage)
 		InviteData: *inviteData,
 	}
 	for _, l := range c.listeners {
-		l.OnRoomUpdate(up)
+		l.OnRoomUpdate(ctx, up)
 	}
 }
 
-func (c *UserCache) OnLeftRoom(roomID string) {
+func (c *UserCache) OnLeftRoom(ctx context.Context, roomID string) {
 	urd := c.LoadRoomData(roomID)
 	urd.IsInvite = false
 	urd.HasLeft = true
@@ -628,11 +629,11 @@ func (c *UserCache) OnLeftRoom(roomID string) {
 		},
 	}
 	for _, l := range c.listeners {
-		l.OnRoomUpdate(up)
+		l.OnRoomUpdate(ctx, up)
 	}
 }
 
-func (c *UserCache) OnAccountData(datas []state.AccountData) {
+func (c *UserCache) OnAccountData(ctx context.Context, datas []state.AccountData) {
 	roomUpdates := make(map[string][]state.AccountData)
 	// room_id -> tag_id -> order
 	tagUpdates := make(map[string]map[string]float64)
@@ -696,7 +697,7 @@ func (c *UserCache) OnAccountData(datas []state.AccountData) {
 				AccountData: updates,
 			}
 			for _, l := range c.listeners {
-				l.OnUpdate(globalUpdate)
+				l.OnUpdate(ctx, globalUpdate)
 			}
 		} else {
 			roomUpdate := &RoomAccountDataUpdate{
@@ -704,7 +705,7 @@ func (c *UserCache) OnAccountData(datas []state.AccountData) {
 				RoomUpdate:  c.newRoomUpdate(roomID),
 			}
 			for _, l := range c.listeners {
-				l.OnRoomUpdate(roomUpdate)
+				l.OnRoomUpdate(ctx, roomUpdate)
 			}
 		}
 	}

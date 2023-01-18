@@ -480,22 +480,24 @@ func (s *ConnState) UserID() string {
 	return s.userID
 }
 
-func (s *ConnState) OnUpdate(up caches.Update) {
+func (s *ConnState) OnUpdate(ctx context.Context, up caches.Update) {
 	s.live.onUpdate(up)
 }
 
 // Called by the user cache when updates arrive
-func (s *ConnState) OnRoomUpdate(up caches.RoomUpdate) {
+func (s *ConnState) OnRoomUpdate(ctx context.Context, up caches.RoomUpdate) {
 	switch update := up.(type) {
 	case *caches.RoomEventUpdate:
 		if update.EventData.LatestPos != caches.PosAlwaysProcess {
 			if update.EventData.LatestPos == 0 || update.EventData.LatestPos < s.loadPosition {
 				// 0 -> this event was from a 'state' block, do not poke active connections
 				// pos < load -> this event has already been processed from the initial load, do not poke active connections
+				trace.Logf(ctx, "connstate", "ignoring RoomEventUpdate as %d < %d", update.EventData.LatestPos, s.loadPosition)
 				return
 			}
 		}
 		internal.Assert("missing global room metadata", update.GlobalRoomMetadata() != nil)
+		trace.Logf(ctx, "connstate", "queued update %d", update.EventData.LatestPos)
 		s.live.onUpdate(update)
 	case caches.RoomUpdate:
 		internal.Assert("missing global room metadata", update.GlobalRoomMetadata() != nil)

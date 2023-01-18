@@ -1,12 +1,14 @@
 package handler
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/url"
 	"os"
 	"reflect"
+	"runtime/trace"
 	"strconv"
 	"sync"
 	"time"
@@ -384,7 +386,7 @@ func (h *SyncLiveHandler) userCache(userID string) (*caches.UserCache, error) {
 	uc := caches.NewUserCache(userID, h.GlobalCache, h.Storage, h)
 	// select all non-zero highlight or notif counts and set them, as this is less costly than looping every room/user pair
 	err := h.Storage.UnreadTable.SelectAllNonZeroCountsForUser(userID, func(roomID string, highlightCount, notificationCount int) {
-		uc.OnUnreadCounts(roomID, &highlightCount, &notificationCount)
+		uc.OnUnreadCounts(context.Background(), roomID, &highlightCount, &notificationCount)
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to load unread counts: %s", err)
@@ -395,7 +397,7 @@ func (h *SyncLiveHandler) userCache(userID string) (*caches.UserCache, error) {
 		return nil, fmt.Errorf("failed to load direct message status for rooms: %s", err)
 	}
 	if len(directEvent) == 1 {
-		uc.OnAccountData([]state.AccountData{directEvent[0]})
+		uc.OnAccountData(context.Background(), []state.AccountData{directEvent[0]})
 	}
 
 	// select all room tag account data and set it
@@ -404,7 +406,7 @@ func (h *SyncLiveHandler) userCache(userID string) (*caches.UserCache, error) {
 		return nil, fmt.Errorf("failed to load room tags %s", err)
 	}
 	if len(tagEvents) > 0 {
-		uc.OnAccountData(tagEvents)
+		uc.OnAccountData(context.Background(), tagEvents)
 	}
 
 	// select outstanding invites
@@ -413,7 +415,7 @@ func (h *SyncLiveHandler) userCache(userID string) (*caches.UserCache, error) {
 		return nil, fmt.Errorf("failed to load outstanding invites for user: %s", err)
 	}
 	for roomID, inviteState := range invites {
-		uc.OnInvite(roomID, inviteState)
+		uc.OnInvite(context.Background(), roomID, inviteState)
 	}
 
 	// use LoadOrStore here else we can race as 2 brand new /sync conns can both get to this point
@@ -491,6 +493,8 @@ func (h *SyncLiveHandler) OnInitialSyncComplete(p *pubsub.V2InitialSyncComplete)
 
 // Called from the v2 poller, implements V2DataReceiver
 func (h *SyncLiveHandler) Accumulate(p *pubsub.V2Accumulate) {
+	ctx, task := trace.NewTask(context.Background(), "Accumulate")
+	defer task.End()
 	events, err := h.Storage.EventNIDs(p.EventNIDs)
 	if err != nil {
 		logger.Err(err).Str("room", p.RoomID).Msg("Accumulate: failed to EventNIDs")
@@ -499,51 +503,62 @@ func (h *SyncLiveHandler) Accumulate(p *pubsub.V2Accumulate) {
 	if len(events) == 0 {
 		return
 	}
+	trace.Log(ctx, "room", fmt.Sprintf("%s: %d events", p.RoomID, len(events)))
 	// we have new events, notify active connections
-	h.Dispatcher.OnNewEvents(p.RoomID, events, p.EventNIDs[len(p.EventNIDs)-1])
+	h.Dispatcher.OnNewEvents(ctx, p.RoomID, events, p.EventNIDs[len(p.EventNIDs)-1])
 }
 
 // Called from the v2 poller, implements V2DataReceiver
 func (h *SyncLiveHandler) Initialise(p *pubsub.V2Initialise) {
+	ctx, task := trace.NewTask(context.Background(), "Initialise")
+	defer task.End()
 	state, err := h.Storage.StateSnapshot(p.SnapshotNID)
 	if err != nil {
 		logger.Err(err).Int64("snap", p.SnapshotNID).Str("room", p.RoomID).Msg("Initialise: failed to get StateSnapshot")
 		return
 	}
 	// we have new state, notify caches
-	h.Dispatcher.OnNewInitialRoomState(p.RoomID, state)
+	h.Dispatcher.OnNewInitialRoomState(ctx, p.RoomID, state)
 }
 
 func (h *SyncLiveHandler) OnUnreadCounts(p *pubsub.V2UnreadCounts) {
+	ctx, task := trace.NewTask(context.Background(), "OnUnreadCounts")
+	defer task.End()
 	userCache, ok := h.userCaches.Load(p.UserID)
 	if !ok {
 		return
 	}
-	userCache.(*caches.UserCache).OnUnreadCounts(p.RoomID, p.HighlightCount, p.NotificationCount)
+	userCache.(*caches.UserCache).OnUnreadCounts(ctx, p.RoomID, p.HighlightCount, p.NotificationCount)
 }
 
 // push device data updates on waiting conns (otk counts, device list changes)
 func (h *SyncLiveHandler) OnDeviceData(p *pubsub.V2DeviceData) {
+	ctx, task := trace.NewTask(context.Background(), "OnDeviceData")
+	defer task.End()
 	conn := h.ConnMap.Conn(sync3.ConnID{
 		DeviceID: p.DeviceID,
 	})
 	if conn == nil {
 		return
 	}
-	conn.OnUpdate(caches.DeviceDataUpdate{})
+	conn.OnUpdate(ctx, caches.DeviceDataUpdate{})
 }
 
 func (h *SyncLiveHandler) OnDeviceMessages(p *pubsub.V2DeviceMessages) {
+	ctx, task := trace.NewTask(context.Background(), "OnDeviceMessages")
+	defer task.End()
 	conn := h.ConnMap.Conn(sync3.ConnID{
 		DeviceID: p.DeviceID,
 	})
 	if conn == nil {
 		return
 	}
-	conn.OnUpdate(caches.DeviceEventsUpdate{})
+	conn.OnUpdate(ctx, caches.DeviceEventsUpdate{})
 }
 
 func (h *SyncLiveHandler) OnInvite(p *pubsub.V2InviteRoom) {
+	ctx, task := trace.NewTask(context.Background(), "OnInvite")
+	defer task.End()
 	userCache, ok := h.userCaches.Load(p.UserID)
 	if !ok {
 		return
@@ -553,18 +568,22 @@ func (h *SyncLiveHandler) OnInvite(p *pubsub.V2InviteRoom) {
 		logger.Err(err).Str("user", p.UserID).Str("room", p.RoomID).Msg("failed to get invite state")
 		return
 	}
-	userCache.(*caches.UserCache).OnInvite(p.RoomID, inviteState)
+	userCache.(*caches.UserCache).OnInvite(ctx, p.RoomID, inviteState)
 }
 
 func (h *SyncLiveHandler) OnLeftRoom(p *pubsub.V2LeaveRoom) {
+	ctx, task := trace.NewTask(context.Background(), "OnLeftRoom")
+	defer task.End()
 	userCache, ok := h.userCaches.Load(p.UserID)
 	if !ok {
 		return
 	}
-	userCache.(*caches.UserCache).OnLeftRoom(p.RoomID)
+	userCache.(*caches.UserCache).OnLeftRoom(ctx, p.RoomID)
 }
 
 func (h *SyncLiveHandler) OnReceipt(p *pubsub.V2Receipt) {
+	ctx, task := trace.NewTask(context.Background(), "OnReceipt")
+	defer task.End()
 	// split receipts into public / private
 	userToPrivateReceipts := make(map[string][]internal.Receipt)
 	publicReceipts := make([]internal.Receipt, 0, len(p.Receipts))
@@ -586,7 +605,7 @@ func (h *SyncLiveHandler) OnReceipt(p *pubsub.V2Receipt) {
 			logger.Err(err).Str("room", p.RoomID).Str("user", userID).Msg("unable to pack private receipts into EDU")
 			continue
 		}
-		userCache.(*caches.UserCache).OnEphemeralEvent(p.RoomID, ephEvent)
+		userCache.(*caches.UserCache).OnEphemeralEvent(ctx, p.RoomID, ephEvent)
 	}
 	if len(publicReceipts) == 0 {
 		return
@@ -597,20 +616,24 @@ func (h *SyncLiveHandler) OnReceipt(p *pubsub.V2Receipt) {
 		logger.Err(err).Str("room", p.RoomID).Msg("unable to pack receipts into EDU")
 		return
 	}
-	h.Dispatcher.OnEphemeralEvent(p.RoomID, ephEvent)
+	h.Dispatcher.OnEphemeralEvent(ctx, p.RoomID, ephEvent)
 }
 
 func (h *SyncLiveHandler) OnTyping(p *pubsub.V2Typing) {
+	ctx, task := trace.NewTask(context.Background(), "OnTyping")
+	defer task.End()
 	rooms := h.GlobalCache.LoadRooms(p.RoomID)
 	if rooms[p.RoomID] != nil {
 		if reflect.DeepEqual(p.EphemeralEvent, rooms[p.RoomID].TypingEvent) {
 			return // it's a duplicate, which happens when 2+ users are in the same room
 		}
 	}
-	h.Dispatcher.OnEphemeralEvent(p.RoomID, p.EphemeralEvent)
+	h.Dispatcher.OnEphemeralEvent(ctx, p.RoomID, p.EphemeralEvent)
 }
 
 func (h *SyncLiveHandler) OnAccountData(p *pubsub.V2AccountData) {
+	ctx, task := trace.NewTask(context.Background(), "OnAccountData")
+	defer task.End()
 	userCache, ok := h.userCaches.Load(p.UserID)
 	if !ok {
 		return
@@ -620,7 +643,7 @@ func (h *SyncLiveHandler) OnAccountData(p *pubsub.V2AccountData) {
 		logger.Err(err).Str("user", p.UserID).Str("room", p.RoomID).Msg("OnAccountData: failed to lookup")
 		return
 	}
-	userCache.(*caches.UserCache).OnAccountData(data)
+	userCache.(*caches.UserCache).OnAccountData(ctx, data)
 }
 
 func parseIntFromQuery(u *url.URL, param string) (result int64, err *internal.HandlerError) {
