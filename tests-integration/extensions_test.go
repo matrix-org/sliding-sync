@@ -51,7 +51,7 @@ func TestExtensionE2EE(t *testing.T) {
 
 	// Dummy request as we will see the same otk/fallback keys twice initially
 	res = v3.mustDoV3RequestWithPos(t, aliceToken, res.Pos, sync3.Request{
-		Lists: []sync3.RequestList{{
+		Lists: map[string]sync3.RequestList{"a": {
 			Ranges: sync3.SliceRanges{
 				[2]int64{0, 10}, // doesn't matter
 			},
@@ -180,7 +180,7 @@ func TestExtensionE2EE(t *testing.T) {
 	})
 	v2.waitUntilEmpty(t, alice)
 	req := sync3.Request{
-		Lists: []sync3.RequestList{{
+		Lists: map[string]sync3.RequestList{"a": {
 			Ranges: sync3.SliceRanges{
 				[2]int64{0, 10}, // doesn't matter
 			},
@@ -340,7 +340,7 @@ func TestExtensionToDevice(t *testing.T) {
 			},
 		},
 	})
-  
+
 	m.MatchResponse(t, res, m.MatchList("a", m.MatchV3Count(0)), m.MatchToDeviceMessages([]json.RawMessage{}))
 
 	// live stream and block, then send a to-device msg which should go through immediately

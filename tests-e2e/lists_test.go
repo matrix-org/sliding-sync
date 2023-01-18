@@ -743,24 +743,24 @@ func TestShrinkRange(t *testing.T) {
 		})}, roomIDs...)
 	}
 	res := alice.SlidingSync(t, sync3.Request{
-		Lists: []sync3.RequestList{
-			{
+		Lists: map[string]sync3.RequestList{
+			"a": {
 				Ranges: sync3.SliceRanges{{0, 20}},
 			},
 		},
 	})
-	m.MatchResponse(t, res, m.MatchList(0, m.MatchV3Count(10), m.MatchV3Ops(
+	m.MatchResponse(t, res, m.MatchList("a", m.MatchV3Count(10), m.MatchV3Ops(
 		m.MatchV3SyncOp(0, 20, roomIDs),
 	)))
 	// now shrink the window on both ends
 	res = alice.SlidingSync(t, sync3.Request{
-		Lists: []sync3.RequestList{
-			{
+		Lists: map[string]sync3.RequestList{
+			"a": {
 				Ranges: sync3.SliceRanges{{2, 6}},
 			},
 		},
 	}, WithPos(res.Pos))
-	m.MatchResponse(t, res, m.MatchList(0, m.MatchV3Count(10), m.MatchV3Ops(
+	m.MatchResponse(t, res, m.MatchList("a", m.MatchV3Count(10), m.MatchV3Ops(
 		m.MatchV3InvalidateOp(0, 1),
 		m.MatchV3InvalidateOp(7, 20),
 	)))
@@ -779,24 +779,24 @@ func TestExpandRange(t *testing.T) {
 		})}, roomIDs...)
 	}
 	res := alice.SlidingSync(t, sync3.Request{
-		Lists: []sync3.RequestList{
-			{
+		Lists: map[string]sync3.RequestList{
+			"a": {
 				Ranges: sync3.SliceRanges{{0, 10}},
 			},
 		},
 	})
-	m.MatchResponse(t, res, m.MatchList(0, m.MatchV3Count(10), m.MatchV3Ops(
+	m.MatchResponse(t, res, m.MatchList("a", m.MatchV3Count(10), m.MatchV3Ops(
 		m.MatchV3SyncOp(0, 10, roomIDs),
 	)))
 	// now expand the window
 	res = alice.SlidingSync(t, sync3.Request{
-		Lists: []sync3.RequestList{
-			{
+		Lists: map[string]sync3.RequestList{
+			"a": {
 				Ranges: sync3.SliceRanges{{0, 20}},
 			},
 		},
 	}, WithPos(res.Pos))
-	m.MatchResponse(t, res, m.MatchList(0, m.MatchV3Count(10), m.MatchV3Ops()))
+	m.MatchResponse(t, res, m.MatchList("a", m.MatchV3Count(10), m.MatchV3Ops()))
 }
 
 // Regression test for Element X which has 2 identical lists and then changes the ranges in weird ways,
@@ -828,15 +828,15 @@ func TestMultipleSameList(t *testing.T) {
 		},
 	}
 	res := alice.SlidingSync(t, sync3.Request{
-		Lists: []sync3.RequestList{
-			firstList, secondList,
+		Lists: map[string]sync3.RequestList{
+			"1": firstList, "2": secondList,
 		},
 	})
 	m.MatchResponse(t, res,
-		m.MatchList(0, m.MatchV3Count(16), m.MatchV3Ops(
+		m.MatchList("1", m.MatchV3Count(16), m.MatchV3Ops(
 			m.MatchV3SyncOp(0, 20, roomIDs, false),
 		)),
-		m.MatchList(1, m.MatchV3Count(16), m.MatchV3Ops(
+		m.MatchList("2", m.MatchV3Count(16), m.MatchV3Ops(
 			m.MatchV3SyncOp(0, 16, roomIDs, false),
 		)),
 	)
@@ -844,15 +844,15 @@ func TestMultipleSameList(t *testing.T) {
 	firstList.Ranges = sync3.SliceRanges{{2, 15}}  // from [0,20]
 	secondList.Ranges = sync3.SliceRanges{{0, 20}} // from [0,16]
 	res = alice.SlidingSync(t, sync3.Request{
-		Lists: []sync3.RequestList{
-			firstList, secondList,
+		Lists: map[string]sync3.RequestList{
+			"1": firstList, "2": secondList,
 		},
 	}, WithPos(res.Pos))
 	m.MatchResponse(t, res,
-		m.MatchList(0, m.MatchV3Count(16), m.MatchV3Ops(
+		m.MatchList("1", m.MatchV3Count(16), m.MatchV3Ops(
 			m.MatchV3InvalidateOp(0, 1),
 			m.MatchV3InvalidateOp(16, 20),
 		)),
-		m.MatchList(1, m.MatchV3Count(16), m.MatchV3Ops()),
+		m.MatchList("2", m.MatchV3Count(16), m.MatchV3Ops()),
 	)
 }
