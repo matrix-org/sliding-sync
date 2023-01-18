@@ -4,7 +4,6 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/jmoiron/sqlx"
 	"github.com/matrix-org/sliding-sync/internal"
 )
 
@@ -25,10 +24,8 @@ func assertDeviceData(t *testing.T, g, w internal.DeviceData) {
 }
 
 func TestDeviceDataTableSwaps(t *testing.T) {
-	db, err := sqlx.Open("postgres", postgresConnectionString)
-	if err != nil {
-		t.Fatalf("failed to open SQL db: %s", err)
-	}
+	db, close := connectToDB(t)
+	defer close()
 	table := NewDeviceDataTable(db)
 	userID := "@bob"
 	deviceID := "BOB"
@@ -67,7 +64,7 @@ func TestDeviceDataTableSwaps(t *testing.T) {
 		},
 	}
 	for _, dd := range deltas {
-		_, err = table.Upsert(&dd)
+		_, err := table.Upsert(&dd)
 		assertNoError(t, err)
 	}
 
@@ -173,10 +170,8 @@ func TestDeviceDataTableSwaps(t *testing.T) {
 }
 
 func TestDeviceDataTableBitset(t *testing.T) {
-	db, err := sqlx.Open("postgres", postgresConnectionString)
-	if err != nil {
-		t.Fatalf("failed to open SQL db: %s", err)
-	}
+	db, close := connectToDB(t)
+	defer close()
 	table := NewDeviceDataTable(db)
 	userID := "@bobTestDeviceDataTableBitset"
 	deviceID := "BOBTestDeviceDataTableBitset"
@@ -202,7 +197,7 @@ func TestDeviceDataTableBitset(t *testing.T) {
 		},
 	}
 
-	_, err = table.Upsert(&otkUpdate)
+	_, err := table.Upsert(&otkUpdate)
 	assertNoError(t, err)
 	got, err := table.Select(userID, deviceID, true)
 	assertNoError(t, err)

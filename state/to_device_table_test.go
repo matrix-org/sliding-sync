@@ -5,15 +5,12 @@ import (
 	"encoding/json"
 	"testing"
 
-	"github.com/jmoiron/sqlx"
 	"github.com/tidwall/gjson"
 )
 
 func TestToDeviceTable(t *testing.T) {
-	db, err := sqlx.Open("postgres", postgresConnectionString)
-	if err != nil {
-		t.Fatalf("failed to open SQL db: %s", err)
-	}
+	db, close := connectToDB(t)
+	defer close()
 	table := NewToDeviceTable(db)
 	deviceID := "FOO"
 	var limit int64 = 999
@@ -22,6 +19,7 @@ func TestToDeviceTable(t *testing.T) {
 		json.RawMessage(`{"sender":"bob","type":"something","content":{"foo":"bar2"}}`),
 	}
 	var lastPos int64
+	var err error
 	if lastPos, err = table.InsertMessages(deviceID, msgs); err != nil {
 		t.Fatalf("InsertMessages: %s", err)
 	}
@@ -119,10 +117,8 @@ func TestToDeviceTable(t *testing.T) {
 
 // Test that https://github.com/uhoreg/matrix-doc/blob/drop-stale-to-device/proposals/3944-drop-stale-to-device.md works for m.room_key_request
 func TestToDeviceTableDeleteCancels(t *testing.T) {
-	db, err := sqlx.Open("postgres", postgresConnectionString)
-	if err != nil {
-		t.Fatalf("failed to open SQL db: %s", err)
-	}
+	db, close := connectToDB(t)
+	defer close()
 	sender := "SENDER"
 	destination := "DEST"
 	table := NewToDeviceTable(db)
@@ -130,7 +126,7 @@ func TestToDeviceTableDeleteCancels(t *testing.T) {
 	reqEv1 := newRoomKeyEvent(t, "request", "1", sender, map[string]interface{}{
 		"foo": "bar",
 	})
-	_, err = table.InsertMessages(destination, []json.RawMessage{reqEv1})
+	_, err := table.InsertMessages(destination, []json.RawMessage{reqEv1})
 	assertNoError(t, err)
 	gotMsgs, _, err := table.Messages(destination, 0, 10)
 	assertNoError(t, err)
@@ -189,10 +185,8 @@ func TestToDeviceTableDeleteCancels(t *testing.T) {
 
 // Test that unacked events are safe from deletion
 func TestToDeviceTableNoDeleteUnacks(t *testing.T) {
-	db, err := sqlx.Open("postgres", postgresConnectionString)
-	if err != nil {
-		t.Fatalf("failed to open SQL db: %s", err)
-	}
+	db, close := connectToDB(t)
+	defer close()
 	sender := "SENDER2"
 	destination := "DEST2"
 	table := NewToDeviceTable(db)
@@ -238,10 +232,8 @@ func TestToDeviceTableNoDeleteUnacks(t *testing.T) {
 
 // Guard against possible message truncation?
 func TestToDeviceTableBytesInEqualBytesOut(t *testing.T) {
-	db, err := sqlx.Open("postgres", postgresConnectionString)
-	if err != nil {
-		t.Fatalf("failed to open SQL db: %s", err)
-	}
+	db, close := connectToDB(t)
+	defer close()
 	table := NewToDeviceTable(db)
 	testCases := []json.RawMessage{
 		json.RawMessage(`{}`),
@@ -264,7 +256,7 @@ func TestToDeviceTableBytesInEqualBytesOut(t *testing.T) {
 		pos = nextPos
 	}
 	// and all at once
-	_, err = table.InsertMessages("B", testCases)
+	_, err := table.InsertMessages("B", testCases)
 	if err != nil {
 		t.Fatalf("InsertMessages: %s", err)
 	}

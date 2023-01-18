@@ -7,7 +7,6 @@ import (
 	"sort"
 	"testing"
 
-	"github.com/jmoiron/sqlx"
 	"github.com/matrix-org/sliding-sync/sync2"
 	"github.com/matrix-org/sliding-sync/testutils"
 	"github.com/tidwall/gjson"
@@ -21,10 +20,8 @@ func TestAccumulatorInitialise(t *testing.T) {
 		[]byte(`{"event_id":"C", "type":"m.room.join_rules", "state_key":"", "content":{"join_rule":"public"}}`),
 	}
 	roomEventIDs := []string{"A", "B", "C"}
-	db, err := sqlx.Open("postgres", postgresConnectionString)
-	if err != nil {
-		t.Fatalf("failed to open SQL db: %s", err)
-	}
+	db, close := connectToDB(t)
+	defer close()
 	accumulator := NewAccumulator(db)
 	added, initSnapID, err := accumulator.Initialise(roomID, roomEvents)
 	if err != nil {
@@ -99,12 +96,10 @@ func TestAccumulatorAccumulate(t *testing.T) {
 		[]byte(`{"event_id":"E", "type":"m.room.member", "state_key":"@me:localhost", "content":{"membership":"join"}}`),
 		[]byte(`{"event_id":"F", "type":"m.room.join_rules", "state_key":"", "content":{"join_rule":"public"}}`),
 	}
-	db, err := sqlx.Open("postgres", postgresConnectionString)
-	if err != nil {
-		t.Fatalf("failed to open SQL db: %s", err)
-	}
+	db, close := connectToDB(t)
+	defer close()
 	accumulator := NewAccumulator(db)
-	_, _, err = accumulator.Initialise(roomID, roomEvents)
+	_, _, err := accumulator.Initialise(roomID, roomEvents)
 	if err != nil {
 		t.Fatalf("failed to Initialise accumulator: %s", err)
 	}
@@ -197,12 +192,10 @@ func TestAccumulatorAccumulate(t *testing.T) {
 
 func TestAccumulatorDelta(t *testing.T) {
 	roomID := "!TestAccumulatorDelta:localhost"
-	db, err := sqlx.Open("postgres", postgresConnectionString)
-	if err != nil {
-		t.Fatalf("failed to open SQL db: %s", err)
-	}
+	db, close := connectToDB(t)
+	defer close()
 	accumulator := NewAccumulator(db)
-	_, _, err = accumulator.Initialise(roomID, nil)
+	_, _, err := accumulator.Initialise(roomID, nil)
 	if err != nil {
 		t.Fatalf("failed to Initialise accumulator: %s", err)
 	}
@@ -248,12 +241,10 @@ func TestAccumulatorDelta(t *testing.T) {
 
 func TestAccumulatorMembershipLogs(t *testing.T) {
 	roomID := "!TestAccumulatorMembershipLogs:localhost"
-	db, err := sqlx.Open("postgres", postgresConnectionString)
-	if err != nil {
-		t.Fatalf("failed to open SQL db: %s", err)
-	}
+	db, close := connectToDB(t)
+	defer close()
 	accumulator := NewAccumulator(db)
-	_, _, err = accumulator.Initialise(roomID, nil)
+	_, _, err := accumulator.Initialise(roomID, nil)
 	if err != nil {
 		t.Fatalf("failed to Initialise accumulator: %s", err)
 	}
@@ -389,13 +380,11 @@ func TestAccumulatorDupeEvents(t *testing.T) {
 		t.Fatalf("failed to unmarshal: %s", err)
 	}
 
-	db, err := sqlx.Open("postgres", postgresConnectionString)
-	if err != nil {
-		t.Fatalf("failed to open SQL db: %s", err)
-	}
+	db, close := connectToDB(t)
+	defer close()
 	accumulator := NewAccumulator(db)
 	roomID := "!buggy:localhost"
-	_, _, err = accumulator.Initialise(roomID, joinRoom.State.Events)
+	_, _, err := accumulator.Initialise(roomID, joinRoom.State.Events)
 	if err != nil {
 		t.Fatalf("failed to Initialise accumulator: %s", err)
 	}
@@ -432,14 +421,12 @@ func TestAccumulatorMisorderedGraceful(t *testing.T) {
 	)
 	t.Logf("A=member-alice, B=msg, C=create, D=member-bob")
 
-	db, err := sqlx.Open("postgres", postgresConnectionString)
-	if err != nil {
-		t.Fatalf("failed to open SQL db: %s", err)
-	}
+	db, close := connectToDB(t)
+	defer close()
 	accumulator := NewAccumulator(db)
 	roomID := "!TestAccumulatorStateReset:localhost"
 	// Create a room with initial state A,C
-	_, _, err = accumulator.Initialise(roomID, []json.RawMessage{
+	_, _, err := accumulator.Initialise(roomID, []json.RawMessage{
 		eventA, eventC,
 	})
 	if err != nil {
@@ -509,10 +496,8 @@ func TestCalculateNewSnapshotDupe(t *testing.T) {
 			t.Errorf("assertNIDsEqual: got %v want %v", a, b)
 		}
 	}
-	db, err := sqlx.Open("postgres", postgresConnectionString)
-	if err != nil {
-		t.Fatalf("failed to open SQL db: %s", err)
-	}
+	db, close := connectToDB(t)
+	defer close()
 	testCases := []struct {
 		input          StrippedEvents
 		inputEvent     Event

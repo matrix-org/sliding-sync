@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"reflect"
+	"sort"
 	"testing"
 	"time"
 
@@ -19,6 +20,7 @@ import (
 func TestStorageRoomStateBeforeAndAfterEventPosition(t *testing.T) {
 	ctx := context.Background()
 	store := NewStorage(postgresConnectionString)
+	defer store.Teardown()
 	roomID := "!TestStorageRoomStateAfterEventPosition:localhost"
 	alice := "@alice:localhost"
 	bob := "@bob:localhost"
@@ -112,6 +114,7 @@ func TestStorageRoomStateBeforeAndAfterEventPosition(t *testing.T) {
 
 func TestStorageJoinedRoomsAfterPosition(t *testing.T) {
 	store := NewStorage(postgresConnectionString)
+	defer store.Teardown()
 	joinedRoomID := "!joined:bar"
 	invitedRoomID := "!invited:bar"
 	leftRoomID := "!left:bar"
@@ -245,6 +248,7 @@ func TestStorageJoinedRoomsAfterPosition(t *testing.T) {
 // Test the examples on VisibleEventNIDsBetween docs
 func TestVisibleEventNIDsBetween(t *testing.T) {
 	store := NewStorage(postgresConnectionString)
+	defer store.Teardown()
 	roomA := "!a:localhost"
 	roomB := "!b:localhost"
 	roomC := "!c:localhost"
@@ -474,6 +478,7 @@ func TestVisibleEventNIDsBetween(t *testing.T) {
 
 func TestStorageLatestEventsInRoomsPrevBatch(t *testing.T) {
 	store := NewStorage(postgresConnectionString)
+	defer store.Teardown()
 	roomID := "!joined:bar"
 	alice := "@alice_TestStorageLatestEventsInRoomsPrevBatch:localhost"
 	stateEvents := []json.RawMessage{
@@ -555,6 +560,146 @@ func TestStorageLatestEventsInRoomsPrevBatch(t *testing.T) {
 			t.Fatalf("SelectClosestPrevBatch: got %v want %v", pb, wantPrevBatch)
 		}
 	}
+}
+
+func TestGlobalSnapshot(t *testing.T) {
+	alice := "@TestGlobalSnapshot_alice:localhost"
+	bob := "@TestGlobalSnapshot_bob:localhost"
+	roomAlice := "!alice"
+	roomBob := "!bob"
+	roomAliceBob := "!alicebob"
+	roomSpace := "!space"
+	oldRoomID := "!old"
+	newRoomID := "!new"
+	roomType := "room_type_here"
+	spaceRoomType := "m.space"
+	roomIDToEventMap := map[string][]json.RawMessage{
+		roomAlice: {
+			testutils.NewStateEvent(t, "m.room.create", "", alice, map[string]interface{}{"creator": alice, "predecessor": map[string]string{
+				"room_id":  oldRoomID,
+				"event_id": "$something",
+			}}),
+			testutils.NewJoinEvent(t, alice),
+			testutils.NewStateEvent(t, "m.room.encryption", "", alice, map[string]interface{}{"algorithm": "m.megolm.v1.aes-sha2"}),
+		},
+		roomBob: {
+			testutils.NewStateEvent(t, "m.room.create", "", bob, map[string]interface{}{"creator": bob, "type": roomType}),
+			testutils.NewJoinEvent(t, bob),
+			testutils.NewStateEvent(t, "m.room.name", "", alice, map[string]interface{}{"name": "My Room"}),
+		},
+		roomAliceBob: {
+			testutils.NewStateEvent(t, "m.room.create", "", bob, map[string]interface{}{"creator": bob}),
+			testutils.NewJoinEvent(t, bob),
+			testutils.NewJoinEvent(t, alice),
+			testutils.NewStateEvent(t, "m.room.canonical_alias", "", alice, map[string]interface{}{"alias": "#alias"}),
+			testutils.NewStateEvent(t, "m.room.tombstone", "", alice, map[string]interface{}{"replacement_room": newRoomID, "body": "yep"}),
+		},
+		roomSpace: {
+			testutils.NewStateEvent(t, "m.room.create", "", bob, map[string]interface{}{"creator": bob, "type": spaceRoomType}),
+			testutils.NewJoinEvent(t, bob),
+			testutils.NewStateEvent(t, "m.space.child", newRoomID, bob, map[string]interface{}{"via": []string{"somewhere"}}),
+			testutils.NewStateEvent(t, "m.space.child", "!no_via", bob, map[string]interface{}{}),
+			testutils.NewStateEvent(t, "m.room.member", alice, bob, map[string]interface{}{"membership": "invite"}),
+		},
+	}
+	// make a fresh DB which is unpolluted from other tests
+	db, close := connectToDB(t)
+	_, err := db.Exec(`
+	DROP TABLE IF EXISTS syncv3_rooms;
+	DROP TABLE IF EXISTS syncv3_invites;
+	DROP TABLE IF EXISTS syncv3_snapshots;
+	DROP TABLE IF EXISTS syncv3_spaces;`)
+	if err != nil {
+		t.Fatalf("failed to wipe DB: %s", err)
+	}
+	close()
+	store := NewStorage(postgresConnectionString)
+	defer store.Teardown()
+	for roomID, stateEvents := range roomIDToEventMap {
+		_, _, err := store.Initialise(roomID, stateEvents)
+		assertNoError(t, err)
+	}
+	snapshot, err := store.GlobalSnapshot()
+	assertNoError(t, err)
+	wantJoinedMembers := map[string][]string{
+		roomAlice:    {alice},
+		roomBob:      {bob},
+		roomAliceBob: {bob, alice}, // user IDs are ordered by event nid, and bob joined first so he is first
+		roomSpace:    {bob},
+	}
+	if !reflect.DeepEqual(snapshot.AllJoinedMembers, wantJoinedMembers) {
+		t.Errorf("Snapshot.AllJoinedMembers:\ngot:  %+v\nwant: %+v", snapshot.AllJoinedMembers, wantJoinedMembers)
+	}
+	wantMetadata := map[string]internal.RoomMetadata{
+		roomAlice: {
+			RoomID:               roomAlice,
+			JoinCount:            1,
+			LastMessageTimestamp: gjson.ParseBytes(roomIDToEventMap[roomAlice][len(roomIDToEventMap[roomAlice])-1]).Get("origin_server_ts").Uint(),
+			Heroes:               []internal.Hero{{ID: alice}},
+			Encrypted:            true,
+			PredecessorRoomID:    &oldRoomID,
+		},
+		roomBob: {
+			RoomID:               roomBob,
+			JoinCount:            1,
+			LastMessageTimestamp: gjson.ParseBytes(roomIDToEventMap[roomBob][len(roomIDToEventMap[roomBob])-1]).Get("origin_server_ts").Uint(),
+			Heroes:               []internal.Hero{{ID: bob}},
+			NameEvent:            "My Room",
+			RoomType:             &roomType,
+		},
+		roomAliceBob: {
+			RoomID:               roomAliceBob,
+			JoinCount:            2,
+			LastMessageTimestamp: gjson.ParseBytes(roomIDToEventMap[roomAliceBob][len(roomIDToEventMap[roomAliceBob])-1]).Get("origin_server_ts").Uint(),
+			Heroes:               []internal.Hero{{ID: bob}, {ID: alice}},
+			CanonicalAlias:       "#alias",
+			UpgradedRoomID:       &newRoomID,
+		},
+		roomSpace: {
+			RoomID:               roomSpace,
+			JoinCount:            1,
+			InviteCount:          1,
+			LastMessageTimestamp: gjson.ParseBytes(roomIDToEventMap[roomSpace][len(roomIDToEventMap[roomSpace])-1]).Get("origin_server_ts").Uint(),
+			Heroes:               []internal.Hero{{ID: bob}, {ID: alice}},
+			RoomType:             &spaceRoomType,
+			ChildSpaceRooms: map[string]struct{}{
+				newRoomID: {},
+			},
+		},
+	}
+	for roomID, want := range wantMetadata {
+		assertRoomMetadata(t, snapshot.GlobalMetadata[roomID], want)
+	}
+}
+
+func assertRoomMetadata(t *testing.T, got, want internal.RoomMetadata) {
+	t.Helper()
+	assertValue(t, "CanonicalAlias", got.CanonicalAlias, want.CanonicalAlias)
+	assertValue(t, "ChildSpaceRooms", got.ChildSpaceRooms, want.ChildSpaceRooms)
+	assertValue(t, "Encrypted", got.Encrypted, want.Encrypted)
+	assertValue(t, "Heroes", sortHeroes(got.Heroes), sortHeroes(want.Heroes))
+	assertValue(t, "InviteCount", got.InviteCount, want.InviteCount)
+	assertValue(t, "JoinCount", got.JoinCount, want.JoinCount)
+	assertValue(t, "LastMessageTimestamp", got.LastMessageTimestamp, want.LastMessageTimestamp)
+	assertValue(t, "NameEvent", got.NameEvent, want.NameEvent)
+	assertValue(t, "PredecessorRoomID", got.PredecessorRoomID, want.PredecessorRoomID)
+	assertValue(t, "RoomID", got.RoomID, want.RoomID)
+	assertValue(t, "RoomType", got.RoomType, want.RoomType)
+	assertValue(t, "TypingEvent", got.TypingEvent, want.TypingEvent)
+	assertValue(t, "UpgradedRoomID", got.UpgradedRoomID, want.UpgradedRoomID)
+}
+
+func assertValue(t *testing.T, msg string, got, want interface{}) {
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("%s: got %v want %v", msg, got, want)
+	}
+}
+
+func sortHeroes(heroes []internal.Hero) []internal.Hero {
+	sort.Slice(heroes, func(i, j int) bool {
+		return heroes[i].ID < heroes[j].ID
+	})
+	return heroes
 }
 
 func verifyRange(t *testing.T, result map[string][][2]int64, roomID string, wantRanges [][2]int64) {

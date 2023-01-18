@@ -4,15 +4,12 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/jmoiron/sqlx"
 	"github.com/lib/pq"
 )
 
 func TestSnapshotTable(t *testing.T) {
-	db, err := sqlx.Open("postgres", postgresConnectionString)
-	if err != nil {
-		t.Fatalf("failed to open SQL db: %s", err)
-	}
+	db, close := connectToDB(t)
+	defer close()
 	txn, err := db.Beginx()
 	if err != nil {
 		t.Fatalf("failed to start txn: %s", err)

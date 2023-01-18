@@ -5,7 +5,6 @@ import (
 	"sort"
 	"testing"
 
-	"github.com/jmoiron/sqlx"
 	"github.com/matrix-org/sliding-sync/sync2"
 )
 
@@ -43,10 +42,8 @@ func assertAccountDatasEqual(t *testing.T, msg string, gots, wants []AccountData
 }
 
 func TestAccountData(t *testing.T) {
-	db, err := sqlx.Open("postgres", postgresConnectionString)
-	if err != nil {
-		t.Fatalf("failed to open SQL db: %s", err)
-	}
+	db, close := connectToDB(t)
+	defer close()
 	txn, err := db.Beginx()
 	if err != nil {
 		t.Fatalf("failed to start txn: %s", err)
@@ -175,10 +172,8 @@ func TestAccountData(t *testing.T) {
 }
 
 func TestAccountDataIDIncrements(t *testing.T) {
-	db, err := sqlx.Open("postgres", postgresConnectionString)
-	if err != nil {
-		t.Fatalf("failed to open SQL db: %s", err)
-	}
+	db, close := connectToDB(t)
+	defer close()
 	txn, err := db.Beginx()
 	if err != nil {
 		t.Fatalf("failed to start txn: %s", err)
