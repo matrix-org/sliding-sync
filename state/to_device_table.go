@@ -60,6 +60,7 @@ func NewToDeviceTable(db *sqlx.DB) *ToDeviceTable {
 	);
 	CREATE INDEX IF NOT EXISTS syncv3_to_device_messages_device_idx ON syncv3_to_device_messages(device_id);
 	CREATE INDEX IF NOT EXISTS syncv3_to_device_messages_ukey_idx ON syncv3_to_device_messages(unique_key, device_id);
+	CREATE INDEX IF NOT EXISTS syncv3_to_device_messages_pos_device_idx ON syncv3_to_device_messages(position, device_id);
 	`)
 	return &ToDeviceTable{db}
 }
@@ -89,6 +90,11 @@ func (t *ToDeviceTable) Messages(deviceID string, from, limit int64) (msgs []jso
 	msgs = make([]json.RawMessage, len(rows))
 	for i := range rows {
 		msgs[i] = json.RawMessage(rows[i].Message)
+		m := gjson.ParseBytes(msgs[i])
+		msgId := m.Get(`content.org\.matrix\.msgid`).Str
+		if msgId != "" {
+			logger.Info().Str("msgid", msgId).Str("device", deviceID).Msg("ToDeviceTable.Messages")
+		}
 	}
 	upTo = rows[len(rows)-1].Position
 	return
@@ -117,6 +123,10 @@ func (t *ToDeviceTable) InsertMessages(deviceID string, msgs []json.RawMessage) 
 				Message:  string(msgs[i]),
 				Type:     m.Get("type").Str,
 				Sender:   m.Get("sender").Str,
+			}
+			msgId := m.Get(`content.org\.matrix\.msgid`).Str
+			if msgId != "" {
+				logger.Debug().Str("msgid", msgId).Str("device", deviceID).Msg("ToDeviceTable.InsertMessages")
 			}
 			switch rows[i].Type {
 			case "m.room_key_request":

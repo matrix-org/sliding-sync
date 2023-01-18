@@ -3,8 +3,6 @@ package state
 import (
 	"testing"
 	"time"
-
-	"github.com/jmoiron/sqlx"
 )
 
 func assertTxns(t *testing.T, gotEventToTxn map[string]string, wantEventToTxn map[string]string) {
@@ -25,10 +23,8 @@ func assertTxns(t *testing.T, gotEventToTxn map[string]string, wantEventToTxn ma
 }
 
 func TestTransactionTable(t *testing.T) {
-	db, err := sqlx.Open("postgres", postgresConnectionString)
-	if err != nil {
-		t.Fatalf("failed to open SQL db: %s", err)
-	}
+	db, close := connectToDB(t)
+	defer close()
 	userID := "@alice:txns"
 	eventA := "$A"
 	eventB := "$B"

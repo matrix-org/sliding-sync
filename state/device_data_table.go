@@ -66,6 +66,9 @@ func (t *DeviceDataTable) Select(userID, deviceID string, swap bool) (dd *intern
 		n := tempDD.DeviceLists.New
 		tempDD.DeviceLists.Sent = n
 		tempDD.DeviceLists.New = make(map[string]int)
+		// reset changed bits
+		changedBits := tempDD.ChangedBits
+		tempDD.ChangedBits = 0
 
 		// re-marshal and write
 		data, err := json.Marshal(tempDD)
@@ -74,29 +77,9 @@ func (t *DeviceDataTable) Select(userID, deviceID string, swap bool) (dd *intern
 		}
 		_, err = t.db.Exec(`UPDATE syncv3_device_data SET data=$1 WHERE user_id=$2 AND device_id=$3`, data, userID, deviceID)
 		dd = &tempDD
+		dd.ChangedBits = changedBits
 		return err
 	})
-	return
-}
-
-func (t *DeviceDataTable) SelectFrom(pos int64) (results []internal.DeviceData, nextPos int64, err error) {
-	nextPos = pos
-	var rows []DeviceDataRow
-	err = t.db.Select(&rows, `SELECT id, user_id, device_id, data FROM syncv3_device_data WHERE id > $1 ORDER BY id ASC`, pos)
-	if err != nil {
-		return
-	}
-	results = make([]internal.DeviceData, len(rows))
-	for i := range rows {
-		var dd internal.DeviceData
-		if err = json.Unmarshal(rows[i].Data, &dd); err != nil {
-			return
-		}
-		dd.UserID = rows[i].UserID
-		dd.DeviceID = rows[i].DeviceID
-		results[i] = dd
-		nextPos = rows[i].ID
-	}
 	return
 }
 
@@ -118,9 +101,11 @@ func (t *DeviceDataTable) Upsert(dd *internal.DeviceData) (pos int64, err error)
 		}
 		if dd.FallbackKeyTypes != nil {
 			tempDD.FallbackKeyTypes = dd.FallbackKeyTypes
+			tempDD.SetFallbackKeysChanged()
 		}
 		if dd.OTKCounts != nil {
 			tempDD.OTKCounts = dd.OTKCounts
+			tempDD.SetOTKCountChanged()
 		}
 		tempDD.DeviceLists = tempDD.DeviceLists.Combine(dd.DeviceLists)
 

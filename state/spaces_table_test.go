@@ -6,8 +6,6 @@ import (
 	"reflect"
 	"sort"
 	"testing"
-
-	"github.com/jmoiron/sqlx"
 )
 
 func matchAnyOrder(t *testing.T, gots, wants []SpaceRelation) {
@@ -35,10 +33,8 @@ func noError(t *testing.T, err error) {
 }
 
 func TestSpacesTable(t *testing.T) {
-	db, err := sqlx.Open("postgres", postgresConnectionString)
-	if err != nil {
-		t.Fatalf("failed to open SQL db: %s", err)
-	}
+	db, close := connectToDB(t)
+	defer close()
 	txn, err := db.Beginx()
 	if err != nil {
 		t.Fatalf("failed to start txn: %s", err)
@@ -220,10 +216,8 @@ func TestNewSpaceRelationFromEvent(t *testing.T) {
 }
 
 func TestHandleSpaceUpdates(t *testing.T) {
-	db, err := sqlx.Open("postgres", postgresConnectionString)
-	if err != nil {
-		t.Fatalf("failed to open SQL db: %s", err)
-	}
+	db, close := connectToDB(t)
+	defer close()
 	txn, err := db.Beginx()
 	if err != nil {
 		t.Fatalf("failed to start txn: %s", err)

@@ -1,10 +1,11 @@
 package extensions
 
 import (
+	"context"
 	"os"
+	"runtime/trace"
 
 	"github.com/matrix-org/sliding-sync/state"
-	"github.com/matrix-org/sliding-sync/sync2"
 	"github.com/matrix-org/sliding-sync/sync3/caches"
 	"github.com/rs/zerolog"
 )
@@ -58,13 +59,13 @@ func (e Response) HasData(isInitial bool) bool {
 }
 
 type HandlerInterface interface {
-	Handle(req Request, roomIDToTimeline map[string][]string, isInitial bool) (res Response)
+	Handle(ctx context.Context, req Request, roomIDToTimeline map[string][]string, isInitial bool) (res Response)
 	HandleLiveUpdate(update caches.Update, req Request, res *Response, updateWillReturnResponse, isInitial bool)
 }
 
 type Handler struct {
 	Store       *state.Storage
-	E2EEFetcher sync2.E2EEFetcher
+	E2EEFetcher E2EEFetcher
 	GlobalCache *caches.GlobalCache
 }
 
@@ -78,23 +79,44 @@ func (h *Handler) HandleLiveUpdate(update caches.Update, req Request, res *Respo
 	if req.Receipts != nil && req.Receipts.Enabled {
 		res.Receipts = ProcessLiveReceipts(update, updateWillReturnResponse, req.UserID, req.Receipts)
 	}
+	if req.ToDevice != nil && req.ToDevice.Enabled != nil && *req.ToDevice.Enabled {
+		res.ToDevice = ProcessLiveToDeviceEvents(update, h.Store, req.UserID, req.DeviceID, req.ToDevice)
+	}
+	// only process 'live' e2ee when we aren't going to return data as we need to ensure that we don't calculate this twice
+	// e.g once on incoming request then again due to wakeup
+	if req.E2EE != nil && req.E2EE.Enabled {
+		if res.E2EE != nil && res.E2EE.HasData(false) {
+			return
+		}
+		res.E2EE = ProcessLiveE2EE(update, h.E2EEFetcher, req.UserID, req.DeviceID, req.E2EE)
+	}
 }
 
-func (h *Handler) Handle(req Request, roomIDToTimeline map[string][]string, isInitial bool) (res Response) {
+func (h *Handler) Handle(ctx context.Context, req Request, roomIDToTimeline map[string][]string, isInitial bool) (res Response) {
 	if req.ToDevice != nil && req.ToDevice.Enabled != nil && *req.ToDevice.Enabled {
-		res.ToDevice = ProcessToDevice(h.Store, req.UserID, req.DeviceID, req.ToDevice)
+		region := trace.StartRegion(ctx, "extension_to_device")
+		res.ToDevice = ProcessToDevice(h.Store, req.UserID, req.DeviceID, req.ToDevice, isInitial)
+		region.End()
 	}
 	if req.E2EE != nil && req.E2EE.Enabled {
+		region := trace.StartRegion(ctx, "extension_e2ee")
 		res.E2EE = ProcessE2EE(h.E2EEFetcher, req.UserID, req.DeviceID, req.E2EE, isInitial)
+		region.End()
 	}
 	if req.AccountData != nil && req.AccountData.Enabled {
+		region := trace.StartRegion(ctx, "extension_account_data")
 		res.AccountData = ProcessAccountData(h.Store, roomIDToTimeline, req.UserID, isInitial, req.AccountData)
+		region.End()
 	}
 	if req.Typing != nil && req.Typing.Enabled {
+		region := trace.StartRegion(ctx, "extension_typing")
 		res.Typing = ProcessTyping(h.GlobalCache, roomIDToTimeline, req.UserID, isInitial, req.Typing)
+		region.End()
 	}
 	if req.Receipts != nil && req.Receipts.Enabled {
+		region := trace.StartRegion(ctx, "extension_receipts")
 		res.Receipts = ProcessReceipts(h.Store, roomIDToTimeline, req.UserID, isInitial, req.Receipts)
+		region.End()
 	}
 	return
 }

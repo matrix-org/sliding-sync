@@ -5,14 +5,12 @@ import (
 	"encoding/json"
 	"testing"
 
-	"github.com/jmoiron/sqlx"
+	"github.com/tidwall/gjson"
 )
 
 func TestToDeviceTable(t *testing.T) {
-	db, err := sqlx.Open("postgres", postgresConnectionString)
-	if err != nil {
-		t.Fatalf("failed to open SQL db: %s", err)
-	}
+	db, close := connectToDB(t)
+	defer close()
 	table := NewToDeviceTable(db)
 	deviceID := "FOO"
 	var limit int64 = 999
@@ -21,6 +19,7 @@ func TestToDeviceTable(t *testing.T) {
 		json.RawMessage(`{"sender":"bob","type":"something","content":{"foo":"bar2"}}`),
 	}
 	var lastPos int64
+	var err error
 	if lastPos, err = table.InsertMessages(deviceID, msgs); err != nil {
 		t.Fatalf("InsertMessages: %s", err)
 	}
@@ -118,10 +117,8 @@ func TestToDeviceTable(t *testing.T) {
 
 // Test that https://github.com/uhoreg/matrix-doc/blob/drop-stale-to-device/proposals/3944-drop-stale-to-device.md works for m.room_key_request
 func TestToDeviceTableDeleteCancels(t *testing.T) {
-	db, err := sqlx.Open("postgres", postgresConnectionString)
-	if err != nil {
-		t.Fatalf("failed to open SQL db: %s", err)
-	}
+	db, close := connectToDB(t)
+	defer close()
 	sender := "SENDER"
 	destination := "DEST"
 	table := NewToDeviceTable(db)
@@ -129,7 +126,7 @@ func TestToDeviceTableDeleteCancels(t *testing.T) {
 	reqEv1 := newRoomKeyEvent(t, "request", "1", sender, map[string]interface{}{
 		"foo": "bar",
 	})
-	_, err = table.InsertMessages(destination, []json.RawMessage{reqEv1})
+	_, err := table.InsertMessages(destination, []json.RawMessage{reqEv1})
 	assertNoError(t, err)
 	gotMsgs, _, err := table.Messages(destination, 0, 10)
 	assertNoError(t, err)
@@ -188,10 +185,8 @@ func TestToDeviceTableDeleteCancels(t *testing.T) {
 
 // Test that unacked events are safe from deletion
 func TestToDeviceTableNoDeleteUnacks(t *testing.T) {
-	db, err := sqlx.Open("postgres", postgresConnectionString)
-	if err != nil {
-		t.Fatalf("failed to open SQL db: %s", err)
-	}
+	db, close := connectToDB(t)
+	defer close()
 	sender := "SENDER2"
 	destination := "DEST2"
 	table := NewToDeviceTable(db)
@@ -233,7 +228,72 @@ func TestToDeviceTableNoDeleteUnacks(t *testing.T) {
 	}
 	bytesEqual(t, gotMsgs[0], reqEv)
 	bytesEqual(t, gotMsgs[1], cancelEv)
+}
 
+// Guard against possible message truncation?
+func TestToDeviceTableBytesInEqualBytesOut(t *testing.T) {
+	db, close := connectToDB(t)
+	defer close()
+	table := NewToDeviceTable(db)
+	testCases := []json.RawMessage{
+		json.RawMessage(`{}`),
+		json.RawMessage(`{"foo":"bar"}`),
+		json.RawMessage(`{  "foo":   "bar" }`),
+		json.RawMessage(`{ not even valid json :D }`),
+		json.RawMessage(`{ "\~./.-$%_!@£?;'\[]= }`),
+	}
+	var pos int64
+	for _, msg := range testCases {
+		nextPos, err := table.InsertMessages("A", []json.RawMessage{msg})
+		if err != nil {
+			t.Fatalf("InsertMessages: %s", err)
+		}
+		got, _, err := table.Messages("A", pos, 1)
+		if err != nil {
+			t.Fatalf("Messages: %s", err)
+		}
+		bytesEqual(t, got[0], msg)
+		pos = nextPos
+	}
+	// and all at once
+	_, err := table.InsertMessages("B", testCases)
+	if err != nil {
+		t.Fatalf("InsertMessages: %s", err)
+	}
+	got, _, err := table.Messages("B", 0, 100)
+	if err != nil {
+		t.Fatalf("Messages: %s", err)
+	}
+	if len(got) != len(testCases) {
+		t.Fatalf("got %d messages, want %d", len(got), len(testCases))
+	}
+	for i := range testCases {
+		bytesEqual(t, got[i], testCases[i])
+	}
+}
+
+func TestMsgID(t *testing.T) {
+	data := json.RawMessage(`{
+		"content": {
+		  "algorithm": "m.olm.v1.curve25519-aes-sha2",
+		  "ciphertext": {
+			"gMObR+/4dqL5T4DisRRRYBJpn+OjzFnkyCFOktP6Eyw": {
+			  "body": "AwogrdbTbG8VCW....slqU",
+			  "type": 0
+			}
+		  },
+		  "org.matrix.msgid": "6390a372-fd3c-4f56-b0d5-2f2ce39f2d56",
+		  "sender_key": "EWnYTm/yIQ1lStSIqO6fdVYvS69OfU2DzrX+q+1d+w8"
+		},
+		"type": "m.room.encrypted",
+		"sender": "@sample:localhost:8480"
+	  }`)
+	m := gjson.ParseBytes(data)
+	got := m.Get(`content.org\.matrix\.msgid`).Str
+	want := "6390a372-fd3c-4f56-b0d5-2f2ce39f2d56"
+	if got != want {
+		t.Fatalf("got %v want %v", got, want)
+	}
 }
 
 func bytesEqual(t *testing.T, got, want json.RawMessage) {

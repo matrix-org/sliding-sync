@@ -14,7 +14,7 @@ import (
 
 var GitCommit string
 
-const version = "0.98.0"
+const version = "0.98.1"
 
 const (
 	// Possibly required fields depending on the mode

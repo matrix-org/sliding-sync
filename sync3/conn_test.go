@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/matrix-org/sliding-sync/internal"
+	"github.com/matrix-org/sliding-sync/sync3/caches"
 )
 
 type connHandlerMock struct {
@@ -21,8 +22,9 @@ func (c *connHandlerMock) OnIncomingRequest(ctx context.Context, cid ConnID, req
 func (c *connHandlerMock) UserID() string {
 	return "dummy"
 }
-func (c *connHandlerMock) Destroy()    {}
-func (c *connHandlerMock) Alive() bool { return true }
+func (c *connHandlerMock) Destroy()                                           {}
+func (c *connHandlerMock) Alive() bool                                        { return true }
+func (c *connHandlerMock) OnUpdate(ctx context.Context, update caches.Update) {}
 
 // Test that Conn can send and receive requests based on positions
 func TestConn(t *testing.T) {

@@ -7,7 +7,6 @@ import (
 	"sort"
 	"sync"
 
-	"github.com/matrix-org/gomatrixserverlib"
 	"github.com/matrix-org/sliding-sync/internal"
 	"github.com/matrix-org/sliding-sync/state"
 	"github.com/rs/zerolog"
@@ -141,6 +140,9 @@ func (c *GlobalCache) LoadRoomState(ctx context.Context, roomIDs []string, loadP
 	if c.store == nil {
 		return nil
 	}
+	if requiredStateMap.Empty() {
+		return nil
+	}
 	resultMap := make(map[string][]json.RawMessage, len(roomIDs))
 	roomIDToStateEvents, err := c.store.RoomStateAfterEventPosition(ctx, roomIDs, loadPosition, requiredStateMap.QueryStateMap())
 	if err != nil {
@@ -187,15 +189,6 @@ func (c *GlobalCache) Startup(roomIDToMetadata map[string]internal.RoomMetadata)
 	sort.Strings(roomIDs)
 	for _, roomID := range roomIDs {
 		metadata := roomIDToMetadata[roomID]
-		var upgradedRoomID string
-		if metadata.UpgradedRoomID != nil {
-			upgradedRoomID = *metadata.UpgradedRoomID
-		}
-		logger.Debug().Str("room", roomID).Interface(
-			"recent", gomatrixserverlib.Timestamp(metadata.LastMessageTimestamp).Time(),
-		).Bool("encrypted", metadata.Encrypted).Str("tombstone", upgradedRoomID).Int("joins", metadata.JoinCount).Msg(
-			"",
-		)
 		internal.Assert("room ID is set", metadata.RoomID != "")
 		internal.Assert("last message timestamp exists", metadata.LastMessageTimestamp > 1)
 		c.roomIDToMetadata[roomID] = &metadata
@@ -207,7 +200,7 @@ func (c *GlobalCache) Startup(roomIDToMetadata map[string]internal.RoomMetadata)
 // Listener function called by dispatcher below
 // =================================================
 
-func (c *GlobalCache) OnEphemeralEvent(roomID string, ephEvent json.RawMessage) {
+func (c *GlobalCache) OnEphemeralEvent(ctx context.Context, roomID string, ephEvent json.RawMessage) {
 	evType := gjson.ParseBytes(ephEvent).Get("type").Str
 	c.roomIDToMetadataMu.Lock()
 	defer c.roomIDToMetadataMu.Unlock()
@@ -227,7 +220,7 @@ func (c *GlobalCache) OnEphemeralEvent(roomID string, ephEvent json.RawMessage) 
 }
 
 func (c *GlobalCache) OnNewEvent(
-	ed *EventData,
+	ctx context.Context, ed *EventData,
 ) {
 	// update global state
 	c.roomIDToMetadataMu.Lock()

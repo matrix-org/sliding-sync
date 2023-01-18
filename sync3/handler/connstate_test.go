@@ -18,7 +18,7 @@ import (
 
 type NopExtensionHandler struct{}
 
-func (h *NopExtensionHandler) Handle(req extensions.Request, listRoomIDs map[string][]string, isInitial bool) (res extensions.Response) {
+func (h *NopExtensionHandler) Handle(ctx context.Context, req extensions.Request, listRoomIDs map[string][]string, isInitial bool) (res extensions.Response) {
 	return
 }
 
@@ -155,7 +155,7 @@ func TestConnStateInitial(t *testing.T) {
 
 	// bump A to the top
 	newEvent := testutils.NewEvent(t, "unimportant", "me", struct{}{}, testutils.WithTimestamp(timestampNow.Add(1*time.Second)))
-	dispatcher.OnNewEvents(roomA.RoomID, []json.RawMessage{
+	dispatcher.OnNewEvents(context.Background(), roomA.RoomID, []json.RawMessage{
 		newEvent,
 	}, 1)
 
@@ -197,7 +197,7 @@ func TestConnStateInitial(t *testing.T) {
 
 	// another message should just update
 	newEvent = testutils.NewEvent(t, "unimportant", "me", struct{}{}, testutils.WithTimestamp(timestampNow.Add(2*time.Second)))
-	dispatcher.OnNewEvents(roomA.RoomID, []json.RawMessage{
+	dispatcher.OnNewEvents(context.Background(), roomA.RoomID, []json.RawMessage{
 		newEvent,
 	}, 2)
 	res, err = cs.OnIncomingRequest(context.Background(), ConnID, &sync3.Request{
@@ -330,7 +330,7 @@ func TestConnStateMultipleRanges(t *testing.T) {
 	// 8,0,1,2,3,4,5,6,7,9
 	//
 	newEvent := testutils.NewEvent(t, "unimportant", "me", struct{}{}, testutils.WithTimestamp(timestampNow.Time().Add(2*time.Second)))
-	dispatcher.OnNewEvents(roomIDs[8], []json.RawMessage{
+	dispatcher.OnNewEvents(context.Background(), roomIDs[8], []json.RawMessage{
 		newEvent,
 	}, 1)
 
@@ -372,7 +372,7 @@ func TestConnStateMultipleRanges(t *testing.T) {
 	// 8,0,1,9,2,3,4,5,6,7 room
 	middleTimestamp := int64((roomIDToRoom[roomIDs[1]].LastMessageTimestamp + roomIDToRoom[roomIDs[2]].LastMessageTimestamp) / 2)
 	newEvent = testutils.NewEvent(t, "unimportant", "me", struct{}{}, testutils.WithTimestamp(gomatrixserverlib.Timestamp(middleTimestamp).Time()))
-	dispatcher.OnNewEvents(roomIDs[9], []json.RawMessage{
+	dispatcher.OnNewEvents(context.Background(), roomIDs[9], []json.RawMessage{
 		newEvent,
 	}, 1)
 	t.Logf("new event %s : %s", roomIDs[9], string(newEvent))
@@ -477,7 +477,7 @@ func TestBumpToOutsideRange(t *testing.T) {
 
 	// D gets bumped to C's position but it's still outside the range so nothing should happen
 	newEvent := testutils.NewEvent(t, "unimportant", "me", struct{}{}, testutils.WithTimestamp(gomatrixserverlib.Timestamp(roomC.LastMessageTimestamp+2).Time()))
-	dispatcher.OnNewEvents(roomD.RoomID, []json.RawMessage{
+	dispatcher.OnNewEvents(context.Background(), roomD.RoomID, []json.RawMessage{
 		newEvent,
 	}, 1)
 
@@ -612,7 +612,7 @@ func TestConnStateRoomSubscriptions(t *testing.T) {
 	})
 	// room D gets a new event but it's so old it doesn't bump to the top of the list
 	newEvent := testutils.NewEvent(t, "unimportant", "me", struct{}{}, testutils.WithTimestamp(gomatrixserverlib.Timestamp(timestampNow-20000).Time()))
-	dispatcher.OnNewEvents(roomD.RoomID, []json.RawMessage{
+	dispatcher.OnNewEvents(context.Background(), roomD.RoomID, []json.RawMessage{
 		newEvent,
 	}, 1)
 	// we should get this message even though it's not in the range because we are subscribed to this room.

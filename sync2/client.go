@@ -18,7 +18,7 @@ var ProxyVersion = ""
 
 type Client interface {
 	WhoAmI(accessToken string) (string, error)
-	DoSyncV2(ctx context.Context, accessToken, since string, isFirst bool) (*SyncResponse, int, error)
+	DoSyncV2(ctx context.Context, accessToken, since string, isFirst bool, toDeviceOnly bool) (*SyncResponse, int, error)
 }
 
 // HTTPClient represents a Sync v2 Client.
@@ -52,23 +52,9 @@ func (v *HTTPClient) WhoAmI(accessToken string) (string, error) {
 
 // DoSyncV2 performs a sync v2 request. Returns the sync response and the response status code
 // or an error. Set isFirst=true on the first sync to force a timeout=0 sync to ensure snapiness.
-func (v *HTTPClient) DoSyncV2(ctx context.Context, accessToken, since string, isFirst bool) (*SyncResponse, int, error) {
-	qps := "?"
-	if isFirst { // first time syncing in this process
-		qps += "timeout=0"
-	} else {
-		qps += "timeout=30000"
-	}
-	if since != "" {
-		qps += "&since=" + since
-	} else {
-		qps += "&filter=" + url.QueryEscape(
-			`{"room":{"timeline":{"limit":1}}}`,
-		)
-	}
-	req, err := http.NewRequest(
-		"GET", v.DestinationServer+"/_matrix/client/r0/sync"+qps, nil,
-	)
+func (v *HTTPClient) DoSyncV2(ctx context.Context, accessToken, since string, isFirst, toDeviceOnly bool) (*SyncResponse, int, error) {
+	syncURL := v.createSyncURL(since, isFirst, toDeviceOnly)
+	req, err := http.NewRequest("GET", syncURL, nil)
 	req.Header.Set("User-Agent", "sync-v3-proxy-"+ProxyVersion)
 	req.Header.Set("Authorization", "Bearer "+accessToken)
 	if err != nil {
@@ -88,6 +74,38 @@ func (v *HTTPClient) DoSyncV2(ctx context.Context, accessToken, since string, is
 	default:
 		return nil, res.StatusCode, fmt.Errorf("DoSyncV2: response returned %s", res.Status)
 	}
+}
+
+func (v *HTTPClient) createSyncURL(since string, isFirst, toDeviceOnly bool) string {
+	qps := "?"
+	if isFirst { // first time syncing in this process
+		qps += "timeout=0"
+	} else {
+		qps += "timeout=30000"
+	}
+	if since != "" {
+		qps += "&since=" + since
+	}
+
+	timelineLimitOne := since == ""
+	if timelineLimitOne || toDeviceOnly {
+		room := map[string]interface{}{}
+		if timelineLimitOne {
+			room["timeline"] = map[string]interface{}{
+				"limit": 1,
+			}
+		}
+		if toDeviceOnly {
+			// no rooms match this filter, so we get everything but room data
+			room["rooms"] = []string{}
+		}
+		filter := map[string]interface{}{
+			"room": room,
+		}
+		filterJSON, _ := json.Marshal(filter)
+		qps += "&filter=" + url.QueryEscape(string(filterJSON))
+	}
+	return v.DestinationServer + "/_matrix/client/r0/sync" + qps
 }
 
 type SyncResponse struct {

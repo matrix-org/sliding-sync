@@ -37,6 +37,7 @@ const (
 )
 
 type testV2Server struct {
+	CheckRequest            func(userID, token string, req *http.Request)
 	mu                      *sync.Mutex
 	tokenToUser             map[string]string
 	queues                  map[string]chan sync2.SyncResponse
@@ -50,8 +51,8 @@ func (s *testV2Server) addAccount(userID, token string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.tokenToUser[token] = userID
-	s.queues[userID] = make(chan sync2.SyncResponse, 100)
-	s.waiting[userID] = &sync.Cond{
+	s.queues[token] = make(chan sync2.SyncResponse, 100)
+	s.waiting[token] = &sync.Cond{
 		L: &sync.Mutex{},
 	}
 }
@@ -87,31 +88,55 @@ func (s *testV2Server) userID(token string) string {
 	return s.tokenToUser[token]
 }
 
-func (s *testV2Server) queueResponse(userID string, resp sync2.SyncResponse) {
+func (s *testV2Server) queueResponse(userIDOrToken string, resp sync2.SyncResponse) {
 	s.mu.Lock()
-	ch := s.queues[userID]
+	ch := s.queues[userIDOrToken]
+	if ch == nil {
+		// try to find a token for this user
+		for token, userID := range s.tokenToUser {
+			if userIDOrToken == userID {
+				userIDOrToken = token
+				break
+			}
+		}
+		ch = s.queues[userIDOrToken]
+	}
 	s.mu.Unlock()
 	ch <- resp
 	if !testutils.Quiet {
-		log.Printf("testV2Server: enqueued v2 response for %s (%d join rooms)", userID, len(resp.Rooms.Join))
+		log.Printf("testV2Server: enqueued v2 response for %s (%d join rooms)", userIDOrToken, len(resp.Rooms.Join))
 	}
 }
 
 // blocks until nextResponse is called with an empty channel (that is, the server has caught up with v2 responses)
-func (s *testV2Server) waitUntilEmpty(t *testing.T, userID string) {
+func (s *testV2Server) waitUntilEmpty(t *testing.T, userIDOrToken string) {
 	t.Helper()
 	s.mu.Lock()
-	cond := s.waiting[userID]
+	// find the
+	cond := s.waiting[userIDOrToken]
+	if cond == nil {
+		// find the token for this user
+		for token, userID := range s.tokenToUser {
+			if userID == userIDOrToken {
+				userIDOrToken = token
+				break
+			}
+		}
+		cond = s.waiting[userIDOrToken]
+	}
+	if cond == nil {
+		t.Fatalf("waitUntilEmpty: cannot find active Cond for userID or token: %s - aware of %+v", userIDOrToken, s.tokenToUser)
+	}
 	s.mu.Unlock()
 	cond.L.Lock()
 	cond.Wait()
 	cond.L.Unlock()
 }
 
-func (s *testV2Server) nextResponse(userID string) *sync2.SyncResponse {
+func (s *testV2Server) nextResponse(userID, token string) *sync2.SyncResponse {
 	s.mu.Lock()
-	ch := s.queues[userID]
-	cond := s.waiting[userID]
+	ch := s.queues[token]
+	cond := s.waiting[token]
 	s.mu.Unlock()
 	if ch == nil {
 		log.Fatalf("testV2Server: nextResponse called with %s but there is no chan for this user", userID)
@@ -187,7 +212,10 @@ func runTestV2Server(t testutils.TestBenchInterface) *testV2Server {
 			server.mu.Unlock()
 			return
 		}
-		resp := server.nextResponse(userID)
+		if server.CheckRequest != nil {
+			server.CheckRequest(userID, token, req)
+		}
+		resp := server.nextResponse(userID, token)
 		body, err := json.Marshal(resp)
 		if err != nil {
 			w.WriteHeader(500)

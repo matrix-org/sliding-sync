@@ -1,17 +1,19 @@
-FROM docker.io/golang:1.17-alpine AS base
+FROM docker.io/golang:1.19-alpine AS base
 
 WORKDIR /build
 
-COPY . /build
-RUN apk --update --no-cache add bash build-base git && mkdir -p bin
-RUN GIT_COMMIT=$(git rev-list -1 HEAD) && \
-  go build -ldflags "-X main.GitCommit=$GIT_COMMIT" -trimpath -o bin/ ./cmd/syncv3
+RUN apk --update --no-cache add build-base git
+RUN --mount=target=. \
+    --mount=type=cache,target=/root/.cache/go-build \
+    --mount=type=cache,target=/go/pkg/mod \
+  GIT_COMMIT=$(git rev-list -1 HEAD) && \
+  go build -ldflags "-X main.GitCommit=$GIT_COMMIT" -trimpath -o /out/ ./cmd/syncv3
 
-FROM alpine:latest
-
-COPY --from=base /build/bin/* /usr/bin/
+FROM alpine:3.17
 
 RUN apk --update --no-cache add curl
+COPY --from=base /out/* /usr/bin/
+
 ENV SYNCV3_BINDADDR="0.0.0.0:8008"
 EXPOSE 8008
 

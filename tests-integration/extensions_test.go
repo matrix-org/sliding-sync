@@ -2,7 +2,6 @@ package syncv3
 
 import (
 	"encoding/json"
-	"fmt"
 	"testing"
 	"time"
 
@@ -50,7 +49,16 @@ func TestExtensionE2EE(t *testing.T) {
 	})
 	m.MatchResponse(t, res, m.MatchOTKCounts(otkCounts), m.MatchFallbackKeyTypes(fallbackKeyTypes))
 
-	// check that OTK counts / fallback key types remain constant when they aren't included in the v2 response.
+	// Dummy request as we will see the same otk/fallback keys twice initially
+	res = v3.mustDoV3RequestWithPos(t, aliceToken, res.Pos, sync3.Request{
+		Lists: []sync3.RequestList{{
+			Ranges: sync3.SliceRanges{
+				[2]int64{0, 10}, // doesn't matter
+			},
+		}},
+	})
+
+	// check that OTK counts / fallback key types aren't present afterwards as they haven't changed.
 	// Do this by feeding in a new joined room
 	v2.queueResponse(alice, sync2.SyncResponse{
 		Rooms: sync2.SyncRoomsResponse{
@@ -61,6 +69,7 @@ func TestExtensionE2EE(t *testing.T) {
 			}),
 		},
 	})
+	v2.waitUntilEmpty(t, alice)
 	res = v3.mustDoV3RequestWithPos(t, aliceToken, res.Pos, sync3.Request{
 		Lists: map[string]sync3.RequestList{"a": {
 			Ranges: sync3.SliceRanges{
@@ -69,10 +78,9 @@ func TestExtensionE2EE(t *testing.T) {
 		}},
 		// skip enabled: true as it should be sticky
 	})
-	m.MatchResponse(t, res, m.MatchOTKCounts(otkCounts), m.MatchFallbackKeyTypes(fallbackKeyTypes))
+	m.MatchResponse(t, res, m.MatchNoE2EEExtension()) // No E2EE changes = no extension
 
 	// check that OTK counts update when they are included in the v2 response
-	// check fallback key types persist when not included
 	otkCounts = map[string]int{
 		"curve25519":        99,
 		"signed_curve25519": 999,
@@ -87,14 +95,8 @@ func TestExtensionE2EE(t *testing.T) {
 				[2]int64{0, 10}, // doesn't matter
 			},
 		}},
-		// enable the E2EE extension
-		Extensions: extensions.Request{
-			E2EE: &extensions.E2EERequest{
-				Enabled: true,
-			},
-		},
 	})
-	m.MatchResponse(t, res, m.MatchOTKCounts(otkCounts), m.MatchFallbackKeyTypes(fallbackKeyTypes))
+	m.MatchResponse(t, res, m.MatchOTKCounts(otkCounts), m.MatchFallbackKeyTypes(nil))
 
 	// check that changed|left get passed to v3
 	wantChanged := []string{"bob"}
@@ -152,6 +154,7 @@ func TestExtensionE2EE(t *testing.T) {
 			}),
 		},
 	})
+	v2.waitUntilEmpty(t, alice)
 	res = v3.mustDoV3RequestWithPos(t, aliceToken, res.Pos, sync3.Request{
 		Lists: map[string]sync3.RequestList{"a": {
 			Ranges: sync3.SliceRanges{
@@ -165,12 +168,31 @@ func TestExtensionE2EE(t *testing.T) {
 			},
 		},
 	})
-	m.MatchResponse(t, res, func(res *sync3.Response) error {
-		if res.Extensions.E2EE.DeviceLists != nil {
-			return fmt.Errorf("e2ee device lists present when it shouldn't be")
-		}
-		return nil
+	m.MatchResponse(t, res, m.MatchNoE2EEExtension())
+
+	// Check that OTK counts are immediately sent to the client
+	otkCounts = map[string]int{
+		"curve25519":        42,
+		"signed_curve25519": 420,
+	}
+	v2.queueResponse(alice, sync2.SyncResponse{
+		DeviceListsOTKCount: otkCounts,
 	})
+	v2.waitUntilEmpty(t, alice)
+	req := sync3.Request{
+		Lists: []sync3.RequestList{{
+			Ranges: sync3.SliceRanges{
+				[2]int64{0, 10}, // doesn't matter
+			},
+		}},
+	}
+	req.SetTimeoutMSecs(500)
+	start := time.Now()
+	res = v3.mustDoV3RequestWithPos(t, aliceToken, res.Pos, req)
+	m.MatchResponse(t, res, m.MatchOTKCounts(otkCounts))
+	if time.Since(start) >= (500 * time.Millisecond) {
+		t.Fatalf("sync request did not return immediately with OTK counts")
+	}
 }
 
 // Checks that to-device messages are passed from v2 to v3
@@ -318,7 +340,39 @@ func TestExtensionToDevice(t *testing.T) {
 			},
 		},
 	})
+  
 	m.MatchResponse(t, res, m.MatchList("a", m.MatchV3Count(0)), m.MatchToDeviceMessages([]json.RawMessage{}))
+
+	// live stream and block, then send a to-device msg which should go through immediately
+	start := time.Now()
+	go func() {
+		time.Sleep(500 * time.Millisecond)
+		t.Logf("sending to-device msgs %v", time.Now())
+		v2.queueResponse(alice, sync2.SyncResponse{
+			ToDevice: sync2.EventsResponse{
+				Events: newToDeviceMsgs,
+			},
+		})
+	}()
+	req := sync3.Request{
+		Lists: map[string]sync3.RequestList{"a": {
+			Ranges: sync3.SliceRanges{
+				[2]int64{0, 10}, // doesn't matter
+			},
+		}},
+		Extensions: extensions.Request{
+			ToDevice: &extensions.ToDeviceRequest{
+				Since: sinceBeforeMsgs,
+			},
+		},
+	}
+	req.SetTimeoutMSecs(1000)
+	t.Logf("sending sync request %v", time.Now())
+	res = v3.mustDoV3RequestWithPos(t, aliceToken, res.Pos, req)
+	if time.Since(start) >= time.Second {
+		t.Fatalf("new to-device msg did not unblock sync request, took: %v", time.Since(start))
+	}
+	m.MatchResponse(t, res, m.MatchList("a", m.MatchV3Count(0)), m.MatchToDeviceMessages(newToDeviceMsgs))
 }
 
 // tests that the account data extension works:

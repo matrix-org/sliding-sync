@@ -20,6 +20,7 @@ type V2Listener interface {
 	OnDeviceData(p *V2DeviceData)
 	OnTyping(p *V2Typing)
 	OnReceipt(p *V2Receipt)
+	OnDeviceMessages(p *V2DeviceMessages)
 }
 
 type V2Initialise struct {
@@ -76,7 +77,8 @@ type V2InitialSyncComplete struct {
 func (*V2InitialSyncComplete) Type() string { return "V2InitialSyncComplete" }
 
 type V2DeviceData struct {
-	Pos int64
+	DeviceID string
+	Pos      int64
 }
 
 func (*V2DeviceData) Type() string { return "V2DeviceData" }
@@ -94,6 +96,13 @@ type V2Receipt struct {
 }
 
 func (*V2Receipt) Type() string { return "V2Receipt" }
+
+type V2DeviceMessages struct {
+	UserID   string
+	DeviceID string
+}
+
+func (*V2DeviceMessages) Type() string { return "V2DeviceMessages" }
 
 type V2Sub struct {
 	listener Listener
@@ -133,6 +142,8 @@ func (v *V2Sub) onMessage(p Payload) {
 		v.receiver.OnDeviceData(pl)
 	case *V2Typing:
 		v.receiver.OnTyping(pl)
+	case *V2DeviceMessages:
+		v.receiver.OnDeviceMessages(pl)
 	default:
 		logger.Warn().Str("type", p.Type()).Msg("V2Sub: unhandled payload type")
 	}

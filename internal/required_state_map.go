@@ -62,6 +62,13 @@ func (rsm *RequiredStateMap) Include(evType, stateKey string) bool {
 	return false
 }
 
+func (rsm *RequiredStateMap) Empty() bool {
+	return !rsm.allState && !rsm.lazyLoading &&
+		len(rsm.eventTypeToStateKeys) == 0 &&
+		len(rsm.stateKeysForWildcardEventType) == 0 &&
+		len(rsm.eventTypesWithWildcardStateKeys) == 0
+}
+
 // work out what to ask the storage layer: if we have wildcard event types we need to pull all
 // room state and cannot only pull out certain event types. If we have wildcard state keys we
 // need to use an empty list for state keys.

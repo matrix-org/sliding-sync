@@ -6,7 +6,6 @@ import (
 	"sort"
 	"testing"
 
-	"github.com/jmoiron/sqlx"
 	"github.com/matrix-org/sliding-sync/internal"
 )
 
@@ -33,10 +32,8 @@ func parsedReceiptsEqual(t *testing.T, got, want []internal.Receipt) {
 }
 
 func TestReceiptTable(t *testing.T) {
-	db, err := sqlx.Open("postgres", postgresConnectionString)
-	if err != nil {
-		t.Fatalf("failed to open SQL db: %s", err)
-	}
+	db, close := connectToDB(t)
+	defer close()
 	roomA := "!A:ReceiptTable"
 	roomB := "!B:ReceiptTable"
 	edu := json.RawMessage(`{

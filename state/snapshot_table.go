@@ -8,9 +8,10 @@ import (
 )
 
 type SnapshotRow struct {
-	SnapshotID int64         `db:"snapshot_id"`
-	RoomID     string        `db:"room_id"`
-	Events     pq.Int64Array `db:"events"`
+	SnapshotID       int64         `db:"snapshot_id"`
+	RoomID           string        `db:"room_id"`
+	OtherEvents      pq.Int64Array `db:"events"`
+	MembershipEvents pq.Int64Array `db:"membership_events"`
 }
 
 // SnapshotTable stores room state snapshots. Each snapshot has a unique numeric ID.
@@ -27,6 +28,7 @@ func NewSnapshotsTable(db *sqlx.DB) *SnapshotTable {
 		snapshot_id BIGINT PRIMARY KEY DEFAULT nextval('syncv3_snapshots_seq'),
 		room_id TEXT NOT NULL,
 		events BIGINT[] NOT NULL,
+		membership_events BIGINT[] NOT NULL,
 		UNIQUE(snapshot_id, room_id)
 	);
 	`)
@@ -35,7 +37,7 @@ func NewSnapshotsTable(db *sqlx.DB) *SnapshotTable {
 
 func (t *SnapshotTable) CurrentSnapshots(txn *sqlx.Tx) (map[string][]int64, error) {
 	rows, err := txn.Query(
-		`SELECT syncv3_rooms.room_id, events FROM syncv3_snapshots JOIN syncv3_rooms ON syncv3_snapshots.snapshot_id = syncv3_rooms.current_snapshot_id`,
+		`SELECT syncv3_rooms.room_id, events, membership_events FROM syncv3_snapshots JOIN syncv3_rooms ON syncv3_snapshots.snapshot_id = syncv3_rooms.current_snapshot_id`,
 	)
 	if err != nil {
 		return nil, err
@@ -44,11 +46,12 @@ func (t *SnapshotTable) CurrentSnapshots(txn *sqlx.Tx) (map[string][]int64, erro
 	defer rows.Close()
 	for rows.Next() {
 		var eventNIDs pq.Int64Array
+		var memberEventNIDs pq.Int64Array
 		var roomID string
-		if err = rows.Scan(&roomID, &eventNIDs); err != nil {
+		if err = rows.Scan(&roomID, &eventNIDs, &memberEventNIDs); err != nil {
 			return nil, err
 		}
-		result[roomID] = eventNIDs
+		result[roomID] = append(eventNIDs, memberEventNIDs...)
 	}
 	return result, nil
 }
@@ -66,7 +69,16 @@ func (s *SnapshotTable) Select(txn *sqlx.Tx, snapshotID int64) (row SnapshotRow,
 // Insert the row. Modifies SnapshotID to be the inserted primary key.
 func (s *SnapshotTable) Insert(txn *sqlx.Tx, row *SnapshotRow) error {
 	var id int64
-	err := txn.QueryRow(`INSERT INTO syncv3_snapshots(room_id, events) VALUES($1, $2) RETURNING snapshot_id`, row.RoomID, row.Events).Scan(&id)
+	if row.MembershipEvents == nil {
+		row.MembershipEvents = []int64{}
+	}
+	if row.OtherEvents == nil {
+		row.OtherEvents = []int64{}
+	}
+	err := txn.QueryRow(
+		`INSERT INTO syncv3_snapshots(room_id, events, membership_events) VALUES($1, $2, $3) RETURNING snapshot_id`,
+		row.RoomID, row.OtherEvents, row.MembershipEvents,
+	).Scan(&id)
 	row.SnapshotID = id
 	return err
 }

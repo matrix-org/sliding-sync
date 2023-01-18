@@ -2,15 +2,11 @@ package state
 
 import (
 	"testing"
-
-	"github.com/jmoiron/sqlx"
 )
 
 func TestUnreadTable(t *testing.T) {
-	db, err := sqlx.Open("postgres", postgresConnectionString)
-	if err != nil {
-		t.Fatalf("failed to open SQL db: %s", err)
-	}
+	db, close := connectToDB(t)
+	defer close()
 	table := NewUnreadTable(db)
 	userID := "@alice:localhost"
 	roomA := "!TestUnreadTableA:localhost"

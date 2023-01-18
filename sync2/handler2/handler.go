@@ -117,7 +117,7 @@ func (h *Handler) StartV2Pollers() {
 			defer wg.Done()
 			for d := range ch {
 				h.pMap.EnsurePolling(
-					d.AccessToken, d.UserID, d.DeviceID, d.Since,
+					d.AccessToken, d.UserID, d.DeviceID, d.Since, true,
 					logger.With().Str("user_id", d.UserID).Logger(),
 				)
 				h.v2Pub.Notify(pubsub.ChanV2, &pubsub.V2InitialSyncComplete{
@@ -178,11 +178,12 @@ func (h *Handler) OnE2EEData(userID, deviceID string, otkCounts map[string]int, 
 		return
 	}
 	h.v2Pub.Notify(pubsub.ChanV2, &pubsub.V2DeviceData{
-		Pos: nextPos,
+		DeviceID: deviceID,
+		Pos:      nextPos,
 	})
 }
 
-func (h *Handler) Accumulate(userID, roomID, prevBatch string, timeline []json.RawMessage) {
+func (h *Handler) Accumulate(deviceID, roomID, prevBatch string, timeline []json.RawMessage) {
 	// Remember any transaction IDs that may be unique to this user
 	eventIDToTxnID := make(map[string]string, len(timeline)) // event_id -> txn_id
 	for _, e := range timeline {
@@ -195,9 +196,9 @@ func (h *Handler) Accumulate(userID, roomID, prevBatch string, timeline []json.R
 	}
 	if len(eventIDToTxnID) > 0 {
 		// persist the txn IDs
-		err := h.Store.TransactionsTable.Insert(userID, eventIDToTxnID)
+		err := h.Store.TransactionsTable.Insert(deviceID, eventIDToTxnID)
 		if err != nil {
-			logger.Err(err).Str("user", userID).Int("num_txns", len(eventIDToTxnID)).Msg("failed to persist txn IDs for user")
+			logger.Err(err).Str("device", deviceID).Int("num_txns", len(eventIDToTxnID)).Msg("failed to persist txn IDs for user")
 		}
 	}
 
@@ -260,12 +261,15 @@ func (h *Handler) OnReceipt(userID, roomID, ephEventType string, ephEvent json.R
 	})
 }
 
-// Send nothing, the v3 API will pull from the DB directly; no in-memory shenanigans
 func (h *Handler) AddToDeviceMessages(userID, deviceID string, msgs []json.RawMessage) {
 	_, err := h.Store.ToDeviceTable.InsertMessages(deviceID, msgs)
 	if err != nil {
 		logger.Err(err).Str("user", userID).Str("device", deviceID).Int("msgs", len(msgs)).Msg("V2: failed to store to-device messages")
 	}
+	h.v2Pub.Notify(pubsub.ChanV2, &pubsub.V2DeviceMessages{
+		UserID:   userID,
+		DeviceID: deviceID,
+	})
 }
 
 func (h *Handler) UpdateUnreadCounts(roomID, userID string, highlightCount, notifCount *int) {
@@ -359,7 +363,7 @@ func (h *Handler) EnsurePolling(p *pubsub.V3EnsurePolling) {
 	go func() {
 		// blocks until an initial sync is done
 		h.pMap.EnsurePolling(
-			dev.AccessToken, dev.UserID, dev.DeviceID, dev.Since,
+			dev.AccessToken, dev.UserID, dev.DeviceID, dev.Since, false,
 			logger.With().Str("user_id", dev.UserID).Logger(),
 		)
 		h.updateMetrics()

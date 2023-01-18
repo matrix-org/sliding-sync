@@ -20,7 +20,7 @@ type V2DataReceiver interface {
 	// Update the since token for this device. Called AFTER all other data in this sync response has been processed.
 	UpdateDeviceSince(deviceID, since string)
 	// Accumulate data for this room. This means the timeline section of the v2 response.
-	Accumulate(userID, roomID, prevBatch string, timeline []json.RawMessage) // latest pos with event nids of timeline entries
+	Accumulate(deviceID, roomID, prevBatch string, timeline []json.RawMessage) // latest pos with event nids of timeline entries
 	// Initialise the room, if it hasn't been already. This means the state section of the v2 response.
 	Initialise(roomID string, state []json.RawMessage) // snapshot ID?
 	// SetTyping indicates which users are typing.
@@ -41,15 +41,6 @@ type V2DataReceiver interface {
 	OnE2EEData(userID, deviceID string, otkCounts map[string]int, fallbackKeyTypes []string, deviceListChanges map[string]int)
 	// Sent when the upstream homeserver sends back a 401 invalidating the token
 	OnTerminated(userID, deviceID string)
-}
-
-// Fetcher used by the E2EE extension
-type E2EEFetcher interface {
-	DeviceData(userID, deviceID string, isInitial bool) *internal.DeviceData
-}
-
-type TransactionIDFetcher interface {
-	TransactionIDForEvents(userID string, eventIDs []string) (eventIDToTxnID map[string]string)
 }
 
 // PollerMap is a map of device ID to Poller
@@ -142,9 +133,8 @@ func (h *PollerMap) NumPollers() (count int) {
 // Note that we will immediately return if there is a poller for the same user but a different device.
 // We do this to allow for logins on clients to be snappy fast, even though they won't yet have the
 // to-device msgs to decrypt E2EE roms.
-func (h *PollerMap) EnsurePolling(accessToken, userID, deviceID, v2since string, logger zerolog.Logger) {
+func (h *PollerMap) EnsurePolling(accessToken, userID, deviceID, v2since string, isStartup bool, logger zerolog.Logger) {
 	h.pollerMu.Lock()
-	logger.Info().Str("device", deviceID).Msg("EnsurePolling lock acquired")
 	if !h.executorRunning {
 		h.executorRunning = true
 		go h.execute()
@@ -158,12 +148,6 @@ func (h *PollerMap) EnsurePolling(accessToken, userID, deviceID, v2since string,
 		poller.WaitUntilInitialSync()
 		return
 	}
-	// replace the poller
-	poller = newPoller(userID, accessToken, deviceID, h.v2Client, h, logger)
-	poller.processHistogramVec = h.processHistogramVec
-	go poller.Poll(v2since)
-	h.Pollers[deviceID] = poller
-
 	// check if we need to wait at all: we don't need to if this user is already syncing on a different device
 	// This is O(n) so we may want to map this if we get a lot of users...
 	needToWait := true
@@ -175,6 +159,13 @@ func (h *PollerMap) EnsurePolling(accessToken, userID, deviceID, v2since string,
 			needToWait = false
 		}
 	}
+
+	// replace the poller. If we don't need to wait, then we just want to nab to-device events initially.
+	// We don't do that on startup though as we cannot be sure that other pollers will not be using expired tokens.
+	poller = newPoller(userID, accessToken, deviceID, h.v2Client, h, logger, !needToWait && !isStartup)
+	poller.processHistogramVec = h.processHistogramVec
+	go poller.Poll(v2since)
+	h.Pollers[deviceID] = poller
 
 	h.pollerMu.Unlock()
 	if needToWait {
@@ -193,11 +184,11 @@ func (h *PollerMap) execute() {
 func (h *PollerMap) UpdateDeviceSince(deviceID, since string) {
 	h.callbacks.UpdateDeviceSince(deviceID, since)
 }
-func (h *PollerMap) Accumulate(userID, roomID, prevBatch string, timeline []json.RawMessage) {
+func (h *PollerMap) Accumulate(deviceID, roomID, prevBatch string, timeline []json.RawMessage) {
 	var wg sync.WaitGroup
 	wg.Add(1)
 	h.executor <- func() {
-		h.callbacks.Accumulate(userID, roomID, prevBatch, timeline)
+		h.callbacks.Accumulate(deviceID, roomID, prevBatch, timeline)
 		wg.Done()
 	}
 	wg.Wait()
@@ -299,6 +290,8 @@ type poller struct {
 	receiver    V2DataReceiver
 	logger      zerolog.Logger
 
+	initialToDeviceOnly bool
+
 	// E2EE fields: we keep them so we only send callbacks on deltas not all the time
 	fallbackKeyTypes []string
 	otkCounts        map[string]int
@@ -312,19 +305,20 @@ type poller struct {
 	processHistogramVec *prometheus.HistogramVec
 }
 
-func newPoller(userID, accessToken, deviceID string, client Client, receiver V2DataReceiver, logger zerolog.Logger) *poller {
+func newPoller(userID, accessToken, deviceID string, client Client, receiver V2DataReceiver, logger zerolog.Logger, initialToDeviceOnly bool) *poller {
 	var wg sync.WaitGroup
 	wg.Add(1)
 	return &poller{
-		accessToken: accessToken,
-		userID:      userID,
-		deviceID:    deviceID,
-		client:      client,
-		receiver:    receiver,
-		Terminated:  false,
-		terminateCh: make(chan struct{}),
-		logger:      logger,
-		wg:          &wg,
+		accessToken:         accessToken,
+		userID:              userID,
+		deviceID:            deviceID,
+		client:              client,
+		receiver:            receiver,
+		Terminated:          false,
+		terminateCh:         make(chan struct{}),
+		logger:              logger,
+		wg:                  &wg,
+		initialToDeviceOnly: initialToDeviceOnly,
 	}
 }
 
@@ -375,7 +369,7 @@ func (p *poller) Poll(since string) {
 			break
 		}
 		start := time.Now()
-		resp, statusCode, err := p.client.DoSyncV2(context.Background(), p.accessToken, since, firstTime)
+		resp, statusCode, err := p.client.DoSyncV2(context.Background(), p.accessToken, since, firstTime, p.initialToDeviceOnly)
 		p.trackRequestDuration(time.Since(start), since == "", firstTime)
 		if p.isTerminated() {
 			break
@@ -395,6 +389,7 @@ func (p *poller) Poll(since string) {
 		if since == "" {
 			p.logger.Info().Msg("Poller: valid initial sync response received")
 		}
+		p.initialToDeviceOnly = false
 		start = time.Now()
 		failCount = 0
 		p.parseE2EEData(resp)
@@ -459,31 +454,29 @@ func (p *poller) parseToDeviceMessages(res *SyncResponse) {
 }
 
 func (p *poller) parseE2EEData(res *SyncResponse) {
-	hasE2EEChanges := false
+	var changedOTKCounts map[string]int
 	if res.DeviceListsOTKCount != nil && len(res.DeviceListsOTKCount) > 0 {
 		if len(p.otkCounts) != len(res.DeviceListsOTKCount) {
-			hasE2EEChanges = true
-		}
-		if !hasE2EEChanges && p.otkCounts != nil {
+			changedOTKCounts = res.DeviceListsOTKCount
+		} else if p.otkCounts != nil {
 			for k := range res.DeviceListsOTKCount {
 				if res.DeviceListsOTKCount[k] != p.otkCounts[k] {
-					hasE2EEChanges = true
+					changedOTKCounts = res.DeviceListsOTKCount
 					break
 				}
 			}
 		}
 		p.otkCounts = res.DeviceListsOTKCount
 	}
+	var changedFallbackTypes []string
 	if len(res.DeviceUnusedFallbackKeyTypes) > 0 {
-		if !hasE2EEChanges {
-			if len(p.fallbackKeyTypes) != len(res.DeviceUnusedFallbackKeyTypes) {
-				hasE2EEChanges = true
-			} else {
-				for i := range res.DeviceUnusedFallbackKeyTypes {
-					if res.DeviceUnusedFallbackKeyTypes[i] != p.fallbackKeyTypes[i] {
-						hasE2EEChanges = true
-						break
-					}
+		if len(p.fallbackKeyTypes) != len(res.DeviceUnusedFallbackKeyTypes) {
+			changedFallbackTypes = res.DeviceUnusedFallbackKeyTypes
+		} else {
+			for i := range res.DeviceUnusedFallbackKeyTypes {
+				if res.DeviceUnusedFallbackKeyTypes[i] != p.fallbackKeyTypes[i] {
+					changedFallbackTypes = res.DeviceUnusedFallbackKeyTypes
+					break
 				}
 			}
 		}
@@ -491,12 +484,9 @@ func (p *poller) parseE2EEData(res *SyncResponse) {
 	}
 
 	deviceListChanges := internal.ToDeviceListChangesMap(res.DeviceLists.Changed, res.DeviceLists.Left)
-	if deviceListChanges != nil {
-		hasE2EEChanges = true
-	}
 
-	if hasE2EEChanges {
-		p.receiver.OnE2EEData(p.userID, p.deviceID, p.otkCounts, p.fallbackKeyTypes, deviceListChanges)
+	if deviceListChanges != nil || changedFallbackTypes != nil || changedOTKCounts != nil {
+		p.receiver.OnE2EEData(p.userID, p.deviceID, changedOTKCounts, changedFallbackTypes, deviceListChanges)
 	}
 }
 
@@ -542,13 +532,13 @@ func (p *poller) parseRoomsResponse(res *SyncResponse) {
 		}
 		if len(roomData.Timeline.Events) > 0 {
 			timelineCalls++
-			p.receiver.Accumulate(p.userID, roomID, roomData.Timeline.PrevBatch, roomData.Timeline.Events)
+			p.receiver.Accumulate(p.deviceID, roomID, roomData.Timeline.PrevBatch, roomData.Timeline.Events)
 		}
 	}
 	for roomID, roomData := range res.Rooms.Leave {
 		// TODO: do we care about state?
 		if len(roomData.Timeline.Events) > 0 {
-			p.receiver.Accumulate(p.userID, roomID, roomData.Timeline.PrevBatch, roomData.Timeline.Events)
+			p.receiver.Accumulate(p.deviceID, roomID, roomData.Timeline.PrevBatch, roomData.Timeline.Events)
 		}
 		p.receiver.OnLeftRoom(p.userID, roomID)
 	}

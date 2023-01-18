@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/jmoiron/sqlx"
 	"github.com/tidwall/gjson"
 
 	"github.com/matrix-org/sliding-sync/sqlutil"
@@ -14,10 +13,8 @@ import (
 )
 
 func TestEventTable(t *testing.T) {
-	db, err := sqlx.Open("postgres", postgresConnectionString)
-	if err != nil {
-		t.Fatalf("failed to open SQL db: %s", err)
-	}
+	db, close := connectToDB(t)
+	defer close()
 	txn, err := db.Beginx()
 	if err != nil {
 		t.Fatalf("failed to start txn: %s", err)
@@ -199,10 +196,8 @@ func TestEventTable(t *testing.T) {
 }
 
 func TestEventTableNullValue(t *testing.T) {
-	db, err := sqlx.Open("postgres", postgresConnectionString)
-	if err != nil {
-		t.Fatalf("failed to open SQL db: %s", err)
-	}
+	db, close := connectToDB(t)
+	defer close()
 	txn, err := db.Beginx()
 	if err != nil {
 		t.Fatalf("failed to start txn: %s", err)
@@ -241,10 +236,8 @@ func TestEventTableNullValue(t *testing.T) {
 }
 
 func TestEventTableDupeInsert(t *testing.T) {
-	db, err := sqlx.Open("postgres", postgresConnectionString)
-	if err != nil {
-		t.Fatalf("failed to open SQL db: %s", err)
-	}
+	db, close := connectToDB(t)
+	defer close()
 	// first insert
 	txn, err := db.Beginx()
 	if err != nil {
@@ -303,10 +296,8 @@ func TestEventTableDupeInsert(t *testing.T) {
 }
 
 func TestEventTableSelectEventsBetween(t *testing.T) {
-	db, err := sqlx.Open("postgres", postgresConnectionString)
-	if err != nil {
-		t.Fatalf("failed to open SQL db: %s", err)
-	}
+	db, close := connectToDB(t)
+	defer close()
 	txn, err := db.Beginx()
 	if err != nil {
 		t.Fatalf("failed to start txn: %s", err)
@@ -347,85 +338,85 @@ func TestEventTableSelectEventsBetween(t *testing.T) {
 	}
 	txn.Commit()
 
-	t.Run("selecting multiple events known lower bound", func(t *testing.T) {
-		t.Parallel()
-		txn2, err := db.Beginx()
-		if err != nil {
-			t.Fatalf("failed to start txn: %s", err)
-		}
-		defer txn2.Rollback()
-		events, err := table.SelectByIDs(txn2, true, []string{eventIDs[0]})
-		if err != nil || len(events) == 0 {
-			t.Fatalf("failed to extract event for lower bound: %s", err)
-		}
-		events, err = table.SelectEventsBetween(txn2, searchRoomID, int64(events[0].NID), EventsEnd, 1000)
-		if err != nil {
-			t.Fatalf("failed to SelectEventsBetween: %s", err)
-		}
-		// 3 as 1 is from a different room
-		if len(events) != 3 {
-			t.Fatalf("wanted 3 events, got %d", len(events))
-		}
-	})
-	t.Run("selecting multiple events known lower and upper bound", func(t *testing.T) {
-		t.Parallel()
-		txn3, err := db.Beginx()
-		if err != nil {
-			t.Fatalf("failed to start txn: %s", err)
-		}
-		defer txn3.Rollback()
-		events, err := table.SelectByIDs(txn3, true, []string{eventIDs[0], eventIDs[2]})
-		if err != nil || len(events) == 0 {
-			t.Fatalf("failed to extract event for lower/upper bound: %s", err)
-		}
-		events, err = table.SelectEventsBetween(txn3, searchRoomID, int64(events[0].NID), int64(events[1].NID), 1000)
-		if err != nil {
-			t.Fatalf("failed to SelectEventsBetween: %s", err)
-		}
-		// eventIDs[1] and eventIDs[2]
-		if len(events) != 2 {
-			t.Fatalf("wanted 2 events, got %d", len(events))
-		}
-	})
-	t.Run("selecting multiple events unknown bounds (all events)", func(t *testing.T) {
-		t.Parallel()
-		txn4, err := db.Beginx()
-		if err != nil {
-			t.Fatalf("failed to start txn: %s", err)
-		}
-		defer txn4.Rollback()
-		gotEvents, err := table.SelectEventsBetween(txn4, searchRoomID, EventsStart, EventsEnd, 1000)
-		if err != nil {
-			t.Fatalf("failed to SelectEventsBetween: %s", err)
-		}
-		// one less as one event is for a different room
-		if len(gotEvents) != (len(events) - 1) {
-			t.Fatalf("wanted %d events, got %d", len(events)-1, len(gotEvents))
-		}
-	})
-	t.Run("selecting multiple events hitting the limit", func(t *testing.T) {
-		t.Parallel()
-		txn5, err := db.Beginx()
-		if err != nil {
-			t.Fatalf("failed to start txn: %s", err)
-		}
-		defer txn5.Rollback()
-		limit := 2
-		gotEvents, err := table.SelectEventsBetween(txn5, searchRoomID, EventsStart, EventsEnd, limit)
-		if err != nil {
-			t.Fatalf("failed to SelectEventsBetween: %s", err)
-		}
-		if len(gotEvents) != limit {
-			t.Fatalf("wanted %d events, got %d", limit, len(gotEvents))
-		}
+	t.Run("subgroup", func(t *testing.T) {
+		t.Run("selecting multiple events known lower bound", func(t *testing.T) {
+			t.Parallel()
+			txn2, err := db.Beginx()
+			if err != nil {
+				t.Fatalf("failed to start txn: %s", err)
+			}
+			defer txn2.Rollback()
+			events, err := table.SelectByIDs(txn2, true, []string{eventIDs[0]})
+			if err != nil || len(events) == 0 {
+				t.Fatalf("failed to extract event for lower bound: %s", err)
+			}
+			events, err = table.SelectEventsBetween(txn2, searchRoomID, int64(events[0].NID), EventsEnd, 1000)
+			if err != nil {
+				t.Fatalf("failed to SelectEventsBetween: %s", err)
+			}
+			// 3 as 1 is from a different room
+			if len(events) != 3 {
+				t.Fatalf("wanted 3 events, got %d", len(events))
+			}
+		})
+		t.Run("selecting multiple events known lower and upper bound", func(t *testing.T) {
+			t.Parallel()
+			txn3, err := db.Beginx()
+			if err != nil {
+				t.Fatalf("failed to start txn: %s", err)
+			}
+			defer txn3.Rollback()
+			events, err := table.SelectByIDs(txn3, true, []string{eventIDs[0], eventIDs[2]})
+			if err != nil || len(events) == 0 {
+				t.Fatalf("failed to extract event for lower/upper bound: %s", err)
+			}
+			events, err = table.SelectEventsBetween(txn3, searchRoomID, int64(events[0].NID), int64(events[1].NID), 1000)
+			if err != nil {
+				t.Fatalf("failed to SelectEventsBetween: %s", err)
+			}
+			// eventIDs[1] and eventIDs[2]
+			if len(events) != 2 {
+				t.Fatalf("wanted 2 events, got %d", len(events))
+			}
+		})
+		t.Run("selecting multiple events unknown bounds (all events)", func(t *testing.T) {
+			t.Parallel()
+			txn4, err := db.Beginx()
+			if err != nil {
+				t.Fatalf("failed to start txn: %s", err)
+			}
+			defer txn4.Rollback()
+			gotEvents, err := table.SelectEventsBetween(txn4, searchRoomID, EventsStart, EventsEnd, 1000)
+			if err != nil {
+				t.Fatalf("failed to SelectEventsBetween: %s", err)
+			}
+			// one less as one event is for a different room
+			if len(gotEvents) != (len(events) - 1) {
+				t.Fatalf("wanted %d events, got %d", len(events)-1, len(gotEvents))
+			}
+		})
+		t.Run("selecting multiple events hitting the limit", func(t *testing.T) {
+			t.Parallel()
+			txn5, err := db.Beginx()
+			if err != nil {
+				t.Fatalf("failed to start txn: %s", err)
+			}
+			defer txn5.Rollback()
+			limit := 2
+			gotEvents, err := table.SelectEventsBetween(txn5, searchRoomID, EventsStart, EventsEnd, limit)
+			if err != nil {
+				t.Fatalf("failed to SelectEventsBetween: %s", err)
+			}
+			if len(gotEvents) != limit {
+				t.Fatalf("wanted %d events, got %d", limit, len(gotEvents))
+			}
+		})
 	})
 }
 
 func TestEventTableMembershipDetection(t *testing.T) {
-	db, err := sqlx.Open("postgres", postgresConnectionString)
-	if err != nil {
-		t.Fatalf("failed to open SQL db: %s", err)
-	}
+	db, close := connectToDB(t)
+	defer close()
 	txn, err := db.Beginx()
 	if err != nil {
 		t.Fatalf("failed to start txn: %s", err)
@@ -546,10 +537,8 @@ func TestChunkify(t *testing.T) {
 }
 
 func TestEventTableSelectEventsWithTypeStateKey(t *testing.T) {
-	db, err := sqlx.Open("postgres", postgresConnectionString)
-	if err != nil {
-		t.Fatalf("failed to open SQL db: %s", err)
-	}
+	db, close := connectToDB(t)
+	defer close()
 	txn, err := db.Beginx()
 	if err != nil {
 		t.Fatalf("failed to start txn: %s", err)
@@ -645,10 +634,8 @@ func TestEventTableSelectEventsWithTypeStateKey(t *testing.T) {
 
 // Do a massive insert/select for event IDs (greater than postgres limit) and ensure it works.
 func TestTortureEventTable(t *testing.T) {
-	db, err := sqlx.Open("postgres", postgresConnectionString)
-	if err != nil {
-		t.Fatalf("failed to open SQL db: %s", err)
-	}
+	db, close := connectToDB(t)
+	defer close()
 	txn, err := db.Beginx()
 	if err != nil {
 		t.Fatalf("failed to start txn: %s", err)
@@ -699,10 +686,8 @@ func TestTortureEventTable(t *testing.T) {
 // 3: SelectClosestPrevBatch with an event without a prev_batch returns the next newest (stream order) event with a prev_batch
 // 4: SelectClosestPrevBatch with an event without a prev_batch returns nothing if there are no newer events with a prev_batch
 func TestEventTablePrevBatch(t *testing.T) {
-	db, err := sqlx.Open("postgres", postgresConnectionString)
-	if err != nil {
-		t.Fatalf("failed to open SQL db: %s", err)
-	}
+	db, close := connectToDB(t)
+	defer close()
 	txn, err := db.Beginx()
 	if err != nil {
 		t.Fatalf("failed to start txn: %s", err)
@@ -827,10 +812,8 @@ func TestEventTablePrevBatch(t *testing.T) {
 }
 
 func TestRemoveUnsignedTXNID(t *testing.T) {
-	db, err := sqlx.Open("postgres", postgresConnectionString)
-	if err != nil {
-		t.Fatalf("failed to open SQL db: %s", err)
-	}
+	db, close := connectToDB(t)
+	defer close()
 	txn, err := db.Beginx()
 	if err != nil {
 		t.Fatalf("failed to start txn: %s", err)

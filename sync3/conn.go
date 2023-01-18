@@ -7,6 +7,7 @@ import (
 	"sync"
 
 	"github.com/matrix-org/sliding-sync/internal"
+	"github.com/matrix-org/sliding-sync/sync3/caches"
 )
 
 type ConnID struct {
@@ -22,6 +23,7 @@ type ConnHandler interface {
 	// to send back or an error. Errors of type *internal.HandlerError are inspected for the correct
 	// status code to send back.
 	OnIncomingRequest(ctx context.Context, cid ConnID, req *Request, isInitial bool) (*Response, error)
+	OnUpdate(ctx context.Context, update caches.Update)
 	UserID() string
 	Destroy()
 	Alive() bool
@@ -67,6 +69,10 @@ func (c *Conn) UserID() string {
 
 func (c *Conn) Alive() bool {
 	return c.handler.Alive()
+}
+
+func (c *Conn) OnUpdate(ctx context.Context, update caches.Update) {
+	c.handler.OnUpdate(ctx, update)
 }
 
 func (c *Conn) tryRequest(ctx context.Context, req *Request) (res *Response, err error) {

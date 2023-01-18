@@ -148,7 +148,7 @@ func (s *ConnState) onIncomingRequest(ctx context.Context, req *sync3.Request, i
 	// for it to mix together
 	builder := NewRoomsBuilder()
 	// works out which rooms are subscribed to but doesn't pull room data
-	s.buildRoomSubscriptions(builder, delta.Subs, delta.Unsubs)
+	s.buildRoomSubscriptions(ctx, builder, delta.Subs, delta.Unsubs)
 	// works out how rooms get moved about but doesn't pull room data
 	respLists := s.buildListSubscriptions(ctx, builder, delta.Lists)
 
@@ -169,7 +169,7 @@ func (s *ConnState) onIncomingRequest(ctx context.Context, req *sync3.Request, i
 	// Handle extensions AFTER processing lists as extensions may need to know which rooms the client
 	// is being notified about (e.g. for room account data)
 	region := trace.StartRegion(ctx, "extensions")
-	response.Extensions = s.extensionsHandler.Handle(ex, includedRoomIDs, isInitial)
+	response.Extensions = s.extensionsHandler.Handle(ctx, ex, includedRoomIDs, isInitial)
 	region.End()
 
 	if response.ListOps() > 0 || len(response.Rooms) > 0 || response.Extensions.HasData(isInitial) {
@@ -267,10 +267,10 @@ func (s *ConnState) onIncomingListRequest(ctx context.Context, builder *RoomsBui
 	if len(removedRanges) > 0 {
 		logger.Trace().Interface("range", removedRanges).Msg("INVALIDATEing because ranges were removed")
 	}
-	for _, r := range removedRanges {
+	for i := range removedRanges {
 		responseOperations = append(responseOperations, &sync3.ResponseOpRange{
 			Operation: sync3.OpInvalidate,
-			Range:     r[:],
+			Range:     removedRanges[i][:],
 		})
 	}
 
@@ -303,6 +303,7 @@ func (s *ConnState) onIncomingListRequest(ctx context.Context, builder *RoomsBui
 }
 
 func (s *ConnState) buildListSubscriptions(ctx context.Context, builder *RoomsBuilder, listDeltas map[string]sync3.RequestListDelta) map[string]sync3.ResponseList {
+  defer trace.StartRegion(ctx, "buildListSubscriptions").End()
 	result := make(map[string]sync3.ResponseList, len(s.muxedReq.Lists))
 	// loop each list and handle each independently
 	for listKey, list := range listDeltas {
@@ -317,7 +318,8 @@ func (s *ConnState) buildListSubscriptions(ctx context.Context, builder *RoomsBu
 	return result
 }
 
-func (s *ConnState) buildRoomSubscriptions(builder *RoomsBuilder, subs, unsubs []string) {
+func (s *ConnState) buildRoomSubscriptions(ctx context.Context, builder *RoomsBuilder, subs, unsubs []string) {
+	defer trace.StartRegion(ctx, "buildRoomSubscriptions").End()
 	for _, roomID := range subs {
 		// check that the user is allowed to see these rooms as they can set arbitrary room IDs
 		if !s.joinChecker.IsUserJoined(s.userID, roomID) {
@@ -383,12 +385,14 @@ func (s *ConnState) buildRooms(ctx context.Context, builtSubs []BuiltSubscriptio
 }
 
 func (s *ConnState) getInitialRoomData(ctx context.Context, roomSub sync3.RoomSubscription, roomIDs ...string) map[string]sync3.Room {
+	defer trace.StartRegion(ctx, "getInitialRoomData").End()
 	rooms := make(map[string]sync3.Room, len(roomIDs))
 	// We want to grab the user room data and the room metadata for each room ID.
 	roomIDToUserRoomData := s.userCache.LazyLoadTimelines(s.loadPosition, roomIDs, int(roomSub.TimelineLimit))
 	roomMetadatas := s.globalCache.LoadRooms(roomIDs...)
-	// prepare lazy loading data structures
+	// prepare lazy loading data structures, txn IDs
 	roomToUsersInTimeline := make(map[string][]string, len(roomIDToUserRoomData))
+	roomToTimeline := make(map[string][]json.RawMessage)
 	for roomID, urd := range roomIDToUserRoomData {
 		set := make(map[string]struct{})
 		for _, ev := range urd.Timeline {
@@ -401,10 +405,14 @@ func (s *ConnState) getInitialRoomData(ctx context.Context, roomSub sync3.RoomSu
 			i++
 		}
 		roomToUsersInTimeline[roomID] = userIDs
+		roomToTimeline[roomID] = urd.Timeline
 	}
+	roomToTimeline = s.userCache.AnnotateWithTransactionIDs(s.deviceID, roomToTimeline)
 	rsm := roomSub.RequiredStateMap(s.userID)
 	roomIDToState := s.globalCache.LoadRoomState(ctx, roomIDs, s.loadPosition, rsm, roomToUsersInTimeline)
-
+	if roomIDToState == nil { // e.g no required_state
+		roomIDToState = make(map[string][]json.RawMessage)
+	}
 	for _, roomID := range roomIDs {
 		userRoomData, ok := roomIDToUserRoomData[roomID]
 		if !ok {
@@ -422,13 +430,16 @@ func (s *ConnState) getInitialRoomData(ctx context.Context, roomSub sync3.RoomSu
 		var requiredState []json.RawMessage
 		if !userRoomData.IsInvite {
 			requiredState = roomIDToState[roomID]
+			if requiredState == nil {
+				requiredState = make([]json.RawMessage, 0)
+			}
 		}
 		prevBatch, _ := userRoomData.PrevBatch()
 		rooms[roomID] = sync3.Room{
 			Name:              internal.CalculateRoomName(metadata, 5), // TODO: customisable?
 			NotificationCount: int64(userRoomData.NotificationCount),
 			HighlightCount:    int64(userRoomData.HighlightCount),
-			Timeline:          s.userCache.AnnotateWithTransactionIDs(userRoomData.Timeline),
+			Timeline:          roomToTimeline[roomID],
 			RequiredState:     requiredState,
 			InviteState:       inviteState,
 			Initial:           true,
@@ -471,22 +482,24 @@ func (s *ConnState) UserID() string {
 	return s.userID
 }
 
-func (s *ConnState) OnUpdate(up caches.Update) {
+func (s *ConnState) OnUpdate(ctx context.Context, up caches.Update) {
 	s.live.onUpdate(up)
 }
 
 // Called by the user cache when updates arrive
-func (s *ConnState) OnRoomUpdate(up caches.RoomUpdate) {
+func (s *ConnState) OnRoomUpdate(ctx context.Context, up caches.RoomUpdate) {
 	switch update := up.(type) {
 	case *caches.RoomEventUpdate:
 		if update.EventData.LatestPos != caches.PosAlwaysProcess {
 			if update.EventData.LatestPos == 0 || update.EventData.LatestPos < s.loadPosition {
 				// 0 -> this event was from a 'state' block, do not poke active connections
 				// pos < load -> this event has already been processed from the initial load, do not poke active connections
+				trace.Logf(ctx, "connstate", "ignoring RoomEventUpdate as %d < %d", update.EventData.LatestPos, s.loadPosition)
 				return
 			}
 		}
 		internal.Assert("missing global room metadata", update.GlobalRoomMetadata() != nil)
+		trace.Logf(ctx, "connstate", "queued update %d", update.EventData.LatestPos)
 		s.live.onUpdate(update)
 	case caches.RoomUpdate:
 		internal.Assert("missing global room metadata", update.GlobalRoomMetadata() != nil)

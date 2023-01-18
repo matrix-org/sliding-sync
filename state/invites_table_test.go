@@ -4,15 +4,11 @@ import (
 	"encoding/json"
 	"reflect"
 	"testing"
-
-	"github.com/jmoiron/sqlx"
 )
 
 func TestInviteTable(t *testing.T) {
-	db, err := sqlx.Open("postgres", postgresConnectionString)
-	if err != nil {
-		t.Fatalf("failed to open SQL db: %s", err)
-	}
+	db, close := connectToDB(t)
+	defer close()
 	table := NewInvitesTable(db)
 	alice := "@alice:localhost"
 	bob := "@bob:localhost"

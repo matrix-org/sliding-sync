@@ -10,7 +10,6 @@ import (
 
 	"github.com/jmoiron/sqlx"
 	"github.com/lib/pq"
-	"github.com/matrix-org/gomatrixserverlib"
 	"github.com/matrix-org/sliding-sync/internal"
 	"github.com/matrix-org/sliding-sync/sqlutil"
 	"github.com/rs/zerolog"
@@ -47,7 +46,7 @@ type Storage struct {
 func NewStorage(postgresURI string) *Storage {
 	db, err := sqlx.Open("postgres", postgresURI)
 	if err != nil {
-		log.Panic().Err(err).Str("uri", postgresURI).Msg("failed to open SQL DB")
+		logger.Panic().Err(err).Str("uri", postgresURI).Msg("failed to open SQL DB")
 	}
 	acc := &Accumulator{
 		db:            db,
@@ -119,63 +118,44 @@ func (s *Storage) InsertAccountData(userID, roomID string, events []json.RawMess
 }
 
 // GlobalSnapshot snapshots the entire database for the purposes of initialising
-// a sliding sync HTTP API instance. It will atomically grab metadata for all rooms, all joined members
-// and the latest pubsub position in a single transaction.
+// a sliding sync instance. It will atomically grab metadata for all rooms and all joined members
+// in a single transaction.
 func (s *Storage) GlobalSnapshot() (ss StartupSnapshot, err error) {
 	err = sqlutil.WithTransaction(s.accumulator.db, func(txn *sqlx.Tx) error {
-		ss.GlobalMetadata, err = s.MetadataForAllRooms(txn)
+		var metadata map[string]internal.RoomMetadata
+		ss.AllJoinedMembers, metadata, err = s.AllJoinedMembers(txn)
 		if err != nil {
 			return err
 		}
-		ss.AllJoinedMembers, err = s.AllJoinedMembers(txn)
+		err = s.MetadataForAllRooms(txn, metadata)
 		if err != nil {
 			return err
 		}
+		ss.GlobalMetadata = metadata
 		return err
 	})
 	return
 }
 
 // Extract hero info for all rooms.
-func (s *Storage) MetadataForAllRooms(txn *sqlx.Tx) (map[string]internal.RoomMetadata, error) {
-	// Select the joined member counts
-	// sub-select all current state, filter on m.room.member and then join membership
+func (s *Storage) MetadataForAllRooms(txn *sqlx.Tx, result map[string]internal.RoomMetadata) error {
+	// Select the invited member counts
 	rows, err := txn.Query(`
 	SELECT room_id, count(state_key) FROM syncv3_events
-		WHERE (membership='_join' OR membership = 'join') AND event_type='m.room.member' AND event_nid IN (
-			SELECT unnest(events) FROM syncv3_snapshots WHERE syncv3_snapshots.snapshot_id IN (
-				SELECT current_snapshot_id FROM syncv3_rooms
-			)
-		) GROUP BY room_id`)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	result := make(map[string]internal.RoomMetadata)
-	for rows.Next() {
-		var metadata internal.RoomMetadata
-		if err := rows.Scan(&metadata.RoomID, &metadata.JoinCount); err != nil {
-			return nil, err
-		}
-		result[metadata.RoomID] = metadata
-	}
-	// Select the invited member counts using the same style of query
-	rows, err = txn.Query(`
-	SELECT room_id, count(state_key) FROM syncv3_events
 		WHERE (membership='_invite' OR membership = 'invite') AND event_type='m.room.member' AND event_nid IN (
-			SELECT unnest(events) FROM syncv3_snapshots WHERE syncv3_snapshots.snapshot_id IN (
+			SELECT unnest(membership_events) FROM syncv3_snapshots WHERE syncv3_snapshots.snapshot_id IN (
 				SELECT current_snapshot_id FROM syncv3_rooms
 			)
 		) GROUP BY room_id`)
 	if err != nil {
-		return nil, err
+		return err
 	}
 	defer rows.Close()
 	for rows.Next() {
 		var roomID string
 		var inviteCount int
 		if err := rows.Scan(&roomID, &inviteCount); err != nil {
-			return nil, err
+			return err
 		}
 		metadata := result[roomID]
 		metadata.InviteCount = inviteCount
@@ -185,7 +165,7 @@ func (s *Storage) MetadataForAllRooms(txn *sqlx.Tx) (map[string]internal.RoomMet
 	// work out latest timestamps
 	events, err := s.accumulator.eventsTable.selectLatestEventInAllRooms(txn)
 	if err != nil {
-		return nil, err
+		return err
 	}
 	for _, ev := range events {
 		metadata := result[ev.RoomID]
@@ -197,11 +177,11 @@ func (s *Storage) MetadataForAllRooms(txn *sqlx.Tx) (map[string]internal.RoomMet
 	}
 
 	// Select the name / canonical alias for all rooms
-	roomIDToStateEvents, err := s.currentStateEventsInAllRooms(txn, []string{
+	roomIDToStateEvents, err := s.currentNotMembershipStateEventsInAllRooms(txn, []string{
 		"m.room.name", "m.room.canonical_alias",
 	})
 	if err != nil {
-		return nil, fmt.Errorf("failed to load state events for all rooms: %s", err)
+		return fmt.Errorf("failed to load state events for all rooms: %s", err)
 	}
 	for roomID, stateEvents := range roomIDToStateEvents {
 		metadata := result[roomID]
@@ -226,13 +206,13 @@ func (s *Storage) MetadataForAllRooms(txn *sqlx.Tx) (map[string]internal.RoomMet
 		) FROM syncv3_events WHERE (
 			membership='join' OR membership='invite' OR membership='_join'
 		) AND event_type='m.room.member' AND event_nid IN (
-			SELECT unnest(events) FROM syncv3_snapshots WHERE syncv3_snapshots.snapshot_id IN (
+			SELECT unnest(membership_events) FROM syncv3_snapshots WHERE syncv3_snapshots.snapshot_id IN (
 				SELECT current_snapshot_id FROM syncv3_rooms
 			)
 		)
 	) rf WHERE rank <= 6`)
 	if err != nil {
-		return nil, fmt.Errorf("failed to query heroes: %s", err)
+		return fmt.Errorf("failed to query heroes: %s", err)
 	}
 	defer rows.Close()
 	seen := map[string]bool{}
@@ -241,7 +221,7 @@ func (s *Storage) MetadataForAllRooms(txn *sqlx.Tx) (map[string]internal.RoomMet
 		var event json.RawMessage
 		var rank int
 		if err := rows.Scan(&roomID, &event, &rank); err != nil {
-			return nil, err
+			return err
 		}
 		ev := gjson.ParseBytes(event)
 		targetUser := ev.Get("state_key").Str
@@ -259,7 +239,7 @@ func (s *Storage) MetadataForAllRooms(txn *sqlx.Tx) (map[string]internal.RoomMet
 	}
 	roomInfos, err := s.accumulator.roomsTable.SelectRoomInfos(txn)
 	if err != nil {
-		return nil, fmt.Errorf("failed to select room infos: %s", err)
+		return fmt.Errorf("failed to select room infos: %s", err)
 	}
 	var spaceRoomIDs []string
 	for _, info := range roomInfos {
@@ -277,7 +257,7 @@ func (s *Storage) MetadataForAllRooms(txn *sqlx.Tx) (map[string]internal.RoomMet
 	// select space children
 	spaceRoomToRelations, err := s.accumulator.spacesTable.SelectChildren(txn, spaceRoomIDs)
 	if err != nil {
-		return nil, fmt.Errorf("failed to select space children: %s", err)
+		return fmt.Errorf("failed to select space children: %s", err)
 	}
 	for roomID, relations := range spaceRoomToRelations {
 		metadata := result[roomID]
@@ -290,12 +270,12 @@ func (s *Storage) MetadataForAllRooms(txn *sqlx.Tx) (map[string]internal.RoomMet
 		}
 		result[roomID] = metadata
 	}
-	return result, nil
+	return nil
 }
 
-// Returns all current state events matching the event types given in all rooms. Returns a map of
+// Returns all current NOT MEMBERSHIP state events matching the event types given in all rooms. Returns a map of
 // room ID to events in that room.
-func (s *Storage) currentStateEventsInAllRooms(txn *sqlx.Tx, eventTypes []string) (map[string][]Event, error) {
+func (s *Storage) currentNotMembershipStateEventsInAllRooms(txn *sqlx.Tx, eventTypes []string) (map[string][]Event, error) {
 	query, args, err := sqlx.In(
 		`SELECT syncv3_events.room_id, syncv3_events.event_type, syncv3_events.state_key, syncv3_events.event FROM syncv3_events
 		WHERE syncv3_events.event_type IN (?)
@@ -349,7 +329,7 @@ func (s *Storage) StateSnapshot(snapID int64) (state []json.RawMessage, err erro
 		if err != nil {
 			return err
 		}
-		events, err := s.accumulator.eventsTable.SelectByNIDs(txn, true, snapshotRow.Events)
+		events, err := s.accumulator.eventsTable.SelectByNIDs(txn, true, append(snapshotRow.MembershipEvents, snapshotRow.OtherEvents...))
 		if err != nil {
 			return fmt.Errorf("failed to select state snapshot %v: %s", snapID, err)
 		}
@@ -422,14 +402,15 @@ func (s *Storage) RoomStateAfterEventPosition(ctx context.Context, roomIDs []str
 				if err != nil {
 					return err
 				}
+				allStateEventNIDs := append(snapshotRow.MembershipEvents, snapshotRow.OtherEvents...)
 				// we need to roll forward if this event is state
 				if gjson.ParseBytes(ev.JSON).Get("state_key").Exists() {
 					if ev.ReplacesNID != 0 {
 						// we determined at insert time of this event that this event replaces a nid in the snapshot.
 						// find it and replace it
-						for j := range snapshotRow.Events {
-							if snapshotRow.Events[j] == ev.ReplacesNID {
-								snapshotRow.Events[j] = ev.NID
+						for j := range allStateEventNIDs {
+							if allStateEventNIDs[j] == ev.ReplacesNID {
+								allStateEventNIDs[j] = ev.NID
 								break
 							}
 						}
@@ -437,18 +418,18 @@ func (s *Storage) RoomStateAfterEventPosition(ctx context.Context, roomIDs []str
 						// the event is still state, but it doesn't replace anything, so just add it onto the snapshot,
 						// but only if we haven't already
 						alreadyExists := false
-						for _, nid := range snapshotRow.Events {
+						for _, nid := range allStateEventNIDs {
 							if nid == ev.NID {
 								alreadyExists = true
 								break
 							}
 						}
 						if !alreadyExists {
-							snapshotRow.Events = append(snapshotRow.Events, ev.NID)
+							allStateEventNIDs = append(allStateEventNIDs, ev.NID)
 						}
 					}
 				}
-				events, err := s.accumulator.eventsTable.SelectByNIDs(txn, true, snapshotRow.Events)
+				events, err := s.accumulator.eventsTable.SelectByNIDs(txn, true, allStateEventNIDs)
 				if err != nil {
 					return fmt.Errorf("failed to select state snapshot %v for room %v: %s", ev.BeforeStateSnapshotID, ev.RoomID, err)
 				}
@@ -458,7 +439,14 @@ func (s *Storage) RoomStateAfterEventPosition(ctx context.Context, roomIDs []str
 			// do an optimised query to pull out only the event types and state keys we care about.
 			var args []interface{} // event type, state key, event type, state key, ....
 			var wheres []string
+			hasMembershipFilter := false
+			hasOtherFilter := false
 			for evType, skeys := range eventTypesToStateKeys {
+				if evType == "m.room.member" {
+					hasMembershipFilter = true
+				} else {
+					hasOtherFilter = true
+				}
 				for _, skey := range skeys {
 					args = append(args, evType, skey)
 					wheres = append(wheres, "(syncv3_events.event_type = ? AND syncv3_events.state_key = ?)")
@@ -473,11 +461,22 @@ func (s *Storage) RoomStateAfterEventPosition(ctx context.Context, roomIDs []str
 				snapIDs[i] = latestEvents[i].BeforeStateSnapshotID
 			}
 			args = append(args, pq.Int64Array(snapIDs))
+
+			// figure out which state events to look at - if there is no m.room.member filter we can be super fast
+			nidcols := "unnest(array_cat(events, membership_events))"
+			if hasMembershipFilter && !hasOtherFilter {
+				nidcols = "unnest(membership_events)"
+			} else if !hasMembershipFilter && hasOtherFilter {
+				nidcols = "unnest(events)"
+			}
+			// it's not possible for there to be no membership filter and no other filter, we wouldn't be executing this code
+			// it is possible to have both, so neither if will execute.
+
 			// Similar to CurrentStateEventsInAllRooms
 			query, args, err := sqlx.In(
 				`SELECT syncv3_events.event_nid, syncv3_events.room_id, syncv3_events.event_type, syncv3_events.state_key, syncv3_events.event FROM syncv3_events
 				WHERE (`+strings.Join(wheres, " OR ")+`) AND syncv3_events.event_nid IN (
-					SELECT unnest(events) FROM syncv3_snapshots WHERE syncv3_snapshots.snapshot_id = ANY(?)
+					SELECT `+nidcols+` FROM syncv3_snapshots WHERE syncv3_snapshots.snapshot_id = ANY(?)
 				) ORDER BY syncv3_events.event_nid ASC`,
 				args...,
 			)
@@ -741,29 +740,34 @@ func (s *Storage) RoomMembershipDelta(roomID string, from, to int64, limit int) 
 	return
 }
 
-func (s *Storage) AllJoinedMembers(txn *sqlx.Tx) (map[string][]string, error) {
-	roomIDToEventNIDs, err := s.accumulator.snapshotTable.CurrentSnapshots(txn)
+func (s *Storage) AllJoinedMembers(txn *sqlx.Tx) (result map[string][]string, metadata map[string]internal.RoomMetadata, err error) {
+	rows, err := txn.Query(
+		`SELECT room_id, state_key from syncv3_events WHERE (membership='join' OR membership='_join') AND event_nid IN (
+			SELECT UNNEST(membership_events) FROM syncv3_snapshots JOIN syncv3_rooms ON syncv3_snapshots.snapshot_id = syncv3_rooms.current_snapshot_id
+		) ORDER BY event_nid ASC`,
+	)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	result := make(map[string][]string)
-	for roomID, eventNIDs := range roomIDToEventNIDs {
-		events, err := s.accumulator.eventsTable.SelectByNIDs(txn, true, eventNIDs)
-		if err != nil {
-			return nil, fmt.Errorf("failed to select events in room %s: %s", roomID, err)
+	defer rows.Close()
+	result = make(map[string][]string)
+	var roomID string
+	var joinedUserID string
+	for rows.Next() {
+		if err := rows.Scan(&roomID, &joinedUserID); err != nil {
+			return nil, nil, err
 		}
-		for _, ev := range events {
-			evj := gjson.ParseBytes(ev.JSON)
-			if evj.Get("type").Str != gomatrixserverlib.MRoomMember {
-				continue
-			}
-			if evj.Get("content.membership").Str != gomatrixserverlib.Join {
-				continue
-			}
-			result[roomID] = append(result[roomID], evj.Get("state_key").Str)
+		users := result[roomID]
+		users = append(users, joinedUserID)
+		result[roomID] = users
+	}
+	metadata = make(map[string]internal.RoomMetadata)
+	for roomID, joinedMembers := range result {
+		metadata[roomID] = internal.RoomMetadata{
+			JoinCount: len(joinedMembers),
 		}
 	}
-	return result, nil
+	return result, metadata, nil
 }
 
 func (s *Storage) JoinedRoomsAfterPosition(userID string, pos int64) ([]string, error) {

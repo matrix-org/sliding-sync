@@ -10,6 +10,7 @@ import (
 	"github.com/matrix-org/sliding-sync/sync3"
 	"github.com/matrix-org/sliding-sync/sync3/caches"
 	"github.com/matrix-org/sliding-sync/sync3/extensions"
+	"github.com/tidwall/gjson"
 )
 
 var (
@@ -97,10 +98,43 @@ func (s *connStateLive) liveUpdate(
 				}
 				s.extensionsHandler.HandleLiveUpdate(update, ex, &response.Extensions, updateWillReturnResponse, isInitial)
 			}
+			// Add membership events for users sending typing notifications
+			if response.Extensions.Typing != nil && response.Extensions.Typing.HasData(isInitial) {
+				s.lazyLoadTypingMembers(ctx, response)
+			}
 		}
 	}
 	logger.Trace().Str("user", s.userID).Int("subs", len(response.Rooms)).Msg("liveUpdate: returning")
 	// TODO: op consolidation
+}
+
+func (s *connStateLive) lazyLoadTypingMembers(ctx context.Context, response *sync3.Response) {
+	for roomID, typingEvent := range response.Extensions.Typing.Rooms {
+		if !s.lazyCache.IsLazyLoading(roomID) {
+			continue
+		}
+		room, ok := response.Rooms[roomID]
+		if !ok {
+			room = sync3.Room{}
+		}
+		typingUsers := gjson.GetBytes(typingEvent, "content.user_ids")
+		for _, typingUserID := range typingUsers.Array() {
+			if s.lazyCache.IsSet(roomID, typingUserID.Str) {
+				// client should already know about this member
+				continue
+			}
+			// load the state event
+			memberEvent := s.globalCache.LoadStateEvent(ctx, roomID, s.loadPosition, "m.room.member", typingUserID.Str)
+			if memberEvent != nil {
+				room.RequiredState = append(room.RequiredState, memberEvent)
+				s.lazyCache.AddUser(roomID, typingUserID.Str)
+			}
+		}
+		// only add the room if we have membership events
+		if len(room.RequiredState) > 0 {
+			response.Rooms[roomID] = room
+		}
+	}
 }
 
 func (s *connStateLive) processLiveUpdate(ctx context.Context, up caches.Update, response *sync3.Response) bool {
@@ -114,7 +148,7 @@ func (s *connStateLive) processLiveUpdate(ctx context.Context, up caches.Update,
 	delta := s.processGlobalUpdates(ctx, builder, up)
 
 	// process room subscriptions
-	hasUpdates := s.processUpdatesForSubscriptions(builder, up)
+	hasUpdates := s.processUpdatesForSubscriptions(ctx, builder, up)
 
 	// do per-list updates (e.g resorting, adding/removing rooms which no longer match filter)
 	for _, listDelta := range delta.Lists {
@@ -164,9 +198,10 @@ func (s *connStateLive) processLiveUpdate(ctx context.Context, up caches.Update,
 			// - the initial:true room from BuildSubscriptions contains the latest live events in the timeline as it's pulled from the DB
 			// - we then process the live events in turn which adds them again.
 			if !advancedPastEvent {
-				r.Timeline = append(r.Timeline, s.userCache.AnnotateWithTransactionIDs([]json.RawMessage{
-					roomEventUpdate.EventData.Event,
-				})...)
+				roomIDtoTimeline := s.userCache.AnnotateWithTransactionIDs(s.deviceID, map[string][]json.RawMessage{
+					roomEventUpdate.RoomID(): []json.RawMessage{roomEventUpdate.EventData.Event},
+				})
+				r.Timeline = append(r.Timeline, roomIDtoTimeline[roomEventUpdate.RoomID()]...)
 				roomID := roomEventUpdate.RoomID()
 				sender := roomEventUpdate.EventData.Sender
 				if s.lazyCache.IsLazyLoading(roomID) && !s.lazyCache.IsSet(roomID, sender) {
@@ -199,13 +234,24 @@ func (s *connStateLive) processLiveUpdate(ctx context.Context, up caches.Update,
 			if delta.JoinCountChanged {
 				thisRoom.JoinedCount = roomUpdate.GlobalRoomMetadata().JoinCount
 			}
+
+			response.Rooms[roomUpdate.RoomID()] = thisRoom
+		}
+		if delta.HighlightCountDecreased || delta.NotificationCountDecreased {
+			if !exists {
+				// we need to make this room exist. Other deltas are caused by events so the room exists,
+				// but highlight/notif counts are silent
+				thisRoom = sync3.Room{}
+			}
+			thisRoom.NotificationCount = int64(roomUpdate.UserRoomMetadata().NotificationCount)
+			thisRoom.HighlightCount = int64(roomUpdate.UserRoomMetadata().HighlightCount)
 			response.Rooms[roomUpdate.RoomID()] = thisRoom
 		}
 	}
 	return hasUpdates
 }
 
-func (s *connStateLive) processUpdatesForSubscriptions(builder *RoomsBuilder, up caches.Update) (hasUpdates bool) {
+func (s *connStateLive) processUpdatesForSubscriptions(ctx context.Context, builder *RoomsBuilder, up caches.Update) (hasUpdates bool) {
 	rup, ok := up.(caches.RoomUpdate)
 	if !ok {
 		return false
@@ -221,7 +267,7 @@ func (s *connStateLive) processUpdatesForSubscriptions(builder *RoomsBuilder, up
 	}
 	// the user does not have a subscription to this room yet but wants one, try to add it.
 	// this will do join checks for us.
-	s.buildRoomSubscriptions(builder, []string{rup.RoomID()}, nil)
+	s.buildRoomSubscriptions(ctx, builder, []string{rup.RoomID()}, nil)
 
 	// if we successfully made the subscription, it will now exist in the confirmed subscriptions map
 	_, exists := s.roomSubscriptions[rup.RoomID()]
@@ -262,7 +308,7 @@ func (s *connStateLive) processLiveUpdateForList(
 			builder.AddRoomsToSubscription(subID, []string{update.RoomID()})
 		}
 	case *caches.UnreadCountUpdate:
-		logger.Trace().Str("user", s.userID).Str("room", update.RoomID()).Msg("received unread count update")
+		logger.Trace().Str("user", s.userID).Str("room", update.RoomID()).Bool("count_decreased", update.HasCountDecreased).Msg("received unread count update")
 		if !update.HasCountDecreased {
 			// if the count increases then we'll notify the user for the event which increases the count, hence
 			// do nothing. We only care to notify the user when the counts decrease.

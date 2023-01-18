@@ -7,7 +7,6 @@ import (
 	"sort"
 	"testing"
 
-	"github.com/jmoiron/sqlx"
 	"github.com/matrix-org/sliding-sync/sync2"
 	"github.com/matrix-org/sliding-sync/testutils"
 	"github.com/tidwall/gjson"
@@ -21,10 +20,8 @@ func TestAccumulatorInitialise(t *testing.T) {
 		[]byte(`{"event_id":"C", "type":"m.room.join_rules", "state_key":"", "content":{"join_rule":"public"}}`),
 	}
 	roomEventIDs := []string{"A", "B", "C"}
-	db, err := sqlx.Open("postgres", postgresConnectionString)
-	if err != nil {
-		t.Fatalf("failed to open SQL db: %s", err)
-	}
+	db, close := connectToDB(t)
+	defer close()
 	accumulator := NewAccumulator(db)
 	added, initSnapID, err := accumulator.Initialise(roomID, roomEvents)
 	if err != nil {
@@ -52,23 +49,30 @@ func TestAccumulatorInitialise(t *testing.T) {
 		t.Fatalf("Initialise returned wrong snapshot ID, got %v want %v", initSnapID, snapID)
 	}
 
-	// this snapshot should have 3 events in it
+	// this snapshot should have 1 member event and 2 other events in it
 	row, err := accumulator.snapshotTable.Select(txn, snapID)
 	if err != nil {
 		t.Fatalf("failed to select snapshot %d: %s", snapID, err)
 	}
-	if len(row.Events) != len(roomEvents) {
-		t.Fatalf("got %d events, want %d in current state snapshot", len(row.Events), len(roomEvents))
+	if len(row.MembershipEvents) != 1 {
+		t.Fatalf("got %d membership events, want %d in current state snapshot", len(row.MembershipEvents), 1)
+	}
+	if len(row.OtherEvents) != 2 {
+		t.Fatalf("got %d other events, want %d in current state snapshot", len(row.MembershipEvents), 2)
 	}
 
 	// these 3 events should map to the three events we initialised with
-	events, err := accumulator.eventsTable.SelectByNIDs(txn, true, row.Events)
+	events, err := accumulator.eventsTable.SelectByNIDs(txn, true, append(row.OtherEvents, row.MembershipEvents...))
 	if err != nil {
 		t.Fatalf("failed to extract events in snapshot: %s", err)
 	}
 	if len(events) != len(roomEvents) {
 		t.Fatalf("failed to extract %d events, got %d", len(roomEvents), len(events))
 	}
+	// sort alphabetically on ID like roomEventIDs
+	sort.Slice(events, func(i, j int) bool {
+		return events[i].ID < events[j].ID
+	})
 	for i := range events {
 		if events[i].ID != roomEventIDs[i] {
 			t.Errorf("event %d was not stored correctly: got ID %s want %s", i, events[i].ID, roomEventIDs[i])
@@ -92,12 +96,10 @@ func TestAccumulatorAccumulate(t *testing.T) {
 		[]byte(`{"event_id":"E", "type":"m.room.member", "state_key":"@me:localhost", "content":{"membership":"join"}}`),
 		[]byte(`{"event_id":"F", "type":"m.room.join_rules", "state_key":"", "content":{"join_rule":"public"}}`),
 	}
-	db, err := sqlx.Open("postgres", postgresConnectionString)
-	if err != nil {
-		t.Fatalf("failed to open SQL db: %s", err)
-	}
+	db, close := connectToDB(t)
+	defer close()
 	accumulator := NewAccumulator(db)
-	_, _, err = accumulator.Initialise(roomID, roomEvents)
+	_, _, err := accumulator.Initialise(roomID, roomEvents)
 	if err != nil {
 		t.Fatalf("failed to Initialise accumulator: %s", err)
 	}
@@ -129,11 +131,13 @@ func TestAccumulatorAccumulate(t *testing.T) {
 	}
 
 	// Begin assertions
-	wantStateEvents := []json.RawMessage{
+	wantOtherStateEvents := []json.RawMessage{
 		roomEvents[0], // create event
-		roomEvents[1], // member event
 		newEvents[1],  // join rules
 		newEvents[2],  // history visibility
+	}
+	wantMemberEvents := []json.RawMessage{
+		roomEvents[1],
 	}
 	txn, err := accumulator.db.Beginx()
 	if err != nil {
@@ -155,18 +159,25 @@ func TestAccumulatorAccumulate(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to select snapshot %d: %s", snapID, err)
 	}
-	if len(row.Events) != len(wantStateEvents) {
-		t.Fatalf("snapshot: %d got %d events, want %d in current state snapshot", snapID, len(row.Events), len(wantStateEvents))
+	if len(row.MembershipEvents) != len(wantMemberEvents) {
+		t.Fatalf("snapshot: %d got %d member events, want %d in current state snapshot", snapID, len(row.MembershipEvents), len(wantMemberEvents))
+	}
+	if len(row.OtherEvents) != len(wantOtherStateEvents) {
+		t.Fatalf("snapshot: %d got %d other events, want %d in current state snapshot", snapID, len(row.OtherEvents), len(wantOtherStateEvents))
 	}
 
 	// these 4 events should map to the create/member events from initialise, then the join_rules/history_visibility from accumulate
-	events, err := accumulator.eventsTable.SelectByNIDs(txn, true, row.Events)
+	events, err := accumulator.eventsTable.SelectByNIDs(txn, true, append(row.OtherEvents, row.MembershipEvents...))
 	if err != nil {
 		t.Fatalf("failed to extract events in snapshot: %s", err)
 	}
+	wantStateEvents := append(wantOtherStateEvents, wantMemberEvents...)
 	if len(events) != len(wantStateEvents) {
 		t.Fatalf("failed to extract %d events, got %d", len(wantStateEvents), len(events))
 	}
+	sort.Slice(wantStateEvents, func(i, j int) bool {
+		return gjson.ParseBytes(wantStateEvents[i]).Get("event_id").Str < gjson.ParseBytes(wantStateEvents[j]).Get("event_id").Str
+	})
 	for i := range events {
 		if events[i].ID != gjson.GetBytes(wantStateEvents[i], "event_id").Str {
 			t.Errorf("event %d was not stored correctly: got ID %s want %s", i, events[i].ID, gjson.GetBytes(wantStateEvents[i], "event_id").Str)
@@ -181,12 +192,10 @@ func TestAccumulatorAccumulate(t *testing.T) {
 
 func TestAccumulatorDelta(t *testing.T) {
 	roomID := "!TestAccumulatorDelta:localhost"
-	db, err := sqlx.Open("postgres", postgresConnectionString)
-	if err != nil {
-		t.Fatalf("failed to open SQL db: %s", err)
-	}
+	db, close := connectToDB(t)
+	defer close()
 	accumulator := NewAccumulator(db)
-	_, _, err = accumulator.Initialise(roomID, nil)
+	_, _, err := accumulator.Initialise(roomID, nil)
 	if err != nil {
 		t.Fatalf("failed to Initialise accumulator: %s", err)
 	}
@@ -232,12 +241,10 @@ func TestAccumulatorDelta(t *testing.T) {
 
 func TestAccumulatorMembershipLogs(t *testing.T) {
 	roomID := "!TestAccumulatorMembershipLogs:localhost"
-	db, err := sqlx.Open("postgres", postgresConnectionString)
-	if err != nil {
-		t.Fatalf("failed to open SQL db: %s", err)
-	}
+	db, close := connectToDB(t)
+	defer close()
 	accumulator := NewAccumulator(db)
-	_, _, err = accumulator.Initialise(roomID, nil)
+	_, _, err := accumulator.Initialise(roomID, nil)
 	if err != nil {
 		t.Fatalf("failed to Initialise accumulator: %s", err)
 	}
@@ -373,13 +380,11 @@ func TestAccumulatorDupeEvents(t *testing.T) {
 		t.Fatalf("failed to unmarshal: %s", err)
 	}
 
-	db, err := sqlx.Open("postgres", postgresConnectionString)
-	if err != nil {
-		t.Fatalf("failed to open SQL db: %s", err)
-	}
+	db, close := connectToDB(t)
+	defer close()
 	accumulator := NewAccumulator(db)
 	roomID := "!buggy:localhost"
-	_, _, err = accumulator.Initialise(roomID, joinRoom.State.Events)
+	_, _, err := accumulator.Initialise(roomID, joinRoom.State.Events)
 	if err != nil {
 		t.Fatalf("failed to Initialise accumulator: %s", err)
 	}
@@ -392,14 +397,16 @@ func TestAccumulatorDupeEvents(t *testing.T) {
 
 // Regression test for corrupt state snapshots.
 // This seems to have happened in the wild, whereby the snapshot exhibited 2 things:
-//  - A message event having a event_replaces_nid. This should be impossible as messages are not state.
-//  - Duplicate events in the state snapshot.
+//   - A message event having a event_replaces_nid. This should be impossible as messages are not state.
+//   - Duplicate events in the state snapshot.
+//
 // We can reproduce a message event having a event_replaces_nid by doing the following:
-//  - Create a room with initial state A,C
-//  - Accumulate events D, A, B(msg). This should be impossible because we already got A initially but whatever, roll with it, blame state resets or something.
-//  - This leads to A,B being processed and D ignored if you just take the newest results.
+//   - Create a room with initial state A,C
+//   - Accumulate events D, A, B(msg). This should be impossible because we already got A initially but whatever, roll with it, blame state resets or something.
+//   - This leads to A,B being processed and D ignored if you just take the newest results.
+//
 // This can then be tested by:
-//  - Query the current room snapshot. This will include B(msg) when it shouldn't.
+//   - Query the current room snapshot. This will include B(msg) when it shouldn't.
 func TestAccumulatorMisorderedGraceful(t *testing.T) {
 	alice := "@alice:localhost"
 	bob := "@bob:localhost"
@@ -414,14 +421,12 @@ func TestAccumulatorMisorderedGraceful(t *testing.T) {
 	)
 	t.Logf("A=member-alice, B=msg, C=create, D=member-bob")
 
-	db, err := sqlx.Open("postgres", postgresConnectionString)
-	if err != nil {
-		t.Fatalf("failed to open SQL db: %s", err)
-	}
+	db, close := connectToDB(t)
+	defer close()
 	accumulator := NewAccumulator(db)
 	roomID := "!TestAccumulatorStateReset:localhost"
 	// Create a room with initial state A,C
-	_, _, err = accumulator.Initialise(roomID, []json.RawMessage{
+	_, _, err := accumulator.Initialise(roomID, []json.RawMessage{
 		eventA, eventC,
 	})
 	if err != nil {
@@ -469,12 +474,15 @@ func TestAccumulatorMisorderedGraceful(t *testing.T) {
 
 // Regression test for corrupt state snapshots.
 // This seems to have happened in the wild, whereby the snapshot exhibited 2 things:
-//  - A message event having a event_replaces_nid. This should be impossible as messages are not state.
-//  - Duplicate events in the state snapshot.
+//   - A message event having a event_replaces_nid. This should be impossible as messages are not state.
+//   - Duplicate events in the state snapshot.
+//
 // We can reproduce duplicate events in the state snapshot by doing the following:
-//  -
+//
+//	-
+//
 // This can then be tested by:
-//  - Query the current room snapshot.
+//   - Query the current room snapshot.
 func TestCalculateNewSnapshotDupe(t *testing.T) {
 	assertNIDsEqual := func(a, b []int64) {
 		t.Helper()
@@ -488,15 +496,14 @@ func TestCalculateNewSnapshotDupe(t *testing.T) {
 			t.Errorf("assertNIDsEqual: got %v want %v", a, b)
 		}
 	}
-	db, err := sqlx.Open("postgres", postgresConnectionString)
-	if err != nil {
-		t.Fatalf("failed to open SQL db: %s", err)
-	}
+	db, close := connectToDB(t)
+	defer close()
 	testCases := []struct {
-		input      StrippedEvents
-		inputEvent Event
-		wantNIDs   []int64
-		wantErr    bool
+		input          StrippedEvents
+		inputEvent     Event
+		wantMemberNIDs []int64
+		wantOtherNIDs  []int64
+		wantErr        bool
 	}{
 		// basic replace
 		{
@@ -512,7 +519,7 @@ func TestCalculateNewSnapshotDupe(t *testing.T) {
 				Type:     "a",
 				StateKey: "b",
 			},
-			wantNIDs: []int64{2},
+			wantOtherNIDs: []int64{2},
 		},
 		// basic addition
 		{
@@ -528,7 +535,7 @@ func TestCalculateNewSnapshotDupe(t *testing.T) {
 				Type:     "c",
 				StateKey: "d",
 			},
-			wantNIDs: []int64{1, 2},
+			wantOtherNIDs: []int64{1, 2},
 		},
 		// dupe nid
 		{
@@ -577,6 +584,32 @@ func TestCalculateNewSnapshotDupe(t *testing.T) {
 			},
 			wantErr: true,
 		},
+		{
+			input: StrippedEvents{
+				{
+					NID:      1,
+					Type:     "m.room.member",
+					StateKey: "alice",
+				},
+				{
+					NID:      2,
+					Type:     "m.room.member",
+					StateKey: "bob",
+				},
+				{
+					NID:      3,
+					Type:     "other",
+					StateKey: "",
+				},
+			},
+			inputEvent: Event{
+				NID:      4,
+				Type:     "m.room.member",
+				StateKey: "alice",
+			},
+			wantMemberNIDs: []int64{4, 2},
+			wantOtherNIDs:  []int64{3},
+		},
 	}
 	accumulator := NewAccumulator(db)
 	for _, tc := range testCases {
@@ -591,7 +624,9 @@ func TestCalculateNewSnapshotDupe(t *testing.T) {
 			t.Errorf("wanted error but got none, instead got %v", got)
 			continue
 		}
-		assertNIDsEqual(got.NIDs(), tc.wantNIDs)
+		gotMemberNIDs, gotOtherNIDs := got.NIDs()
+		assertNIDsEqual(gotMemberNIDs, tc.wantMemberNIDs)
+		assertNIDsEqual(gotOtherNIDs, tc.wantOtherNIDs)
 	}
 }
 

@@ -1,8 +1,11 @@
 package sync3
 
 import (
+	"context"
 	"encoding/json"
+	"fmt"
 	"os"
+	"runtime/trace"
 	"sync"
 
 	"github.com/matrix-org/sliding-sync/sync3/caches"
@@ -18,8 +21,8 @@ var logger = zerolog.New(os.Stdout).With().Timestamp().Logger().Output(zerolog.C
 const DispatcherAllUsers = "-"
 
 type Receiver interface {
-	OnNewEvent(event *caches.EventData)
-	OnEphemeralEvent(roomID string, ephEvent json.RawMessage)
+	OnNewEvent(ctx context.Context, event *caches.EventData)
+	OnEphemeralEvent(ctx context.Context, roomID string, ephEvent json.RawMessage)
 	OnRegistered(latestPos int64) error
 }
 
@@ -91,13 +94,13 @@ func (d *Dispatcher) newEventData(event json.RawMessage, roomID string, latestPo
 
 // Called by v2 pollers when we receive an initial state block. Very similar to OnNewEvents but
 // done in bulk for speed.
-func (d *Dispatcher) OnNewInitialRoomState(roomID string, state []json.RawMessage) {
+func (d *Dispatcher) OnNewInitialRoomState(ctx context.Context, roomID string, state []json.RawMessage) {
 	// sanity check
 	if _, jc := d.jrt.JoinedUsersForRoom(roomID, nil); jc > 0 {
 		logger.Warn().Int("join_count", jc).Str("room", roomID).Int("num_state", len(state)).Msg(
 			"OnNewInitialRoomState but have entries in JoinedRoomsTracker already, this should be impossible. Degrading to live events",
 		)
-		d.OnNewEvents(roomID, state, 0)
+		d.OnNewEvents(ctx, roomID, state, 0)
 		return
 	}
 	// create event datas for state
@@ -134,21 +137,21 @@ func (d *Dispatcher) OnNewInitialRoomState(roomID string, state []json.RawMessag
 	for _, ed := range eventDatas {
 		ed.InviteCount = inviteCount
 		ed.JoinCount = joinCount
-		d.notifyListeners(ed, userIDs, "", forceInitial, "")
+		d.notifyListeners(ctx, ed, userIDs, "", forceInitial, "")
 	}
 }
 
 // Called by v2 pollers when we receive new events
 func (d *Dispatcher) OnNewEvents(
-	roomID string, events []json.RawMessage, latestPos int64,
+	ctx context.Context, roomID string, events []json.RawMessage, latestPos int64,
 ) {
 	for _, event := range events {
-		d.onNewEvent(roomID, event, latestPos)
+		d.onNewEvent(ctx, roomID, event, latestPos)
 	}
 }
 
 func (d *Dispatcher) onNewEvent(
-	roomID string, event json.RawMessage, latestPos int64,
+	ctx context.Context, roomID string, event json.RawMessage, latestPos int64,
 ) {
 	// keep track of the latest position. We don't care about it, but Receivers do if they want
 	// to atomically load from the global cache and receive updates.
@@ -189,10 +192,10 @@ func (d *Dispatcher) onNewEvent(
 		return exists
 	})
 	ed.JoinCount = joinCount
-	d.notifyListeners(ed, userIDs, targetUser, shouldForceInitial, membership)
+	d.notifyListeners(ctx, ed, userIDs, targetUser, shouldForceInitial, membership)
 }
 
-func (d *Dispatcher) OnEphemeralEvent(roomID string, ephEvent json.RawMessage) {
+func (d *Dispatcher) OnEphemeralEvent(ctx context.Context, roomID string, ephEvent json.RawMessage) {
 	notifyUserIDs, _ := d.jrt.JoinedUsersForRoom(roomID, func(userID string) bool {
 		if userID == DispatcherAllUsers {
 			return false // safety guard to prevent dupe global callbacks
@@ -207,7 +210,7 @@ func (d *Dispatcher) OnEphemeralEvent(roomID string, ephEvent json.RawMessage) {
 	// global listeners (invoke before per-user listeners so caches can update)
 	listener := d.userToReceiver[DispatcherAllUsers]
 	if listener != nil {
-		listener.OnEphemeralEvent(roomID, ephEvent)
+		listener.OnEphemeralEvent(ctx, roomID, ephEvent)
 	}
 
 	// poke user caches OnEphemeralEvent which then pokes ConnState
@@ -216,11 +219,12 @@ func (d *Dispatcher) OnEphemeralEvent(roomID string, ephEvent json.RawMessage) {
 		if l == nil {
 			continue
 		}
-		l.OnEphemeralEvent(roomID, ephEvent)
+		l.OnEphemeralEvent(ctx, roomID, ephEvent)
 	}
 }
 
-func (d *Dispatcher) notifyListeners(ed *caches.EventData, userIDs []string, targetUser string, shouldForceInitial bool, membership string) {
+func (d *Dispatcher) notifyListeners(ctx context.Context, ed *caches.EventData, userIDs []string, targetUser string, shouldForceInitial bool, membership string) {
+	trace.Log(ctx, "dispatcher", fmt.Sprintf("%s: notify %d users (nid=%d,join_count=%d)", ed.RoomID, len(userIDs), ed.LatestPos, ed.JoinCount))
 	// invoke listeners
 	d.userToReceiverMu.RLock()
 	defer d.userToReceiverMu.RUnlock()
@@ -228,7 +232,7 @@ func (d *Dispatcher) notifyListeners(ed *caches.EventData, userIDs []string, tar
 	// global listeners (invoke before per-user listeners so caches can update)
 	listener := d.userToReceiver[DispatcherAllUsers]
 	if listener != nil {
-		listener.OnNewEvent(ed)
+		listener.OnNewEvent(ctx, ed)
 	}
 
 	// per-user listeners
@@ -243,7 +247,7 @@ func (d *Dispatcher) notifyListeners(ed *caches.EventData, userIDs []string, tar
 					edd.ForceInitial = true
 				}
 			}
-			l.OnNewEvent(&edd)
+			l.OnNewEvent(ctx, &edd)
 		}
 	}
 	if targetUser != "" && !notifiedTarget { // e.g invites/leaves where you aren't joined yet but need to know about it
@@ -257,7 +261,7 @@ func (d *Dispatcher) notifyListeners(ed *caches.EventData, userIDs []string, tar
 			}
 			l := d.userToReceiver[targetUser]
 			if l != nil {
-				l.OnNewEvent(ed)
+				l.OnNewEvent(ctx, ed)
 			}
 		}
 	}
