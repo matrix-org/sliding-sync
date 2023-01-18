@@ -743,7 +743,7 @@ func (s *Storage) RoomMembershipDelta(roomID string, from, to int64, limit int) 
 func (s *Storage) AllJoinedMembers(txn *sqlx.Tx) (result map[string][]string, metadata map[string]internal.RoomMetadata, err error) {
 	rows, err := txn.Query(
 		`SELECT room_id, state_key from syncv3_events WHERE (membership='join' OR membership='_join') AND event_nid IN (
-			SELECT UNNEST(events) FROM syncv3_snapshots JOIN syncv3_rooms ON syncv3_snapshots.snapshot_id = syncv3_rooms.current_snapshot_id
+			SELECT UNNEST(membership_events) FROM syncv3_snapshots JOIN syncv3_rooms ON syncv3_snapshots.snapshot_id = syncv3_rooms.current_snapshot_id
 		) ORDER BY event_nid ASC`,
 	)
 	if err != nil {
