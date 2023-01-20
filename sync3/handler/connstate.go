@@ -218,7 +218,6 @@ func (s *ConnState) onIncomingListRequest(ctx context.Context, builder *RoomsBui
 		}
 	}
 
-	// TODO: calculate the M values for N < M calcs
 	// TODO: list deltas
 	var responseOperations []sync3.ResponseOp
 
@@ -292,6 +291,45 @@ func (s *ConnState) onIncomingListRequest(ctx context.Context, builder *RoomsBui
 			Range:     addedRanges[i][:],
 			RoomIDs:   roomIDs,
 		})
+	}
+
+	if prevReqList != nil {
+		// If nothing has changed ordering wise in this list (sort/filter) but the timeline limit / req_state has,
+		// we need to make a new subscription registering this change to include the new data.
+		timelineChanged := prevReqList.TimelineLimitChanged(nextReqList)
+		reqStateChanged := prevReqList.RoomSubscription.RequiredStateChanged(nextReqList.RoomSubscription)
+		if !sortChanged && !filtersChanged && (timelineChanged || reqStateChanged) {
+			var newRS sync3.RoomSubscription
+			if timelineChanged {
+				newRS.TimelineLimit = nextReqList.TimelineLimit
+			}
+			if reqStateChanged {
+				newRS.RequiredState = nextReqList.RequiredState
+			}
+			newSubID := builder.AddSubscription(newRS)
+			// all the current rooms need to be added to this subscription
+			subslice := nextReqList.Ranges.SliceInto(roomList)
+			for _, ss := range subslice {
+				sortableRooms := ss.(*sync3.SortableRooms)
+				roomIDs := sortableRooms.RoomIDs()
+				// it's important that we filter out rooms the user is no longer joined to. Specifically,
+				// there is a race condition exercised in the security test TestSecurityLiveStreamEventLeftLeak
+				// whereby Eve syncs whilst still joined to the room, then she gets kicked, then syncs again
+				// with an existing session but with changed req state / timeline params. In this scenario,
+				// this code executes BEFORE the kick event has been processed on liveUpdate. This will cause
+				// the subscription to fetch the CURRENT state (though not timeline as the load position has
+				// not been updated) which Eve should not be able to see as she is no longer joined.
+				joinedRoomIDs := make([]string, 0, len(roomIDs))
+				for _, roomID := range roomIDs {
+					if !s.joinChecker.IsUserJoined(s.userID, roomID) {
+						continue
+					}
+					joinedRoomIDs = append(joinedRoomIDs, roomID)
+				}
+				// the builder will populate this with the right room data
+				builder.AddRoomsToSubscription(newSubID, joinedRoomIDs)
+			}
+		}
 	}
 
 	return sync3.ResponseList{

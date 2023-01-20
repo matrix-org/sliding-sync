@@ -823,3 +823,96 @@ func TestPrevBatchInTimeline(t *testing.T) {
 		}), m.MatchRoomSubscription(roomID, m.MatchRoomPrevBatch(tc.wantPrevBatch)))
 	}
 }
+
+// Test that you can get a window with timeline_limit: 1, then increase the limit to 3 and get the
+// room timeline changes only (without any req_state or list ops sent)
+func TestTimelineTrickle(t *testing.T) {
+	// setup code
+	v2 := runTestV2Server(t)
+	v3 := runTestServer(t, v2, "")
+	defer v2.close()
+	defer v3.close()
+	// make 10 rooms, first room is most recent, and send A,B,C into each room
+	allRooms := make([]roomEvents, 10)
+	for i := 0; i < len(allRooms); i++ {
+		ts := time.Now().Add(-1 * time.Duration(i) * time.Minute)
+		roomName := fmt.Sprintf("My Room %d", i)
+		allRooms[i] = roomEvents{
+			roomID: fmt.Sprintf("!TestTimelineTrickle_%d:localhost", i),
+			name:   roomName,
+			events: append(createRoomState(t, alice, ts), []json.RawMessage{
+				testutils.NewStateEvent(t, "m.room.name", "", alice, map[string]interface{}{"name": roomName}, testutils.WithTimestamp(ts.Add(3*time.Second))),
+				testutils.NewEvent(t, "m.room.message", alice, map[string]interface{}{"body": "A"}, testutils.WithTimestamp(ts.Add(4*time.Second))),
+				testutils.NewEvent(t, "m.room.message", alice, map[string]interface{}{"body": "B"}, testutils.WithTimestamp(ts.Add(5*time.Second))),
+				testutils.NewEvent(t, "m.room.message", alice, map[string]interface{}{"body": "C"}, testutils.WithTimestamp(ts.Add(6*time.Second))),
+			}...),
+		}
+	}
+	v2.addAccount(alice, aliceToken)
+	v2.queueResponse(alice, sync2.SyncResponse{
+		Rooms: sync2.SyncRoomsResponse{
+			Join: v2JoinTimeline(allRooms...),
+		},
+	})
+
+	// request top 3 rooms with a timeline limit = 1
+	res := v3.mustDoV3Request(t, aliceToken, sync3.Request{
+		Lists: []sync3.RequestList{
+			{
+				Ranges: [][2]int64{{0, 2}},
+				Sort:   []string{sync3.SortByRecency},
+				RoomSubscription: sync3.RoomSubscription{
+					TimelineLimit: 1,
+					RequiredState: [][2]string{{"m.room.create", ""}},
+				},
+			},
+		},
+	})
+	m.MatchResponse(t, res,
+		m.MatchList(0, m.MatchV3Ops(m.MatchV3SyncOp(0, 2, []string{allRooms[0].roomID, allRooms[1].roomID, allRooms[2].roomID}))),
+		m.MatchRoomSubscriptionsStrict(map[string][]m.RoomMatcher{
+			allRooms[0].roomID: {
+				m.MatchRoomTimeline([]json.RawMessage{allRooms[0].events[len(allRooms[0].events)-1]}),
+				m.MatchRoomRequiredState([]json.RawMessage{allRooms[0].events[0]}),
+			},
+			allRooms[1].roomID: {
+				m.MatchRoomTimeline([]json.RawMessage{allRooms[1].events[len(allRooms[1].events)-1]}),
+				m.MatchRoomRequiredState([]json.RawMessage{allRooms[1].events[0]}),
+			},
+			allRooms[2].roomID: {
+				m.MatchRoomTimeline([]json.RawMessage{allRooms[2].events[len(allRooms[2].events)-1]}),
+				m.MatchRoomRequiredState([]json.RawMessage{allRooms[2].events[0]}),
+			},
+		}),
+	)
+
+	// next request just changes the timeline limit
+	res = v3.mustDoV3RequestWithPos(t, aliceToken, res.Pos, sync3.Request{
+		Lists: []sync3.RequestList{
+			{
+				Ranges: [][2]int64{{0, 2}},
+				Sort:   []string{sync3.SortByRecency},
+				RoomSubscription: sync3.RoomSubscription{
+					TimelineLimit: 3,
+					RequiredState: [][2]string{{"m.room.create", ""}},
+				},
+			},
+		},
+	})
+	m.MatchResponse(t, res, m.MatchNoV3Ops(),
+		m.MatchRoomSubscriptionsStrict(map[string][]m.RoomMatcher{
+			allRooms[0].roomID: {
+				m.MatchRoomTimeline(allRooms[0].events[len(allRooms[0].events)-3:]),
+				m.MatchRoomRequiredState(nil),
+			},
+			allRooms[1].roomID: {
+				m.MatchRoomTimeline(allRooms[1].events[len(allRooms[1].events)-3:]),
+				m.MatchRoomRequiredState(nil),
+			},
+			allRooms[2].roomID: {
+				m.MatchRoomTimeline(allRooms[2].events[len(allRooms[2].events)-3:]),
+				m.MatchRoomRequiredState(nil),
+			},
+		}),
+	)
+}
