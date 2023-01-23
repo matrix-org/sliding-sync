@@ -192,6 +192,33 @@ func TestRoomSubscriptionUnion(t *testing.T) {
 	}
 }
 
+func TestRoomSubscriptionRequiredStateChanged(t *testing.T) {
+	a := RoomSubscription{
+		TimelineLimit: 5,
+		RequiredState: [][2]string{
+			{"a", "b"},
+			{"c", ""},
+		},
+	}
+	b := RoomSubscription{
+		TimelineLimit: 5,
+		RequiredState: [][2]string{
+			{"a", "b"},
+		},
+	}
+	c := RoomSubscription{
+		TimelineLimit: 5,
+		RequiredState: [][2]string{
+			{"c", ""},
+			{"a", "b"},
+		},
+	}
+	assertBool(t, "same required_state", a.RequiredStateChanged(a), false)
+	assertBool(t, "different length", a.RequiredStateChanged(b), true)
+	// This is TRUE even though semantically it is false
+	assertBool(t, "reordered required_state", a.RequiredStateChanged(c), true)
+}
+
 type testData struct {
 	name string
 	next Request

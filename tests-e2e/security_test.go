@@ -2,8 +2,8 @@ package syncv3_test
 
 import (
 	"encoding/json"
+	"fmt"
 	"testing"
-	"time"
 
 	"github.com/matrix-org/sliding-sync/sync3"
 	"github.com/matrix-org/sliding-sync/testutils/m"
@@ -38,6 +38,12 @@ func TestSecurityLiveStreamEventLeftLeak(t *testing.T) {
 				Ranges: sync3.SliceRanges{
 					[2]int64{0, 10}, // doesn't matter
 				},
+				RoomSubscription: sync3.RoomSubscription{
+					RequiredState: [][2]string{
+						{"m.room.name", ""},
+					},
+					TimelineLimit: 2,
+				},
 			}},
 	})
 	m.MatchResponse(t, aliceRes, m.MatchList("a", m.MatchV3Count(1), m.MatchV3Ops(
@@ -68,10 +74,10 @@ func TestSecurityLiveStreamEventLeftLeak(t *testing.T) {
 			"name": "I hate Eve",
 		},
 	})
-	time.Sleep(200 * time.Millisecond) // wait for the proxy to process it..
 
-	// Ensure Alice sees both events
-	aliceRes = alice.SlidingSync(t, sync3.Request{
+	// Ensure Alice sees both events, wait till she gets them
+	var timeline []json.RawMessage
+	aliceRes = alice.SlidingSyncUntil(t, aliceRes.Pos, sync3.Request{
 		Lists: map[string]sync3.RequestList{
 			"a": {
 				Ranges: sync3.SliceRanges{
@@ -81,11 +87,17 @@ func TestSecurityLiveStreamEventLeftLeak(t *testing.T) {
 					RequiredState: [][2]string{
 						{"m.room.name", ""},
 					},
+					TimelineLimit: 2,
 				},
 			}},
-	}, WithPos(aliceRes.Pos))
+	}, func(r *sync3.Response) error {
+		timeline = append(timeline, r.Rooms[roomID].Timeline...)
+		if len(timeline) != 2 {
+			return fmt.Errorf("waiting for more messages, got %v", len(timeline))
+		}
+		return nil
+	})
 
-	timeline := aliceRes.Rooms[roomID].Timeline
 	lastTwoEvents := timeline[len(timeline)-2:]
 	assertEventsEqual(t, []Event{
 		{
@@ -121,10 +133,13 @@ func TestSecurityLiveStreamEventLeftLeak(t *testing.T) {
 				Ranges: sync3.SliceRanges{
 					[2]int64{0, 10}, // doesn't matter
 				},
+				// Note we are _adding_ this to the list which will kick in logic to return required state / timeline limits
+				// so we need to make sure that this returns no data.
 				RoomSubscription: sync3.RoomSubscription{
 					RequiredState: [][2]string{
 						{"m.room.name", ""},
 					},
+					TimelineLimit: 2,
 				},
 			}},
 	}, WithPos(eveRes.Pos))

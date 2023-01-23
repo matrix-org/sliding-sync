@@ -66,6 +66,14 @@ func (rl *RequestList) SortOrderChanged(next *RequestList) bool {
 	return false
 }
 
+func (rl *RequestList) TimelineLimitChanged(next *RequestList) bool {
+	limit := 0
+	if rl != nil {
+		limit = int(rl.TimelineLimit)
+	}
+	return limit != int(next.TimelineLimit)
+}
+
 func (rl *RequestList) FiltersChanged(next *RequestList) bool {
 	var prev *RequestFilters
 	if rl != nil {
@@ -426,19 +434,6 @@ func (r *Request) ApplyDelta(nextReq *Request) (result *Request, delta *RequestD
 	return
 }
 
-func (r *Request) GetTimelineLimit(listKey string, roomID string) int64 {
-	if r.RoomSubscriptions != nil {
-		room, ok := r.RoomSubscriptions[roomID]
-		if ok && room.TimelineLimit > 0 {
-			return room.TimelineLimit
-		}
-	}
-	if r.Lists[listKey].TimelineLimit > 0 {
-		return r.Lists[listKey].TimelineLimit
-	}
-	return DefaultTimelineLimit
-}
-
 type RequestFilters struct {
 	Spaces         []string  `json:"spaces"`
 	IsDM           *bool     `json:"is_dm"`
@@ -522,6 +517,18 @@ type RoomSubscription struct {
 	RequiredState   [][2]string       `json:"required_state"`
 	TimelineLimit   int64             `json:"timeline_limit"`
 	IncludeOldRooms *RoomSubscription `json:"include_old_rooms"`
+}
+
+func (rs RoomSubscription) RequiredStateChanged(other RoomSubscription) bool {
+	if len(rs.RequiredState) != len(other.RequiredState) {
+		return true
+	}
+	for i := range rs.RequiredState {
+		if rs.RequiredState[i] != other.RequiredState[i] {
+			return true
+		}
+	}
+	return false
 }
 
 func (rs RoomSubscription) LazyLoadMembers() bool {
