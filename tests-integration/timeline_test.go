@@ -853,8 +853,8 @@ func TestTimelineTrickle(t *testing.T) {
 
 	// request top 3 rooms with a timeline limit = 1
 	res := v3.mustDoV3Request(t, aliceToken, sync3.Request{
-		Lists: []sync3.RequestList{
-			{
+		Lists: map[string]sync3.RequestList{
+			"a": {
 				Ranges: [][2]int64{{0, 2}},
 				Sort:   []string{sync3.SortByRecency},
 				RoomSubscription: sync3.RoomSubscription{
@@ -865,7 +865,7 @@ func TestTimelineTrickle(t *testing.T) {
 		},
 	})
 	m.MatchResponse(t, res,
-		m.MatchList(0, m.MatchV3Ops(m.MatchV3SyncOp(0, 2, []string{allRooms[0].roomID, allRooms[1].roomID, allRooms[2].roomID}))),
+		m.MatchList("a", m.MatchV3Ops(m.MatchV3SyncOp(0, 2, []string{allRooms[0].roomID, allRooms[1].roomID, allRooms[2].roomID}))),
 		m.MatchRoomSubscriptionsStrict(map[string][]m.RoomMatcher{
 			allRooms[0].roomID: {
 				m.MatchRoomTimeline([]json.RawMessage{allRooms[0].events[len(allRooms[0].events)-1]}),
@@ -884,8 +884,8 @@ func TestTimelineTrickle(t *testing.T) {
 
 	// next request just changes the timeline limit
 	res = v3.mustDoV3RequestWithPos(t, aliceToken, res.Pos, sync3.Request{
-		Lists: []sync3.RequestList{
-			{
+		Lists: map[string]sync3.RequestList{
+			"a": {
 				Ranges: [][2]int64{{0, 2}},
 				Sort:   []string{sync3.SortByRecency},
 				RoomSubscription: sync3.RoomSubscription{
