@@ -158,7 +158,7 @@ func TestTimelinesLiveStream(t *testing.T) {
 
 	// first request => rooms 19,18,17,16
 	res := v3.mustDoV3Request(t, aliceToken, sync3.Request{
-		Lists: []sync3.RequestList{{
+		Lists: map[string]sync3.RequestList{"a": {
 			Ranges: sync3.SliceRanges{
 				[2]int64{0, int64(len(wantRooms) - 1)}, // first N rooms
 			},
@@ -167,7 +167,7 @@ func TestTimelinesLiveStream(t *testing.T) {
 			},
 		}},
 	})
-	m.MatchResponse(t, res, m.MatchList(0, m.MatchV3Count(len(allRooms)), m.MatchV3Ops(
+	m.MatchResponse(t, res, m.MatchList("a", m.MatchV3Count(len(allRooms)), m.MatchV3Ops(
 		m.MatchV3SyncOpFn(func(op *sync3.ResponseOpRange) error {
 			if len(op.RoomIDs) != len(wantRooms) {
 				return fmt.Errorf("want %d rooms, got %d", len(wantRooms), len(op.RoomIDs))
@@ -190,14 +190,14 @@ func TestTimelinesLiveStream(t *testing.T) {
 
 	// next request, DELETE 3; INSERT 0 7;
 	res = v3.mustDoV3RequestWithPos(t, aliceToken, res.Pos, sync3.Request{
-		Lists: []sync3.RequestList{{
+		Lists: map[string]sync3.RequestList{"a": {
 			Ranges: sync3.SliceRanges{
 				[2]int64{0, int64(len(wantRooms) - 1)}, // first N rooms
 			},
 			// sticky remember the timeline_limit
 		}},
 	})
-	m.MatchResponse(t, res, m.MatchList(0, m.MatchV3Count(len(allRooms)), m.MatchV3Ops(
+	m.MatchResponse(t, res, m.MatchList("a", m.MatchV3Count(len(allRooms)), m.MatchV3Ops(
 		m.MatchV3DeleteOp(3),
 		m.MatchV3InsertOp(0, allRooms[7].roomID),
 	)), m.MatchRoomSubscription(
@@ -208,25 +208,25 @@ func TestTimelinesLiveStream(t *testing.T) {
 
 	// next request, UPDATE 0 7;
 	res = v3.mustDoV3RequestWithPos(t, aliceToken, res.Pos, sync3.Request{
-		Lists: []sync3.RequestList{{
+		Lists: map[string]sync3.RequestList{"a": {
 			Ranges: sync3.SliceRanges{
 				[2]int64{0, int64(len(wantRooms) - 1)}, // first N rooms
 			},
 		}},
 	})
-	m.MatchResponse(t, res, m.MatchList(0, m.MatchV3Count(len(allRooms))), m.MatchNoV3Ops())
+	m.MatchResponse(t, res, m.MatchList("a", m.MatchV3Count(len(allRooms))), m.MatchNoV3Ops())
 
 	bumpRoom(18)
 
 	// next request, DELETE 2; INSERT 0 18;
 	res = v3.mustDoV3RequestWithPos(t, aliceToken, res.Pos, sync3.Request{
-		Lists: []sync3.RequestList{{
+		Lists: map[string]sync3.RequestList{"a": {
 			Ranges: sync3.SliceRanges{
 				[2]int64{0, int64(len(wantRooms) - 1)}, // first N rooms
 			},
 		}},
 	})
-	m.MatchResponse(t, res, m.MatchList(0, m.MatchV3Count(len(allRooms)), m.MatchV3Ops(
+	m.MatchResponse(t, res, m.MatchList("a", m.MatchV3Count(len(allRooms)), m.MatchV3Ops(
 		m.MatchV3DeleteOp(2),
 		m.MatchV3InsertOp(0, allRooms[18].roomID),
 	)), m.MatchRoomSubscription(allRooms[18].roomID, m.MatchRoomTimelineMostRecent(1, []json.RawMessage{allRooms[18].events[len(allRooms[18].events)-1]})))
@@ -266,7 +266,7 @@ func TestMultipleWindows(t *testing.T) {
 
 	// request 3 windows
 	res := v3.mustDoV3Request(t, aliceToken, sync3.Request{
-		Lists: []sync3.RequestList{{
+		Lists: map[string]sync3.RequestList{"a": {
 			Ranges: sync3.SliceRanges{
 				[2]int64{0, 2},   // first 3 rooms
 				[2]int64{10, 12}, // 3 rooms in the middle
@@ -277,7 +277,7 @@ func TestMultipleWindows(t *testing.T) {
 			},
 		}},
 	})
-	m.MatchResponse(t, res, m.MatchList(0, m.MatchV3Count(len(allRooms)), m.MatchV3Ops(
+	m.MatchResponse(t, res, m.MatchList("a", m.MatchV3Count(len(allRooms)), m.MatchV3Ops(
 		m.MatchV3SyncOp(0, 2, []string{allRooms[0].roomID, allRooms[1].roomID, allRooms[2].roomID}),
 		m.MatchV3SyncOp(10, 12, []string{allRooms[10].roomID, allRooms[11].roomID, allRooms[12].roomID}),
 		m.MatchV3SyncOp(17, 19, []string{allRooms[17].roomID, allRooms[18].roomID, allRooms[19].roomID}),
@@ -302,7 +302,7 @@ func TestMultipleWindows(t *testing.T) {
 	bumpRoom(18)
 
 	res = v3.mustDoV3RequestWithPos(t, aliceToken, res.Pos, sync3.Request{
-		Lists: []sync3.RequestList{{
+		Lists: map[string]sync3.RequestList{"a": {
 			Ranges: sync3.SliceRanges{
 				[2]int64{0, 2},   // first 3 rooms
 				[2]int64{10, 12}, // 3 rooms in the middle
@@ -316,7 +316,7 @@ func TestMultipleWindows(t *testing.T) {
 	//18 0 1 2 3 4 5 6 7 8 9  10 11 12 13 14 15 16 17 18
 	// DELETE 2            DELETE 12            DELETE 18
 	// INSERT 0,18         INSERT 10,9          INSERT 17,16
-	m.MatchResponse(t, res, m.MatchList(0,
+	m.MatchResponse(t, res, m.MatchList("a",
 		m.MatchV3Count(len(allRooms)),
 		m.MatchV3Ops(
 			m.MatchV3DeleteOp(18),
@@ -348,7 +348,7 @@ func TestInitialFlag(t *testing.T) {
 		},
 	})
 	res := v3.mustDoV3Request(t, aliceToken, sync3.Request{
-		Lists: []sync3.RequestList{{
+		Lists: map[string]sync3.RequestList{"a": {
 			Ranges: sync3.SliceRanges{
 				[2]int64{0, 10},
 			},
@@ -357,7 +357,7 @@ func TestInitialFlag(t *testing.T) {
 			},
 		}},
 	})
-	m.MatchResponse(t, res, m.MatchList(0, m.MatchV3Ops(
+	m.MatchResponse(t, res, m.MatchList("a", m.MatchV3Ops(
 		m.MatchV3SyncOp(0, 10, []string{roomID}),
 	)), m.MatchRoomSubscription(roomID, m.MatchRoomInitial(true)))
 	// send an update
@@ -376,7 +376,7 @@ func TestInitialFlag(t *testing.T) {
 	v2.waitUntilEmpty(t, alice)
 
 	res = v3.mustDoV3RequestWithPos(t, aliceToken, res.Pos, sync3.Request{
-		Lists: []sync3.RequestList{{
+		Lists: map[string]sync3.RequestList{"a": {
 			Ranges: sync3.SliceRanges{
 				[2]int64{0, 10},
 			},
@@ -415,7 +415,7 @@ func TestDuplicateEventsInTimeline(t *testing.T) {
 		},
 	})
 	res := v3.mustDoV3Request(t, aliceToken, sync3.Request{
-		Lists: []sync3.RequestList{{
+		Lists: map[string]sync3.RequestList{"a": {
 			Ranges: sync3.SliceRanges{
 				[2]int64{0, 10},
 			},
@@ -424,7 +424,7 @@ func TestDuplicateEventsInTimeline(t *testing.T) {
 			},
 		}},
 	})
-	m.MatchResponse(t, res, m.MatchList(0,
+	m.MatchResponse(t, res, m.MatchList("a",
 		m.MatchV3Ops(m.MatchV3SyncOp(0, 10, []string{roomID})),
 	), m.MatchRoomSubscription(roomID, m.MatchRoomTimelineMostRecent(1, []json.RawMessage{dupeEvent})))
 }
@@ -468,7 +468,7 @@ func TestTimelineMiddleWindowZeroTimelineLimit(t *testing.T) {
 
 	// Request rooms 5-10 with a 0 timeline limit
 	res := v3.mustDoV3Request(t, aliceToken, sync3.Request{
-		Lists: []sync3.RequestList{{
+		Lists: map[string]sync3.RequestList{"a": {
 			Ranges: sync3.SliceRanges{
 				[2]int64{5, 10},
 			},
@@ -478,7 +478,7 @@ func TestTimelineMiddleWindowZeroTimelineLimit(t *testing.T) {
 		}},
 	})
 	wantRooms := allRooms[5:11]
-	m.MatchResponse(t, res, m.MatchList(0, m.MatchV3Count(len(allRooms)), m.MatchV3Ops(
+	m.MatchResponse(t, res, m.MatchList("a", m.MatchV3Count(len(allRooms)), m.MatchV3Ops(
 		m.MatchV3SyncOpFn(func(op *sync3.ResponseOpRange) error {
 			if len(op.RoomIDs) != len(wantRooms) {
 				return fmt.Errorf("want %d rooms, got %d", len(wantRooms), len(op.RoomIDs))
@@ -512,21 +512,21 @@ func TestTimelineMiddleWindowZeroTimelineLimit(t *testing.T) {
 
 	// should see room 4, the server should not panic
 	res = v3.mustDoV3RequestWithPos(t, aliceToken, res.Pos, sync3.Request{
-		Lists: []sync3.RequestList{{
+		Lists: map[string]sync3.RequestList{"a": {
 			Ranges: sync3.SliceRanges{
 				[2]int64{5, 10},
 			},
 		}},
 	})
-	m.MatchResponse(t, res, m.MatchLists(
-		[]m.ListMatcher{
+	m.MatchResponse(t, res, m.MatchLists(map[string][]m.ListMatcher{
+		"a": {
 			m.MatchV3Count(len(allRooms)),
 			m.MatchV3Ops(
 				m.MatchV3DeleteOp(10),
 				m.MatchV3InsertOp(5, allRooms[4].roomID),
 			),
 		},
-	))
+	}))
 }
 
 // Regression test to ensure that the 'state' block NEVER appears when requesting a high timeline_limit.
@@ -562,7 +562,7 @@ func TestHistoryDoesntIncludeState(t *testing.T) {
 		},
 	})
 	res := v3.mustDoV3Request(t, aliceToken, sync3.Request{
-		Lists: []sync3.RequestList{{
+		Lists: map[string]sync3.RequestList{"a": {
 			Ranges: sync3.SliceRanges{
 				[2]int64{0, 10},
 			},
@@ -571,7 +571,7 @@ func TestHistoryDoesntIncludeState(t *testing.T) {
 			},
 		}},
 	})
-	m.MatchResponse(t, res, m.MatchList(0,
+	m.MatchResponse(t, res, m.MatchList("a",
 		m.MatchV3Ops(m.MatchV3SyncOp(0, 10, []string{roomID})),
 	), m.MatchRoomSubscription(roomID, m.MatchRoomTimeline(room.events), m.MatchRoomPrevBatch(prevBatch)))
 }
@@ -609,27 +609,25 @@ func TestTimelineTxnID(t *testing.T) {
 	})
 
 	aliceRes := v3.mustDoV3Request(t, aliceToken, sync3.Request{
-		Lists: []sync3.RequestList{
-			{
-				Ranges: sync3.SliceRanges{
-					[2]int64{0, 10},
-				},
-				RoomSubscription: sync3.RoomSubscription{
-					TimelineLimit: 2,
-				},
+		Lists: map[string]sync3.RequestList{"a": {
+			Ranges: sync3.SliceRanges{
+				[2]int64{0, 10},
 			},
+			RoomSubscription: sync3.RoomSubscription{
+				TimelineLimit: 2,
+			},
+		},
 		},
 	})
 	bobRes := v3.mustDoV3Request(t, bobToken, sync3.Request{
-		Lists: []sync3.RequestList{
-			{
-				Ranges: sync3.SliceRanges{
-					[2]int64{0, 10},
-				},
-				RoomSubscription: sync3.RoomSubscription{
-					TimelineLimit: 2,
-				},
+		Lists: map[string]sync3.RequestList{"a": {
+			Ranges: sync3.SliceRanges{
+				[2]int64{0, 10},
 			},
+			RoomSubscription: sync3.RoomSubscription{
+				TimelineLimit: 2,
+			},
+		},
 		},
 	})
 
@@ -666,29 +664,27 @@ func TestTimelineTxnID(t *testing.T) {
 
 	// now Alice syncs, she should see the event with the txn ID
 	aliceRes = v3.mustDoV3RequestWithPos(t, aliceToken, aliceRes.Pos, sync3.Request{
-		Lists: []sync3.RequestList{
-			{
-				Ranges: sync3.SliceRanges{
-					[2]int64{0, 10},
-				},
+		Lists: map[string]sync3.RequestList{"a": {
+			Ranges: sync3.SliceRanges{
+				[2]int64{0, 10},
 			},
 		},
+		},
 	})
-	m.MatchResponse(t, aliceRes, m.MatchLists([]m.ListMatcher{m.MatchV3Count(1)}), m.MatchNoV3Ops(), m.MatchRoomSubscription(
+	m.MatchResponse(t, aliceRes, m.MatchList("a", m.MatchV3Count(1)), m.MatchNoV3Ops(), m.MatchRoomSubscription(
 		roomID, m.MatchRoomTimelineMostRecent(1, []json.RawMessage{newEvent}),
 	))
 
 	// now Bob syncs, he should see the event without the txn ID
 	bobRes = v3.mustDoV3RequestWithPos(t, bobToken, bobRes.Pos, sync3.Request{
-		Lists: []sync3.RequestList{
-			{
-				Ranges: sync3.SliceRanges{
-					[2]int64{0, 10},
-				},
+		Lists: map[string]sync3.RequestList{"a": {
+			Ranges: sync3.SliceRanges{
+				[2]int64{0, 10},
 			},
 		},
+		},
 	})
-	m.MatchResponse(t, bobRes, m.MatchLists([]m.ListMatcher{m.MatchV3Count(1)}), m.MatchNoV3Ops(), m.MatchRoomSubscription(
+	m.MatchResponse(t, bobRes, m.MatchList("a", m.MatchV3Count(1)), m.MatchNoV3Ops(), m.MatchRoomSubscription(
 		roomID, m.MatchRoomTimelineMostRecent(1, []json.RawMessage{newEventNoUnsigned}),
 	))
 }
@@ -698,7 +694,7 @@ func testTimelineLoadInitialEvents(v3 *testV3Server, token string, count int, wa
 	return func(t *testing.T) {
 		t.Helper()
 		res := v3.mustDoV3Request(t, token, sync3.Request{
-			Lists: []sync3.RequestList{{
+			Lists: map[string]sync3.RequestList{"a": {
 				Ranges: sync3.SliceRanges{
 					[2]int64{0, int64(len(wantRooms) - 1)}, // first N rooms
 				},
@@ -708,7 +704,7 @@ func testTimelineLoadInitialEvents(v3 *testV3Server, token string, count int, wa
 			}},
 		})
 
-		m.MatchResponse(t, res, m.MatchList(0, m.MatchV3Count(count), m.MatchV3Ops(
+		m.MatchResponse(t, res, m.MatchList("a", m.MatchV3Count(count), m.MatchV3Ops(
 			m.MatchV3SyncOpFn(func(op *sync3.ResponseOpRange) error {
 				if len(op.RoomIDs) != len(wantRooms) {
 					return fmt.Errorf("want %d rooms, got %d", len(wantRooms), len(op.RoomIDs))
@@ -755,7 +751,7 @@ func TestPrevBatchInTimeline(t *testing.T) {
 		},
 	})
 	res := v3.mustDoV3Request(t, aliceToken, sync3.Request{
-		Lists: []sync3.RequestList{{
+		Lists: map[string]sync3.RequestList{"a": {
 			Ranges: sync3.SliceRanges{
 				[2]int64{0, 10},
 			},
@@ -764,11 +760,11 @@ func TestPrevBatchInTimeline(t *testing.T) {
 			},
 		}},
 	})
-	m.MatchResponse(t, res, m.MatchLists([]m.ListMatcher{
+	m.MatchResponse(t, res, m.MatchList("a",
 		m.MatchV3Ops(
 			m.MatchV3SyncOp(0, 10, []string{roomID}),
 		),
-	}), m.MatchRoomSubscription(roomID, m.MatchRoomPrevBatch("")))
+	), m.MatchRoomSubscription(roomID, m.MatchRoomPrevBatch("")))
 
 	// now make a newer prev_batch and try again
 	v2.queueResponse(alice, sync2.SyncResponse{
@@ -807,7 +803,7 @@ func TestPrevBatchInTimeline(t *testing.T) {
 	}
 	for _, tc := range testCases {
 		res := v3.mustDoV3Request(t, aliceToken, sync3.Request{
-			Lists: []sync3.RequestList{{
+			Lists: map[string]sync3.RequestList{"a": {
 				Ranges: sync3.SliceRanges{
 					[2]int64{0, 10},
 				},
@@ -816,11 +812,11 @@ func TestPrevBatchInTimeline(t *testing.T) {
 				},
 			}},
 		})
-		m.MatchResponse(t, res, m.MatchLists([]m.ListMatcher{
+		m.MatchResponse(t, res, m.MatchList("a",
 			m.MatchV3Ops(
 				m.MatchV3SyncOp(0, 10, []string{roomID}),
 			),
-		}), m.MatchRoomSubscription(roomID, m.MatchRoomPrevBatch(tc.wantPrevBatch)))
+		), m.MatchRoomSubscription(roomID, m.MatchRoomPrevBatch(tc.wantPrevBatch)))
 	}
 }
 
@@ -857,8 +853,8 @@ func TestTimelineTrickle(t *testing.T) {
 
 	// request top 3 rooms with a timeline limit = 1
 	res := v3.mustDoV3Request(t, aliceToken, sync3.Request{
-		Lists: []sync3.RequestList{
-			{
+		Lists: map[string]sync3.RequestList{
+			"a": {
 				Ranges: [][2]int64{{0, 2}},
 				Sort:   []string{sync3.SortByRecency},
 				RoomSubscription: sync3.RoomSubscription{
@@ -869,7 +865,7 @@ func TestTimelineTrickle(t *testing.T) {
 		},
 	})
 	m.MatchResponse(t, res,
-		m.MatchList(0, m.MatchV3Ops(m.MatchV3SyncOp(0, 2, []string{allRooms[0].roomID, allRooms[1].roomID, allRooms[2].roomID}))),
+		m.MatchList("a", m.MatchV3Ops(m.MatchV3SyncOp(0, 2, []string{allRooms[0].roomID, allRooms[1].roomID, allRooms[2].roomID}))),
 		m.MatchRoomSubscriptionsStrict(map[string][]m.RoomMatcher{
 			allRooms[0].roomID: {
 				m.MatchRoomTimeline([]json.RawMessage{allRooms[0].events[len(allRooms[0].events)-1]}),
@@ -888,8 +884,8 @@ func TestTimelineTrickle(t *testing.T) {
 
 	// next request just changes the timeline limit
 	res = v3.mustDoV3RequestWithPos(t, aliceToken, res.Pos, sync3.Request{
-		Lists: []sync3.RequestList{
-			{
+		Lists: map[string]sync3.RequestList{
+			"a": {
 				Ranges: [][2]int64{{0, 2}},
 				Sort:   []string{sync3.SortByRecency},
 				RoomSubscription: sync3.RoomSubscription{

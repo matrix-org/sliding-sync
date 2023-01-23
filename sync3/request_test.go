@@ -251,7 +251,7 @@ func TestRequestApplyDeltas(t *testing.T) {
 							},
 						},
 						want: Request{
-							Lists: []RequestList{},
+							Lists: map[string]RequestList{},
 							RoomSubscriptions: map[string]RoomSubscription{
 								"!foo:bar": {
 									TimelineLimit: 10,
@@ -262,7 +262,7 @@ func TestRequestApplyDeltas(t *testing.T) {
 					wantDelta: func(input *Request, d testData) RequestDelta {
 						return RequestDelta{
 							Subs:  []string{"!foo:bar"},
-							Lists: []RequestListDelta{},
+							Lists: map[string]RequestListDelta{},
 						}
 					},
 				},
@@ -270,16 +270,16 @@ func TestRequestApplyDeltas(t *testing.T) {
 					testData: testData{
 						name: "initial: list only",
 						next: Request{
-							Lists: []RequestList{
-								{
+							Lists: map[string]RequestList{
+								"a": {
 									Ranges: [][2]int64{{0, 20}},
 									Sort:   []string{SortByHighlightCount},
 								},
 							},
 						},
 						want: Request{
-							Lists: []RequestList{
-								{
+							Lists: map[string]RequestList{
+								"a": {
 									Ranges: [][2]int64{{0, 20}},
 									Sort:   []string{SortByHighlightCount},
 								},
@@ -289,10 +289,10 @@ func TestRequestApplyDeltas(t *testing.T) {
 					},
 					wantDelta: func(input *Request, d testData) RequestDelta {
 						return RequestDelta{
-							Lists: []RequestListDelta{
-								{
+							Lists: map[string]RequestListDelta{
+								"a": {
 									Prev: nil,
-									Curr: &d.want.Lists[0],
+									Curr: listPtr(d.want.Lists["a"]),
 								},
 							},
 						}
@@ -302,15 +302,15 @@ func TestRequestApplyDeltas(t *testing.T) {
 					testData: testData{
 						name: "initial: sets sort order to be by_recency if missing",
 						next: Request{
-							Lists: []RequestList{
-								{
+							Lists: map[string]RequestList{
+								"a": {
 									Ranges: [][2]int64{{0, 20}},
 								},
 							},
 						},
 						want: Request{
-							Lists: []RequestList{
-								{
+							Lists: map[string]RequestList{
+								"a": {
 									Ranges: [][2]int64{{0, 20}},
 									Sort:   []string{SortByRecency},
 								},
@@ -320,10 +320,10 @@ func TestRequestApplyDeltas(t *testing.T) {
 					},
 					wantDelta: func(input *Request, d testData) RequestDelta {
 						return RequestDelta{
-							Lists: []RequestListDelta{
-								{
+							Lists: map[string]RequestListDelta{
+								"a": {
 									Prev: nil,
-									Curr: &d.want.Lists[0],
+									Curr: listPtr(d.want.Lists["a"]),
 								},
 							},
 						}
@@ -333,19 +333,19 @@ func TestRequestApplyDeltas(t *testing.T) {
 					testData: testData{
 						name: "initial: multiple lists",
 						next: Request{
-							Lists: []RequestList{
-								{
+							Lists: map[string]RequestList{
+								"z": {
 									Ranges: [][2]int64{{0, 20}},
 									Sort:   []string{SortByHighlightCount},
 								},
-								{
+								"a": {
 									Ranges: [][2]int64{{0, 10}},
 									Filters: &RequestFilters{
 										IsEncrypted: &boolTrue,
 									},
 									Sort: []string{SortByRecency},
 								},
-								{
+								"b": {
 									Ranges: [][2]int64{{0, 5}},
 									Sort:   []string{SortByRecency, SortByName},
 									RoomSubscription: RoomSubscription{
@@ -358,19 +358,19 @@ func TestRequestApplyDeltas(t *testing.T) {
 							},
 						},
 						want: Request{
-							Lists: []RequestList{
-								{
+							Lists: map[string]RequestList{
+								"z": {
 									Ranges: [][2]int64{{0, 20}},
 									Sort:   []string{SortByHighlightCount},
 								},
-								{
+								"a": {
 									Ranges: [][2]int64{{0, 10}},
 									Filters: &RequestFilters{
 										IsEncrypted: &boolTrue,
 									},
 									Sort: []string{SortByRecency},
 								},
-								{
+								"b": {
 									Ranges: [][2]int64{{0, 5}},
 									Sort:   []string{SortByRecency, SortByName},
 									RoomSubscription: RoomSubscription{
@@ -386,18 +386,18 @@ func TestRequestApplyDeltas(t *testing.T) {
 					},
 					wantDelta: func(input *Request, d testData) RequestDelta {
 						return RequestDelta{
-							Lists: []RequestListDelta{
-								{
+							Lists: map[string]RequestListDelta{
+								"z": {
 									Prev: nil,
-									Curr: &d.want.Lists[0],
+									Curr: listPtr(d.want.Lists["z"]),
 								},
-								{
+								"a": {
 									Prev: nil,
-									Curr: &d.want.Lists[1],
+									Curr: listPtr(d.want.Lists["a"]),
 								},
-								{
+								"b": {
 									Prev: nil,
-									Curr: &d.want.Lists[2],
+									Curr: listPtr(d.want.Lists["b"]),
 								},
 							},
 						}
@@ -407,8 +407,8 @@ func TestRequestApplyDeltas(t *testing.T) {
 					testData: testData{
 						name: "initial: list and sub",
 						next: Request{
-							Lists: []RequestList{
-								{
+							Lists: map[string]RequestList{
+								"f": {
 									Ranges: [][2]int64{{0, 20}},
 									Sort:   []string{SortByHighlightCount},
 								},
@@ -420,8 +420,8 @@ func TestRequestApplyDeltas(t *testing.T) {
 							},
 						},
 						want: Request{
-							Lists: []RequestList{
-								{
+							Lists: map[string]RequestList{
+								"f": {
 									Ranges: [][2]int64{{0, 20}},
 									Sort:   []string{SortByHighlightCount},
 								},
@@ -436,10 +436,10 @@ func TestRequestApplyDeltas(t *testing.T) {
 					wantDelta: func(input *Request, d testData) RequestDelta {
 						return RequestDelta{
 							Subs: []string{"!foo:bar"},
-							Lists: []RequestListDelta{
-								{
+							Lists: map[string]RequestListDelta{
+								"f": {
 									Prev: nil,
-									Curr: &d.want.Lists[0],
+									Curr: listPtr(d.want.Lists["f"]),
 								},
 							},
 						}
@@ -449,8 +449,8 @@ func TestRequestApplyDeltas(t *testing.T) {
 		},
 		{
 			input: &Request{
-				Lists: []RequestList{
-					{
+				Lists: map[string]RequestList{
+					"q": {
 						Sort: []string{SortByName},
 						RoomSubscription: RoomSubscription{
 							TimelineLimit: 5,
@@ -472,8 +472,8 @@ func TestRequestApplyDeltas(t *testing.T) {
 					testData: testData{
 						name: "overwriting of sort and updating subs without adding new ones",
 						next: Request{
-							Lists: []RequestList{
-								{
+							Lists: map[string]RequestList{
+								"q": {
 									Sort: []string{SortByRecency},
 								},
 							},
@@ -484,8 +484,8 @@ func TestRequestApplyDeltas(t *testing.T) {
 							},
 						},
 						want: Request{
-							Lists: []RequestList{
-								{
+							Lists: map[string]RequestList{
+								"q": {
 									Sort: []string{SortByRecency},
 									RoomSubscription: RoomSubscription{
 										TimelineLimit: 5,
@@ -503,10 +503,10 @@ func TestRequestApplyDeltas(t *testing.T) {
 						return RequestDelta{
 							Subs:   nil,
 							Unsubs: nil,
-							Lists: []RequestListDelta{
-								{
-									Prev: &input.Lists[0],
-									Curr: &d.want.Lists[0],
+							Lists: map[string]RequestListDelta{
+								"q": {
+									Prev: listPtr(input.Lists["q"]),
+									Curr: listPtr(d.want.Lists["q"]),
 								},
 							},
 						}
@@ -517,8 +517,8 @@ func TestRequestApplyDeltas(t *testing.T) {
 					testData: testData{
 						name: "Adding a sub",
 						next: Request{
-							Lists: []RequestList{
-								{
+							Lists: map[string]RequestList{
+								"q": {
 									Sort: []string{SortByRecency},
 									RoomSubscription: RoomSubscription{
 										TimelineLimit: 5,
@@ -532,8 +532,8 @@ func TestRequestApplyDeltas(t *testing.T) {
 							},
 						},
 						want: Request{
-							Lists: []RequestList{
-								{
+							Lists: map[string]RequestList{
+								"q": {
 									Sort: []string{SortByRecency},
 									RoomSubscription: RoomSubscription{
 										TimelineLimit: 5,
@@ -554,10 +554,10 @@ func TestRequestApplyDeltas(t *testing.T) {
 						return RequestDelta{
 							Subs:   []string{"!bar:baz"},
 							Unsubs: nil,
-							Lists: []RequestListDelta{
-								{
-									Prev: &input.Lists[0],
-									Curr: &d.want.Lists[0],
+							Lists: map[string]RequestListDelta{
+								"q": {
+									Prev: listPtr(input.Lists["q"]),
+									Curr: listPtr(d.want.Lists["q"]),
 								},
 							},
 						}
@@ -568,16 +568,16 @@ func TestRequestApplyDeltas(t *testing.T) {
 					testData: testData{
 						name: "Unsubscribing",
 						next: Request{
-							Lists: []RequestList{
-								{
+							Lists: map[string]RequestList{
+								"q": {
 									Sort: []string{SortByName},
 								},
 							},
 							UnsubscribeRooms: []string{"!foo:bar"},
 						},
 						want: Request{
-							Lists: []RequestList{
-								{
+							Lists: map[string]RequestList{
+								"q": {
 									Sort: []string{SortByName},
 									RoomSubscription: RoomSubscription{
 										TimelineLimit: 5,
@@ -591,10 +591,10 @@ func TestRequestApplyDeltas(t *testing.T) {
 						return RequestDelta{
 							Subs:   nil,
 							Unsubs: []string{"!foo:bar"},
-							Lists: []RequestListDelta{
-								{
-									Prev: &input.Lists[0],
-									Curr: &d.want.Lists[0],
+							Lists: map[string]RequestListDelta{
+								"q": {
+									Prev: listPtr(input.Lists["q"]),
+									Curr: listPtr(d.want.Lists["q"]),
 								},
 							},
 						}
@@ -605,8 +605,8 @@ func TestRequestApplyDeltas(t *testing.T) {
 					testData: testData{
 						name: "Subscribing/Unsubscribing in one request",
 						next: Request{
-							Lists: []RequestList{
-								{
+							Lists: map[string]RequestList{
+								"q": {
 									Sort: []string{SortByRecency},
 								},
 							},
@@ -618,8 +618,8 @@ func TestRequestApplyDeltas(t *testing.T) {
 							UnsubscribeRooms: []string{"!bar:baz"},
 						},
 						want: Request{
-							Lists: []RequestList{
-								{
+							Lists: map[string]RequestList{
+								"q": {
 									Sort: []string{SortByRecency},
 									RoomSubscription: RoomSubscription{
 										TimelineLimit: 5,
@@ -637,10 +637,10 @@ func TestRequestApplyDeltas(t *testing.T) {
 						return RequestDelta{
 							Subs:   nil,
 							Unsubs: nil,
-							Lists: []RequestListDelta{
-								{
-									Prev: &input.Lists[0],
-									Curr: &d.want.Lists[0],
+							Lists: map[string]RequestListDelta{
+								"q": {
+									Prev: listPtr(input.Lists["q"]),
+									Curr: listPtr(d.want.Lists["q"]),
 								},
 							},
 						}
@@ -650,11 +650,15 @@ func TestRequestApplyDeltas(t *testing.T) {
 					testData: testData{
 						name: "deleting a list",
 						next: Request{
-							Lists:             []RequestList{},
+							Lists: map[string]RequestList{
+								"q": {
+									Deleted: true,
+								},
+							},
 							RoomSubscriptions: map[string]RoomSubscription{},
 						},
 						want: Request{
-							Lists: []RequestList{},
+							Lists: map[string]RequestList{},
 							RoomSubscriptions: map[string]RoomSubscription{
 								"!foo:bar": {
 									TimelineLimit: 10,
@@ -666,9 +670,9 @@ func TestRequestApplyDeltas(t *testing.T) {
 						return RequestDelta{
 							Subs:   nil,
 							Unsubs: nil,
-							Lists: []RequestListDelta{
-								{
-									Prev: &input.Lists[0],
+							Lists: map[string]RequestListDelta{
+								"q": {
+									Prev: listPtr(input.Lists["q"]),
 									Curr: nil,
 								},
 							},
@@ -679,11 +683,11 @@ func TestRequestApplyDeltas(t *testing.T) {
 					testData: testData{
 						name: "adding a list",
 						next: Request{
-							Lists: []RequestList{
-								{
+							Lists: map[string]RequestList{
+								"q": {
 									Sort: []string{SortByRecency},
 								},
-								{
+								"s": {
 									Sort: []string{SortByHighlightCount},
 									RoomSubscription: RoomSubscription{
 										TimelineLimit: 9000,
@@ -693,14 +697,14 @@ func TestRequestApplyDeltas(t *testing.T) {
 							RoomSubscriptions: map[string]RoomSubscription{},
 						},
 						want: Request{
-							Lists: []RequestList{
-								{
+							Lists: map[string]RequestList{
+								"q": {
 									Sort: []string{SortByRecency},
 									RoomSubscription: RoomSubscription{
 										TimelineLimit: 5,
 									},
 								},
-								{
+								"s": {
 									Sort: []string{SortByHighlightCount},
 									RoomSubscription: RoomSubscription{
 										TimelineLimit: 9000,
@@ -718,14 +722,14 @@ func TestRequestApplyDeltas(t *testing.T) {
 						return RequestDelta{
 							Subs:   nil,
 							Unsubs: nil,
-							Lists: []RequestListDelta{
-								{
-									Prev: &input.Lists[0],
-									Curr: &d.want.Lists[0],
+							Lists: map[string]RequestListDelta{
+								"q": {
+									Prev: listPtr(input.Lists["q"]),
+									Curr: listPtr(d.want.Lists["q"]),
 								},
-								{
+								"s": {
 									Prev: nil,
-									Curr: &d.want.Lists[1],
+									Curr: listPtr(d.want.Lists["s"]),
 								},
 							},
 						}
@@ -1066,4 +1070,8 @@ func jsonEqual(t *testing.T, name string, got, want interface{}) {
 	if !bytes.Equal(aa, bb) {
 		t.Errorf("%s\ngot  %s\nwant %s", name, string(aa), string(bb))
 	}
+}
+
+func listPtr(l RequestList) *RequestList {
+	return &l
 }

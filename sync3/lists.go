@@ -26,8 +26,8 @@ var (
 )
 
 type RoomListDelta struct {
-	ListIndex int
-	Op        ListOp
+	ListKey string
+	Op      ListOp
 }
 
 type RoomDelta struct {
@@ -44,12 +44,13 @@ type RoomDelta struct {
 // lists.
 type InternalRequestLists struct {
 	allRooms map[string]RoomConnMetadata
-	lists    []*FilteredSortableRooms
+	lists    map[string]*FilteredSortableRooms
 }
 
 func NewInternalRequestLists() *InternalRequestLists {
 	return &InternalRequestLists{
 		allRooms: make(map[string]RoomConnMetadata, 10),
+		lists:    make(map[string]*FilteredSortableRooms),
 	}
 }
 
@@ -80,9 +81,9 @@ func (s *InternalRequestLists) SetRoom(r RoomConnMetadata) (delta RoomDelta) {
 	// filter.Include may call on this room ID in the RoomFinder, so make sure it finds it.
 	s.allRooms[r.RoomID] = r
 
-	for i := range s.lists {
-		_, alreadyExists := s.lists[i].roomIDToIndex[r.RoomID]
-		shouldExist := s.lists[i].filter.Include(&r, s)
+	for listKey, list := range s.lists {
+		_, alreadyExists := list.roomIDToIndex[r.RoomID]
+		shouldExist := list.filter.Include(&r, s)
 		if shouldExist && r.HasLeft {
 			shouldExist = false
 		}
@@ -90,20 +91,20 @@ func (s *InternalRequestLists) SetRoom(r RoomConnMetadata) (delta RoomDelta) {
 		if alreadyExists {
 			if shouldExist { // could be a change
 				delta.Lists = append(delta.Lists, RoomListDelta{
-					ListIndex: i,
-					Op:        ListOpChange,
+					ListKey: listKey,
+					Op:      ListOpChange,
 				})
 			} else { // removal
 				delta.Lists = append(delta.Lists, RoomListDelta{
-					ListIndex: i,
-					Op:        ListOpDel,
+					ListKey: listKey,
+					Op:      ListOpDel,
 				})
 			}
 		} else {
 			if shouldExist { // addition
 				delta.Lists = append(delta.Lists, RoomListDelta{
-					ListIndex: i,
-					Op:        ListOpAdd,
+					ListKey: listKey,
+					Op:      ListOpAdd,
 				})
 			} // else it doesn't exist and it shouldn't exist, so do nothing e.g room isn't relevant to this list
 		}
@@ -117,7 +118,7 @@ func (s *InternalRequestLists) RemoveRoom(roomID string) {
 	// TODO: update lists?
 }
 
-func (s *InternalRequestLists) DeleteList(index int) {
+func (s *InternalRequestLists) DeleteList(listKey string) {
 	// TODO
 }
 
@@ -126,16 +127,18 @@ func (s *InternalRequestLists) Room(roomID string) *RoomConnMetadata {
 	return &r
 }
 
-func (s *InternalRequestLists) Get(listIndex int) *FilteredSortableRooms {
-	return s.lists[listIndex]
+func (s *InternalRequestLists) Get(listKey string) *FilteredSortableRooms {
+	return s.lists[listKey]
 }
 
-// Assign a new list at the given index. If Overwrite, any existing list is replaced. If DoNotOverwrite, the existing
+// Assign a new list at the given key. If Overwrite, any existing list is replaced. If DoNotOverwrite, the existing
 // list is returned if one exists, else a new list is created. Returns the list and true if the list was overwritten.
-func (s *InternalRequestLists) AssignList(index int, filters *RequestFilters, sort []string, shouldOverwrite OverwriteVal) (*FilteredSortableRooms, bool) {
-	internal.Assert("Set index is at most list size", index <= len(s.lists))
-	if shouldOverwrite == DoNotOverwrite && index < len(s.lists) {
-		return s.lists[index], false
+func (s *InternalRequestLists) AssignList(listKey string, filters *RequestFilters, sort []string, shouldOverwrite OverwriteVal) (*FilteredSortableRooms, bool) {
+	if shouldOverwrite == DoNotOverwrite {
+		_, exists := s.lists[listKey]
+		if exists {
+			return s.lists[listKey], false
+		}
 	}
 	roomIDs := make([]string, len(s.allRooms))
 	i := 0
@@ -151,17 +154,13 @@ func (s *InternalRequestLists) AssignList(index int, filters *RequestFilters, so
 			logger.Err(err).Strs("sort_by", sort).Msg("failed to sort")
 		}
 	}
-	if index == len(s.lists) {
-		s.lists = append(s.lists, roomList)
-		return roomList, true
-	}
-	s.lists[index] = roomList
+	s.lists[listKey] = roomList
 	return roomList, true
 }
 
 // Count returns the count of total rooms in this list
-func (s *InternalRequestLists) Count(index int) int {
-	return int(s.lists[index].Len())
+func (s *InternalRequestLists) Count(listKey string) int {
+	return int(s.lists[listKey].Len())
 }
 
 func (s *InternalRequestLists) Len() int {

@@ -54,19 +54,20 @@ func TestNotificationsOnTop(t *testing.T) {
 
 	// connect and make sure we get nobing, bing
 	syncRequestBody := sync3.Request{
-		Lists: []sync3.RequestList{{
-			Ranges: sync3.SliceRanges{
-				[2]int64{0, int64(len(allRooms) - 1)}, // all rooms
-			},
-			RoomSubscription: sync3.RoomSubscription{
-				TimelineLimit: int64(100),
-			},
-			// prefer highlights/notifs/rest, and group them by recency not counts count first, THEN eventually recency
-			Sort: []string{sync3.SortByNotificationLevel, sync3.SortByRecency},
-		}},
+		Lists: map[string]sync3.RequestList{
+			"a": {
+				Ranges: sync3.SliceRanges{
+					[2]int64{0, int64(len(allRooms) - 1)}, // all rooms
+				},
+				RoomSubscription: sync3.RoomSubscription{
+					TimelineLimit: int64(100),
+				},
+				// prefer highlights/notifs/rest, and group them by recency not counts count first, THEN eventually recency
+				Sort: []string{sync3.SortByNotificationLevel, sync3.SortByRecency},
+			}},
 	}
 	res := v3.mustDoV3Request(t, aliceToken, syncRequestBody)
-	m.MatchResponse(t, res, m.MatchList(0, m.MatchV3Count(len(allRooms)), m.MatchV3Ops(
+	m.MatchResponse(t, res, m.MatchList("a", m.MatchV3Count(len(allRooms)), m.MatchV3Ops(
 		m.MatchV3SyncOp(0, int64(len(allRooms)-1), []string{noBingRoomID, bingRoomID}),
 	)))
 
@@ -90,7 +91,7 @@ func TestNotificationsOnTop(t *testing.T) {
 	})
 	v2.waitUntilEmpty(t, alice)
 	res = v3.mustDoV3RequestWithPos(t, aliceToken, res.Pos, syncRequestBody)
-	m.MatchResponse(t, res, m.MatchList(0, m.MatchV3Count(len(allRooms)),
+	m.MatchResponse(t, res, m.MatchList("a", m.MatchV3Count(len(allRooms)),
 		m.MatchV3Ops(m.MatchV3DeleteOp(1), m.MatchV3InsertOp(0, bingRoomID)),
 	), m.MatchRoomSubscriptionsStrict(map[string][]m.RoomMatcher{
 		bingRoomID: {
@@ -115,25 +116,26 @@ func TestNotificationsOnTop(t *testing.T) {
 	})
 	v2.waitUntilEmpty(t, alice)
 	res = v3.mustDoV3RequestWithPos(t, aliceToken, res.Pos, syncRequestBody)
-	m.MatchResponse(t, res, m.MatchList(0, m.MatchV3Count(len(allRooms))),
+	m.MatchResponse(t, res, m.MatchList("a", m.MatchV3Count(len(allRooms))),
 		m.MatchNoV3Ops(),
 	)
 
 	// restart the server and sync from fresh again, it should still have the bing room on top
 	v3.restart(t, v2, pqString)
 	res = v3.mustDoV3Request(t, aliceToken, sync3.Request{
-		Lists: []sync3.RequestList{{
-			Ranges: sync3.SliceRanges{
-				[2]int64{0, int64(len(allRooms) - 1)}, // all rooms
-			},
-			RoomSubscription: sync3.RoomSubscription{
-				TimelineLimit: int64(100),
-			},
-			// prefer highlight count first, THEN eventually recency
-			Sort: []string{sync3.SortByNotificationLevel, sync3.SortByRecency},
-		}},
+		Lists: map[string]sync3.RequestList{
+			"a": {
+				Ranges: sync3.SliceRanges{
+					[2]int64{0, int64(len(allRooms) - 1)}, // all rooms
+				},
+				RoomSubscription: sync3.RoomSubscription{
+					TimelineLimit: int64(100),
+				},
+				// prefer highlight count first, THEN eventually recency
+				Sort: []string{sync3.SortByNotificationLevel, sync3.SortByRecency},
+			}},
 	})
-	m.MatchResponse(t, res, m.MatchList(0, m.MatchV3Count(len(allRooms)), m.MatchV3Ops(
+	m.MatchResponse(t, res, m.MatchList("a", m.MatchV3Count(len(allRooms)), m.MatchV3Ops(
 		m.MatchV3SyncOpFn(func(op *sync3.ResponseOpRange) error {
 			if len(op.RoomIDs) != len(allRooms) {
 				return fmt.Errorf("want %d rooms, got %d", len(allRooms), len(op.RoomIDs))

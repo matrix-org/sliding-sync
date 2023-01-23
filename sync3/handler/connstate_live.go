@@ -152,13 +152,15 @@ func (s *connStateLive) processLiveUpdate(ctx context.Context, up caches.Update,
 
 	// do per-list updates (e.g resorting, adding/removing rooms which no longer match filter)
 	for _, listDelta := range delta.Lists {
-		index := listDelta.ListIndex
-		list := s.lists.Get(index)
-		reqList := s.muxedReq.Lists[index]
-		updates := s.processLiveUpdateForList(ctx, builder, up, listDelta.Op, &reqList, list, &response.Lists[index])
+		listKey := listDelta.ListKey
+		list := s.lists.Get(listKey)
+		reqList := s.muxedReq.Lists[listKey]
+		resList := response.Lists[listKey]
+		updates := s.processLiveUpdateForList(ctx, builder, up, listDelta.Op, &reqList, list, &resList)
 		if updates {
 			hasUpdates = true
 		}
+		response.Lists[listKey] = resList
 	}
 
 	// add in initial rooms FIRST as we replace whatever is in the rooms key for these rooms.

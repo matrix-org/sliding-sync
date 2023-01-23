@@ -30,8 +30,8 @@ func TestFiltersEncryption(t *testing.T) {
 
 	// connect and make sure either the encrypted room or not depending on what the filter says
 	res := rig.V3.mustDoV3Request(t, aliceToken, sync3.Request{
-		Lists: []sync3.RequestList{
-			{
+		Lists: map[string]sync3.RequestList{
+			"enc": {
 				Ranges: sync3.SliceRanges{
 					[2]int64{0, 1}, // all rooms
 				},
@@ -39,7 +39,7 @@ func TestFiltersEncryption(t *testing.T) {
 					IsEncrypted: &boolTrue,
 				},
 			},
-			{
+			"noenc": {
 				Ranges: sync3.SliceRanges{
 					[2]int64{0, 1}, // all rooms
 				},
@@ -50,17 +50,19 @@ func TestFiltersEncryption(t *testing.T) {
 		},
 	})
 	m.MatchResponse(t, res, m.MatchLists(
-		[]m.ListMatcher{
-			m.MatchV3Count(1),
-			m.MatchV3Ops(
-				m.MatchV3SyncOp(0, 1, []string{encryptedRoomID}),
-			),
-		},
-		[]m.ListMatcher{
-			m.MatchV3Count(1),
-			m.MatchV3Ops(
-				m.MatchV3SyncOp(0, 1, []string{unencryptedRoomID}),
-			),
+		map[string][]m.ListMatcher{
+			"enc": {
+				m.MatchV3Count(1),
+				m.MatchV3Ops(
+					m.MatchV3SyncOp(0, 1, []string{encryptedRoomID}),
+				),
+			},
+			"noenc": {
+				m.MatchV3Count(1),
+				m.MatchV3Ops(
+					m.MatchV3SyncOp(0, 1, []string{unencryptedRoomID}),
+				),
+			},
 		},
 	))
 
@@ -69,14 +71,14 @@ func TestFiltersEncryption(t *testing.T) {
 
 	// now requesting the encrypted list should include it (added)
 	res = rig.V3.mustDoV3RequestWithPos(t, aliceToken, res.Pos, sync3.Request{
-		Lists: []sync3.RequestList{
-			{
+		Lists: map[string]sync3.RequestList{
+			"enc": {
 				Ranges: sync3.SliceRanges{
 					[2]int64{0, 1}, // all rooms
 				},
 				// sticky; should remember filters
 			},
-			{
+			"noenc": {
 				Ranges: sync3.SliceRanges{
 					[2]int64{0, 1}, // all rooms
 				},
@@ -85,54 +87,62 @@ func TestFiltersEncryption(t *testing.T) {
 		},
 	})
 	m.MatchResponse(t, res, m.MatchLists(
-		[]m.ListMatcher{
-			m.MatchV3Count(2),
-			m.MatchV3Ops(
-				m.MatchV3DeleteOp(1), m.MatchV3InsertOp(0, unencryptedRoomID),
-			),
-		},
-		[]m.ListMatcher{
-			m.MatchV3Count(0),
-			m.MatchV3Ops(
-				m.MatchV3DeleteOp(0),
-			),
+		map[string][]m.ListMatcher{
+			"enc": {
+				m.MatchV3Count(2),
+				m.MatchV3Ops(
+					m.MatchV3DeleteOp(1), m.MatchV3InsertOp(0, unencryptedRoomID),
+				),
+			},
+			"noenc": {
+				m.MatchV3Count(0),
+				m.MatchV3Ops(
+					m.MatchV3DeleteOp(0),
+				),
+			},
 		},
 	))
 
 	// requesting the encrypted list from scratch returns 2 rooms now
 	res = rig.V3.mustDoV3Request(t, aliceToken, sync3.Request{
-		Lists: []sync3.RequestList{{
-			Ranges: sync3.SliceRanges{
-				[2]int64{0, 1}, // all rooms
-			},
-			Filters: &sync3.RequestFilters{
-				IsEncrypted: &boolTrue,
-			},
-		}},
+		Lists: map[string]sync3.RequestList{
+			"enc": {
+				Ranges: sync3.SliceRanges{
+					[2]int64{0, 1}, // all rooms
+				},
+				Filters: &sync3.RequestFilters{
+					IsEncrypted: &boolTrue,
+				},
+			}},
 	})
 	m.MatchResponse(t, res, m.MatchLists(
-		[]m.ListMatcher{
-			m.MatchV3Count(2),
-			m.MatchV3Ops(
-				m.MatchV3SyncOp(0, 1, []string{unencryptedRoomID, encryptedRoomID}),
-			),
+		map[string][]m.ListMatcher{
+			"enc": {
+				m.MatchV3Count(2),
+				m.MatchV3Ops(
+					m.MatchV3SyncOp(0, 1, []string{unencryptedRoomID, encryptedRoomID}),
+				),
+			},
 		},
 	))
 
 	// requesting the unencrypted stream from scratch returns 0 rooms
 	res = rig.V3.mustDoV3Request(t, aliceToken, sync3.Request{
-		Lists: []sync3.RequestList{{
-			Ranges: sync3.SliceRanges{
-				[2]int64{0, 1}, // all rooms
-			},
-			Filters: &sync3.RequestFilters{
-				IsEncrypted: &boolFalse,
-			},
-		}},
+		Lists: map[string]sync3.RequestList{
+			"noenc": {
+				Ranges: sync3.SliceRanges{
+					[2]int64{0, 1}, // all rooms
+				},
+				Filters: &sync3.RequestFilters{
+					IsEncrypted: &boolFalse,
+				},
+			}},
 	})
 	m.MatchResponse(t, res, m.MatchLists(
-		[]m.ListMatcher{
-			m.MatchV3Count(0),
+		map[string][]m.ListMatcher{
+			"noenc": {
+				m.MatchV3Count(0),
+			},
 		},
 	))
 }
@@ -152,8 +162,8 @@ func TestFiltersInvite(t *testing.T) {
 
 	// make sure the is_invite filter works
 	res := rig.V3.mustDoV3Request(t, aliceToken, sync3.Request{
-		Lists: []sync3.RequestList{
-			{
+		Lists: map[string]sync3.RequestList{
+			"inv": {
 				Ranges: sync3.SliceRanges{
 					[2]int64{0, 20}, // all rooms
 				},
@@ -161,7 +171,7 @@ func TestFiltersInvite(t *testing.T) {
 					IsInvite: &boolTrue,
 				},
 			},
-			{
+			"noinv": {
 				Ranges: sync3.SliceRanges{
 					[2]int64{0, 20}, // all rooms
 				},
@@ -172,14 +182,16 @@ func TestFiltersInvite(t *testing.T) {
 		},
 	})
 	m.MatchResponse(t, res, m.MatchLists(
-		[]m.ListMatcher{
-			m.MatchV3Count(1),
-			m.MatchV3Ops(
-				m.MatchV3SyncOp(0, 20, []string{roomID}),
-			),
-		},
-		[]m.ListMatcher{
-			m.MatchV3Count(0),
+		map[string][]m.ListMatcher{
+			"inv": {
+				m.MatchV3Count(1),
+				m.MatchV3Ops(
+					m.MatchV3SyncOp(0, 20, []string{roomID}),
+				),
+			},
+			"noinv": {
+				m.MatchV3Count(0),
+			},
 		},
 	))
 
@@ -188,14 +200,14 @@ func TestFiltersInvite(t *testing.T) {
 
 	// now the room should move from one room to another
 	res = rig.V3.mustDoV3RequestWithPos(t, aliceToken, res.Pos, sync3.Request{
-		Lists: []sync3.RequestList{
-			{
+		Lists: map[string]sync3.RequestList{
+			"inv": {
 				Ranges: sync3.SliceRanges{
 					[2]int64{0, 20}, // all rooms
 				},
 				// sticky; should remember filters
 			},
-			{
+			"noinv": {
 				Ranges: sync3.SliceRanges{
 					[2]int64{0, 20}, // all rooms
 				},
@@ -205,18 +217,20 @@ func TestFiltersInvite(t *testing.T) {
 	})
 	// the room swaps from the invite list to the join list
 	m.MatchResponse(t, res, m.MatchLists(
-		[]m.ListMatcher{
-			m.MatchV3Count(0),
-			m.MatchV3Ops(
-				m.MatchV3DeleteOp(0),
-			),
-		},
-		[]m.ListMatcher{
-			m.MatchV3Count(1),
-			m.MatchV3Ops(
-				m.MatchV3DeleteOp(0),
-				m.MatchV3InsertOp(0, roomID),
-			),
+		map[string][]m.ListMatcher{
+			"inv": {
+				m.MatchV3Count(0),
+				m.MatchV3Ops(
+					m.MatchV3DeleteOp(0),
+				),
+			},
+			"noinv": {
+				m.MatchV3Count(1),
+				m.MatchV3Ops(
+					m.MatchV3DeleteOp(0),
+					m.MatchV3InsertOp(0, roomID),
+				),
+			},
 		},
 	))
 }
@@ -258,8 +272,8 @@ func TestFiltersRoomName(t *testing.T) {
 
 	// make sure the room name filter works
 	res := rig.V3.mustDoV3Request(t, aliceToken, sync3.Request{
-		Lists: []sync3.RequestList{
-			{
+		Lists: map[string]sync3.RequestList{
+			"a": {
 				Ranges: sync3.SliceRanges{
 					[2]int64{0, 20}, // all rooms
 				},
@@ -269,21 +283,19 @@ func TestFiltersRoomName(t *testing.T) {
 			},
 		},
 	})
-	m.MatchResponse(t, res, m.MatchLists(
-		[]m.ListMatcher{
-			m.MatchV3Count(5),
-			m.MatchV3Ops(
-				m.MatchV3SyncOp(0, 20, []string{
-					ridApple, ridPear, ridOrange, ridPineapple, ridBanana,
-				}, true),
-			),
-		},
+	m.MatchResponse(t, res, m.MatchList("a",
+		m.MatchV3Count(5),
+		m.MatchV3Ops(
+			m.MatchV3SyncOp(0, 20, []string{
+				ridApple, ridPear, ridOrange, ridPineapple, ridBanana,
+			}, true),
+		),
 	))
 
 	// refine the filter
 	res = rig.V3.mustDoV3RequestWithPos(t, aliceToken, res.Pos, sync3.Request{
-		Lists: []sync3.RequestList{
-			{
+		Lists: map[string]sync3.RequestList{
+			"a": {
 				Ranges: sync3.SliceRanges{
 					[2]int64{0, 20}, // all rooms
 				},
@@ -293,16 +305,14 @@ func TestFiltersRoomName(t *testing.T) {
 			},
 		},
 	})
-	m.MatchResponse(t, res, m.MatchLists(
-		[]m.ListMatcher{
-			m.MatchV3Count(2),
-			m.MatchV3Ops(
-				m.MatchV3InvalidateOp(0, 20),
-				m.MatchV3SyncOp(0, 20, []string{
-					ridApple, ridPineapple,
-				}, true),
-			),
-		},
+	m.MatchResponse(t, res, m.MatchList("a",
+		m.MatchV3Count(2),
+		m.MatchV3Ops(
+			m.MatchV3InvalidateOp(0, 20),
+			m.MatchV3SyncOp(0, 20, []string{
+				ridApple, ridPineapple,
+			}, true),
+		),
 	))
 }
 
@@ -328,9 +338,9 @@ func TestFiltersRoomTypes(t *testing.T) {
 
 	// make sure the room_types and not_room_types filters works
 	res := rig.V3.mustDoV3Request(t, aliceToken, sync3.Request{
-		Lists: []sync3.RequestList{
+		Lists: map[string]sync3.RequestList{
 			// returns spaceRoomID only due to direct match
-			{
+			"a": {
 				Ranges: sync3.SliceRanges{
 					[2]int64{0, 20}, // all rooms
 				},
@@ -339,7 +349,7 @@ func TestFiltersRoomTypes(t *testing.T) {
 				},
 			},
 			// returns roomID only due to direct match (null = things without a room type)
-			{
+			"b": {
 				Ranges: sync3.SliceRanges{
 					[2]int64{0, 20}, // all rooms
 				},
@@ -348,7 +358,7 @@ func TestFiltersRoomTypes(t *testing.T) {
 				},
 			},
 			// returns roomID and otherRoomID due to exclusion
-			{
+			"c": {
 				Ranges: sync3.SliceRanges{
 					[2]int64{0, 20}, // all rooms
 				},
@@ -357,7 +367,7 @@ func TestFiltersRoomTypes(t *testing.T) {
 				},
 			},
 			// returns otherRoomID due to otherRoomType inclusive, roomType is excluded (override)
-			{
+			"d": {
 				Ranges: sync3.SliceRanges{
 					[2]int64{0, 20}, // all rooms
 				},
@@ -367,7 +377,7 @@ func TestFiltersRoomTypes(t *testing.T) {
 				},
 			},
 			// returns no rooms as filtered room type isn't set on any rooms
-			{
+			"e": {
 				Ranges: sync3.SliceRanges{
 					[2]int64{0, 20}, // all rooms
 				},
@@ -376,7 +386,7 @@ func TestFiltersRoomTypes(t *testing.T) {
 				},
 			},
 			// returns all rooms as filtered not room type isn't set on any rooms
-			{
+			"f": {
 				Ranges: sync3.SliceRanges{
 					[2]int64{0, 20}, // all rooms
 				},
@@ -386,26 +396,26 @@ func TestFiltersRoomTypes(t *testing.T) {
 			},
 		},
 	})
-	m.MatchResponse(t, res, m.MatchLists(
-		[]m.ListMatcher{
+	m.MatchResponse(t, res, m.MatchLists(map[string][]m.ListMatcher{
+		"a": {
 			m.MatchV3Count(1), m.MatchV3Ops(m.MatchV3SyncOp(0, 20, []string{spaceRoomID})),
 		},
-		[]m.ListMatcher{
+		"b": {
 			m.MatchV3Count(1), m.MatchV3Ops(m.MatchV3SyncOp(0, 20, []string{roomID})),
 		},
-		[]m.ListMatcher{
+		"c": {
 			m.MatchV3Count(2), m.MatchV3Ops(m.MatchV3SyncOp(0, 20, []string{roomID, otherRoomID}, true)),
 		},
-		[]m.ListMatcher{
+		"d": {
 			m.MatchV3Count(1), m.MatchV3Ops(m.MatchV3SyncOp(0, 20, []string{otherRoomID})),
 		},
-		[]m.ListMatcher{
+		"e": {
 			m.MatchV3Count(0),
 		},
-		[]m.ListMatcher{
+		"f": {
 			m.MatchV3Count(3), m.MatchV3Ops(m.MatchV3SyncOp(0, 20, []string{roomID, otherRoomID, spaceRoomID}, true)),
 		},
-	))
+	}))
 }
 
 func TestFiltersTags(t *testing.T) {
@@ -448,8 +458,8 @@ func TestFiltersTags(t *testing.T) {
 	})
 	aliceToken := rig.Token(alice)
 	res := rig.V3.mustDoV3Request(t, aliceToken, sync3.Request{
-		Lists: []sync3.RequestList{
-			{
+		Lists: map[string]sync3.RequestList{
+			"fav": {
 				Ranges: sync3.SliceRanges{
 					[2]int64{0, 20},
 				},
@@ -457,7 +467,7 @@ func TestFiltersTags(t *testing.T) {
 					Tags: []string{tagFav},
 				},
 			},
-			{
+			"lp": {
 				Ranges: sync3.SliceRanges{
 					[2]int64{0, 20},
 				},
@@ -465,7 +475,7 @@ func TestFiltersTags(t *testing.T) {
 					Tags: []string{tagLow},
 				},
 			},
-			{
+			"favlp": {
 				Ranges: sync3.SliceRanges{
 					[2]int64{0, 20},
 				},
@@ -475,21 +485,21 @@ func TestFiltersTags(t *testing.T) {
 			},
 		},
 	})
-	m.MatchResponse(t, res, m.MatchList(0, m.MatchV3Count(3), m.MatchV3Ops(
+	m.MatchResponse(t, res, m.MatchList("fav", m.MatchV3Count(3), m.MatchV3Ops(
 		m.MatchV3SyncOp(0, 20, []string{fav1RoomID, fav2RoomID, favAndLowRoomID}, true),
-	)), m.MatchList(1, m.MatchV3Count(3), m.MatchV3Ops(
+	)), m.MatchList("lp", m.MatchV3Count(3), m.MatchV3Ops(
 		m.MatchV3SyncOp(0, 20, []string{low1RoomID, low2RoomID, favAndLowRoomID}, true),
-	)), m.MatchList(2, m.MatchV3Count(5), m.MatchV3Ops(
+	)), m.MatchList("favlp", m.MatchV3Count(5), m.MatchV3Ops(
 		m.MatchV3SyncOp(0, 20, []string{fav1RoomID, fav2RoomID, favAndLowRoomID, low1RoomID, low2RoomID}, true),
 	)))
 
 	// first bump the fav1 room
 	rig.FlushEvent(t, alice, fav1RoomID, testutils.NewMessageEvent(t, alice, "Hi"))
 	res = rig.V3.mustDoV3RequestWithPos(t, aliceToken, res.Pos, sync3.Request{
-		Lists: []sync3.RequestList{
-			{Ranges: sync3.SliceRanges{{0, 20}}},
-			{Ranges: sync3.SliceRanges{{0, 20}}},
-			{Ranges: sync3.SliceRanges{{0, 20}}},
+		Lists: map[string]sync3.RequestList{
+			"fav":   {Ranges: sync3.SliceRanges{{0, 20}}},
+			"lp":    {Ranges: sync3.SliceRanges{{0, 20}}},
+			"favlp": {Ranges: sync3.SliceRanges{{0, 20}}},
 		},
 	})
 
@@ -511,22 +521,22 @@ func TestFiltersTags(t *testing.T) {
 
 	// we should see DELETEs
 	res = rig.V3.mustDoV3RequestWithPos(t, aliceToken, res.Pos, sync3.Request{
-		Lists: []sync3.RequestList{
-			{Ranges: sync3.SliceRanges{{0, 20}}},
-			{Ranges: sync3.SliceRanges{{0, 20}}},
-			{Ranges: sync3.SliceRanges{{0, 20}}},
+		Lists: map[string]sync3.RequestList{
+			"fav":   {Ranges: sync3.SliceRanges{{0, 20}}},
+			"lp":    {Ranges: sync3.SliceRanges{{0, 20}}},
+			"favlp": {Ranges: sync3.SliceRanges{{0, 20}}},
 		},
 	})
-	m.MatchResponse(t, res, m.MatchList(0, m.MatchV3Count(2), m.MatchV3Ops(
+	m.MatchResponse(t, res, m.MatchList("fav", m.MatchV3Count(2), m.MatchV3Ops(
 		m.MatchV3DeleteOp(0),
-	)), m.MatchList(1, m.MatchV3Ops()), m.MatchList(2, m.MatchV3Count(4), m.MatchV3Ops(
+	)), m.MatchList("lp", m.MatchV3Ops()), m.MatchList("favlp", m.MatchV3Count(4), m.MatchV3Ops(
 		m.MatchV3DeleteOp(0),
 	)))
 
 	// check not_tags works
 	res = rig.V3.mustDoV3Request(t, aliceToken, sync3.Request{
-		Lists: []sync3.RequestList{
-			{
+		Lists: map[string]sync3.RequestList{
+			"fav": {
 				Ranges: sync3.SliceRanges{
 					[2]int64{0, 20},
 				},
@@ -534,7 +544,7 @@ func TestFiltersTags(t *testing.T) {
 					Tags: []string{tagFav},
 				},
 			},
-			{
+			"nofav": {
 				Ranges: sync3.SliceRanges{
 					[2]int64{0, 20},
 				},
@@ -544,9 +554,9 @@ func TestFiltersTags(t *testing.T) {
 			},
 		},
 	})
-	m.MatchResponse(t, res, m.MatchList(0, m.MatchV3Count(2), m.MatchV3Ops(
+	m.MatchResponse(t, res, m.MatchList("fav", m.MatchV3Count(2), m.MatchV3Ops(
 		m.MatchV3SyncOp(0, 20, []string{fav2RoomID, favAndLowRoomID}, true),
-	)), m.MatchList(1, m.MatchV3Count(3), m.MatchV3Ops(
+	)), m.MatchList("nofav", m.MatchV3Count(3), m.MatchV3Ops(
 		m.MatchV3SyncOp(0, 20, []string{low1RoomID, low2RoomID, fav1RoomID}, true),
 	)))
 
@@ -568,13 +578,13 @@ func TestFiltersTags(t *testing.T) {
 	})
 	rig.V2.waitUntilEmpty(t, alice)
 	res = rig.V3.mustDoV3RequestWithPos(t, aliceToken, res.Pos, sync3.Request{
-		Lists: []sync3.RequestList{
-			{
+		Lists: map[string]sync3.RequestList{
+			"fav": {
 				Ranges: sync3.SliceRanges{
 					[2]int64{0, 20},
 				},
 			},
-			{
+			"nofav": {
 				Ranges: sync3.SliceRanges{
 					[2]int64{0, 20},
 				},
@@ -589,9 +599,9 @@ func TestFiltersTags(t *testing.T) {
 	// now we have removed fav tag on FAV2 so new lists are:
 	// FAVLOW
 	// FAV1, LOW2, LOW1, FAV2
-	m.MatchResponse(t, res, m.MatchList(0, m.MatchV3Count(1), m.MatchV3Ops(
+	m.MatchResponse(t, res, m.MatchList("fav", m.MatchV3Count(1), m.MatchV3Ops(
 		m.MatchV3DeleteOp(1),
-	)), m.MatchList(1, m.MatchV3Count(4), m.MatchV3Ops(
+	)), m.MatchList("nofav", m.MatchV3Count(4), m.MatchV3Ops(
 		m.MatchV3DeleteOp(3),
 		m.MatchV3InsertOp(3, fav2RoomID),
 	)))

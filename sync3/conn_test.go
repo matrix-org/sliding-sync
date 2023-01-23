@@ -36,8 +36,8 @@ func TestConn(t *testing.T) {
 	c := NewConn(connID, &connHandlerMock{func(ctx context.Context, cid ConnID, req *Request, isInitial bool) (*Response, error) {
 		count += 1
 		return &Response{
-			Lists: []ResponseList{
-				{
+			Lists: map[string]ResponseList{
+				"a": {
 					Count: count,
 				},
 			},
@@ -50,14 +50,14 @@ func TestConn(t *testing.T) {
 	})
 	assertNoError(t, err)
 	assertPos(t, resp.Pos, 1)
-	assertInt(t, resp.Lists[0].Count, 101)
+	assertInt(t, resp.Lists["a"].Count, 101)
 
 	// happy case, pos=1
 	resp, err = c.OnIncomingRequest(ctx, &Request{
 		pos: 1,
 	})
 	assertPos(t, resp.Pos, 2)
-	assertInt(t, resp.Lists[0].Count, 102)
+	assertInt(t, resp.Lists["a"].Count, 102)
 	assertNoError(t, err)
 	// bogus position returns a 400
 	_, err = c.OnIncomingRequest(ctx, &Request{
@@ -82,10 +82,10 @@ func TestConnBlocking(t *testing.T) {
 	}
 	ch := make(chan string)
 	c := NewConn(connID, &connHandlerMock{func(ctx context.Context, cid ConnID, req *Request, init bool) (*Response, error) {
-		if req.Lists[0].Sort[0] == "hi" {
+		if req.Lists["a"].Sort[0] == "hi" {
 			time.Sleep(10 * time.Millisecond)
 		}
-		ch <- req.Lists[0].Sort[0]
+		ch <- req.Lists["a"].Sort[0]
 		return &Response{}, nil
 	}})
 
@@ -97,8 +97,8 @@ func TestConnBlocking(t *testing.T) {
 	go func() {
 		defer wg.Done()
 		c.OnIncomingRequest(ctx, &Request{
-			Lists: []RequestList{
-				{
+			Lists: map[string]RequestList{
+				"a": {
 					Sort: []string{"hi"},
 				},
 			},
@@ -108,8 +108,8 @@ func TestConnBlocking(t *testing.T) {
 		defer wg.Done()
 		time.Sleep(1 * time.Millisecond) // this req happens 2nd
 		c.OnIncomingRequest(ctx, &Request{
-			Lists: []RequestList{
-				{
+			Lists: map[string]RequestList{
+				"a": {
 					Sort: []string{"hi2"},
 				},
 			},
@@ -137,37 +137,37 @@ func TestConnRetries(t *testing.T) {
 	callCount := 0
 	c := NewConn(connID, &connHandlerMock{func(ctx context.Context, cid ConnID, req *Request, init bool) (*Response, error) {
 		callCount += 1
-		return &Response{Lists: []ResponseList{
-			{
+		return &Response{Lists: map[string]ResponseList{
+			"a": {
 				Count: 20,
 			},
 		}}, nil
 	}})
 	resp, err := c.OnIncomingRequest(ctx, &Request{})
 	assertPos(t, resp.Pos, 1)
-	assertInt(t, resp.Lists[0].Count, 20)
+	assertInt(t, resp.Lists["a"].Count, 20)
 	assertInt(t, callCount, 1)
 	assertNoError(t, err)
 	resp, err = c.OnIncomingRequest(ctx, &Request{pos: 1})
 	assertPos(t, resp.Pos, 2)
-	assertInt(t, resp.Lists[0].Count, 20)
+	assertInt(t, resp.Lists["a"].Count, 20)
 	assertInt(t, callCount, 2)
 	assertNoError(t, err)
 	// retry! Shouldn't invoke handler again
 	resp, err = c.OnIncomingRequest(ctx, &Request{pos: 1})
 	assertPos(t, resp.Pos, 2)
-	assertInt(t, resp.Lists[0].Count, 20)
+	assertInt(t, resp.Lists["a"].Count, 20)
 	assertInt(t, callCount, 2) // this doesn't increment
 	assertNoError(t, err)
 	// retry! but with modified request body, so should invoke handler again but return older data (buffered)
 	resp, err = c.OnIncomingRequest(ctx, &Request{
-		pos: 1, Lists: []RequestList{
-			{
+		pos: 1, Lists: map[string]RequestList{
+			"a": {
 				Sort: []string{SortByName},
 			},
 		}})
 	assertPos(t, resp.Pos, 2)
-	assertInt(t, resp.Lists[0].Count, 20)
+	assertInt(t, resp.Lists["a"].Count, 20)
 	assertInt(t, callCount, 3) // this doesn't increment
 	assertNoError(t, err)
 }
@@ -180,8 +180,8 @@ func TestConnBufferRes(t *testing.T) {
 	callCount := 0
 	c := NewConn(connID, &connHandlerMock{func(ctx context.Context, cid ConnID, req *Request, init bool) (*Response, error) {
 		callCount += 1
-		return &Response{Lists: []ResponseList{
-			{
+		return &Response{Lists: map[string]ResponseList{
+			"a": {
 				Count: callCount,
 			},
 		}}, nil
@@ -189,24 +189,24 @@ func TestConnBufferRes(t *testing.T) {
 	resp, err := c.OnIncomingRequest(ctx, &Request{})
 	assertNoError(t, err)
 	assertPos(t, resp.Pos, 1)
-	assertInt(t, resp.Lists[0].Count, 1)
+	assertInt(t, resp.Lists["a"].Count, 1)
 	assertInt(t, callCount, 1)
 	resp, err = c.OnIncomingRequest(ctx, &Request{pos: 1})
 	assertNoError(t, err)
 	assertPos(t, resp.Pos, 2)
-	assertInt(t, resp.Lists[0].Count, 2)
+	assertInt(t, resp.Lists["a"].Count, 2)
 	assertInt(t, callCount, 2)
 	// retry with modified request data, should invoke handler again!
 	resp, err = c.OnIncomingRequest(ctx, &Request{pos: 1, TxnID: "a"})
 	assertNoError(t, err)
 	assertPos(t, resp.Pos, 2)
-	assertInt(t, resp.Lists[0].Count, 2)
+	assertInt(t, resp.Lists["a"].Count, 2)
 	assertInt(t, callCount, 3) // this DOES increment, the response is buffered and not returned yet.
 	// retry with same request body, so should NOT invoke handler again and return buffered response
 	resp, err = c.OnIncomingRequest(ctx, &Request{pos: 2, TxnID: "a"})
 	assertNoError(t, err)
 	assertPos(t, resp.Pos, 3)
-	assertInt(t, resp.Lists[0].Count, 3)
+	assertInt(t, resp.Lists["a"].Count, 3)
 	assertInt(t, callCount, 3)
 }
 
@@ -283,8 +283,8 @@ func TestConnBufferRememberInflight(t *testing.T) {
 	callCount := 0
 	c := NewConn(connID, &connHandlerMock{func(ctx context.Context, cid ConnID, req *Request, init bool) (*Response, error) {
 		callCount += 1
-		return &Response{Lists: []ResponseList{
-			{
+		return &Response{Lists: map[string]ResponseList{
+			"a": {
 				Count: callCount,
 			},
 		}}, nil
@@ -360,7 +360,7 @@ func TestConnBufferRememberInflight(t *testing.T) {
 			assertNoError(t, err)
 		}
 		assertPos(t, resp.Pos, step.wantResPos)
-		assertInt(t, resp.Lists[0].Count, step.wantResCount)
+		assertInt(t, resp.Lists["a"].Count, step.wantResCount)
 		assertInt(t, callCount, step.wantCallCount)
 	}
 }

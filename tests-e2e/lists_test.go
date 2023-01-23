@@ -34,8 +34,8 @@ func TestMultipleLists(t *testing.T) {
 
 	// request 2 lists, one set encrypted, one set unencrypted
 	res := alice.SlidingSync(t, sync3.Request{
-		Lists: []sync3.RequestList{
-			{
+		Lists: map[string]sync3.RequestList{
+			"enc": {
 				Sort: []string{sync3.SortByRecency},
 				Ranges: sync3.SliceRanges{
 					[2]int64{0, 2}, // first 3 rooms
@@ -47,7 +47,7 @@ func TestMultipleLists(t *testing.T) {
 					IsEncrypted: &boolTrue,
 				},
 			},
-			{
+			"unenc": {
 				Sort: []string{sync3.SortByRecency},
 				Ranges: sync3.SliceRanges{
 					[2]int64{0, 2}, // first 3 rooms
@@ -63,12 +63,15 @@ func TestMultipleLists(t *testing.T) {
 	})
 
 	m.MatchResponse(t, res,
-		m.MatchLists([]m.ListMatcher{
-			m.MatchV3Count(len(encryptedRoomIDs)),
-			m.MatchV3Ops(m.MatchV3SyncOp(0, 2, encryptedRoomIDs[:3])),
-		}, []m.ListMatcher{
-			m.MatchV3Count(len(unencryptedRoomIDs)),
-			m.MatchV3Ops(m.MatchV3SyncOp(0, 2, unencryptedRoomIDs[:3])),
+		m.MatchLists(map[string][]m.ListMatcher{
+			"enc": {
+				m.MatchV3Count(len(encryptedRoomIDs)),
+				m.MatchV3Ops(m.MatchV3SyncOp(0, 2, encryptedRoomIDs[:3])),
+			},
+			"unenc": {
+				m.MatchV3Count(len(unencryptedRoomIDs)),
+				m.MatchV3Ops(m.MatchV3SyncOp(0, 2, unencryptedRoomIDs[:3])),
+			},
 		}),
 		m.MatchRoomSubscriptionsStrict(map[string][]m.RoomMatcher{
 			encryptedRoomIDs[0]:   {},
@@ -82,13 +85,13 @@ func TestMultipleLists(t *testing.T) {
 
 	// now scroll one of the lists
 	res = alice.SlidingSync(t, sync3.Request{
-		Lists: []sync3.RequestList{
-			{
+		Lists: map[string]sync3.RequestList{
+			"enc": {
 				Ranges: sync3.SliceRanges{
 					[2]int64{0, 2}, // first 3 rooms still
 				},
 			},
-			{
+			"unenc": {
 				Ranges: sync3.SliceRanges{
 					[2]int64{0, 2}, // first 3 rooms
 					[2]int64{3, 5}, // next 3 rooms
@@ -96,13 +99,16 @@ func TestMultipleLists(t *testing.T) {
 			},
 		},
 	}, WithPos(res.Pos))
-	m.MatchResponse(t, res, m.MatchLists([]m.ListMatcher{
-		m.MatchV3Count(len(encryptedRoomIDs)),
-	}, []m.ListMatcher{
-		m.MatchV3Count(len(unencryptedRoomIDs)),
-		m.MatchV3Ops(
-			m.MatchV3SyncOp(3, 5, unencryptedRoomIDs[3:6]),
-		),
+	m.MatchResponse(t, res, m.MatchLists(map[string][]m.ListMatcher{
+		"enc": {
+			m.MatchV3Count(len(encryptedRoomIDs)),
+		},
+		"unenc": {
+			m.MatchV3Count(len(unencryptedRoomIDs)),
+			m.MatchV3Ops(
+				m.MatchV3SyncOp(3, 5, unencryptedRoomIDs[3:6]),
+			),
+		},
 	}), m.MatchRoomSubscriptionsStrict(map[string][]m.RoomMatcher{
 		unencryptedRoomIDs[3]: {},
 		unencryptedRoomIDs[4]: {},
@@ -118,13 +124,13 @@ func TestMultipleLists(t *testing.T) {
 	// We are tracking the first few encrypted rooms so we expect list 0 to update
 	// However we do not track old unencrypted rooms so we expect no change in list 1
 	res = alice.SlidingSync(t, sync3.Request{
-		Lists: []sync3.RequestList{
-			{
+		Lists: map[string]sync3.RequestList{
+			"enc": {
 				Ranges: sync3.SliceRanges{
 					[2]int64{0, 2}, // first 3 rooms still
 				},
 			},
-			{
+			"unenc": {
 				Ranges: sync3.SliceRanges{
 					[2]int64{0, 2}, // first 3 rooms
 					[2]int64{3, 5}, // next 3 rooms
@@ -132,14 +138,17 @@ func TestMultipleLists(t *testing.T) {
 			},
 		},
 	}, WithPos(res.Pos))
-	m.MatchResponse(t, res, m.MatchLists([]m.ListMatcher{
-		m.MatchV3Count(len(encryptedRoomIDs)),
-		m.MatchV3Ops(
-			m.MatchV3DeleteOp(2),
-			m.MatchV3InsertOp(0, encryptedRoomIDs[0]),
-		),
-	}, []m.ListMatcher{
-		m.MatchV3Count(len(unencryptedRoomIDs)),
+	m.MatchResponse(t, res, m.MatchLists(map[string][]m.ListMatcher{
+		"enc": {
+			m.MatchV3Count(len(encryptedRoomIDs)),
+			m.MatchV3Ops(
+				m.MatchV3DeleteOp(2),
+				m.MatchV3InsertOp(0, encryptedRoomIDs[0]),
+			),
+		},
+		"unenc": {
+			m.MatchV3Count(len(unencryptedRoomIDs)),
+		},
 	}))
 }
 
@@ -171,8 +180,8 @@ func TestMultipleListsDMUpdate(t *testing.T) {
 
 	// request 2 lists, one set DM, one set no DM
 	res := alice.SlidingSync(t, sync3.Request{
-		Lists: []sync3.RequestList{
-			{
+		Lists: map[string]sync3.RequestList{
+			"dm": {
 				Sort: []string{sync3.SortByRecency},
 				Ranges: sync3.SliceRanges{
 					[2]int64{0, 2}, // first 3 rooms
@@ -184,7 +193,7 @@ func TestMultipleListsDMUpdate(t *testing.T) {
 					IsDM: &boolTrue,
 				},
 			},
-			{
+			"nodm": {
 				Sort: []string{sync3.SortByRecency},
 				Ranges: sync3.SliceRanges{
 					[2]int64{0, 2}, // first 3 rooms
@@ -199,12 +208,15 @@ func TestMultipleListsDMUpdate(t *testing.T) {
 		},
 	})
 
-	m.MatchResponse(t, res, m.MatchLists([]m.ListMatcher{
-		m.MatchV3Count(len(dmRoomIDs)),
-		m.MatchV3Ops(m.MatchV3SyncOp(0, 2, dmRoomIDs[:3])),
-	}, []m.ListMatcher{
-		m.MatchV3Count(len(groupRoomIDs)),
-		m.MatchV3Ops(m.MatchV3SyncOp(0, 2, groupRoomIDs[:3])),
+	m.MatchResponse(t, res, m.MatchLists(map[string][]m.ListMatcher{
+		"dm": {
+			m.MatchV3Count(len(dmRoomIDs)),
+			m.MatchV3Ops(m.MatchV3SyncOp(0, 2, dmRoomIDs[:3])),
+		},
+		"nodm": {
+			m.MatchV3Count(len(groupRoomIDs)),
+			m.MatchV3Ops(m.MatchV3SyncOp(0, 2, groupRoomIDs[:3])),
+		},
 	}))
 
 	// now bring the last DM room to the top with a notif
@@ -217,27 +229,30 @@ func TestMultipleListsDMUpdate(t *testing.T) {
 
 	// now get the delta: only the DM room should change
 	res = alice.SlidingSync(t, sync3.Request{
-		Lists: []sync3.RequestList{
-			{
+		Lists: map[string]sync3.RequestList{
+			"dm": {
 				Ranges: sync3.SliceRanges{
 					[2]int64{0, 2}, // first 3 rooms still
 				},
 			},
-			{
+			"nodm": {
 				Ranges: sync3.SliceRanges{
 					[2]int64{0, 2}, // first 3 rooms still
 				},
 			},
 		},
 	}, WithPos(res.Pos))
-	m.MatchResponse(t, res, m.MatchLists([]m.ListMatcher{
-		m.MatchV3Count(len(dmRoomIDs)),
-		m.MatchV3Ops(
-			m.MatchV3DeleteOp(2),
-			m.MatchV3InsertOp(0, dmRoomIDs[0]),
-		),
-	}, []m.ListMatcher{
-		m.MatchV3Count(len(groupRoomIDs)),
+	m.MatchResponse(t, res, m.MatchLists(map[string][]m.ListMatcher{
+		"dm": {
+			m.MatchV3Count(len(dmRoomIDs)),
+			m.MatchV3Ops(
+				m.MatchV3DeleteOp(2),
+				m.MatchV3InsertOp(0, dmRoomIDs[0]),
+			),
+		},
+		"nodm": {
+			m.MatchV3Count(len(groupRoomIDs)),
+		},
 	}), m.MatchRoomSubscription(dmRoomIDs[0], MatchRoomTimelineMostRecent(1, []Event{
 		{
 			Type: "m.room.message",
@@ -261,14 +276,14 @@ func TestNewListMidConnection(t *testing.T) {
 
 	// first request no list
 	res := alice.SlidingSync(t, sync3.Request{
-		Lists: []sync3.RequestList{},
+		Lists: map[string]sync3.RequestList{},
 	})
-	m.MatchResponse(t, res, m.MatchLists())
+	m.MatchResponse(t, res, m.MatchLists(nil))
 
 	// now add a list
 	res = alice.SlidingSync(t, sync3.Request{
-		Lists: []sync3.RequestList{
-			{
+		Lists: map[string]sync3.RequestList{
+			"a": {
 				Ranges: sync3.SliceRanges{
 					[2]int64{0, 2}, // first 3 rooms
 				},
@@ -278,7 +293,7 @@ func TestNewListMidConnection(t *testing.T) {
 			},
 		},
 	}, WithPos(res.Pos))
-	m.MatchResponse(t, res, m.MatchList(0, m.MatchV3Count(len(roomIDs)), m.MatchV3Ops(
+	m.MatchResponse(t, res, m.MatchList("a", m.MatchV3Count(len(roomIDs)), m.MatchV3Ops(
 		m.MatchV3SyncOp(0, 2, roomIDs[:3]),
 	)))
 }
@@ -358,8 +373,8 @@ func TestMultipleOverlappingLists(t *testing.T) {
 	//
 	// Rooms with * are union'd
 	res := alice.SlidingSync(t, sync3.Request{
-		Lists: []sync3.RequestList{
-			{
+		Lists: map[string]sync3.RequestList{
+			"enc": {
 				Sort: []string{sync3.SortByRecency},
 				Ranges: sync3.SliceRanges{
 					[2]int64{0, 4}, // first 5 rooms
@@ -374,7 +389,7 @@ func TestMultipleOverlappingLists(t *testing.T) {
 					IsEncrypted: &boolTrue,
 				},
 			},
-			{
+			"dm": {
 				Sort: []string{sync3.SortByRecency},
 				Ranges: sync3.SliceRanges{
 					[2]int64{0, 4}, // first 5 rooms
@@ -393,8 +408,8 @@ func TestMultipleOverlappingLists(t *testing.T) {
 	})
 
 	m.MatchResponse(t, res,
-		m.MatchList(0, m.MatchV3Ops(m.MatchV3SyncOp(0, 4, encryptedRoomIDs[:5]))),
-		m.MatchList(1, m.MatchV3Ops(m.MatchV3SyncOp(0, 4, dmRoomIDs[:5]))),
+		m.MatchList("enc", m.MatchV3Ops(m.MatchV3SyncOp(0, 4, encryptedRoomIDs[:5]))),
+		m.MatchList("dm", m.MatchV3Ops(m.MatchV3SyncOp(0, 4, dmRoomIDs[:5]))),
 		m.MatchRoomSubscriptions(map[string][]m.RoomMatcher{
 			// encrypted rooms just come from the encrypted only list
 			encryptedRoomIDs[0]: {
@@ -513,8 +528,8 @@ func TestNot500OnNewRooms(t *testing.T) {
 	mSpace := "m.space"
 	alice := registerNewUser(t)
 	res := alice.SlidingSync(t, sync3.Request{
-		Lists: []sync3.RequestList{
-			{
+		Lists: map[string]sync3.RequestList{
+			"a": {
 				SlowGetAllRooms: &boolTrue,
 				Filters: &sync3.RequestFilters{
 					RoomTypes: []*string{&mSpace},
@@ -524,14 +539,14 @@ func TestNot500OnNewRooms(t *testing.T) {
 	})
 	alice.CreateRoom(t, map[string]interface{}{"preset": "public_chat"})
 	alice.SlidingSync(t, sync3.Request{
-		Lists: []sync3.RequestList{
-			{
+		Lists: map[string]sync3.RequestList{
+			"a": {
 				SlowGetAllRooms: &boolTrue,
 				Filters: &sync3.RequestFilters{
 					RoomTypes: []*string{&mSpace},
 				},
 			},
-			{
+			"b": {
 				Filters: &sync3.RequestFilters{
 					IsDM: &boolFalse,
 				},
@@ -540,12 +555,13 @@ func TestNot500OnNewRooms(t *testing.T) {
 		},
 	}, WithPos(res.Pos))
 	alice.CreateRoom(t, map[string]interface{}{"preset": "public_chat"})
+	// should not 500
 	alice.SlidingSync(t, sync3.Request{
-		Lists: []sync3.RequestList{
-			{
+		Lists: map[string]sync3.RequestList{
+			"a": {
 				SlowGetAllRooms: &boolTrue,
 			},
-			{
+			"b": {
 				Ranges: sync3.SliceRanges{{0, 20}},
 			},
 		},
@@ -557,13 +573,13 @@ func TestNot500OnNewRooms(t *testing.T) {
 func TestNewRoomNameCalculations(t *testing.T) {
 	alice := registerNewUser(t)
 	res := alice.SlidingSync(t, sync3.Request{
-		Lists: []sync3.RequestList{
-			{
+		Lists: map[string]sync3.RequestList{
+			"a": {
 				SlowGetAllRooms: &boolTrue,
 			},
 		},
 	})
-	m.MatchResponse(t, res, m.MatchList(0, m.MatchV3Count(0)))
+	m.MatchResponse(t, res, m.MatchList("a", m.MatchV3Count(0)))
 
 	// create 10 room in parallel and at the same time spam sliding sync to ensure we get bits of
 	// rooms before they are fully loaded.
@@ -591,8 +607,8 @@ func TestNewRoomNameCalculations(t *testing.T) {
 	var err error
 	for {
 		res = alice.SlidingSync(t, sync3.Request{
-			Lists: []sync3.RequestList{
-				{
+			Lists: map[string]sync3.RequestList{
+				"a": {
 					SlowGetAllRooms: &boolTrue,
 				},
 			},
@@ -638,8 +654,8 @@ func TestChangeSortOrder(t *testing.T) {
 	alice := registerNewUser(t)
 
 	res := alice.SlidingSync(t, sync3.Request{
-		Lists: []sync3.RequestList{
-			{
+		Lists: map[string]sync3.RequestList{
+			"a": {
 				Ranges: sync3.SliceRanges{{0, 20}},
 				Sort:   []string{sync3.SortByRecency},
 				RoomSubscription: sync3.RoomSubscription{
@@ -663,8 +679,8 @@ func TestChangeSortOrder(t *testing.T) {
 				break
 			}
 			res = alice.SlidingSync(t, sync3.Request{
-				Lists: []sync3.RequestList{
-					{
+				Lists: map[string]sync3.RequestList{
+					"a": {
 						Ranges: sync3.SliceRanges{{0, 20}},
 					},
 				},
@@ -692,8 +708,8 @@ func TestChangeSortOrder(t *testing.T) {
 	txnID := "a"
 	res = alice.SlidingSync(t, sync3.Request{
 		TxnID: "a",
-		Lists: []sync3.RequestList{
-			{
+		Lists: map[string]sync3.RequestList{
+			"a": {
 				Ranges: sync3.SliceRanges{{0, 20}},
 				Sort:   []string{sync3.SortByName},
 			},
@@ -701,15 +717,15 @@ func TestChangeSortOrder(t *testing.T) {
 	}, WithPos(res.Pos))
 	for res.TxnID != txnID {
 		res = alice.SlidingSync(t, sync3.Request{
-			Lists: []sync3.RequestList{
-				{
+			Lists: map[string]sync3.RequestList{
+				"a": {
 					Ranges: sync3.SliceRanges{{0, 20}},
 				},
 			},
 		}, WithPos(res.Pos))
 	}
 
-	m.MatchResponse(t, res, m.MatchList(0, m.MatchV3Count(4), m.MatchV3Ops(
+	m.MatchResponse(t, res, m.MatchList("a", m.MatchV3Count(4), m.MatchV3Ops(
 		m.MatchV3InvalidateOp(0, 20),
 		m.MatchV3SyncOp(0, 20, []string{gotNameToIDs["Apple"], gotNameToIDs["Kiwi"], gotNameToIDs["Lemon"], gotNameToIDs["Orange"]}),
 	)))
@@ -727,24 +743,24 @@ func TestShrinkRange(t *testing.T) {
 		})}, roomIDs...)
 	}
 	res := alice.SlidingSync(t, sync3.Request{
-		Lists: []sync3.RequestList{
-			{
+		Lists: map[string]sync3.RequestList{
+			"a": {
 				Ranges: sync3.SliceRanges{{0, 20}},
 			},
 		},
 	})
-	m.MatchResponse(t, res, m.MatchList(0, m.MatchV3Count(10), m.MatchV3Ops(
+	m.MatchResponse(t, res, m.MatchList("a", m.MatchV3Count(10), m.MatchV3Ops(
 		m.MatchV3SyncOp(0, 20, roomIDs),
 	)))
 	// now shrink the window on both ends
 	res = alice.SlidingSync(t, sync3.Request{
-		Lists: []sync3.RequestList{
-			{
+		Lists: map[string]sync3.RequestList{
+			"a": {
 				Ranges: sync3.SliceRanges{{2, 6}},
 			},
 		},
 	}, WithPos(res.Pos))
-	m.MatchResponse(t, res, m.MatchList(0, m.MatchV3Count(10), m.MatchV3Ops(
+	m.MatchResponse(t, res, m.MatchList("a", m.MatchV3Count(10), m.MatchV3Ops(
 		m.MatchV3InvalidateOp(0, 1),
 		m.MatchV3InvalidateOp(7, 20),
 	)))
@@ -763,24 +779,24 @@ func TestExpandRange(t *testing.T) {
 		})}, roomIDs...)
 	}
 	res := alice.SlidingSync(t, sync3.Request{
-		Lists: []sync3.RequestList{
-			{
+		Lists: map[string]sync3.RequestList{
+			"a": {
 				Ranges: sync3.SliceRanges{{0, 10}},
 			},
 		},
 	})
-	m.MatchResponse(t, res, m.MatchList(0, m.MatchV3Count(10), m.MatchV3Ops(
+	m.MatchResponse(t, res, m.MatchList("a", m.MatchV3Count(10), m.MatchV3Ops(
 		m.MatchV3SyncOp(0, 10, roomIDs),
 	)))
 	// now expand the window
 	res = alice.SlidingSync(t, sync3.Request{
-		Lists: []sync3.RequestList{
-			{
+		Lists: map[string]sync3.RequestList{
+			"a": {
 				Ranges: sync3.SliceRanges{{0, 20}},
 			},
 		},
 	}, WithPos(res.Pos))
-	m.MatchResponse(t, res, m.MatchList(0, m.MatchV3Count(10), m.MatchV3Ops()))
+	m.MatchResponse(t, res, m.MatchList("a", m.MatchV3Count(10), m.MatchV3Ops()))
 }
 
 // Regression test for Element X which has 2 identical lists and then changes the ranges in weird ways,
@@ -812,15 +828,15 @@ func TestMultipleSameList(t *testing.T) {
 		},
 	}
 	res := alice.SlidingSync(t, sync3.Request{
-		Lists: []sync3.RequestList{
-			firstList, secondList,
+		Lists: map[string]sync3.RequestList{
+			"1": firstList, "2": secondList,
 		},
 	})
 	m.MatchResponse(t, res,
-		m.MatchList(0, m.MatchV3Count(16), m.MatchV3Ops(
+		m.MatchList("1", m.MatchV3Count(16), m.MatchV3Ops(
 			m.MatchV3SyncOp(0, 20, roomIDs, false),
 		)),
-		m.MatchList(1, m.MatchV3Count(16), m.MatchV3Ops(
+		m.MatchList("2", m.MatchV3Count(16), m.MatchV3Ops(
 			m.MatchV3SyncOp(0, 16, roomIDs, false),
 		)),
 	)
@@ -828,15 +844,15 @@ func TestMultipleSameList(t *testing.T) {
 	firstList.Ranges = sync3.SliceRanges{{2, 15}}  // from [0,20]
 	secondList.Ranges = sync3.SliceRanges{{0, 20}} // from [0,16]
 	res = alice.SlidingSync(t, sync3.Request{
-		Lists: []sync3.RequestList{
-			firstList, secondList,
+		Lists: map[string]sync3.RequestList{
+			"1": firstList, "2": secondList,
 		},
 	}, WithPos(res.Pos))
 	m.MatchResponse(t, res,
-		m.MatchList(0, m.MatchV3Count(16), m.MatchV3Ops(
+		m.MatchList("1", m.MatchV3Count(16), m.MatchV3Ops(
 			m.MatchV3InvalidateOp(0, 1),
 			m.MatchV3InvalidateOp(16, 20),
 		)),
-		m.MatchList(1, m.MatchV3Count(16), m.MatchV3Ops()),
+		m.MatchList("2", m.MatchV3Count(16), m.MatchV3Ops()),
 	)
 }

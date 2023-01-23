@@ -33,7 +33,7 @@ func TestMultipleConnsAtStartup(t *testing.T) {
 	go func() {
 		defer wg.Done()
 		_, body, _ := v3.doV3Request(t, ctx, aliceToken, "", sync3.Request{
-			Lists: []sync3.RequestList{{
+			Lists: map[string]sync3.RequestList{"a": {
 				Ranges: sync3.SliceRanges{
 					[2]int64{0, 10},
 				},
@@ -67,7 +67,7 @@ func TestMultipleConnsAtStartup(t *testing.T) {
 
 	// do another /sync
 	res = v3.mustDoV3Request(t, aliceToken, sync3.Request{
-		Lists: []sync3.RequestList{{
+		Lists: map[string]sync3.RequestList{"a": {
 			Ranges: sync3.SliceRanges{
 				[2]int64{0, 10},
 			},
@@ -76,7 +76,7 @@ func TestMultipleConnsAtStartup(t *testing.T) {
 			},
 		}},
 	})
-	m.MatchResponse(t, res, m.MatchList(0, m.MatchV3Ops(
+	m.MatchResponse(t, res, m.MatchList("a", m.MatchV3Ops(
 		m.MatchV3SyncOp(0, 10, []string{roomID}),
 	)))
 }
@@ -122,7 +122,7 @@ func TestOutstandingRequestsGetCancelled(t *testing.T) {
 	})
 	// first request to get some data
 	res := v3.mustDoV3Request(t, aliceToken, sync3.Request{
-		Lists: []sync3.RequestList{{
+		Lists: map[string]sync3.RequestList{"a": {
 			Ranges: sync3.SliceRanges{
 				[2]int64{0, 1},
 			},
@@ -132,7 +132,7 @@ func TestOutstandingRequestsGetCancelled(t *testing.T) {
 			},
 		}},
 	})
-	m.MatchResponse(t, res, m.MatchList(0, m.MatchV3Count(2), m.MatchV3Ops(
+	m.MatchResponse(t, res, m.MatchList("a", m.MatchV3Count(2), m.MatchV3Ops(
 		m.MatchV3SyncOp(0, 1, []string{roomA, roomB}),
 	)))
 	// now we do a blocking request, and a few ms later do another request which can be satisfied
@@ -146,7 +146,7 @@ func TestOutstandingRequestsGetCancelled(t *testing.T) {
 		defer wg.Done()
 		time.Sleep(100 * time.Millisecond)
 		res2 := v3.mustDoV3RequestWithPos(t, aliceToken, pos, sync3.Request{
-			Lists: []sync3.RequestList{{
+			Lists: map[string]sync3.RequestList{"a": {
 				Ranges: sync3.SliceRanges{
 					[2]int64{0, 1},
 				},
@@ -160,7 +160,7 @@ func TestOutstandingRequestsGetCancelled(t *testing.T) {
 		m.MatchResponse(t, res2, m.MatchNoV3Ops())
 		// retry request with new pos and we should see the new data
 		res2 = v3.mustDoV3RequestWithPos(t, aliceToken, res2.Pos, sync3.Request{
-			Lists: []sync3.RequestList{{
+			Lists: map[string]sync3.RequestList{"a": {
 				Ranges: sync3.SliceRanges{
 					[2]int64{0, 1},
 				},
@@ -170,7 +170,7 @@ func TestOutstandingRequestsGetCancelled(t *testing.T) {
 				},
 			}},
 		})
-		m.MatchResponse(t, res2, m.MatchList(0, m.MatchV3Count(2), m.MatchV3Ops(
+		m.MatchResponse(t, res2, m.MatchList("a", m.MatchV3Count(2), m.MatchV3Ops(
 			m.MatchV3InvalidateOp(0, 1),
 			m.MatchV3SyncOp(0, 1, []string{roomB, roomA}),
 		)))
@@ -179,7 +179,7 @@ func TestOutstandingRequestsGetCancelled(t *testing.T) {
 		}
 	}()
 	req := sync3.Request{
-		Lists: []sync3.RequestList{{
+		Lists: map[string]sync3.RequestList{"a": {
 			Ranges: sync3.SliceRanges{
 				[2]int64{0, 1},
 			},
@@ -190,7 +190,7 @@ func TestOutstandingRequestsGetCancelled(t *testing.T) {
 	if time.Since(startTime) > time.Second {
 		t.Errorf("took >1s to process request which should have been interrupted before timing out, took %v", time.Since(startTime))
 	}
-	m.MatchResponse(t, res, m.MatchList(0, m.MatchV3Count(2)), m.MatchNoV3Ops())
+	m.MatchResponse(t, res, m.MatchList("a", m.MatchV3Count(2)), m.MatchNoV3Ops())
 	wg.Wait()
 }
 
@@ -228,7 +228,7 @@ func TestConnectionTimeoutNotReset(t *testing.T) {
 	})
 	// first request to get some data
 	res := v3.mustDoV3Request(t, aliceToken, sync3.Request{
-		Lists: []sync3.RequestList{{
+		Lists: map[string]sync3.RequestList{"a": {
 			Ranges: sync3.SliceRanges{
 				[2]int64{0, 0}, // first room only -> roomID
 			},
@@ -238,12 +238,12 @@ func TestConnectionTimeoutNotReset(t *testing.T) {
 			},
 		}},
 	})
-	m.MatchResponse(t, res, m.MatchList(0, m.MatchV3Count(2), m.MatchV3Ops(
+	m.MatchResponse(t, res, m.MatchList("a", m.MatchV3Count(2), m.MatchV3Ops(
 		m.MatchV3SyncOp(0, 0, []string{roomA}),
 	)))
 	// 2nd request with a 1s timeout
 	req := sync3.Request{
-		Lists: []sync3.RequestList{{
+		Lists: map[string]sync3.RequestList{"a": {
 			Ranges: sync3.SliceRanges{
 				[2]int64{0, 0},
 			},
@@ -282,7 +282,7 @@ func TestConnectionTimeoutNotReset(t *testing.T) {
 	if dur > (1500 * time.Millisecond) { // 0.5s leeway
 		t.Fatalf("request took %v to complete, expected ~1s", dur)
 	}
-	m.MatchResponse(t, res, m.MatchList(0, m.MatchV3Count(2)), m.MatchNoV3Ops())
+	m.MatchResponse(t, res, m.MatchList("a", m.MatchV3Count(2)), m.MatchNoV3Ops())
 
 }
 
@@ -377,7 +377,7 @@ func TestTxnIDResponseBuffering(t *testing.T) {
 	// Send a request with room_name_like = C. Get back pos=1
 	res := v3.mustDoV3Request(t, aliceToken, sync3.Request{
 		TxnID: "c",
-		Lists: []sync3.RequestList{{
+		Lists: map[string]sync3.RequestList{"a": {
 			Ranges: sync3.SliceRanges{
 				[2]int64{0, 10},
 			},
@@ -390,13 +390,13 @@ func TestTxnIDResponseBuffering(t *testing.T) {
 			},
 		}},
 	})
-	m.MatchResponse(t, res, m.MatchTxnID("c"), m.MatchList(0, m.MatchV3Count(1), m.MatchV3Ops(
+	m.MatchResponse(t, res, m.MatchTxnID("c"), m.MatchList("a", m.MatchV3Count(1), m.MatchV3Ops(
 		m.MatchV3SyncOp(0, 10, []string{roomC}),
 	)))
 	// Send a request with pos=1 to filter for room_name_like = A . Discard the response.
 	v3.mustDoV3RequestWithPos(t, aliceToken, res.Pos, sync3.Request{
 		TxnID: "a",
-		Lists: []sync3.RequestList{{
+		Lists: map[string]sync3.RequestList{"a": {
 			Ranges: sync3.SliceRanges{
 				[2]int64{0, 10},
 			},
@@ -413,7 +413,7 @@ func TestTxnIDResponseBuffering(t *testing.T) {
 	// Send a request with pos=1 to filter for room_name_like = B. Ensure we see both A,B and the txn_id is set correctly for both.
 	res = v3.mustDoV3RequestWithPos(t, aliceToken, res.Pos, sync3.Request{
 		TxnID: "b",
-		Lists: []sync3.RequestList{{
+		Lists: map[string]sync3.RequestList{"a": {
 			Ranges: sync3.SliceRanges{
 				[2]int64{0, 10},
 			},
@@ -427,7 +427,7 @@ func TestTxnIDResponseBuffering(t *testing.T) {
 		}},
 	})
 	// this response should be the one for A
-	m.MatchResponse(t, res, m.MatchTxnID("a"), m.MatchList(0, m.MatchV3Count(1), m.MatchV3Ops(
+	m.MatchResponse(t, res, m.MatchTxnID("a"), m.MatchList("a", m.MatchV3Count(1), m.MatchV3Ops(
 		m.MatchV3InvalidateOp(0, 10),
 		m.MatchV3SyncOp(0, 10, []string{roomA}),
 	)))
@@ -436,7 +436,7 @@ func TestTxnIDResponseBuffering(t *testing.T) {
 	res = v3.mustDoV3RequestWithPos(t, aliceToken, res.Pos, sync3.Request{})
 
 	// now we get the response for B
-	m.MatchResponse(t, res, m.MatchTxnID("b"), m.MatchList(0, m.MatchV3Count(1), m.MatchV3Ops(
+	m.MatchResponse(t, res, m.MatchTxnID("b"), m.MatchList("a", m.MatchV3Count(1), m.MatchV3Ops(
 		m.MatchV3InvalidateOp(0, 10),
 		m.MatchV3SyncOp(0, 10, []string{roomB}),
 	)))

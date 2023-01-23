@@ -33,29 +33,31 @@ func TestSecurityLiveStreamEventLeftLeak(t *testing.T) {
 
 	// start sync streams for Alice and Eve
 	aliceRes := alice.SlidingSync(t, sync3.Request{
-		Lists: []sync3.RequestList{{
-			Ranges: sync3.SliceRanges{
-				[2]int64{0, 10}, // doesn't matter
-			},
-			RoomSubscription: sync3.RoomSubscription{
-				RequiredState: [][2]string{
-					{"m.room.name", ""},
+		Lists: map[string]sync3.RequestList{
+			"a": {
+				Ranges: sync3.SliceRanges{
+					[2]int64{0, 10}, // doesn't matter
 				},
-				TimelineLimit: 2,
-			},
-		}},
+				RoomSubscription: sync3.RoomSubscription{
+					RequiredState: [][2]string{
+						{"m.room.name", ""},
+					},
+					TimelineLimit: 2,
+				},
+			}},
 	})
-	m.MatchResponse(t, aliceRes, m.MatchList(0, m.MatchV3Count(1), m.MatchV3Ops(
+	m.MatchResponse(t, aliceRes, m.MatchList("a", m.MatchV3Count(1), m.MatchV3Ops(
 		m.MatchV3SyncOp(0, 10, []string{roomID}),
 	)))
 	eveRes := eve.SlidingSync(t, sync3.Request{
-		Lists: []sync3.RequestList{{
-			Ranges: sync3.SliceRanges{
-				[2]int64{0, 10}, // doesn't matter
-			},
-		}},
+		Lists: map[string]sync3.RequestList{
+			"a": {
+				Ranges: sync3.SliceRanges{
+					[2]int64{0, 10}, // doesn't matter
+				},
+			}},
 	})
-	m.MatchResponse(t, eveRes, m.MatchList(0, m.MatchV3Count(1), m.MatchV3Ops(
+	m.MatchResponse(t, eveRes, m.MatchList("a", m.MatchV3Count(1), m.MatchV3Ops(
 		m.MatchV3SyncOp(0, 10, []string{roomID}),
 	)))
 
@@ -76,17 +78,18 @@ func TestSecurityLiveStreamEventLeftLeak(t *testing.T) {
 	// Ensure Alice sees both events, wait till she gets them
 	var timeline []json.RawMessage
 	aliceRes = alice.SlidingSyncUntil(t, aliceRes.Pos, sync3.Request{
-		Lists: []sync3.RequestList{{
-			Ranges: sync3.SliceRanges{
-				[2]int64{0, 10}, // doesn't matter
-			},
-			RoomSubscription: sync3.RoomSubscription{
-				RequiredState: [][2]string{
-					{"m.room.name", ""},
+		Lists: map[string]sync3.RequestList{
+			"a": {
+				Ranges: sync3.SliceRanges{
+					[2]int64{0, 10}, // doesn't matter
 				},
-				TimelineLimit: 2,
-			},
-		}},
+				RoomSubscription: sync3.RoomSubscription{
+					RequiredState: [][2]string{
+						{"m.room.name", ""},
+					},
+					TimelineLimit: 2,
+				},
+			}},
 	}, func(r *sync3.Response) error {
 		timeline = append(timeline, r.Rooms[roomID].Timeline...)
 		if len(timeline) != 2 {
@@ -119,28 +122,29 @@ func TestSecurityLiveStreamEventLeftLeak(t *testing.T) {
 	kickEvent := lastTwoEvents[0]
 
 	// TODO: WE should be returning updated values for name and required_state
-	m.MatchResponse(t, aliceRes, m.MatchList(0, m.MatchV3Count(1)), m.MatchNoV3Ops(), m.MatchRoomSubscription(
+	m.MatchResponse(t, aliceRes, m.MatchList("a", m.MatchV3Count(1)), m.MatchNoV3Ops(), m.MatchRoomSubscription(
 		roomID, m.MatchRoomTimelineMostRecent(2, []json.RawMessage{kickEvent, sensitiveEvent}),
 	))
 
 	// Ensure Eve doesn't see this message in the timeline, name calc or required_state
 	eveRes = eve.SlidingSync(t, sync3.Request{
-		Lists: []sync3.RequestList{{
-			Ranges: sync3.SliceRanges{
-				[2]int64{0, 10}, // doesn't matter
-			},
-			// Note we are _adding_ this to the list which will kick in logic to return required state / timeline limits
-			// so we need to make sure that this returns no data.
-			RoomSubscription: sync3.RoomSubscription{
-				RequiredState: [][2]string{
-					{"m.room.name", ""},
+		Lists: map[string]sync3.RequestList{
+			"a": {
+				Ranges: sync3.SliceRanges{
+					[2]int64{0, 10}, // doesn't matter
 				},
-				TimelineLimit: 2,
-			},
-		}},
+				// Note we are _adding_ this to the list which will kick in logic to return required state / timeline limits
+				// so we need to make sure that this returns no data.
+				RoomSubscription: sync3.RoomSubscription{
+					RequiredState: [][2]string{
+						{"m.room.name", ""},
+					},
+					TimelineLimit: 2,
+				},
+			}},
 	}, WithPos(eveRes.Pos))
 	// the room is deleted from eve's point of view and she sees up to and including her kick event
-	m.MatchResponse(t, eveRes, m.MatchList(0, m.MatchV3Count(0), m.MatchV3Ops(m.MatchV3DeleteOp(0))), m.MatchRoomSubscription(
+	m.MatchResponse(t, eveRes, m.MatchList("a", m.MatchV3Count(0), m.MatchV3Ops(m.MatchV3DeleteOp(0))), m.MatchRoomSubscription(
 		roomID, m.MatchRoomName(""), m.MatchRoomRequiredState(nil), m.MatchRoomTimelineMostRecent(1, []json.RawMessage{kickEvent}),
 	))
 }
@@ -172,11 +176,12 @@ func TestSecurityRoomSubscriptionLeak(t *testing.T) {
 
 	// start sync streams for Eve, with a room subscription to alice's private room
 	eveRes := eve.SlidingSync(t, sync3.Request{
-		Lists: []sync3.RequestList{{
-			Ranges: sync3.SliceRanges{
-				[2]int64{0, 10}, // doesn't matter
-			},
-		}},
+		Lists: map[string]sync3.RequestList{
+			"a": {
+				Ranges: sync3.SliceRanges{
+					[2]int64{0, 10}, // doesn't matter
+				},
+			}},
 		RoomSubscriptions: map[string]sync3.RoomSubscription{
 			alicePrivateRoomID: {
 				TimelineLimit: 5,
@@ -187,7 +192,7 @@ func TestSecurityRoomSubscriptionLeak(t *testing.T) {
 		},
 	})
 	// Assert that Eve doesn't see anything
-	m.MatchResponse(t, eveRes, m.MatchList(0, m.MatchV3Count(1), m.MatchV3Ops(
+	m.MatchResponse(t, eveRes, m.MatchList("a", m.MatchV3Count(1), m.MatchV3Ops(
 		m.MatchV3SyncOp(0, 10, []string{eveUnrelatedRoomID}),
 	)), m.MatchRoomSubscriptionsStrict(map[string][]m.RoomMatcher{
 		eveUnrelatedRoomID: {},
@@ -202,15 +207,16 @@ func TestSecurityRoomSubscriptionLeak(t *testing.T) {
 		},
 	})
 	eveRes = eve.SlidingSync(t, sync3.Request{
-		Lists: []sync3.RequestList{{
-			Ranges: sync3.SliceRanges{
-				[2]int64{0, 10}, // doesn't matter
-			},
-		}},
+		Lists: map[string]sync3.RequestList{
+			"a": {
+				Ranges: sync3.SliceRanges{
+					[2]int64{0, 10}, // doesn't matter
+				},
+			}},
 	}, WithPos(eveRes.Pos))
 
 	// Assert that Eve doesn't see anything
-	m.MatchResponse(t, eveRes, m.MatchList(0, m.MatchV3Count(1)), m.MatchNoV3Ops(), m.MatchRoomSubscriptionsStrict(map[string][]m.RoomMatcher{}))
+	m.MatchResponse(t, eveRes, m.MatchList("a", m.MatchV3Count(1)), m.MatchNoV3Ops(), m.MatchRoomSubscriptionsStrict(map[string][]m.RoomMatcher{}))
 }
 
 // Test that events do not leak via direct space subscriptions.
@@ -246,8 +252,8 @@ func TestSecuritySpaceDataLeak(t *testing.T) {
 
 	// ensure eve sees nothing
 	res := eve.SlidingSync(t, sync3.Request{
-		Lists: []sync3.RequestList{
-			{
+		Lists: map[string]sync3.RequestList{
+			"a": {
 				Ranges: [][2]int64{{0, 20}},
 				Filters: &sync3.RequestFilters{
 					Spaces: []string{roomA},
@@ -310,8 +316,8 @@ func TestSecuritySpaceMetadataLeak(t *testing.T) {
 
 	// ensure eve sees nothing
 	res := eve.SlidingSync(t, sync3.Request{
-		Lists: []sync3.RequestList{
-			{
+		Lists: map[string]sync3.RequestList{
+			"a": {
 				Ranges: [][2]int64{{0, 20}},
 				Filters: &sync3.RequestFilters{
 					Spaces: []string{roomA},

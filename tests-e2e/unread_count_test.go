@@ -24,8 +24,8 @@ func TestUnreadCountsUpdate(t *testing.T) {
 	})
 
 	res := alice.SlidingSync(t, sync3.Request{
-		Lists: []sync3.RequestList{
-			{
+		Lists: map[string]sync3.RequestList{
+			"a": {
 				Ranges: sync3.SliceRanges{{0, 20}},
 			},
 		},
@@ -40,8 +40,8 @@ func TestUnreadCountsUpdate(t *testing.T) {
 		"m.read":       eventID,
 	}))
 	alice.SlidingSyncUntil(t, res.Pos, sync3.Request{
-		Lists: []sync3.RequestList{
-			{
+		Lists: map[string]sync3.RequestList{
+			"a": {
 				Ranges: sync3.SliceRanges{{0, 20}},
 			},
 		},

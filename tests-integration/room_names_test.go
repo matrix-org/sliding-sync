@@ -71,16 +71,17 @@ func TestRoomNames(t *testing.T) {
 		t.Helper()
 		// do a sync, make sure room names are sensible
 		res := v3.mustDoV3Request(t, aliceToken, sync3.Request{
-			Lists: []sync3.RequestList{{
-				Ranges: sync3.SliceRanges{
-					[2]int64{0, int64(len(allRooms) - 1)}, // all rooms
-				},
-				RoomSubscription: sync3.RoomSubscription{
-					TimelineLimit: int64(100),
-				},
-			}},
+			Lists: map[string]sync3.RequestList{
+				"a": {
+					Ranges: sync3.SliceRanges{
+						[2]int64{0, int64(len(allRooms) - 1)}, // all rooms
+					},
+					RoomSubscription: sync3.RoomSubscription{
+						TimelineLimit: int64(100),
+					},
+				}},
 		})
-		m.MatchResponse(t, res, m.MatchList(0, m.MatchV3Count(len(allRooms)), m.MatchV3Ops(
+		m.MatchResponse(t, res, m.MatchList("a", m.MatchV3Count(len(allRooms)), m.MatchV3Ops(
 			m.MatchV3SyncOpFn(func(op *sync3.ResponseOpRange) error {
 				if len(op.RoomIDs) != len(allRooms) {
 					return fmt.Errorf("want %d rooms, got %d", len(allRooms), len(op.RoomIDs))
@@ -109,14 +110,15 @@ func TestRoomNames(t *testing.T) {
 		t.Helper()
 		// do a sync, make sure room names are sensible
 		res := v3.mustDoV3Request(t, aliceToken, sync3.Request{
-			Lists: []sync3.RequestList{{
-				Ranges: sync3.SliceRanges{
-					[2]int64{0, int64(len(allRooms) - 1)}, // all rooms
-				},
-				Filters: &sync3.RequestFilters{
-					RoomNameFilter: searchTerm,
-				},
-			}},
+			Lists: map[string]sync3.RequestList{
+				"a": {
+					Ranges: sync3.SliceRanges{
+						[2]int64{0, int64(len(allRooms) - 1)}, // all rooms
+					},
+					Filters: &sync3.RequestFilters{
+						RoomNameFilter: searchTerm,
+					},
+				}},
 		})
 		matchers := make(map[string][]m.RoomMatcher, len(wantRooms))
 		wantRoomIDs := make([]string, len(wantRooms))
@@ -126,7 +128,7 @@ func TestRoomNames(t *testing.T) {
 				m.MatchRoomName(wantRooms[i].name),
 			}
 		}
-		m.MatchResponse(t, res, m.MatchList(0, m.MatchV3Count(len(wantRooms)), m.MatchV3Ops(
+		m.MatchResponse(t, res, m.MatchList("a", m.MatchV3Count(len(wantRooms)), m.MatchV3Ops(
 			m.MatchV3SyncOp(0, int64(len(allRooms)-1), wantRoomIDs),
 		)), m.MatchRoomSubscriptions(matchers))
 	}

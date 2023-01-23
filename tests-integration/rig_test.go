@@ -168,6 +168,10 @@ func (r *testRig) EncryptRoom(t *testing.T, userID, roomID string) {
 	))
 }
 
+func (r *testRig) FlushText(t *testing.T, userID, roomID, text string) {
+	r.FlushEvent(t, userID, roomID, testutils.NewMessageEvent(t, userID, text))
+}
+
 func (r *testRig) FlushEvent(t *testing.T, userID, roomID string, event json.RawMessage) {
 	r.V2.queueResponse(userID, sync2.SyncResponse{
 		Rooms: sync2.SyncRoomsResponse{

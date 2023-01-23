@@ -376,9 +376,9 @@ func MatchV3InvalidateOp(start, end int64) OpMatcher {
 
 func MatchNoV3Ops() RespMatcher {
 	return func(res *sync3.Response) error {
-		for i, l := range res.Lists {
+		for key, l := range res.Lists {
 			if len(l.Ops) > 0 {
-				return fmt.Errorf("MatchNoV3Ops: list %d got %d ops", i, len(l.Ops))
+				return fmt.Errorf("MatchNoV3Ops: list %v got %d ops", key, len(l.Ops))
 			}
 		}
 		return nil
@@ -507,10 +507,10 @@ func MatchAccountData(globals []json.RawMessage, rooms map[string][]json.RawMess
 	}
 }
 
-func CheckList(i int, res sync3.ResponseList, matchers ...ListMatcher) error {
+func CheckList(listKey string, res sync3.ResponseList, matchers ...ListMatcher) error {
 	for _, m := range matchers {
 		if err := m(res); err != nil {
-			return fmt.Errorf("MatchList[%d]: %v", i, err)
+			return fmt.Errorf("MatchList[%v]: %v", listKey, err)
 		}
 	}
 	return nil
@@ -525,24 +525,24 @@ func MatchTxnID(txnID string) RespMatcher {
 	}
 }
 
-func MatchList(i int, matchers ...ListMatcher) RespMatcher {
+func MatchList(listKey string, matchers ...ListMatcher) RespMatcher {
 	return func(res *sync3.Response) error {
-		if i >= len(res.Lists) {
-			return fmt.Errorf("MatchSingleList: index %d does not exist, got %d lists", i, len(res.Lists))
+		if _, exists := res.Lists[listKey]; !exists {
+			return fmt.Errorf("MatchSingleList: key %v does not exist, got %d lists", listKey, len(res.Lists))
 		}
-		list := res.Lists[i]
-		return CheckList(i, list, matchers...)
+		list := res.Lists[listKey]
+		return CheckList(listKey, list, matchers...)
 	}
 }
 
-func MatchLists(matchers ...[]ListMatcher) RespMatcher {
+func MatchLists(matchers map[string][]ListMatcher) RespMatcher {
 	return func(res *sync3.Response) error {
 		if len(matchers) != len(res.Lists) {
 			return fmt.Errorf("MatchLists: got %d matchers for %d lists", len(matchers), len(res.Lists))
 		}
-		for i := range matchers {
-			if err := CheckList(i, res.Lists[i], matchers[i]...); err != nil {
-				return fmt.Errorf("MatchLists[%d]: %v", i, err)
+		for listKey, matchersForList := range matchers {
+			if err := CheckList(listKey, res.Lists[listKey], matchersForList...); err != nil {
+				return fmt.Errorf("MatchLists[%v]: %v", listKey, err)
 			}
 		}
 		return nil

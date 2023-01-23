@@ -30,8 +30,8 @@ func TestPrevBatch(t *testing.T) {
 
 	// hit proxy
 	res := client.SlidingSync(t, sync3.Request{
-		Lists: []sync3.RequestList{
-			{
+		Lists: map[string]sync3.RequestList{
+			"a": {
 				Ranges: sync3.SliceRanges{[2]int64{0, 10}},
 				RoomSubscription: sync3.RoomSubscription{
 					TimelineLimit: 1,

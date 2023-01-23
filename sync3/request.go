@@ -27,7 +27,7 @@ var (
 
 type Request struct {
 	TxnID             string                      `json:"txn_id"`
-	Lists             []RequestList               `json:"lists"`
+	Lists             map[string]RequestList      `json:"lists"`
 	RoomSubscriptions map[string]RoomSubscription `json:"room_subscriptions"`
 	UnsubscribeRooms  []string                    `json:"unsubscribe_rooms"`
 	Extensions        extensions.Request          `json:"extensions"`
@@ -43,6 +43,7 @@ type RequestList struct {
 	Sort            []string        `json:"sort"`
 	Filters         *RequestFilters `json:"filters"`
 	SlowGetAllRooms *bool           `json:"slow_get_all_rooms,omitempty"`
+	Deleted         bool            `json:"deleted,omitempty"`
 }
 
 func (rl *RequestList) ShouldGetAllRooms() bool {
@@ -275,7 +276,7 @@ type RequestDelta struct {
 	// room IDs to unsubscribe from
 	Unsubs []string
 	// The complete union of both lists (contains max(a,b) lists)
-	Lists []RequestListDelta
+	Lists map[string]RequestListDelta
 }
 
 // Internal struct used to represent a single list delta.
@@ -302,24 +303,39 @@ func (r *Request) ApplyDelta(nextReq *Request) (result *Request, delta *RequestD
 			Extensions: r.Extensions.ApplyDelta(&nextReq.Extensions),
 		}
 	}
-
+	listKeys := make(set)
+	for k := range nextReq.Lists {
+		listKeys[k] = struct{}{}
+	}
+	for k := range r.Lists {
+		listKeys[k] = struct{}{}
+	}
 	delta = &RequestDelta{}
-	lists := make([]RequestList, len(nextReq.Lists))
-	for i := 0; i < len(lists); i++ {
-		var existingList *RequestList
-		if i < len(r.Lists) {
-			existingList = &r.Lists[i]
-		}
-		// default to recency sort order if missing and there isn't a previous list to draw from
-		if len(nextReq.Lists[i].Sort) == 0 && existingList == nil {
-			nextReq.Lists[i].Sort = []string{SortByRecency}
-		}
-		if existingList == nil {
-			// we added a list
-			lists[i] = nextReq.Lists[i]
+	calculatedLists := make(map[string]RequestList, len(nextReq.Lists))
+	for listKey := range listKeys {
+		existingList, existingOk := r.Lists[listKey]
+		nextList, nextOk := nextReq.Lists[listKey]
+		if !nextOk {
+			// copy over what they said before (sticky), no diffs to make
+			calculatedLists[listKey] = existingList
 			continue
 		}
-		nextList := nextReq.Lists[i]
+		if !existingOk {
+			// we added a list
+			// default to recency sort order if missing and there isn't a previous list value to draw from
+			if len(nextList.Sort) == 0 {
+				nextList.Sort = []string{SortByRecency}
+			}
+			calculatedLists[listKey] = nextList
+			continue
+		}
+		// both existing and next exist, check for deletions
+		if nextList.Deleted {
+			// do not add the list to `lists` so it disappears
+			continue
+		}
+
+		// apply the delta
 		rooms := nextList.Ranges
 		if rooms == nil {
 			rooms = existingList.Ranges
@@ -340,7 +356,6 @@ func (r *Request) ApplyDelta(nextReq *Request) (result *Request, delta *RequestD
 		if includeOldRooms == nil {
 			includeOldRooms = existingList.IncludeOldRooms
 		}
-
 		timelineLimit := nextList.TimelineLimit
 		if timelineLimit == 0 {
 			timelineLimit = existingList.TimelineLimit
@@ -350,7 +365,7 @@ func (r *Request) ApplyDelta(nextReq *Request) (result *Request, delta *RequestD
 			filters = existingList.Filters
 		}
 
-		lists[i] = RequestList{
+		calculatedLists[listKey] = RequestList{
 			RoomSubscription: RoomSubscription{
 				RequiredState:   reqState,
 				TimelineLimit:   timelineLimit,
@@ -362,20 +377,20 @@ func (r *Request) ApplyDelta(nextReq *Request) (result *Request, delta *RequestD
 			SlowGetAllRooms: slowGetAllRooms,
 		}
 	}
-	result.Lists = lists
-	// the delta is as large as the longest list of lists
-	maxLen := len(result.Lists)
-	if len(r.Lists) > maxLen {
-		maxLen = len(r.Lists)
-	}
-	delta.Lists = make([]RequestListDelta, maxLen)
-	for i := range result.Lists {
-		delta.Lists[i] = RequestListDelta{
-			Curr: &result.Lists[i],
+	result.Lists = calculatedLists
+
+	delta.Lists = make(map[string]RequestListDelta, len(calculatedLists))
+	for listKey := range result.Lists {
+		l := result.Lists[listKey]
+		delta.Lists[listKey] = RequestListDelta{
+			Curr: &l,
 		}
 	}
-	for i := range r.Lists {
-		delta.Lists[i].Prev = &r.Lists[i]
+	for listKey := range r.Lists {
+		l := r.Lists[listKey]
+		rld := delta.Lists[listKey]
+		rld.Prev = &l
+		delta.Lists[listKey] = rld
 	}
 
 	// Work out subscriptions. The operations are applied as:

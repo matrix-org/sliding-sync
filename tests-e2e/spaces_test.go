@@ -77,8 +77,8 @@ func TestSpacesFilter(t *testing.T) {
 		}
 		t.Logf("requesting rooms in spaces %v", spaces)
 		res := alice.SlidingSync(t, sync3.Request{
-			Lists: []sync3.RequestList{
-				{
+			Lists: map[string]sync3.RequestList{
+				"a": {
 					Ranges: [][2]int64{{0, 20}},
 					Filters: &sync3.RequestFilters{
 						Spaces: spaces,
@@ -86,7 +86,7 @@ func TestSpacesFilter(t *testing.T) {
 				},
 			},
 		}, opts...)
-		m.MatchResponse(t, res, m.MatchList(0, listMatchers...))
+		m.MatchResponse(t, res, m.MatchList("a", listMatchers...))
 		return res
 	}
 
