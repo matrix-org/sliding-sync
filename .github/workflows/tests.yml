@@ -111,7 +111,7 @@ jobs:
             - name: "Build docker image"
               env:
                 DOCKER_BUILDKIT: 1
-              run: docker build -f Dockerfile -t ghcr.io/matrix-org/sliding-sync-proxy:ci  .
+              run: docker build -f Dockerfile -t ghcr.io/matrix-org/sliding-sync:ci  .
             - uses: actions/checkout@v2
               with:
                 repository: matrix-org/matrix-react-sdk
