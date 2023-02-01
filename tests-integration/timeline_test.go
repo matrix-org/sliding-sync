@@ -821,8 +821,9 @@ func TestPrevBatchInTimeline(t *testing.T) {
 }
 
 // Test that you can get a window with timeline_limit: 1, then increase the limit to 3 and get the
-// room timeline changes only (without any req_state or list ops sent)
-func TestTimelineTrickle(t *testing.T) {
+// room timeline changes only (without any req_state or list ops sent). Likewise, do the same
+// but for required_state (initially empty, then set stuff and only get that)
+func TestTrickling(t *testing.T) {
 	// setup code
 	v2 := runTestV2Server(t)
 	v3 := runTestServer(t, v2, "")
@@ -851,64 +852,162 @@ func TestTimelineTrickle(t *testing.T) {
 		},
 	})
 
-	// request top 3 rooms with a timeline limit = 1
-	res := v3.mustDoV3Request(t, aliceToken, sync3.Request{
-		Lists: map[string]sync3.RequestList{
-			"a": {
-				Ranges: [][2]int64{{0, 2}},
-				Sort:   []string{sync3.SortByRecency},
-				RoomSubscription: sync3.RoomSubscription{
-					TimelineLimit: 1,
-					RequiredState: [][2]string{{"m.room.create", ""}},
+	// always request the top 3 rooms
+	testCases := []struct {
+		name            string
+		initialSub      sync3.RoomSubscription
+		nextSub         sync3.RoomSubscription
+		wantInitialSubs map[string][]m.RoomMatcher
+		wantNextSubs    map[string][]m.RoomMatcher
+	}{
+		{
+			name: "Timeline trickling",
+			initialSub: sync3.RoomSubscription{
+				TimelineLimit: 1,
+				RequiredState: [][2]string{{"m.room.create", ""}},
+			},
+			wantInitialSubs: map[string][]m.RoomMatcher{
+				allRooms[0].roomID: {
+					m.MatchRoomTimeline([]json.RawMessage{allRooms[0].events[len(allRooms[0].events)-1]}),
+					m.MatchRoomRequiredState([]json.RawMessage{allRooms[0].events[0]}),
+				},
+				allRooms[1].roomID: {
+					m.MatchRoomTimeline([]json.RawMessage{allRooms[1].events[len(allRooms[1].events)-1]}),
+					m.MatchRoomRequiredState([]json.RawMessage{allRooms[1].events[0]}),
+				},
+				allRooms[2].roomID: {
+					m.MatchRoomTimeline([]json.RawMessage{allRooms[2].events[len(allRooms[2].events)-1]}),
+					m.MatchRoomRequiredState([]json.RawMessage{allRooms[2].events[0]}),
+				},
+			},
+			nextSub: sync3.RoomSubscription{
+				TimelineLimit: 3,
+				RequiredState: [][2]string{{"m.room.create", ""}},
+			},
+			wantNextSubs: map[string][]m.RoomMatcher{
+				allRooms[0].roomID: {
+					m.MatchRoomTimeline(allRooms[0].events[len(allRooms[0].events)-3:]),
+					m.MatchRoomRequiredState(nil),
+				},
+				allRooms[1].roomID: {
+					m.MatchRoomTimeline(allRooms[1].events[len(allRooms[1].events)-3:]),
+					m.MatchRoomRequiredState(nil),
+				},
+				allRooms[2].roomID: {
+					m.MatchRoomTimeline(allRooms[2].events[len(allRooms[2].events)-3:]),
+					m.MatchRoomRequiredState(nil),
 				},
 			},
 		},
-	})
-	m.MatchResponse(t, res,
-		m.MatchList("a", m.MatchV3Ops(m.MatchV3SyncOp(0, 2, []string{allRooms[0].roomID, allRooms[1].roomID, allRooms[2].roomID}))),
-		m.MatchRoomSubscriptionsStrict(map[string][]m.RoomMatcher{
-			allRooms[0].roomID: {
-				m.MatchRoomTimeline([]json.RawMessage{allRooms[0].events[len(allRooms[0].events)-1]}),
-				m.MatchRoomRequiredState([]json.RawMessage{allRooms[0].events[0]}),
+		{
+			name: "Required State trickling",
+			initialSub: sync3.RoomSubscription{
+				TimelineLimit: 1,
+				RequiredState: [][2]string{{"m.room.create", ""}},
 			},
-			allRooms[1].roomID: {
-				m.MatchRoomTimeline([]json.RawMessage{allRooms[1].events[len(allRooms[1].events)-1]}),
-				m.MatchRoomRequiredState([]json.RawMessage{allRooms[1].events[0]}),
+			wantInitialSubs: map[string][]m.RoomMatcher{
+				allRooms[0].roomID: {
+					m.MatchRoomTimeline([]json.RawMessage{allRooms[0].events[len(allRooms[0].events)-1]}),
+					m.MatchRoomRequiredState([]json.RawMessage{allRooms[0].events[0]}),
+				},
+				allRooms[1].roomID: {
+					m.MatchRoomTimeline([]json.RawMessage{allRooms[1].events[len(allRooms[1].events)-1]}),
+					m.MatchRoomRequiredState([]json.RawMessage{allRooms[1].events[0]}),
+				},
+				allRooms[2].roomID: {
+					m.MatchRoomTimeline([]json.RawMessage{allRooms[2].events[len(allRooms[2].events)-1]}),
+					m.MatchRoomRequiredState([]json.RawMessage{allRooms[2].events[0]}),
+				},
 			},
-			allRooms[2].roomID: {
-				m.MatchRoomTimeline([]json.RawMessage{allRooms[2].events[len(allRooms[2].events)-1]}),
-				m.MatchRoomRequiredState([]json.RawMessage{allRooms[2].events[0]}),
+			// now add in the room member event
+			nextSub: sync3.RoomSubscription{
+				TimelineLimit: 1,
+				RequiredState: [][2]string{{"m.room.create", ""}, {"m.room.member", alice}},
 			},
-		}),
-	)
+			wantNextSubs: map[string][]m.RoomMatcher{
+				allRooms[0].roomID: {
+					m.MatchRoomTimeline(nil),
+					m.MatchRoomRequiredState([]json.RawMessage{allRooms[0].events[0], allRooms[0].events[1]}),
+				},
+				allRooms[1].roomID: {
+					m.MatchRoomTimeline(nil),
+					m.MatchRoomRequiredState([]json.RawMessage{allRooms[1].events[0], allRooms[1].events[1]}),
+				},
+				allRooms[2].roomID: {
+					m.MatchRoomTimeline(nil),
+					m.MatchRoomRequiredState([]json.RawMessage{allRooms[2].events[0], allRooms[2].events[1]}),
+				},
+			},
+		},
+		{
+			name: "Timeline trickling from 0",
+			initialSub: sync3.RoomSubscription{
+				TimelineLimit: 0,
+			},
+			wantInitialSubs: map[string][]m.RoomMatcher{
+				allRooms[0].roomID: {
+					m.MatchRoomTimeline(nil),
+					m.MatchRoomRequiredState(nil),
+				},
+				allRooms[1].roomID: {
+					m.MatchRoomTimeline(nil),
+					m.MatchRoomRequiredState(nil),
+				},
+				allRooms[2].roomID: {
+					m.MatchRoomTimeline(nil),
+					m.MatchRoomRequiredState(nil),
+				},
+			},
+			nextSub: sync3.RoomSubscription{
+				TimelineLimit: 1,
+			},
+			wantNextSubs: map[string][]m.RoomMatcher{
+				allRooms[0].roomID: {
+					m.MatchRoomTimeline([]json.RawMessage{allRooms[0].events[len(allRooms[0].events)-1]}),
+					m.MatchRoomRequiredState(nil),
+				},
+				allRooms[1].roomID: {
+					m.MatchRoomTimeline([]json.RawMessage{allRooms[1].events[len(allRooms[1].events)-1]}),
+					m.MatchRoomRequiredState(nil),
+				},
+				allRooms[2].roomID: {
+					m.MatchRoomTimeline([]json.RawMessage{allRooms[2].events[len(allRooms[2].events)-1]}),
+					m.MatchRoomRequiredState(nil),
+				},
+			},
+		},
+	}
 
-	// next request just changes the timeline limit
-	res = v3.mustDoV3RequestWithPos(t, aliceToken, res.Pos, sync3.Request{
-		Lists: map[string]sync3.RequestList{
-			"a": {
-				Ranges: [][2]int64{{0, 2}},
-				Sort:   []string{sync3.SortByRecency},
-				RoomSubscription: sync3.RoomSubscription{
-					TimelineLimit: 3,
-					RequiredState: [][2]string{{"m.room.create", ""}},
+	for _, tc := range testCases {
+		t.Logf(tc.name)
+		// request top 3 rooms with initial subscription
+		res := v3.mustDoV3Request(t, aliceToken, sync3.Request{
+			Lists: map[string]sync3.RequestList{
+				"a": {
+					Ranges:           [][2]int64{{0, 2}},
+					Sort:             []string{sync3.SortByRecency},
+					RoomSubscription: tc.initialSub,
 				},
 			},
-		},
-	})
-	m.MatchResponse(t, res, m.MatchNoV3Ops(),
-		m.MatchRoomSubscriptionsStrict(map[string][]m.RoomMatcher{
-			allRooms[0].roomID: {
-				m.MatchRoomTimeline(allRooms[0].events[len(allRooms[0].events)-3:]),
-				m.MatchRoomRequiredState(nil),
+		})
+		m.MatchResponse(t, res,
+			m.MatchList("a", m.MatchV3Ops(m.MatchV3SyncOp(0, 2, []string{allRooms[0].roomID, allRooms[1].roomID, allRooms[2].roomID}))),
+			m.MatchRoomSubscriptionsStrict(tc.wantInitialSubs),
+		)
+
+		// next request changes the subscription
+		res = v3.mustDoV3RequestWithPos(t, aliceToken, res.Pos, sync3.Request{
+			Lists: map[string]sync3.RequestList{
+				"a": {
+					Ranges:           [][2]int64{{0, 2}},
+					Sort:             []string{sync3.SortByRecency},
+					RoomSubscription: tc.nextSub,
+				},
 			},
-			allRooms[1].roomID: {
-				m.MatchRoomTimeline(allRooms[1].events[len(allRooms[1].events)-3:]),
-				m.MatchRoomRequiredState(nil),
-			},
-			allRooms[2].roomID: {
-				m.MatchRoomTimeline(allRooms[2].events[len(allRooms[2].events)-3:]),
-				m.MatchRoomRequiredState(nil),
-			},
-		}),
-	)
+		})
+		// assert we got what we were expecting
+		m.MatchResponse(t, res, m.MatchNoV3Ops(),
+			m.MatchRoomSubscriptionsStrict(tc.wantNextSubs),
+		)
+	}
 }
