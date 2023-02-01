@@ -12,7 +12,7 @@ on:
 
 env:
   GHCR_NAMESPACE: matrix-org
-  PLATFORMS: linux/amd64
+  PLATFORMS: "linux/amd64, linux/arm64"
 
 jobs:
   slidingsync:
