@@ -2,6 +2,7 @@ package handler2
 
 import (
 	"encoding/json"
+	"hash/fnv"
 	"os"
 	"sync"
 
@@ -32,6 +33,8 @@ type Handler struct {
 		Highlight int
 		Notif     int
 	}
+	// room_id => fnv_hash([typing user ids])
+	typingMap map[string]uint64
 
 	numPollers prometheus.Gauge
 	subSystem  string
@@ -51,6 +54,7 @@ func NewHandler(
 			Highlight int
 			Notif     int
 		}),
+		typingMap: make(map[string]uint64),
 	}
 	pMap.SetCallbacks(h)
 
@@ -236,6 +240,12 @@ func (h *Handler) Initialise(roomID string, state []json.RawMessage) {
 }
 
 func (h *Handler) SetTyping(roomID string, ephEvent json.RawMessage) {
+	next := typingHash(ephEvent)
+	existing := h.typingMap[roomID]
+	if existing == next {
+		return
+	}
+	h.typingMap[roomID] = next
 	// we don't persist this for long term storage as typing notifs are inherently ephemeral.
 	// So rather than maintaining them forever, they will naturally expire when we terminate.
 	h.v2Pub.Notify(pubsub.ChanV2, &pubsub.V2Typing{
@@ -372,4 +382,12 @@ func (h *Handler) EnsurePolling(p *pubsub.V3EnsurePolling) {
 			DeviceID: p.DeviceID,
 		})
 	}()
+}
+
+func typingHash(ephEvent json.RawMessage) uint64 {
+	h := fnv.New64a()
+	for _, userID := range gjson.ParseBytes(ephEvent).Get("content.user_ids").Array() {
+		h.Write([]byte(userID.Str))
+	}
+	return h.Sum64()
 }
