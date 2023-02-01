@@ -11,7 +11,7 @@ on:
   workflow_call: # Another pipeline called us
 
 env:
-  GHCR_NAMESPACE: matrix-org
+  GHCR_NAMESPACE: dbkr
   PLATFORMS: linux/amd64
 
 jobs:
