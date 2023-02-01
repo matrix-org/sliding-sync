@@ -116,12 +116,6 @@ func (s *ConnState) load() error {
 
 // OnIncomingRequest is guaranteed to be called sequentially (it's protected by a mutex in conn.go)
 func (s *ConnState) OnIncomingRequest(ctx context.Context, cid sync3.ConnID, req *sync3.Request, isInitial bool) (*sync3.Response, error) {
-	taskType := "OnIncomingRequest"
-	if isInitial {
-		taskType = "OnIncomingRequestInitial"
-	}
-	ctx, task := trace.NewTask(ctx, taskType)
-	defer task.End()
 	if s.loadPosition == 0 {
 		region := trace.StartRegion(ctx, "load")
 		s.load()
@@ -138,6 +132,15 @@ func (s *ConnState) onIncomingRequest(ctx context.Context, req *sync3.Request, i
 	// ApplyDelta works fine if s.muxedReq is nil
 	var delta *sync3.RequestDelta
 	s.muxedReq, delta = s.muxedReq.ApplyDelta(req)
+	trace.Logf(ctx, "connstate", "new subs=%v unsubs=%v num_lists=%v", len(delta.Subs), len(delta.Unsubs), len(delta.Lists))
+	for key, l := range delta.Lists {
+		listData := ""
+		if l.Curr != nil {
+			listDataBytes, _ := json.Marshal(l.Curr)
+			listData = string(listDataBytes)
+		}
+		trace.Logf(ctx, "connstate", "list[%v] prev_empty=%v curr=%v", key, l.Prev == nil, listData)
+	}
 
 	// associate extensions context
 	ex := s.muxedReq.Extensions
@@ -192,7 +195,6 @@ func (s *ConnState) onIncomingRequest(ctx context.Context, req *sync3.Request, i
 		l.Count = s.lists.Count(listKey)
 		response.Lists[listKey] = l
 	}
-
 	return response, nil
 }
 
@@ -341,7 +343,7 @@ func (s *ConnState) onIncomingListRequest(ctx context.Context, builder *RoomsBui
 }
 
 func (s *ConnState) buildListSubscriptions(ctx context.Context, builder *RoomsBuilder, listDeltas map[string]sync3.RequestListDelta) map[string]sync3.ResponseList {
-  defer trace.StartRegion(ctx, "buildListSubscriptions").End()
+	defer trace.StartRegion(ctx, "buildListSubscriptions").End()
 	result := make(map[string]sync3.ResponseList, len(s.muxedReq.Lists))
 	// loop each list and handle each independently
 	for listKey, list := range listDeltas {
