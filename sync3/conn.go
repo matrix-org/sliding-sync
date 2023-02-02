@@ -52,15 +52,17 @@ type Conn struct {
 	lastPos         int64
 
 	// ensure only 1 incoming request is handled per connection
-	mu                       *sync.Mutex
-	cancelOutstandingRequest func()
+	mu                         *sync.Mutex
+	cancelOutstandingRequest   func()
+	cancelOutstandingRequestMu *sync.Mutex
 }
 
 func NewConn(connID ConnID, h ConnHandler) *Conn {
 	return &Conn{
-		ConnID:  connID,
-		handler: h,
-		mu:      &sync.Mutex{},
+		ConnID:                     connID,
+		handler:                    h,
+		mu:                         &sync.Mutex{},
+		cancelOutstandingRequestMu: &sync.Mutex{},
 	}
 }
 
@@ -105,12 +107,17 @@ func (c *Conn) isOutstanding(pos int64) bool {
 
 // OnIncomingRequest advances the clients position in the stream, returning the response position and data.
 func (c *Conn) OnIncomingRequest(ctx context.Context, req *Request) (resp *Response, herr *internal.HandlerError) {
+	c.cancelOutstandingRequestMu.Lock()
 	if c.cancelOutstandingRequest != nil {
 		c.cancelOutstandingRequest()
 	}
+	c.cancelOutstandingRequestMu.Unlock()
 	c.mu.Lock()
 	ctx, cancel := context.WithCancel(ctx)
+
+	c.cancelOutstandingRequestMu.Lock()
 	c.cancelOutstandingRequest = cancel
+	c.cancelOutstandingRequestMu.Unlock()
 	// it's intentional for the lock to be held whilst inside HandleIncomingRequest
 	// as it guarantees linearisation of data within a single connection
 	defer c.mu.Unlock()

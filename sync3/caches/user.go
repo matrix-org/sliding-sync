@@ -176,7 +176,7 @@ type UserCache struct {
 	roomToData           map[string]UserRoomData
 	roomToDataMu         *sync.RWMutex
 	listeners            map[int]UserCacheListener
-	listenersMu          *sync.Mutex
+	listenersMu          *sync.RWMutex
 	id                   int
 	store                *state.Storage
 	globalCache          *GlobalCache
@@ -190,7 +190,7 @@ func NewUserCache(userID string, globalCache *GlobalCache, store *state.Storage,
 		roomToDataMu: &sync.RWMutex{},
 		roomToData:   make(map[string]UserRoomData),
 		listeners:    make(map[int]UserCacheListener),
-		listenersMu:  &sync.Mutex{},
+		listenersMu:  &sync.RWMutex{},
 		store:        store,
 		globalCache:  globalCache,
 		txnIDs:       txnIDs,
@@ -484,8 +484,22 @@ func (c *UserCache) OnEphemeralEvent(ctx context.Context, roomID string, ephEven
 		return
 	}
 
+	c.emitOnRoomUpdate(ctx, update)
+}
+
+func (c *UserCache) emitOnRoomUpdate(ctx context.Context, update RoomUpdate) {
+	c.listenersMu.RLock()
+	defer c.listenersMu.RUnlock()
 	for _, l := range c.listeners {
 		l.OnRoomUpdate(ctx, update)
+	}
+}
+
+func (c *UserCache) emitOnUpdate(ctx context.Context, update Update) {
+	c.listenersMu.RLock()
+	defer c.listenersMu.RUnlock()
+	for _, l := range c.listeners {
+		l.OnUpdate(ctx, update)
 	}
 }
 
@@ -511,9 +525,7 @@ func (c *UserCache) OnUnreadCounts(ctx context.Context, roomID string, highlight
 		HasCountDecreased: hasCountDecreased,
 	}
 
-	for _, l := range c.listeners {
-		l.OnRoomUpdate(ctx, roomUpdate)
-	}
+	c.emitOnRoomUpdate(ctx, roomUpdate)
 }
 
 func (c *UserCache) OnSpaceUpdate(ctx context.Context, parentRoomID, childRoomID string, isDeleted bool, eventData *EventData) {
@@ -537,9 +549,7 @@ func (c *UserCache) OnSpaceUpdate(ctx context.Context, parentRoomID, childRoomID
 		EventData:  eventData,
 	}
 
-	for _, l := range c.listeners {
-		l.OnRoomUpdate(ctx, roomUpdate)
-	}
+	c.emitOnRoomUpdate(ctx, roomUpdate)
 }
 
 func (c *UserCache) OnNewEvent(ctx context.Context, eventData *EventData) {
@@ -572,9 +582,7 @@ func (c *UserCache) OnNewEvent(ctx context.Context, eventData *EventData) {
 		EventData:  eventData,
 	}
 
-	for _, l := range c.listeners {
-		l.OnRoomUpdate(ctx, roomUpdate)
-	}
+	c.emitOnRoomUpdate(ctx, roomUpdate)
 }
 
 func (c *UserCache) OnInvite(ctx context.Context, roomID string, inviteStateEvents []json.RawMessage) {
@@ -602,9 +610,7 @@ func (c *UserCache) OnInvite(ctx context.Context, roomID string, inviteStateEven
 		},
 		InviteData: *inviteData,
 	}
-	for _, l := range c.listeners {
-		l.OnRoomUpdate(ctx, up)
-	}
+	c.emitOnRoomUpdate(ctx, up)
 }
 
 func (c *UserCache) OnLeftRoom(ctx context.Context, roomID string) {
@@ -628,9 +634,7 @@ func (c *UserCache) OnLeftRoom(ctx context.Context, roomID string) {
 			userRoomData: &urd,
 		},
 	}
-	for _, l := range c.listeners {
-		l.OnRoomUpdate(ctx, up)
-	}
+	c.emitOnRoomUpdate(ctx, up)
 }
 
 func (c *UserCache) OnAccountData(ctx context.Context, datas []state.AccountData) {
@@ -696,17 +700,13 @@ func (c *UserCache) OnAccountData(ctx context.Context, datas []state.AccountData
 			globalUpdate := &AccountDataUpdate{
 				AccountData: updates,
 			}
-			for _, l := range c.listeners {
-				l.OnUpdate(ctx, globalUpdate)
-			}
+			c.emitOnUpdate(ctx, globalUpdate)
 		} else {
 			roomUpdate := &RoomAccountDataUpdate{
 				AccountData: updates,
 				RoomUpdate:  c.newRoomUpdate(roomID),
 			}
-			for _, l := range c.listeners {
-				l.OnRoomUpdate(ctx, roomUpdate)
-			}
+			c.emitOnRoomUpdate(ctx, roomUpdate)
 		}
 	}
 
