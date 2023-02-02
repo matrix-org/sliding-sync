@@ -489,16 +489,24 @@ func (c *UserCache) OnEphemeralEvent(ctx context.Context, roomID string, ephEven
 
 func (c *UserCache) emitOnRoomUpdate(ctx context.Context, update RoomUpdate) {
 	c.listenersMu.RLock()
-	defer c.listenersMu.RUnlock()
+	var listeners []UserCacheListener
 	for _, l := range c.listeners {
+		listeners = append(listeners, l)
+	}
+	c.listenersMu.RUnlock()
+	for _, l := range listeners {
 		l.OnRoomUpdate(ctx, update)
 	}
 }
 
 func (c *UserCache) emitOnUpdate(ctx context.Context, update Update) {
 	c.listenersMu.RLock()
-	defer c.listenersMu.RUnlock()
+	var listeners []UserCacheListener
 	for _, l := range c.listeners {
+		listeners = append(listeners, l)
+	}
+	c.listenersMu.RUnlock()
+	for _, l := range listeners {
 		l.OnUpdate(ctx, update)
 	}
 }
