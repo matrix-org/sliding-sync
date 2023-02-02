@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/matrix-org/sliding-sync/internal"
@@ -119,7 +120,7 @@ func (h *PollerMap) NumPollers() (count int) {
 	h.pollerMu.Lock()
 	defer h.pollerMu.Unlock()
 	for _, p := range h.Pollers {
-		if !p.Terminated {
+		if !p.terminated.Load() {
 			count++
 		}
 	}
@@ -141,7 +142,7 @@ func (h *PollerMap) EnsurePolling(accessToken, userID, deviceID, v2since string,
 	}
 	poller, ok := h.Pollers[deviceID]
 	// a poller exists and hasn't been terminated so we don't need to do anything
-	if ok && !poller.Terminated {
+	if ok && !poller.terminated.Load() {
 		h.pollerMu.Unlock()
 		// this existing poller may not have completed the initial sync yet, so we need to make sure
 		// it has before we return.
@@ -155,7 +156,7 @@ func (h *PollerMap) EnsurePolling(accessToken, userID, deviceID, v2since string,
 		if deviceID == pollerDeviceID {
 			continue
 		}
-		if poller.userID == userID && !poller.Terminated {
+		if poller.userID == userID && !poller.terminated.Load() {
 			needToWait = false
 		}
 	}
@@ -297,9 +298,8 @@ type poller struct {
 	otkCounts        map[string]int
 
 	// flag set to true when poll() returns due to expired access tokens
-	Terminated  bool
-	terminateCh chan struct{}
-	wg          *sync.WaitGroup
+	terminated *atomic.Bool
+	wg         *sync.WaitGroup
 
 	pollHistogramVec    *prometheus.HistogramVec
 	processHistogramVec *prometheus.HistogramVec
@@ -314,8 +314,7 @@ func newPoller(userID, accessToken, deviceID string, client Client, receiver V2D
 		deviceID:            deviceID,
 		client:              client,
 		receiver:            receiver,
-		Terminated:          false,
-		terminateCh:         make(chan struct{}),
+		terminated:          &atomic.Bool{},
 		logger:              logger,
 		wg:                  &wg,
 		initialToDeviceOnly: initialToDeviceOnly,
@@ -328,22 +327,7 @@ func (p *poller) WaitUntilInitialSync() {
 }
 
 func (p *poller) Terminate() {
-	if p.Terminated {
-		return
-	}
-	p.Terminated = true
-	close(p.terminateCh)
-}
-
-func (p *poller) isTerminated() bool {
-	select {
-	case <-p.terminateCh:
-		p.Terminated = true
-		return true
-	default:
-		// not yet terminated
-	}
-	return false
+	p.terminated.CompareAndSwap(false, true)
 }
 
 // Poll will block forever, repeatedly calling v2 sync. Do this in a goroutine.
@@ -356,7 +340,7 @@ func (p *poller) Poll(since string) {
 	}()
 	failCount := 0
 	firstTime := true
-	for !p.Terminated {
+	for !p.terminated.Load() {
 		if failCount > 0 {
 			// don't backoff when doing v2 syncs because the response is only in the cache for a short
 			// period of time (on massive accounts on matrix.org) such that if you wait 2,4,8min between
@@ -365,13 +349,13 @@ func (p *poller) Poll(since string) {
 			p.logger.Warn().Str("duration", waitTime.String()).Int("fail-count", failCount).Msg("Poller: waiting before next poll")
 			timeSleep(waitTime)
 		}
-		if p.isTerminated() {
+		if p.terminated.Load() {
 			break
 		}
 		start := time.Now()
 		resp, statusCode, err := p.client.DoSyncV2(context.Background(), p.accessToken, since, firstTime, p.initialToDeviceOnly)
 		p.trackRequestDuration(time.Since(start), since == "", firstTime)
-		if p.isTerminated() {
+		if p.terminated.Load() {
 			break
 		}
 		if err != nil {
@@ -382,7 +366,7 @@ func (p *poller) Poll(since string) {
 				continue
 			} else {
 				p.logger.Warn().Msg("Poller: access token has been invalidated, terminating loop")
-				p.Terminated = true
+				p.Terminate()
 				break
 			}
 		}
