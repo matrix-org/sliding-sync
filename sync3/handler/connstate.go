@@ -55,6 +55,7 @@ func NewConnState(
 		userCache:           userCache,
 		userID:              userID,
 		deviceID:            deviceID,
+		loadPosition:        -1,
 		roomSubscriptions:   make(map[string]sync3.RoomSubscription),
 		lists:               sync3.NewInternalRequestLists(),
 		extensionsHandler:   ex,
@@ -116,7 +117,7 @@ func (s *ConnState) load() error {
 
 // OnIncomingRequest is guaranteed to be called sequentially (it's protected by a mutex in conn.go)
 func (s *ConnState) OnIncomingRequest(ctx context.Context, cid sync3.ConnID, req *sync3.Request, isInitial bool) (*sync3.Response, error) {
-	if s.loadPosition == 0 {
+	if s.loadPosition == -1 {
 		region := trace.StartRegion(ctx, "load")
 		s.load()
 		region.End()
@@ -530,13 +531,9 @@ func (s *ConnState) OnUpdate(ctx context.Context, up caches.Update) {
 func (s *ConnState) OnRoomUpdate(ctx context.Context, up caches.RoomUpdate) {
 	switch update := up.(type) {
 	case *caches.RoomEventUpdate:
-		if update.EventData.LatestPos != caches.PosAlwaysProcess {
-			if update.EventData.LatestPos == 0 || update.EventData.LatestPos < s.loadPosition {
-				// 0 -> this event was from a 'state' block, do not poke active connections
-				// pos < load -> this event has already been processed from the initial load, do not poke active connections
-				trace.Logf(ctx, "connstate", "ignoring RoomEventUpdate as %d < %d", update.EventData.LatestPos, s.loadPosition)
-				return
-			}
+		if update.EventData.LatestPos != caches.PosAlwaysProcess && update.EventData.LatestPos == 0 {
+			// 0 -> this event was from a 'state' block, do not poke active connections
+			return
 		}
 		internal.Assert("missing global room metadata", update.GlobalRoomMetadata() != nil)
 		trace.Logf(ctx, "connstate", "queued update %d", update.EventData.LatestPos)

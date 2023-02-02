@@ -140,6 +140,13 @@ func (s *connStateLive) lazyLoadTypingMembers(ctx context.Context, response *syn
 func (s *connStateLive) processLiveUpdate(ctx context.Context, up caches.Update, response *sync3.Response) bool {
 	internal.Assert("processLiveUpdate: response list length != internal list length", s.lists.Len() == len(response.Lists))
 	internal.Assert("processLiveUpdate: request list length != internal list length", s.lists.Len() == len(s.muxedReq.Lists))
+	roomUpdate, _ := up.(caches.RoomUpdate)
+	roomEventUpdate, _ := up.(*caches.RoomEventUpdate)
+	// if this is a room event update we may not want to process this if the event nid is < loadPos,
+	// as that means we have already taken it into account
+	if roomEventUpdate != nil && roomEventUpdate.EventData.LatestPos != caches.PosAlwaysProcess && roomEventUpdate.EventData.LatestPos < s.loadPosition {
+		return false
+	}
 
 	// for initial rooms e.g a room comes into the window or a subscription now exists
 	builder := NewRoomsBuilder()
@@ -173,9 +180,6 @@ func (s *connStateLive) processLiveUpdate(ctx context.Context, up caches.Update,
 		// already snapshotted here.
 		s.loadPositions[roomID] = s.loadPosition
 	}
-
-	roomUpdate, _ := up.(caches.RoomUpdate)
-	roomEventUpdate, _ := up.(*caches.RoomEventUpdate)
 
 	// TODO: find a better way to determine if the triggering event should be included e.g ask the lists?
 	if hasUpdates && roomEventUpdate != nil {
