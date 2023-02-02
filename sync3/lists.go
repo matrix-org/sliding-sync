@@ -43,13 +43,13 @@ type RoomDelta struct {
 // JSON 'lists'. It contains all the internal metadata for rooms and controls access and updatings of said
 // lists.
 type InternalRequestLists struct {
-	allRooms map[string]RoomConnMetadata
+	allRooms map[string]*RoomConnMetadata
 	lists    map[string]*FilteredSortableRooms
 }
 
 func NewInternalRequestLists() *InternalRequestLists {
 	return &InternalRequestLists{
-		allRooms: make(map[string]RoomConnMetadata, 10),
+		allRooms: make(map[string]*RoomConnMetadata, 10),
 		lists:    make(map[string]*FilteredSortableRooms),
 	}
 }
@@ -79,7 +79,7 @@ func (s *InternalRequestLists) SetRoom(r RoomConnMetadata) (delta RoomDelta) {
 		)
 	}
 	// filter.Include may call on this room ID in the RoomFinder, so make sure it finds it.
-	s.allRooms[r.RoomID] = r
+	s.allRooms[r.RoomID] = &r
 
 	for listKey, list := range s.lists {
 		_, alreadyExists := list.roomIDToIndex[r.RoomID]
@@ -122,9 +122,10 @@ func (s *InternalRequestLists) DeleteList(listKey string) {
 	// TODO
 }
 
-func (s *InternalRequestLists) Room(roomID string) *RoomConnMetadata {
-	r := s.allRooms[roomID]
-	return &r
+// Returns the underlying Room object. Returns a shared pointer, not a copy.
+// It is only safe to read this data, never to write.
+func (s *InternalRequestLists) ReadOnlyRoom(roomID string) *RoomConnMetadata {
+	return s.allRooms[roomID]
 }
 
 func (s *InternalRequestLists) Get(listKey string) *FilteredSortableRooms {

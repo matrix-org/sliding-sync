@@ -391,7 +391,7 @@ func (s *ConnState) buildRooms(ctx context.Context, builtSubs []BuiltSubscriptio
 			var oldRoomIDs []string
 			for _, currRoomID := range bs.RoomIDs { // <- the list of subs we definitely are including
 				// append old rooms if we are joined to them
-				currRoom := s.lists.Room(currRoomID)
+				currRoom := s.lists.ReadOnlyRoom(currRoomID)
 				var prevRoomID *string
 				if currRoom != nil {
 					prevRoomID = currRoom.PredecessorRoomID
@@ -403,7 +403,7 @@ func (s *ConnState) buildRooms(ctx context.Context, builtSubs []BuiltSubscriptio
 					}
 					oldRoomIDs = append(oldRoomIDs, *prevRoomID)
 					// keep checking
-					prevRoom := s.lists.Room(*prevRoomID)
+					prevRoom := s.lists.ReadOnlyRoom(*prevRoomID)
 					if prevRoom != nil {
 						prevRoomID = prevRoom.PredecessorRoomID
 					}

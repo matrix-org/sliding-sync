@@ -8,7 +8,7 @@ import (
 )
 
 type RoomFinder interface {
-	Room(roomID string) *RoomConnMetadata
+	ReadOnlyRoom(roomID string) *RoomConnMetadata
 }
 
 // SortableRooms represents a list of rooms which can be sorted and updated. Maintains mappings of
@@ -124,8 +124,8 @@ func (s *SortableRooms) Sort(sortBy []string) error {
 // Comparator functions: -1 = false, +1 = true, 0 = match
 
 func (s *SortableRooms) resolveRooms(i, j int) (ri, rj *RoomConnMetadata) {
-	ri = s.finder.Room(s.roomIDs[i])
-	rj = s.finder.Room(s.roomIDs[j])
+	ri = s.finder.ReadOnlyRoom(s.roomIDs[i])
+	rj = s.finder.ReadOnlyRoom(s.roomIDs[j])
 	return
 }
 
@@ -219,7 +219,7 @@ func NewFilteredSortableRooms(finder RoomFinder, roomIDs []string, filter *Reque
 		filter = &RequestFilters{}
 	}
 	for _, roomID := range roomIDs {
-		r := finder.Room(roomID)
+		r := finder.ReadOnlyRoom(roomID)
 		if filter.Include(r, finder) {
 			filteredRooms = append(filteredRooms, roomID)
 		}
@@ -231,7 +231,7 @@ func NewFilteredSortableRooms(finder RoomFinder, roomIDs []string, filter *Reque
 }
 
 func (f *FilteredSortableRooms) Add(roomID string) bool {
-	r := f.finder.Room(roomID)
+	r := f.finder.ReadOnlyRoom(roomID)
 	if !f.filter.Include(r, f.finder) {
 		return false
 	}

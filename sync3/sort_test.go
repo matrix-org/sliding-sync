@@ -14,7 +14,7 @@ type finder struct {
 	roomIDs []string
 }
 
-func (f finder) Room(roomID string) *RoomConnMetadata {
+func (f finder) ReadOnlyRoom(roomID string) *RoomConnMetadata {
 	return f.rooms[roomID]
 }
 

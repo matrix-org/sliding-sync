@@ -454,7 +454,7 @@ func (rf *RequestFilters) Include(r *RoomConnMetadata, finder RoomFinder) bool {
 	if r.UpgradedRoomID != nil {
 		// should we exclude this room? If we have _joined_ the successor room then yes because
 		// this room must therefore be old, else no.
-		nextRoom := finder.Room(*r.UpgradedRoomID)
+		nextRoom := finder.ReadOnlyRoom(*r.UpgradedRoomID)
 		if nextRoom != nil && !nextRoom.HasLeft && !nextRoom.IsInvite {
 			return false
 		}
