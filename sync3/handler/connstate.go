@@ -49,6 +49,7 @@ type ConnState struct {
 func NewConnState(
 	userID, deviceID string, userCache *caches.UserCache, globalCache *caches.GlobalCache,
 	ex extensions.HandlerInterface, joinChecker JoinChecker, histVec *prometheus.HistogramVec,
+	maxPendingEventUpdates int,
 ) *ConnState {
 	cs := &ConnState{
 		globalCache:         globalCache,
@@ -66,7 +67,7 @@ func NewConnState(
 	cs.live = &connStateLive{
 		ConnState:     cs,
 		loadPositions: make(map[string]int64),
-		updates:       make(chan caches.Update, MaxPendingEventUpdates), // TODO: customisable
+		updates:       make(chan caches.Update, maxPendingEventUpdates),
 	}
 	cs.userCacheID = cs.userCache.Subsribe(cs)
 	return cs

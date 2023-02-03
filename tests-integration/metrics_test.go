@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	slidingsync "github.com/matrix-org/sliding-sync"
 	"github.com/matrix-org/sliding-sync/sync2"
 	"github.com/matrix-org/sliding-sync/sync3"
 	"github.com/matrix-org/sliding-sync/testutils"
@@ -59,7 +60,9 @@ func TestMetricsNumPollers(t *testing.T) {
 	pqString := testutils.PrepareDBConnectionString()
 	// setup code
 	v2 := runTestV2Server(t)
-	v3 := runTestServer(t, v2, pqString, true)
+	v3 := runTestServer(t, v2, pqString, slidingsync.Opts{
+		AddPrometheusMetrics: true,
+	})
 	defer v2.close()
 	defer v3.close()
 	metricsServer := runMetricsServer(t)
@@ -106,7 +109,9 @@ func TestMetricsNumConns(t *testing.T) {
 	pqString := testutils.PrepareDBConnectionString()
 	// setup code
 	v2 := runTestV2Server(t)
-	v3 := runTestServer(t, v2, pqString, true)
+	v3 := runTestServer(t, v2, pqString, slidingsync.Opts{
+		AddPrometheusMetrics: true,
+	})
 	defer v2.close()
 	defer v3.close()
 	metricsServer := runMetricsServer(t)

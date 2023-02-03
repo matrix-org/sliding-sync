@@ -20,6 +20,19 @@ type Payload interface {
 	Type() string
 }
 
+// EmptyPayload is used internally to act as a synchronisation point with consumers when bufferSize==0.
+// When no buffer is used, pubsub should act synchronously, meaning we wait for the consumer to process
+// the message before sending the next one. This is used in tests to stop race conditions in the tests.
+// We need to know when the consumer has consumed - make(ch, 0) isn't enough as that wakes up the producer
+// too early (as soon as the consumer consumes it will free the buffer, whereas we need to wait for processing
+// too). To ensure we wait for processing, we send this emptyPayload immediately after messages. When that
+// returns, we know the previous payload was fully consumed.
+type emptyPayload struct{}
+
+func (p *emptyPayload) Type() string { return emptyPayloadType }
+
+const emptyPayloadType = "empty"
+
 // Listener represents the common functions required by all subscription listeners
 type Listener interface {
 	// Begin listening on this channel with this callback starting from this position. Blocks until Close() is called.
@@ -70,6 +83,9 @@ func (ps *PubSub) Notify(chanName string, p Payload) error {
 	case <-time.After(5 * time.Second):
 		return fmt.Errorf("notify with payload %v timed out", p.Type())
 	}
+	if ps.bufferSize == 0 {
+		ch <- &emptyPayload{}
+	}
 	return nil
 }
 
@@ -89,6 +105,9 @@ func (ps *PubSub) Close() error {
 func (ps *PubSub) Listen(chanName string, fn func(p Payload)) error {
 	ch := ps.getChan(chanName)
 	for payload := range ch {
+		if payload.Type() == emptyPayloadType {
+			continue
+		}
 		fn(payload)
 	}
 	return nil

@@ -50,7 +50,8 @@ type SyncLiveHandler struct {
 	userCaches *sync.Map // map[user_id]*UserCache
 	Dispatcher *sync3.Dispatcher
 
-	GlobalCache *caches.GlobalCache
+	GlobalCache            *caches.GlobalCache
+	maxPendingEventUpdates int
 
 	numConns prometheus.Gauge
 	histVec  *prometheus.HistogramVec
@@ -58,7 +59,7 @@ type SyncLiveHandler struct {
 
 func NewSync3Handler(
 	store *state.Storage, storev2 *sync2.Storage, v2Client sync2.Client, postgresDBURI, secret string,
-	debug bool, pub pubsub.Notifier, sub pubsub.Listener, enablePrometheus bool,
+	debug bool, pub pubsub.Notifier, sub pubsub.Listener, enablePrometheus bool, maxPendingEventUpdates int,
 ) (*SyncLiveHandler, error) {
 	logger.Info().Msg("creating handler")
 	if debug {
@@ -67,13 +68,14 @@ func NewSync3Handler(
 		zerolog.SetGlobalLevel(zerolog.InfoLevel)
 	}
 	sh := &SyncLiveHandler{
-		V2:          v2Client,
-		Storage:     store,
-		V2Store:     storev2,
-		ConnMap:     sync3.NewConnMap(),
-		userCaches:  &sync.Map{},
-		Dispatcher:  sync3.NewDispatcher(),
-		GlobalCache: caches.NewGlobalCache(store),
+		V2:                     v2Client,
+		Storage:                store,
+		V2Store:                storev2,
+		ConnMap:                sync3.NewConnMap(),
+		userCaches:             &sync.Map{},
+		Dispatcher:             sync3.NewDispatcher(),
+		GlobalCache:            caches.NewGlobalCache(store),
+		maxPendingEventUpdates: maxPendingEventUpdates,
 	}
 	sh.Extensions = &extensions.Handler{
 		Store:       store,
@@ -359,7 +361,7 @@ func (h *SyncLiveHandler) setupConnection(req *http.Request, syncReq *sync3.Requ
 	conn, created := h.ConnMap.CreateConn(sync3.ConnID{
 		DeviceID: deviceID,
 	}, func() sync3.ConnHandler {
-		return NewConnState(v2device.UserID, v2device.DeviceID, userCache, h.GlobalCache, h.Extensions, h.Dispatcher, h.histVec)
+		return NewConnState(v2device.UserID, v2device.DeviceID, userCache, h.GlobalCache, h.Extensions, h.Dispatcher, h.histVec, h.maxPendingEventUpdates)
 	})
 	if created {
 		log.Info().Str("user", v2device.UserID).Str("conn_id", conn.ConnID.String()).Msg("created new connection")

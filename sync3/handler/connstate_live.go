@@ -13,12 +13,9 @@ import (
 	"github.com/tidwall/gjson"
 )
 
-var (
-	// The max number of events the client is eligible to read (unfiltered) which we are willing to
-	// buffer on this connection. Too large and we consume lots of memory. Too small and busy accounts
-	// will trip the connection knifing.
-	MaxPendingEventUpdates = 2000
-)
+// the amount of time to try to insert into a full buffer before giving up.
+// Customisable for testing
+var BufferWaitTime = time.Second * 5
 
 // Contains code for processing live updates. Split out from connstate because they concern different
 // code paths. Relies on ConnState for various list/sort/subscription operations.
@@ -44,7 +41,7 @@ func (s *connStateLive) onUpdate(up caches.Update) {
 	}
 	select {
 	case s.updates <- up:
-	case <-time.After(5 * time.Second):
+	case <-time.After(BufferWaitTime):
 		logger.Warn().Interface("update", up).Str("user", s.userID).Msg(
 			"cannot send update to connection, buffer exceeded. Destroying connection.",
 		)
@@ -203,7 +200,7 @@ func (s *connStateLive) processLiveUpdate(ctx context.Context, up caches.Update,
 			// - we then process the live events in turn which adds them again.
 			if !advancedPastEvent {
 				roomIDtoTimeline := s.userCache.AnnotateWithTransactionIDs(s.deviceID, map[string][]json.RawMessage{
-					roomEventUpdate.RoomID(): []json.RawMessage{roomEventUpdate.EventData.Event},
+					roomEventUpdate.RoomID(): {roomEventUpdate.EventData.Event},
 				})
 				r.Timeline = append(r.Timeline, roomIDtoTimeline[roomEventUpdate.RoomID()]...)
 				roomID := roomEventUpdate.RoomID()

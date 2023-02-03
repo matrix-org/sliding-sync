@@ -309,18 +309,24 @@ func (s *testV3Server) doV3Request(t testutils.TestBenchInterface, ctx context.C
 	return &r, respBytes, resp.StatusCode
 }
 
-func runTestServer(t testutils.TestBenchInterface, v2Server *testV2Server, postgresConnectionString string, enableProm ...bool) *testV3Server {
+func runTestServer(t testutils.TestBenchInterface, v2Server *testV2Server, postgresConnectionString string, opts ...syncv3.Opts) *testV3Server {
 	t.Helper()
 	if postgresConnectionString == "" {
 		postgresConnectionString = testutils.PrepareDBConnectionString()
 	}
 	metricsEnabled := false
-	if len(enableProm) > 0 && enableProm[0] {
-		metricsEnabled = true
+	maxPendingEventUpdates := 200
+	if len(opts) > 0 {
+		metricsEnabled = opts[0].AddPrometheusMetrics
+		if opts[0].MaxPendingEventUpdates > 0 {
+			maxPendingEventUpdates = opts[0].MaxPendingEventUpdates
+			handler.BufferWaitTime = 5 * time.Millisecond
+		}
 	}
 	h2, h3 := syncv3.Setup(v2Server.url(), postgresConnectionString, os.Getenv("SYNCV3_SECRET"), syncv3.Opts{
 		Debug:                    true,
 		TestingSynchronousPubsub: true, // critical to avoid flakey tests
+		MaxPendingEventUpdates:   maxPendingEventUpdates,
 		AddPrometheusMetrics:     metricsEnabled,
 	})
 	// for ease of use we don't start v2 pollers at startup in tests

@@ -3,10 +3,12 @@ package syncv3
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"sync"
 	"testing"
 	"time"
 
+	slidingsync "github.com/matrix-org/sliding-sync"
 	"github.com/matrix-org/sliding-sync/sync2"
 	"github.com/matrix-org/sliding-sync/sync3"
 	"github.com/matrix-org/sliding-sync/testutils"
@@ -553,6 +555,67 @@ func TestSessionExpiry(t *testing.T) {
 	_ = v3.mustDoV3RequestWithPos(t, aliceToken, res2.Pos, req)
 	// now use an earlier ?pos= to expire the session
 	_, body, code := v3.doV3Request(t, context.Background(), aliceToken, res1.Pos, req)
+	if code != 400 {
+		t.Errorf("got HTTP %d want 400", code)
+	}
+	if gjson.ParseBytes(body).Get("errcode").Str != "M_UNKNOWN_POS" {
+		t.Errorf("got %v want errcode=M_UNKNOWN_POS", string(body))
+	}
+}
+
+func TestSessionExpiryOnBufferFill(t *testing.T) {
+	roomID := "!doesnt:matter"
+	maxPendingEventUpdates := 3
+	pqString := testutils.PrepareDBConnectionString()
+	v2 := runTestV2Server(t)
+	v2.addAccount(alice, aliceToken)
+	v2.queueResponse(alice, sync2.SyncResponse{
+		Rooms: sync2.SyncRoomsResponse{
+			Join: v2JoinTimeline(roomEvents{
+				roomID: roomID,
+				state:  createRoomState(t, alice, time.Now()),
+				events: []json.RawMessage{
+					testutils.NewStateEvent(t, "m.room.name", "", alice, map[string]interface{}{"name": "B"}),
+				},
+			}),
+		},
+	})
+	v3 := runTestServer(t, v2, pqString, slidingsync.Opts{
+		MaxPendingEventUpdates: maxPendingEventUpdates,
+	})
+
+	res := v3.mustDoV3Request(t, aliceToken, sync3.Request{
+		RoomSubscriptions: map[string]sync3.RoomSubscription{
+			roomID: {
+				TimelineLimit: 1,
+			},
+		},
+	})
+	m.MatchResponse(t, res, m.MatchRoomSubscriptionsStrict(map[string][]m.RoomMatcher{
+		roomID: {
+			m.MatchJoinCount(1),
+		},
+	}))
+
+	// inject maxPendingEventUpdates+1 events to expire the session
+	events := make([]json.RawMessage, maxPendingEventUpdates+1)
+	for i := range events {
+		events[i] = testutils.NewEvent(t, "m.room.message", alice, map[string]interface{}{
+			"msgtype": "m.text",
+			"body":    fmt.Sprintf("Test %d", i),
+		}, testutils.WithTimestamp(time.Now().Add(time.Duration(i)*time.Second)))
+	}
+	v2.queueResponse(alice, sync2.SyncResponse{
+		Rooms: sync2.SyncRoomsResponse{
+			Join: v2JoinTimeline(roomEvents{
+				roomID: roomID,
+				events: events,
+			}),
+		},
+	})
+	v2.waitUntilEmpty(t, aliceToken)
+
+	_, body, code := v3.doV3Request(t, context.Background(), aliceToken, res.Pos, sync3.Request{})
 	if code != 400 {
 		t.Errorf("got HTTP %d want 400", code)
 	}

@@ -28,6 +28,10 @@ var Version string
 type Opts struct {
 	Debug                bool
 	AddPrometheusMetrics bool
+	// The max number of events the client is eligible to read (unfiltered) which we are willing to
+	// buffer on this connection. Too large and we consume lots of memory. Too small and busy accounts
+	// will trip the connection knifing. Customisable as tests might want to test filling the buffer.
+	MaxPendingEventUpdates int
 	// if true, publishing messages will block until the consumer has consumed it.
 	// Assumes a single producer and a single consumer.
 	TestingSynchronousPubsub bool
@@ -74,6 +78,9 @@ func Setup(destHomeserver, postgresURI, secret string, opts Opts) (*handler2.Han
 	if opts.TestingSynchronousPubsub {
 		bufferSize = 0
 	}
+	if opts.MaxPendingEventUpdates == 0 {
+		opts.MaxPendingEventUpdates = 2000
+	}
 	pubSub := pubsub.NewPubSub(bufferSize)
 
 	// create v2 handler
@@ -83,7 +90,7 @@ func Setup(destHomeserver, postgresURI, secret string, opts Opts) (*handler2.Han
 	}
 
 	// create v3 handler
-	h3, err := handler.NewSync3Handler(store, storev2, v2Client, postgresURI, secret, opts.Debug, pubSub, pubSub, opts.AddPrometheusMetrics)
+	h3, err := handler.NewSync3Handler(store, storev2, v2Client, postgresURI, secret, opts.Debug, pubSub, pubSub, opts.AddPrometheusMetrics, opts.MaxPendingEventUpdates)
 	if err != nil {
 		panic(err)
 	}
