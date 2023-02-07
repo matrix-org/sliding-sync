@@ -370,11 +370,12 @@ func createRoomStateWithCreateEvent(t testutils.TestBenchInterface, creator stri
 }
 
 type roomEvents struct {
-	roomID    string
-	name      string
-	state     []json.RawMessage
-	events    []json.RawMessage
-	prevBatch string
+	roomID     string
+	name       string
+	state      []json.RawMessage
+	events     []json.RawMessage
+	prevBatch  string
+	notifCount *int
 }
 
 func (re *roomEvents) getStateEvent(evType, stateKey string) json.RawMessage {
@@ -409,6 +410,9 @@ func v2JoinTimeline(joinEvents ...roomEvents) map[string]sync2.SyncV2JoinRespons
 		}
 		if re.prevBatch != "" {
 			data.Timeline.PrevBatch = re.prevBatch
+		}
+		if re.notifCount != nil {
+			data.UnreadNotifications.NotificationCount = re.notifCount
 		}
 		result[re.roomID] = data
 	}

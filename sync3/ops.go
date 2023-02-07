@@ -13,12 +13,15 @@ type List interface {
 // the underlying list on which to perform operations on, and the room which was modified and in what
 // way. It returns a list of INSERT/DELETE operations, which may be zero length, as well as which rooms
 // are newly added into the window.
-//    A,B,C,D,E,F,G,H,I        <-- List
-//    `----`    `----`         <-- RequestList.Ranges
-//    DEL E | ADD J | CHANGE C <-- ListOp RoomID
+//
+//	A,B,C,D,E,F,G,H,I        <-- List
+//	`----`    `----`         <-- RequestList.Ranges
+//	DEL E | ADD J | CHANGE C <-- ListOp RoomID
+//
 // returns:
-//    [ {op:DELETE, index:2}, {op:INSERT, index:0, room_id:A} ] <--- []ResponseOp
-//    [ "A" ] <--- []string, new room subscriptions, if it wasn't in the window before
+//
+//	[ {op:DELETE, index:2}, {op:INSERT, index:0, room_id:A} ] <--- []ResponseOp
+//	[ "A" ] <--- []string, new room subscriptions, if it wasn't in the window before
 //
 // This function will modify List to Add/Delete/Sort appropriately.
 func CalculateListOps(reqList *RequestList, list List, roomID string, listOp ListOp) (ops []ResponseOp, subs []string) {

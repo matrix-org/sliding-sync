@@ -373,6 +373,10 @@ type roomUpdateCache struct {
 	userRoomData   *UserRoomData
 }
 
+func (c *roomUpdateCache) Type() string {
+	return "roomUpdateCache"
+}
+
 func (c *roomUpdateCache) RoomID() string {
 	return c.roomID
 }

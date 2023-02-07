@@ -491,12 +491,6 @@ func (p *poller) parseRoomsResponse(res *SyncResponse) {
 			stateCalls++
 			p.receiver.Initialise(roomID, roomData.State.Events)
 		}
-		// process unread counts before events else we might push the event without including said event in the count
-		if roomData.UnreadNotifications.HighlightCount != nil || roomData.UnreadNotifications.NotificationCount != nil {
-			p.receiver.UpdateUnreadCounts(
-				roomID, p.userID, roomData.UnreadNotifications.HighlightCount, roomData.UnreadNotifications.NotificationCount,
-			)
-		}
 		// process typing/receipts before events so we seed the caches correctly for when we return the room
 		for _, ephEvent := range roomData.Ephemeral.Events {
 			ephEventType := gjson.GetBytes(ephEvent, "type").Str
@@ -517,6 +511,15 @@ func (p *poller) parseRoomsResponse(res *SyncResponse) {
 		if len(roomData.Timeline.Events) > 0 {
 			timelineCalls++
 			p.receiver.Accumulate(p.deviceID, roomID, roomData.Timeline.PrevBatch, roomData.Timeline.Events)
+		}
+
+		// process unread counts AFTER events so global caches have been updated by the time this metadata is added.
+		// Previously we did this BEFORE events so we atomically showed the event and the unread count in one go, but
+		// this could cause clients to de-sync: see TestUnreadCountMisordering integration test.
+		if roomData.UnreadNotifications.HighlightCount != nil || roomData.UnreadNotifications.NotificationCount != nil {
+			p.receiver.UpdateUnreadCounts(
+				roomID, p.userID, roomData.UnreadNotifications.HighlightCount, roomData.UnreadNotifications.NotificationCount,
+			)
 		}
 	}
 	for roomID, roomData := range res.Rooms.Leave {

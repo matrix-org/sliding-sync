@@ -83,6 +83,7 @@ func (s *connStateLive) liveUpdate(
 			return
 		case update := <-s.updates:
 			trace.Logf(ctx, "liveUpdate", "process live update")
+
 			updateWillReturnResponse := s.processLiveUpdate(ctx, update, response)
 			// pass event to extensions AFTER processing
 			s.extensionsHandler.HandleLiveUpdate(update, ex, &response.Extensions, updateWillReturnResponse, isInitial)
@@ -238,7 +239,7 @@ func (s *connStateLive) processLiveUpdate(ctx context.Context, up caches.Update,
 
 			response.Rooms[roomUpdate.RoomID()] = thisRoom
 		}
-		if delta.HighlightCountDecreased || delta.NotificationCountDecreased {
+		if delta.HighlightCountChanged || delta.NotificationCountChanged {
 			if !exists {
 				// we need to make this room exist. Other deltas are caused by events so the room exists,
 				// but highlight/notif counts are silent
@@ -310,11 +311,11 @@ func (s *connStateLive) processLiveUpdateForList(
 		}
 	case *caches.UnreadCountUpdate:
 		logger.Trace().Str("user", s.userID).Str("room", update.RoomID()).Bool("count_decreased", update.HasCountDecreased).Msg("received unread count update")
-		if !update.HasCountDecreased {
-			// if the count increases then we'll notify the user for the event which increases the count, hence
-			// do nothing. We only care to notify the user when the counts decrease.
-			return false
-		}
+		// normally we do not signal unread count increases to the client as we want to atomically
+		// increase the count AND send the msg so there's no phantom msgs/notifications. However,
+		// we must resort the list and send delta even if this is an increase else
+		// the server's view of the world can get out-of-sync with the clients, causing bogus DELETE/INSERT
+		// ops which causes duplicate rooms to appear.
 	}
 
 	// only room updates can cause the rooms to reshuffle e.g events, room account data, tags

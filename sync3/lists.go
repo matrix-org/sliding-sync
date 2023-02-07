@@ -31,12 +31,12 @@ type RoomListDelta struct {
 }
 
 type RoomDelta struct {
-	RoomNameChanged            bool
-	JoinCountChanged           bool
-	InviteCountChanged         bool
-	NotificationCountDecreased bool
-	HighlightCountDecreased    bool
-	Lists                      []RoomListDelta
+	RoomNameChanged          bool
+	JoinCountChanged         bool
+	InviteCountChanged       bool
+	NotificationCountChanged bool
+	HighlightCountChanged    bool
+	Lists                    []RoomListDelta
 }
 
 // InternalRequestLists is a list of lists which matches each index position in the request
@@ -57,11 +57,11 @@ func NewInternalRequestLists() *InternalRequestLists {
 func (s *InternalRequestLists) SetRoom(r RoomConnMetadata) (delta RoomDelta) {
 	existing, exists := s.allRooms[r.RoomID]
 	if exists {
-		if existing.NotificationCount > r.NotificationCount {
-			delta.NotificationCountDecreased = true
+		if existing.NotificationCount != r.NotificationCount {
+			delta.NotificationCountChanged = true
 		}
-		if existing.HighlightCount > r.HighlightCount {
-			delta.HighlightCountDecreased = true
+		if existing.HighlightCount != r.HighlightCount {
+			delta.HighlightCountChanged = true
 		}
 		delta.InviteCountChanged = !existing.SameInviteCount(&r.RoomMetadata)
 		delta.JoinCountChanged = !existing.SameJoinCount(&r.RoomMetadata)

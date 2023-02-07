@@ -55,7 +55,8 @@ type Response struct {
 func (e Response) HasData(isInitial bool) bool {
 	return (e.ToDevice != nil && e.ToDevice.HasData(isInitial)) ||
 		(e.E2EE != nil && e.E2EE.HasData(isInitial)) ||
-		(e.AccountData != nil && e.AccountData.HasData(isInitial))
+		(e.AccountData != nil && e.AccountData.HasData(isInitial)) ||
+		(e.Receipts != nil && e.Receipts.HasData(isInitial))
 }
 
 type HandlerInterface interface {

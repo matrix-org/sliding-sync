@@ -30,7 +30,7 @@ func (r *TypingResponse) HasData(isInitial bool) bool {
 
 func ProcessLiveTyping(up caches.Update, updateWillReturnResponse bool, userID string, req *TypingRequest) (res *TypingResponse) {
 	switch update := up.(type) {
-	case caches.TypingUpdate:
+	case *caches.TypingUpdate:
 		// a live typing event happened, send this back
 		return &TypingResponse{
 			Rooms: map[string]json.RawMessage{
