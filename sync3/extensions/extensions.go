@@ -27,19 +27,39 @@ type Request struct {
 
 func (r Request) ApplyDelta(next *Request) Request {
 	if next.ToDevice != nil {
-		r.ToDevice = r.ToDevice.ApplyDelta(next.ToDevice)
+		if r.ToDevice == nil {
+			r.ToDevice = next.ToDevice
+		} else {
+			r.ToDevice = r.ToDevice.ApplyDelta(next.ToDevice)
+		}
 	}
 	if next.E2EE != nil {
-		r.E2EE = r.E2EE.ApplyDelta(next.E2EE)
+		if r.E2EE == nil {
+			r.E2EE = next.E2EE
+		} else {
+			r.E2EE = r.E2EE.ApplyDelta(next.E2EE)
+		}
 	}
 	if next.AccountData != nil {
-		r.AccountData = r.AccountData.ApplyDelta(next.AccountData)
+		if r.AccountData == nil {
+			r.AccountData = next.AccountData
+		} else {
+			r.AccountData = r.AccountData.ApplyDelta(next.AccountData)
+		}
 	}
 	if next.Typing != nil {
-		r.Typing = r.Typing.ApplyDelta(next.Typing)
+		if r.Typing == nil {
+			r.Typing = next.Typing
+		} else {
+			r.Typing = r.Typing.ApplyDelta(next.Typing)
+		}
 	}
 	if next.Receipts != nil {
-		r.Receipts = r.Receipts.ApplyDelta(next.Receipts)
+		if r.Receipts == nil {
+			r.Receipts = next.Receipts
+		} else {
+			r.Receipts = r.Receipts.ApplyDelta(next.Receipts)
+		}
 	}
 	return r
 }

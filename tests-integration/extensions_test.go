@@ -567,3 +567,40 @@ func TestExtensionAccountData(t *testing.T) {
 		},
 	))
 }
+
+// Regression test to make sure the server doesn't panic when extensions get enabled at a later time.
+func TestExtensionLateEnable(t *testing.T) {
+	pqString := testutils.PrepareDBConnectionString()
+	// setup code
+	v2 := runTestV2Server(t)
+	v3 := runTestServer(t, v2, pqString)
+	defer v2.close()
+	defer v3.close()
+
+	v2.addAccount(alice, aliceToken)
+	v2.queueResponse(alice, sync2.SyncResponse{
+		Rooms: sync2.SyncRoomsResponse{
+			Join: v2JoinTimeline(roomEvents{
+				roomID: "!doesnt-matter2",
+				name:   "Poke 2",
+				events: createRoomState(t, alice, time.Now()),
+			}),
+		},
+	})
+	res := v3.mustDoV3Request(t, aliceToken, sync3.Request{
+		Lists: map[string]sync3.RequestList{"a": {
+			Ranges: sync3.SliceRanges{
+				[2]int64{0, 10}, // doesn't matter
+			},
+		}},
+	})
+	// now enable extensions and ensure we don't panic
+	boolTrue := true
+	v3.mustDoV3RequestWithPos(t, aliceToken, res.Pos, sync3.Request{
+		Extensions: extensions.Request{
+			ToDevice: &extensions.ToDeviceRequest{
+				Enabled: &boolTrue,
+			},
+		},
+	})
+}
