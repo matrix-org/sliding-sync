@@ -78,7 +78,18 @@ func (h *Handler) HandleLiveUpdate(update caches.Update, req Request, res *Respo
 		res.Typing = ProcessLiveTyping(update, updateWillReturnResponse, req.UserID, req.Typing)
 	}
 	if req.Receipts != nil && req.Receipts.Enabled {
-		res.Receipts = ProcessLiveReceipts(update, updateWillReturnResponse, req.UserID, req.Receipts)
+		newReceipts := ProcessLiveReceipts(update, updateWillReturnResponse, req.UserID, req.Receipts)
+		if newReceipts != nil {
+			if res.Receipts == nil {
+				res.Receipts = newReceipts
+			} else {
+				// aggregate receipts
+				for roomID, ephEvent := range newReceipts.Rooms {
+					res.Receipts.Rooms[roomID] = ephEvent
+				}
+			}
+
+		}
 	}
 	if req.ToDevice != nil && req.ToDevice.Enabled != nil && *req.ToDevice.Enabled {
 		res.ToDevice = ProcessLiveToDeviceEvents(update, h.Store, req.UserID, req.DeviceID, req.ToDevice)
