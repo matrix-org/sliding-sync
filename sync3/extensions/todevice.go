@@ -49,13 +49,16 @@ func (r *ToDeviceResponse) HasData(isInitial bool) bool {
 	return len(r.Events) > 0
 }
 
-func (r *ToDeviceRequest) Process(ctx context.Context, res *Response, extCtx Context) {
-	if extCtx.Update != nil {
-		_, ok := extCtx.Update.(caches.DeviceEventsUpdate)
-		if !ok {
-			return
-		}
+func (r *ToDeviceRequest) ProcessLive(ctx context.Context, res *Response, extCtx Context, up caches.Update) {
+	_, ok := up.(caches.DeviceEventsUpdate)
+	if !ok {
+		return
 	}
+	// DeviceEventsUpdate has no data and just serves to poke this extension to recheck the database
+	r.ProcessInitial(ctx, res, extCtx)
+}
+
+func (r *ToDeviceRequest) ProcessInitial(ctx context.Context, res *Response, extCtx Context) {
 	if r.Limit == 0 {
 		r.Limit = 100 // default to 100
 	}

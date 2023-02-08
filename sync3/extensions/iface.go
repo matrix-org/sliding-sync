@@ -2,6 +2,8 @@ package extensions
 
 import (
 	"context"
+
+	"github.com/matrix-org/sliding-sync/sync3/caches"
 )
 
 type GenericRequest interface {
@@ -11,7 +13,10 @@ type GenericRequest interface {
 	// Overwrite fields in the request by side-effecting on this struct.
 	ApplyDelta(next GenericRequest)
 	// Process this request and put the response into *Response.
-	Process(ctx context.Context, res *Response, extCtx Context)
+	ProcessInitial(ctx context.Context, res *Response, extCtx Context)
+	// Process a live event, /aggregating/ the response in *Response. This function can be called
+	// multiple times per sync loop as the conn buffer is consumed.
+	ProcessLive(ctx context.Context, res *Response, extCtx Context, up caches.Update)
 }
 
 // mixin for managing the enabled flag

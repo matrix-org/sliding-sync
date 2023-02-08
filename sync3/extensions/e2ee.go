@@ -40,19 +40,21 @@ func (r *E2EEResponse) HasData(isInitial bool) bool {
 	return r.DeviceLists != nil || len(r.FallbackKeyTypes) > 0 || len(r.OTKCounts) > 0
 }
 
-func (r *E2EERequest) Process(ctx context.Context, res *Response, extCtx Context) {
-	if extCtx.Update != nil {
-		// only process 'live' e2ee when we aren't going to return data as we need to ensure that we don't calculate this twice
-		// e.g once on incoming request then again due to wakeup
-		if res.E2EE != nil && res.E2EE.HasData(false) {
-			return
-		}
-		_, ok := extCtx.Update.(caches.DeviceDataUpdate)
-		if !ok {
-			return
-		}
-		// fallthrough
+func (r *E2EERequest) ProcessLive(ctx context.Context, res *Response, extCtx Context, up caches.Update) {
+	// only process 'live' e2ee when we aren't going to return data as we need to ensure that we don't calculate this twice
+	// e.g once on incoming request then again due to wakeup
+	if res.E2EE != nil && res.E2EE.HasData(false) {
+		return
 	}
+	_, ok := up.(caches.DeviceDataUpdate)
+	if !ok {
+		return
+	}
+	// DeviceDataUpdate has no data and just serves to poke this extension to recheck the database
+	r.ProcessInitial(ctx, res, extCtx)
+}
+
+func (r *E2EERequest) ProcessInitial(ctx context.Context, res *Response, extCtx Context) {
 	//  pull OTK counts and changed/left from device data
 	dd := extCtx.E2EEFetcher.DeviceData(extCtx.UserID, extCtx.DeviceID, extCtx.IsInitial)
 	if dd == nil {

@@ -102,7 +102,6 @@ type Context struct {
 	IsInitial        bool
 	UserID           string
 	DeviceID         string
-	Update           caches.Update
 }
 
 type HandlerInterface interface {
@@ -118,10 +117,9 @@ type Handler struct {
 
 func (h *Handler) HandleLiveUpdate(update caches.Update, req Request, res *Response, extCtx Context) {
 	extCtx.Handler = h
-	extCtx.Update = update
 	exts := req.EnabledExtensions()
 	for _, ext := range exts {
-		ext.Process(context.Background(), res, extCtx)
+		ext.ProcessLive(context.Background(), res, extCtx, update)
 	}
 }
 
@@ -130,7 +128,7 @@ func (h *Handler) Handle(ctx context.Context, req Request, extCtx Context) (res 
 	exts := req.EnabledExtensions()
 	for _, ext := range exts {
 		region := trace.StartRegion(ctx, "extension_"+ext.Name())
-		ext.Process(ctx, &res, extCtx)
+		ext.ProcessInitial(ctx, &res, extCtx)
 		region.End()
 	}
 	return

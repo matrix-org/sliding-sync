@@ -30,34 +30,25 @@ func (r *ReceiptsResponse) HasData(isInitial bool) bool {
 	return len(r.Rooms) > 0
 }
 
-func (r *ReceiptsRequest) ProcessLiveReceipts(extCtx Context) (res *ReceiptsResponse) {
-	switch update := extCtx.Update.(type) {
+func (r *ReceiptsRequest) ProcessLive(ctx context.Context, res *Response, extCtx Context, up caches.Update) {
+	switch update := up.(type) {
 	case *caches.ReceiptUpdate:
 		// a live receipt event happened, send this back
-		return &ReceiptsResponse{
-			Rooms: map[string]json.RawMessage{
-				update.RoomID(): update.EphemeralEvent,
-			},
-		}
-	}
-	return nil
-}
-
-func (r *ReceiptsRequest) Process(ctx context.Context, res *Response, extCtx Context) {
-	if extCtx.Update != nil {
-		newReceipts := r.ProcessLiveReceipts(extCtx)
-		if newReceipts != nil {
-			if res.Receipts == nil {
-				res.Receipts = newReceipts
-			} else {
-				// aggregate receipts
-				for roomID, ephEvent := range newReceipts.Rooms {
-					res.Receipts.Rooms[roomID] = ephEvent
-				}
+		if res.Receipts == nil {
+			res.Receipts = &ReceiptsResponse{
+				Rooms: map[string]json.RawMessage{
+					update.RoomID(): update.EphemeralEvent,
+				},
 			}
+		} else {
+			// aggregate receipts
+			res.Receipts.Rooms[update.RoomID()] = update.EphemeralEvent
 		}
 		return
 	}
+}
+
+func (r *ReceiptsRequest) ProcessInitial(ctx context.Context, res *Response, extCtx Context) {
 	// grab receipts for all timelines for all the rooms we're going to return
 	rooms := make(map[string]json.RawMessage)
 	for roomID, timeline := range extCtx.RoomIDToTimeline {

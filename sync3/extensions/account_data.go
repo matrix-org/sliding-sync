@@ -38,14 +38,14 @@ func accountEventsAsJSON(events []state.AccountData) []json.RawMessage {
 	return j
 }
 
-func (r *AccountDataRequest) ProcessLiveAccountData(extCtx Context) (res *AccountDataResponse) {
-	switch update := extCtx.Update.(type) {
+func (r *AccountDataRequest) ProcessLive(ctx context.Context, res *Response, extCtx Context, up caches.Update) {
+	switch update := up.(type) {
 	case *caches.AccountDataUpdate:
-		return &AccountDataResponse{
+		res.AccountData = &AccountDataResponse{ // TODO: aggregate
 			Global: accountEventsAsJSON(update.AccountData),
 		}
 	case *caches.RoomAccountDataUpdate:
-		return &AccountDataResponse{
+		res.AccountData = &AccountDataResponse{ // TODO: aggregate
 			Rooms: map[string][]json.RawMessage{
 				update.RoomID(): accountEventsAsJSON(update.AccountData),
 			},
@@ -57,7 +57,7 @@ func (r *AccountDataRequest) ProcessLiveAccountData(extCtx Context) (res *Accoun
 			if err != nil {
 				logger.Err(err).Str("user", extCtx.UserID).Str("room", update.RoomID()).Msg("failed to fetch room account data")
 			} else {
-				return &AccountDataResponse{
+				res.AccountData = &AccountDataResponse{ // TODO: aggregate
 					Rooms: map[string][]json.RawMessage{
 						update.RoomID(): accountEventsAsJSON(roomAccountData),
 					},
@@ -65,17 +65,9 @@ func (r *AccountDataRequest) ProcessLiveAccountData(extCtx Context) (res *Accoun
 			}
 		}
 	}
-	return nil
 }
 
-func (r *AccountDataRequest) Process(ctx context.Context, res *Response, extCtx Context) {
-	if extCtx.Update != nil {
-		ares := r.ProcessLiveAccountData(extCtx)
-		if ares != nil {
-			res.AccountData = ares // TODO aggregate
-		}
-		return
-	}
+func (r *AccountDataRequest) ProcessInitial(ctx context.Context, res *Response, extCtx Context) {
 	roomIDs := make([]string, len(extCtx.RoomIDToTimeline))
 	i := 0
 	for roomID := range extCtx.RoomIDToTimeline {
