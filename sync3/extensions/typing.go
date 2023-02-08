@@ -8,12 +8,11 @@ import (
 
 // Client created request params
 type TypingRequest struct {
-	Enabled bool `json:"enabled"`
+	Enableable
 }
 
-func (r TypingRequest) ApplyDelta(next *TypingRequest) *TypingRequest {
-	r.Enabled = next.Enabled
-	return &r
+func (r *TypingRequest) Name() string {
+	return "TypingRequest"
 }
 
 // Server response

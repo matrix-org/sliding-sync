@@ -29,7 +29,7 @@ func TestToDeviceDeliveryStream(t *testing.T) {
 	res := alice.SlidingSync(t, sync3.Request{
 		Extensions: extensions.Request{
 			ToDevice: &extensions.ToDeviceRequest{
-				Enabled: &boolTrue,
+				Enableable: extensions.Enableable{Enabled: &boolTrue},
 			},
 		},
 	})
@@ -48,7 +48,7 @@ func TestToDeviceDeliveryReconnect(t *testing.T) {
 	alice.SlidingSync(t, sync3.Request{
 		Extensions: extensions.Request{
 			ToDevice: &extensions.ToDeviceRequest{
-				Enabled: &boolTrue,
+				Enableable: extensions.Enableable{Enabled: &boolTrue},
 			},
 		},
 	})
@@ -137,7 +137,7 @@ func loopUntilToDeviceEvent(t *testing.T, client *CSAPI, res *sync3.Response, si
 		res = client.SlidingSync(t, sync3.Request{
 			Extensions: extensions.Request{
 				ToDevice: &extensions.ToDeviceRequest{
-					Enabled: &boolTrue,
+					Enableable: extensions.Enableable{Enabled: &boolTrue},
 				},
 			},
 		})

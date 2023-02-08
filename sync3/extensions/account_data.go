@@ -9,12 +9,11 @@ import (
 
 // Client created request params
 type AccountDataRequest struct {
-	Enabled bool `json:"enabled"`
+	Enableable
 }
 
-func (r AccountDataRequest) ApplyDelta(next *AccountDataRequest) *AccountDataRequest {
-	r.Enabled = next.Enabled
-	return &r
+func (r *AccountDataRequest) Name() string {
+	return "AccountDataRequest"
 }
 
 // Server response

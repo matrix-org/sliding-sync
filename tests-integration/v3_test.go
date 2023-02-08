@@ -36,6 +36,10 @@ const (
 	bobToken   = "BOB_BEARER_TOKEN"
 )
 
+var (
+	boolTrue = true
+)
+
 type testV2Server struct {
 	CheckRequest            func(userID, token string, req *http.Request)
 	mu                      *sync.Mutex

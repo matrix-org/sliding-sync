@@ -35,7 +35,7 @@ func TestTyping(t *testing.T) {
 	res := alice.SlidingSync(t, sync3.Request{
 		Extensions: extensions.Request{
 			Typing: &extensions.TypingRequest{
-				Enabled: true,
+				Enableable: extensions.Enableable{Enabled: &boolTrue},
 			},
 		},
 		RoomSubscriptions: map[string]sync3.RoomSubscription{
@@ -159,7 +159,9 @@ func TestTypingLazyLoad(t *testing.T) {
 	// Initial sync request with lazy loading and typing enabled
 	syncResp := alice.SlidingSync(t, sync3.Request{
 		Extensions: extensions.Request{
-			Typing: &extensions.TypingRequest{Enabled: true},
+			Typing: &extensions.TypingRequest{
+				Enableable: extensions.Enableable{Enabled: &boolTrue},
+			},
 		},
 		RoomSubscriptions: map[string]sync3.RoomSubscription{
 			roomID: {
@@ -197,7 +199,7 @@ func waitUntilTypingData(t *testing.T, client *CSAPI, roomID string, wantUserIDs
 	return client.SlidingSyncUntil(t, "", sync3.Request{
 		Extensions: extensions.Request{
 			Typing: &extensions.TypingRequest{
-				Enabled: true,
+				Enableable: extensions.Enableable{Enabled: &boolTrue},
 			},
 		},
 		RoomSubscriptions: map[string]sync3.RoomSubscription{

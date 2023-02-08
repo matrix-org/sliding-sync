@@ -12,12 +12,11 @@ type E2EEFetcher interface {
 
 // Client created request params
 type E2EERequest struct {
-	Enabled bool `json:"enabled"`
+	Enableable
 }
 
-func (r E2EERequest) ApplyDelta(next *E2EERequest) *E2EERequest {
-	r.Enabled = next.Enabled
-	return &r
+func (r *E2EERequest) Name() string {
+	return "E2EERequest"
 }
 
 // Server response

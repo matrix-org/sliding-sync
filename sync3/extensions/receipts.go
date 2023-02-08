@@ -9,12 +9,11 @@ import (
 
 // Client created request params
 type ReceiptsRequest struct {
-	Enabled bool `json:"enabled"`
+	Enableable
 }
 
-func (r ReceiptsRequest) ApplyDelta(next *ReceiptsRequest) *ReceiptsRequest {
-	r.Enabled = next.Enabled
-	return &r
+func (r *ReceiptsRequest) Name() string {
+	return "ReceiptsRequest"
 }
 
 // Server response
