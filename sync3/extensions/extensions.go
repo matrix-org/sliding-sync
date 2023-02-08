@@ -16,8 +16,6 @@ var logger = zerolog.New(os.Stdout).With().Timestamp().Logger().Output(zerolog.C
 })
 
 type Request struct {
-	UserID      string
-	DeviceID    string
 	ToDevice    *ToDeviceRequest    `json:"to_device"`
 	E2EE        *E2EERequest        `json:"e2ee"`
 	AccountData *AccountDataRequest `json:"account_data"`
@@ -100,15 +98,17 @@ func (e Response) HasData(isInitial bool) bool {
 
 type Context struct {
 	*Handler
-	RoomIDToTimeline map[string][]string
-	IsInitial        bool
-	UserID           string
-	DeviceID         string
+	RoomIDToTimeline         map[string][]string
+	IsInitial                bool
+	UserID                   string
+	DeviceID                 string
+	UpdateWillReturnResponse bool
+	Update                   caches.Update
 }
 
 type HandlerInterface interface {
 	Handle(ctx context.Context, req Request, extCtx Context) (res Response)
-	HandleLiveUpdate(update caches.Update, req Request, res *Response, updateWillReturnResponse, isInitial bool)
+	HandleLiveUpdate(update caches.Update, req Request, res *Response, extCtx Context)
 }
 
 type Handler struct {
@@ -117,53 +117,12 @@ type Handler struct {
 	GlobalCache *caches.GlobalCache
 }
 
-func (h *Handler) HandleLiveUpdate(update caches.Update, req Request, res *Response, updateWillReturnResponse, isInitial bool) {
-	if req.AccountData != nil && req.AccountData.Enabled != nil && *req.AccountData.Enabled {
-		res.AccountData = ProcessLiveAccountData(update, h.Store, updateWillReturnResponse, req.UserID, req.AccountData)
-	}
-	if req.Typing != nil && req.Typing.Enabled != nil && *req.Typing.Enabled {
-		res.Typing = ProcessLiveTyping(update, updateWillReturnResponse, req.UserID, req.Typing)
-	}
-	if req.Receipts != nil && req.Receipts.Enabled != nil && *req.Receipts.Enabled {
-		newReceipts := ProcessLiveReceipts(update, updateWillReturnResponse, req.UserID, req.Receipts)
-		if newReceipts != nil {
-			if res.Receipts == nil {
-				res.Receipts = newReceipts
-			} else {
-				// aggregate receipts
-				for roomID, ephEvent := range newReceipts.Rooms {
-					res.Receipts.Rooms[roomID] = ephEvent
-				}
-			}
-
-		}
-	}
-	if req.ToDevice != nil && req.ToDevice.Enabled != nil && *req.ToDevice.Enabled {
-		_, ok := update.(caches.DeviceEventsUpdate)
-		if ok {
-			req.ToDevice.Process(context.Background(), res, Context{
-				Handler:   h,
-				IsInitial: false,
-				UserID:    req.UserID,
-				DeviceID:  req.DeviceID,
-			})
-		}
-	}
-	// only process 'live' e2ee when we aren't going to return data as we need to ensure that we don't calculate this twice
-	// e.g once on incoming request then again due to wakeup
-	if req.E2EE != nil && req.E2EE.Enabled != nil && *req.E2EE.Enabled {
-		if res.E2EE != nil && res.E2EE.HasData(false) {
-			return
-		}
-		_, ok := update.(caches.DeviceDataUpdate)
-		if ok {
-			req.E2EE.Process(context.Background(), res, Context{
-				Handler:   h,
-				IsInitial: false,
-				UserID:    req.UserID,
-				DeviceID:  req.DeviceID,
-			})
-		}
+func (h *Handler) HandleLiveUpdate(update caches.Update, req Request, res *Response, extCtx Context) {
+	extCtx.Handler = h
+	extCtx.Update = update
+	exts := req.EnabledExtensions()
+	for _, ext := range exts {
+		ext.Process(context.Background(), res, extCtx)
 	}
 }
 

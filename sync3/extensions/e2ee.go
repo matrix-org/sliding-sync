@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"github.com/matrix-org/sliding-sync/internal"
+	"github.com/matrix-org/sliding-sync/sync3/caches"
 )
 
 // Fetcher used by the E2EE extension
@@ -40,6 +41,18 @@ func (r *E2EEResponse) HasData(isInitial bool) bool {
 }
 
 func (r *E2EERequest) Process(ctx context.Context, res *Response, extCtx Context) {
+	if extCtx.Update != nil {
+		// only process 'live' e2ee when we aren't going to return data as we need to ensure that we don't calculate this twice
+		// e.g once on incoming request then again due to wakeup
+		if res.E2EE != nil && res.E2EE.HasData(false) {
+			return
+		}
+		_, ok := extCtx.Update.(caches.DeviceDataUpdate)
+		if !ok {
+			return
+		}
+		// fallthrough
+	}
 	//  pull OTK counts and changed/left from device data
 	dd := extCtx.E2EEFetcher.DeviceData(extCtx.UserID, extCtx.DeviceID, extCtx.IsInitial)
 	if dd == nil {

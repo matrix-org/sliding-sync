@@ -44,6 +44,20 @@ func ProcessLiveReceipts(up caches.Update, updateWillReturnResponse bool, userID
 }
 
 func (r *ReceiptsRequest) Process(ctx context.Context, res *Response, extCtx Context) {
+	if extCtx.Update != nil {
+		newReceipts := ProcessLiveReceipts(extCtx.Update, extCtx.UpdateWillReturnResponse, extCtx.UserID, r)
+		if newReceipts != nil {
+			if res.Receipts == nil {
+				res.Receipts = newReceipts
+			} else {
+				// aggregate receipts
+				for roomID, ephEvent := range newReceipts.Rooms {
+					res.Receipts.Rooms[roomID] = ephEvent
+				}
+			}
+		}
+		return
+	}
 	// grab receipts for all timelines for all the rooms we're going to return
 	rooms := make(map[string]json.RawMessage)
 	for roomID, timeline := range extCtx.RoomIDToTimeline {

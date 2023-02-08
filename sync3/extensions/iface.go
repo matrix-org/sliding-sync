@@ -1,6 +1,8 @@
 package extensions
 
-import "context"
+import (
+	"context"
+)
 
 type GenericRequest interface {
 	Name() string

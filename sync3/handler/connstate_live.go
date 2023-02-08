@@ -86,7 +86,12 @@ func (s *connStateLive) liveUpdate(
 
 			updateWillReturnResponse := s.processLiveUpdate(ctx, update, response)
 			// pass event to extensions AFTER processing
-			s.extensionsHandler.HandleLiveUpdate(update, ex, &response.Extensions, updateWillReturnResponse, isInitial)
+			s.extensionsHandler.HandleLiveUpdate(update, ex, &response.Extensions, extensions.Context{
+				IsInitial:                false,
+				UpdateWillReturnResponse: updateWillReturnResponse,
+				UserID:                   s.userID,
+				DeviceID:                 s.deviceID,
+			})
 			// if there's more updates and we don't have lots stacked up already, go ahead and process another
 			for len(s.updates) > 0 && response.ListOps() < 50 {
 				update = <-s.updates
@@ -94,7 +99,12 @@ func (s *connStateLive) liveUpdate(
 				if willReturn {
 					updateWillReturnResponse = true
 				}
-				s.extensionsHandler.HandleLiveUpdate(update, ex, &response.Extensions, updateWillReturnResponse, isInitial)
+				s.extensionsHandler.HandleLiveUpdate(update, ex, &response.Extensions, extensions.Context{
+					IsInitial:                false,
+					UpdateWillReturnResponse: updateWillReturnResponse,
+					UserID:                   s.userID,
+					DeviceID:                 s.deviceID,
+				})
 			}
 			// Add membership events for users sending typing notifications
 			if response.Extensions.Typing != nil && response.Extensions.Typing.HasData(isInitial) {

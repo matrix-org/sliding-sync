@@ -144,11 +144,6 @@ func (s *ConnState) onIncomingRequest(ctx context.Context, req *sync3.Request, i
 		trace.Logf(ctx, "connstate", "list[%v] prev_empty=%v curr=%v", key, l.Prev == nil, listData)
 	}
 
-	// associate extensions context
-	ex := s.muxedReq.Extensions
-	ex.UserID = s.userID
-	ex.DeviceID = s.deviceID
-
 	// work out which rooms we'll return data for and add their relevant subscriptions to the builder
 	// for it to mix together
 	builder := NewRoomsBuilder()
@@ -174,9 +169,9 @@ func (s *ConnState) onIncomingRequest(ctx context.Context, req *sync3.Request, i
 	// Handle extensions AFTER processing lists as extensions may need to know which rooms the client
 	// is being notified about (e.g. for room account data)
 	region := trace.StartRegion(ctx, "extensions")
-	response.Extensions = s.extensionsHandler.Handle(ctx, ex, extensions.Context{
-		UserID:           ex.UserID,
-		DeviceID:         ex.DeviceID,
+	response.Extensions = s.extensionsHandler.Handle(ctx, s.muxedReq.Extensions, extensions.Context{
+		UserID:           s.userID,
+		DeviceID:         s.deviceID,
 		RoomIDToTimeline: includedRoomIDs,
 		IsInitial:        isInitial,
 	})
@@ -193,7 +188,7 @@ func (s *ConnState) onIncomingRequest(ctx context.Context, req *sync3.Request, i
 
 	// do live tracking if we have nothing to tell the client yet
 	region = trace.StartRegion(ctx, "liveUpdate")
-	s.live.liveUpdate(ctx, req, ex, isInitial, response)
+	s.live.liveUpdate(ctx, req, s.muxedReq.Extensions, isInitial, response)
 	region.End()
 
 	// counts are AFTER events are applied, hence after liveUpdate

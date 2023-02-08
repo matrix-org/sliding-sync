@@ -57,6 +57,13 @@ func ProcessLiveTyping(up caches.Update, updateWillReturnResponse bool, userID s
 }
 
 func (r *TypingRequest) Process(ctx context.Context, res *Response, extCtx Context) {
+	if extCtx.Update != nil {
+		tres := ProcessLiveTyping(extCtx.Update, extCtx.UpdateWillReturnResponse, extCtx.UserID, r)
+		if tres != nil {
+			res.Typing = tres // TODO aggregate
+		}
+		return
+	}
 	// grab typing users for all the rooms we're going to return
 	rooms := make(map[string]json.RawMessage)
 	roomIDs := make([]string, 0, len(extCtx.RoomIDToTimeline))

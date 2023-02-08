@@ -70,6 +70,13 @@ func ProcessLiveAccountData(up caches.Update, store *state.Storage, updateWillRe
 }
 
 func (r *AccountDataRequest) Process(ctx context.Context, res *Response, extCtx Context) {
+	if extCtx.Update != nil {
+		ares := ProcessLiveAccountData(extCtx.Update, extCtx.Store, extCtx.UpdateWillReturnResponse, extCtx.UserID, r)
+		if ares != nil {
+			res.AccountData = ares // TODO aggregate
+		}
+		return
+	}
 	roomIDs := make([]string, len(extCtx.RoomIDToTimeline))
 	i := 0
 	for roomID := range extCtx.RoomIDToTimeline {

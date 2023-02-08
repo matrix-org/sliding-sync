@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"strconv"
 	"sync"
+
+	"github.com/matrix-org/sliding-sync/sync3/caches"
 )
 
 // used to remember since positions to warn when they are not incremented. This can happen
@@ -48,6 +50,12 @@ func (r *ToDeviceResponse) HasData(isInitial bool) bool {
 }
 
 func (r *ToDeviceRequest) Process(ctx context.Context, res *Response, extCtx Context) {
+	if extCtx.Update != nil {
+		_, ok := extCtx.Update.(caches.DeviceEventsUpdate)
+		if !ok {
+			return
+		}
+	}
 	if r.Limit == 0 {
 		r.Limit = 100 // default to 100
 	}
