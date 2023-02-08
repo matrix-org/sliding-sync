@@ -58,7 +58,7 @@ func NewReceiptTable(db *sqlx.DB) *ReceiptTable {
 // Returns newly inserted receipts, or nil if there are no new receipts.
 // These newly inserted receipts can then be sent to the API processes for live updates.
 func (t *ReceiptTable) Insert(roomID string, ephEvent json.RawMessage) (receipts []internal.Receipt, err error) {
-	readReceipts, privateReceipts, err := unpackReceiptsFromEDU(roomID, ephEvent)
+	readReceipts, privateReceipts, err := UnpackReceiptsFromEDU(roomID, ephEvent)
 	if err != nil {
 		return nil, err
 	}
@@ -184,7 +184,7 @@ func PackReceiptsIntoEDU(receipts []internal.Receipt) (json.RawMessage, error) {
 	return json.Marshal(newReceiptEDU)
 }
 
-func unpackReceiptsFromEDU(roomID string, ephEvent json.RawMessage) (readReceipts, privateReceipts []internal.Receipt, err error) {
+func UnpackReceiptsFromEDU(roomID string, ephEvent json.RawMessage) (readReceipts, privateReceipts []internal.Receipt, err error) {
 	// unpack the receipts, of the form:
 	//  {
 	//		"content": {

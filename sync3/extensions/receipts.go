@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 
+	"github.com/matrix-org/sliding-sync/internal"
 	"github.com/matrix-org/sliding-sync/state"
 	"github.com/matrix-org/sliding-sync/sync3/caches"
 )
@@ -35,16 +36,42 @@ func (r *ReceiptsRequest) ProcessLive(ctx context.Context, res *Response, extCtx
 	case *caches.ReceiptUpdate:
 		// a live receipt event happened, send this back
 		if res.Receipts == nil {
+			edu, err := state.PackReceiptsIntoEDU([]internal.Receipt{update.Receipt})
+			if err != nil {
+				logger.Err(err).Str("user", extCtx.UserID).Str("room", update.Receipt.RoomID).Msg("failed to pack receipt into new edu")
+				return
+			}
 			res.Receipts = &ReceiptsResponse{
 				Rooms: map[string]json.RawMessage{
-					update.RoomID(): update.EphemeralEvent,
+					update.RoomID(): edu,
 				},
 			}
+		} else if res.Receipts.Rooms[update.RoomID()] == nil {
+			// we have receipts already, but not for this room
+			edu, err := state.PackReceiptsIntoEDU([]internal.Receipt{update.Receipt})
+			if err != nil {
+				logger.Err(err).Str("user", extCtx.UserID).Str("room", update.Receipt.RoomID).Msg("failed to pack receipt into edu")
+				return
+			}
+			res.Receipts.Rooms[update.RoomID()] = edu
 		} else {
-			// aggregate receipts
-			res.Receipts.Rooms[update.RoomID()] = update.EphemeralEvent
+			// we have receipts already for this room.
+			// aggregate receipts: we need to unpack then repack annoyingly.
+			pub, priv, err := state.UnpackReceiptsFromEDU(update.RoomID(), res.Receipts.Rooms[update.RoomID()])
+			if err != nil {
+				logger.Err(err).Str("user", extCtx.UserID).Str("room", update.Receipt.RoomID).Msg("failed to pack receipt into edu")
+				return
+			}
+			receipts := append(pub, priv...)
+			// add the live one
+			receipts = append(receipts, update.Receipt)
+			edu, err := state.PackReceiptsIntoEDU(receipts)
+			if err != nil {
+				logger.Err(err).Str("user", extCtx.UserID).Str("room", update.Receipt.RoomID).Msg("failed to pack receipt into edu")
+				return
+			}
+			res.Receipts.Rooms[update.RoomID()] = edu
 		}
-		return
 	}
 }
 

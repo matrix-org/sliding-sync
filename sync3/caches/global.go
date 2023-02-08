@@ -219,6 +219,10 @@ func (c *GlobalCache) OnEphemeralEvent(ctx context.Context, roomID string, ephEv
 	c.roomIDToMetadata[roomID] = metadata
 }
 
+func (c *GlobalCache) OnReceipt(ctx context.Context, receipt internal.Receipt) {
+	// nothing to do but we need it because the Dispatcher demands it.
+}
+
 func (c *GlobalCache) OnNewEvent(
 	ctx context.Context, ed *EventData,
 ) {

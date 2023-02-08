@@ -602,23 +602,17 @@ func (h *SyncLiveHandler) OnReceipt(p *pubsub.V2Receipt) {
 		if !ok {
 			continue
 		}
-		ephEvent, err := state.PackReceiptsIntoEDU(privateReceipts)
-		if err != nil {
-			logger.Err(err).Str("room", p.RoomID).Str("user", userID).Msg("unable to pack private receipts into EDU")
-			continue
+		for _, pr := range privateReceipts {
+			userCache.(*caches.UserCache).OnReceipt(ctx, pr)
 		}
-		userCache.(*caches.UserCache).OnEphemeralEvent(ctx, p.RoomID, ephEvent)
 	}
 	if len(publicReceipts) == 0 {
 		return
 	}
 	// inform the dispatcher of global receipts
-	ephEvent, err := state.PackReceiptsIntoEDU(publicReceipts)
-	if err != nil {
-		logger.Err(err).Str("room", p.RoomID).Msg("unable to pack receipts into EDU")
-		return
+	for _, pr := range publicReceipts {
+		h.Dispatcher.OnReceipt(ctx, pr)
 	}
-	h.Dispatcher.OnEphemeralEvent(ctx, p.RoomID, ephEvent)
 }
 
 func (h *SyncLiveHandler) OnTyping(p *pubsub.V2Typing) {

@@ -478,17 +478,19 @@ func (c *UserCache) OnEphemeralEvent(ctx context.Context, roomID string, ephEven
 		update = &TypingUpdate{
 			RoomUpdate: c.newRoomUpdate(roomID),
 		}
-	case "m.receipt":
-		update = &ReceiptUpdate{
-			RoomUpdate:     c.newRoomUpdate(roomID),
-			EphemeralEvent: ephEvent,
-		}
 	}
 	if update == nil {
 		return
 	}
 
 	c.emitOnRoomUpdate(ctx, update)
+}
+
+func (c *UserCache) OnReceipt(ctx context.Context, receipt internal.Receipt) {
+	c.emitOnRoomUpdate(ctx, &ReceiptUpdate{
+		RoomUpdate: c.newRoomUpdate(receipt.RoomID),
+		Receipt:    receipt,
+	})
 }
 
 func (c *UserCache) emitOnRoomUpdate(ctx context.Context, update RoomUpdate) {

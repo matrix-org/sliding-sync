@@ -31,12 +31,13 @@ func (r *TypingResponse) HasData(isInitial bool) bool {
 func (r *TypingRequest) ProcessLive(ctx context.Context, res *Response, extCtx Context, up caches.Update) {
 	switch update := up.(type) {
 	case *caches.TypingUpdate:
-		// a live typing event happened, send this back
-		res.Typing = &TypingResponse{ // TODO aggregate
-			Rooms: map[string]json.RawMessage{
-				update.RoomID(): update.GlobalRoomMetadata().TypingEvent,
-			},
+		// a live typing event happened, send this back. Allow for aggregation (>1 typing event in same room => replace)
+		if res.Typing == nil {
+			res.Typing = &TypingResponse{
+				Rooms: make(map[string]json.RawMessage),
+			}
 		}
+		res.Typing.Rooms[update.RoomID()] = update.GlobalRoomMetadata().TypingEvent
 	case caches.RoomUpdate:
 		// if this is a room update which is included in the response, send typing notifs for this room
 		if _, exists := extCtx.RoomIDToTimeline[update.RoomID()]; !exists {

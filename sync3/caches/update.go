@@ -1,7 +1,6 @@
 package caches
 
 import (
-	"encoding/json"
 	"fmt"
 
 	"github.com/matrix-org/sliding-sync/internal"
@@ -55,7 +54,7 @@ func (u *TypingUpdate) Type() string {
 
 type ReceiptUpdate struct {
 	RoomUpdate
-	EphemeralEvent json.RawMessage
+	Receipt internal.Receipt
 }
 
 func (u *ReceiptUpdate) Type() string {

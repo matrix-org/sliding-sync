@@ -8,6 +8,7 @@ import (
 	"runtime/trace"
 	"sync"
 
+	"github.com/matrix-org/sliding-sync/internal"
 	"github.com/matrix-org/sliding-sync/sync3/caches"
 	"github.com/rs/zerolog"
 	"github.com/tidwall/gjson"
@@ -22,6 +23,7 @@ const DispatcherAllUsers = "-"
 
 type Receiver interface {
 	OnNewEvent(ctx context.Context, event *caches.EventData)
+	OnReceipt(ctx context.Context, receipt internal.Receipt)
 	OnEphemeralEvent(ctx context.Context, roomID string, ephEvent json.RawMessage)
 	OnRegistered(latestPos int64) error
 }
@@ -220,6 +222,34 @@ func (d *Dispatcher) OnEphemeralEvent(ctx context.Context, roomID string, ephEve
 			continue
 		}
 		l.OnEphemeralEvent(ctx, roomID, ephEvent)
+	}
+}
+
+func (d *Dispatcher) OnReceipt(ctx context.Context, receipt internal.Receipt) {
+	notifyUserIDs, _ := d.jrt.JoinedUsersForRoom(receipt.RoomID, func(userID string) bool {
+		if userID == DispatcherAllUsers {
+			return false // safety guard to prevent dupe global callbacks
+		}
+		_, exists := d.userToReceiver[userID]
+		return exists
+	})
+
+	d.userToReceiverMu.RLock()
+	defer d.userToReceiverMu.RUnlock()
+
+	// global listeners (invoke before per-user listeners so caches can update)
+	listener := d.userToReceiver[DispatcherAllUsers]
+	if listener != nil {
+		listener.OnReceipt(ctx, receipt) // FIXME: redundant, it doesn't care about receipts
+	}
+
+	// poke user caches OnReceipt which then pokes ConnState
+	for _, userID := range notifyUserIDs {
+		l := d.userToReceiver[userID]
+		if l == nil {
+			continue
+		}
+		l.OnReceipt(ctx, receipt)
 	}
 }
 
