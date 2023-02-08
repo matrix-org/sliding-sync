@@ -1,6 +1,7 @@
 package extensions
 
 import (
+	"context"
 	"encoding/json"
 
 	"github.com/matrix-org/sliding-sync/sync3/caches"
@@ -55,22 +56,25 @@ func ProcessLiveTyping(up caches.Update, updateWillReturnResponse bool, userID s
 	return nil
 }
 
-func ProcessTyping(globalCache *caches.GlobalCache, roomIDToTimeline map[string][]string, userID string, isInitial bool, req *TypingRequest) (res *TypingResponse) {
+func (r *TypingRequest) Process(ctx context.Context, res *Response, extCtx Context) {
 	// grab typing users for all the rooms we're going to return
-	res = &TypingResponse{
-		Rooms: make(map[string]json.RawMessage),
-	}
-	roomIDs := make([]string, 0, len(roomIDToTimeline))
-	for roomID := range roomIDToTimeline {
+	rooms := make(map[string]json.RawMessage)
+	roomIDs := make([]string, 0, len(extCtx.RoomIDToTimeline))
+	for roomID := range extCtx.RoomIDToTimeline {
 		roomIDs = append(roomIDs, roomID)
 	}
-	roomToGlobalMetadata := globalCache.LoadRooms(roomIDs...)
-	for roomID := range roomIDToTimeline {
+	roomToGlobalMetadata := extCtx.GlobalCache.LoadRooms(roomIDs...)
+	for roomID := range extCtx.RoomIDToTimeline {
 		meta := roomToGlobalMetadata[roomID]
 		if meta == nil || meta.TypingEvent == nil {
 			continue
 		}
-		res.Rooms[roomID] = meta.TypingEvent
+		rooms[roomID] = meta.TypingEvent
 	}
-	return
+	if len(rooms) == 0 {
+		return // don't add a typing extension, no data!
+	}
+	res.Typing = &TypingResponse{
+		Rooms: rooms, // TODO aggregate
+	}
 }

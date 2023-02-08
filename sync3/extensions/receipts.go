@@ -1,6 +1,7 @@
 package extensions
 
 import (
+	"context"
 	"encoding/json"
 
 	"github.com/matrix-org/sliding-sync/state"
@@ -42,27 +43,29 @@ func ProcessLiveReceipts(up caches.Update, updateWillReturnResponse bool, userID
 	return nil
 }
 
-func ProcessReceipts(store *state.Storage, roomIDToTimeline map[string][]string, userID string, isInitial bool, req *ReceiptsRequest) (res *ReceiptsResponse) {
+func (r *ReceiptsRequest) Process(ctx context.Context, res *Response, extCtx Context) {
 	// grab receipts for all timelines for all the rooms we're going to return
-	res = &ReceiptsResponse{
-		Rooms: make(map[string]json.RawMessage),
-	}
-	for roomID, timeline := range roomIDToTimeline {
-		receipts, err := store.ReceiptTable.SelectReceiptsForEvents(roomID, timeline)
+	rooms := make(map[string]json.RawMessage)
+	for roomID, timeline := range extCtx.RoomIDToTimeline {
+		receipts, err := extCtx.Store.ReceiptTable.SelectReceiptsForEvents(roomID, timeline)
 		if err != nil {
-			logger.Err(err).Str("user", userID).Str("room", roomID).Msg("failed to SelectReceiptsForEvents")
+			logger.Err(err).Str("user", extCtx.UserID).Str("room", roomID).Msg("failed to SelectReceiptsForEvents")
 			continue
 		}
 		// always include your own receipts
-		ownReceipts, err := store.ReceiptTable.SelectReceiptsForUser(roomID, userID)
+		ownReceipts, err := extCtx.Store.ReceiptTable.SelectReceiptsForUser(roomID, extCtx.UserID)
 		if err != nil {
-			logger.Err(err).Str("user", userID).Str("room", roomID).Msg("failed to SelectReceiptsForUser")
+			logger.Err(err).Str("user", extCtx.UserID).Str("room", roomID).Msg("failed to SelectReceiptsForUser")
 			continue
 		}
 		if len(receipts) == 0 && len(ownReceipts) == 0 {
 			continue
 		}
-		res.Rooms[roomID], _ = state.PackReceiptsIntoEDU(append(receipts, ownReceipts...))
+		rooms[roomID], _ = state.PackReceiptsIntoEDU(append(receipts, ownReceipts...))
 	}
-	return
+	if len(rooms) > 0 {
+		res.Receipts = &ReceiptsResponse{
+			Rooms: rooms, // TODO aggregate
+		}
+	}
 }

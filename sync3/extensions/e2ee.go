@@ -1,8 +1,9 @@
 package extensions
 
 import (
+	"context"
+
 	"github.com/matrix-org/sliding-sync/internal"
-	"github.com/matrix-org/sliding-sync/sync3/caches"
 )
 
 // Fetcher used by the E2EE extension
@@ -38,33 +39,32 @@ func (r *E2EEResponse) HasData(isInitial bool) bool {
 	return r.DeviceLists != nil || len(r.FallbackKeyTypes) > 0 || len(r.OTKCounts) > 0
 }
 
-func ProcessLiveE2EE(up caches.Update, fetcher E2EEFetcher, userID, deviceID string, req *E2EERequest) (res *E2EEResponse) {
-	_, ok := up.(caches.DeviceDataUpdate)
-	if !ok {
-		return nil
-	}
-	return ProcessE2EE(fetcher, userID, deviceID, req, false)
-}
-
-func ProcessE2EE(fetcher E2EEFetcher, userID, deviceID string, req *E2EERequest, isInitial bool) (res *E2EEResponse) {
+func (r *E2EERequest) Process(ctx context.Context, res *Response, extCtx Context) {
 	//  pull OTK counts and changed/left from device data
-	dd := fetcher.DeviceData(userID, deviceID, isInitial)
-	res = &E2EEResponse{}
+	dd := extCtx.E2EEFetcher.DeviceData(extCtx.UserID, extCtx.DeviceID, extCtx.IsInitial)
 	if dd == nil {
-		return res // unknown device?
+		return // unknown device?
 	}
-	if dd.FallbackKeyTypes != nil && (dd.FallbackKeysChanged() || isInitial) {
-		res.FallbackKeyTypes = dd.FallbackKeyTypes
+	extRes := &E2EEResponse{}
+	hasUpdates := false
+	if dd.FallbackKeyTypes != nil && (dd.FallbackKeysChanged() || extCtx.IsInitial) {
+		extRes.FallbackKeyTypes = dd.FallbackKeyTypes
+		hasUpdates = true
 	}
-	if dd.OTKCounts != nil && (dd.OTKCountChanged() || isInitial) {
-		res.OTKCounts = dd.OTKCounts
+	if dd.OTKCounts != nil && (dd.OTKCountChanged() || extCtx.IsInitial) {
+		extRes.OTKCounts = dd.OTKCounts
+		hasUpdates = true
 	}
 	changed, left := internal.DeviceListChangesArrays(dd.DeviceLists.Sent)
 	if len(changed) > 0 || len(left) > 0 {
-		res.DeviceLists = &E2EEDeviceList{
+		extRes.DeviceLists = &E2EEDeviceList{
 			Changed: changed,
 			Left:    left,
 		}
+		hasUpdates = true
 	}
-	return
+	if !hasUpdates {
+		return
+	}
+	res.E2EE = extRes // TODO: aggregate
 }

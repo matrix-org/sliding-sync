@@ -98,8 +98,16 @@ func (e Response) HasData(isInitial bool) bool {
 		(e.Receipts != nil && e.Receipts.HasData(isInitial))
 }
 
+type Context struct {
+	*Handler
+	RoomIDToTimeline map[string][]string
+	IsInitial        bool
+	UserID           string
+	DeviceID         string
+}
+
 type HandlerInterface interface {
-	Handle(ctx context.Context, req Request, roomIDToTimeline map[string][]string, isInitial bool) (res Response)
+	Handle(ctx context.Context, req Request, extCtx Context) (res Response)
 	HandleLiveUpdate(update caches.Update, req Request, res *Response, updateWillReturnResponse, isInitial bool)
 }
 
@@ -131,7 +139,15 @@ func (h *Handler) HandleLiveUpdate(update caches.Update, req Request, res *Respo
 		}
 	}
 	if req.ToDevice != nil && req.ToDevice.Enabled != nil && *req.ToDevice.Enabled {
-		res.ToDevice = ProcessLiveToDeviceEvents(update, h.Store, req.UserID, req.DeviceID, req.ToDevice)
+		_, ok := update.(caches.DeviceEventsUpdate)
+		if ok {
+			req.ToDevice.Process(context.Background(), res, Context{
+				Handler:   h,
+				IsInitial: false,
+				UserID:    req.UserID,
+				DeviceID:  req.DeviceID,
+			})
+		}
 	}
 	// only process 'live' e2ee when we aren't going to return data as we need to ensure that we don't calculate this twice
 	// e.g once on incoming request then again due to wakeup
@@ -139,34 +155,24 @@ func (h *Handler) HandleLiveUpdate(update caches.Update, req Request, res *Respo
 		if res.E2EE != nil && res.E2EE.HasData(false) {
 			return
 		}
-		res.E2EE = ProcessLiveE2EE(update, h.E2EEFetcher, req.UserID, req.DeviceID, req.E2EE)
+		_, ok := update.(caches.DeviceDataUpdate)
+		if ok {
+			req.E2EE.Process(context.Background(), res, Context{
+				Handler:   h,
+				IsInitial: false,
+				UserID:    req.UserID,
+				DeviceID:  req.DeviceID,
+			})
+		}
 	}
 }
 
-func (h *Handler) Handle(ctx context.Context, req Request, roomIDToTimeline map[string][]string, isInitial bool) (res Response) {
-	if req.ToDevice != nil && req.ToDevice.Enabled != nil && *req.ToDevice.Enabled {
-		region := trace.StartRegion(ctx, "extension_to_device")
-		res.ToDevice = ProcessToDevice(h.Store, req.UserID, req.DeviceID, req.ToDevice, isInitial)
-		region.End()
-	}
-	if req.E2EE != nil && req.E2EE.Enabled != nil && *req.E2EE.Enabled {
-		region := trace.StartRegion(ctx, "extension_e2ee")
-		res.E2EE = ProcessE2EE(h.E2EEFetcher, req.UserID, req.DeviceID, req.E2EE, isInitial)
-		region.End()
-	}
-	if req.AccountData != nil && req.AccountData.Enabled != nil && *req.AccountData.Enabled {
-		region := trace.StartRegion(ctx, "extension_account_data")
-		res.AccountData = ProcessAccountData(h.Store, roomIDToTimeline, req.UserID, isInitial, req.AccountData)
-		region.End()
-	}
-	if req.Typing != nil && req.Typing.Enabled != nil && *req.Typing.Enabled {
-		region := trace.StartRegion(ctx, "extension_typing")
-		res.Typing = ProcessTyping(h.GlobalCache, roomIDToTimeline, req.UserID, isInitial, req.Typing)
-		region.End()
-	}
-	if req.Receipts != nil && req.Receipts.Enabled != nil && *req.Receipts.Enabled {
-		region := trace.StartRegion(ctx, "extension_receipts")
-		res.Receipts = ProcessReceipts(h.Store, roomIDToTimeline, req.UserID, isInitial, req.Receipts)
+func (h *Handler) Handle(ctx context.Context, req Request, extCtx Context) (res Response) {
+	extCtx.Handler = h
+	exts := req.EnabledExtensions()
+	for _, ext := range exts {
+		region := trace.StartRegion(ctx, "extension_"+ext.Name())
+		ext.Process(ctx, &res, extCtx)
 		region.End()
 	}
 	return

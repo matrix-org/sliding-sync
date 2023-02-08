@@ -1,6 +1,7 @@
 package extensions
 
 import (
+	"context"
 	"encoding/json"
 
 	"github.com/matrix-org/sliding-sync/state"
@@ -68,35 +69,35 @@ func ProcessLiveAccountData(up caches.Update, store *state.Storage, updateWillRe
 	return nil
 }
 
-func ProcessAccountData(store *state.Storage, roomIDToTimeline map[string][]string, userID string, isInitial bool, req *AccountDataRequest) (res *AccountDataResponse) {
-	roomIDs := make([]string, len(roomIDToTimeline))
+func (r *AccountDataRequest) Process(ctx context.Context, res *Response, extCtx Context) {
+	roomIDs := make([]string, len(extCtx.RoomIDToTimeline))
 	i := 0
-	for roomID := range roomIDToTimeline {
+	for roomID := range extCtx.RoomIDToTimeline {
 		roomIDs[i] = roomID
 		i++
 	}
-	res = &AccountDataResponse{}
+	extRes := &AccountDataResponse{}
 	// room account data needs to be sent every time the user scrolls the list to get new room IDs
 	// TODO: remember which rooms the client has been told about
 	if len(roomIDs) > 0 {
-		roomsAccountData, err := store.AccountDatas(userID, roomIDs...)
+		roomsAccountData, err := extCtx.Store.AccountDatas(extCtx.UserID, roomIDs...)
 		if err != nil {
-			logger.Err(err).Str("user", userID).Strs("rooms", roomIDs).Msg("failed to fetch room account data")
+			logger.Err(err).Str("user", extCtx.UserID).Strs("rooms", roomIDs).Msg("failed to fetch room account data")
 		} else {
-			res.Rooms = make(map[string][]json.RawMessage)
+			extRes.Rooms = make(map[string][]json.RawMessage)
 			for _, ad := range roomsAccountData {
-				res.Rooms[ad.RoomID] = append(res.Rooms[ad.RoomID], ad.Data)
+				extRes.Rooms[ad.RoomID] = append(extRes.Rooms[ad.RoomID], ad.Data)
 			}
 		}
 	}
 	// global account data is only sent on the first connection, then we live stream
-	if isInitial {
-		globalAccountData, err := store.AccountDatas(userID)
+	if extCtx.IsInitial {
+		globalAccountData, err := extCtx.Store.AccountDatas(extCtx.UserID)
 		if err != nil {
-			logger.Err(err).Str("user", userID).Msg("failed to fetch global account data")
+			logger.Err(err).Str("user", extCtx.UserID).Msg("failed to fetch global account data")
 		} else {
-			res.Global = accountEventsAsJSON(globalAccountData)
+			extRes.Global = accountEventsAsJSON(globalAccountData)
 		}
 	}
-	return
+	res.AccountData = extRes
 }

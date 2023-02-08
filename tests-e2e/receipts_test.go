@@ -185,22 +185,8 @@ func TestReceiptsPrivate(t *testing.T) {
 	// bob secretly reads this
 	bob.SendReceipt(t, roomID, eventID, "m.read.private")
 	time.Sleep(300 * time.Millisecond) // TODO: find a better way to wait until the proxy has processed this.
-	// alice does sliding sync -> does not see private RR
-	res := alice.SlidingSync(t, sync3.Request{
-		RoomSubscriptions: map[string]sync3.RoomSubscription{
-			roomID: {
-				TimelineLimit: 1,
-			},
-		},
-		Extensions: extensions.Request{
-			Receipts: &extensions.ReceiptsRequest{
-				Enableable: extensions.Enableable{Enabled: &boolTrue},
-			},
-		},
-	})
-	m.MatchResponse(t, res, m.MatchReceipts(roomID, nil))
 	// bob does sliding sync -> sees private RR
-	res = bob.SlidingSync(t, sync3.Request{
+	res := bob.SlidingSync(t, sync3.Request{
 		RoomSubscriptions: map[string]sync3.RoomSubscription{
 			roomID: {
 				TimelineLimit: 1,
@@ -219,4 +205,20 @@ func TestReceiptsPrivate(t *testing.T) {
 			Type:    "m.read.private",
 		},
 	}))
+	// alice does sliding sync -> does not see private RR
+	// We do this _after_ bob's sync request so we know we got the private RR and it is actively
+	// suppressed, rather than the private RR not making it to the proxy yet.
+	res = alice.SlidingSync(t, sync3.Request{
+		RoomSubscriptions: map[string]sync3.RoomSubscription{
+			roomID: {
+				TimelineLimit: 1,
+			},
+		},
+		Extensions: extensions.Request{
+			Receipts: &extensions.ReceiptsRequest{
+				Enableable: extensions.Enableable{Enabled: &boolTrue},
+			},
+		},
+	})
+	m.MatchResponse(t, res, m.MatchNoReceiptsExtension())
 }

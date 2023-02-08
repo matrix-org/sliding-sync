@@ -174,7 +174,12 @@ func (s *ConnState) onIncomingRequest(ctx context.Context, req *sync3.Request, i
 	// Handle extensions AFTER processing lists as extensions may need to know which rooms the client
 	// is being notified about (e.g. for room account data)
 	region := trace.StartRegion(ctx, "extensions")
-	response.Extensions = s.extensionsHandler.Handle(ctx, ex, includedRoomIDs, isInitial)
+	response.Extensions = s.extensionsHandler.Handle(ctx, ex, extensions.Context{
+		UserID:           ex.UserID,
+		DeviceID:         ex.DeviceID,
+		RoomIDToTimeline: includedRoomIDs,
+		IsInitial:        isInitial,
+	})
 	region.End()
 
 	if response.ListOps() > 0 || len(response.Rooms) > 0 || response.Extensions.HasData(isInitial) {

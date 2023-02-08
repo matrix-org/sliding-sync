@@ -236,6 +236,15 @@ func MatchNoE2EEExtension() RespMatcher {
 	}
 }
 
+func MatchNoReceiptsExtension() RespMatcher {
+	return func(res *sync3.Response) error {
+		if res.Extensions.Receipts != nil {
+			return fmt.Errorf("MatchNoReceiptsExtension: got Receipts extension: %+v", res.Extensions.Receipts)
+		}
+		return nil
+	}
+}
+
 func MatchOTKCounts(otkCounts map[string]int) RespMatcher {
 	return func(res *sync3.Response) error {
 		if res.Extensions.E2EE == nil {

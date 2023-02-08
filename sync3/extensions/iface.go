@@ -1,11 +1,15 @@
 package extensions
 
+import "context"
+
 type GenericRequest interface {
 	Name() string
 	// Returns the value of the `enabled` JSON key. nil for "not specified".
 	IsEnabled() *bool
 	// Overwrite fields in the request by side-effecting on this struct.
 	ApplyDelta(next GenericRequest)
+	// Process this request and put the response into *Response.
+	Process(ctx context.Context, res *Response, extCtx Context)
 }
 
 // mixin for managing the enabled flag

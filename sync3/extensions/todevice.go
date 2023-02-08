@@ -1,13 +1,11 @@
 package extensions
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"strconv"
 	"sync"
-
-	"github.com/matrix-org/sliding-sync/state"
-	"github.com/matrix-org/sliding-sync/sync3/caches"
 )
 
 // used to remember since positions to warn when they are not incremented. This can happen
@@ -49,62 +47,53 @@ func (r *ToDeviceResponse) HasData(isInitial bool) bool {
 	return len(r.Events) > 0
 }
 
-func ProcessLiveToDeviceEvents(up caches.Update, store *state.Storage, userID, deviceID string, req *ToDeviceRequest) (res *ToDeviceResponse) {
-	_, ok := up.(caches.DeviceEventsUpdate)
-	if !ok {
-		return nil
+func (r *ToDeviceRequest) Process(ctx context.Context, res *Response, extCtx Context) {
+	if r.Limit == 0 {
+		r.Limit = 100 // default to 100
 	}
-	return ProcessToDevice(store, userID, deviceID, req, false)
-}
-
-func ProcessToDevice(store *state.Storage, userID, deviceID string, req *ToDeviceRequest, isInitial bool) (res *ToDeviceResponse) {
-	if req.Limit == 0 {
-		req.Limit = 100 // default to 100
-	}
-	l := logger.With().Str("user", userID).Str("device", deviceID).Logger()
+	l := logger.With().Str("user", extCtx.UserID).Str("device", extCtx.DeviceID).Logger()
 	var from int64
 	var err error
-	if req.Since != "" {
-		from, err = strconv.ParseInt(req.Since, 10, 64)
+	if r.Since != "" {
+		from, err = strconv.ParseInt(r.Since, 10, 64)
 		if err != nil {
-			l.Err(err).Str("since", req.Since).Msg("invalid since value")
-			return nil
+			l.Err(err).Str("since", r.Since).Msg("invalid since value")
+			return
 		}
 		// the client is confirming messages up to `from` so delete everything up to and including it.
-		if err = store.ToDeviceTable.DeleteMessagesUpToAndIncluding(deviceID, from); err != nil {
-			l.Err(err).Str("since", req.Since).Msg("failed to delete to-device messages up to this value")
+		if err = extCtx.Store.ToDeviceTable.DeleteMessagesUpToAndIncluding(extCtx.DeviceID, from); err != nil {
+			l.Err(err).Str("since", r.Since).Msg("failed to delete to-device messages up to this value")
 			// non-fatal TODO sentry
 		}
 	}
 	mapMu.Lock()
-	lastSentPos := deviceIDToSinceDebugOnly[deviceID]
+	lastSentPos := deviceIDToSinceDebugOnly[extCtx.DeviceID]
 	mapMu.Unlock()
 	if from < lastSentPos {
 		// we told the client about a newer position, but yet they are using an older position, yell loudly
 		// TODO sentry
-		l.Warn().Int64("last_sent", lastSentPos).Int64("recv", from).Bool("initial", isInitial).Msg(
+		l.Warn().Int64("last_sent", lastSentPos).Int64("recv", from).Bool("initial", extCtx.IsInitial).Msg(
 			"Client did not increment since token: possibly sending back duplicate to-device events!",
 		)
 	}
 
-	msgs, upTo, err := store.ToDeviceTable.Messages(deviceID, from, int64(req.Limit))
+	msgs, upTo, err := extCtx.Store.ToDeviceTable.Messages(extCtx.DeviceID, from, int64(r.Limit))
 	if err != nil {
 		l.Err(err).Int64("from", from).Msg("cannot query to-device messages")
 		// TODO sentry
-		return nil
+		return
 	}
-	err = store.ToDeviceTable.SetUnackedPosition(deviceID, upTo)
+	err = extCtx.Store.ToDeviceTable.SetUnackedPosition(extCtx.DeviceID, upTo)
 	if err != nil {
 		l.Err(err).Msg("cannot set unacked position")
 		// TODO sentry
-		return nil
+		return
 	}
 	mapMu.Lock()
-	deviceIDToSinceDebugOnly[deviceID] = upTo
+	deviceIDToSinceDebugOnly[extCtx.DeviceID] = upTo
 	mapMu.Unlock()
-	res = &ToDeviceResponse{
+	res.ToDevice = &ToDeviceResponse{ // TODO: aggregate
 		NextBatch: fmt.Sprintf("%d", upTo),
 		Events:    msgs,
 	}
-	return
 }
