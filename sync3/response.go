@@ -46,6 +46,18 @@ func (r *Response) ListOps() int {
 	return num
 }
 
+func (r *Response) RoomIDsToTimelineEventIDs() map[string][]string {
+	includedRoomIDs := make(map[string][]string)
+	for roomID := range r.Rooms {
+		eventIDs := make([]string, len(r.Rooms[roomID].Timeline))
+		for i := range eventIDs {
+			eventIDs[i] = gjson.ParseBytes(r.Rooms[roomID].Timeline[i]).Get("event_id").Str
+		}
+		includedRoomIDs[roomID] = eventIDs
+	}
+	return includedRoomIDs
+}
+
 // Custom unmarshal so we can dynamically create the right ResponseOp for Ops
 func (r *Response) UnmarshalJSON(b []byte) error {
 	temporary := struct {

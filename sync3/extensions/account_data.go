@@ -38,8 +38,8 @@ func accountEventsAsJSON(events []state.AccountData) []json.RawMessage {
 	return j
 }
 
-func ProcessLiveAccountData(up caches.Update, store *state.Storage, updateWillReturnResponse bool, userID string, req *AccountDataRequest) (res *AccountDataResponse) {
-	switch update := up.(type) {
+func (r *AccountDataRequest) ProcessLiveAccountData(extCtx Context) (res *AccountDataResponse) {
+	switch update := extCtx.Update.(type) {
 	case *caches.AccountDataUpdate:
 		return &AccountDataResponse{
 			Global: accountEventsAsJSON(update.AccountData),
@@ -51,12 +51,11 @@ func ProcessLiveAccountData(up caches.Update, store *state.Storage, updateWillRe
 			},
 		}
 	case caches.RoomUpdate:
-		// this is a room update which is causing us to return, meaning we are interested in this room.
-		// send account data for this room.
-		if updateWillReturnResponse {
-			roomAccountData, err := store.AccountDatas(userID, update.RoomID())
+		// if this is a room update which is included in the response, send account data for this room
+		if _, exists := extCtx.RoomIDToTimeline[update.RoomID()]; exists {
+			roomAccountData, err := extCtx.Store.AccountDatas(extCtx.UserID, update.RoomID())
 			if err != nil {
-				logger.Err(err).Str("user", userID).Str("room", update.RoomID()).Msg("failed to fetch room account data")
+				logger.Err(err).Str("user", extCtx.UserID).Str("room", update.RoomID()).Msg("failed to fetch room account data")
 			} else {
 				return &AccountDataResponse{
 					Rooms: map[string][]json.RawMessage{
@@ -71,7 +70,7 @@ func ProcessLiveAccountData(up caches.Update, store *state.Storage, updateWillRe
 
 func (r *AccountDataRequest) Process(ctx context.Context, res *Response, extCtx Context) {
 	if extCtx.Update != nil {
-		ares := ProcessLiveAccountData(extCtx.Update, extCtx.Store, extCtx.UpdateWillReturnResponse, extCtx.UserID, r)
+		ares := r.ProcessLiveAccountData(extCtx)
 		if ares != nil {
 			res.AccountData = ares // TODO aggregate
 		}

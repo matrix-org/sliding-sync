@@ -28,8 +28,8 @@ func (r *TypingResponse) HasData(isInitial bool) bool {
 	return len(r.Rooms) > 0
 }
 
-func ProcessLiveTyping(up caches.Update, updateWillReturnResponse bool, userID string, req *TypingRequest) (res *TypingResponse) {
-	switch update := up.(type) {
+func (r *TypingRequest) ProcessLiveTyping(extCtx Context) (res *TypingResponse) {
+	switch update := extCtx.Update.(type) {
 	case *caches.TypingUpdate:
 		// a live typing event happened, send this back
 		return &TypingResponse{
@@ -38,9 +38,8 @@ func ProcessLiveTyping(up caches.Update, updateWillReturnResponse bool, userID s
 			},
 		}
 	case caches.RoomUpdate:
-		// this is a room update which is causing us to return, meaning we are interested in this room.
-		// send typing for this room.
-		if !updateWillReturnResponse {
+		// if this is a room update which is included in the response, send typing notifs for this room
+		if _, exists := extCtx.RoomIDToTimeline[update.RoomID()]; !exists {
 			return nil
 		}
 		ev := update.GlobalRoomMetadata().TypingEvent
@@ -58,7 +57,7 @@ func ProcessLiveTyping(up caches.Update, updateWillReturnResponse bool, userID s
 
 func (r *TypingRequest) Process(ctx context.Context, res *Response, extCtx Context) {
 	if extCtx.Update != nil {
-		tres := ProcessLiveTyping(extCtx.Update, extCtx.UpdateWillReturnResponse, extCtx.UserID, r)
+		tres := r.ProcessLiveTyping(extCtx)
 		if tres != nil {
 			res.Typing = tres // TODO aggregate
 		}

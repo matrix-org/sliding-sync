@@ -30,8 +30,8 @@ func (r *ReceiptsResponse) HasData(isInitial bool) bool {
 	return len(r.Rooms) > 0
 }
 
-func ProcessLiveReceipts(up caches.Update, updateWillReturnResponse bool, userID string, req *ReceiptsRequest) (res *ReceiptsResponse) {
-	switch update := up.(type) {
+func (r *ReceiptsRequest) ProcessLiveReceipts(extCtx Context) (res *ReceiptsResponse) {
+	switch update := extCtx.Update.(type) {
 	case *caches.ReceiptUpdate:
 		// a live receipt event happened, send this back
 		return &ReceiptsResponse{
@@ -45,7 +45,7 @@ func ProcessLiveReceipts(up caches.Update, updateWillReturnResponse bool, userID
 
 func (r *ReceiptsRequest) Process(ctx context.Context, res *Response, extCtx Context) {
 	if extCtx.Update != nil {
-		newReceipts := ProcessLiveReceipts(extCtx.Update, extCtx.UpdateWillReturnResponse, extCtx.UserID, r)
+		newReceipts := r.ProcessLiveReceipts(extCtx)
 		if newReceipts != nil {
 			if res.Receipts == nil {
 				res.Receipts = newReceipts

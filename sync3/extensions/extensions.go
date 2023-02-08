@@ -98,12 +98,11 @@ func (e Response) HasData(isInitial bool) bool {
 
 type Context struct {
 	*Handler
-	RoomIDToTimeline         map[string][]string
-	IsInitial                bool
-	UserID                   string
-	DeviceID                 string
-	UpdateWillReturnResponse bool
-	Update                   caches.Update
+	RoomIDToTimeline map[string][]string
+	IsInitial        bool
+	UserID           string
+	DeviceID         string
+	Update           caches.Update
 }
 
 type HandlerInterface interface {

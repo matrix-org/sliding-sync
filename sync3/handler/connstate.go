@@ -158,21 +158,13 @@ func (s *ConnState) onIncomingRequest(ctx context.Context, req *sync3.Request, i
 		Lists: respLists,
 	}
 
-	includedRoomIDs := make(map[string][]string)
-	for roomID := range response.Rooms {
-		eventIDs := make([]string, len(response.Rooms[roomID].Timeline))
-		for i := range eventIDs {
-			eventIDs[i] = gjson.ParseBytes(response.Rooms[roomID].Timeline[i]).Get("event_id").Str
-		}
-		includedRoomIDs[roomID] = eventIDs
-	}
 	// Handle extensions AFTER processing lists as extensions may need to know which rooms the client
 	// is being notified about (e.g. for room account data)
 	region := trace.StartRegion(ctx, "extensions")
 	response.Extensions = s.extensionsHandler.Handle(ctx, s.muxedReq.Extensions, extensions.Context{
 		UserID:           s.userID,
 		DeviceID:         s.deviceID,
-		RoomIDToTimeline: includedRoomIDs,
+		RoomIDToTimeline: response.RoomIDsToTimelineEventIDs(),
 		IsInitial:        isInitial,
 	})
 	region.End()

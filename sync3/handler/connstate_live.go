@@ -84,26 +84,23 @@ func (s *connStateLive) liveUpdate(
 		case update := <-s.updates:
 			trace.Logf(ctx, "liveUpdate", "process live update")
 
-			updateWillReturnResponse := s.processLiveUpdate(ctx, update, response)
+			s.processLiveUpdate(ctx, update, response)
 			// pass event to extensions AFTER processing
 			s.extensionsHandler.HandleLiveUpdate(update, ex, &response.Extensions, extensions.Context{
-				IsInitial:                false,
-				UpdateWillReturnResponse: updateWillReturnResponse,
-				UserID:                   s.userID,
-				DeviceID:                 s.deviceID,
+				IsInitial:        false,
+				RoomIDToTimeline: response.RoomIDsToTimelineEventIDs(),
+				UserID:           s.userID,
+				DeviceID:         s.deviceID,
 			})
 			// if there's more updates and we don't have lots stacked up already, go ahead and process another
 			for len(s.updates) > 0 && response.ListOps() < 50 {
 				update = <-s.updates
-				willReturn := s.processLiveUpdate(ctx, update, response)
-				if willReturn {
-					updateWillReturnResponse = true
-				}
+				s.processLiveUpdate(ctx, update, response)
 				s.extensionsHandler.HandleLiveUpdate(update, ex, &response.Extensions, extensions.Context{
-					IsInitial:                false,
-					UpdateWillReturnResponse: updateWillReturnResponse,
-					UserID:                   s.userID,
-					DeviceID:                 s.deviceID,
+					IsInitial:        false,
+					RoomIDToTimeline: response.RoomIDsToTimelineEventIDs(),
+					UserID:           s.userID,
+					DeviceID:         s.deviceID,
 				})
 			}
 			// Add membership events for users sending typing notifications
