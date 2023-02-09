@@ -40,7 +40,7 @@ func (r *E2EEResponse) HasData(isInitial bool) bool {
 	return r.DeviceLists != nil || len(r.FallbackKeyTypes) > 0 || len(r.OTKCounts) > 0
 }
 
-func (r *E2EERequest) ProcessLive(ctx context.Context, res *Response, extCtx Context, up caches.Update) {
+func (r *E2EERequest) AppendLive(ctx context.Context, res *Response, extCtx Context, up caches.Update) {
 	// only process 'live' e2ee when we aren't going to return data as we need to ensure that we don't calculate this twice
 	// e.g once on incoming request then again due to wakeup
 	if res.E2EE != nil && res.E2EE.HasData(false) {

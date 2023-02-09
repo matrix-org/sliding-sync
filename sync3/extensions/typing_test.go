@@ -46,9 +46,9 @@ func TestLiveTypingAggregation(t *testing.T) {
 			},
 		},
 	}
-	ext.ProcessLive(ctx, &res, extCtx, typingA1)
-	ext.ProcessLive(ctx, &res, extCtx, typingB1)
-	ext.ProcessLive(ctx, &res, extCtx, typingA2)
+	ext.AppendLive(ctx, &res, extCtx, typingA1)
+	ext.AppendLive(ctx, &res, extCtx, typingB1)
+	ext.AppendLive(ctx, &res, extCtx, typingA2)
 	if res.Typing == nil {
 		t.Fatalf("typing response is empty")
 	}

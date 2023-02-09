@@ -49,7 +49,7 @@ func (r *ToDeviceResponse) HasData(isInitial bool) bool {
 	return len(r.Events) > 0
 }
 
-func (r *ToDeviceRequest) ProcessLive(ctx context.Context, res *Response, extCtx Context, up caches.Update) {
+func (r *ToDeviceRequest) AppendLive(ctx context.Context, res *Response, extCtx Context, up caches.Update) {
 	_, ok := up.(caches.DeviceEventsUpdate)
 	if !ok {
 		return

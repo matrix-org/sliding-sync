@@ -54,11 +54,11 @@ func TestLiveReceiptsAggregation(t *testing.T) {
 		},
 	}
 	// tests that the receipt response is made
-	ext.ProcessLive(ctx, &res, extCtx, receiptA1)
+	ext.AppendLive(ctx, &res, extCtx, receiptA1)
 	// test that aggregations work in different rooms
-	ext.ProcessLive(ctx, &res, extCtx, receiptB1)
+	ext.AppendLive(ctx, &res, extCtx, receiptB1)
 	// test that aggregation work in the same room (aggregate not replace)
-	ext.ProcessLive(ctx, &res, extCtx, receiptA2)
+	ext.AppendLive(ctx, &res, extCtx, receiptA2)
 	if res.Receipts == nil {
 		t.Fatalf("receipts response is empty")
 	}

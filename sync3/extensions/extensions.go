@@ -119,7 +119,7 @@ func (h *Handler) HandleLiveUpdate(update caches.Update, req Request, res *Respo
 	extCtx.Handler = h
 	exts := req.EnabledExtensions()
 	for _, ext := range exts {
-		ext.ProcessLive(context.Background(), res, extCtx, update)
+		ext.AppendLive(context.Background(), res, extCtx, update)
 	}
 }
 

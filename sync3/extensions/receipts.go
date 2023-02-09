@@ -31,7 +31,7 @@ func (r *ReceiptsResponse) HasData(isInitial bool) bool {
 	return len(r.Rooms) > 0
 }
 
-func (r *ReceiptsRequest) ProcessLive(ctx context.Context, res *Response, extCtx Context, up caches.Update) {
+func (r *ReceiptsRequest) AppendLive(ctx context.Context, res *Response, extCtx Context, up caches.Update) {
 	switch update := up.(type) {
 	case *caches.ReceiptUpdate:
 		// a live receipt event happened, send this back

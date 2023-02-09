@@ -38,7 +38,7 @@ func accountEventsAsJSON(events []state.AccountData) []json.RawMessage {
 	return j
 }
 
-func (r *AccountDataRequest) ProcessLive(ctx context.Context, res *Response, extCtx Context, up caches.Update) {
+func (r *AccountDataRequest) AppendLive(ctx context.Context, res *Response, extCtx Context, up caches.Update) {
 	switch update := up.(type) {
 	case *caches.AccountDataUpdate:
 		res.AccountData = &AccountDataResponse{ // TODO: aggregate
