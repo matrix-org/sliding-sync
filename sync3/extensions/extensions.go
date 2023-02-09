@@ -3,6 +3,7 @@ package extensions
 import (
 	"context"
 	"os"
+	"reflect"
 	"runtime/trace"
 
 	"github.com/matrix-org/sliding-sync/state"
@@ -23,21 +24,22 @@ type Request struct {
 	Receipts    *ReceiptsRequest    `json:"receipts"`
 }
 
+func (r Request) fields() []GenericRequest {
+	return []GenericRequest{
+		r.ToDevice, r.E2EE, r.AccountData, r.Typing, r.Receipts,
+	}
+}
+
 func (r Request) EnabledExtensions() (exts []GenericRequest) {
-	if r.AccountData != nil && ExtensionEnabled(r.AccountData) {
-		exts = append(exts, r.AccountData)
-	}
-	if r.E2EE != nil && ExtensionEnabled(r.E2EE) {
-		exts = append(exts, r.E2EE)
-	}
-	if r.Receipts != nil && ExtensionEnabled(r.Receipts) {
-		exts = append(exts, r.Receipts)
-	}
-	if r.ToDevice != nil && ExtensionEnabled(r.ToDevice) {
-		exts = append(exts, r.ToDevice)
-	}
-	if r.Typing != nil && ExtensionEnabled(r.Typing) {
-		exts = append(exts, r.Typing)
+	fields := r.fields()
+	for _, f := range fields {
+		f := f
+		if isNil(f) {
+			continue
+		}
+		if ExtensionEnabled(f) {
+			exts = append(exts, f)
+		}
 	}
 	return
 }
@@ -81,6 +83,8 @@ func (r Request) ApplyDelta(next *Request) Request {
 	return r
 }
 
+// Response represents the top-level `extensions` key in the JSON response.
+// To add a new extension, add a field here, then modify the fields in HasData.
 type Response struct {
 	ToDevice    *ToDeviceResponse    `json:"to_device,omitempty"`
 	E2EE        *E2EEResponse        `json:"e2ee,omitempty"`
@@ -89,11 +93,24 @@ type Response struct {
 	Receipts    *ReceiptsResponse    `json:"receipts,omitempty"`
 }
 
-func (e Response) HasData(isInitial bool) bool {
-	return (e.ToDevice != nil && e.ToDevice.HasData(isInitial)) ||
-		(e.E2EE != nil && e.E2EE.HasData(isInitial)) ||
-		(e.AccountData != nil && e.AccountData.HasData(isInitial)) ||
-		(e.Receipts != nil && e.Receipts.HasData(isInitial))
+func (r Response) fields() []GenericResponse {
+	return []GenericResponse{
+		r.ToDevice, r.E2EE, r.AccountData, r.Typing, r.Receipts,
+	}
+}
+
+func (r Response) HasData(isInitial bool) bool {
+	fields := r.fields()
+	for _, f := range fields {
+		if isNil(f) {
+			continue
+		}
+		if !f.HasData(isInitial) {
+			continue
+		}
+		return true
+	}
+	return false
 }
 
 type Context struct {
@@ -132,4 +149,12 @@ func (h *Handler) Handle(ctx context.Context, req Request, extCtx Context) (res 
 		region.End()
 	}
 	return
+}
+
+// check if this interface is pointing to nil, or is itself nil. Nil interfaces can be checked by
+// doing == nil but interfaces holding nil pointers cannot, and need to be done using reflection :(
+// it's not particularly nice, but is arguably neater than adding nil guards everywhere in method
+// functions.
+func isNil(v interface{}) bool {
+	return v == nil || (reflect.ValueOf(v).Kind() == reflect.Ptr && reflect.ValueOf(v).IsNil())
 }

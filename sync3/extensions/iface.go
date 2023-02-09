@@ -19,6 +19,10 @@ type GenericRequest interface {
 	AppendLive(ctx context.Context, res *Response, extCtx Context, up caches.Update)
 }
 
+type GenericResponse interface {
+	HasData(isInitial bool) bool
+}
+
 // mixin for managing the enabled flag
 type Enableable struct {
 	Enabled *bool `json:"enabled"`
