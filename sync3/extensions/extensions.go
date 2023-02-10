@@ -24,10 +24,19 @@ type Request struct {
 	Receipts    *ReceiptsRequest    `json:"receipts"`
 }
 
-func (r Request) fields() []GenericRequest {
+func (r *Request) fields() []GenericRequest {
 	return []GenericRequest{
 		r.ToDevice, r.E2EE, r.AccountData, r.Typing, r.Receipts,
 	}
+}
+
+// these fields must match up in order/type to fields()
+func (r *Request) setFields(fields []GenericRequest) {
+	r.ToDevice = fields[0].(*ToDeviceRequest)
+	r.E2EE = fields[1].(*E2EERequest)
+	r.AccountData = fields[2].(*AccountDataRequest)
+	r.Typing = fields[3].(*TypingRequest)
+	r.Receipts = fields[4].(*ReceiptsRequest)
 }
 
 func (r Request) EnabledExtensions() (exts []GenericRequest) {
@@ -45,41 +54,29 @@ func (r Request) EnabledExtensions() (exts []GenericRequest) {
 }
 
 func (r Request) ApplyDelta(next *Request) Request {
-	if next.ToDevice != nil {
-		if r.ToDevice == nil {
-			r.ToDevice = next.ToDevice
+	currFields := r.fields()
+	nextFields := next.fields()
+	hasChanges := false
+	for i := range nextFields {
+		curr := currFields[i]
+		next := nextFields[i]
+		if isNil(next) {
+			continue // missing extension, keep it sticky
+		}
+		if isNil(curr) {
+			// the next field is what we want to apply
+			currFields[i] = next
+			hasChanges = true
 		} else {
-			r.ToDevice.ApplyDelta(next.ToDevice)
+			// mix the two fields together
+			curr.ApplyDelta(next)
+			hasChanges = true
 		}
 	}
-	if next.E2EE != nil {
-		if r.E2EE == nil {
-			r.E2EE = next.E2EE
-		} else {
-			r.E2EE.ApplyDelta(next.E2EE)
-		}
+	if hasChanges {
+		r.setFields(currFields)
 	}
-	if next.AccountData != nil {
-		if r.AccountData == nil {
-			r.AccountData = next.AccountData
-		} else {
-			r.AccountData.ApplyDelta(next.AccountData)
-		}
-	}
-	if next.Typing != nil {
-		if r.Typing == nil {
-			r.Typing = next.Typing
-		} else {
-			r.Typing.ApplyDelta(next.Typing)
-		}
-	}
-	if next.Receipts != nil {
-		if r.Receipts == nil {
-			r.Receipts = next.Receipts
-		} else {
-			r.Receipts.ApplyDelta(next.Receipts)
-		}
-	}
+
 	return r
 }
 
