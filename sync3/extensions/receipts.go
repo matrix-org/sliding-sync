@@ -97,7 +97,7 @@ func (r *ReceiptsRequest) ProcessInitial(ctx context.Context, res *Response, ext
 	}
 	if len(rooms) > 0 {
 		res.Receipts = &ReceiptsResponse{
-			Rooms: rooms, // TODO aggregate
+			Rooms: rooms,
 		}
 	}
 }

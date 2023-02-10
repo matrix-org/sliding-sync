@@ -103,7 +103,8 @@ func (r *ToDeviceRequest) ProcessInitial(ctx context.Context, res *Response, ext
 	mapMu.Lock()
 	deviceIDToSinceDebugOnly[extCtx.DeviceID] = upTo
 	mapMu.Unlock()
-	res.ToDevice = &ToDeviceResponse{ // TODO: aggregate
+	// we don't need to aggregate here as we're pulling from the DB and not relying on in-memory structs
+	res.ToDevice = &ToDeviceResponse{
 		NextBatch: fmt.Sprintf("%d", upTo),
 		Events:    msgs,
 	}

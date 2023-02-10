@@ -1,3 +1,4 @@
+// package extensions contains the interface and concrete implementations for all sliding sync extensions
 package extensions
 
 import (
@@ -16,6 +17,60 @@ var logger = zerolog.New(os.Stdout).With().Timestamp().Logger().Output(zerolog.C
 	TimeFormat: "15:04:05",
 })
 
+type GenericRequest interface {
+	Name() string
+	// Returns the value of the `enabled` JSON key. nil for "not specified".
+	IsEnabled() *bool
+	// Overwrite fields in the request by side-effecting on this struct.
+	ApplyDelta(next GenericRequest)
+	// Process this request and put the response into *Response. This is called for every request
+	// before going into a live stream loop.
+	ProcessInitial(ctx context.Context, res *Response, extCtx Context)
+	// Process a live event, /aggregating/ the response in *Response. This function can be called
+	// multiple times per sync loop as the conn buffer is consumed.
+	AppendLive(ctx context.Context, res *Response, extCtx Context, up caches.Update)
+}
+
+type GenericResponse interface {
+	HasData(isInitial bool) bool
+}
+
+// mixin for managing the enabled flag
+type Enableable struct {
+	Enabled *bool `json:"enabled"`
+}
+
+func (r *Enableable) Name() string {
+	return "Enableable"
+}
+
+func (r *Enableable) IsEnabled() *bool {
+	return r.Enabled
+}
+
+func (r *Enableable) ApplyDelta(gnext GenericRequest) {
+	if gnext == nil {
+		return
+	}
+	nextEnabled := gnext.IsEnabled()
+	// nil means they didn't specify this field, so leave it unchanged.
+	if nextEnabled != nil {
+		r.Enabled = nextEnabled
+	}
+}
+
+func ExtensionEnabled(r GenericRequest) bool {
+	enabled := r.IsEnabled()
+	if enabled != nil && *enabled {
+		return true
+	}
+	return false
+}
+
+// Request is the JSON request body under 'extensions'.
+//
+// To add new extensions, add a field here and return it in fields() whilst setting it correctly
+// in setFields().
 type Request struct {
 	ToDevice    *ToDeviceRequest    `json:"to_device"`
 	E2EE        *E2EERequest        `json:"e2ee"`
@@ -81,7 +136,8 @@ func (r Request) ApplyDelta(next *Request) Request {
 }
 
 // Response represents the top-level `extensions` key in the JSON response.
-// To add a new extension, add a field here, then modify the fields in HasData.
+//
+// To add a new extension, add a field here and in fields().
 type Response struct {
 	ToDevice    *ToDeviceResponse    `json:"to_device,omitempty"`
 	E2EE        *E2EEResponse        `json:"e2ee,omitempty"`
