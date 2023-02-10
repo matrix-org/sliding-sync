@@ -39,17 +39,13 @@ func accountEventsAsJSON(events []state.AccountData) []json.RawMessage {
 }
 
 func (r *AccountDataRequest) AppendLive(ctx context.Context, res *Response, extCtx Context, up caches.Update) {
+	var globalMsgs []json.RawMessage
+	roomToMsgs := map[string][]json.RawMessage{}
 	switch update := up.(type) {
 	case *caches.AccountDataUpdate:
-		res.AccountData = &AccountDataResponse{ // TODO: aggregate
-			Global: accountEventsAsJSON(update.AccountData),
-		}
+		globalMsgs = accountEventsAsJSON(update.AccountData)
 	case *caches.RoomAccountDataUpdate:
-		res.AccountData = &AccountDataResponse{ // TODO: aggregate
-			Rooms: map[string][]json.RawMessage{
-				update.RoomID(): accountEventsAsJSON(update.AccountData),
-			},
-		}
+		roomToMsgs[update.RoomID()] = accountEventsAsJSON(update.AccountData)
 	case caches.RoomUpdate:
 		// if this is a room update which is included in the response, send account data for this room
 		if _, exists := extCtx.RoomIDToTimeline[update.RoomID()]; exists {
@@ -57,13 +53,21 @@ func (r *AccountDataRequest) AppendLive(ctx context.Context, res *Response, extC
 			if err != nil {
 				logger.Err(err).Str("user", extCtx.UserID).Str("room", update.RoomID()).Msg("failed to fetch room account data")
 			} else {
-				res.AccountData = &AccountDataResponse{ // TODO: aggregate
-					Rooms: map[string][]json.RawMessage{
-						update.RoomID(): accountEventsAsJSON(roomAccountData),
-					},
-				}
+				roomToMsgs[update.RoomID()] = accountEventsAsJSON(roomAccountData)
 			}
 		}
+	}
+	if len(globalMsgs) == 0 && len(roomToMsgs) == 0 {
+		return
+	}
+	if res.AccountData == nil {
+		res.AccountData = &AccountDataResponse{
+			Rooms: make(map[string][]json.RawMessage),
+		}
+	}
+	res.AccountData.Global = append(res.AccountData.Global, globalMsgs...)
+	for roomID, roomAccountData := range roomToMsgs {
+		res.AccountData.Rooms[roomID] = append(res.AccountData.Rooms[roomID], roomAccountData...)
 	}
 }
 
@@ -74,7 +78,9 @@ func (r *AccountDataRequest) ProcessInitial(ctx context.Context, res *Response, 
 		roomIDs[i] = roomID
 		i++
 	}
-	extRes := &AccountDataResponse{}
+	extRes := &AccountDataResponse{
+		Rooms: make(map[string][]json.RawMessage),
+	}
 	// room account data needs to be sent every time the user scrolls the list to get new room IDs
 	// TODO: remember which rooms the client has been told about
 	if len(roomIDs) > 0 {
@@ -97,5 +103,7 @@ func (r *AccountDataRequest) ProcessInitial(ctx context.Context, res *Response, 
 			extRes.Global = accountEventsAsJSON(globalAccountData)
 		}
 	}
-	res.AccountData = extRes
+	if len(extRes.Rooms) > 0 || len(extRes.Global) > 0 {
+		res.AccountData = extRes
+	}
 }

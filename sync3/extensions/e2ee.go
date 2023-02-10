@@ -81,5 +81,6 @@ func (r *E2EERequest) ProcessInitial(ctx context.Context, res *Response, extCtx 
 	if !hasUpdates {
 		return
 	}
-	res.E2EE = extRes // TODO: aggregate
+	// doesn't need aggregation as we just replace from the db
+	res.E2EE = extRes
 }
