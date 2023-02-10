@@ -53,7 +53,9 @@ func (r *AccountDataRequest) AppendLive(ctx context.Context, res *Response, extC
 			if err != nil {
 				logger.Err(err).Str("user", extCtx.UserID).Str("room", update.RoomID()).Msg("failed to fetch room account data")
 			} else {
-				roomToMsgs[update.RoomID()] = accountEventsAsJSON(roomAccountData)
+				if len(roomAccountData) > 0 { // else we can end up with `null` not `[]`
+					roomToMsgs[update.RoomID()] = accountEventsAsJSON(roomAccountData)
+				}
 			}
 		}
 	}
