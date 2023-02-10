@@ -7,6 +7,7 @@ import (
 
 	"github.com/matrix-org/sliding-sync/internal"
 	"github.com/matrix-org/sliding-sync/sync3/caches"
+	"github.com/tidwall/gjson"
 )
 
 // Test that aggregation works, which is hard to assert in integration tests
@@ -56,6 +57,31 @@ func TestLiveTypingAggregation(t *testing.T) {
 		roomA: typingA2.GlobalRoomMetadata().TypingEvent,
 		roomB: typingB1.GlobalRoomMetadata().TypingEvent,
 	}
+	if !reflect.DeepEqual(res.Typing.Rooms, want) {
+		t.Fatalf("got  %+v\nwant %+v", res.Typing.Rooms, want)
+	}
+
+	// now add a message: we should include typing members at this time.
+	eventC1 := &caches.RoomEventUpdate{
+		RoomUpdate: &dummyRoomUpdate{
+			roomID: roomC,
+			globalMetadata: &internal.RoomMetadata{
+				RoomID:      roomC,
+				TypingEvent: json.RawMessage(`{"type":"m.typing","content":{"user_ids":["@doris:localhost"]}}`),
+			},
+		},
+		EventData: &caches.EventData{
+			RoomID:    roomC,
+			EventType: "m.room.message",
+			Content:   gjson.Parse(`{"body":"hello world"}`),
+			Timestamp: 123456,
+		},
+	}
+	extCtx.RoomIDToTimeline = map[string][]string{
+		roomC: {"$c"},
+	}
+	ext.AppendLive(ctx, &res, extCtx, eventC1)
+	want[roomC] = eventC1.GlobalRoomMetadata().TypingEvent
 	if !reflect.DeepEqual(res.Typing.Rooms, want) {
 		t.Fatalf("got  %+v\nwant %+v", res.Typing.Rooms, want)
 	}

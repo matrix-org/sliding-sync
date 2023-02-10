@@ -14,6 +14,7 @@ var (
 	boolFalse = false
 	roomA     = "!a:localhost"
 	roomB     = "!b:localhost"
+	roomC     = "!c:localhost"
 	ctx       = context.Background()
 )
 
