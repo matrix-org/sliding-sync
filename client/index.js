@@ -241,7 +241,11 @@ const doSyncLoop = async (accessToken) => {
         slidingSync.stop();
     }
     console.log("Starting sync loop");
-    slidingSync = new SlidingSync(activeLists, syncConnection);
+    const lists = {};
+    activeLists.forEach((al, i) => {
+        lists[""+i] = al;
+    })
+    slidingSync = new SlidingSync(lists, syncConnection);
     slidingSync.addLifecycleListener((state, resp, err) => {
         switch (state) {
             // The sync has been processed and we can now re-render the UI.

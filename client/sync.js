@@ -147,11 +147,11 @@ export class SlidingList {
 export class SlidingSync {
     /**
      * Create a new sliding sync instance
-     * @param {[]SlidingList} lists The lists to use for sliding sync.
+     * @param {Record<string, SlidingList>} lists The lists to use for sliding sync.
      * @param {SlidingSyncConnection} conn The connection to use for /sync calls.
      */
     constructor(lists, conn) {
-        this.lists = lists;
+        this.lists = lists || {};
         this.conn = conn;
         this.terminated = false;
         this.roomSubscription = "";
@@ -217,24 +217,27 @@ export class SlidingSync {
             let resp;
             try {
                 // these fields are always required
+                const reqLists = {};
+                Object.keys(this.lists).forEach((listKey) => {
+                    const al = this.lists[listKey];
+                    let l = {
+                        ranges: al.activeRanges,
+                        filters: al.getFilters(),
+                    };
+                    // if this is the first request on this session, send sticky request data which never changes
+                    if (!currentPos) {
+                        l.required_state = REQUIRED_STATE_EVENTS_IN_LIST;
+                        l.timeline_limit = 1;
+                        l.sort = [
+                            "by_highlight_count",
+                            "by_notification_count",
+                            "by_recency",
+                        ];
+                    }
+                    reqLists[listKey] = l;
+                });
                 let reqBody = {
-                    lists: this.lists.map((al) => {
-                        let l = {
-                            ranges: al.activeRanges,
-                            filters: al.getFilters(),
-                        };
-                        // if this is the first request on this session, send sticky request data which never changes
-                        if (!currentPos) {
-                            l.required_state = REQUIRED_STATE_EVENTS_IN_LIST;
-                            l.timeline_limit = 1;
-                            l.sort = [
-                                "by_highlight_count",
-                                "by_notification_count",
-                                "by_recency",
-                            ];
-                        }
-                        return l;
-                    }),
+                    lists: reqLists,
                 };
                 // check if we are (un)subscribing to a room and modify request this one time for it
                 let subscribingToRoom;
@@ -265,10 +268,14 @@ export class SlidingSync {
                     currentSub = subscribingToRoom;
                 }
                 if (!resp.lists) {
-                    resp.lists = [];
+                    resp.lists = {};
                 }
-                resp.lists.forEach((l, index) => {
-                    this.lists[index].joinedCount = l.count;
+                Object.keys(resp.lists).forEach((key) => {
+                    const list = this.lists[key];
+                    if (!list) {
+                        return;
+                    }
+                    list.joinedCount  = resp.lists[key].count;
                 });
                 this._invokeLifecycleListeners(
                     LifecycleSyncRequestFinished,
@@ -292,17 +299,18 @@ export class SlidingSync {
                 this._invokeRoomDataListeners(roomId, resp.rooms[roomId]);
             });
 
-            resp.lists.forEach((list, listIndex) => {
+            Object.keys(resp.lists).forEach((listKey) => {
+                const list = resp.lists[listKey];
                 let gapIndex = -1;
                 list.ops = list.ops || [];
                 list.ops.forEach((op) => {
                     switch (op.op) {
                         case "DELETE": {
-                            console.log("DELETE", listIndex, op.index, ";");
-                            delete this.lists[listIndex].roomIndexToRoomId[op.index];
+                            console.log("DELETE", listKey, op.index, ";");
+                            delete this.lists[listKey].roomIndexToRoomId[op.index];
                             if (gapIndex !== -1) {
                                 // we already have a DELETE operation to process, so process it.
-                                this.removeEntry(listIndex, gapIndex);
+                                this.removeEntry(listKey, gapIndex);
                             }
                             gapIndex = op.index;
                             break;
@@ -310,16 +318,16 @@ export class SlidingSync {
                         case "INSERT": {
                             console.log(
                                 "INSERT",
-                                listIndex,
+                                listKey,
                                 op.index,
                                 op.room_id,
                                 ";",
                             );
-                            if (this.lists[listIndex].roomIndexToRoomId[op.index]) {
+                            if (this.lists[listKey].roomIndexToRoomId[op.index]) {
                                 // something is in this space, shift items out of the way
                                 if (gapIndex < 0) {
                                     // we haven't been told where to shift from, so make way for a new room entry.
-                                    this.addEntry(listIndex, op.index);
+                                    this.addEntry(listKey, op.index);
                                 } else if (gapIndex > op.index) {
                                     // the gap is further down the list, shift every element to the right
                                     // starting at the gap so we can just shift each element in turn:
@@ -328,11 +336,11 @@ export class SlidingSync {
                                     // [A,B,B,C] i=2
                                     // [A,A,B,C] i=1
                                     // Terminate. We'll assign into op.index next.
-                                    this.shiftRight(listIndex, gapIndex, op.index);
+                                    this.shiftRight(listKey, gapIndex, op.index);
                                 } else if (gapIndex < op.index) {
                                     // the gap is further up the list, shift every element to the left
                                     // starting at the gap so we can just shift each element in turn
-                                    this.shiftLeft(listIndex, op.index, gapIndex);
+                                    this.shiftLeft(listKey, op.index, gapIndex);
                                 }
                             }
                             // forget the gap, we don't need it anymore. This is outside the check for
@@ -340,17 +348,17 @@ export class SlidingSync {
                             // forget the gap, not conditionally based on the presence of a room in the INSERT
                             // position. Without this, DELETE 0; INSERT 0; would do the wrong thing.
                             gapIndex = -1;
-                            this.lists[listIndex].roomIndexToRoomId[op.index] = op.room_id;
+                            this.lists[listKey].roomIndexToRoomId[op.index] = op.room_id;
                             break;
                         }
                         case "INVALIDATE": {
                             const startIndex = op.range[0];
                             for (let i = startIndex; i <= op.range[1]; i++) {
-                                delete this.lists[listIndex].roomIndexToRoomId[i];
+                                delete this.lists[listKey].roomIndexToRoomId[i];
                             }
                             console.log(
                                 "INVALIDATE",
-                                listIndex,
+                                listKey,
                                 op.range[0],
                                 op.range[1],
                                 ";",
@@ -364,11 +372,11 @@ export class SlidingSync {
                                 if (!roomId) {
                                     break; // we are at the end of list
                                 }
-                                this.lists[listIndex].roomIndexToRoomId[i] = roomId;
+                                this.lists[listKey].roomIndexToRoomId[i] = roomId;
                             }
                             console.log(
                                 "SYNC",
-                                listIndex,
+                                listKey,
                                 op.range[0],
                                 op.range[1],
                                 (op.room_ids || []).join(" "),
@@ -381,7 +389,7 @@ export class SlidingSync {
                 if (gapIndex !== -1) {
                     // we already have a DELETE operation to process, so process it
                     // Everything higher than the gap needs to be shifted left.
-                    this.removeEntry(listIndex, gapIndex);
+                    this.removeEntry(listKey, gapIndex);
                 }
             });
 
@@ -389,38 +397,38 @@ export class SlidingSync {
         }
     }
 
-    shiftRight(listIndex, hi, low) {
+    shiftRight(listKey, hi, low) {
         //     l   h
         // 0,1,2,3,4 <- before
         // 0,1,2,2,3 <- after, hi is deleted and low is duplicated
         for (let i = hi; i > low; i--) {
-            if (this.isIndexInRange(this.lists[listIndex], i)) {
-                this.lists[listIndex].roomIndexToRoomId[i] =
-                    this.lists[listIndex].roomIndexToRoomId[
+            if (this.isIndexInRange(this.lists[listKey], i)) {
+                this.lists[listKey].roomIndexToRoomId[i] =
+                    this.lists[listKey].roomIndexToRoomId[
                         i - 1
                     ];
             }
         }
     }
 
-    shiftLeft(listIndex, hi, low) {
+    shiftLeft(listKey, hi, low) {
         //     l   h
         // 0,1,2,3,4 <- before
         // 0,1,3,4,4 <- after, low is deleted and hi is duplicated
         for (let i = low; i < hi; i++) {
-            if (this.isIndexInRange(this.lists[listIndex], i)) {
-                this.lists[listIndex].roomIndexToRoomId[i] =
-                    this.lists[listIndex].roomIndexToRoomId[
+            if (this.isIndexInRange(this.lists[listKey], i)) {
+                this.lists[listKey].roomIndexToRoomId[i] =
+                    this.lists[listKey].roomIndexToRoomId[
                         i + 1
                     ];
             }
         }
     }
 
-    removeEntry(listIndex, index) {
+    removeEntry(listKey, index) {
         // work out the max index
         let max = -1;
-        for (const n in this.lists[listIndex].roomIndexToRoomId) {
+        for (const n in this.lists[listKey].roomIndexToRoomId) {
             if (Number(n) > max) {
                 max = Number(n);
             }
@@ -429,14 +437,14 @@ export class SlidingSync {
             return;
         }
         // Everything higher than the gap needs to be shifted left.
-        this.shiftLeft(listIndex, max, index);
-        delete this.lists[listIndex].roomIndexToRoomId[max];
+        this.shiftLeft(listKey, max, index);
+        delete this.lists[listKey].roomIndexToRoomId[max];
     }
 
-    addEntry(listIndex, index) {
+    addEntry(listKey, index) {
         // work out the max index
         let max = -1;
-        for (const n in this.lists[listIndex].roomIndexToRoomId) {
+        for (const n in this.lists[listKey].roomIndexToRoomId) {
             if (Number(n) > max) {
                 max = Number(n);
             }
@@ -445,7 +453,7 @@ export class SlidingSync {
             return;
         }
         // Everything higher than the gap needs to be shifted right, +1 so we don't delete the highest element
-        this.shiftRight(listIndex, max+1, index);
+        this.shiftRight(listKey, max+1, index);
     }
 
     isIndexInRange(list, i) {
@@ -460,19 +468,4 @@ export class SlidingSync {
 
 const sleep = (ms) => {
     return new Promise((resolve) => setTimeout(resolve, ms));
-};
-
-// SYNC 0 2 a b c; SYNC 6 8 d e f; DELETE 7; INSERT 0 e;
-// 0 1 2 3 4 5 6 7 8
-// a b c       d e f
-// a b c       d _ f
-// e a b c       d f  <--- c=3 is wrong as we are not tracking it, ergo we need to see if `i` is in range else drop it
-const indexInRange = (listIndex, i) => {
-    let isInRange = false;
-    activeLists[listIndex].activeRanges.forEach((r) => {
-        if (r[0] <= i && i <= r[1]) {
-            isInRange = true;
-        }
-    });
-    return isInRange;
 };

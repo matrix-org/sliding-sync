@@ -113,7 +113,10 @@ export function svgify(domNode, activeLists, resp) {
     };
 
     // add insertions, deletions and updates
-    resp.lists.forEach((list, listIndex) => {
+    let listIndex = 0;
+    const listKeys = Object.keys(resp.lists).sort();
+    listKeys.forEach((listKey) => {
+        const list = resp.lists[listKey];
         list.ops.forEach((op) => {
             if (op.op === "DELETE") {
                 addLine(listIndex, op.index, colorDelete);
@@ -135,6 +138,7 @@ export function svgify(domNode, activeLists, resp) {
                 );
             }
         });
+        listIndex++;
     });
 
     // this is expensive so only do it on smaller accounts
