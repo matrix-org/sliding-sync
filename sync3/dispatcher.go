@@ -3,9 +3,7 @@ package sync3
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"os"
-	"runtime/trace"
 	"sync"
 
 	"github.com/matrix-org/sliding-sync/internal"
@@ -254,7 +252,7 @@ func (d *Dispatcher) OnReceipt(ctx context.Context, receipt internal.Receipt) {
 }
 
 func (d *Dispatcher) notifyListeners(ctx context.Context, ed *caches.EventData, userIDs []string, targetUser string, shouldForceInitial bool, membership string) {
-	trace.Log(ctx, "dispatcher", fmt.Sprintf("%s: notify %d users (nid=%d,join_count=%d)", ed.RoomID, len(userIDs), ed.LatestPos, ed.JoinCount))
+	internal.Logf(ctx, "dispatcher", "%s: notify %d users (nid=%d,join_count=%d)", ed.RoomID, len(userIDs), ed.LatestPos, ed.JoinCount)
 	// invoke listeners
 	d.userToReceiverMu.RLock()
 	defer d.userToReceiverMu.RUnlock()

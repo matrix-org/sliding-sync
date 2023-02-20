@@ -8,7 +8,6 @@ import (
 	"net/url"
 	"os"
 	"reflect"
-	"runtime/trace"
 	"strconv"
 	"sync"
 	"time"
@@ -495,7 +494,7 @@ func (h *SyncLiveHandler) OnInitialSyncComplete(p *pubsub.V2InitialSyncComplete)
 
 // Called from the v2 poller, implements V2DataReceiver
 func (h *SyncLiveHandler) Accumulate(p *pubsub.V2Accumulate) {
-	ctx, task := trace.NewTask(context.Background(), "Accumulate")
+	ctx, task := internal.StartTask(context.Background(), "Accumulate")
 	defer task.End()
 	events, err := h.Storage.EventNIDs(p.EventNIDs)
 	if err != nil {
@@ -505,14 +504,14 @@ func (h *SyncLiveHandler) Accumulate(p *pubsub.V2Accumulate) {
 	if len(events) == 0 {
 		return
 	}
-	trace.Log(ctx, "room", fmt.Sprintf("%s: %d events", p.RoomID, len(events)))
+	internal.Logf(ctx, "room", fmt.Sprintf("%s: %d events", p.RoomID, len(events)))
 	// we have new events, notify active connections
 	h.Dispatcher.OnNewEvents(ctx, p.RoomID, events, p.EventNIDs[len(p.EventNIDs)-1])
 }
 
 // Called from the v2 poller, implements V2DataReceiver
 func (h *SyncLiveHandler) Initialise(p *pubsub.V2Initialise) {
-	ctx, task := trace.NewTask(context.Background(), "Initialise")
+	ctx, task := internal.StartTask(context.Background(), "Initialise")
 	defer task.End()
 	state, err := h.Storage.StateSnapshot(p.SnapshotNID)
 	if err != nil {
@@ -524,7 +523,7 @@ func (h *SyncLiveHandler) Initialise(p *pubsub.V2Initialise) {
 }
 
 func (h *SyncLiveHandler) OnUnreadCounts(p *pubsub.V2UnreadCounts) {
-	ctx, task := trace.NewTask(context.Background(), "OnUnreadCounts")
+	ctx, task := internal.StartTask(context.Background(), "OnUnreadCounts")
 	defer task.End()
 	userCache, ok := h.userCaches.Load(p.UserID)
 	if !ok {
@@ -535,7 +534,7 @@ func (h *SyncLiveHandler) OnUnreadCounts(p *pubsub.V2UnreadCounts) {
 
 // push device data updates on waiting conns (otk counts, device list changes)
 func (h *SyncLiveHandler) OnDeviceData(p *pubsub.V2DeviceData) {
-	ctx, task := trace.NewTask(context.Background(), "OnDeviceData")
+	ctx, task := internal.StartTask(context.Background(), "OnDeviceData")
 	defer task.End()
 	conn := h.ConnMap.Conn(sync3.ConnID{
 		DeviceID: p.DeviceID,
@@ -547,7 +546,7 @@ func (h *SyncLiveHandler) OnDeviceData(p *pubsub.V2DeviceData) {
 }
 
 func (h *SyncLiveHandler) OnDeviceMessages(p *pubsub.V2DeviceMessages) {
-	ctx, task := trace.NewTask(context.Background(), "OnDeviceMessages")
+	ctx, task := internal.StartTask(context.Background(), "OnDeviceMessages")
 	defer task.End()
 	conn := h.ConnMap.Conn(sync3.ConnID{
 		DeviceID: p.DeviceID,
@@ -559,7 +558,7 @@ func (h *SyncLiveHandler) OnDeviceMessages(p *pubsub.V2DeviceMessages) {
 }
 
 func (h *SyncLiveHandler) OnInvite(p *pubsub.V2InviteRoom) {
-	ctx, task := trace.NewTask(context.Background(), "OnInvite")
+	ctx, task := internal.StartTask(context.Background(), "OnInvite")
 	defer task.End()
 	userCache, ok := h.userCaches.Load(p.UserID)
 	if !ok {
@@ -574,7 +573,7 @@ func (h *SyncLiveHandler) OnInvite(p *pubsub.V2InviteRoom) {
 }
 
 func (h *SyncLiveHandler) OnLeftRoom(p *pubsub.V2LeaveRoom) {
-	ctx, task := trace.NewTask(context.Background(), "OnLeftRoom")
+	ctx, task := internal.StartTask(context.Background(), "OnLeftRoom")
 	defer task.End()
 	userCache, ok := h.userCaches.Load(p.UserID)
 	if !ok {
@@ -584,7 +583,7 @@ func (h *SyncLiveHandler) OnLeftRoom(p *pubsub.V2LeaveRoom) {
 }
 
 func (h *SyncLiveHandler) OnReceipt(p *pubsub.V2Receipt) {
-	ctx, task := trace.NewTask(context.Background(), "OnReceipt")
+	ctx, task := internal.StartTask(context.Background(), "OnReceipt")
 	defer task.End()
 	// split receipts into public / private
 	userToPrivateReceipts := make(map[string][]internal.Receipt)
@@ -616,7 +615,7 @@ func (h *SyncLiveHandler) OnReceipt(p *pubsub.V2Receipt) {
 }
 
 func (h *SyncLiveHandler) OnTyping(p *pubsub.V2Typing) {
-	ctx, task := trace.NewTask(context.Background(), "OnTyping")
+	ctx, task := internal.StartTask(context.Background(), "OnTyping")
 	defer task.End()
 	rooms := h.GlobalCache.LoadRooms(p.RoomID)
 	if rooms[p.RoomID] != nil {
@@ -628,7 +627,7 @@ func (h *SyncLiveHandler) OnTyping(p *pubsub.V2Typing) {
 }
 
 func (h *SyncLiveHandler) OnAccountData(p *pubsub.V2AccountData) {
-	ctx, task := trace.NewTask(context.Background(), "OnAccountData")
+	ctx, task := internal.StartTask(context.Background(), "OnAccountData")
 	defer task.End()
 	userCache, ok := h.userCaches.Load(p.UserID)
 	if !ok {

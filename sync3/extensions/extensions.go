@@ -5,8 +5,8 @@ import (
 	"context"
 	"os"
 	"reflect"
-	"runtime/trace"
 
+	"github.com/matrix-org/sliding-sync/internal"
 	"github.com/matrix-org/sliding-sync/state"
 	"github.com/matrix-org/sliding-sync/sync3/caches"
 	"github.com/rs/zerolog"
@@ -197,8 +197,8 @@ func (h *Handler) Handle(ctx context.Context, req Request, extCtx Context) (res 
 	extCtx.Handler = h
 	exts := req.EnabledExtensions()
 	for _, ext := range exts {
-		region := trace.StartRegion(ctx, "extension_"+ext.Name())
-		ext.ProcessInitial(ctx, &res, extCtx)
+		childCtx, region := internal.StartSpan(ctx, "extension_"+ext.Name())
+		ext.ProcessInitial(childCtx, &res, extCtx)
 		region.End()
 	}
 	return

@@ -3,7 +3,6 @@ package handler
 import (
 	"context"
 	"encoding/json"
-	"runtime/trace"
 	"time"
 
 	"github.com/matrix-org/sliding-sync/internal"
@@ -75,14 +74,14 @@ func (s *connStateLive) liveUpdate(
 		select {
 		case <-ctx.Done(): // client has given up
 			logger.Trace().Str("user", s.userID).Msg("liveUpdate: client gave up")
-			trace.Logf(ctx, "liveUpdate", "context cancelled")
+			internal.Logf(ctx, "liveUpdate", "context cancelled")
 			return
 		case <-time.After(timeLeftToWait): // we've timed out
 			logger.Trace().Str("user", s.userID).Msg("liveUpdate: timed out")
-			trace.Logf(ctx, "liveUpdate", "timed out after %v", timeLeftToWait)
+			internal.Logf(ctx, "liveUpdate", "timed out after %v", timeLeftToWait)
 			return
 		case update := <-s.updates:
-			trace.Logf(ctx, "liveUpdate", "process live update")
+			internal.Logf(ctx, "liveUpdate", "process live update")
 
 			s.processLiveUpdate(ctx, update, response)
 			// pass event to extensions AFTER processing

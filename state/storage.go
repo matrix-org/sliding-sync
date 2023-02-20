@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"runtime/trace"
 	"strings"
 
 	"github.com/jmoiron/sqlx"
@@ -346,7 +345,8 @@ func (s *Storage) StateSnapshot(snapID int64) (state []json.RawMessage, err erro
 // If the list of state keys is empty then all events matching that event type will be returned. If the map is empty entirely, then all room state
 // will be returned.
 func (s *Storage) RoomStateAfterEventPosition(ctx context.Context, roomIDs []string, pos int64, eventTypesToStateKeys map[string][]string) (roomToEvents map[string][]Event, err error) {
-	defer trace.StartRegion(ctx, "RoomStateAfterEventPosition").End()
+	_, span := internal.StartSpan(ctx, "RoomStateAfterEventPosition")
+	defer span.End()
 	roomToEvents = make(map[string][]Event, len(roomIDs))
 	roomIndex := make(map[string]int, len(roomIDs))
 	err = sqlutil.WithTransaction(s.accumulator.db, func(txn *sqlx.Tx) error {

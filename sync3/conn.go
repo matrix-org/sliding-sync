@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"runtime/debug"
-	"runtime/trace"
 	"sync"
 
 	"github.com/matrix-org/sliding-sync/internal"
@@ -90,9 +89,9 @@ func (c *Conn) tryRequest(ctx context.Context, req *Request) (res *Response, err
 	if req.pos == 0 {
 		taskType = "OnIncomingRequestInitial"
 	}
-	ctx, task := trace.NewTask(ctx, taskType)
+	ctx, task := internal.StartTask(ctx, taskType)
 	defer task.End()
-	trace.Logf(ctx, "connstate", "starting user=%v device=%v pos=%v", c.handler.UserID(), c.ConnID.DeviceID, req.pos)
+	internal.Logf(ctx, "connstate", "starting user=%v device=%v pos=%v", c.handler.UserID(), c.ConnID.DeviceID, req.pos)
 	return c.handler.OnIncomingRequest(ctx, c.ConnID, req, req.pos == 0)
 }
 

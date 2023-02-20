@@ -3,7 +3,6 @@ package handler
 import (
 	"context"
 	"encoding/json"
-	"runtime/trace"
 	"time"
 
 	"github.com/matrix-org/sliding-sync/internal"
@@ -119,7 +118,8 @@ func (s *ConnState) load() error {
 // OnIncomingRequest is guaranteed to be called sequentially (it's protected by a mutex in conn.go)
 func (s *ConnState) OnIncomingRequest(ctx context.Context, cid sync3.ConnID, req *sync3.Request, isInitial bool) (*sync3.Response, error) {
 	if s.loadPosition == -1 {
-		region := trace.StartRegion(ctx, "load")
+		// load() needs no ctx so drop it
+		_, region := internal.StartSpan(ctx, "load")
 		s.load()
 		region.End()
 	}
@@ -134,14 +134,14 @@ func (s *ConnState) onIncomingRequest(ctx context.Context, req *sync3.Request, i
 	// ApplyDelta works fine if s.muxedReq is nil
 	var delta *sync3.RequestDelta
 	s.muxedReq, delta = s.muxedReq.ApplyDelta(req)
-	trace.Logf(ctx, "connstate", "new subs=%v unsubs=%v num_lists=%v", len(delta.Subs), len(delta.Unsubs), len(delta.Lists))
+	internal.Logf(ctx, "connstate", "new subs=%v unsubs=%v num_lists=%v", len(delta.Subs), len(delta.Unsubs), len(delta.Lists))
 	for key, l := range delta.Lists {
 		listData := ""
 		if l.Curr != nil {
 			listDataBytes, _ := json.Marshal(l.Curr)
 			listData = string(listDataBytes)
 		}
-		trace.Logf(ctx, "connstate", "list[%v] prev_empty=%v curr=%v", key, l.Prev == nil, listData)
+		internal.Logf(ctx, "connstate", "list[%v] prev_empty=%v curr=%v", key, l.Prev == nil, listData)
 	}
 
 	// work out which rooms we'll return data for and add their relevant subscriptions to the builder
@@ -160,7 +160,7 @@ func (s *ConnState) onIncomingRequest(ctx context.Context, req *sync3.Request, i
 
 	// Handle extensions AFTER processing lists as extensions may need to know which rooms the client
 	// is being notified about (e.g. for room account data)
-	region := trace.StartRegion(ctx, "extensions")
+	ctx, region := internal.StartSpan(ctx, "extensions")
 	response.Extensions = s.extensionsHandler.Handle(ctx, s.muxedReq.Extensions, extensions.Context{
 		UserID:           s.userID,
 		DeviceID:         s.deviceID,
@@ -179,7 +179,7 @@ func (s *ConnState) onIncomingRequest(ctx context.Context, req *sync3.Request, i
 	}
 
 	// do live tracking if we have nothing to tell the client yet
-	region = trace.StartRegion(ctx, "liveUpdate")
+	ctx, region = internal.StartSpan(ctx, "liveUpdate")
 	s.live.liveUpdate(ctx, req, s.muxedReq.Extensions, isInitial, response)
 	region.End()
 
@@ -193,7 +193,8 @@ func (s *ConnState) onIncomingRequest(ctx context.Context, req *sync3.Request, i
 }
 
 func (s *ConnState) onIncomingListRequest(ctx context.Context, builder *RoomsBuilder, listKey string, prevReqList, nextReqList *sync3.RequestList) sync3.ResponseList {
-	defer trace.StartRegion(ctx, "onIncomingListRequest").End()
+	ctx, span := internal.StartSpan(ctx, "onIncomingListRequest")
+	defer span.End()
 	roomList, overwritten := s.lists.AssignList(listKey, nextReqList.Filters, nextReqList.Sort, sync3.DoNotOverwrite)
 
 	if nextReqList.ShouldGetAllRooms() {
@@ -337,7 +338,8 @@ func (s *ConnState) onIncomingListRequest(ctx context.Context, builder *RoomsBui
 }
 
 func (s *ConnState) buildListSubscriptions(ctx context.Context, builder *RoomsBuilder, listDeltas map[string]sync3.RequestListDelta) map[string]sync3.ResponseList {
-	defer trace.StartRegion(ctx, "buildListSubscriptions").End()
+	ctx, span := internal.StartSpan(ctx, "buildListSubscriptions")
+	defer span.End()
 	result := make(map[string]sync3.ResponseList, len(s.muxedReq.Lists))
 	// loop each list and handle each independently
 	for listKey, list := range listDeltas {
@@ -353,7 +355,8 @@ func (s *ConnState) buildListSubscriptions(ctx context.Context, builder *RoomsBu
 }
 
 func (s *ConnState) buildRoomSubscriptions(ctx context.Context, builder *RoomsBuilder, subs, unsubs []string) {
-	defer trace.StartRegion(ctx, "buildRoomSubscriptions").End()
+	ctx, span := internal.StartSpan(ctx, "buildRoomSubscriptions")
+	defer span.End()
 	for _, roomID := range subs {
 		// check that the user is allowed to see these rooms as they can set arbitrary room IDs
 		if !s.joinChecker.IsUserJoined(s.userID, roomID) {
@@ -377,7 +380,8 @@ func (s *ConnState) buildRoomSubscriptions(ctx context.Context, builder *RoomsBu
 }
 
 func (s *ConnState) buildRooms(ctx context.Context, builtSubs []BuiltSubscription) map[string]sync3.Room {
-	defer trace.StartRegion(ctx, "buildRooms").End()
+	ctx, span := internal.StartSpan(ctx, "buildRooms")
+	defer span.End()
 	result := make(map[string]sync3.Room)
 	for _, bs := range builtSubs {
 		roomIDs := bs.RoomIDs
@@ -419,7 +423,8 @@ func (s *ConnState) buildRooms(ctx context.Context, builtSubs []BuiltSubscriptio
 }
 
 func (s *ConnState) getInitialRoomData(ctx context.Context, roomSub sync3.RoomSubscription, roomIDs ...string) map[string]sync3.Room {
-	defer trace.StartRegion(ctx, "getInitialRoomData").End()
+	ctx, span := internal.StartSpan(ctx, "getInitialRoomData")
+	defer span.End()
 	rooms := make(map[string]sync3.Room, len(roomIDs))
 	// We want to grab the user room data and the room metadata for each room ID.
 	roomIDToUserRoomData := s.userCache.LazyLoadTimelines(s.loadPosition, roomIDs, int(roomSub.TimelineLimit))
@@ -529,7 +534,7 @@ func (s *ConnState) OnRoomUpdate(ctx context.Context, up caches.RoomUpdate) {
 			return
 		}
 		internal.Assert("missing global room metadata", update.GlobalRoomMetadata() != nil)
-		trace.Logf(ctx, "connstate", "queued update %d", update.EventData.LatestPos)
+		internal.Logf(ctx, "connstate", "queued update %d", update.EventData.LatestPos)
 		s.live.onUpdate(update)
 	case caches.RoomUpdate:
 		internal.Assert("missing global room metadata", update.GlobalRoomMetadata() != nil)
