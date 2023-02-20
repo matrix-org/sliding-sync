@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	syncv3 "github.com/matrix-org/sliding-sync"
+	"github.com/matrix-org/sliding-sync/internal"
 	"github.com/matrix-org/sliding-sync/sync2"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
@@ -17,16 +18,17 @@ var GitCommit string
 const version = "0.99.0"
 
 const (
-	// Possibly required fields depending on the mode
-	EnvServer   = "SYNCV3_SERVER"
-	EnvDB       = "SYNCV3_DB"
-	EnvBindAddr = "SYNCV3_BINDADDR"
-	EnvSecret   = "SYNCV3_SECRET"
+	// Required fields
+	EnvServer = "SYNCV3_SERVER"
+	EnvDB     = "SYNCV3_DB"
+	EnvSecret = "SYNCV3_SECRET"
 
 	// Optional fields
+	EnvBindAddr   = "SYNCV3_BINDADDR"
 	EnvPPROF      = "SYNCV3_PPROF"
 	EnvPrometheus = "SYNCV3_PROM"
 	EnvDebug      = "SYNCV3_DEBUG"
+	EnvJaeger     = "SYNCV3_JAEGER_URL"
 )
 
 var helpMsg = fmt.Sprintf(`
@@ -37,7 +39,8 @@ Environment var
 %s   Required. A secret to use to encrypt access tokens. Must remain the same for the lifetime of the database.
 %s   Defualt: unset. The bind addr for pprof debugging e.g ':6060'. If not set, does not listen.
 %s   Default: unset. The bind addr for Prometheus metrics, which will be accessible at /metrics at this address.
-`, EnvServer, EnvDB, EnvBindAddr, EnvSecret, EnvPPROF, EnvPrometheus)
+%s   Default: unset. The Jaeger URL to send spans to e.g http://localhost:14268/api/traces - if unset does not send OTLP traces.
+`, EnvServer, EnvDB, EnvBindAddr, EnvSecret, EnvPPROF, EnvPrometheus, EnvJaeger)
 
 func defaulting(in, dft string) string {
 	if in == "" {
@@ -58,6 +61,7 @@ func main() {
 		EnvPPROF:      os.Getenv(EnvPPROF),
 		EnvPrometheus: os.Getenv(EnvPrometheus),
 		EnvDebug:      os.Getenv(EnvDebug),
+		EnvJaeger:     os.Getenv(EnvJaeger),
 	}
 	requiredEnvVars := []string{EnvServer, EnvDB, EnvSecret, EnvBindAddr}
 	for _, requiredEnvVar := range requiredEnvVars {
@@ -85,6 +89,12 @@ func main() {
 				panic(err)
 			}
 		}()
+	}
+	if args[EnvJaeger] != "" {
+		fmt.Printf("Configuring Jaeger collector...\n")
+		if err := internal.ConfigureJaeger(args[EnvJaeger], syncv3.Version); err != nil {
+			panic(err)
+		}
 	}
 	h2, h3 := syncv3.Setup(args[EnvServer], args[EnvDB], args[EnvSecret], syncv3.Opts{
 		Debug:                args[EnvDebug] == "1",

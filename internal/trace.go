@@ -5,8 +5,13 @@ import (
 	"fmt"
 	"runtime/trace"
 
+	"github.com/go-logr/zerologr" // required for Jaeger errors during transmission to use zerolog
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/exporters/jaeger"
+	"go.opentelemetry.io/otel/sdk/resource"
+	tracesdk "go.opentelemetry.io/otel/sdk/trace"
+	semconv "go.opentelemetry.io/otel/semconv/v1.17.0"
 	otlptrace "go.opentelemetry.io/otel/trace"
 )
 
@@ -64,4 +69,27 @@ func StartTask(ctx context.Context, name string) (context.Context, *Task) {
 		t: task,
 		o: ospan,
 	}
+}
+
+func ConfigureJaeger(jaegerURL, version string) error {
+	_ = zerologr.New(&logger) // TODO
+	// Create the Jaeger exporter
+	exp, err := jaeger.New(jaeger.WithCollectorEndpoint(
+		jaeger.WithEndpoint(jaegerURL),
+	))
+	if err != nil {
+		return err
+	}
+	tp := tracesdk.NewTracerProvider(
+		// Always be sure to batch in production.
+		tracesdk.WithBatcher(exp),
+		// Record information about this application in a Resource.
+		tracesdk.WithResource(resource.NewWithAttributes(
+			semconv.SchemaURL,
+			semconv.ServiceName("sliding-sync"),
+			attribute.String("version", version),
+		)),
+	)
+	otel.SetTracerProvider(tp)
+	return nil
 }
