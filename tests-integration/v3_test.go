@@ -343,7 +343,7 @@ func runTestServer(t testutils.TestBenchInterface, v2Server *testV2Server, postg
 	}
 	return &testV3Server{
 		srv:     srv,
-		handler: h3,
+		handler: h3.(*handler.SyncLiveHandler),
 		h2:      h2,
 	}
 }

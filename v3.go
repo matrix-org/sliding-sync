@@ -64,7 +64,7 @@ func allowCORS(next http.Handler) http.HandlerFunc {
 }
 
 // Setup the proxy
-func Setup(destHomeserver, postgresURI, secret string, opts Opts) (*handler2.Handler, *handler.SyncLiveHandler) {
+func Setup(destHomeserver, postgresURI, secret string, opts Opts) (*handler2.Handler, http.Handler) {
 	// Setup shared DB and HTTP client
 	v2Client := &sync2.HTTPClient{
 		Client: &http.Client{

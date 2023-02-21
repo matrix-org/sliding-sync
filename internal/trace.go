@@ -9,6 +9,7 @@ import (
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/exporters/jaeger"
+	"go.opentelemetry.io/otel/propagation"
 	"go.opentelemetry.io/otel/sdk/resource"
 	tracesdk "go.opentelemetry.io/otel/sdk/trace"
 	semconv "go.opentelemetry.io/otel/semconv/v1.17.0"
@@ -91,5 +92,9 @@ func ConfigureJaeger(jaegerURL, version string) error {
 		)),
 	)
 	otel.SetTracerProvider(tp)
+	// setup traceparent (TraceContext) handling, and pass through any Baggage
+	otel.SetTextMapPropagator(propagation.NewCompositeTextMapPropagator(
+		propagation.Baggage{}, propagation.TraceContext{},
+	))
 	return nil
 }

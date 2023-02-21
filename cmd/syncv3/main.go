@@ -11,6 +11,7 @@ import (
 	"github.com/matrix-org/sliding-sync/internal"
 	"github.com/matrix-org/sliding-sync/sync2"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
+	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 )
 
 var GitCommit string
@@ -102,6 +103,9 @@ func main() {
 	})
 
 	go h2.StartV2Pollers()
+	if args[EnvJaeger] != "" {
+		h3 = otelhttp.NewHandler(h3, "Sync")
+	}
 	syncv3.RunSyncV3Server(h3, args[EnvBindAddr], args[EnvServer])
 	select {} // block forever
 }
