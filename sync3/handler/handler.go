@@ -271,7 +271,7 @@ func (h *SyncLiveHandler) setupConnection(req *http.Request, syncReq *sync3.Requ
 
 	// Identify the device
 	deviceID, accessToken, err := internal.HashedTokenFromRequest(req)
-	if err != nil {
+	if err != nil || accessToken == "" {
 		log.Warn().Err(err).Msg("failed to get device ID from request")
 		return nil, &internal.HandlerError{
 			StatusCode: 400,
