@@ -47,7 +47,7 @@ jobs:
           platforms: ${{ env.PLATFORMS }}
           push: true
           tags: |
-            ghcr.io/${{ env.GHCR_NAMESPACE }}/sliding-sync:latest
+            ghcr.io/${{ env.GHCR_NAMESPACE }}/sliding-sync:main
 
       - name: Build release Sliding Sync image
         if: github.event_name == 'release' # Only for GitHub releases
@@ -61,12 +61,12 @@ jobs:
           push: true
           tags: |
             ghcr.io/${{ env.GHCR_NAMESPACE }}/sliding-sync:latest
-            ghcr.io/${{ env.GHCR_NAMESPACE }}/sliding-sync:${{ env.RELEASE_VERSION }}
+            ghcr.io/${{ env.GHCR_NAMESPACE }}/sliding-sync:${{ github.event.release.tag_name }}
 
       - name: Run Trivy vulnerability scanner
         uses: aquasecurity/trivy-action@master
         with:
-          image-ref: ghcr.io/${{ env.GHCR_NAMESPACE }}/sliding-sync:latest
+          image-ref: ghcr.io/${{ env.GHCR_NAMESPACE }}/sliding-sync:main
           format: "sarif"
           output: "trivy-results.sarif"
 
