@@ -12,4 +12,6 @@ Welcome intrepid Matrix explorer. You've landed on this page because you're tryi
 }
 ```
 
+For those of you who prefer to follow the steps via video, please watch [Getting Ready for Sliding Sync](https://youtu.be/25wkV2ZCSsM) on YouTube.
+
 Once these steps are complete you will be able to continue on your journey of exploring the very latest that Matrix has to offer!
