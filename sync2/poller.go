@@ -40,8 +40,10 @@ type V2DataReceiver interface {
 	OnLeftRoom(userID, roomID string)
 	// Sent when there is a _change_ in E2EE data, not all the time
 	OnE2EEData(userID, deviceID string, otkCounts map[string]int, fallbackKeyTypes []string, deviceListChanges map[string]int)
-	// Sent when the upstream homeserver sends back a 401 invalidating the token
+	// Sent when the poll loop terminates
 	OnTerminated(userID, deviceID string)
+	// Sent when the token gets a 401 response
+	OnExpiredToken(deviceID string)
 }
 
 // PollerMap is a map of device ID to Poller
@@ -242,6 +244,10 @@ func (h *PollerMap) OnTerminated(userID, deviceID string) {
 	h.callbacks.OnTerminated(userID, deviceID)
 }
 
+func (h *PollerMap) OnExpiredToken(deviceID string) {
+	h.callbacks.OnExpiredToken(deviceID)
+}
+
 func (h *PollerMap) UpdateUnreadCounts(roomID, userID string, highlightCount, notifCount *int) {
 	var wg sync.WaitGroup
 	wg.Add(1)
@@ -366,6 +372,7 @@ func (p *poller) Poll(since string) {
 				continue
 			} else {
 				p.logger.Warn().Msg("Poller: access token has been invalidated, terminating loop")
+				p.receiver.OnExpiredToken(p.deviceID)
 				p.Terminate()
 				break
 			}

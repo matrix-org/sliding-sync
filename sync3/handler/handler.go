@@ -313,6 +313,12 @@ func (h *SyncLiveHandler) setupConnection(req *http.Request, syncReq *sync3.Requ
 	if v2device.UserID == "" {
 		v2device.UserID, err = h.V2.WhoAmI(accessToken)
 		if err != nil {
+			if err == sync2.HTTP401 {
+				return nil, &internal.HandlerError{
+					StatusCode: 401,
+					Err:        fmt.Errorf("/whoami returned HTTP 401"),
+				}
+			}
 			log.Warn().Err(err).Str("device_id", deviceID).Msg("failed to get user ID from device ID")
 			return nil, &internal.HandlerError{
 				StatusCode: http.StatusBadGateway,
@@ -639,6 +645,12 @@ func (h *SyncLiveHandler) OnAccountData(p *pubsub.V2AccountData) {
 		return
 	}
 	userCache.(*caches.UserCache).OnAccountData(ctx, data)
+}
+
+func (h *SyncLiveHandler) OnExpiredToken(p *pubsub.V2ExpiredToken) {
+	h.ConnMap.CloseConn(sync3.ConnID{
+		DeviceID: p.DeviceID,
+	})
 }
 
 func parseIntFromQuery(u *url.URL, param string) (result int64, err *internal.HandlerError) {

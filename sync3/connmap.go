@@ -51,6 +51,7 @@ func (m *ConnMap) Conn(cid ConnID) *Conn {
 		return conn
 	}
 	// e.g buffer exceeded, close it and remove it from the cache
+	logger.Trace().Str("conn", cid.String()).Msg("closing connection due to dead connection (buffer full)")
 	m.closeConn(conn)
 	return nil
 }
@@ -63,6 +64,7 @@ func (m *ConnMap) CreateConn(cid ConnID, newConnHandler func() ConnHandler) (*Co
 	conn := m.Conn(cid)
 	if conn != nil {
 		// tear down this connection and fallthrough
+		logger.Trace().Str("conn", cid.String()).Msg("closing connection due to CreateConn called again")
 		m.closeConn(conn)
 	}
 	h := newConnHandler()
@@ -74,16 +76,15 @@ func (m *ConnMap) CreateConn(cid ConnID, newConnHandler func() ConnHandler) (*Co
 }
 
 func (m *ConnMap) CloseConn(connID ConnID) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	conn := m.Conn(connID)
-	m.closeConn(conn)
+	logger.Trace().Str("conn", connID.String()).Msg("closing connection due to CloseConn()")
+	m.cache.Remove(connID.String()) // this will fire TTL callbacks which calls closeConn
 }
 
 func (m *ConnMap) closeConnExpires(connID string, value interface{}) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	conn := value.(*Conn)
+	logger.Trace().Str("conn", connID).Msg("closing connection due to expired TTL in cache")
 	m.closeConn(conn)
 }
 

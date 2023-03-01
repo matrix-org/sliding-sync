@@ -623,3 +623,34 @@ func TestSessionExpiryOnBufferFill(t *testing.T) {
 		t.Errorf("got %v want errcode=M_UNKNOWN_POS", string(body))
 	}
 }
+
+func TestExpiredAccessToken(t *testing.T) {
+	pqString := testutils.PrepareDBConnectionString()
+	v2 := runTestV2Server(t)
+	v2.addAccount(alice, aliceToken)
+	v3 := runTestServer(t, v2, pqString)
+	roomID := "!doesnt:matter"
+	res := v3.mustDoV3Request(t, aliceToken, sync3.Request{
+		RoomSubscriptions: map[string]sync3.RoomSubscription{
+			roomID: {
+				TimelineLimit: 1,
+			},
+		},
+	})
+	// now expire the token
+	v2.invalidateToken(aliceToken)
+	// now do another request, this should 400 as it expires the session
+	req := sync3.Request{}
+	req.SetTimeoutMSecs(1)
+	_, body, statusCode := v3.doV3Request(t, context.Background(), aliceToken, res.Pos, req)
+	if statusCode != 400 {
+		t.Fatalf("got %d want 400 : %v", statusCode, string(body))
+	}
+	// do a fresh request, this should 401
+	req = sync3.Request{}
+	req.SetTimeoutMSecs(1)
+	_, body, statusCode = v3.doV3Request(t, context.Background(), aliceToken, "", req)
+	if statusCode != 401 {
+		t.Fatalf("got %d want 401 : %v", statusCode, string(body))
+	}
+}

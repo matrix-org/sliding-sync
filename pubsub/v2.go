@@ -21,6 +21,7 @@ type V2Listener interface {
 	OnTyping(p *V2Typing)
 	OnReceipt(p *V2Receipt)
 	OnDeviceMessages(p *V2DeviceMessages)
+	OnExpiredToken(p *V2ExpiredToken)
 }
 
 type V2Initialise struct {
@@ -104,6 +105,12 @@ type V2DeviceMessages struct {
 
 func (*V2DeviceMessages) Type() string { return "V2DeviceMessages" }
 
+type V2ExpiredToken struct {
+	DeviceID string
+}
+
+func (*V2ExpiredToken) Type() string { return "V2ExpiredToken" }
+
 type V2Sub struct {
 	listener Listener
 	receiver V2Listener
@@ -144,6 +151,8 @@ func (v *V2Sub) onMessage(p Payload) {
 		v.receiver.OnTyping(pl)
 	case *V2DeviceMessages:
 		v.receiver.OnDeviceMessages(pl)
+	case *V2ExpiredToken:
+		v.receiver.OnExpiredToken(pl)
 	default:
 		logger.Warn().Str("type", p.Type()).Msg("V2Sub: unhandled payload type")
 	}

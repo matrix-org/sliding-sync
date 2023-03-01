@@ -134,6 +134,14 @@ func (s *Storage) AllDevices() (devices []Device, err error) {
 	return
 }
 
+func (s *Storage) RemoveDevice(deviceID string) error {
+	_, err := s.db.Exec(
+		`DELETE FROM syncv3_sync2_devices WHERE device_id = $1`, deviceID,
+	)
+	log.Info().Str("device", deviceID).Msg("Deleting device")
+	return err
+}
+
 func (s *Storage) InsertDevice(deviceID, accessToken string) (*Device, error) {
 	var device Device
 	device.AccessToken = accessToken

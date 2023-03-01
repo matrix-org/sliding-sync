@@ -15,6 +15,7 @@ import (
 const AccountDataGlobalRoom = ""
 
 var ProxyVersion = ""
+var HTTP401 error = fmt.Errorf("HTTP 401")
 
 type Client interface {
 	WhoAmI(accessToken string) (string, error)
@@ -28,6 +29,7 @@ type HTTPClient struct {
 	DestinationServer string
 }
 
+// Return sync2.HTTP401 if this request returns 401
 func (v *HTTPClient) WhoAmI(accessToken string) (string, error) {
 	req, err := http.NewRequest("GET", v.DestinationServer+"/_matrix/client/r0/account/whoami", nil)
 	if err != nil {
@@ -40,6 +42,9 @@ func (v *HTTPClient) WhoAmI(accessToken string) (string, error) {
 		return "", err
 	}
 	if res.StatusCode != 200 {
+		if res.StatusCode == 401 {
+			return "", HTTP401
+		}
 		return "", fmt.Errorf("/whoami returned HTTP %d", res.StatusCode)
 	}
 	defer res.Body.Close()

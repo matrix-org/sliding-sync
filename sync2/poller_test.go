@@ -486,6 +486,7 @@ func (s *mockDataReceiver) OnLeftRoom(userID, roomID string)                    
 func (s *mockDataReceiver) OnE2EEData(userID, deviceID string, otkCounts map[string]int, fallbackKeyTypes []string, deviceListChanges map[string]int) {
 }
 func (s *mockDataReceiver) OnTerminated(userID, deviceID string) {}
+func (s *mockDataReceiver) OnExpiredToken(deviceID string)       {}
 
 func newMocks(doSyncV2 func(authHeader, since string) (*SyncResponse, int, error)) (*mockDataReceiver, *mockClient) {
 	client := &mockClient{

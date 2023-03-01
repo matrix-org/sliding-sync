@@ -147,6 +147,14 @@ func (h *Handler) OnTerminated(userID, deviceID string) {
 	h.updateMetrics()
 }
 
+func (h *Handler) OnExpiredToken(deviceID string) {
+	h.v2Store.RemoveDevice(deviceID)
+	// also notify v3 side so it can remove the connection from ConnMap
+	h.v2Pub.Notify(pubsub.ChanV2, &pubsub.V2ExpiredToken{
+		DeviceID: deviceID,
+	})
+}
+
 func (h *Handler) addPrometheusMetrics() {
 	h.numPollers = prometheus.NewGauge(prometheus.GaugeOpts{
 		Namespace: "sliding_sync",
