@@ -76,6 +76,11 @@ func (t *ToDeviceTable) DeleteMessagesUpToAndIncluding(deviceID string, toIncl i
 	return err
 }
 
+func (t *ToDeviceTable) DeleteAllMessagesForDevice(deviceID string) error {
+	_, err := t.db.Exec(`DELETE FROM syncv3_to_device_messages WHERE device_id = $1`, deviceID)
+	return err
+}
+
 // Query to-device messages for this device, exclusive of from and inclusive of to. If a to value is unknown, use -1.
 func (t *ToDeviceTable) Messages(deviceID string, from, limit int64) (msgs []json.RawMessage, upTo int64, err error) {
 	upTo = from

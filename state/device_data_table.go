@@ -83,6 +83,11 @@ func (t *DeviceDataTable) Select(userID, deviceID string, swap bool) (dd *intern
 	return
 }
 
+func (t *DeviceDataTable) DeleteDevice(userID, deviceID string) error {
+	_, err := t.db.Exec(`DELETE FROM syncv3_device_data WHERE user_id = $1 AND device_id = $2`, userID, deviceID)
+	return err
+}
+
 // Upsert combines what is in the database for this user|device with the partial entry `dd`
 func (t *DeviceDataTable) Upsert(dd *internal.DeviceData) (pos int64, err error) {
 	err = sqlutil.WithTransaction(t.db, func(txn *sqlx.Tx) error {

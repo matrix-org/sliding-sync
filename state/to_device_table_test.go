@@ -113,6 +113,12 @@ func TestToDeviceTable(t *testing.T) {
 	if !bytes.Equal(gotMsgs[0], want) {
 		t.Fatalf("Messages: deleted message but unexpected message left: got %s want %s", string(gotMsgs[0]), string(want))
 	}
+	// delete everything and check it works
+	err = table.DeleteAllMessagesForDevice(deviceID)
+	assertNoError(t, err)
+	msgs, _, err = table.Messages(deviceID, -1, 10)
+	assertNoError(t, err)
+	assertVal(t, "wanted 0 msgs", len(msgs), 0)
 }
 
 // Test that https://github.com/uhoreg/matrix-doc/blob/drop-stale-to-device/proposals/3944-drop-stale-to-device.md works for m.room_key_request

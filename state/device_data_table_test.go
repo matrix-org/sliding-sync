@@ -167,6 +167,14 @@ func TestDeviceDataTableSwaps(t *testing.T) {
 		New:  nil,
 	}
 	assertDeviceData(t, *got, want5)
+
+	// delete everything, no data returned
+	assertNoError(t, table.DeleteDevice(userID, deviceID))
+	got, err = table.Select(userID, deviceID, false)
+	assertNoError(t, err)
+	if got != nil {
+		t.Errorf("wanted no data, got %v", got)
+	}
 }
 
 func TestDeviceDataTableBitset(t *testing.T) {
