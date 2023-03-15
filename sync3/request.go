@@ -28,6 +28,7 @@ var (
 type Request struct {
 	TxnID             string                      `json:"txn_id"`
 	Lists             map[string]RequestList      `json:"lists"`
+	BumpEventTypes    []string                    `json:"bump_event_types"`
 	RoomSubscriptions map[string]RoomSubscription `json:"room_subscriptions"`
 	UnsubscribeRooms  []string                    `json:"unsubscribe_rooms"`
 	Extensions        extensions.Request          `json:"extensions"`
@@ -431,6 +432,13 @@ func (r *Request) ApplyDelta(nextReq *Request) (result *Request, delta *RequestD
 		delta.Subs = append(delta.Subs, roomID)
 	}
 	result.RoomSubscriptions = resultSubs
+
+	// Make bump_event_types sticky.
+	result.BumpEventTypes = nextReq.BumpEventTypes
+	if result.BumpEventTypes == nil {
+		result.BumpEventTypes = r.BumpEventTypes
+	}
+
 	return
 }
 
