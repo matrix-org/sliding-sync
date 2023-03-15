@@ -19,6 +19,10 @@ Run a Synapse in a separate terminal:
 docker run --rm -e "SYNAPSE_COMPLEMENT_DATABASE=sqlite" -e "SERVER_NAME=synapse" -p 8008:8008 ghcr.io/matrix-org/synapse-service:v1.62.0
 ```
 
+(You will need to [`docker login` to the GitHub container registry](
+    https://docs.github.com/en/packages/working-with-a-github-packages-registry/working-with-the-container-registry#authenticating-with-a-personal-access-token-classic
+) to pull that image.)
+
 Keep it running. Then run the tests on a fresh postgres database (run in the root of this repository):
 
 ```bash
