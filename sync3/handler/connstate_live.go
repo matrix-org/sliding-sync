@@ -284,6 +284,14 @@ func (s *connStateLive) processUpdatesForSubscriptions(ctx context.Context, buil
 
 // this function does any updates which apply to the connection, regardless of which lists/subs exist.
 func (s *connStateLive) processGlobalUpdates(ctx context.Context, builder *RoomsBuilder, up caches.Update) (delta sync3.RoomDelta) {
+	roomEventUpdate, ok := up.(*caches.RoomEventUpdate)
+	if ok {
+		if roomEventUpdate.EventData.LatestPos <= s.loadPosition {
+			return // if this update is in the past then ignore it
+		}
+		s.loadPosition = roomEventUpdate.EventData.LatestPos
+	}
+
 	rup, ok := up.(caches.RoomUpdate)
 	if ok {
 		delta = s.lists.SetRoom(sync3.RoomConnMetadata{
@@ -292,14 +300,6 @@ func (s *connStateLive) processGlobalUpdates(ctx context.Context, builder *Rooms
 		})
 	}
 
-	roomEventUpdate, ok := up.(*caches.RoomEventUpdate)
-	if ok {
-		// TODO: we should do this check before lists.SetRoom
-		if roomEventUpdate.EventData.LatestPos <= s.loadPosition {
-			return // if this update is in the past then ignore it
-		}
-		s.loadPosition = roomEventUpdate.EventData.LatestPos
-	}
 	return
 }
 
