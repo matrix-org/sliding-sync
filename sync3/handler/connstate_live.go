@@ -284,12 +284,26 @@ func (s *connStateLive) processUpdatesForSubscriptions(ctx context.Context, buil
 
 // this function does any updates which apply to the connection, regardless of which lists/subs exist.
 func (s *connStateLive) processGlobalUpdates(ctx context.Context, builder *RoomsBuilder, up caches.Update) (delta sync3.RoomDelta) {
+	var roomActivityTimestamp uint64
+
 	roomEventUpdate, ok := up.(*caches.RoomEventUpdate)
 	if ok {
 		if roomEventUpdate.EventData.LatestPos <= s.loadPosition {
 			return // if this update is in the past then ignore it
 		}
 		s.loadPosition = roomEventUpdate.EventData.LatestPos
+
+		// bump this room if this connection cares about this event type.
+		if s.muxedReq.BumpEventTypes != nil && len(s.muxedReq.BumpEventTypes) > 0 {
+			for _, eventType := range s.muxedReq.BumpEventTypes {
+				if eventType == roomEventUpdate.EventData.EventType {
+					roomActivityTimestamp = roomEventUpdate.EventData.Timestamp
+					break
+				}
+			}
+		} else {
+			roomActivityTimestamp = roomEventUpdate.EventData.Timestamp
+		}
 	}
 
 	rup, ok := up.(caches.RoomUpdate)
@@ -297,6 +311,8 @@ func (s *connStateLive) processGlobalUpdates(ctx context.Context, builder *Rooms
 		delta = s.lists.SetRoom(sync3.RoomConnMetadata{
 			RoomMetadata: *rup.GlobalRoomMetadata(),
 			UserRoomData: *rup.UserRoomMetadata(),
+			// Note: using a zero value here to mean "don't bump this room".
+			LastActivityTimestamp: roomActivityTimestamp,
 		})
 	}
 
@@ -348,6 +364,7 @@ func (s *connStateLive) resort(
 	reqList *sync3.RequestList, intList *sync3.FilteredSortableRooms, roomID string,
 	listOp sync3.ListOp,
 ) (ops []sync3.ResponseOp, didUpdate bool) {
+	logger.Trace().Str("r", roomID).Uint("listOp", uint(listOp)).Msg("DMR: resort")
 	if reqList.ShouldGetAllRooms() {
 		// no need to sort this list as we get all rooms
 		// no need to calculate ops as we get all rooms

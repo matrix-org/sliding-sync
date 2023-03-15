@@ -25,4 +25,7 @@ type Room struct {
 type RoomConnMetadata struct {
 	internal.RoomMetadata
 	caches.UserRoomData
+	// Information specific to this connection.
+	// Last time this room was determined to have activity for the `by_recency` sort ordering.
+	LastActivityTimestamp uint64
 }

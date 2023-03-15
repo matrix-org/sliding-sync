@@ -14,7 +14,7 @@ type RoomMetadata struct {
 	CanonicalAlias       string
 	JoinCount            int
 	InviteCount          int
-	LastMessageTimestamp uint64
+	LastMessageTimestamp uint64 // TODO: remove this?
 	Encrypted            bool
 	PredecessorRoomID    *string
 	UpgradedRoomID       *string

@@ -92,7 +92,7 @@ type InviteData struct {
 	InviteEvent          *EventData
 	NameEvent            string // the content of m.room.name, NOT the calculated name
 	CanonicalAlias       string
-	LastMessageTimestamp uint64
+	LastMessageTimestamp uint64 // TODO: remove this?
 	Encrypted            bool
 	IsDM                 bool
 }

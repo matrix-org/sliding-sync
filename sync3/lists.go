@@ -72,6 +72,12 @@ func (s *InternalRequestLists) SetRoom(r RoomConnMetadata) (delta RoomDelta) {
 				strings.Trim(internal.CalculateRoomName(&r.RoomMetadata, 5), "#!():_@"),
 			)
 		}
+
+		// If there hasn't been any activity in the room, use the previous LastActivityTimestamp
+		if r.LastActivityTimestamp == 0 {
+			r.LastActivityTimestamp = existing.LastActivityTimestamp
+		}
+
 	} else {
 		// set the canonical name to allow room name sorting to work
 		r.CanonicalisedName = strings.ToLower(
