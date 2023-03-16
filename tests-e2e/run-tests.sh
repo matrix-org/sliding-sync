@@ -4,7 +4,8 @@ export SYNCV3_ADDR='http://localhost:8844'
 export SYNCV3_DEBUG=1
 
 # Run the binary and stop it afterwards.
-../syncv3 &
+# Direct stderr into stdout, and optionally redirect both to a file.
+../syncv3 &> "${E2E_TEST_SERVER_STDOUT:-/dev/stdout}" &
 SYNCV3_PID=$!
 trap "kill $SYNCV3_PID" EXIT
 
