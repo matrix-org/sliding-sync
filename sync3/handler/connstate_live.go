@@ -306,6 +306,13 @@ func (s *connStateLive) processGlobalUpdates(ctx context.Context, builder *Rooms
 		}
 	}
 
+	inviteEventUpdate, ok := up.(*caches.InviteUpdate)
+	if ok {
+		// Even if we have ignored membership events, we probably want to know when
+		// we've been invited to a room.
+		roomActivityTimestamp = inviteEventUpdate.InviteData.LastMessageTimestamp
+	}
+
 	rup, ok := up.(caches.RoomUpdate)
 	if ok {
 		delta = s.lists.SetRoom(sync3.RoomConnMetadata{
