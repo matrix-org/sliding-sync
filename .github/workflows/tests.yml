@@ -42,8 +42,14 @@ jobs:
             - name: Build
               run: go build ./cmd/syncv3
 
+            - name: Set up gotestfmt
+              uses: GoTestTools/gotestfmt-action@v2
+
             - name: Test
-              run: go test -covermode=atomic -coverpkg ./... -p 1 $(go list ./... | grep -v tests-e2e) -coverprofile synccoverage.out
+              run: |
+                set -euo pipefail
+                go test -covermode=atomic -coverpkg ./... -p 1 -v -json $(go list ./... | grep -v tests-e2e) -coverprofile synccoverage.out 2>&1 | tee ./test-integration.log | gotestfmt
+              shell: bash
               env:
                   POSTGRES_HOST: localhost
                   POSTGRES_USER: postgres
@@ -61,6 +67,14 @@ jobs:
                   SYNCV3_DB: user=postgres dbname=syncv3 sslmode=disable password=postgres host=localhost
                   SYNCV3_SERVER: https://matrix-client.matrix.org
                   SYNCV3_SECRET: itsasecret
+
+            - name: Upload test log
+              uses: actions/upload-artifact@v2
+              if: always()
+              with:
+                name: Integration test logs
+                path: ./test-integration.log
+                if-no-files-found: error
     end_to_end:
         runs-on: ubuntu-latest
         services:
