@@ -112,12 +112,31 @@ jobs:
                   echo "~/go/bin" >> $GITHUB_PATH
             - name: Build
               run: go build ./cmd/syncv3
+
+            - name: Set up gotestfmt
+              uses: GoTestTools/gotestfmt-action@v2
+
             - name: Run end-to-end tests
-              run: (cd tests-e2e && ./run-tests.sh .)
+              run: |
+                set -euo pipefail
+                ./run-tests.sh -v -json . 2>&1 | tee test-e2e-runner.log | gotestfmt
+              working-directory: tests-e2e
+              shell: bash
               env:
                   SYNCV3_DB: user=postgres dbname=syncv3 sslmode=disable password=postgres host=localhost
                   SYNCV3_SERVER: http://localhost:8008
                   SYNCV3_SECRET: itsasecret
+                  E2E_TEST_SERVER_STDOUT: test-e2e-server.log
+
+            - name: Upload test log
+              uses: actions/upload-artifact@v2
+              if: always()
+              with:
+                name: E2E test logs
+                path: |
+                  ./tests-e2e/test-e2e-runner.log
+                  ./tests-e2e/test-e2e-server.log
+                if-no-files-found: error
     element_web:
         runs-on: ubuntu-latest
         steps:
