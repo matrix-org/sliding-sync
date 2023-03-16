@@ -47,6 +47,7 @@ func TestSortBySingleOperation(t *testing.T) {
 				NotificationCount: 12,
 				CanonicalisedName: "foo",
 			},
+			LastActivityTimestamp: 600,
 		},
 		{
 			RoomMetadata: internal.RoomMetadata{
@@ -58,6 +59,7 @@ func TestSortBySingleOperation(t *testing.T) {
 				NotificationCount: 3,
 				CanonicalisedName: "koo",
 			},
+			LastActivityTimestamp: 700,
 		},
 		{
 			RoomMetadata: internal.RoomMetadata{
@@ -69,6 +71,7 @@ func TestSortBySingleOperation(t *testing.T) {
 				NotificationCount: 7,
 				CanonicalisedName: "yoo",
 			},
+			LastActivityTimestamp: 900,
 		},
 		{
 			RoomMetadata: internal.RoomMetadata{
@@ -80,6 +83,7 @@ func TestSortBySingleOperation(t *testing.T) {
 				NotificationCount: 1,
 				CanonicalisedName: "boo",
 			},
+			LastActivityTimestamp: 800,
 		},
 	}
 	// name: 4,1,2,3
@@ -126,6 +130,7 @@ func TestSortByMultipleOperations(t *testing.T) {
 				NotificationCount: 1,
 				CanonicalisedName: "foo",
 			},
+			LastActivityTimestamp: 600,
 		},
 		{
 			RoomMetadata: internal.RoomMetadata{
@@ -137,6 +142,7 @@ func TestSortByMultipleOperations(t *testing.T) {
 				NotificationCount: 5,
 				CanonicalisedName: "koo",
 			},
+			LastActivityTimestamp: 700,
 		},
 		{
 			RoomMetadata: internal.RoomMetadata{
@@ -148,6 +154,7 @@ func TestSortByMultipleOperations(t *testing.T) {
 				NotificationCount: 0,
 				CanonicalisedName: "yoo",
 			},
+			LastActivityTimestamp: 800,
 		},
 		{
 			RoomMetadata: internal.RoomMetadata{
@@ -159,6 +166,7 @@ func TestSortByMultipleOperations(t *testing.T) {
 				NotificationCount: 0,
 				CanonicalisedName: "boo",
 			},
+			LastActivityTimestamp: 900,
 		},
 	}
 	testCases := []struct {
@@ -272,6 +280,7 @@ func TestSortByNotificationLevel(t *testing.T) {
 				HighlightCount:    1,
 				NotificationCount: 0,
 			},
+			LastActivityTimestamp: 1,
 		},
 		roomUnencHCNC: {
 			RoomMetadata: internal.RoomMetadata{
@@ -282,6 +291,7 @@ func TestSortByNotificationLevel(t *testing.T) {
 				HighlightCount:    1,
 				NotificationCount: 1,
 			},
+			LastActivityTimestamp: 2,
 		},
 		roomUnencNC: {
 			RoomMetadata: internal.RoomMetadata{
@@ -292,6 +302,7 @@ func TestSortByNotificationLevel(t *testing.T) {
 				HighlightCount:    0,
 				NotificationCount: 1,
 			},
+			LastActivityTimestamp: 3,
 		},
 		roomUnenc: {
 			RoomMetadata: internal.RoomMetadata{
@@ -302,6 +313,7 @@ func TestSortByNotificationLevel(t *testing.T) {
 				HighlightCount:    0,
 				NotificationCount: 0,
 			},
+			LastActivityTimestamp: 4,
 		},
 		roomEncHC: {
 			RoomMetadata: internal.RoomMetadata{
@@ -312,6 +324,7 @@ func TestSortByNotificationLevel(t *testing.T) {
 				HighlightCount:    1,
 				NotificationCount: 0,
 			},
+			LastActivityTimestamp: 5,
 		},
 		roomEncHCNC: {
 			RoomMetadata: internal.RoomMetadata{
@@ -322,6 +335,7 @@ func TestSortByNotificationLevel(t *testing.T) {
 				HighlightCount:    1,
 				NotificationCount: 1,
 			},
+			LastActivityTimestamp: 6,
 		},
 		roomEncNC: {
 			RoomMetadata: internal.RoomMetadata{
@@ -333,6 +347,7 @@ func TestSortByNotificationLevel(t *testing.T) {
 				HighlightCount:    0,
 				NotificationCount: 1,
 			},
+			LastActivityTimestamp: 7,
 		},
 		roomEnc: {
 			RoomMetadata: internal.RoomMetadata{
@@ -344,6 +359,7 @@ func TestSortByNotificationLevel(t *testing.T) {
 				HighlightCount:    0,
 				NotificationCount: 0,
 			},
+			LastActivityTimestamp: 8,
 		},
 	}
 	roomIDs := make([]string, len(roomsMap))
