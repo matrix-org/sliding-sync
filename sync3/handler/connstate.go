@@ -96,6 +96,10 @@ func (s *ConnState) load() error {
 		rooms[i] = sync3.RoomConnMetadata{
 			RoomMetadata: *metadata,
 			UserRoomData: urd,
+			// For now, set the initial activity timestamp to be that of the last event
+			// in the room. (We could do better by searching for the types given in
+			// s.muxedReq.BumpEventTypes in the future, if that's easy to query for.)
+			LastActivityTimestamp: metadata.LastMessageTimestamp,
 		}
 		i++
 	}
@@ -103,8 +107,9 @@ func (s *ConnState) load() error {
 	for _, urd := range invites {
 		metadata := urd.Invite.RoomMetadata()
 		rooms = append(rooms, sync3.RoomConnMetadata{
-			RoomMetadata: *metadata,
-			UserRoomData: urd,
+			RoomMetadata:          *metadata,
+			UserRoomData:          urd,
+			LastActivityTimestamp: metadata.LastMessageTimestamp,
 		})
 	}
 
