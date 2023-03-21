@@ -54,7 +54,7 @@ func NewInternalRequestLists() *InternalRequestLists {
 	}
 }
 
-func (s *InternalRequestLists) SetRoom(r RoomConnMetadata, hasActivity bool) (delta RoomDelta) {
+func (s *InternalRequestLists) SetRoom(r RoomConnMetadata, replacePreviousTimestamp bool) (delta RoomDelta) {
 	existing, exists := s.allRooms[r.RoomID]
 	if exists {
 		if existing.NotificationCount != r.NotificationCount {
@@ -75,7 +75,7 @@ func (s *InternalRequestLists) SetRoom(r RoomConnMetadata, hasActivity bool) (de
 
 		// Don't bump this room in the room list if the update isn't of interest to
 		// the client.
-		if (!hasActivity) {
+		if !replacePreviousTimestamp {
 			r.LastMessageTimestamp = existing.LastMessageTimestamp
 		}
 	} else {
