@@ -288,8 +288,9 @@ func (s *connStateLive) processGlobalUpdates(ctx context.Context, builder *Rooms
 
 	roomEventUpdate, isRoomEventUpdate := up.(*caches.RoomEventUpdate)
 	if isRoomEventUpdate {
-		// If this connection cares about specific event types, only bump the room
-		// for room updates that the connection cares about.
+		// If this connection hasn't provided BumpEventTypes (nil) or has provided an
+		// empty BumpEventTypes list, bump the room list for all events.
+		// Otherwise, only bump for room updates that the connection cares about.
 		if s.muxedReq.BumpEventTypes != nil && len(s.muxedReq.BumpEventTypes) > 0 {
 			bumpThisRoom = false
 			for _, eventType := range s.muxedReq.BumpEventTypes {
