@@ -140,7 +140,7 @@ jobs:
                   E2E_TEST_SERVER_STDOUT: test-e2e-server.log
 
             - name: Upload test log
-              uses: actions/upload-artifact@v2
+              uses: actions/upload-artifact@v3
               if: always()
               with:
                 name: E2E test logs
