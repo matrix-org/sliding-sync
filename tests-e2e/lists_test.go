@@ -856,3 +856,124 @@ func TestMultipleSameList(t *testing.T) {
 		m.MatchList("2", m.MatchV3Count(16), m.MatchV3Ops()),
 	)
 }
+
+// NB: assumes bump_event_types is sticky
+func TestBumpEventTypesHandling(t *testing.T) {
+	alice := registerNewUser(t)
+	bob := registerNewUser(t)
+	charlie := registerNewUser(t)
+
+	t.Log("Alice creates two rooms")
+	room1 := alice.CreateRoom(
+		t,
+		map[string]interface{}{
+			"preset": "public_chat",
+			"name":   "room1",
+		},
+	)
+	room2 := alice.CreateRoom(
+		t,
+		map[string]interface{}{
+			"preset": "public_chat",
+			"name":   "room2",
+		},
+	)
+	t.Logf("room1=%s room2=%s", room1, room2)
+	t.Log("Bob joins both rooms.")
+	bob.JoinRoom(t, room1, nil)
+	bob.JoinRoom(t, room2, nil)
+
+	t.Log("Bob sends a message in room 2 then room 1.")
+	bob.SendEventSynced(t, room2, Event{
+		Type: "m.room.message",
+		Content: map[string]interface{}{
+			"body":    "Hi room 2",
+			"msgtype": "m.text",
+		},
+	})
+	bob.SendEventSynced(t, room1, Event{
+		Type: "m.room.message",
+		Content: map[string]interface{}{
+			"body":    "Hello world",
+			"msgtype": "m.text",
+		},
+	})
+
+	t.Log("Alice requests a sliding sync that bumps rooms on messages only.")
+	aliceReqList := sync3.RequestList{
+		Sort:   []string{sync3.SortByRecency, sync3.SortByName},
+		Ranges: sync3.SliceRanges{{0, 20}},
+		RoomSubscription: sync3.RoomSubscription{
+			RequiredState: [][2]string{{"m.room.avatar", ""}, {"m.room.encryption", ""}},
+			TimelineLimit: 10,
+		},
+	}
+	aliceSyncRequest := sync3.Request{
+		Lists: map[string]sync3.RequestList{
+			"room_list": aliceReqList,
+		},
+		BumpEventTypes: []string{"m.room.message", "m.room.encrypted"},
+	}
+	// This sync should include both of Bob's messages. The proxy will make an initial
+	// V2 sync to the HS, which should include the latest event in both rooms.
+	// TODO: we could capture the event IDs above and assert this explicitly.
+	aliceRes := alice.SlidingSync(t, aliceSyncRequest)
+
+	t.Log("Alice's sync response should include room1 ahead of room 2.")
+	matchRoom1ThenRoom2 := m.MatchList("room_list",
+		m.MatchV3Count(2),
+		m.MatchV3Ops(
+			m.MatchV3SyncOp(0, 20, []string{room1, room2}, false),
+		))
+	m.MatchResponse(t, aliceRes, matchRoom1ThenRoom2)
+
+	t.Log("Bob requests a sliding sync that bumps rooms on messages and memberships.")
+	bobReqList := sync3.RequestList{
+		Sort:   []string{sync3.SortByRecency, sync3.SortByName},
+		Ranges: sync3.SliceRanges{{0, 20}},
+		RoomSubscription: sync3.RoomSubscription{
+			RequiredState: [][2]string{{"m.room.avatar", ""}, {"m.room.encryption", ""}},
+			TimelineLimit: 10,
+		},
+	}
+	bobSyncRequest := sync3.Request{
+		Lists: map[string]sync3.RequestList{
+			"room_list": bobReqList,
+		},
+		BumpEventTypes: []string{"m.room.message", "m.room.encrypted", "m.room.member"},
+	}
+	bobRes := bob.SlidingSync(t, bobSyncRequest)
+
+	t.Log("Bob should also see room 1 ahead of room 2 in his sliding sync response.")
+	m.MatchResponse(t, bobRes, matchRoom1ThenRoom2)
+
+	t.Log("Charlie joins room 2.")
+	charlie.JoinRoom(t, room2, nil)
+
+	t.Log("Alice syncs until she sees Charlie's membership.")
+	aliceRes = alice.SlidingSyncUntilMembership(t, aliceRes.Pos, room2, charlie, "join")
+
+	t.Log("Alice shouldn't see any rooms' positions change.")
+	m.MatchResponse(
+		t,
+		aliceRes,
+		m.MatchList("room_list", m.MatchV3Count(2)),
+		m.MatchNoV3Ops(),
+	)
+
+	t.Log("Bob syncs until he sees Charlie's membership.")
+	bobRes = bob.SlidingSyncUntilMembership(t, bobRes.Pos, room2, charlie, "join")
+
+	t.Log("Bob should see room 2 at the top of his list.")
+	matchBobSeesRoom2Bumped := m.MatchList("room_list",
+		m.MatchV3Count(2),
+		m.MatchV3Ops(
+			m.MatchV3DeleteOp(1),
+			m.MatchV3InsertOp(0, room2),
+		),
+	)
+
+	m.MatchResponse(t, bobRes, matchBobSeesRoom2Bumped)
+}
+
+// Test joining a room puts it at the top of your list. What about invites?

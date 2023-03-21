@@ -54,7 +54,7 @@ func NewInternalRequestLists() *InternalRequestLists {
 	}
 }
 
-func (s *InternalRequestLists) SetRoom(r RoomConnMetadata) (delta RoomDelta) {
+func (s *InternalRequestLists) SetRoom(r RoomConnMetadata, replacePreviousTimestamp bool) (delta RoomDelta) {
 	existing, exists := s.allRooms[r.RoomID]
 	if exists {
 		if existing.NotificationCount != r.NotificationCount {
@@ -71,6 +71,12 @@ func (s *InternalRequestLists) SetRoom(r RoomConnMetadata) (delta RoomDelta) {
 			r.CanonicalisedName = strings.ToLower(
 				strings.Trim(internal.CalculateRoomName(&r.RoomMetadata, 5), "#!():_@"),
 			)
+		}
+
+		// Don't bump this room in the room list if the update isn't of interest to
+		// the client.
+		if !replacePreviousTimestamp {
+			r.LastMessageTimestamp = existing.LastMessageTimestamp
 		}
 	} else {
 		// set the canonical name to allow room name sorting to work

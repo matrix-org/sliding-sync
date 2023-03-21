@@ -109,7 +109,7 @@ func (s *ConnState) load() error {
 	}
 
 	for _, r := range rooms {
-		s.lists.SetRoom(r)
+		s.lists.SetRoom(r, true)
 	}
 	s.loadPosition = initialLoadPosition
 	return nil
