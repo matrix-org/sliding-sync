@@ -914,7 +914,9 @@ func TestBumpEventTypesHandling(t *testing.T) {
 		},
 		BumpEventTypes: []string{"m.room.message", "m.room.encrypted"},
 	}
-	// TODO: to avoid flakes, want this sync to include/cover Bob's messages in both rooms.
+	// This sync should include both of Bob's messages. The proxy will make an initial
+	// V2 sync to the HS, which should include the latest event in both rooms.
+	// TODO: we could capture the event IDs above and assert this explicitly.
 	aliceRes := alice.SlidingSync(t, aliceSyncRequest)
 
 	t.Log("Alice's sync response should include room1 ahead of room 2.")
@@ -952,11 +954,12 @@ func TestBumpEventTypesHandling(t *testing.T) {
 	aliceRes = alice.SlidingSyncUntilMembership(t, aliceRes.Pos, room2, charlie, "join")
 
 	t.Log("Alice shouldn't see any rooms' positions change.")
-	matchNoOps := m.MatchList("room_list",
-		m.MatchV3Count(2),
-		m.MatchV3Ops(),
+	m.MatchResponse(
+		t,
+		aliceRes,
+		m.MatchList("room_list", m.MatchV3Count(2)),
+		m.MatchNoV3Ops(),
 	)
-	m.MatchResponse(t, aliceRes, matchNoOps)
 
 	t.Log("Bob syncs until he sees Charlie's membership.")
 	bobRes = bob.SlidingSyncUntilMembership(t, bobRes.Pos, room2, charlie, "join")
