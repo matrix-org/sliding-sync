@@ -290,8 +290,6 @@ func (s *connStateLive) processGlobalUpdates(ctx context.Context, builder *Rooms
 	if isRoomEventUpdate {
 		// If this connection cares about specific event types, only bump the room
 		// for room updates that the connection cares about.
-		// TODO: this probably ought to be in SetRoom, not in here. But SetRoom doesn't
-		// have access to muxedReq, where BumpEventTypes lives (for now).
 		if s.muxedReq.BumpEventTypes != nil && len(s.muxedReq.BumpEventTypes) > 0 {
 			bumpThisRoom = false
 			for _, eventType := range s.muxedReq.BumpEventTypes {
