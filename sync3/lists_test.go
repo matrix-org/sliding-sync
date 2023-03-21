@@ -39,6 +39,6 @@ func addRooms(list *sync3.InternalRequestLists, n int) {
 			UserRoomData: caches.UserRoomData{
 				IsDM: next%10 == 0,
 			},
-		})
+		}, true)
 	}
 }
