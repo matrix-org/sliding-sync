@@ -183,3 +183,10 @@ jobs:
                 PUPPETEER_SKIP_CHROMIUM_DOWNLOAD: true
                 TMPDIR: ${{ runner.temp }}
                 CYPRESS_SLIDING_SYNC_PROXY_TAG: 'ci'
+            - uses: actions/upload-artifact@v3
+              if: failure()
+              with:
+                name: cypress-captures
+                path: |
+                  cypress/screenshots
+                  cypress/videos
