@@ -108,7 +108,7 @@ func Setup(destHomeserver, postgresURI, secret string, opts Opts) (*handler2.Han
 }
 
 // RunSyncV3Server is the main entry point to the server
-func RunSyncV3Server(h http.Handler, bindAddr, destV2Server string) {
+func RunSyncV3Server(h http.Handler, bindAddr, destV2Server, tlsCert, tlsKey string) {
 	// HTTP path routing
 	r := mux.NewRouter()
 	r.Handle("/_matrix/client/v3/sync", allowCORS(h))
@@ -159,8 +159,15 @@ func RunSyncV3Server(h http.Handler, bindAddr, destV2Server string) {
 	}
 
 	// Block forever
-	logger.Info().Msgf("listening on %s", bindAddr)
-	if err := http.ListenAndServe(bindAddr, srv); err != nil {
+	var err error
+	if tlsCert != "" {
+		logger.Info().Msgf("listening TLS on %s", bindAddr)
+		err = http.ListenAndServeTLS(bindAddr, tlsCert, tlsKey, srv)
+	} else {
+		logger.Info().Msgf("listening on %s", bindAddr)
+		err = http.ListenAndServe(bindAddr, srv)
+	}
+	if err != nil {
 		logger.Fatal().Err(err).Msg("failed to listen and serve")
 	}
 }
