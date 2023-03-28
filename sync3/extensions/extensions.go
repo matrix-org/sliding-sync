@@ -37,7 +37,10 @@ type GenericResponse interface {
 
 // mixin for managing the flags reserved by the Core API
 type Core struct {
-	Enabled *bool `json:"enabled"`
+	// All fields are optional, with nil meaning "not specified".
+	Enabled *bool     `json:"enabled"`
+	Lists   *[]string `json:"lists"`
+	Rooms   *[]string `json:"rooms"`
 }
 
 func (r *Core) Name() string {
