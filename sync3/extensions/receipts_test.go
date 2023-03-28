@@ -14,7 +14,7 @@ import (
 func TestLiveReceiptsAggregation(t *testing.T) {
 	boolTrue := true
 	ext := &ReceiptsRequest{
-		Enableable: Enableable{
+		Core: Core{
 			Enabled: &boolTrue,
 		},
 	}

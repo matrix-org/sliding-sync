@@ -35,7 +35,7 @@ func TestReceipts(t *testing.T) {
 		},
 		Extensions: extensions.Request{
 			Receipts: &extensions.ReceiptsRequest{
-				Enableable: extensions.Enableable{Enabled: &boolTrue},
+				Core: extensions.Core{Enabled: &boolTrue},
 			},
 		},
 	})
@@ -129,7 +129,7 @@ func TestReceiptsLazy(t *testing.T) {
 		},
 		Extensions: extensions.Request{
 			Receipts: &extensions.ReceiptsRequest{
-				Enableable: extensions.Enableable{Enabled: &boolTrue},
+				Core: extensions.Core{Enabled: &boolTrue},
 			},
 		},
 	})
@@ -149,7 +149,7 @@ func TestReceiptsLazy(t *testing.T) {
 		},
 		Extensions: extensions.Request{
 			Receipts: &extensions.ReceiptsRequest{
-				Enableable: extensions.Enableable{Enabled: &boolTrue},
+				Core: extensions.Core{Enabled: &boolTrue},
 			},
 		},
 	})
@@ -194,7 +194,7 @@ func TestReceiptsPrivate(t *testing.T) {
 		},
 		Extensions: extensions.Request{
 			Receipts: &extensions.ReceiptsRequest{
-				Enableable: extensions.Enableable{Enabled: &boolTrue},
+				Core: extensions.Core{Enabled: &boolTrue},
 			},
 		},
 	})
@@ -216,7 +216,7 @@ func TestReceiptsPrivate(t *testing.T) {
 		},
 		Extensions: extensions.Request{
 			Receipts: &extensions.ReceiptsRequest{
-				Enableable: extensions.Enableable{Enabled: &boolTrue},
+				Core: extensions.Core{Enabled: &boolTrue},
 			},
 		},
 	})

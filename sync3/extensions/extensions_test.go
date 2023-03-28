@@ -56,21 +56,21 @@ func TestExtension_ApplyDelta(t *testing.T) {
 			name: "enabled: true to enabled: false", // updating extension
 			curr: &Request{
 				AccountData: &AccountDataRequest{
-					Enableable: Enableable{
+					Core: Core{
 						Enabled: &boolTrue,
 					},
 				},
 			},
 			next: &Request{
 				AccountData: &AccountDataRequest{
-					Enableable: Enableable{
+					Core: Core{
 						Enabled: &boolFalse,
 					},
 				},
 			},
 			want: &Request{
 				AccountData: &AccountDataRequest{
-					Enableable: Enableable{
+					Core: Core{
 						Enabled: &boolFalse,
 					},
 				},
@@ -81,14 +81,14 @@ func TestExtension_ApplyDelta(t *testing.T) {
 			curr: &Request{},
 			next: &Request{
 				AccountData: &AccountDataRequest{
-					Enableable: Enableable{
+					Core: Core{
 						Enabled: &boolTrue,
 					},
 				},
 			},
 			want: &Request{
 				AccountData: &AccountDataRequest{
-					Enableable: Enableable{
+					Core: Core{
 						Enabled: &boolTrue,
 					},
 				},
@@ -98,7 +98,7 @@ func TestExtension_ApplyDelta(t *testing.T) {
 			name: "enabled: true to <nil>", // sticky extension
 			curr: &Request{
 				AccountData: &AccountDataRequest{
-					Enableable: Enableable{
+					Core: Core{
 						Enabled: &boolTrue,
 					},
 				},
@@ -106,7 +106,7 @@ func TestExtension_ApplyDelta(t *testing.T) {
 			next: &Request{},
 			want: &Request{
 				AccountData: &AccountDataRequest{
-					Enableable: Enableable{
+					Core: Core{
 						Enabled: &boolTrue,
 					},
 				},
@@ -122,27 +122,27 @@ func TestExtension_ApplyDelta(t *testing.T) {
 			name: "all extensions", // makes sure all extension fields are correct
 			curr: &Request{
 				AccountData: &AccountDataRequest{
-					Enableable: Enableable{
+					Core: Core{
 						Enabled: &boolFalse,
 					},
 				},
 				E2EE: &E2EERequest{
-					Enableable: Enableable{
+					Core: Core{
 						Enabled: &boolFalse,
 					},
 				},
 				Receipts: &ReceiptsRequest{
-					Enableable: Enableable{
+					Core: Core{
 						Enabled: &boolFalse,
 					},
 				},
 				Typing: &TypingRequest{
-					Enableable: Enableable{
+					Core: Core{
 						Enabled: &boolFalse,
 					},
 				},
 				ToDevice: &ToDeviceRequest{
-					Enableable: Enableable{
+					Core: Core{
 						Enabled: &boolFalse,
 					},
 					Limit: 42,
@@ -150,27 +150,27 @@ func TestExtension_ApplyDelta(t *testing.T) {
 			},
 			next: &Request{
 				AccountData: &AccountDataRequest{
-					Enableable: Enableable{
+					Core: Core{
 						Enabled: &boolTrue,
 					},
 				},
 				E2EE: &E2EERequest{
-					Enableable: Enableable{
+					Core: Core{
 						Enabled: &boolTrue,
 					},
 				},
 				Receipts: &ReceiptsRequest{
-					Enableable: Enableable{
+					Core: Core{
 						Enabled: &boolTrue,
 					},
 				},
 				Typing: &TypingRequest{
-					Enableable: Enableable{
+					Core: Core{
 						Enabled: &boolTrue,
 					},
 				},
 				ToDevice: &ToDeviceRequest{
-					Enableable: Enableable{
+					Core: Core{
 						Enabled: &boolTrue,
 					},
 					Since: "A",
@@ -178,27 +178,27 @@ func TestExtension_ApplyDelta(t *testing.T) {
 			},
 			want: &Request{
 				AccountData: &AccountDataRequest{
-					Enableable: Enableable{
+					Core: Core{
 						Enabled: &boolTrue,
 					},
 				},
 				E2EE: &E2EERequest{
-					Enableable: Enableable{
+					Core: Core{
 						Enabled: &boolTrue,
 					},
 				},
 				Receipts: &ReceiptsRequest{
-					Enableable: Enableable{
+					Core: Core{
 						Enabled: &boolTrue,
 					},
 				},
 				Typing: &TypingRequest{
-					Enableable: Enableable{
+					Core: Core{
 						Enabled: &boolTrue,
 					},
 				},
 				ToDevice: &ToDeviceRequest{
-					Enableable: Enableable{
+					Core: Core{
 						Enabled: &boolTrue,
 					},
 					Since: "A",

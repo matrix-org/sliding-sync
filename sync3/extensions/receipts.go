@@ -11,7 +11,7 @@ import (
 
 // Client created request params
 type ReceiptsRequest struct {
-	Enableable
+	Core
 }
 
 func (r *ReceiptsRequest) Name() string {

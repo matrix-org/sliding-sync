@@ -84,7 +84,7 @@ func TestSecondPollerFiltersToDevice(t *testing.T) {
 	res := v3.mustDoV3Request(t, deviceBToken, sync3.Request{
 		Extensions: extensions.Request{
 			ToDevice: &extensions.ToDeviceRequest{
-				Enableable: extensions.Enableable{Enabled: &boolTrue},
+				Core: extensions.Core{Enabled: &boolTrue},
 			},
 		},
 	})

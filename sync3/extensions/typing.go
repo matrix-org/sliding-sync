@@ -9,7 +9,7 @@ import (
 
 // Client created request params
 type TypingRequest struct {
-	Enableable
+	Core
 }
 
 func (r *TypingRequest) Name() string {

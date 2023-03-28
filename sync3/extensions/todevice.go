@@ -19,7 +19,7 @@ var mapMu = &sync.Mutex{}
 
 // Client created request params
 type ToDeviceRequest struct {
-	Enableable
+	Core
 	Limit int    `json:"limit"` // max number of to-device messages per response
 	Since string `json:"since"` // since token
 }
@@ -29,7 +29,7 @@ func (r *ToDeviceRequest) Name() string {
 }
 
 func (r *ToDeviceRequest) ApplyDelta(gnext GenericRequest) {
-	r.Enableable.ApplyDelta(gnext)
+	r.Core.ApplyDelta(gnext)
 	next := gnext.(*ToDeviceRequest)
 	if next.Limit != 0 {
 		r.Limit = next.Limit

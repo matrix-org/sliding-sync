@@ -35,20 +35,20 @@ type GenericResponse interface {
 	HasData(isInitial bool) bool
 }
 
-// mixin for managing the enabled flag
-type Enableable struct {
+// mixin for managing the flags reserved by the Core API
+type Core struct {
 	Enabled *bool `json:"enabled"`
 }
 
-func (r *Enableable) Name() string {
-	return "Enableable"
+func (r *Core) Name() string {
+	return "Core"
 }
 
-func (r *Enableable) IsEnabled() *bool {
+func (r *Core) IsEnabled() *bool {
 	return r.Enabled
 }
 
-func (r *Enableable) ApplyDelta(gnext GenericRequest) {
+func (r *Core) ApplyDelta(gnext GenericRequest) {
 	if gnext == nil {
 		return
 	}
