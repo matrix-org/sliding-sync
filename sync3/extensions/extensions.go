@@ -21,6 +21,10 @@ type GenericRequest interface {
 	Name() string
 	// Returns the value of the `enabled` JSON key. nil for "not specified".
 	IsEnabled() *bool
+	// Returns the value of the `lists` JSON key. nil for "not specified".
+	OnlyLists() *[]string
+	// Returns the value of the `rooms` JSON key. nil for "not specified".
+	OnlyRooms() *[]string
 	// Overwrite fields in the request by side-effecting on this struct.
 	ApplyDelta(next GenericRequest)
 	// Process this request and put the response into *Response. This is called for every request
@@ -51,6 +55,14 @@ func (r *Core) IsEnabled() *bool {
 	return r.Enabled
 }
 
+func (r *Core) OnlyLists() *[]string {
+	return r.Lists
+}
+
+func (r *Core) OnlyRooms() *[]string {
+	return r.Rooms
+}
+
 func (r *Core) ApplyDelta(gnext GenericRequest) {
 	if gnext == nil {
 		return
@@ -59,6 +71,14 @@ func (r *Core) ApplyDelta(gnext GenericRequest) {
 	// nil means they didn't specify this field, so leave it unchanged.
 	if nextEnabled != nil {
 		r.Enabled = nextEnabled
+	}
+	nextLists := gnext.OnlyLists()
+	if nextLists != nil {
+		r.Lists = nextLists
+	}
+	nextRooms := gnext.OnlyLists()
+	if nextRooms != nil {
+		r.Rooms = nextRooms
 	}
 }
 
