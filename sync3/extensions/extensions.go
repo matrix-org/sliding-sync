@@ -22,9 +22,9 @@ type GenericRequest interface {
 	// Returns the value of the `enabled` JSON key. nil for "not specified".
 	IsEnabled() *bool
 	// Returns the value of the `lists` JSON key. nil for "not specified".
-	OnlyLists() *[]string
+	OnlyLists() []string
 	// Returns the value of the `rooms` JSON key. nil for "not specified".
-	OnlyRooms() *[]string
+	OnlyRooms() []string
 	// Overwrite fields in the request by side-effecting on this struct.
 	ApplyDelta(next GenericRequest)
 	// Process this request and put the response into *Response. This is called for every request
@@ -42,9 +42,9 @@ type GenericResponse interface {
 // mixin for managing the flags reserved by the Core API
 type Core struct {
 	// All fields are optional, with nil meaning "not specified".
-	Enabled *bool     `json:"enabled"`
-	Lists   *[]string `json:"lists"`
-	Rooms   *[]string `json:"rooms"`
+	Enabled *bool    `json:"enabled"`
+	Lists   []string `json:"lists"`
+	Rooms   []string `json:"rooms"`
 }
 
 func (r *Core) Name() string {
@@ -55,11 +55,11 @@ func (r *Core) IsEnabled() *bool {
 	return r.Enabled
 }
 
-func (r *Core) OnlyLists() *[]string {
+func (r *Core) OnlyLists() []string {
 	return r.Lists
 }
 
-func (r *Core) OnlyRooms() *[]string {
+func (r *Core) OnlyRooms() []string {
 	return r.Rooms
 }
 
