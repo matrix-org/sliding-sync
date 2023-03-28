@@ -12,6 +12,10 @@ permissions:
   # > If you specify the access for any of these scopes, all of those that are not specified are set to none.
 
 jobs:
+    check-signoff:
+        if: "github.event_name == 'pull_request'"
+        uses: "matrix-org/backend-meta/.github/workflows/sign-off.yml@v2"
+
     integration:
         runs-on: ubuntu-latest
 
