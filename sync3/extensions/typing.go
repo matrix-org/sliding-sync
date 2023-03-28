@@ -81,9 +81,6 @@ func (r *TypingRequest) shouldProcessUpdate(roomID string, extCtx Context) bool 
 	// If the room belongs to one of the lists that this extension should process, process the update.
 	for _, listName := range r.Lists {
 		roomIDs := extCtx.ListToRoomIDs[listName]
-		if roomIDs == nil {
-			continue
-		}
 
 		for _, visibleRoom := range roomIDs {
 			if roomID == visibleRoom {
