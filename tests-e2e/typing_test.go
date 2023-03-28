@@ -193,6 +193,97 @@ func TestTypingLazyLoad(t *testing.T) {
 	}))
 }
 
+func TestTypingRespectsExtensionScope(t *testing.T) {
+	alice := registerNewUser(t)
+	bob := registerNewUser(t)
+
+	t.Log("Alice creates two rooms. Bob joins both.")
+	room1 := alice.CreateRoom(t, map[string]interface{}{"preset": "public_chat"})
+	room2 := alice.CreateRoom(t, map[string]interface{}{"preset": "public_chat"})
+	bob.JoinRoom(t, room1, nil)
+	bob.JoinRoom(t, room2, nil)
+
+	t.Log("Bob types in both rooms")
+	bob.SendTyping(t, room1, true, 5000)
+	bob.SendTyping(t, room2, true, 5000)
+
+	t.Log("Alice makes an initial sync request, opting out of all typing notifications")
+	syncResp := alice.SlidingSync(t, sync3.Request{
+		Extensions: extensions.Request{
+			Typing: &extensions.TypingRequest{
+				Core: extensions.Core{Enabled: &boolTrue, Lists: &[]string{}, Rooms: &[]string{}},
+			},
+		},
+		Lists: map[string]sync3.RequestList{
+			"window": {
+				Ranges: sync3.SliceRanges{{0, 1}},
+			},
+		},
+	})
+
+	t.Log("Alice should see no indication that Bob is typing.")
+	m.MatchResponse(
+		t,
+		syncResp,
+		m.MatchList(
+			"window",
+			m.MatchV3Count(2),
+			m.MatchV3Ops(
+				m.MatchV3SyncOp(0, 1, []string{room1, room2}, true),
+			),
+		),
+		m.MatchRoomSubscriptions(map[string][]m.RoomMatcher{
+			room1: {},
+			room2: {},
+		}),
+		m.MatchNotTyping(room1, []string{bob.UserID}),
+		m.MatchNotTyping(room2, []string{bob.UserID}),
+	)
+
+	//t.Log("Alice sends a message in both rooms")
+	//aliceMessage1 := alice.SendEventSynced(t, room1, Event{
+	//	Type: "m.room.message",
+	//	Content: map[string]interface{}{
+	//		"body":    "hello room 1!",
+	//		"msgtype": "m.text",
+	//	},
+	//})
+	//aliceMessage2 := alice.SendEventSynced(t, room2, Event{
+	//	Type: "m.room.message",
+	//	Content: map[string]interface{}{
+	//		"body":    "hello room 2!",
+	//		"msgtype": "m.text",
+	//	},
+	//})
+	//
+	//t.Log("Alice makes an incremental sync, requesting typing notifications in her sliding window")
+	//syncResp = alice.SlidingSyncUntilEventID(
+	//	t,
+	//	syncResp.Pos,
+	//	sync3.Request{
+	//		Extensions: extensions.Request{
+	//			Typing: &extensions.TypingRequest{
+	//				Core: extensions.Core{Lists: &[]string{"window"}},
+	//			},
+	//		},
+	//	},
+	//	room1, aliceMessage2),
+	//)
+	//
+
+	//// Bob starts typing
+	//bob.SendTyping(t, roomID, true, 5000)
+	//
+	//// Alice should now see Bob typing and Bob should be lazy loaded
+	//syncResp = waitUntilTypingData(t, alice, roomID, []string{bob.UserID})
+	//m.MatchResponse(t, syncResp, m.MatchRoomSubscriptionsStrict(map[string][]m.RoomMatcher{
+	//	roomID: {
+	//		MatchRoomRequiredState([]Event{{Type: "m.room.member", StateKey: &bob.UserID}}),
+	//	},
+	//}))
+
+}
+
 func waitUntilTypingData(t *testing.T, client *CSAPI, roomID string, wantUserIDs []string) *sync3.Response {
 	t.Helper()
 	sort.Strings(wantUserIDs)
