@@ -76,7 +76,7 @@ func (r *Core) ApplyDelta(gnext GenericRequest) {
 	if nextLists != nil {
 		r.Lists = nextLists
 	}
-	nextRooms := gnext.OnlyLists()
+	nextRooms := gnext.OnlyRooms()
 	if nextRooms != nil {
 		r.Rooms = nextRooms
 	}
