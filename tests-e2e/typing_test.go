@@ -239,48 +239,62 @@ func TestTypingRespectsExtensionScope(t *testing.T) {
 		m.MatchNotTyping(room2, []string{bob.UserID}),
 	)
 
-	//t.Log("Alice sends a message in both rooms")
-	//aliceMessage1 := alice.SendEventSynced(t, room1, Event{
-	//	Type: "m.room.message",
-	//	Content: map[string]interface{}{
-	//		"body":    "hello room 1!",
-	//		"msgtype": "m.text",
-	//	},
-	//})
-	//aliceMessage2 := alice.SendEventSynced(t, room2, Event{
-	//	Type: "m.room.message",
-	//	Content: map[string]interface{}{
-	//		"body":    "hello room 2!",
-	//		"msgtype": "m.text",
-	//	},
-	//})
-	//
-	//t.Log("Alice makes an incremental sync, requesting typing notifications in her sliding window")
-	//syncResp = alice.SlidingSyncUntilEventID(
-	//	t,
-	//	syncResp.Pos,
-	//	sync3.Request{
-	//		Extensions: extensions.Request{
-	//			Typing: &extensions.TypingRequest{
-	//				Core: extensions.Core{Lists: &[]string{"window"}},
-	//			},
-	//		},
-	//	},
-	//	room1, aliceMessage2),
-	//)
-	//
+	t.Log("Alice sends a message in room 1")
+	messageID1 := alice.SendEventSynced(t, room1, Event{
+		Type: "m.room.message",
+		Content: map[string]interface{}{
+			"body":    "hello room 1!",
+			"msgtype": "m.text",
+		},
+	})
 
-	//// Bob starts typing
-	//bob.SendTyping(t, roomID, true, 5000)
-	//
-	//// Alice should now see Bob typing and Bob should be lazy loaded
-	//syncResp = waitUntilTypingData(t, alice, roomID, []string{bob.UserID})
-	//m.MatchResponse(t, syncResp, m.MatchRoomSubscriptionsStrict(map[string][]m.RoomMatcher{
-	//	roomID: {
-	//		MatchRoomRequiredState([]Event{{Type: "m.room.member", StateKey: &bob.UserID}}),
-	//	},
-	//}))
+	t.Log("Alice syncs until she sees messageID1, requesting future typing notifications in room 1 only.")
+	syncResp = alice.SlidingSyncUntilEvent(
+		t,
+		syncResp.Pos,
+		sync3.Request{
+			Extensions: extensions.Request{
+				Typing: &extensions.TypingRequest{
+					Core: extensions.Core{Rooms: []string{room1}},
+				},
+			},
+		},
+		room1,
+		Event{ID: messageID1},
+	)
 
+	t.Log("Bob types in room1")
+	bob.SendTyping(t, room1, true, 5000)
+
+	t.Log("Alice should be able to see that Bob is typing in room 1.")
+	syncResp = alice.SlidingSyncUntil(t, syncResp.Pos, sync3.Request{}, m.MatchTyping(room1, []string{bob.UserID}))
+
+	t.Log("Bob types in room2")
+	bob.SendTyping(t, room2, true, 5000)
+
+	t.Log("Alice sends a message in room 2")
+	messageID2 := alice.SendEventSynced(t, room2, Event{
+		Type: "m.room.message",
+		Content: map[string]interface{}{
+			"body":    "hello room 2!",
+			"msgtype": "m.text",
+		},
+	})
+
+	t.Log("Alice syncs until she sees her messages.")
+	syncResp = alice.SlidingSyncUntilEventID(
+		t,
+		syncResp.Pos,
+		room2,
+		messageID2,
+	)
+
+	t.Log("Alice should not see Bob typing in room 2.")
+	m.MatchResponse(
+		t,
+		syncResp,
+		m.MatchNotTyping(room2, []string{bob.UserID}),
+	)
 }
 
 func waitUntilTypingData(t *testing.T, client *CSAPI, roomID string, wantUserIDs []string) *sync3.Response {
