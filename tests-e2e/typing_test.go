@@ -2,7 +2,6 @@ package syncv3_test
 
 import (
 	"encoding/json"
-	"fmt"
 	"reflect"
 	"sort"
 	"testing"
@@ -302,23 +301,9 @@ func waitUntilTypingData(t *testing.T, client *CSAPI, roomID string, wantUserIDs
 				},
 			},
 		},
-	}, func(r *sync3.Response) error {
-		if r.Extensions.Typing == nil {
-			return fmt.Errorf("missing typing extension")
-		}
-		if len(r.Extensions.Typing.Rooms) == 0 {
-			return fmt.Errorf("no rooms typing")
-		}
-		typingEvent := r.Extensions.Typing.Rooms[roomID]
-		if typingEvent == nil {
-			return fmt.Errorf("no typing for room %s", roomID)
-		}
-		gotUserIDs := typingUsers(t, typingEvent)
-		if !reflect.DeepEqual(gotUserIDs, wantUserIDs) {
-			return fmt.Errorf("wrong typing users: got %v want %v", gotUserIDs, wantUserIDs)
-		}
-		return nil
-	})
+	},
+		m.MatchTyping(roomID, wantUserIDs),
+	)
 }
 
 func typingUsers(t *testing.T, ev json.RawMessage) []string {
