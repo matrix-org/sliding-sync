@@ -51,12 +51,49 @@ func (r *TypingRequest) AppendLive(ctx context.Context, res *Response, extCtx Co
 	if roomID == "" || typingEvent == nil {
 		return
 	}
+
+	// We've found a typing event. Ignore it if the client doesn't want to know about it.
+	if !r.shouldProcessUpdate(roomID, extCtx) {
+		return
+	}
+
 	if res.Typing == nil {
 		res.Typing = &TypingResponse{
 			Rooms: make(map[string]json.RawMessage),
 		}
 	}
 	res.Typing.Rooms[roomID] = typingEvent
+}
+
+func (r *TypingRequest) shouldProcessUpdate(roomID string, extCtx Context) bool {
+	// If the extension hasn't had a its scope configured, process everything.
+	if r.Lists == nil && r.Rooms == nil {
+		return true
+	}
+
+	// If this extension has been explicitly subscribed to this room, process the update.
+	for _, roomInScope := range r.Rooms {
+		if roomInScope == roomID {
+			return true
+		}
+	}
+
+	// If the room belongs to one of the lists that this extension should process, process the update.
+	for _, listName := range r.Lists {
+		roomIDs := extCtx.ListToRoomIDs[listName]
+		if roomIDs == nil {
+			continue
+		}
+
+		for _, visibleRoom := range roomIDs {
+			if roomID == visibleRoom {
+				return true
+			}
+		}
+	}
+
+	// Otherwise ignore the update.
+	return false
 }
 
 func (r *TypingRequest) ProcessInitial(ctx context.Context, res *Response, extCtx Context) {
@@ -72,6 +109,11 @@ func (r *TypingRequest) ProcessInitial(ctx context.Context, res *Response, extCt
 		if meta == nil || meta.TypingEvent == nil {
 			continue
 		}
+
+		if !r.shouldProcessUpdate(roomID, extCtx) {
+			continue
+		}
+
 		rooms[roomID] = meta.TypingEvent
 	}
 	if len(rooms) == 0 {
