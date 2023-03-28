@@ -211,7 +211,7 @@ func TestTypingRespectsExtensionScope(t *testing.T) {
 	syncResp := alice.SlidingSync(t, sync3.Request{
 		Extensions: extensions.Request{
 			Typing: &extensions.TypingRequest{
-				Core: extensions.Core{Enabled: &boolTrue, Lists: &[]string{}, Rooms: &[]string{}},
+				Core: extensions.Core{Enabled: &boolTrue, Lists: []string{}, Rooms: []string{}},
 			},
 		},
 		Lists: map[string]sync3.RequestList{
