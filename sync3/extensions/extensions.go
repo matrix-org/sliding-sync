@@ -195,6 +195,7 @@ type Context struct {
 	IsInitial        bool
 	UserID           string
 	DeviceID         string
+	ListToRoomIDs    map[string][]string
 }
 
 type HandlerInterface interface {

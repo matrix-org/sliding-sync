@@ -90,6 +90,7 @@ func (s *connStateLive) liveUpdate(
 				RoomIDToTimeline: response.RoomIDsToTimelineEventIDs(),
 				UserID:           s.userID,
 				DeviceID:         s.deviceID,
+				ListToRoomIDs:    s.lists.SnapshotRoomIDs(),
 			})
 			// if there's more updates and we don't have lots stacked up already, go ahead and process another
 			for len(s.updates) > 0 && response.ListOps() < 50 {
@@ -100,6 +101,7 @@ func (s *connStateLive) liveUpdate(
 					RoomIDToTimeline: response.RoomIDsToTimelineEventIDs(),
 					UserID:           s.userID,
 					DeviceID:         s.deviceID,
+					ListToRoomIDs:    s.lists.SnapshotRoomIDs(),
 				})
 			}
 			// Add membership events for users sending typing notifications

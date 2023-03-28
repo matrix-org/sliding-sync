@@ -138,6 +138,18 @@ func (s *InternalRequestLists) Get(listKey string) *FilteredSortableRooms {
 	return s.lists[listKey]
 }
 
+// SnapshotRoomIDs builds a map from list name to the room IDs in that list's sliding
+// window. The result is safe to modify by the caller.
+func (s *InternalRequestLists) SnapshotRoomIDs() map[string][]string {
+	roomIDsByList := make(map[string][]string, s.Len())
+	for listName, listData := range s.lists {
+		roomsInList := make([]string, len(listData.roomIDs))
+		copy(roomsInList, listData.roomIDs)
+		roomIDsByList[listName] = roomsInList
+	}
+	return roomIDsByList
+}
+
 // Assign a new list at the given key. If Overwrite, any existing list is replaced. If DoNotOverwrite, the existing
 // list is returned if one exists, else a new list is created. Returns the list and true if the list was overwritten.
 func (s *InternalRequestLists) AssignList(listKey string, filters *RequestFilters, sort []string, shouldOverwrite OverwriteVal) (*FilteredSortableRooms, bool) {
