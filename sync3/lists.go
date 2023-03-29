@@ -139,13 +139,30 @@ func (s *InternalRequestLists) Get(listKey string) *FilteredSortableRooms {
 }
 
 // SnapshotRoomIDs builds a map from list name to the room IDs in that list's sliding
-// window. The result is safe to modify by the caller.
-func (s *InternalRequestLists) SnapshotRoomIDs() map[string][]string {
-	roomIDsByList := make(map[string][]string, s.Len())
-	for listName, listData := range s.lists {
-		roomsInList := make([]string, len(listData.roomIDs))
-		copy(roomsInList, listData.roomIDs)
-		roomIDsByList[listName] = roomsInList
+// window. Each slice of room IDs is sorted as requested by the sliding sync protocol.
+//
+// Note that a given room ID may appear more than once in the list of
+//
+// The return value is a copy, i.e. is safe to modify by the caller.
+func (s *InternalRequestLists) SnapshotRoomIDs(muxedReqLists map[string]RequestList) map[string][]string {
+	roomIDsByList := make(map[string][]string, len(muxedReqLists))
+	for listName, reqList := range muxedReqLists {
+		listData := s.lists[listName]
+		if listData == nil {
+			continue
+		}
+
+		if reqList.SlowGetAllRooms != nil && *reqList.SlowGetAllRooms {
+			roomIDsByList[listName] = listData.RoomIDs()
+		} else {
+			var roomIDs []string
+			subslices := reqList.Ranges.SliceInto(listData)
+			for _, subslice := range subslices {
+				sortableRooms := subslice.(*SortableRooms)
+				roomIDs = append(roomIDs, sortableRooms.RoomIDs()...)
+			}
+			roomIDsByList[listName] = roomIDs
+		}
 	}
 	return roomIDsByList
 }
