@@ -160,7 +160,7 @@ func RunSyncV3Server(h http.Handler, bindAddr, destV2Server, tlsCert, tlsKey str
 
 	// Block forever
 	var err error
-	if tlsCert != "" {
+	if tlsCert != "" && tlsKey != "" {
 		logger.Info().Msgf("listening TLS on %s", bindAddr)
 		err = http.ListenAndServeTLS(bindAddr, tlsCert, tlsKey, srv)
 	} else {
