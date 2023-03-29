@@ -154,15 +154,16 @@ func (s *InternalRequestLists) ListsByVisibleRoomIDs(muxedReqLists map[string]Re
 			continue
 		}
 
-		// If we've requested all rooms, we can loop over the list of all rooms
-		// without worrying about taking subslices to match the requested ranges.
+		// If we've requested all rooms, every room is visible in this list---we don't
+		// have to worry about extracting room IDs in the sliding windows' ranges.
 		if reqList.SlowGetAllRooms != nil && *reqList.SlowGetAllRooms {
 			for _, roomID := range sortedRooms.RoomIDs() {
 				listsByRoomIDs[roomID] = append(listsByRoomIDs[roomID], listName)
 			}
 		} else {
 			subslices := reqList.Ranges.SliceInto(sortedRooms)
-			for _, sortedRooms = range subslices {
+			for _, subslice := range subslices {
+				sortedRooms = subslice.(*SortableRooms)
 				for _, roomID := range sortedRooms.RoomIDs() {
 					listsByRoomIDs[roomID] = append(listsByRoomIDs[roomID], listName)
 				}
