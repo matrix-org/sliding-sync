@@ -41,7 +41,9 @@ Using a Docker image:
 docker run --rm -e "SYNCV3_SERVER=https://matrix-client.matrix.org" -e "SYNCV3_SECRET=$(cat .secret)" -e "SYNCV3_BINDADDR=:8008" -e "SYNCV3_DB=user=$(whoami) dbname=syncv3 sslmode=disable host=host.docker.internal" -p 8008:8008 ghcr.io/matrix-org/sliding-sync:v0.98.0
 ```
 
-Then visit http://localhost:8008/client/ (with trailing slash) and paste in the `access_token` for any account on `-server`.
+Regular users may now log in with their sliding-sync compatible Matrix client. If developing sliding-sync, a simple client is provided (although it is not included in the Docker image).
+
+To use the stub client, visit http://localhost:8008/client/ (with trailing slash) and paste in the `access_token` for any account on `SYNCV3_SERVER`. Note that this will consume to-device messages for the device associated with that access token.
 
 When you hit the Sync button nothing will happen initially, but you should see:
 
