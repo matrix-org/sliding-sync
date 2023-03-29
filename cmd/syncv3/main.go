@@ -26,6 +26,8 @@ const (
 
 	// Optional fields
 	EnvBindAddr   = "SYNCV3_BINDADDR"
+	EnvTLSCert    = "SYNCV3_TLS_CERT"
+	EnvTLSKey     = "SYNCV3_TLS_KEY"
 	EnvPPROF      = "SYNCV3_PPROF"
 	EnvPrometheus = "SYNCV3_PROM"
 	EnvDebug      = "SYNCV3_DEBUG"
@@ -34,14 +36,16 @@ const (
 
 var helpMsg = fmt.Sprintf(`
 Environment var
-%s   Required. The destination homeserver to talk to (CS API HTTPS URL) e.g 'https://matrix-client.matrix.org'
-%s       Required. The postgres connection string: https://www.postgresql.org/docs/current/libpq-connect.html#LIBPQ-CONNSTRING 
-%s (Default: 0.0.0.0:8008) The interface and port to listen on.
-%s   Required. A secret to use to encrypt access tokens. Must remain the same for the lifetime of the database.
-%s   Defualt: unset. The bind addr for pprof debugging e.g ':6060'. If not set, does not listen.
-%s   Default: unset. The bind addr for Prometheus metrics, which will be accessible at /metrics at this address.
-%s   Default: unset. The Jaeger URL to send spans to e.g http://localhost:14268/api/traces - if unset does not send OTLP traces.
-`, EnvServer, EnvDB, EnvBindAddr, EnvSecret, EnvPPROF, EnvPrometheus, EnvJaeger)
+%s     Required. The destination homeserver to talk to (CS API HTTPS URL) e.g 'https://matrix-client.matrix.org'
+%s         Required. The postgres connection string: https://www.postgresql.org/docs/current/libpq-connect.html#LIBPQ-CONNSTRING
+%s     Required. A secret to use to encrypt access tokens. Must remain the same for the lifetime of the database.
+%s   Default: 0.0.0.0:8008.  The interface and port to listen on.
+%s   Default: unset. Path to a certificate file to serve to HTTPS clients. Specifying this enables TLS on the bound address.
+%s    Default: unset. Path to a key file for the certificate. Must be provided along with the certificate file.
+%s      Default: unset. The bind addr for pprof debugging e.g ':6060'. If not set, does not listen.
+%s       Default: unset. The bind addr for Prometheus metrics, which will be accessible at /metrics at this address.
+%s Default: unset. The Jaeger URL to send spans to e.g http://localhost:14268/api/traces - if unset does not send OTLP traces.
+`, EnvServer, EnvDB, EnvSecret, EnvBindAddr, EnvTLSCert, EnvTLSKey, EnvPPROF, EnvPrometheus, EnvJaeger)
 
 func defaulting(in, dft string) string {
 	if in == "" {
@@ -59,6 +63,8 @@ func main() {
 		EnvDB:         os.Getenv(EnvDB),
 		EnvSecret:     os.Getenv(EnvSecret),
 		EnvBindAddr:   defaulting(os.Getenv(EnvBindAddr), "0.0.0.0:8008"),
+		EnvTLSCert:    os.Getenv(EnvTLSCert),
+		EnvTLSKey:     os.Getenv(EnvTLSKey),
 		EnvPPROF:      os.Getenv(EnvPPROF),
 		EnvPrometheus: os.Getenv(EnvPrometheus),
 		EnvDebug:      os.Getenv(EnvDebug),
@@ -72,6 +78,11 @@ func main() {
 			fmt.Printf("\n%s must be set\n", strings.Join(requiredEnvVars, ", "))
 			os.Exit(1)
 		}
+	}
+	if (args[EnvTLSCert] != "" || args[EnvTLSKey] != "") && (args[EnvTLSCert] == "" || args[EnvTLSKey] == "") {
+		fmt.Print(helpMsg)
+		fmt.Printf("\nboth %s and %s must be set together\n", EnvTLSCert, EnvTLSKey)
+		os.Exit(1)
 	}
 	// pprof
 	if args[EnvPPROF] != "" {
@@ -106,6 +117,6 @@ func main() {
 	if args[EnvJaeger] != "" {
 		h3 = otelhttp.NewHandler(h3, "Sync")
 	}
-	syncv3.RunSyncV3Server(h3, args[EnvBindAddr], args[EnvServer])
+	syncv3.RunSyncV3Server(h3, args[EnvBindAddr], args[EnvServer], args[EnvTLSCert], args[EnvTLSKey])
 	select {} // block forever
 }
