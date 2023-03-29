@@ -138,33 +138,38 @@ func (s *InternalRequestLists) Get(listKey string) *FilteredSortableRooms {
 	return s.lists[listKey]
 }
 
-// SnapshotRoomIDs builds a map from list name to the room IDs in that list's sliding
-// window. Each slice of room IDs is sorted as requested by the sliding sync protocol.
+// ListsByVisibleRoomIDs builds a map from room IDs to a slice of list names. Keys are
+// all room IDs that are currently visible in at least one sliding window. Values are
+// the names of all lists (in no particular order) in which the given room ID is
+// currently visible. The value slices are nonnil and contain at least one list name
+// (possibly more).
 //
-// Note that a given room ID may appear more than once in the list of
-//
-// The return value is a copy, i.e. is safe to modify by the caller.
-func (s *InternalRequestLists) SnapshotRoomIDs(muxedReqLists map[string]RequestList) map[string][]string {
-	roomIDsByList := make(map[string][]string, len(muxedReqLists))
+// The returned map is a copy, i.e. is safe to modify by the caller.
+func (s *InternalRequestLists) ListsByVisibleRoomIDs(muxedReqLists map[string]RequestList) map[string][]string {
+	listsByRoomIDs := make(map[string][]string, len(muxedReqLists))
+	// Loop over each list, and mark each room in its sliding window as being visible in this list.
 	for listName, reqList := range muxedReqLists {
-		listData := s.lists[listName]
-		if listData == nil {
+		sortedRooms := s.lists[listName].SortableRooms
+		if sortedRooms == nil {
 			continue
 		}
 
+		// If we've requested all rooms, we can loop over the list of all rooms
+		// without worrying about taking subslices to match the requested ranges.
 		if reqList.SlowGetAllRooms != nil && *reqList.SlowGetAllRooms {
-			roomIDsByList[listName] = listData.RoomIDs()
-		} else {
-			var roomIDs []string
-			subslices := reqList.Ranges.SliceInto(listData)
-			for _, subslice := range subslices {
-				sortableRooms := subslice.(*SortableRooms)
-				roomIDs = append(roomIDs, sortableRooms.RoomIDs()...)
+			for _, roomID := range sortedRooms.RoomIDs() {
+				listsByRoomIDs[roomID] = append(listsByRoomIDs[roomID], listName)
 			}
-			roomIDsByList[listName] = roomIDs
+		} else {
+			subslices := reqList.Ranges.SliceInto(sortedRooms)
+			for _, sortedRooms = range subslices {
+				for _, roomID := range sortedRooms.RoomIDs() {
+					listsByRoomIDs[roomID] = append(listsByRoomIDs[roomID], listName)
+				}
+			}
 		}
 	}
-	return roomIDsByList
+	return listsByRoomIDs
 }
 
 // Assign a new list at the given key. If Overwrite, any existing list is replaced. If DoNotOverwrite, the existing

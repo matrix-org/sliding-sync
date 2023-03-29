@@ -85,12 +85,13 @@ func (s *connStateLive) liveUpdate(
 
 			s.processLiveUpdate(ctx, update, response)
 			// pass event to extensions AFTER processing
+			var roomIDsToLists map[string][]string
 			s.extensionsHandler.HandleLiveUpdate(update, ex, &response.Extensions, extensions.Context{
 				IsInitial:        false,
 				RoomIDToTimeline: response.RoomIDsToTimelineEventIDs(),
 				UserID:           s.userID,
 				DeviceID:         s.deviceID,
-				ListToRoomIDs:    s.lists.SnapshotRoomIDs(s.muxedReq.Lists),
+				RoomIDsToLists:   roomIDsToLists,
 			})
 			// if there's more updates and we don't have lots stacked up already, go ahead and process another
 			for len(s.updates) > 0 && response.ListOps() < 50 {
@@ -101,8 +102,7 @@ func (s *connStateLive) liveUpdate(
 					RoomIDToTimeline: response.RoomIDsToTimelineEventIDs(),
 					UserID:           s.userID,
 					DeviceID:         s.deviceID,
-					// TODO: don't recompute this field.
-					ListToRoomIDs: s.lists.SnapshotRoomIDs(s.muxedReq.Lists),
+					RoomIDsToLists:   roomIDsToLists,
 				})
 			}
 			// Add membership events for users sending typing notifications

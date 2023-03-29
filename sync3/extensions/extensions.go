@@ -195,7 +195,11 @@ type Context struct {
 	IsInitial        bool
 	UserID           string
 	DeviceID         string
-	ListToRoomIDs    map[string][]string
+	// Map from room IDs to list names. Keys are the room IDs of all rooms currently
+	// visible in at least one sliding window. Values are the names of the lists that
+	// enclose those sliding windows. Values should be nonnil and nonempty, and may
+	// contain multiple list names.
+	RoomIDsToLists map[string][]string
 }
 
 type HandlerInterface interface {
