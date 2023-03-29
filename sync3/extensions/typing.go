@@ -66,7 +66,7 @@ func (r *TypingRequest) AppendLive(ctx context.Context, res *Response, extCtx Co
 }
 
 func (r *TypingRequest) shouldProcessUpdate(roomID string, extCtx Context) bool {
-	// If the extension hasn't had a its scope configured, process everything.
+	// If the extension hasn't had its scope configured, process everything.
 	if r.Lists == nil && r.Rooms == nil {
 		return true
 	}
@@ -79,11 +79,11 @@ func (r *TypingRequest) shouldProcessUpdate(roomID string, extCtx Context) bool 
 	}
 
 	// If the room belongs to one of the lists that this extension should process, process the update.
-	for _, listName := range r.Lists {
-		roomIDs := extCtx.ListToRoomIDs[listName]
-
-		for _, visibleRoom := range roomIDs {
-			if roomID == visibleRoom {
+	visibleInLists := extCtx.RoomIDsToLists[roomID]
+	for _, visibleInList := range visibleInLists {
+		for _, shouldProcessList := range r.Lists {
+			if visibleInList == shouldProcessList {
+				logger.Warn().Str("roomID", roomID).Str("listName", visibleInList).Msg("DMR: shouldProcessUpdate -> true (room in list in scope)")
 				return true
 			}
 		}
