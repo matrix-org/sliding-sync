@@ -196,137 +196,96 @@ func TestTypingRespectsExtensionScope(t *testing.T) {
 	alice := registerNewUser(t)
 	bob := registerNewUser(t)
 
-	t.Log("Alice creates two rooms. Bob joins both.")
-	room1 := alice.CreateRoom(t, map[string]interface{}{"preset": "public_chat"})
-	room2 := alice.CreateRoom(t, map[string]interface{}{"preset": "public_chat"})
-	bob.JoinRoom(t, room1, nil)
-	bob.JoinRoom(t, room2, nil)
+	var syncResp *sync3.Response
 
-	makeBobType := func(isTyping bool) {
-		t.Helper()
-		if isTyping {
-			t.Log("Bob starts typing in both rooms.")
-		} else {
-			t.Log("Bob stops typing in both rooms.")
-		}
-		bob.SendTyping(t, room1, isTyping, 5000)
-		bob.SendTyping(t, room2, isTyping, 5000)
-	}
+	// Want at least one test of the initial sync behaviour (which hits `ProcessInitial`)
+	// separate to the incremental sync behaviour (hits `AppendLive`)
+	t.Run("Can limit by room in an initial sync", func(t *testing.T) {
+		t.Log("Alice creates rooms 1 and 2. Bob joins both.")
+		room1 := alice.CreateRoom(t, map[string]interface{}{"preset": "public_chat", "name": "room 1"})
+		room2 := alice.CreateRoom(t, map[string]interface{}{"preset": "public_chat", "name": "room 2"})
+		bob.JoinRoom(t, room1, nil)
+		bob.JoinRoom(t, room2, nil)
+		t.Logf("room1=%s room2=%s", room1, room2)
 
-	aliceSendsSentinel := func(roomID, desc string) string {
-		t.Helper()
-		t.Logf("Alice sends a sentinel message in %s", desc)
-		return alice.SendEventSynced(t, roomID, Event{
-			Type: "m.room.message",
-			Content: map[string]interface{}{
-				"body":    "hello!",
-				"msgtype": "m.text",
-			},
-		})
-	}
+		t.Log("Bob types in rooms 1 and 2")
+		bob.SendTyping(t, room1, true, 5000)
+		bob.SendTyping(t, room2, true, 5000)
 
-	makeBobType(true)
-
-	t.Log("Alice makes an initial sync request, opting out of all typing notifications")
-	syncResp := alice.SlidingSync(t, sync3.Request{
-		Extensions: extensions.Request{
-			Typing: &extensions.TypingRequest{
-				Core: extensions.Core{Enabled: &boolTrue, Lists: []string{}, Rooms: []string{}},
-			},
-		},
-		Lists: map[string]sync3.RequestList{
-			"window": {
-				Ranges: sync3.SliceRanges{{0, 20}},
-			},
-		},
-	})
-
-	t.Log("Alice should see no indication that Bob is typing.")
-	m.MatchResponse(
-		t,
-		syncResp,
-		m.MatchRoomSubscriptions(map[string][]m.RoomMatcher{
-			room1: {},
-			room2: {},
-		}),
-		m.MatchNotTyping(room1, []string{bob.UserID}),
-		m.MatchNotTyping(room2, []string{bob.UserID}),
-	)
-
-	t.Run("Can opt into typing for a specific room only", func(t *testing.T) {
-		makeBobType(false)
-		// Use a sentinel to ensure Alice sees that Bob isn't typing in her next sync
-		sentinelID := aliceSendsSentinel(room1, "room 1")
-
-		t.Log("Alice syncs to see her sentinel, requesting typing notifications in room 1 only.")
-		syncResp = alice.SlidingSyncUntilEvent(
-			t,
-			syncResp.Pos,
-			sync3.Request{
-				Extensions: extensions.Request{
-					Typing: &extensions.TypingRequest{
-						Core: extensions.Core{Rooms: []string{room1}},
-					},
+		t.Log("Alice makes an initial sync request, requesting typing notifications in room 1 only.")
+		syncResp = alice.SlidingSync(t, sync3.Request{
+			Extensions: extensions.Request{
+				Typing: &extensions.TypingRequest{
+					Core: extensions.Core{Enabled: &boolTrue, Lists: []string{}, Rooms: []string{room1}},
 				},
 			},
-			room1,
-			Event{ID: sentinelID},
-		)
+			Lists: map[string]sync3.RequestList{
+				"window": {
+					Ranges: sync3.SliceRanges{{0, 3}},
+					Sort:   []string{sync3.SortByName},
+				},
+			},
+		})
 
-		makeBobType(true)
-
-		sentinelID = aliceSendsSentinel(room2, "room 2")
-
-		t.Log("Alice waits to see her sentinel.")
-		syncResp = alice.SlidingSyncUntilEventID(
-			t,
-			syncResp.Pos,
-			room2,
-			sentinelID,
-		)
-
-		t.Log("Alice should see Bob typing in room 1, but not in room 2.")
+		// Note: no sentinel needed here: we have just done an initial v3 sync, so the
+		// poller will make an initial v2 sync and see the typing EDUs.
+		t.Log("Alice should see Bob typing in room 1 only.")
 		m.MatchResponse(
 			t,
 			syncResp,
+			m.MatchRoomSubscriptions(map[string][]m.RoomMatcher{
+				room1: {},
+				room2: {},
+			}),
 			m.MatchTyping(room1, []string{bob.UserID}),
 			m.MatchNotTyping(room2, []string{bob.UserID}),
 		)
 	})
 
-	t.Run("Can opt into typing for visible rooms only", func(t *testing.T) {
-		makeBobType(false)
-		// Use a sentinel to ensure Alice sees that Bob isn't typing in her next sync
-		sentinelID := aliceSendsSentinel(room1, "room 1")
+	t.Run("Can limit by list in an incremental sync", func(t *testing.T) {
+		t.Log("Alice creates rooms 3 and 4. Bob joins both.")
+		room3 := alice.CreateRoom(t, map[string]interface{}{"preset": "public_chat", "name": "room 3"})
+		room4 := alice.CreateRoom(t, map[string]interface{}{"preset": "public_chat", "name": "room 4"})
+		bob.JoinRoom(t, room3, nil)
+		bob.JoinRoom(t, room4, nil)
+		t.Logf("room3=%s room4=%s", room3, room4)
 
-		t.Log("Alice syncs to see her sentinel, narrowing her sliding window to one room only. She requesting typing notifications in that window only.")
-		syncResp = alice.SlidingSyncUntilEvent(
+		t.Log("Bob types in rooms 3 and 4")
+		bob.SendTyping(t, room3, true, 5000)
+		bob.SendTyping(t, room4, true, 5000)
+
+		t.Log("Alice incremental syncs until she sees Bob typing in room 4.")
+		t.Log("She a window containing all rooms, and a narrower window containing last-named room only.")
+		t.Log("She requests typing notifications in the narrow window only.")
+		t.Log("She should not see Bob typing in room 3 at any point.")
+		syncResp = alice.SlidingSyncUntil(
 			t,
 			syncResp.Pos,
 			sync3.Request{
 				Extensions: extensions.Request{
 					Typing: &extensions.TypingRequest{
-						Core: extensions.Core{Lists: []string{"window"}, Rooms: []string{}},
+						Core: extensions.Core{Enabled: &boolTrue, Lists: []string{"window"}, Rooms: []string{}},
 					},
 				},
 				Lists: map[string]sync3.RequestList{
 					"window": {
-						Ranges: sync3.SliceRanges{{0, 0}},
-						Sort:   []string{sync3.SortByRecency},
+						Ranges: sync3.SliceRanges{{3, 3}},
 					},
-				},
-			},
-			room1,
-			Event{ID: sentinelID},
-		)
+					"all": {
+						SlowGetAllRooms: &boolTrue,
+					},
+				}},
+			func(response *sync3.Response) error {
+				// Alice should never see Bob type in room 3.
+				dump, _ := json.MarshalIndent(response, "", "    ")
+				if m.MatchTyping(room3, []string{bob.UserID})(response) == nil {
+					t.Fatalf("Alice saw Bob typing in room 3. Response was %s", dump)
+				}
 
-		t.Log("Alice should only see room 1 in her sliding window (it has the most recent activity).")
-		m.MatchResponse(
-			t,
-			syncResp,
-			m.MatchList("window",
-				m.MatchV3Count(1),
-			),
+				t.Logf("DEBUG: okay, response was %s", dump)
+				// Alice wants to see Bob type in room 4.
+				return m.MatchTyping(room4, []string{bob.UserID})(response)
+			},
 		)
 	})
 }
