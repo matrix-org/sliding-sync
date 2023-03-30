@@ -277,8 +277,8 @@ func TestTypingRespectsExtensionScope(t *testing.T) {
 				}},
 			func(response *sync3.Response) error {
 				// Alice should never see Bob type in room 3.
-				dump, _ := json.MarshalIndent(response, "", "    ")
 				if m.MatchTyping(room3, []string{bob.UserID})(response) == nil {
+					dump, _ := json.MarshalIndent(response, "", "    ")
 					t.Fatalf("Alice saw Bob typing in room 3. Response was %s", dump)
 				}
 
