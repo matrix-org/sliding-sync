@@ -83,7 +83,6 @@ func (r *TypingRequest) shouldProcessUpdate(roomID string, extCtx Context) bool 
 	for _, visibleInList := range visibleInLists {
 		for _, shouldProcessList := range r.Lists {
 			if visibleInList == shouldProcessList {
-				logger.Warn().Str("roomID", roomID).Str("listName", visibleInList).Msg("DMR: shouldProcessUpdate -> true (room in list in scope)")
 				return true
 			}
 		}
