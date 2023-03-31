@@ -539,6 +539,34 @@ func MatchAccountData(globals []json.RawMessage, rooms map[string][]json.RawMess
 	}
 }
 
+// MatchHasGlobalAccountData works well enough
+func MatchHasGlobalAccountData(want json.RawMessage) RespMatcher {
+	return func(res *sync3.Response) error {
+		for _, msg := range res.Extensions.AccountData.Global {
+			if bytes.Equal(msg, want) {
+				return nil
+			}
+		}
+
+		return fmt.Errorf("could not find %s in global account data", want)
+	}
+}
+
+// MatchNoGlobalAccountData builds a matcher which asserts that no global account data
+// is present in a sync response.
+func MatchNoGlobalAccountData() RespMatcher {
+	return func(res *sync3.Response) error {
+		if res.Extensions.AccountData == nil {
+			return nil
+		}
+		accountDataEvents := res.Extensions.AccountData.Global
+		if len(accountDataEvents) > 0 {
+			return fmt.Errorf("MatchNoGlobalAccountData: got %d account data events, but expected none", len(accountDataEvents))
+		}
+		return nil
+	}
+}
+
 // MatchNoRoomAccountData builds a matcher which asserts that none of the given roomIDs
 // have room account data in a sync response.
 func MatchNoRoomAccountData(roomIDs []string) RespMatcher {

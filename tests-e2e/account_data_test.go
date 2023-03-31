@@ -1,14 +1,13 @@
 package syncv3_test
 
 import (
-	"bytes"
 	"encoding/json"
-	"fmt"
 	"github.com/matrix-org/sliding-sync/sync3"
 	"github.com/matrix-org/sliding-sync/sync3/extensions"
 	"github.com/matrix-org/sliding-sync/testutils"
 	"github.com/matrix-org/sliding-sync/testutils/m"
 	"testing"
+	"time"
 )
 
 func TestAccountDataRespectsExtensionScope(t *testing.T) {
@@ -28,21 +27,21 @@ func TestAccountDataRespectsExtensionScope(t *testing.T) {
 		t,
 		alice,
 		"com.example.global",
-		map[string]interface{}{"global": "GLOBAL!"},
+		map[string]interface{}{"global": "GLOBAL!", "version": 1},
 	)
 	putRoomAccountData(
 		t,
 		alice,
 		room1,
 		"com.example.room",
-		map[string]interface{}{"room": 1},
+		map[string]interface{}{"room": 1, "version": 1},
 	)
 	putRoomAccountData(
 		t,
 		alice,
 		room2,
 		"com.example.room",
-		map[string]interface{}{"room": 2},
+		map[string]interface{}{"room": 2, "version": 2},
 	)
 
 	t.Log("Alice makes an initial sync request, requesting global account data only.")
@@ -63,16 +62,82 @@ func TestAccountDataRespectsExtensionScope(t *testing.T) {
 	m.MatchResponse(
 		t,
 		syncResp,
-		func(res *sync3.Response) error {
-			for _, msg := range res.Extensions.AccountData.Global {
-				if bytes.Equal(msg, globalAccountDataEvent) {
-					return nil
-				}
-			}
-			return fmt.Errorf("could not find the global account data that Alice PUT earlier")
-		},
+		m.MatchHasGlobalAccountData(globalAccountDataEvent),
 		m.MatchNoRoomAccountData([]string{room1, room2}),
 	)
+
+	pos := syncResp.Pos
+	responses := make(chan *sync3.Response, 10)
+
+	waitForSyncResponse := func() *sync3.Response {
+		select {
+		case res := <-responses:
+			return res
+		case <-time.After(500 * time.Millisecond):
+			t.Fatalf("Timed out waiting for incremental sync response")
+		}
+		return nil
+	}
+
+	aliceIncrementalSync := func() {
+		t.Log("Alice incremental syncs, requesting account data for room 2")
+		response := alice.SlidingSync(
+			t,
+			sync3.Request{
+				Extensions: extensions.Request{
+					AccountData: &extensions.AccountDataRequest{
+						Core: extensions.Core{Enabled: &boolTrue, Lists: []string{}, Rooms: []string{room2}},
+					},
+				},
+			},
+			WithPos(pos),
+		)
+		pos = response.Pos
+		responses <- response
+	}
+
+	go aliceIncrementalSync()
+	t.Log("Alice updates global account data")
+	globalAccountDataEvent = putGlobalAccountData(
+		t,
+		alice,
+		"com.example.global",
+		map[string]interface{}{"global": "GLOBAL!", "version": 2},
+	)
+	t.Log("Alice sees the global account data update")
+	resp := waitForSyncResponse()
+	m.MatchResponse(
+		t,
+		resp,
+		m.MatchHasGlobalAccountData(globalAccountDataEvent),
+		m.MatchNoRoomAccountData([]string{room1, room2}),
+	)
+
+	go aliceIncrementalSync()
+	t.Log("Alice updates account data in both rooms")
+	putRoomAccountData(
+		t,
+		alice,
+		room1,
+		"com.example.room",
+		map[string]interface{}{"room": 1, "version": 1},
+	)
+	room2AccountDataEvent := putRoomAccountData(
+		t,
+		alice,
+		room2,
+		"com.example.room",
+		map[string]interface{}{"room": 2, "version": 2},
+	)
+	resp = waitForSyncResponse()
+	m.MatchResponse(
+		t,
+		resp,
+		m.MatchNoGlobalAccountData(),
+		m.MatchNoRoomAccountData([]string{room1}),
+		m.MatchAccountData(nil, map[string][]json.RawMessage{room2: {room2AccountDataEvent}}),
+	)
+
 }
 
 // putAccountData is a wrapper around SetGlobalAccountData. It returns the account data
