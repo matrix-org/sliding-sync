@@ -14,7 +14,7 @@ import (
 func TestLiveAccountDataAggregation(t *testing.T) {
 	boolTrue := true
 	ext := &AccountDataRequest{
-		Enableable: Enableable{
+		Core: Core{
 			Enabled: &boolTrue,
 		},
 	}

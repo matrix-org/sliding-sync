@@ -14,7 +14,7 @@ import (
 func TestLiveTypingAggregation(t *testing.T) {
 	boolTrue := true
 	ext := &TypingRequest{
-		Enableable: Enableable{
+		Core: Core{
 			Enabled: &boolTrue,
 		},
 	}

@@ -14,7 +14,7 @@ type E2EEFetcher interface {
 
 // Client created request params
 type E2EERequest struct {
-	Enableable
+	Core
 }
 
 func (r *E2EERequest) Name() string {

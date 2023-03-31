@@ -10,7 +10,7 @@ import (
 
 // Client created request params
 type AccountDataRequest struct {
-	Enableable
+	Core
 }
 
 func (r *AccountDataRequest) Name() string {

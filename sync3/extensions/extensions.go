@@ -21,6 +21,10 @@ type GenericRequest interface {
 	Name() string
 	// Returns the value of the `enabled` JSON key. nil for "not specified".
 	IsEnabled() *bool
+	// Returns the value of the `lists` JSON key. nil for "not specified".
+	OnlyLists() []string
+	// Returns the value of the `rooms` JSON key. nil for "not specified".
+	OnlyRooms() []string
 	// Overwrite fields in the request by side-effecting on this struct.
 	ApplyDelta(next GenericRequest)
 	// Process this request and put the response into *Response. This is called for every request
@@ -35,20 +39,31 @@ type GenericResponse interface {
 	HasData(isInitial bool) bool
 }
 
-// mixin for managing the enabled flag
-type Enableable struct {
-	Enabled *bool `json:"enabled"`
+// mixin for managing the flags reserved by the Core API
+type Core struct {
+	// All fields are optional, with nil meaning "not specified".
+	Enabled *bool    `json:"enabled"`
+	Lists   []string `json:"lists"`
+	Rooms   []string `json:"rooms"`
 }
 
-func (r *Enableable) Name() string {
-	return "Enableable"
+func (r *Core) Name() string {
+	return "Core"
 }
 
-func (r *Enableable) IsEnabled() *bool {
+func (r *Core) IsEnabled() *bool {
 	return r.Enabled
 }
 
-func (r *Enableable) ApplyDelta(gnext GenericRequest) {
+func (r *Core) OnlyLists() []string {
+	return r.Lists
+}
+
+func (r *Core) OnlyRooms() []string {
+	return r.Rooms
+}
+
+func (r *Core) ApplyDelta(gnext GenericRequest) {
 	if gnext == nil {
 		return
 	}
@@ -56,6 +71,14 @@ func (r *Enableable) ApplyDelta(gnext GenericRequest) {
 	// nil means they didn't specify this field, so leave it unchanged.
 	if nextEnabled != nil {
 		r.Enabled = nextEnabled
+	}
+	nextLists := gnext.OnlyLists()
+	if nextLists != nil {
+		r.Lists = nextLists
+	}
+	nextRooms := gnext.OnlyRooms()
+	if nextRooms != nil {
+		r.Rooms = nextRooms
 	}
 }
 
@@ -172,6 +195,11 @@ type Context struct {
 	IsInitial        bool
 	UserID           string
 	DeviceID         string
+	// Map from room IDs to list names. Keys are the room IDs of all rooms currently
+	// visible in at least one sliding window. Values are the names of the lists that
+	// enclose those sliding windows. Values should be nonnil and nonempty, and may
+	// contain multiple list names.
+	RoomIDsToLists map[string][]string
 }
 
 type HandlerInterface interface {

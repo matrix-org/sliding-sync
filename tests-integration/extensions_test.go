@@ -43,7 +43,7 @@ func TestExtensionE2EE(t *testing.T) {
 		// enable the E2EE extension
 		Extensions: extensions.Request{
 			E2EE: &extensions.E2EERequest{
-				Enableable: extensions.Enableable{Enabled: &boolTrue},
+				Core: extensions.Core{Enabled: &boolTrue},
 			},
 		},
 	})
@@ -121,7 +121,7 @@ func TestExtensionE2EE(t *testing.T) {
 		// enable the E2EE extension
 		Extensions: extensions.Request{
 			E2EE: &extensions.E2EERequest{
-				Enableable: extensions.Enableable{Enabled: &boolTrue},
+				Core: extensions.Core{Enabled: &boolTrue},
 			},
 		},
 	})
@@ -137,7 +137,7 @@ func TestExtensionE2EE(t *testing.T) {
 		// enable the E2EE extension
 		Extensions: extensions.Request{
 			E2EE: &extensions.E2EERequest{
-				Enableable: extensions.Enableable{Enabled: &boolTrue},
+				Core: extensions.Core{Enabled: &boolTrue},
 			},
 		},
 	})
@@ -164,7 +164,7 @@ func TestExtensionE2EE(t *testing.T) {
 		// enable the E2EE extension
 		Extensions: extensions.Request{
 			E2EE: &extensions.E2EERequest{
-				Enableable: extensions.Enableable{Enabled: &boolTrue},
+				Core: extensions.Core{Enabled: &boolTrue},
 			},
 		},
 	})
@@ -233,7 +233,7 @@ func TestExtensionToDevice(t *testing.T) {
 		}},
 		Extensions: extensions.Request{
 			ToDevice: &extensions.ToDeviceRequest{
-				Enableable: extensions.Enableable{Enabled: &boolTrue},
+				Core: extensions.Core{Enabled: &boolTrue},
 			},
 		},
 	})
@@ -248,7 +248,7 @@ func TestExtensionToDevice(t *testing.T) {
 		}},
 		Extensions: extensions.Request{
 			ToDevice: &extensions.ToDeviceRequest{
-				Enableable: extensions.Enableable{Enabled: &boolTrue},
+				Core: extensions.Core{Enabled: &boolTrue},
 			},
 		},
 	})
@@ -263,8 +263,8 @@ func TestExtensionToDevice(t *testing.T) {
 		}},
 		Extensions: extensions.Request{
 			ToDevice: &extensions.ToDeviceRequest{
-				Enableable: extensions.Enableable{Enabled: &boolTrue},
-				Since:      res.Extensions.ToDevice.NextBatch,
+				Core:  extensions.Core{Enabled: &boolTrue},
+				Since: res.Extensions.ToDevice.NextBatch,
 			},
 		},
 	})
@@ -450,7 +450,7 @@ func TestExtensionAccountData(t *testing.T) {
 	res := v3.mustDoV3Request(t, aliceToken, sync3.Request{
 		Extensions: extensions.Request{
 			AccountData: &extensions.AccountDataRequest{
-				Enableable: extensions.Enableable{Enabled: &boolTrue},
+				Core: extensions.Core{Enabled: &boolTrue},
 			},
 		},
 		Lists: map[string]sync3.RequestList{"a": {
@@ -490,7 +490,7 @@ func TestExtensionAccountData(t *testing.T) {
 	res = v3.mustDoV3Request(t, aliceToken, sync3.Request{
 		Extensions: extensions.Request{
 			AccountData: &extensions.AccountDataRequest{
-				Enableable: extensions.Enableable{Enabled: &boolTrue},
+				Core: extensions.Core{Enabled: &boolTrue},
 			},
 		},
 		RoomSubscriptions: map[string]sync3.RoomSubscription{
@@ -524,7 +524,7 @@ func TestExtensionAccountData(t *testing.T) {
 	res = v3.mustDoV3Request(t, aliceToken, sync3.Request{
 		Extensions: extensions.Request{
 			AccountData: &extensions.AccountDataRequest{
-				Enableable: extensions.Enableable{Enabled: &boolTrue},
+				Core: extensions.Core{Enabled: &boolTrue},
 			},
 		},
 		Lists: map[string]sync3.RequestList{"a": {
@@ -599,7 +599,7 @@ func TestExtensionLateEnable(t *testing.T) {
 	v3.mustDoV3RequestWithPos(t, aliceToken, res.Pos, sync3.Request{
 		Extensions: extensions.Request{
 			ToDevice: &extensions.ToDeviceRequest{
-				Enableable: extensions.Enableable{Enabled: &boolTrue},
+				Core: extensions.Core{Enabled: &boolTrue},
 			},
 		},
 	})

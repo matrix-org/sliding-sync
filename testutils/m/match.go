@@ -432,6 +432,29 @@ func MatchTyping(roomID string, wantUserIDs []string) RespMatcher {
 	}
 }
 
+func MatchNotTyping(roomID string, dontWantUserIDs []string) RespMatcher {
+	return func(res *sync3.Response) error {
+		if res.Extensions.Typing == nil {
+			return nil
+		}
+		if len(res.Extensions.Typing.Rooms) == 0 || res.Extensions.Typing.Rooms[roomID] == nil {
+			return nil
+		}
+		ev := res.Extensions.Typing.Rooms[roomID]
+		typingIDs := gjson.ParseBytes(ev).Get("content.user_ids").Array()
+
+		for _, dontWantID := range dontWantUserIDs {
+			for _, typingID := range typingIDs {
+				// Quick and dirty: report the first mismatch we see.
+				if dontWantID == typingID.Str {
+					return fmt.Errorf("MatchTyping: user %s should not be typing in %s, but is", dontWantID, roomID)
+				}
+			}
+		}
+		return nil
+	}
+}
+
 type Receipt struct {
 	EventID  string
 	UserID   string

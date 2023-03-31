@@ -138,6 +138,41 @@ func (s *InternalRequestLists) Get(listKey string) *FilteredSortableRooms {
 	return s.lists[listKey]
 }
 
+// ListsByVisibleRoomIDs builds a map from room IDs to a slice of list names. Keys are
+// all room IDs that are currently visible in at least one sliding window. Values are
+// the names of all lists (in no particular order) in which the given room ID is
+// currently visible. The value slices are nonnil and contain at least one list name
+// (possibly more).
+//
+// The returned map is a copy, i.e. is safe to modify by the caller.
+func (s *InternalRequestLists) ListsByVisibleRoomIDs(muxedReqLists map[string]RequestList) map[string][]string {
+	listsByRoomIDs := make(map[string][]string, len(muxedReqLists))
+	// Loop over each list, and mark each room in its sliding window as being visible in this list.
+	for listName, reqList := range muxedReqLists {
+		sortedRooms := s.lists[listName].SortableRooms
+		if sortedRooms == nil {
+			continue
+		}
+
+		// If we've requested all rooms, every room is visible in this list---we don't
+		// have to worry about extracting room IDs in the sliding windows' ranges.
+		if reqList.SlowGetAllRooms != nil && *reqList.SlowGetAllRooms {
+			for _, roomID := range sortedRooms.RoomIDs() {
+				listsByRoomIDs[roomID] = append(listsByRoomIDs[roomID], listName)
+			}
+		} else {
+			subslices := reqList.Ranges.SliceInto(sortedRooms)
+			for _, subslice := range subslices {
+				sortedRooms = subslice.(*SortableRooms)
+				for _, roomID := range sortedRooms.RoomIDs() {
+					listsByRoomIDs[roomID] = append(listsByRoomIDs[roomID], listName)
+				}
+			}
+		}
+	}
+	return listsByRoomIDs
+}
+
 // Assign a new list at the given key. If Overwrite, any existing list is replaced. If DoNotOverwrite, the existing
 // list is returned if one exists, else a new list is created. Returns the list and true if the list was overwritten.
 func (s *InternalRequestLists) AssignList(listKey string, filters *RequestFilters, sort []string, shouldOverwrite OverwriteVal) (*FilteredSortableRooms, bool) {
