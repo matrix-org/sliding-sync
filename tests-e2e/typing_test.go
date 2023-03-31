@@ -212,11 +212,11 @@ func TestTypingRespectsExtensionScope(t *testing.T) {
 		bob.SendTyping(t, room1, true, 5000)
 		bob.SendTyping(t, room2, true, 5000)
 
-		t.Log("Alice makes an initial sync request, requesting typing notifications in room 1 only.")
+		t.Log("Alice makes an initial sync request, requesting typing notifications in room 2 only.")
 		syncResp = alice.SlidingSync(t, sync3.Request{
 			Extensions: extensions.Request{
 				Typing: &extensions.TypingRequest{
-					Core: extensions.Core{Enabled: &boolTrue, Lists: []string{}, Rooms: []string{room1}},
+					Core: extensions.Core{Enabled: &boolTrue, Lists: []string{}, Rooms: []string{room2}},
 				},
 			},
 			Lists: map[string]sync3.RequestList{
@@ -229,7 +229,7 @@ func TestTypingRespectsExtensionScope(t *testing.T) {
 
 		// Note: no sentinel needed here: we have just done an initial v3 sync, so the
 		// poller will make an initial v2 sync and see the typing EDUs.
-		t.Log("Alice should see Bob typing in room 1 only.")
+		t.Log("Alice should see Bob typing in room 2 only.")
 		m.MatchResponse(
 			t,
 			syncResp,
@@ -237,8 +237,8 @@ func TestTypingRespectsExtensionScope(t *testing.T) {
 				room1: {},
 				room2: {},
 			}),
-			m.MatchTyping(room1, []string{bob.UserID}),
-			m.MatchNotTyping(room2, []string{bob.UserID}),
+			m.MatchNotTyping(room1, []string{bob.UserID}),
+			m.MatchTyping(room2, []string{bob.UserID}),
 		)
 	})
 
