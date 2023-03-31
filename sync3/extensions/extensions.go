@@ -82,6 +82,36 @@ func (r *Core) ApplyDelta(gnext GenericRequest) {
 	}
 }
 
+// RoomInScope determines whether a given room ought to be processed by this extension,
+// according to the "core" extension scoping logic. Extensions are free to suppress
+// updates for a room based on additional criteria.
+func (r *Core) RoomInScope(roomID string, extCtx Context) bool {
+	// If the extension hasn't had its scope configured, process everything.
+	if r.Lists == nil && r.Rooms == nil {
+		return true
+	}
+
+	// If this extension has been explicitly subscribed to this room, process the update.
+	for _, roomInScope := range r.Rooms {
+		if roomInScope == roomID {
+			return true
+		}
+	}
+
+	// If the room belongs to one of the lists that this extension should process, process the update.
+	visibleInLists := extCtx.RoomIDsToLists[roomID]
+	for _, visibleInList := range visibleInLists {
+		for _, shouldProcessList := range r.Lists {
+			if visibleInList == shouldProcessList {
+				return true
+			}
+		}
+	}
+
+	// Otherwise ignore the update.
+	return false
+}
+
 func ExtensionEnabled(r GenericRequest) bool {
 	enabled := r.IsEnabled()
 	if enabled != nil && *enabled {
