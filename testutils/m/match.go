@@ -539,6 +539,21 @@ func MatchAccountData(globals []json.RawMessage, rooms map[string][]json.RawMess
 	}
 }
 
+// MatchNoRoomAccountData builds a matcher which asserts that none of the given roomIDs
+// have room account data in a sync response.
+func MatchNoRoomAccountData(roomIDs []string) RespMatcher {
+	return func(res *sync3.Response) error {
+		for _, roomID := range roomIDs {
+			// quick and dirty: complain the first time we see something we shouldn't
+			roomData := res.Extensions.AccountData.Rooms[roomID]
+			if roomData != nil {
+				return fmt.Errorf("MatchNoRoomAccountData: got account data for %s, but expected it to be missing", roomID)
+			}
+		}
+		return nil
+	}
+}
+
 func CheckList(listKey string, res sync3.ResponseList, matchers ...ListMatcher) error {
 	for _, m := range matchers {
 		if err := m(res); err != nil {
