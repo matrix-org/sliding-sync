@@ -282,7 +282,7 @@ func TestTypingRespectsExtensionScope(t *testing.T) {
 					t.Fatalf("Alice saw Bob typing in room 3. Response was %s", dump)
 				}
 
-				// Alice wants to see Bob type in room 4.
+				// Alice waits to see Bob type in room 4.
 				return m.MatchTyping(room4, []string{bob.UserID})(response)
 			},
 		)
