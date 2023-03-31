@@ -77,8 +77,10 @@ func (r *AccountDataRequest) ProcessInitial(ctx context.Context, res *Response, 
 	roomIDs := make([]string, len(extCtx.RoomIDToTimeline))
 	i := 0
 	for roomID := range extCtx.RoomIDToTimeline {
-		roomIDs[i] = roomID
-		i++
+		if r.RoomInScope(roomID, extCtx) {
+			roomIDs[i] = roomID
+			i++
+		}
 	}
 	extRes := &AccountDataResponse{
 		Rooms: make(map[string][]json.RawMessage),
