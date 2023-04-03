@@ -7,7 +7,6 @@ import (
 	"github.com/matrix-org/sliding-sync/testutils"
 	"github.com/matrix-org/sliding-sync/testutils/m"
 	"testing"
-	"time"
 )
 
 func TestAccountDataRespectsExtensionScope(t *testing.T) {
@@ -66,54 +65,34 @@ func TestAccountDataRespectsExtensionScope(t *testing.T) {
 		m.MatchNoRoomAccountData([]string{room1, room2}),
 	)
 
-	pos := syncResp.Pos
-	responses := make(chan *sync3.Response, 10)
-
-	waitForSyncResponse := func() *sync3.Response {
-		select {
-		case res := <-responses:
-			return res
-		case <-time.After(500 * time.Millisecond):
-			t.Fatalf("Timed out waiting for incremental sync response")
-		}
-		return nil
-	}
-
-	aliceIncrementalSync := func() {
-		t.Log("Alice incremental syncs, requesting account data for room 2")
-		response := alice.SlidingSync(
-			t,
-			sync3.Request{
-				Extensions: extensions.Request{
-					AccountData: &extensions.AccountDataRequest{
-						Core: extensions.Core{Enabled: &boolTrue, Lists: []string{}, Rooms: []string{room2}},
-					},
-				},
-			},
-			WithPos(pos),
-		)
-		pos = response.Pos
-		responses <- response
-	}
-
-	go aliceIncrementalSync()
-	t.Log("Alice updates global account data")
+	t.Log("Alice updates her global account data.")
 	globalAccountDataEvent = putGlobalAccountData(
 		t,
 		alice,
 		"com.example.global",
 		map[string]interface{}{"global": "GLOBAL!", "version": 2},
 	)
-	t.Log("Alice sees the global account data update")
-	resp := waitForSyncResponse()
-	m.MatchResponse(
+
+	t.Log("Alice syncs until she sees the new data, requesting—but not expecting—account data for room 2.")
+	syncResp = alice.SlidingSyncUntil(
 		t,
-		resp,
-		m.MatchHasGlobalAccountData(globalAccountDataEvent),
-		m.MatchNoRoomAccountData([]string{room1, room2}),
+		syncResp.Pos,
+		sync3.Request{
+			Extensions: extensions.Request{
+				AccountData: &extensions.AccountDataRequest{
+					Core: extensions.Core{Enabled: &boolTrue, Lists: []string{}, Rooms: []string{room2}},
+				},
+			},
+		},
+		func(response *sync3.Response) error {
+			err := m.MatchNoRoomAccountData([]string{room1, room2})(response)
+			if err != nil {
+				t.Error(err)
+			}
+			return m.MatchHasGlobalAccountData(globalAccountDataEvent)(response)
+		},
 	)
 
-	go aliceIncrementalSync()
 	t.Log("Alice updates account data in both rooms")
 	putRoomAccountData(
 		t,
@@ -129,13 +108,19 @@ func TestAccountDataRespectsExtensionScope(t *testing.T) {
 		"com.example.room",
 		map[string]interface{}{"room": 2, "version": 2},
 	)
-	resp = waitForSyncResponse()
-	m.MatchResponse(
+
+	t.Log("Alice syncs until she sees the account data for room 2. She shouldn't see account data for room 1")
+	syncResp = alice.SlidingSyncUntil(
 		t,
-		resp,
-		m.MatchNoGlobalAccountData(),
-		m.MatchNoRoomAccountData([]string{room1}),
-		m.MatchAccountData(nil, map[string][]json.RawMessage{room2: {room2AccountDataEvent}}),
+		syncResp.Pos,
+		sync3.Request{}, // as before
+		func(response *sync3.Response) error {
+			err := m.MatchNoRoomAccountData([]string{room1})(response)
+			if err != nil {
+				t.Error(err)
+			}
+			return m.MatchAccountData(nil, map[string][]json.RawMessage{room2: {room2AccountDataEvent}})(response)
+		},
 	)
 
 }
