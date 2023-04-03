@@ -79,6 +79,9 @@ func (r *ReceiptsRequest) ProcessInitial(ctx context.Context, res *Response, ext
 	// grab receipts for all timelines for all the rooms we're going to return
 	rooms := make(map[string]json.RawMessage)
 	for roomID, timeline := range extCtx.RoomIDToTimeline {
+		if !r.RoomInScope(roomID, extCtx) {
+			continue
+		}
 		receipts, err := extCtx.Store.ReceiptTable.SelectReceiptsForEvents(roomID, timeline)
 		if err != nil {
 			logger.Err(err).Str("user", extCtx.UserID).Str("room", roomID).Msg("failed to SelectReceiptsForEvents")
