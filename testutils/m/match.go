@@ -470,6 +470,14 @@ func sortReceipts(receipts []Receipt) {
 	})
 }
 
+// MatchReceipts builds a matcher which asserts that a sync response has the expected
+// set of read receipts in a given room is the expected set of `wantReceipts`.
+//
+// The match fails if:
+//   - there is no receipts extension in the sync response,
+//   - the room is missing from the sync response and `wantReceipts` is nonempty,
+//   - the room is present in the sync response but has a different set of receipts
+//     to `wantReceipts`.
 func MatchReceipts(roomID string, wantReceipts []Receipt) RespMatcher {
 	return func(res *sync3.Response) error {
 		if res.Extensions.Receipts == nil {
