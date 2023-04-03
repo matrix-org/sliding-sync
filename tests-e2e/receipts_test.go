@@ -1,6 +1,7 @@
 package syncv3_test
 
 import (
+	"fmt"
 	"testing"
 	"time"
 
@@ -242,7 +243,7 @@ func TestReceiptsRespectsExtensionScope(t *testing.T) {
 	bob.JoinRoom(t, room3, nil)
 	bob.JoinRoom(t, room4, nil)
 
-	t.Log("Alice posts a message to each rooms")
+	t.Log("Alice posts a message to each room")
 	messageEvent := Event{
 		Type: "m.room.message",
 		Content: map[string]interface{}{
@@ -258,9 +259,8 @@ func TestReceiptsRespectsExtensionScope(t *testing.T) {
 	t.Log("Bob posts a public read receipt for the messages in rooms 1 and 2.")
 	bob.SendReceipt(t, room1, message1, "m.read")
 	bob.SendReceipt(t, room2, message2, "m.read")
-	time.Sleep(300 * time.Millisecond) // TODO: find a better way to wait until the proxy has processed this.
 
-	t.Log("Bob makes an initial sliding sync, requesting receipts in rooms 2 and 4only.")
+	t.Log("Bob makes an initial sliding sync, requesting receipts in rooms 2 and 4 only.")
 	syncResp = bob.SlidingSync(t, sync3.Request{
 		Extensions: extensions.Request{
 			Receipts: &extensions.ReceiptsRequest{
@@ -286,52 +286,34 @@ func TestReceiptsRespectsExtensionScope(t *testing.T) {
 		}}),
 	)
 
-	responses := make(chan *sync3.Response, 10)
-	pos := syncResp.Pos
-	bobIncrementalSync := func() {
-		t.Log("Bob requests an incremental sync...")
-		response := bob.SlidingSync(
-			t,
-			sync3.Request{
-				Extensions: extensions.Request{
-					AccountData: &extensions.AccountDataRequest{
-						Core: extensions.Core{Enabled: &boolTrue, Lists: []string{}, Rooms: []string{room2}},
-					},
-				},
-			},
-			WithPos(pos),
-		)
-		pos = response.Pos
-		responses <- response
-	}
-	waitForSyncResponse := func() *sync3.Response {
-		t.Log("... Bob waits for the incremental sync response...")
-		select {
-		case res := <-responses:
-			return res
-		case <-time.After(500 * time.Millisecond):
-			t.Fatalf("Timed out waiting for incremental sync response")
-		}
-		return nil
-	}
-
-	go bobIncrementalSync()
 	t.Log("Bob posts receipts for rooms 3 and 4.")
 	bob.SendReceipt(t, room3, message3, "m.read")
 	bob.SendReceipt(t, room4, message4, "m.read")
-	time.Sleep(300 * time.Millisecond) // TODO: find a better way to wait until the proxy has processed this.
 
-	syncResp = waitForSyncResponse()
 	t.Log("Bob sees his receipt in room 4, but not in room 3.")
-	m.MatchResponse(
+	syncResp = bob.SlidingSyncUntil(
 		t,
-		syncResp,
-		m.MatchReceipts(room3, nil),
-		m.MatchReceipts(room4, []m.Receipt{{
-			EventID: message4,
-			UserID:  bob.UserID,
-			Type:    "m.read",
-		}}),
-	)
+		syncResp.Pos,
+		sync3.Request{}, // no change
+		func(response *sync3.Response) error {
+			// Need to check some receipts data exist, or room3 matcher will fail
+			if response.Extensions.Receipts == nil {
+				return fmt.Errorf("no receipts data in sync response")
+			}
 
+			// Bob never sees a receipt in room 3.
+			matcherRoom3 := m.MatchReceipts(room3, nil)
+			err := matcherRoom3(response)
+			if err != nil {
+				t.Error(err)
+			}
+
+			matcherRoom4 := m.MatchReceipts(room4, []m.Receipt{{
+				EventID: message4,
+				UserID:  bob.UserID,
+				Type:    "m.read",
+			}})
+			return matcherRoom4(response)
+		},
+	)
 }
