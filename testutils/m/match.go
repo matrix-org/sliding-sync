@@ -141,19 +141,6 @@ func MatchRoomTimeline(events []json.RawMessage) RoomMatcher {
 	}
 }
 
-// MatchRoomHasEventID builds a matcher which asserts that the room timeline part of
-// a sync response contains a specific event ID.
-func MatchRoomHasEventID(eventID string) RoomMatcher {
-	return func(r sync3.Room) error {
-		for _, event := range r.Timeline {
-			if gjson.ParseBytes(event).Get("event_id").Str == eventID {
-				return nil
-			}
-		}
-		return fmt.Errorf("Event %s did not appear in timeline")
-	}
-}
-
 func MatchRoomHighlightCount(count int64) RoomMatcher {
 	return func(r sync3.Room) error {
 		if r.HighlightCount != count {
