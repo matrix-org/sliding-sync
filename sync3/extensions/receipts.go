@@ -34,6 +34,10 @@ func (r *ReceiptsResponse) HasData(isInitial bool) bool {
 func (r *ReceiptsRequest) AppendLive(ctx context.Context, res *Response, extCtx Context, up caches.Update) {
 	switch update := up.(type) {
 	case *caches.ReceiptUpdate:
+		if !r.RoomInScope(update.RoomID(), extCtx) {
+			break
+		}
+
 		// a live receipt event happened, send this back
 		if res.Receipts == nil {
 			edu, err := state.PackReceiptsIntoEDU([]internal.Receipt{update.Receipt})
