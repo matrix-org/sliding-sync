@@ -232,8 +232,8 @@ func TestReceiptsRespectsExtensionScope(t *testing.T) {
 	t.Log("Alice creates four rooms.")
 	room1 := alice.CreateRoom(t, map[string]interface{}{"preset": "public_chat", "name": "room 1"})
 	room2 := alice.CreateRoom(t, map[string]interface{}{"preset": "public_chat", "name": "room 2"})
-	room3 := alice.CreateRoom(t, map[string]interface{}{"preset": "public_chat", "name": "room 1"})
-	room4 := alice.CreateRoom(t, map[string]interface{}{"preset": "public_chat", "name": "room 2"})
+	room3 := alice.CreateRoom(t, map[string]interface{}{"preset": "public_chat", "name": "room 3"})
+	room4 := alice.CreateRoom(t, map[string]interface{}{"preset": "public_chat", "name": "room 4"})
 	t.Logf("room1=%s room2=%s room3=%s room4=%s", room1, room2, room3, room4)
 
 	t.Log("Bob joins those rooms.")
@@ -251,9 +251,9 @@ func TestReceiptsRespectsExtensionScope(t *testing.T) {
 		},
 	}
 	message1 := alice.SendEventSynced(t, room1, messageEvent)
-	message2 := alice.SendEventSynced(t, room1, messageEvent)
-	message3 := alice.SendEventSynced(t, room1, messageEvent)
-	message4 := alice.SendEventSynced(t, room1, messageEvent)
+	message2 := alice.SendEventSynced(t, room2, messageEvent)
+	message3 := alice.SendEventSynced(t, room3, messageEvent)
+	message4 := alice.SendEventSynced(t, room4, messageEvent)
 
 	t.Log("Bob posts a public read receipt for the messages in rooms 1 and 2.")
 	bob.SendReceipt(t, room1, message1, "m.read")
