@@ -18,6 +18,8 @@ var logger = zerolog.New(os.Stdout).With().Timestamp().Logger().Output(zerolog.C
 })
 
 type GenericRequest interface {
+	// Name provides a name to identify the kind of request. At present, it's only
+	// used to name opentracing spans; this isn't end-user visible.
 	Name() string
 	// Returns the value of the `enabled` JSON key. nil for "not specified".
 	IsEnabled() *bool
@@ -27,8 +29,14 @@ type GenericRequest interface {
 	OnlyRooms() []string
 	// Overwrite fields in the request by side-effecting on this struct.
 	ApplyDelta(next GenericRequest)
-	// Process this request and put the response into *Response. This is called for every request
-	// before going into a live stream loop.
+	// ProcessInitial provides a means for extensions to return data to clients immediately.
+	// If an implementation wants to do so, put the response into *Response (and ensure
+	// that GenericResponse.HasData returns true).
+	//
+	// This is called for every request before going into a live stream loop. By "every
+	// request" we mean both initial and incremental syncs; this function gets call
+	// multiple times over the lifetime of a connection. (Read Context.IsInitial to see
+	// if we are serving an initial or incremental sync.)
 	ProcessInitial(ctx context.Context, res *Response, extCtx Context)
 	// Process a live event, /aggregating/ the response in *Response. This function can be called
 	// multiple times per sync loop as the conn buffer is consumed.
@@ -36,6 +44,12 @@ type GenericRequest interface {
 }
 
 type GenericResponse interface {
+	// HasData determines if there is enough data in the response for it to be
+	// meaningful or useful for the client. If so, we eagerly return this response
+	// (even if we are aware of other updates). The parameter isInitial is true if and
+	// only if this response is to an initial sync request; this allows the
+	// implementation to send out a "fuller" update to an initial sync than it would
+	// for an incremental sync.
 	HasData(isInitial bool) bool
 }
 
@@ -221,10 +235,19 @@ func (r Response) HasData(isInitial bool) bool {
 
 type Context struct {
 	*Handler
+	// RoomIDToTimeline is a map from room IDs to slices of event IDs. The keys are the
+	// rooms which
+	// - have seen new events since the last sync request, and
+	// - the client is subscribed to (via a list or a room subscription).
+	// The values are the event IDs at the end of the room "timeline", ordered from
+	// oldest to newest, as determined by the core sliding sync protocol.
+	// TODO: can the timelines be "gappy" like a v2 sync timeline?
 	RoomIDToTimeline map[string][]string
-	IsInitial        bool
-	UserID           string
-	DeviceID         string
+	// IsInitial is true if this sync is requesting a snapshot of current client state
+	// (pos = 0, "initial sync") and false otherwise (pos > 0, "incremental sync").
+	IsInitial bool
+	UserID    string
+	DeviceID  string
 	// Map from room IDs to list names. Keys are the room IDs of all rooms currently
 	// visible in at least one sliding window. Values are the names of the lists that
 	// enclose those sliding windows. Values should be nonnil and nonempty, and may

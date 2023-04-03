@@ -511,6 +511,20 @@ func MatchReceipts(roomID string, wantReceipts []Receipt) RespMatcher {
 	}
 }
 
+// MatchAccountData builds a matcher which asserts that the account data in a sync
+// response /exactly/ matches the given `globals` and `rooms`, up to ordering.
+//
+// - If there is no account data extension in the response, the matche fails.
+// - If globals is non-nil:
+//   - if globals is not equal to the global account data, the match fails.
+//     Equality is determined using EqualAnyOrder.
+//
+// - If rooms is non-nil:
+//   - If the set of given rooms differs from the set of rooms present in the account
+//     data response, the match fails.
+//   - If a given room's account data events are not equal to its account data events
+//     in the sync response, the match fails. Again, equality is determined using
+//     EqualAnyOrder.
 func MatchAccountData(globals []json.RawMessage, rooms map[string][]json.RawMessage) RespMatcher {
 	return func(res *sync3.Response) error {
 		if res.Extensions.AccountData == nil {
@@ -539,7 +553,8 @@ func MatchAccountData(globals []json.RawMessage, rooms map[string][]json.RawMess
 	}
 }
 
-// MatchHasGlobalAccountData works well enough
+// MatchHasGlobalAccountData builds a matcher which asserts that the given event is
+// present in a global account data response.
 func MatchHasGlobalAccountData(want json.RawMessage) RespMatcher {
 	return func(res *sync3.Response) error {
 		for _, msg := range res.Extensions.AccountData.Global {
