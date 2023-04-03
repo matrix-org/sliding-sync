@@ -229,41 +229,42 @@ func TestReceiptsRespectsExtensionScope(t *testing.T) {
 
 	var syncResp *sync3.Response
 
-	t.Log("Alice creates rooms 1 and 2.")
+	t.Log("Alice creates four rooms.")
 	room1 := alice.CreateRoom(t, map[string]interface{}{"preset": "public_chat", "name": "room 1"})
 	room2 := alice.CreateRoom(t, map[string]interface{}{"preset": "public_chat", "name": "room 2"})
-	t.Logf("room1=%s room2=%s", room1, room2)
+	room3 := alice.CreateRoom(t, map[string]interface{}{"preset": "public_chat", "name": "room 1"})
+	room4 := alice.CreateRoom(t, map[string]interface{}{"preset": "public_chat", "name": "room 2"})
+	t.Logf("room1=%s room2=%s room3=%s room4=%s", room1, room2, room3, room4)
 
-	t.Log("Bob joins both rooms.")
+	t.Log("Bob joins those rooms.")
 	bob.JoinRoom(t, room1, nil)
 	bob.JoinRoom(t, room2, nil)
+	bob.JoinRoom(t, room3, nil)
+	bob.JoinRoom(t, room4, nil)
 
-	t.Log("Alice posts a message to both rooms")
-	message1 := alice.SendEventSynced(t, room1, Event{
+	t.Log("Alice posts a message to each rooms")
+	messageEvent := Event{
 		Type: "m.room.message",
 		Content: map[string]interface{}{
 			"msgtype": "m.text",
-			"body":    "Hello room 1",
+			"body":    "Hello, room!",
 		},
-	})
-	message2 := alice.SendEventSynced(t, room1, Event{
-		Type: "m.room.message",
-		Content: map[string]interface{}{
-			"msgtype": "m.text",
-			"body":    "Hello room 1",
-		},
-	})
+	}
+	message1 := alice.SendEventSynced(t, room1, messageEvent)
+	message2 := alice.SendEventSynced(t, room1, messageEvent)
+	message3 := alice.SendEventSynced(t, room1, messageEvent)
+	message4 := alice.SendEventSynced(t, room1, messageEvent)
 
-	t.Log("Bob posts a public read receipt for both messages.")
+	t.Log("Bob posts a public read receipt for the messages in rooms 1 and 2.")
 	bob.SendReceipt(t, room1, message1, "m.read")
 	bob.SendReceipt(t, room2, message2, "m.read")
 	time.Sleep(300 * time.Millisecond) // TODO: find a better way to wait until the proxy has processed this.
 
-	t.Log("Bob makes an initial sliding sync, requesting receipts in room 2 only.")
+	t.Log("Bob makes an initial sliding sync, requesting receipts in rooms 2 and 4only.")
 	syncResp = bob.SlidingSync(t, sync3.Request{
 		Extensions: extensions.Request{
 			Receipts: &extensions.ReceiptsRequest{
-				Core: extensions.Core{Enabled: &boolTrue, Lists: []string{}, Rooms: []string{room2}},
+				Core: extensions.Core{Enabled: &boolTrue, Lists: []string{}, Rooms: []string{room2, room4}},
 			},
 		},
 		Lists: map[string]sync3.RequestList{
@@ -284,4 +285,53 @@ func TestReceiptsRespectsExtensionScope(t *testing.T) {
 			Type:    "m.read",
 		}}),
 	)
+
+	responses := make(chan *sync3.Response, 10)
+	pos := syncResp.Pos
+	bobIncrementalSync := func() {
+		t.Log("Bob requests an incremental sync...")
+		response := bob.SlidingSync(
+			t,
+			sync3.Request{
+				Extensions: extensions.Request{
+					AccountData: &extensions.AccountDataRequest{
+						Core: extensions.Core{Enabled: &boolTrue, Lists: []string{}, Rooms: []string{room2}},
+					},
+				},
+			},
+			WithPos(pos),
+		)
+		pos = response.Pos
+		responses <- response
+	}
+	waitForSyncResponse := func() *sync3.Response {
+		t.Log("... Bob waits for the incremental sync response...")
+		select {
+		case res := <-responses:
+			return res
+		case <-time.After(500 * time.Millisecond):
+			t.Fatalf("Timed out waiting for incremental sync response")
+		}
+		return nil
+	}
+
+	go bobIncrementalSync()
+	t.Log("Bob posts receipts for rooms 3 and 4.")
+	bob.SendReceipt(t, room3, message3, "m.read")
+	bob.SendReceipt(t, room4, message4, "m.read")
+	time.Sleep(300 * time.Millisecond) // TODO: find a better way to wait until the proxy has processed this.
+
+	syncResp = waitForSyncResponse()
+	t.Log("Bob sees his receipt in room 4, but not in room 3.")
+	m.MatchResponse(
+		t,
+		syncResp,
+		m.MatchReceipts(room3, nil),
+		m.MatchReceipts(room4, []m.Receipt{{
+			EventID: message4,
+			UserID:  bob.UserID,
+			Type:    "m.read",
+		}}),
+	)
+
 }

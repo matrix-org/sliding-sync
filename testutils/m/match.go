@@ -140,6 +140,20 @@ func MatchRoomTimeline(events []json.RawMessage) RoomMatcher {
 		return nil
 	}
 }
+
+// MatchRoomHasEventID builds a matcher which asserts that the room timeline part of
+// a sync response contains a specific event ID.
+func MatchRoomHasEventID(eventID string) RoomMatcher {
+	return func(r sync3.Room) error {
+		for _, event := range r.Timeline {
+			if gjson.ParseBytes(event).Get("event_id").Str == eventID {
+				return nil
+			}
+		}
+		return fmt.Errorf("Event %s did not appear in timeline")
+	}
+}
+
 func MatchRoomHighlightCount(count int64) RoomMatcher {
 	return func(r sync3.Room) error {
 		if r.HighlightCount != count {
@@ -586,6 +600,16 @@ func MatchNoRoomAccountData(roomIDs []string) RespMatcher {
 				return fmt.Errorf("MatchNoRoomAccountData: got account data for %s, but expected it to be missing", roomID)
 			}
 		}
+		return nil
+	}
+}
+
+// LogResponse builds a matcher that always succeeds. As a side-effect, it pretty-prints
+// the given sync response to the test log. This is useful when debugging a test.
+func LogResponse(t *testing.T) RespMatcher {
+	return func(res *sync3.Response) error {
+		dump, _ := json.MarshalIndent(res, "", "    ")
+		t.Logf("Response was: %s", dump)
 		return nil
 	}
 }
