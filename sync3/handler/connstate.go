@@ -287,7 +287,7 @@ func (s *ConnState) onIncomingListRequest(ctx context.Context, builder *RoomsBui
 
 		responseOperations = append(responseOperations, &sync3.ResponseOpRange{
 			Operation: sync3.OpSync,
-			Range:     addedRanges[i][:],
+			Range:     clampSliceRangeToRooms(addedRanges[i], roomIDs),
 			RoomIDs:   roomIDs,
 		})
 	}
@@ -542,4 +542,15 @@ func (s *ConnState) OnRoomUpdate(ctx context.Context, up caches.RoomUpdate) {
 	default:
 		logger.Warn().Str("room_id", up.RoomID()).Msg("OnRoomUpdate unknown update type")
 	}
+}
+
+// clampSliceRangeToRooms ensures we return a SYNC operation that is client-friendly.
+//
+// Suppose the client asks us to maintain a window on positions [10,19]. If the
+// underlying room list has only 12 elements, the window will see three rooms: those at
+// positions 10, 11 and 12. In this situation it is helpful for clients to be told that
+// the sync applies to the "effective" range [10, 12] rather than the "conceptual" range
+// [10, 19].
+func clampSliceRangeToRooms(r [2]int64, roomIDs []string) []int64 {
+	return []int64{r[0], r[0] + int64(len(roomIDs))}
 }
