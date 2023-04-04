@@ -45,8 +45,13 @@ func (r *AccountDataRequest) AppendLive(ctx context.Context, res *Response, extC
 	case *caches.AccountDataUpdate:
 		globalMsgs = accountEventsAsJSON(update.AccountData)
 	case *caches.RoomAccountDataUpdate:
-		roomToMsgs[update.RoomID()] = accountEventsAsJSON(update.AccountData)
+		if r.RoomInScope(update.RoomID(), extCtx) {
+			roomToMsgs[update.RoomID()] = accountEventsAsJSON(update.AccountData)
+		}
 	case caches.RoomUpdate:
+		if !r.RoomInScope(update.RoomID(), extCtx) {
+			break
+		}
 		// if this is a room update which is included in the response, send account data for this room
 		if _, exists := extCtx.RoomIDToTimeline[update.RoomID()]; exists {
 			roomAccountData, err := extCtx.Store.AccountDatas(extCtx.UserID, update.RoomID())
@@ -77,8 +82,10 @@ func (r *AccountDataRequest) ProcessInitial(ctx context.Context, res *Response, 
 	roomIDs := make([]string, len(extCtx.RoomIDToTimeline))
 	i := 0
 	for roomID := range extCtx.RoomIDToTimeline {
-		roomIDs[i] = roomID
-		i++
+		if r.RoomInScope(roomID, extCtx) {
+			roomIDs[i] = roomID
+			i++
+		}
 	}
 	extRes := &AccountDataResponse{
 		Rooms: make(map[string][]json.RawMessage),

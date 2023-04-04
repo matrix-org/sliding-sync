@@ -53,7 +53,7 @@ func (r *TypingRequest) AppendLive(ctx context.Context, res *Response, extCtx Co
 	}
 
 	// We've found a typing event. Ignore it if the client doesn't want to know about it.
-	if !r.shouldProcessUpdate(roomID, extCtx) {
+	if !r.RoomInScope(roomID, extCtx) {
 		return
 	}
 
@@ -63,33 +63,6 @@ func (r *TypingRequest) AppendLive(ctx context.Context, res *Response, extCtx Co
 		}
 	}
 	res.Typing.Rooms[roomID] = typingEvent
-}
-
-func (r *TypingRequest) shouldProcessUpdate(roomID string, extCtx Context) bool {
-	// If the extension hasn't had its scope configured, process everything.
-	if r.Lists == nil && r.Rooms == nil {
-		return true
-	}
-
-	// If this extension has been explicitly subscribed to this room, process the update.
-	for _, roomInScope := range r.Rooms {
-		if roomInScope == roomID {
-			return true
-		}
-	}
-
-	// If the room belongs to one of the lists that this extension should process, process the update.
-	visibleInLists := extCtx.RoomIDsToLists[roomID]
-	for _, visibleInList := range visibleInLists {
-		for _, shouldProcessList := range r.Lists {
-			if visibleInList == shouldProcessList {
-				return true
-			}
-		}
-	}
-
-	// Otherwise ignore the update.
-	return false
 }
 
 func (r *TypingRequest) ProcessInitial(ctx context.Context, res *Response, extCtx Context) {
@@ -106,7 +79,7 @@ func (r *TypingRequest) ProcessInitial(ctx context.Context, res *Response, extCt
 			continue
 		}
 
-		if !r.shouldProcessUpdate(roomID, extCtx) {
+		if !r.RoomInScope(roomID, extCtx) {
 			continue
 		}
 
