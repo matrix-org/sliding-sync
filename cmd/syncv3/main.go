@@ -49,7 +49,8 @@ Environment var
 %s      Default: unset. The bind addr for pprof debugging e.g ':6060'. If not set, does not listen.
 %s       Default: unset. The bind addr for Prometheus metrics, which will be accessible at /metrics at this address.
 %s Default: unset. The Jaeger URL to send spans to e.g http://localhost:14268/api/traces - if unset does not send OTLP traces.
-`, EnvServer, EnvDB, EnvSecret, EnvBindAddr, EnvTLSCert, EnvTLSKey, EnvPPROF, EnvPrometheus, EnvJaeger)
+%s Default: unset. The Sentry DSN to report events to e.g https://sliding-sync@sentry.example.com/123 - if unset does not send sentry events.
+`, EnvServer, EnvDB, EnvSecret, EnvBindAddr, EnvTLSCert, EnvTLSKey, EnvPPROF, EnvPrometheus, EnvJaeger, EnvSentryDsn)
 
 func defaulting(in, dft string) string {
 	if in == "" {
