@@ -242,7 +242,7 @@ func (s *ConnState) onIncomingListRequest(ctx context.Context, builder *RoomsBui
 			logger.Trace().Interface("range", prevRange).Msg("INVALIDATEing because sort/filter ops have changed")
 			allRoomIDs := roomList.RoomIDs()
 			for _, r := range prevRange {
-				clamped := clampSliceRangeToListSize(r, len(allRoomIDs))
+				clamped := clampSliceRangeToListSize(r, int64(len(allRoomIDs)))
 				if clamped == nil {
 					continue
 				}
@@ -292,7 +292,7 @@ func (s *ConnState) onIncomingListRequest(ctx context.Context, builder *RoomsBui
 		// the builder will populate this with the right room data
 		builder.AddRoomsToSubscription(subID, roomIDs)
 
-		clamped := clampSliceRangeToListSize(addedRanges[i], len(roomIDs))
+		clamped := clampSliceRangeToListSize(addedRanges[i], roomList.Len())
 		if clamped == nil {
 			continue
 		}
@@ -565,8 +565,8 @@ func (s *ConnState) OnRoomUpdate(ctx context.Context, up caches.RoomUpdate) {
 // The "full" room list occupies positions [0, totalRooms - 1]. If the given range r
 // does not overlap the full room list, return nil. Otherwise, return the intersection
 // of r with the full room list.
-func clampSliceRangeToListSize(r [2]int64, totalRooms int) []int64 {
-	lastIndexInRoom := int64(totalRooms) - 1
+func clampSliceRangeToListSize(r [2]int64, totalRooms int64) []int64 {
+	lastIndexInRoom := totalRooms - 1
 	if r[0] > lastIndexInRoom {
 		return nil
 	} else if r[1] <= lastIndexInRoom {
