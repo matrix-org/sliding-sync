@@ -32,6 +32,7 @@ const (
 	EnvPrometheus = "SYNCV3_PROM"
 	EnvDebug      = "SYNCV3_DEBUG"
 	EnvJaeger     = "SYNCV3_JAEGER_URL"
+	EnvSentryDsn  = "SYNCV3_SENTRY_DSN"
 )
 
 var helpMsg = fmt.Sprintf(`
@@ -69,6 +70,7 @@ func main() {
 		EnvPrometheus: os.Getenv(EnvPrometheus),
 		EnvDebug:      os.Getenv(EnvDebug),
 		EnvJaeger:     os.Getenv(EnvJaeger),
+		EnvSentryDsn:  os.Getenv(EnvSentryDsn),
 	}
 	requiredEnvVars := []string{EnvServer, EnvDB, EnvSecret, EnvBindAddr}
 	for _, requiredEnvVar := range requiredEnvVars {
