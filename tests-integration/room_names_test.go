@@ -21,7 +21,7 @@ func TestRoomNames(t *testing.T) {
 	defer v2.close()
 	defer v3.close()
 	bob := "@TestRoomNames_bob:localhost"
-	// make 5 rooms, last room is most recent, and send A,B,C into each room
+	// make 4 rooms, last room is most recent, and send A,B,C into each room
 	latestTimestamp := time.Now()
 	allRooms := []roomEvents{
 		{
@@ -113,7 +113,7 @@ func TestRoomNames(t *testing.T) {
 			Lists: map[string]sync3.RequestList{
 				"a": {
 					Ranges: sync3.SliceRanges{
-						[2]int64{0, int64(len(allRooms) - 1)}, // all rooms
+						[2]int64{0, (int64(len(allRooms)) - 1)}, // all rooms
 					},
 					Filters: &sync3.RequestFilters{
 						RoomNameFilter: searchTerm,
@@ -129,7 +129,7 @@ func TestRoomNames(t *testing.T) {
 			}
 		}
 		m.MatchResponse(t, res, m.MatchList("a", m.MatchV3Count(len(wantRooms)), m.MatchV3Ops(
-			m.MatchV3SyncOp(0, int64(len(allRooms)-1), wantRoomIDs),
+			m.MatchV3SyncOp(0, int64(len(wantRooms)-1), wantRoomIDs),
 		)), m.MatchRoomSubscriptions(matchers))
 	}
 	// case-insensitive matching

@@ -143,7 +143,7 @@ func TestConnStateInitial(t *testing.T) {
 				Ops: []sync3.ResponseOp{
 					&sync3.ResponseOpRange{
 						Operation: "SYNC",
-						Range:     []int64{0, 9},
+						Range:     []int64{0, 2},
 						RoomIDs: []string{
 							roomB.RoomID, roomC.RoomID, roomA.RoomID,
 						},

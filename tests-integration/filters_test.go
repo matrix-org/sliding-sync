@@ -54,13 +54,14 @@ func TestFiltersEncryption(t *testing.T) {
 			"enc": {
 				m.MatchV3Count(1),
 				m.MatchV3Ops(
-					m.MatchV3SyncOp(0, 1, []string{encryptedRoomID}),
+					m.MatchV3SyncOp(0, 0, []string{encryptedRoomID}),
 				),
 			},
 			"noenc": {
 				m.MatchV3Count(1),
 				m.MatchV3Ops(
-					m.MatchV3SyncOp(0, 1, []string{unencryptedRoomID}),
+					// Note: expect position 0 here---this is a separate list
+					m.MatchV3SyncOp(0, 0, []string{unencryptedRoomID}),
 				),
 			},
 		},
@@ -186,7 +187,7 @@ func TestFiltersInvite(t *testing.T) {
 			"inv": {
 				m.MatchV3Count(1),
 				m.MatchV3Ops(
-					m.MatchV3SyncOp(0, 20, []string{roomID}),
+					m.MatchV3SyncOp(0, 0, []string{roomID}),
 				),
 			},
 			"noinv": {
@@ -286,7 +287,7 @@ func TestFiltersRoomName(t *testing.T) {
 	m.MatchResponse(t, res, m.MatchList("a",
 		m.MatchV3Count(5),
 		m.MatchV3Ops(
-			m.MatchV3SyncOp(0, 20, []string{
+			m.MatchV3SyncOp(0, 4, []string{
 				ridApple, ridPear, ridOrange, ridPineapple, ridBanana,
 			}, true),
 		),
@@ -308,8 +309,8 @@ func TestFiltersRoomName(t *testing.T) {
 	m.MatchResponse(t, res, m.MatchList("a",
 		m.MatchV3Count(2),
 		m.MatchV3Ops(
-			m.MatchV3InvalidateOp(0, 20),
-			m.MatchV3SyncOp(0, 20, []string{
+			m.MatchV3InvalidateOp(0, 4),
+			m.MatchV3SyncOp(0, 1, []string{
 				ridApple, ridPineapple,
 			}, true),
 		),
@@ -398,22 +399,22 @@ func TestFiltersRoomTypes(t *testing.T) {
 	})
 	m.MatchResponse(t, res, m.MatchLists(map[string][]m.ListMatcher{
 		"a": {
-			m.MatchV3Count(1), m.MatchV3Ops(m.MatchV3SyncOp(0, 20, []string{spaceRoomID})),
+			m.MatchV3Count(1), m.MatchV3Ops(m.MatchV3SyncOp(0, 0, []string{spaceRoomID})),
 		},
 		"b": {
-			m.MatchV3Count(1), m.MatchV3Ops(m.MatchV3SyncOp(0, 20, []string{roomID})),
+			m.MatchV3Count(1), m.MatchV3Ops(m.MatchV3SyncOp(0, 0, []string{roomID})),
 		},
 		"c": {
-			m.MatchV3Count(2), m.MatchV3Ops(m.MatchV3SyncOp(0, 20, []string{roomID, otherRoomID}, true)),
+			m.MatchV3Count(2), m.MatchV3Ops(m.MatchV3SyncOp(0, 1, []string{roomID, otherRoomID}, true)),
 		},
 		"d": {
-			m.MatchV3Count(1), m.MatchV3Ops(m.MatchV3SyncOp(0, 20, []string{otherRoomID})),
+			m.MatchV3Count(1), m.MatchV3Ops(m.MatchV3SyncOp(0, 0, []string{otherRoomID})),
 		},
 		"e": {
 			m.MatchV3Count(0),
 		},
 		"f": {
-			m.MatchV3Count(3), m.MatchV3Ops(m.MatchV3SyncOp(0, 20, []string{roomID, otherRoomID, spaceRoomID}, true)),
+			m.MatchV3Count(3), m.MatchV3Ops(m.MatchV3SyncOp(0, 2, []string{roomID, otherRoomID, spaceRoomID}, true)),
 		},
 	}))
 }
@@ -486,11 +487,11 @@ func TestFiltersTags(t *testing.T) {
 		},
 	})
 	m.MatchResponse(t, res, m.MatchList("fav", m.MatchV3Count(3), m.MatchV3Ops(
-		m.MatchV3SyncOp(0, 20, []string{fav1RoomID, fav2RoomID, favAndLowRoomID}, true),
+		m.MatchV3SyncOp(0, 2, []string{fav1RoomID, fav2RoomID, favAndLowRoomID}, true),
 	)), m.MatchList("lp", m.MatchV3Count(3), m.MatchV3Ops(
-		m.MatchV3SyncOp(0, 20, []string{low1RoomID, low2RoomID, favAndLowRoomID}, true),
+		m.MatchV3SyncOp(0, 2, []string{low1RoomID, low2RoomID, favAndLowRoomID}, true),
 	)), m.MatchList("favlp", m.MatchV3Count(5), m.MatchV3Ops(
-		m.MatchV3SyncOp(0, 20, []string{fav1RoomID, fav2RoomID, favAndLowRoomID, low1RoomID, low2RoomID}, true),
+		m.MatchV3SyncOp(0, 4, []string{fav1RoomID, fav2RoomID, favAndLowRoomID, low1RoomID, low2RoomID}, true),
 	)))
 
 	// first bump the fav1 room
@@ -555,9 +556,9 @@ func TestFiltersTags(t *testing.T) {
 		},
 	})
 	m.MatchResponse(t, res, m.MatchList("fav", m.MatchV3Count(2), m.MatchV3Ops(
-		m.MatchV3SyncOp(0, 20, []string{fav2RoomID, favAndLowRoomID}, true),
+		m.MatchV3SyncOp(0, 1, []string{fav2RoomID, favAndLowRoomID}, true),
 	)), m.MatchList("nofav", m.MatchV3Count(3), m.MatchV3Ops(
-		m.MatchV3SyncOp(0, 20, []string{low1RoomID, low2RoomID, fav1RoomID}, true),
+		m.MatchV3SyncOp(0, 2, []string{low1RoomID, low2RoomID, fav1RoomID}, true),
 	)))
 
 	// remove a fav, it should move to the other list
