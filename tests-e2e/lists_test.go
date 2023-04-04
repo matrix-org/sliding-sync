@@ -726,8 +726,8 @@ func TestChangeSortOrder(t *testing.T) {
 	}
 
 	m.MatchResponse(t, res, m.MatchList("a", m.MatchV3Count(4), m.MatchV3Ops(
-		m.MatchV3InvalidateOp(0, 20),
-		m.MatchV3SyncOp(0, 20, []string{gotNameToIDs["Apple"], gotNameToIDs["Kiwi"], gotNameToIDs["Lemon"], gotNameToIDs["Orange"]}),
+		m.MatchV3InvalidateOp(0, 3),
+		m.MatchV3SyncOp(0, 3, []string{gotNameToIDs["Apple"], gotNameToIDs["Kiwi"], gotNameToIDs["Lemon"], gotNameToIDs["Orange"]}),
 	)))
 }
 
@@ -786,7 +786,7 @@ func TestExpandRange(t *testing.T) {
 		},
 	})
 	m.MatchResponse(t, res, m.MatchList("a", m.MatchV3Count(10), m.MatchV3Ops(
-		m.MatchV3SyncOp(0, 10, roomIDs),
+		m.MatchV3SyncOp(0, 9, roomIDs),
 	)))
 	// now expand the window
 	res = alice.SlidingSync(t, sync3.Request{
@@ -834,10 +834,10 @@ func TestMultipleSameList(t *testing.T) {
 	})
 	m.MatchResponse(t, res,
 		m.MatchList("1", m.MatchV3Count(16), m.MatchV3Ops(
-			m.MatchV3SyncOp(0, 20, roomIDs, false),
+			m.MatchV3SyncOp(0, 15, roomIDs, false),
 		)),
 		m.MatchList("2", m.MatchV3Count(16), m.MatchV3Ops(
-			m.MatchV3SyncOp(0, 16, roomIDs, false),
+			m.MatchV3SyncOp(0, 15, roomIDs, false),
 		)),
 	)
 	// now change both list ranges in a valid but strange way, and get back bad responses
@@ -923,7 +923,7 @@ func TestBumpEventTypesHandling(t *testing.T) {
 	matchRoom1ThenRoom2 := m.MatchList("room_list",
 		m.MatchV3Count(2),
 		m.MatchV3Ops(
-			m.MatchV3SyncOp(0, 20, []string{room1, room2}, false),
+			m.MatchV3SyncOp(0, 1, []string{room1, room2}, false),
 		))
 	m.MatchResponse(t, aliceRes, matchRoom1ThenRoom2)
 
