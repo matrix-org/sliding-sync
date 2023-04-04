@@ -140,6 +140,7 @@ func MatchRoomTimeline(events []json.RawMessage) RoomMatcher {
 		return nil
 	}
 }
+
 func MatchRoomHighlightCount(count int64) RoomMatcher {
 	return func(r sync3.Room) error {
 		if r.HighlightCount != count {
@@ -470,6 +471,14 @@ func sortReceipts(receipts []Receipt) {
 	})
 }
 
+// MatchReceipts builds a matcher which asserts that a sync response has the expected
+// set of read receipts in a given room is the expected set of `wantReceipts`.
+//
+// The match fails if:
+//   - there is no receipts extension in the sync response,
+//   - the room is missing from the sync response and `wantReceipts` is nonempty,
+//   - the room is present in the sync response but has a different set of receipts
+//     to `wantReceipts`.
 func MatchReceipts(roomID string, wantReceipts []Receipt) RespMatcher {
 	return func(res *sync3.Response) error {
 		if res.Extensions.Receipts == nil {
@@ -599,6 +608,16 @@ func MatchNoRoomAccountData(roomIDs []string) RespMatcher {
 				return fmt.Errorf("MatchNoRoomAccountData: got account data for %s, but expected it to be missing", roomID)
 			}
 		}
+		return nil
+	}
+}
+
+// LogResponse builds a matcher that always succeeds. As a side-effect, it pretty-prints
+// the given sync response to the test log. This is useful when debugging a test.
+func LogResponse(t *testing.T) RespMatcher {
+	return func(res *sync3.Response) error {
+		dump, _ := json.MarshalIndent(res, "", "    ")
+		t.Logf("Response was: %s", dump)
 		return nil
 	}
 }

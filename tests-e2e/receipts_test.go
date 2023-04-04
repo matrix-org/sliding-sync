@@ -1,6 +1,7 @@
 package syncv3_test
 
 import (
+	"fmt"
 	"testing"
 	"time"
 
@@ -221,4 +222,98 @@ func TestReceiptsPrivate(t *testing.T) {
 		},
 	})
 	m.MatchResponse(t, res, m.MatchNoReceiptsExtension())
+}
+
+func TestReceiptsRespectsExtensionScope(t *testing.T) {
+	alice := registerNewUser(t)
+	bob := registerNewUser(t)
+
+	var syncResp *sync3.Response
+
+	t.Log("Alice creates four rooms.")
+	room1 := alice.CreateRoom(t, map[string]interface{}{"preset": "public_chat", "name": "room 1"})
+	room2 := alice.CreateRoom(t, map[string]interface{}{"preset": "public_chat", "name": "room 2"})
+	room3 := alice.CreateRoom(t, map[string]interface{}{"preset": "public_chat", "name": "room 3"})
+	room4 := alice.CreateRoom(t, map[string]interface{}{"preset": "public_chat", "name": "room 4"})
+	t.Logf("room1=%s room2=%s room3=%s room4=%s", room1, room2, room3, room4)
+
+	t.Log("Bob joins those rooms.")
+	bob.JoinRoom(t, room1, nil)
+	bob.JoinRoom(t, room2, nil)
+	bob.JoinRoom(t, room3, nil)
+	bob.JoinRoom(t, room4, nil)
+
+	t.Log("Alice posts a message to each room")
+	messageEvent := Event{
+		Type: "m.room.message",
+		Content: map[string]interface{}{
+			"msgtype": "m.text",
+			"body":    "Hello, room!",
+		},
+	}
+	message1 := alice.SendEventSynced(t, room1, messageEvent)
+	message2 := alice.SendEventSynced(t, room2, messageEvent)
+	message3 := alice.SendEventSynced(t, room3, messageEvent)
+	message4 := alice.SendEventSynced(t, room4, messageEvent)
+
+	t.Log("Bob posts a public read receipt for the messages in rooms 1 and 2.")
+	bob.SendReceipt(t, room1, message1, "m.read")
+	bob.SendReceipt(t, room2, message2, "m.read")
+
+	t.Log("Bob makes an initial sliding sync, requesting receipts in rooms 2 and 4 only.")
+	syncResp = bob.SlidingSync(t, sync3.Request{
+		Extensions: extensions.Request{
+			Receipts: &extensions.ReceiptsRequest{
+				Core: extensions.Core{Enabled: &boolTrue, Lists: []string{}, Rooms: []string{room2, room4}},
+			},
+		},
+		Lists: map[string]sync3.RequestList{
+			"window": {
+				Ranges: sync3.SliceRanges{{0, 20}},
+			},
+		},
+	})
+
+	t.Log("Bob should see his receipt in room 2, but not his receipt in room 1.")
+	m.MatchResponse(
+		t,
+		syncResp,
+		m.MatchReceipts(room1, nil),
+		m.MatchReceipts(room2, []m.Receipt{{
+			EventID: message2,
+			UserID:  bob.UserID,
+			Type:    "m.read",
+		}}),
+	)
+
+	t.Log("Bob posts receipts for rooms 3 and 4.")
+	bob.SendReceipt(t, room3, message3, "m.read")
+	bob.SendReceipt(t, room4, message4, "m.read")
+
+	t.Log("Bob sees his receipt in room 4, but not in room 3.")
+	syncResp = bob.SlidingSyncUntil(
+		t,
+		syncResp.Pos,
+		sync3.Request{}, // no change
+		func(response *sync3.Response) error {
+			// Need to check some receipts data exist, or room3 matcher will fail
+			if response.Extensions.Receipts == nil {
+				return fmt.Errorf("no receipts data in sync response")
+			}
+
+			// Bob never sees a receipt in room 3.
+			matcherRoom3 := m.MatchReceipts(room3, nil)
+			err := matcherRoom3(response)
+			if err != nil {
+				t.Error(err)
+			}
+
+			matcherRoom4 := m.MatchReceipts(room4, []m.Receipt{{
+				EventID: message4,
+				UserID:  bob.UserID,
+				Type:    "m.read",
+			}})
+			return matcherRoom4(response)
+		},
+	)
 }

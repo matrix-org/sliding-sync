@@ -34,6 +34,10 @@ func (r *ReceiptsResponse) HasData(isInitial bool) bool {
 func (r *ReceiptsRequest) AppendLive(ctx context.Context, res *Response, extCtx Context, up caches.Update) {
 	switch update := up.(type) {
 	case *caches.ReceiptUpdate:
+		if !r.RoomInScope(update.RoomID(), extCtx) {
+			break
+		}
+
 		// a live receipt event happened, send this back
 		if res.Receipts == nil {
 			edu, err := state.PackReceiptsIntoEDU([]internal.Receipt{update.Receipt})
@@ -79,6 +83,9 @@ func (r *ReceiptsRequest) ProcessInitial(ctx context.Context, res *Response, ext
 	// grab receipts for all timelines for all the rooms we're going to return
 	rooms := make(map[string]json.RawMessage)
 	for roomID, timeline := range extCtx.RoomIDToTimeline {
+		if !r.RoomInScope(roomID, extCtx) {
+			continue
+		}
 		receipts, err := extCtx.Store.ReceiptTable.SelectReceiptsForEvents(roomID, timeline)
 		if err != nil {
 			logger.Err(err).Str("user", extCtx.UserID).Str("room", roomID).Msg("failed to SelectReceiptsForEvents")
