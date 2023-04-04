@@ -240,10 +240,15 @@ func (s *ConnState) onIncomingListRequest(ctx context.Context, builder *RoomsBui
 		if prevReqList != nil {
 			// there were previous syncs for this list, INVALIDATE the lot
 			logger.Trace().Interface("range", prevRange).Msg("INVALIDATEing because sort/filter ops have changed")
+			allRoomIDs := roomList.RoomIDs()
 			for _, r := range prevRange {
+				clamped := clampSliceRangeToListSize(r, len(allRoomIDs))
+				if clamped == nil {
+					continue
+				}
 				responseOperations = append(responseOperations, &sync3.ResponseOpRange{
 					Operation: sync3.OpInvalidate,
-					Range:     r[:],
+					Range:     clamped,
 				})
 			}
 		}
@@ -266,7 +271,9 @@ func (s *ConnState) onIncomingListRequest(ctx context.Context, builder *RoomsBui
 	for i := range removedRanges {
 		responseOperations = append(responseOperations, &sync3.ResponseOpRange{
 			Operation: sync3.OpInvalidate,
-			Range:     removedRanges[i][:],
+			// we shouldn't need to clamp this range: we are removing concrete rooms
+			// whose position is in bounds.
+			Range: removedRanges[i][:],
 		})
 	}
 
@@ -285,9 +292,13 @@ func (s *ConnState) onIncomingListRequest(ctx context.Context, builder *RoomsBui
 		// the builder will populate this with the right room data
 		builder.AddRoomsToSubscription(subID, roomIDs)
 
+		clamped := clampSliceRangeToListSize(addedRanges[i], len(roomIDs))
+		if clamped == nil {
+			continue
+		}
 		responseOperations = append(responseOperations, &sync3.ResponseOpRange{
 			Operation: sync3.OpSync,
-			Range:     clampSliceRangeToRooms(addedRanges[i], roomIDs),
+			Range:     clamped,
 			RoomIDs:   roomIDs,
 		})
 	}
@@ -544,13 +555,24 @@ func (s *ConnState) OnRoomUpdate(ctx context.Context, up caches.RoomUpdate) {
 	}
 }
 
-// clampSliceRangeToRooms ensures we return a SYNC operation that is client-friendly.
+// clampSliceRangeToListSize helps us send client-friend SYNC and INVALIDATE ranges.
 //
-// Suppose the client asks us to maintain a window on positions [10,19]. If the
-// underlying room list has only 12 elements, the window will see three rooms: those at
-// positions 10, 11 and 12. In this situation it is helpful for clients to be told that
-// the sync applies to the "effective" range [10, 12] rather than the "conceptual" range
-// [10, 19].
-func clampSliceRangeToRooms(r [2]int64, roomIDs []string) []int64 {
-	return []int64{r[0], r[0] + int64(len(roomIDs))}
+// Suppose the client asks for a window on positions [10, 19]. If the list
+// has exactly 12 rooms, the window will see 3: those at positions 10, 11
+// and 12. In this situation, it is helpful for clients to be given the
+// "effective" range [10, 12] rather than the "conceptual" range [10, 19].
+//
+// The "full" room list occupies positions [0, totalRooms - 1]. If the given range r
+// does not overlap the full room list, return nil. Otherwise, return the intersection
+// of r with the full room list.
+func clampSliceRangeToListSize(r [2]int64, totalRooms int) []int64 {
+	lastIndexInRoom := int64(totalRooms) - 1
+	if r[0] > lastIndexInRoom {
+		return nil
+	} else if r[1] <= lastIndexInRoom {
+		return r[:]
+	} else {
+		return []int64{r[0], lastIndexInRoom}
+	}
+
 }
