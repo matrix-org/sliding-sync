@@ -11,7 +11,10 @@ import (
 	"net/http"
 	_ "net/http/pprof"
 	"os"
+	"os/signal"
 	"strings"
+	"syscall"
+	"time"
 )
 
 var GitCommit string
@@ -133,5 +136,27 @@ func main() {
 	}
 
 	syncv3.RunSyncV3Server(h3, args[EnvBindAddr], args[EnvServer], args[EnvTLSCert], args[EnvTLSKey])
-	select {} // block forever
+	WaitForShutdown(args[EnvSentryDsn] != "")
+}
+
+// WaitForShutdown blocks until the process receives a SIGINT or SIGTERM signal
+// (see `man 7 signal`). It performs any last cleanup tasks and then exits.
+func WaitForShutdown(sentryInUse bool) {
+	sigs := make(chan os.Signal, 1)
+	signal.Notify(sigs, syscall.SIGINT, syscall.SIGTERM)
+	select {
+	case <-sigs:
+	}
+	signal.Reset(syscall.SIGINT, syscall.SIGTERM)
+
+	fmt.Printf("Shutdown signal received...")
+
+	if sentryInUse {
+		fmt.Printf("Flushing sentry events...")
+		if !sentry.Flush(time.Second * 5) {
+			fmt.Printf("Failed to flush all Sentry events!")
+		}
+	}
+
+	fmt.Printf("Exiting now")
 }
