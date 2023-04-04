@@ -2,16 +2,18 @@ package main
 
 import (
 	"fmt"
-	"net/http"
-	_ "net/http/pprof"
-	"os"
-	"strings"
-
+	"github.com/getsentry/sentry-go"
+	sentryhttp "github.com/getsentry/sentry-go/http"
 	syncv3 "github.com/matrix-org/sliding-sync"
 	"github.com/matrix-org/sliding-sync/internal"
 	"github.com/matrix-org/sliding-sync/sync2"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
+	"net/http"
+	_ "net/http/pprof"
+	"os"
+	"strings"
+	"time"
 )
 
 var GitCommit string
@@ -115,10 +117,31 @@ func main() {
 		AddPrometheusMetrics: args[EnvPrometheus] != "",
 	})
 
+	if args[EnvSentryDsn] != "" {
+		fmt.Printf("Configuring Sentry reporter...\n")
+		err := sentry.Init(sentry.ClientOptions{
+			Dsn:     args[EnvSentryDsn],
+			Release: version,
+			Dist:    GitCommit,
+		})
+		if err != nil {
+			panic(err)
+		}
+	}
+
 	go h2.StartV2Pollers()
 	if args[EnvJaeger] != "" {
 		h3 = otelhttp.NewHandler(h3, "Sync")
 	}
+
+	if args[EnvSentryDsn] != "" {
+		defer sentry.Flush(2 * time.Second)
+		sentryHandler := sentryhttp.New(sentryhttp.Options{
+			Repanic: true,
+		})
+		h3 = sentryHandler.Handle(h3)
+	}
+
 	syncv3.RunSyncV3Server(h3, args[EnvBindAddr], args[EnvServer], args[EnvTLSCert], args[EnvTLSKey])
 	select {} // block forever
 }
