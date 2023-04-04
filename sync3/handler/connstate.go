@@ -566,13 +566,13 @@ func (s *ConnState) OnRoomUpdate(ctx context.Context, up caches.RoomUpdate) {
 // does not overlap the full room list, return nil. Otherwise, return the intersection
 // of r with the full room list.
 func clampSliceRangeToListSize(r [2]int64, totalRooms int64) []int64 {
-	lastIndexInRoom := totalRooms - 1
-	if r[0] > lastIndexInRoom {
+	lastIndexWithRoom := totalRooms - 1
+	if r[0] > lastIndexWithRoom {
 		return nil
-	} else if r[1] <= lastIndexInRoom {
+	} else if r[1] <= lastIndexWithRoom {
 		return r[:]
 	} else {
-		return []int64{r[0], lastIndexInRoom}
+		return []int64{r[0], lastIndexWithRoom}
 	}
 
 }
