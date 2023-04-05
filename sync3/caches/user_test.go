@@ -1,9 +1,9 @@
 package caches_test
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
-	"golang.org/x/net/context"
 	"reflect"
 	"testing"
 

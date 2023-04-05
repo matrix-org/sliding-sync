@@ -1,10 +1,10 @@
 package internal
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"github.com/getsentry/sentry-go"
-	"golang.org/x/net/context"
 	"os"
 	"runtime"
 
