@@ -192,7 +192,7 @@ func (s *InternalRequestLists) AssignList(ctx context.Context, listKey string, f
 
 	roomList := NewFilteredSortableRooms(s, roomIDs, filters)
 	if sort != nil {
-		err := roomList.Sort(ctx, sort)
+		err := roomList.Sort(sort)
 		if err != nil {
 			logger.Err(err).Strs("sort_by", sort).Msg("failed to sort")
 			internal.GetSentryHubFromContextOrDefault(ctx).CaptureException(err)

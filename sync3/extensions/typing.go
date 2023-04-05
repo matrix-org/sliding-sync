@@ -72,7 +72,7 @@ func (r *TypingRequest) ProcessInitial(ctx context.Context, res *Response, extCt
 	for roomID := range extCtx.RoomIDToTimeline {
 		roomIDs = append(roomIDs, roomID)
 	}
-	roomToGlobalMetadata := extCtx.GlobalCache.LoadRooms(roomIDs...)
+	roomToGlobalMetadata := extCtx.GlobalCache.LoadRooms(ctx, roomIDs...)
 	for roomID := range extCtx.RoomIDToTimeline {
 		meta := roomToGlobalMetadata[roomID]
 		if meta == nil || meta.TypingEvent == nil {

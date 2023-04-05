@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"github.com/getsentry/sentry-go"
 	"os"
 	"sort"
 	"sync"
@@ -74,14 +73,14 @@ func NewGlobalCache(store *state.Storage) *GlobalCache {
 	}
 }
 
-func (c *GlobalCache) OnRegistered(_ int64) error {
+func (c *GlobalCache) OnRegistered(_ context.Context, _ int64) error {
 	return nil
 }
 
 // Load the current room metadata for the given room IDs. Races unless you call this in a dispatcher loop.
 // Always returns copies of the room metadata so ownership can be passed to other threads.
 // Keeps the ordering of the room IDs given.
-func (c *GlobalCache) LoadRooms(roomIDs ...string) map[string]*internal.RoomMetadata {
+func (c *GlobalCache) LoadRooms(ctx context.Context, roomIDs ...string) map[string]*internal.RoomMetadata {
 	c.roomIDToMetadataMu.RLock()
 	defer c.roomIDToMetadataMu.RUnlock()
 	result := make(map[string]*internal.RoomMetadata, len(roomIDs))
@@ -91,7 +90,7 @@ func (c *GlobalCache) LoadRooms(roomIDs ...string) map[string]*internal.RoomMeta
 		if sr == nil {
 			const errMsg = "GlobalCache.LoadRoom: no metadata for this room"
 			logger.Error().Str("room", roomID).Msg(errMsg)
-			sentry.CaptureException(fmt.Errorf(errMsg))
+			internal.GetSentryHubFromContextOrDefault(ctx).CaptureException(fmt.Errorf(errMsg))
 			continue
 		}
 		srCopy := *sr
@@ -107,7 +106,7 @@ func (c *GlobalCache) LoadRooms(roomIDs ...string) map[string]*internal.RoomMeta
 
 // Load all current joined room metadata for the user given. Returns the absolute database position along
 // with the results. TODO: remove with LoadRoomState?
-func (c *GlobalCache) LoadJoinedRooms(userID string) (pos int64, joinedRooms map[string]*internal.RoomMetadata, err error) {
+func (c *GlobalCache) LoadJoinedRooms(ctx context.Context, userID string) (pos int64, joinedRooms map[string]*internal.RoomMetadata, err error) {
 	if c.LoadJoinedRoomsOverride != nil {
 		return c.LoadJoinedRoomsOverride(userID)
 	}
@@ -120,7 +119,7 @@ func (c *GlobalCache) LoadJoinedRooms(userID string) (pos int64, joinedRooms map
 		return 0, nil, err
 	}
 	// TODO: no guarantee that this state is the same as latest unless called in a dispatcher loop
-	rooms := c.LoadRooms(joinedRoomIDs...)
+	rooms := c.LoadRooms(ctx, joinedRoomIDs...)
 	return initialLoadPosition, rooms, nil
 }
 

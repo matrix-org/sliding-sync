@@ -100,7 +100,7 @@ func (h *SyncLiveHandler) Startup(storeSnapshot *state.StartupSnapshot) error {
 	if err := h.Dispatcher.Startup(storeSnapshot.AllJoinedMembers); err != nil {
 		return fmt.Errorf("failed to load sync3.Dispatcher: %s", err)
 	}
-	h.Dispatcher.Register(sync3.DispatcherAllUsers, h.GlobalCache)
+	h.Dispatcher.Register(context.Background(), sync3.DispatcherAllUsers, h.GlobalCache)
 	if err := h.GlobalCache.Startup(storeSnapshot.GlobalMetadata); err != nil {
 		return fmt.Errorf("failed to populate global cache: %s", err)
 	}
@@ -433,7 +433,7 @@ func (h *SyncLiveHandler) userCache(userID string) (*caches.UserCache, error) {
 	actualUC, loaded := h.userCaches.LoadOrStore(userID, uc)
 	uc = actualUC.(*caches.UserCache)
 	if !loaded { // we actually inserted the cache, so register with the dispatcher.
-		if err = h.Dispatcher.Register(userID, uc); err != nil {
+		if err = h.Dispatcher.Register(context.Background(), userID, uc); err != nil {
 			h.Dispatcher.Unregister(userID)
 			h.userCaches.Delete(userID)
 			return nil, fmt.Errorf("failed to register user cache with dispatcher: %s", err)
@@ -630,7 +630,7 @@ func (h *SyncLiveHandler) OnReceipt(p *pubsub.V2Receipt) {
 func (h *SyncLiveHandler) OnTyping(p *pubsub.V2Typing) {
 	ctx, task := internal.StartTask(context.Background(), "OnTyping")
 	defer task.End()
-	rooms := h.GlobalCache.LoadRooms(p.RoomID)
+	rooms := h.GlobalCache.LoadRooms(ctx, p.RoomID)
 	if rooms[p.RoomID] != nil {
 		if reflect.DeepEqual(p.EphemeralEvent, rooms[p.RoomID].TypingEvent) {
 			return // it's a duplicate, which happens when 2+ users are in the same room

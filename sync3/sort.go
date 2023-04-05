@@ -1,7 +1,6 @@
 package sync3
 
 import (
-	"context"
 	"fmt"
 	"sort"
 
@@ -52,8 +51,9 @@ func (s *SortableRooms) Add(roomID string) bool {
 	return true
 }
 
-func (s *SortableRooms) Get(ctx context.Context, index int) string {
-	internal.AssertWithContext(ctx, fmt.Sprintf("index is within len(rooms) %v < %v", index, len(s.roomIDs)), index < len(s.roomIDs))
+func (s *SortableRooms) Get(index int) string {
+	// TODO: find a way to plumb a context through
+	internal.Assert(fmt.Sprintf("index is within len(rooms) %v < %v", index, len(s.roomIDs)), index < len(s.roomIDs))
 	return s.roomIDs[index]
 }
 
@@ -85,8 +85,8 @@ func (s *SortableRooms) Subslice(i, j int64) Subslicer {
 	}
 }
 
-func (s *SortableRooms) Sort(ctx context.Context, sortBy []string) error {
-	internal.AssertWithContext(ctx, "sortBy is not empty", len(sortBy) != 0)
+func (s *SortableRooms) Sort(sortBy []string) error {
+	internal.Assert("sortBy is not empty", len(sortBy) != 0)
 	comparators := []func(i, j int) int{}
 	for _, sort := range sortBy {
 		switch sort {

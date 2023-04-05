@@ -83,7 +83,7 @@ func CalculateListOps(ctx context.Context, reqList *RequestList, list List, room
 		listFromIndex := listFromTo[0]
 		listToIndex := listFromTo[1]
 		wasUpdatedRoomInserted := listToIndex == toIndex
-		toRoomID := list.Get(ctx, listToIndex)
+		toRoomID := list.Get(listToIndex)
 		if toRoomID == roomID && listFromIndex == listToIndex && listOp == ListOpChange && wasInsideRange && len(listFromTos) == 1 {
 			// DELETE/INSERT have the same index, we're INSERTing the room that was updated, it was a Change not Add/Delete, it
 			// was previously inside the window AND there's just 1 move operation = it's moving to and from the same index so

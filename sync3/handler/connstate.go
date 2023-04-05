@@ -83,8 +83,8 @@ func NewConnState(
 //     N events arrive and get buffered.
 //   - load() bases its current state based on the latest position, which includes processing of these N events.
 //   - post load() we read N events, processing them a 2nd time.
-func (s *ConnState) load() error {
-	initialLoadPosition, joinedRooms, err := s.globalCache.LoadJoinedRooms(s.userID)
+func (s *ConnState) load(ctx context.Context) error {
+	initialLoadPosition, joinedRooms, err := s.globalCache.LoadJoinedRooms(ctx, s.userID)
 	if err != nil {
 		return err
 	}
@@ -120,7 +120,7 @@ func (s *ConnState) OnIncomingRequest(ctx context.Context, cid sync3.ConnID, req
 	if s.loadPosition == -1 {
 		// load() needs no ctx so drop it
 		_, region := internal.StartSpan(ctx, "load")
-		s.load()
+		s.load(ctx)
 		region.End()
 	}
 	return s.onIncomingRequest(ctx, req, isInitial)
@@ -252,7 +252,7 @@ func (s *ConnState) onIncomingListRequest(ctx context.Context, builder *RoomsBui
 			roomList, _ = s.lists.AssignList(ctx, listKey, nextReqList.Filters, nextReqList.Sort, sync3.Overwrite)
 		}
 		// resort as either we changed the sort order or we added/removed a bunch of rooms
-		if err := roomList.Sort(ctx, nextReqList.Sort); err != nil {
+		if err := roomList.Sort(nextReqList.Sort); err != nil {
 			logger.Err(err).Str("key", listKey).Msg("cannot sort list")
 			internal.GetSentryHubFromContextOrDefault(ctx).CaptureException(err)
 		}
@@ -429,7 +429,7 @@ func (s *ConnState) getInitialRoomData(ctx context.Context, roomSub sync3.RoomSu
 	rooms := make(map[string]sync3.Room, len(roomIDs))
 	// We want to grab the user room data and the room metadata for each room ID.
 	roomIDToUserRoomData := s.userCache.LazyLoadTimelines(ctx, s.loadPosition, roomIDs, int(roomSub.TimelineLimit))
-	roomMetadatas := s.globalCache.LoadRooms(roomIDs...)
+	roomMetadatas := s.globalCache.LoadRooms(ctx, roomIDs...)
 	// prepare lazy loading data structures, txn IDs
 	roomToUsersInTimeline := make(map[string][]string, len(roomIDToUserRoomData))
 	roomToTimeline := make(map[string][]json.RawMessage)

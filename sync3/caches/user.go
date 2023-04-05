@@ -213,10 +213,10 @@ func (c *UserCache) Unsubscribe(id int) {
 	delete(c.listeners, id)
 }
 
-func (c *UserCache) OnRegistered(_ int64) error {
+func (c *UserCache) OnRegistered(ctx context.Context, _ int64) error {
 	// select all spaces the user is a part of to seed the cache correctly. This has to be done in
 	// the OnRegistered callback which has locking guarantees. This is why...
-	latestPos, joinedRooms, err := c.globalCache.LoadJoinedRooms(c.UserID)
+	latestPos, joinedRooms, err := c.globalCache.LoadJoinedRooms(ctx, c.UserID)
 	if err != nil {
 		return fmt.Errorf("failed to load joined rooms: %s", err)
 	}
@@ -393,7 +393,7 @@ func (c *roomUpdateCache) UserRoomMetadata() *UserRoomData {
 func (c *UserCache) newRoomUpdate(ctx context.Context, roomID string) RoomUpdate {
 	u := c.LoadRoomData(roomID)
 	var r *internal.RoomMetadata
-	globalRooms := c.globalCache.LoadRooms(roomID)
+	globalRooms := c.globalCache.LoadRooms(ctx, roomID)
 	if globalRooms == nil || globalRooms[roomID] == nil {
 		// this can happen when we join a room we didn't know about because we process unread counts
 		// before the timeline events. Warn and send a stub
