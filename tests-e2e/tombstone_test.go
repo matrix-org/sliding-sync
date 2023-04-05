@@ -27,7 +27,7 @@ func TestIncludeOldRooms(t *testing.T) {
 		},
 	})
 	m.MatchResponse(t, res, m.MatchList("a", m.MatchV3Count(1), m.MatchV3Ops(
-		m.MatchV3SyncOp(0, 1, []string{roomID}),
+		m.MatchV3SyncOp(0, 0, []string{roomID}),
 	)))
 	newRoomID := upgradeRoom(t, client, roomID)
 	t.Logf("old %s new %s", roomID, newRoomID)
