@@ -269,11 +269,13 @@ func (s *ConnState) onIncomingListRequest(ctx context.Context, builder *RoomsBui
 		logger.Trace().Interface("range", removedRanges).Msg("INVALIDATEing because ranges were removed")
 	}
 	for i := range removedRanges {
+		clamped := clampSliceRangeToListSize(removedRanges[i], roomList.Len())
+		if clamped == nil {
+			continue
+		}
 		responseOperations = append(responseOperations, &sync3.ResponseOpRange{
 			Operation: sync3.OpInvalidate,
-			// we shouldn't need to clamp this range: we are removing concrete rooms
-			// whose position is in bounds.
-			Range: removedRanges[i][:],
+			Range:     clamped,
 		})
 	}
 
