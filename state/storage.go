@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/getsentry/sentry-go"
 	"os"
 	"strings"
 
@@ -46,6 +47,7 @@ func NewStorage(postgresURI string) *Storage {
 	db, err := sqlx.Open("postgres", postgresURI)
 	if err != nil {
 		logger.Panic().Err(err).Str("uri", postgresURI).Msg("failed to open SQL DB")
+		sentry.CaptureException(err)
 	}
 	acc := &Accumulator{
 		db:            db,
