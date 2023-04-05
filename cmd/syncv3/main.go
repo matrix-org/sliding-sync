@@ -141,7 +141,6 @@ func main() {
 	}
 
 	if args[EnvSentryDsn] != "" {
-		defer sentry.Flush(2 * time.Second)
 		sentryHandler := sentryhttp.New(sentryhttp.Options{
 			Repanic: true,
 		})
