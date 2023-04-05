@@ -390,7 +390,7 @@ func (c *roomUpdateCache) UserRoomMetadata() *UserRoomData {
 }
 
 // snapshots the user cache / global cache data for this room for sending to connections
-func (c *UserCache) newRoomUpdate(roomID string) RoomUpdate {
+func (c *UserCache) newRoomUpdate(ctx context.Context, roomID string) RoomUpdate {
 	u := c.LoadRoomData(roomID)
 	var r *internal.RoomMetadata
 	globalRooms := c.globalCache.LoadRooms(roomID)
@@ -404,7 +404,7 @@ func (c *UserCache) newRoomUpdate(roomID string) RoomUpdate {
 	} else {
 		r = globalRooms[roomID]
 	}
-	internal.Assert("missing global room metadata for room "+roomID, r != nil)
+	internal.AssertWithContext(ctx, "missing global room metadata for room "+roomID, r != nil)
 	return &roomUpdateCache{
 		roomID:         roomID,
 		globalRoomData: r,
@@ -479,7 +479,7 @@ func (c *UserCache) OnEphemeralEvent(ctx context.Context, roomID string, ephEven
 	switch evType {
 	case "m.typing":
 		update = &TypingUpdate{
-			RoomUpdate: c.newRoomUpdate(roomID),
+			RoomUpdate: c.newRoomUpdate(ctx, roomID),
 		}
 	}
 	if update == nil {
@@ -491,7 +491,7 @@ func (c *UserCache) OnEphemeralEvent(ctx context.Context, roomID string, ephEven
 
 func (c *UserCache) OnReceipt(ctx context.Context, receipt internal.Receipt) {
 	c.emitOnRoomUpdate(ctx, &ReceiptUpdate{
-		RoomUpdate: c.newRoomUpdate(receipt.RoomID),
+		RoomUpdate: c.newRoomUpdate(ctx, receipt.RoomID),
 		Receipt:    receipt,
 	})
 }
@@ -538,7 +538,7 @@ func (c *UserCache) OnUnreadCounts(ctx context.Context, roomID string, highlight
 	c.roomToDataMu.Unlock()
 
 	roomUpdate := &UnreadCountUpdate{
-		RoomUpdate:        c.newRoomUpdate(roomID),
+		RoomUpdate:        c.newRoomUpdate(ctx, roomID),
 		HasCountDecreased: hasCountDecreased,
 	}
 
@@ -562,7 +562,7 @@ func (c *UserCache) OnSpaceUpdate(ctx context.Context, parentRoomID, childRoomID
 
 	// now we need to notify connections for the _child_
 	roomUpdate := &RoomEventUpdate{
-		RoomUpdate: c.newRoomUpdate(childRoomID),
+		RoomUpdate: c.newRoomUpdate(ctx, childRoomID),
 		EventData:  eventData,
 	}
 
@@ -595,7 +595,7 @@ func (c *UserCache) OnNewEvent(ctx context.Context, eventData *EventData) {
 	c.roomToDataMu.Unlock()
 
 	roomUpdate := &RoomEventUpdate{
-		RoomUpdate: c.newRoomUpdate(eventData.RoomID),
+		RoomUpdate: c.newRoomUpdate(ctx, eventData.RoomID),
 		EventData:  eventData,
 	}
 
@@ -721,7 +721,7 @@ func (c *UserCache) OnAccountData(ctx context.Context, datas []state.AccountData
 		} else {
 			roomUpdate := &RoomAccountDataUpdate{
 				AccountData: updates,
-				RoomUpdate:  c.newRoomUpdate(roomID),
+				RoomUpdate:  c.newRoomUpdate(ctx, roomID),
 			}
 			c.emitOnRoomUpdate(ctx, roomUpdate)
 		}

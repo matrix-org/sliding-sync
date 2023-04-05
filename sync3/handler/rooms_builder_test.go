@@ -258,7 +258,7 @@ func TestRoomsBuilder(t *testing.T) {
 		rb := NewRoomsBuilder()
 		for _, bs := range tc.subsToAdd {
 			id := rb.AddSubscription(bs.RoomSubscription)
-			rb.AddRoomsToSubscription(id, bs.RoomIDs)
+			rb.AddRoomsToSubscription(ctx, id, bs.RoomIDs)
 		}
 		got := rb.BuildSubscriptions()
 		tc.want = sortBuiltSubs(tc.want)

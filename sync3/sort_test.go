@@ -1,6 +1,7 @@
 package sync3
 
 import (
+	"context"
 	"reflect"
 	"strings"
 	"testing"
@@ -97,7 +98,7 @@ func TestSortBySingleOperation(t *testing.T) {
 	f := newFinder(rooms)
 	sr := NewSortableRooms(f, f.roomIDs)
 	for sortBy, wantOrder := range wantMap {
-		sr.Sort(strings.Split(sortBy, " "))
+		sr.Sort(context.Background(), strings.Split(sortBy, " "))
 		var gotRoomIDs []string
 		for i := range sr.roomIDs {
 			gotRoomIDs = append(gotRoomIDs, sr.roomIDs[i])
@@ -185,7 +186,7 @@ func TestSortByMultipleOperations(t *testing.T) {
 	f := newFinder(rooms)
 	sr := NewSortableRooms(f, f.roomIDs)
 	for _, tc := range testCases {
-		sr.Sort(tc.SortBy)
+		sr.Sort(context.Background(), tc.SortBy)
 		var gotRoomIDs []string
 		for i := range sr.roomIDs {
 			gotRoomIDs = append(gotRoomIDs, sr.roomIDs[i])
@@ -228,7 +229,7 @@ func TestSortableRoomsRemove(t *testing.T) {
 	}
 	f := newFinder(rooms)
 	sr := NewSortableRooms(f, f.roomIDs)
-	if err := sr.Sort([]string{SortByRecency}); err != nil { // room 1 is first, then room 2
+	if err := sr.Sort(context.Background(), []string{SortByRecency}); err != nil { // room 1 is first, then room 2
 		t.Fatalf("Sort: %s", err)
 	}
 	if i, ok := sr.IndexOf(room1); i != 0 || !ok {
@@ -358,7 +359,7 @@ func TestSortByNotificationLevel(t *testing.T) {
 	t.Logf("%v", roomIDs)
 	f := newFinder(rooms)
 	sr := NewSortableRooms(f, roomIDs)
-	if err := sr.Sort([]string{SortByNotificationLevel, SortByRecency}); err != nil {
+	if err := sr.Sort(context.Background(), []string{SortByNotificationLevel, SortByRecency}); err != nil {
 		t.Fatalf("Sort: %s", err)
 	}
 	var gotRoomIDs []string

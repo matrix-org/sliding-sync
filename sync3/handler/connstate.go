@@ -202,7 +202,7 @@ func (s *ConnState) onIncomingListRequest(ctx context.Context, builder *RoomsBui
 			// this is either a new list or the filters changed, so we need to splat all the rooms to the client.
 			subID := builder.AddSubscription(nextReqList.RoomSubscription)
 			allRoomIDs := roomList.RoomIDs()
-			builder.AddRoomsToSubscription(subID, allRoomIDs)
+			builder.AddRoomsToSubscription(ctx, subID, allRoomIDs)
 			return sync3.ResponseList{
 				// send all the room IDs initially so the user knows which rooms in the top-level rooms map
 				// correspond to this list.
@@ -252,7 +252,7 @@ func (s *ConnState) onIncomingListRequest(ctx context.Context, builder *RoomsBui
 			roomList, _ = s.lists.AssignList(ctx, listKey, nextReqList.Filters, nextReqList.Sort, sync3.Overwrite)
 		}
 		// resort as either we changed the sort order or we added/removed a bunch of rooms
-		if err := roomList.Sort(nextReqList.Sort); err != nil {
+		if err := roomList.Sort(ctx, nextReqList.Sort); err != nil {
 			logger.Err(err).Str("key", listKey).Msg("cannot sort list")
 			internal.GetSentryHubFromContextOrDefault(ctx).CaptureException(err)
 		}
@@ -284,7 +284,7 @@ func (s *ConnState) onIncomingListRequest(ctx context.Context, builder *RoomsBui
 		sortableRooms := subslice[0].(*sync3.SortableRooms)
 		roomIDs := sortableRooms.RoomIDs()
 		// the builder will populate this with the right room data
-		builder.AddRoomsToSubscription(subID, roomIDs)
+		builder.AddRoomsToSubscription(ctx, subID, roomIDs)
 
 		responseOperations = append(responseOperations, &sync3.ResponseOpRange{
 			Operation: sync3.OpSync,
@@ -327,7 +327,7 @@ func (s *ConnState) onIncomingListRequest(ctx context.Context, builder *RoomsBui
 					joinedRoomIDs = append(joinedRoomIDs, roomID)
 				}
 				// the builder will populate this with the right room data
-				builder.AddRoomsToSubscription(newSubID, joinedRoomIDs)
+				builder.AddRoomsToSubscription(ctx, newSubID, joinedRoomIDs)
 			}
 		}
 	}
@@ -373,7 +373,7 @@ func (s *ConnState) buildRoomSubscriptions(ctx context.Context, builder *RoomsBu
 		}
 		s.roomSubscriptions[roomID] = sub
 		subID := builder.AddSubscription(sub)
-		builder.AddRoomsToSubscription(subID, []string{roomID})
+		builder.AddRoomsToSubscription(ctx, subID, []string{roomID})
 	}
 	for _, roomID := range unsubs {
 		delete(s.roomSubscriptions, roomID)
@@ -534,11 +534,11 @@ func (s *ConnState) OnRoomUpdate(ctx context.Context, up caches.RoomUpdate) {
 			// 0 -> this event was from a 'state' block, do not poke active connections
 			return
 		}
-		internal.Assert("missing global room metadata", update.GlobalRoomMetadata() != nil)
+		internal.AssertWithContext(ctx, "missing global room metadata", update.GlobalRoomMetadata() != nil)
 		internal.Logf(ctx, "connstate", "queued update %d", update.EventData.LatestPos)
 		s.live.onUpdate(update)
 	case caches.RoomUpdate:
-		internal.Assert("missing global room metadata", update.GlobalRoomMetadata() != nil)
+		internal.AssertWithContext(ctx, "missing global room metadata", update.GlobalRoomMetadata() != nil)
 		s.live.onUpdate(update)
 	default:
 		logger.Warn().Str("room_id", up.RoomID()).Msg("OnRoomUpdate unknown update type")
