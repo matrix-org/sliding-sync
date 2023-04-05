@@ -3,7 +3,6 @@ package sync3
 import (
 	"context"
 	"fmt"
-	"github.com/getsentry/sentry-go"
 	"runtime/debug"
 	"sync"
 
@@ -85,9 +84,9 @@ func (c *Conn) tryRequest(ctx context.Context, req *Request) (res *Response, err
 		if panicErr != nil {
 			err = fmt.Errorf("panic: %s", panicErr)
 			logger.Error().Msg(string(debug.Stack()))
-			sentry.GetHubFromContext(ctx).Recover(panicErr)
+			internal.GetSentryHubFromContextOrDefault(ctx).RecoverWithContext(ctx, panicErr)
 		} else if err != nil {
-			sentry.GetHubFromContext(ctx).CaptureException(err)
+			internal.GetSentryHubFromContextOrDefault(ctx).CaptureException(err)
 		}
 	}()
 	taskType := "OnIncomingRequest"
