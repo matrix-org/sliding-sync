@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"github.com/getsentry/sentry-go"
+	sentryhttp "github.com/getsentry/sentry-go/http"
 	syncv3 "github.com/matrix-org/sliding-sync"
 	"github.com/matrix-org/sliding-sync/internal"
 	"github.com/matrix-org/sliding-sync/sync2"
@@ -134,6 +135,14 @@ func main() {
 	go h2.StartV2Pollers()
 	if args[EnvJaeger] != "" {
 		h3 = otelhttp.NewHandler(h3, "Sync")
+	}
+
+	if args[EnvSentryDsn] != "" {
+		defer sentry.Flush(2 * time.Second)
+		sentryHandler := sentryhttp.New(sentryhttp.Options{
+			Repanic: true,
+		})
+		h3 = sentryHandler.Handle(h3)
 	}
 
 	syncv3.RunSyncV3Server(h3, args[EnvBindAddr], args[EnvServer], args[EnvTLSCert], args[EnvTLSKey])
