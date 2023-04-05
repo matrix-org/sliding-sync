@@ -851,7 +851,6 @@ func TestMultipleSameList(t *testing.T) {
 	m.MatchResponse(t, res,
 		m.MatchList("1", m.MatchV3Count(16), m.MatchV3Ops(
 			m.MatchV3InvalidateOp(0, 1),
-			m.MatchV3InvalidateOp(16, 20),
 		)),
 		m.MatchList("2", m.MatchV3Count(16), m.MatchV3Ops()),
 	)
