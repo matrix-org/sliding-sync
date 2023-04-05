@@ -195,7 +195,7 @@ func (s *ConnState) onIncomingRequest(ctx context.Context, req *sync3.Request, i
 func (s *ConnState) onIncomingListRequest(ctx context.Context, builder *RoomsBuilder, listKey string, prevReqList, nextReqList *sync3.RequestList) sync3.ResponseList {
 	ctx, span := internal.StartSpan(ctx, "onIncomingListRequest")
 	defer span.End()
-	roomList, overwritten := s.lists.AssignList(listKey, nextReqList.Filters, nextReqList.Sort, sync3.DoNotOverwrite)
+	roomList, overwritten := s.lists.AssignList(ctx, listKey, nextReqList.Filters, nextReqList.Sort, sync3.DoNotOverwrite)
 
 	if nextReqList.ShouldGetAllRooms() {
 		if overwritten || prevReqList.FiltersChanged(nextReqList) {
@@ -249,11 +249,12 @@ func (s *ConnState) onIncomingListRequest(ctx context.Context, builder *RoomsBui
 		}
 		if filtersChanged {
 			// we need to re-create the list as the rooms may have completely changed
-			roomList, _ = s.lists.AssignList(listKey, nextReqList.Filters, nextReqList.Sort, sync3.Overwrite)
+			roomList, _ = s.lists.AssignList(ctx, listKey, nextReqList.Filters, nextReqList.Sort, sync3.Overwrite)
 		}
 		// resort as either we changed the sort order or we added/removed a bunch of rooms
 		if err := roomList.Sort(nextReqList.Sort); err != nil {
 			logger.Err(err).Str("key", listKey).Msg("cannot sort list")
+			internal.GetSentryHubFromContextOrDefault(ctx).CaptureException(err)
 		}
 		addedRanges = nextReqList.Ranges
 		removedRanges = nil
@@ -427,7 +428,7 @@ func (s *ConnState) getInitialRoomData(ctx context.Context, roomSub sync3.RoomSu
 	defer span.End()
 	rooms := make(map[string]sync3.Room, len(roomIDs))
 	// We want to grab the user room data and the room metadata for each room ID.
-	roomIDToUserRoomData := s.userCache.LazyLoadTimelines(s.loadPosition, roomIDs, int(roomSub.TimelineLimit))
+	roomIDToUserRoomData := s.userCache.LazyLoadTimelines(ctx, s.loadPosition, roomIDs, int(roomSub.TimelineLimit))
 	roomMetadatas := s.globalCache.LoadRooms(roomIDs...)
 	// prepare lazy loading data structures, txn IDs
 	roomToUsersInTimeline := make(map[string][]string, len(roomIDToUserRoomData))
@@ -446,7 +447,7 @@ func (s *ConnState) getInitialRoomData(ctx context.Context, roomSub sync3.RoomSu
 		roomToUsersInTimeline[roomID] = userIDs
 		roomToTimeline[roomID] = urd.Timeline
 	}
-	roomToTimeline = s.userCache.AnnotateWithTransactionIDs(s.deviceID, roomToTimeline)
+	roomToTimeline = s.userCache.AnnotateWithTransactionIDs(ctx, s.deviceID, roomToTimeline)
 	rsm := roomSub.RequiredStateMap(s.userID)
 	roomIDToState := s.globalCache.LoadRoomState(ctx, roomIDs, s.loadPosition, rsm, roomToUsersInTimeline)
 	if roomIDToState == nil { // e.g no required_state

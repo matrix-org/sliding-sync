@@ -3,7 +3,7 @@ package extensions
 import (
 	"context"
 	"encoding/json"
-
+	"github.com/matrix-org/sliding-sync/internal"
 	"github.com/matrix-org/sliding-sync/state"
 	"github.com/matrix-org/sliding-sync/sync3/caches"
 )
@@ -57,6 +57,7 @@ func (r *AccountDataRequest) AppendLive(ctx context.Context, res *Response, extC
 			roomAccountData, err := extCtx.Store.AccountDatas(extCtx.UserID, update.RoomID())
 			if err != nil {
 				logger.Err(err).Str("user", extCtx.UserID).Str("room", update.RoomID()).Msg("failed to fetch room account data")
+				internal.GetSentryHubFromContextOrDefault(ctx).CaptureException(err)
 			} else {
 				if len(roomAccountData) > 0 { // else we can end up with `null` not `[]`
 					roomToMsgs[update.RoomID()] = accountEventsAsJSON(roomAccountData)
@@ -96,6 +97,7 @@ func (r *AccountDataRequest) ProcessInitial(ctx context.Context, res *Response, 
 		roomsAccountData, err := extCtx.Store.AccountDatas(extCtx.UserID, roomIDs...)
 		if err != nil {
 			logger.Err(err).Str("user", extCtx.UserID).Strs("rooms", roomIDs).Msg("failed to fetch room account data")
+			internal.GetSentryHubFromContextOrDefault(ctx).CaptureException(err)
 		} else {
 			extRes.Rooms = make(map[string][]json.RawMessage)
 			for _, ad := range roomsAccountData {
@@ -108,6 +110,7 @@ func (r *AccountDataRequest) ProcessInitial(ctx context.Context, res *Response, 
 		globalAccountData, err := extCtx.Store.AccountDatas(extCtx.UserID)
 		if err != nil {
 			logger.Err(err).Str("user", extCtx.UserID).Msg("failed to fetch global account data")
+			internal.GetSentryHubFromContextOrDefault(ctx).CaptureException(err)
 		} else {
 			extRes.Global = accountEventsAsJSON(globalAccountData)
 		}

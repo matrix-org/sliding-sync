@@ -97,7 +97,7 @@ type InviteData struct {
 	IsDM                 bool
 }
 
-func NewInviteData(userID, roomID string, inviteState []json.RawMessage) *InviteData {
+func NewInviteData(ctx context.Context, userID, roomID string, inviteState []json.RawMessage) *InviteData {
 	// work out metadata for this invite. There's an origin_server_ts on the invite m.room.member event
 	id := InviteData{
 		roomID:      roomID,
@@ -138,9 +138,9 @@ func NewInviteData(userID, roomID string, inviteState []json.RawMessage) *Invite
 		}
 	}
 	if id.InviteEvent == nil {
-		logger.Error().Str("invitee", userID).Str("room", roomID).Int("num_invite_state", len(inviteState)).Msg(
-			"cannot make invite, missing invite event for user",
-		)
+		const errMsg = "cannot make invite, missing invite event for user"
+		logger.Error().Str("invitee", userID).Str("room", roomID).Int("num_invite_state", len(inviteState)).Msg(errMsg)
+		internal.GetSentryHubFromContextOrDefault(ctx).CaptureException(fmt.Errorf(errMsg))
 		return nil
 	}
 	return &id
@@ -270,7 +270,7 @@ func (c *UserCache) OnRegistered(_ int64) error {
 	return nil
 }
 
-func (c *UserCache) LazyLoadTimelines(loadPos int64, roomIDs []string, maxTimelineEvents int) map[string]UserRoomData {
+func (c *UserCache) LazyLoadTimelines(ctx context.Context, loadPos int64, roomIDs []string, maxTimelineEvents int) map[string]UserRoomData {
 	if c.LazyRoomDataOverride != nil {
 		return c.LazyRoomDataOverride(loadPos, roomIDs, maxTimelineEvents)
 	}
@@ -306,6 +306,7 @@ func (c *UserCache) LazyLoadTimelines(loadPos int64, roomIDs []string, maxTimeli
 						prevBatch, err := c.store.EventsTable.SelectClosestPrevBatchByID(roomID, eventID)
 						if err != nil {
 							logger.Err(err).Str("room", roomID).Str("event_id", eventID).Msg("failed to get prev batch token for room")
+							internal.GetSentryHubFromContextOrDefault(ctx).CaptureException(err)
 						}
 						urd.SetPrevBatch(eventID, prevBatch)
 					}
@@ -335,6 +336,7 @@ func (c *UserCache) LazyLoadTimelines(loadPos int64, roomIDs []string, maxTimeli
 	roomIDToEvents, roomIDToPrevBatch, err := c.store.LatestEventsInRooms(c.UserID, lazyRoomIDs, loadPos, maxTimelineEvents)
 	if err != nil {
 		logger.Err(err).Strs("rooms", lazyRoomIDs).Msg("failed to get LatestEventsInRooms")
+		internal.GetSentryHubFromContextOrDefault(ctx).CaptureException(err)
 		return nil
 	}
 	c.roomToDataMu.Lock()
@@ -428,7 +430,7 @@ func (c *UserCache) Invites() map[string]UserRoomData {
 // events are globally scoped, so if Alice sends a message, Bob might receive it first on his v2 loop
 // which would cause the transaction ID to be missing from the event. Instead, we always look for txn
 // IDs in the v2 poller, and then set them appropriately at request time.
-func (c *UserCache) AnnotateWithTransactionIDs(deviceID string, roomIDToEvents map[string][]json.RawMessage) map[string][]json.RawMessage {
+func (c *UserCache) AnnotateWithTransactionIDs(ctx context.Context, deviceID string, roomIDToEvents map[string][]json.RawMessage) map[string][]json.RawMessage {
 	var eventIDs []string
 	eventIDToEvent := make(map[string]struct {
 		roomID string
@@ -458,6 +460,7 @@ func (c *UserCache) AnnotateWithTransactionIDs(deviceID string, roomIDToEvents m
 		newJSON, err := sjson.SetBytes(event, "unsigned.transaction_id", txnID)
 		if err != nil {
 			logger.Err(err).Str("user", c.UserID).Msg("AnnotateWithTransactionIDs: sjson failed")
+			internal.GetSentryHubFromContextOrDefault(ctx).CaptureException(err)
 		} else {
 			events[data.i] = newJSON
 			roomIDToEvents[data.roomID] = events
@@ -600,7 +603,7 @@ func (c *UserCache) OnNewEvent(ctx context.Context, eventData *EventData) {
 }
 
 func (c *UserCache) OnInvite(ctx context.Context, roomID string, inviteStateEvents []json.RawMessage) {
-	inviteData := NewInviteData(c.UserID, roomID, inviteStateEvents)
+	inviteData := NewInviteData(ctx, c.UserID, roomID, inviteStateEvents)
 	if inviteData == nil {
 		return // malformed invite
 	}

@@ -9,7 +9,7 @@ import (
 
 // Fetcher used by the E2EE extension
 type E2EEFetcher interface {
-	DeviceData(userID, deviceID string, isInitial bool) *internal.DeviceData
+	DeviceData(context context.Context, userID, deviceID string, isInitial bool) *internal.DeviceData
 }
 
 // Client created request params
@@ -56,7 +56,7 @@ func (r *E2EERequest) AppendLive(ctx context.Context, res *Response, extCtx Cont
 
 func (r *E2EERequest) ProcessInitial(ctx context.Context, res *Response, extCtx Context) {
 	//  pull OTK counts and changed/left from device data
-	dd := extCtx.E2EEFetcher.DeviceData(extCtx.UserID, extCtx.DeviceID, extCtx.IsInitial)
+	dd := extCtx.E2EEFetcher.DeviceData(ctx, extCtx.UserID, extCtx.DeviceID, extCtx.IsInitial)
 	if dd == nil {
 		return // unknown device?
 	}

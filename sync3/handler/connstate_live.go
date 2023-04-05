@@ -209,7 +209,7 @@ func (s *connStateLive) processLiveUpdate(ctx context.Context, up caches.Update,
 			// - the initial:true room from BuildSubscriptions contains the latest live events in the timeline as it's pulled from the DB
 			// - we then process the live events in turn which adds them again.
 			if !advancedPastEvent {
-				roomIDtoTimeline := s.userCache.AnnotateWithTransactionIDs(s.deviceID, map[string][]json.RawMessage{
+				roomIDtoTimeline := s.userCache.AnnotateWithTransactionIDs(ctx, s.deviceID, map[string][]json.RawMessage{
 					roomEventUpdate.RoomID(): {roomEventUpdate.EventData.Event},
 				})
 				r.Timeline = append(r.Timeline, roomIDtoTimeline[roomEventUpdate.RoomID()]...)
@@ -383,7 +383,7 @@ func (s *connStateLive) resort(
 		return nil, true
 	}
 
-	ops, subs := sync3.CalculateListOps(reqList, intList, roomID, listOp)
+	ops, subs := sync3.CalculateListOps(ctx, reqList, intList, roomID, listOp)
 	if len(subs) > 0 { // handle rooms which have just come into the window
 		subID := builder.AddSubscription(reqList.RoomSubscription)
 		builder.AddRoomsToSubscription(subID, subs)

@@ -1,6 +1,7 @@
 package sync3_test
 
 import (
+	"context"
 	"fmt"
 	"sync/atomic"
 	"testing"
@@ -23,7 +24,7 @@ func BenchmarkSortRooms(b *testing.B) {
 func sortRooms(n int) {
 	list := sync3.NewInternalRequestLists()
 	addRooms(list, n)
-	list.AssignList("benchmark", &sync3.RequestFilters{}, []string{sync3.SortByRecency}, sync3.Overwrite)
+	list.AssignList(context.Background(), "benchmark", &sync3.RequestFilters{}, []string{sync3.SortByRecency}, sync3.Overwrite)
 }
 
 func addRooms(list *sync3.InternalRequestLists, n int) {

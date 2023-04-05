@@ -3,6 +3,8 @@ package caches
 import (
 	"context"
 	"encoding/json"
+	"fmt"
+	"github.com/getsentry/sentry-go"
 	"os"
 	"sort"
 	"sync"
@@ -87,7 +89,9 @@ func (c *GlobalCache) LoadRooms(roomIDs ...string) map[string]*internal.RoomMeta
 		roomID := roomIDs[i]
 		sr := c.roomIDToMetadata[roomID]
 		if sr == nil {
-			logger.Error().Str("room", roomID).Msg("GlobalCache.LoadRoom: no metadata for this room")
+			const errMsg = "GlobalCache.LoadRoom: no metadata for this room"
+			logger.Error().Str("room", roomID).Msg(errMsg)
+			sentry.CaptureException(fmt.Errorf(errMsg))
 			continue
 		}
 		srCopy := *sr
@@ -126,6 +130,7 @@ func (c *GlobalCache) LoadStateEvent(ctx context.Context, roomID string, loadPos
 	})
 	if err != nil {
 		logger.Err(err).Str("room", roomID).Int64("pos", loadPosition).Msg("failed to load room state")
+		internal.GetSentryHubFromContextOrDefault(ctx).CaptureException(err)
 		return nil
 	}
 	events := roomIDToStateEvents[roomID]
@@ -147,6 +152,7 @@ func (c *GlobalCache) LoadRoomState(ctx context.Context, roomIDs []string, loadP
 	roomIDToStateEvents, err := c.store.RoomStateAfterEventPosition(ctx, roomIDs, loadPosition, requiredStateMap.QueryStateMap())
 	if err != nil {
 		logger.Err(err).Strs("rooms", roomIDs).Int64("pos", loadPosition).Msg("failed to load room state")
+		internal.GetSentryHubFromContextOrDefault(ctx).CaptureException(err)
 		return nil
 	}
 	for roomID, stateEvents := range roomIDToStateEvents {
@@ -295,6 +301,7 @@ func (c *GlobalCache) OnNewEvent(
 					err := c.store.InvitesTable.RemoveInvite(*ed.StateKey, ed.RoomID)
 					if err != nil {
 						logger.Err(err).Str("user", *ed.StateKey).Str("room", ed.RoomID).Msg("failed to remove accepted invite")
+						internal.GetSentryHubFromContextOrDefault(ctx).CaptureException(err)
 					}
 				}
 			}

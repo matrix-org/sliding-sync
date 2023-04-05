@@ -1,5 +1,10 @@
 package sync3
 
+import (
+	"context"
+	"github.com/matrix-org/sliding-sync/internal"
+)
+
 type List interface {
 	IndexOf(roomID string) (int, bool)
 	Len() int64
@@ -24,7 +29,7 @@ type List interface {
 //	[ "A" ] <--- []string, new room subscriptions, if it wasn't in the window before
 //
 // This function will modify List to Add/Delete/Sort appropriately.
-func CalculateListOps(reqList *RequestList, list List, roomID string, listOp ListOp) (ops []ResponseOp, subs []string) {
+func CalculateListOps(ctx context.Context, reqList *RequestList, list List, roomID string, listOp ListOp) (ops []ResponseOp, subs []string) {
 	fromIndex, ok := list.IndexOf(roomID)
 	if !ok {
 		if listOp == ListOpAdd {
@@ -45,6 +50,7 @@ func CalculateListOps(reqList *RequestList, list List, roomID string, listOp Lis
 		// this should only move exactly 1 room at most as this is called for every single update
 		if err := list.Sort(reqList.Sort); err != nil {
 			logger.Err(err).Msg("cannot sort list")
+			internal.GetSentryHubFromContextOrDefault(ctx).CaptureException(err)
 		}
 		// find the new position of this room
 		toIndex, _ = list.IndexOf(roomID)
@@ -62,6 +68,7 @@ func CalculateListOps(reqList *RequestList, list List, roomID string, listOp Lis
 		// this should only move exactly 1 room at most as this is called for every single update
 		if err := list.Sort(reqList.Sort); err != nil {
 			logger.Err(err).Msg("cannot sort list")
+			internal.GetSentryHubFromContextOrDefault(ctx).CaptureException(err)
 		}
 		// find the new position of this room
 		toIndex, _ = list.IndexOf(roomID)

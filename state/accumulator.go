@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"github.com/getsentry/sentry-go"
 
 	"github.com/jmoiron/sqlx"
 	"github.com/lib/pq"
@@ -176,9 +177,9 @@ func (a *Accumulator) Initialise(roomID string, state []json.RawMessage) (bool, 
 		if len(eventIDToNID) == 0 {
 			// we don't have a current snapshot for this room but yet no events are new,
 			// no idea how this should be handled.
-			logger.Error().Str("room_id", roomID).Msg(
-				"Accumulator.Initialise: room has no current snapshot but also no new inserted events, doing nothing. This is probably a bug.",
-			)
+			const errMsg = "Accumulator.Initialise: room has no current snapshot but also no new inserted events, doing nothing. This is probably a bug."
+			logger.Error().Str("room_id", roomID).Msg(errMsg)
+			sentry.CaptureException(fmt.Errorf(errMsg))
 			return nil
 		}
 
