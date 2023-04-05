@@ -132,7 +132,7 @@ func TestInviteRejection(t *testing.T) {
 		},
 	})
 	m.MatchResponse(t, res, m.MatchList("a", m.MatchV3Count(1), m.MatchV3Ops(
-		m.MatchV3SyncOp(0, 1, []string{firstInviteRoomID}),
+		m.MatchV3SyncOp(0, 0, []string{firstInviteRoomID}),
 	)), m.MatchRoomSubscriptionsStrict(map[string][]m.RoomMatcher{
 		firstInviteRoomID: {
 			m.MatchRoomInitial(true),

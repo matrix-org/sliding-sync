@@ -750,7 +750,7 @@ func TestShrinkRange(t *testing.T) {
 		},
 	})
 	m.MatchResponse(t, res, m.MatchList("a", m.MatchV3Count(10), m.MatchV3Ops(
-		m.MatchV3SyncOp(0, 20, roomIDs),
+		m.MatchV3SyncOp(0, 9, roomIDs),
 	)))
 	// now shrink the window on both ends
 	res = alice.SlidingSync(t, sync3.Request{
@@ -762,7 +762,7 @@ func TestShrinkRange(t *testing.T) {
 	}, WithPos(res.Pos))
 	m.MatchResponse(t, res, m.MatchList("a", m.MatchV3Count(10), m.MatchV3Ops(
 		m.MatchV3InvalidateOp(0, 1),
-		m.MatchV3InvalidateOp(7, 20),
+		m.MatchV3InvalidateOp(7, 9),
 	)))
 }
 

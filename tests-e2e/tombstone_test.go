@@ -99,7 +99,7 @@ func TestIncludeOldRooms(t *testing.T) {
 		},
 	})
 	m.MatchResponse(t, res, m.MatchList("a", m.MatchV3Count(1), m.MatchV3Ops(
-		m.MatchV3SyncOp(0, 2, []string{newRoomID}),
+		m.MatchV3SyncOp(0, 0, []string{newRoomID}),
 	)), m.MatchRoomSubscriptionsStrict(map[string][]m.RoomMatcher{
 		newRoomID: {
 			MatchRoomRequiredState([]Event{
