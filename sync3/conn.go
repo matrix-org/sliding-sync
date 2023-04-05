@@ -79,12 +79,15 @@ func (c *Conn) OnUpdate(ctx context.Context, update caches.Update) {
 }
 
 func (c *Conn) tryRequest(ctx context.Context, req *Request) (res *Response, err error) {
+	// TODO: include useful information from the request in the sentry hub/context
 	defer func() {
 		panicErr := recover()
 		if panicErr != nil {
 			err = fmt.Errorf("panic: %s", panicErr)
 			logger.Error().Msg(string(debug.Stack()))
 			sentry.GetHubFromContext(ctx).RecoverWithContext(ctx, panicErr)
+		} else if err != nil {
+			sentry.GetHubFromContext(ctx).CaptureException(err)
 		}
 	}()
 	taskType := "OnIncomingRequest"
