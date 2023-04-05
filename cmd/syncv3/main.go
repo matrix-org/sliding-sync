@@ -115,14 +115,10 @@ func main() {
 			panic(err)
 		}
 	}
-	h2, h3 := syncv3.Setup(args[EnvServer], args[EnvDB], args[EnvSecret], syncv3.Opts{
-		Debug:                args[EnvDebug] == "1",
-		AddPrometheusMetrics: args[EnvPrometheus] != "",
-	})
 
 	// Initialise sentry. We do this in a separate block to the sentry code below,
-	// because we want to configure logging before starting the pollers—they may want to
-	// log to sentry themselves.
+	// because we want to configure logging before the call to syncv3.Setup---which may
+	// want to log to sentry itself.
 	if args[EnvSentryDsn] != "" {
 		fmt.Printf("Configuring Sentry reporter...\n")
 		err := sentry.Init(sentry.ClientOptions{
@@ -136,11 +132,17 @@ func main() {
 		}
 	}
 
+	h2, h3 := syncv3.Setup(args[EnvServer], args[EnvDB], args[EnvSecret], syncv3.Opts{
+		Debug:                args[EnvDebug] == "1",
+		AddPrometheusMetrics: args[EnvPrometheus] != "",
+	})
+
 	go h2.StartV2Pollers()
 	if args[EnvJaeger] != "" {
 		h3 = otelhttp.NewHandler(h3, "Sync")
 	}
 
+	// Install the Sentry middleware, if configured.
 	if args[EnvSentryDsn] != "" {
 		sentryHandler := sentryhttp.New(sentryhttp.Options{
 			Repanic: true,
