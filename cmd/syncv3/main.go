@@ -2,16 +2,20 @@ package main
 
 import (
 	"fmt"
-	"net/http"
-	_ "net/http/pprof"
-	"os"
-	"strings"
-
+	"github.com/getsentry/sentry-go"
+	sentryhttp "github.com/getsentry/sentry-go/http"
 	syncv3 "github.com/matrix-org/sliding-sync"
 	"github.com/matrix-org/sliding-sync/internal"
 	"github.com/matrix-org/sliding-sync/sync2"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
+	"net/http"
+	_ "net/http/pprof"
+	"os"
+	"os/signal"
+	"strings"
+	"syscall"
+	"time"
 )
 
 var GitCommit string
@@ -32,6 +36,7 @@ const (
 	EnvPrometheus = "SYNCV3_PROM"
 	EnvDebug      = "SYNCV3_DEBUG"
 	EnvJaeger     = "SYNCV3_JAEGER_URL"
+	EnvSentryDsn  = "SYNCV3_SENTRY_DSN"
 )
 
 var helpMsg = fmt.Sprintf(`
@@ -45,7 +50,8 @@ Environment var
 %s      Default: unset. The bind addr for pprof debugging e.g ':6060'. If not set, does not listen.
 %s       Default: unset. The bind addr for Prometheus metrics, which will be accessible at /metrics at this address.
 %s Default: unset. The Jaeger URL to send spans to e.g http://localhost:14268/api/traces - if unset does not send OTLP traces.
-`, EnvServer, EnvDB, EnvSecret, EnvBindAddr, EnvTLSCert, EnvTLSKey, EnvPPROF, EnvPrometheus, EnvJaeger)
+%s Default: unset. The Sentry DSN to report events to e.g https://sliding-sync@sentry.example.com/123 - if unset does not send sentry events.
+`, EnvServer, EnvDB, EnvSecret, EnvBindAddr, EnvTLSCert, EnvTLSKey, EnvPPROF, EnvPrometheus, EnvJaeger, EnvSentryDsn)
 
 func defaulting(in, dft string) string {
 	if in == "" {
@@ -69,6 +75,7 @@ func main() {
 		EnvPrometheus: os.Getenv(EnvPrometheus),
 		EnvDebug:      os.Getenv(EnvDebug),
 		EnvJaeger:     os.Getenv(EnvJaeger),
+		EnvSentryDsn:  os.Getenv(EnvSentryDsn),
 	}
 	requiredEnvVars := []string{EnvServer, EnvDB, EnvSecret, EnvBindAddr}
 	for _, requiredEnvVar := range requiredEnvVars {
@@ -113,10 +120,55 @@ func main() {
 		AddPrometheusMetrics: args[EnvPrometheus] != "",
 	})
 
+	// Initialise sentry. We do this in a separate block to the sentry code below,
+	// because we want to configure logging before starting the pollers—they may want to
+	// log to sentry themselves.
+	if args[EnvSentryDsn] != "" {
+		fmt.Printf("Configuring Sentry reporter...\n")
+		err := sentry.Init(sentry.ClientOptions{
+			Dsn:     args[EnvSentryDsn],
+			Release: version,
+			Dist:    GitCommit,
+		})
+		if err != nil {
+			panic(err)
+		}
+	}
+
 	go h2.StartV2Pollers()
 	if args[EnvJaeger] != "" {
 		h3 = otelhttp.NewHandler(h3, "Sync")
 	}
+
+	if args[EnvSentryDsn] != "" {
+		sentryHandler := sentryhttp.New(sentryhttp.Options{
+			Repanic: true,
+		})
+		h3 = sentryHandler.Handle(h3)
+	}
+
 	syncv3.RunSyncV3Server(h3, args[EnvBindAddr], args[EnvServer], args[EnvTLSCert], args[EnvTLSKey])
-	select {} // block forever
+	WaitForShutdown(args[EnvSentryDsn] != "")
+}
+
+// WaitForShutdown blocks until the process receives a SIGINT or SIGTERM signal
+// (see `man 7 signal`). It performs any last cleanup tasks and then exits.
+func WaitForShutdown(sentryInUse bool) {
+	sigs := make(chan os.Signal, 1)
+	signal.Notify(sigs, syscall.SIGINT, syscall.SIGTERM)
+	select {
+	case <-sigs:
+	}
+	signal.Reset(syscall.SIGINT, syscall.SIGTERM)
+
+	fmt.Printf("Shutdown signal received...")
+
+	if sentryInUse {
+		fmt.Printf("Flushing sentry events...")
+		if !sentry.Flush(time.Second * 5) {
+			fmt.Printf("Failed to flush all Sentry events!")
+		}
+	}
+
+	fmt.Printf("Exiting now")
 }

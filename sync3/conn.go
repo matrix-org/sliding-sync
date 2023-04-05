@@ -78,11 +78,25 @@ func (c *Conn) OnUpdate(ctx context.Context, update caches.Update) {
 }
 
 func (c *Conn) tryRequest(ctx context.Context, req *Request) (res *Response, err error) {
+	// TODO: include useful information from the request in the sentry hub/context
 	defer func() {
 		panicErr := recover()
 		if panicErr != nil {
 			err = fmt.Errorf("panic: %s", panicErr)
 			logger.Error().Msg(string(debug.Stack()))
+			// Note: as we've captured the panicErr ourselves, there isn't much
+			// difference between RecoverWithContext and CaptureException. But
+			// there /is/ a small difference:
+			//
+			// - RecoverWithContext will generate generate an Sentry event marked with
+			//   a "RecoveredException" hint
+			// - CaptureException instead uses an "OriginalException" hint.
+			//
+			// I'm guessing that Sentry will use the former to display panicErr as
+			// having come from a panic.
+			internal.GetSentryHubFromContextOrDefault(ctx).RecoverWithContext(ctx, panicErr)
+		} else if err != nil {
+			internal.GetSentryHubFromContextOrDefault(ctx).CaptureException(err)
 		}
 	}()
 	taskType := "OnIncomingRequest"
