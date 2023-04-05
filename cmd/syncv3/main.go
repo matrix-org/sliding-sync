@@ -120,6 +120,9 @@ func main() {
 		AddPrometheusMetrics: args[EnvPrometheus] != "",
 	})
 
+	// Initialise sentry. We do this in a separate block to the sentry code below,
+	// because we want to configure logging before starting the pollers—they may want to
+	// log to sentry themselves.
 	if args[EnvSentryDsn] != "" {
 		fmt.Printf("Configuring Sentry reporter...\n")
 		err := sentry.Init(sentry.ClientOptions{
