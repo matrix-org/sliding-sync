@@ -557,7 +557,7 @@ func (s *ConnState) OnRoomUpdate(ctx context.Context, up caches.RoomUpdate) {
 	}
 }
 
-// clampSliceRangeToListSize helps us send client-friend SYNC and INVALIDATE ranges.
+// clampSliceRangeToListSize helps us to send client-friendly SYNC and INVALIDATE ranges.
 //
 // Suppose the client asks for a window on positions [10, 19]. If the list
 // has exactly 12 rooms, the window will see 3: those at positions 10, 11
