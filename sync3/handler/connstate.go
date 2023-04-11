@@ -209,7 +209,7 @@ func (s *ConnState) onIncomingListRequest(ctx context.Context, builder *RoomsBui
 				Ops: []sync3.ResponseOp{
 					&sync3.ResponseOpRange{
 						Operation: sync3.OpSync,
-						Range:     []int64{0, int64(len(allRoomIDs) - 1)},
+						Range:     [2]int64{0, int64(len(allRoomIDs) - 1)},
 						RoomIDs:   allRoomIDs,
 					},
 				},
@@ -242,13 +242,9 @@ func (s *ConnState) onIncomingListRequest(ctx context.Context, builder *RoomsBui
 			logger.Trace().Interface("range", prevRange).Msg("INVALIDATEing because sort/filter ops have changed")
 			allRoomIDs := roomList.RoomIDs()
 			for _, r := range prevRange {
-				clamped := clampSliceRangeToListSize(r, int64(len(allRoomIDs)))
-				if clamped == nil {
-					continue
-				}
 				responseOperations = append(responseOperations, &sync3.ResponseOpRange{
 					Operation: sync3.OpInvalidate,
-					Range:     clamped,
+					Range:     clampSliceRangeToListSize(r, int64(len(allRoomIDs))),
 				})
 			}
 		}
@@ -269,13 +265,9 @@ func (s *ConnState) onIncomingListRequest(ctx context.Context, builder *RoomsBui
 		logger.Trace().Interface("range", removedRanges).Msg("INVALIDATEing because ranges were removed")
 	}
 	for i := range removedRanges {
-		clamped := clampSliceRangeToListSize(removedRanges[i], roomList.Len())
-		if clamped == nil {
-			continue
-		}
 		responseOperations = append(responseOperations, &sync3.ResponseOpRange{
 			Operation: sync3.OpInvalidate,
-			Range:     clamped,
+			Range:     clampSliceRangeToListSize(removedRanges[i], roomList.Len()),
 		})
 	}
 
@@ -294,13 +286,9 @@ func (s *ConnState) onIncomingListRequest(ctx context.Context, builder *RoomsBui
 		// the builder will populate this with the right room data
 		builder.AddRoomsToSubscription(subID, roomIDs)
 
-		clamped := clampSliceRangeToListSize(addedRanges[i], roomList.Len())
-		if clamped == nil {
-			continue
-		}
 		responseOperations = append(responseOperations, &sync3.ResponseOpRange{
 			Operation: sync3.OpSync,
-			Range:     clamped,
+			Range:     clampSliceRangeToListSize(addedRanges[i], roomList.Len()),
 			RoomIDs:   roomIDs,
 		})
 	}
@@ -567,14 +555,12 @@ func (s *ConnState) OnRoomUpdate(ctx context.Context, up caches.RoomUpdate) {
 // The "full" room list occupies positions [0, totalRooms - 1]. If the given range r
 // does not overlap the full room list, return nil. Otherwise, return the intersection
 // of r with the full room list.
-func clampSliceRangeToListSize(r [2]int64, totalRooms int64) []int64 {
+func clampSliceRangeToListSize(r [2]int64, totalRooms int64) [2]int64 {
 	lastIndexWithRoom := totalRooms - 1
-	if r[0] > lastIndexWithRoom {
-		return nil
-	} else if r[1] <= lastIndexWithRoom {
-		return r[:]
+	internal.Assert("Start of range exceeds last room index in list", r[0] <= lastIndexWithRoom)
+	if r[1] <= lastIndexWithRoom {
+		return r
 	} else {
-		return []int64{r[0], lastIndexWithRoom}
+		return [2]int64{r[0], lastIndexWithRoom}
 	}
-
 }

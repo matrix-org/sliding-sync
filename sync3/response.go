@@ -114,7 +114,7 @@ type ResponseOp interface {
 
 type ResponseOpRange struct {
 	Operation string   `json:"op"`
-	Range     []int64  `json:"range,omitempty"`
+	Range     [2]int64 `json:"range,omitempty"`
 	RoomIDs   []string `json:"room_ids,omitempty"`
 }
 
