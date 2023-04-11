@@ -587,6 +587,14 @@ func (c *CSAPI) SlidingSyncUntilEventID(t *testing.T, pos string, roomID string,
 
 func (c *CSAPI) SlidingSyncUntilMembership(t *testing.T, pos string, roomID string, target *CSAPI, membership string) (res *sync3.Response) {
 	t.Helper()
+	content := map[string]interface{}{
+		"membership": membership,
+	}
+
+	if membership == "join" {
+		content["displayname"] = target.Localpart
+	}
+
 	return c.SlidingSyncUntilEvent(t, pos, sync3.Request{
 		RoomSubscriptions: map[string]sync3.RoomSubscription{
 			roomID: {
@@ -596,10 +604,7 @@ func (c *CSAPI) SlidingSyncUntilMembership(t *testing.T, pos string, roomID stri
 	}, roomID, Event{
 		Type:     "m.room.member",
 		StateKey: &target.UserID,
-		Content: map[string]interface{}{
-			"displayname": target.Localpart,
-			"membership":  membership,
-		},
+		Content:  content,
 	})
 }
 
