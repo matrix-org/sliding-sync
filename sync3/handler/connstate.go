@@ -242,6 +242,11 @@ func (s *ConnState) onIncomingListRequest(ctx context.Context, builder *RoomsBui
 			logger.Trace().Interface("range", prevRange).Msg("INVALIDATEing because sort/filter ops have changed")
 			allRoomIDs := roomList.RoomIDs()
 			for _, r := range prevRange {
+				if r[0] >= roomList.Len() {
+					// This range will not have been echoed to the client because it is outside
+					// the total length of the room list; do not try to invalidate it.
+					continue
+				}
 				responseOperations = append(responseOperations, &sync3.ResponseOpRange{
 					Operation: sync3.OpInvalidate,
 					Range:     clampSliceRangeToListSize(r, int64(len(allRoomIDs))),
@@ -265,6 +270,11 @@ func (s *ConnState) onIncomingListRequest(ctx context.Context, builder *RoomsBui
 		logger.Trace().Interface("range", removedRanges).Msg("INVALIDATEing because ranges were removed")
 	}
 	for i := range removedRanges {
+		if removedRanges[i][0] >= (roomList.Len()) {
+			// This range will not have been echoed to the client because it is outside
+			// the total length of the room list; do not try to invalidate it.
+			continue
+		}
 		responseOperations = append(responseOperations, &sync3.ResponseOpRange{
 			Operation: sync3.OpInvalidate,
 			Range:     clampSliceRangeToListSize(removedRanges[i], roomList.Len()),
