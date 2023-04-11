@@ -285,13 +285,6 @@ func (h *SyncLiveHandler) setupConnection(req *http.Request, syncReq *sync3.Requ
 		conn = h.ConnMap.Conn(sync3.ConnID{
 			DeviceID: deviceID,
 		})
-		if err != nil {
-			log.Warn().Err(err).Msg("failed to lookup conn for request")
-			return nil, &internal.HandlerError{
-				StatusCode: 400,
-				Err:        err,
-			}
-		}
 		if conn != nil {
 			log.Trace().Str("conn", conn.ConnID.String()).Msg("reusing conn")
 			return conn, nil
