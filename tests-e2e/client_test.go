@@ -591,7 +591,7 @@ func (c *CSAPI) SlidingSyncUntilMembership(t *testing.T, pos string, roomID stri
 		"membership": membership,
 	}
 
-	if membership == "join" {
+	if membership == "join" || membership == "invite" {
 		content["displayname"] = target.Localpart
 	}
 
