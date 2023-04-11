@@ -1055,7 +1055,7 @@ func TestNumLiveBulk(t *testing.T) {
 			},
 		},
 	), m.MatchList("the_list", m.MatchV3Count(1), m.MatchV3Ops(
-		m.MatchV3SyncOp(0, 1, []string{roomID}),
+		m.MatchV3SyncOp(0, 0, []string{roomID}),
 	)))
 
 	// inject 10 events in batches of 2, 1, 3, 4
