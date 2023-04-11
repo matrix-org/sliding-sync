@@ -100,7 +100,9 @@ func (d *Dispatcher) OnNewInitialRoomState(ctx context.Context, roomID string, s
 		logger.Warn().Int("join_count", jc).Str("room", roomID).Int("num_state", len(state)).Msg(
 			"OnNewInitialRoomState but have entries in JoinedRoomsTracker already, this should be impossible. Degrading to live events",
 		)
-		d.OnNewEvents(ctx, roomID, state, 0)
+		for _, s := range state {
+			d.OnNewEvent(ctx, roomID, s, 0)
+		}
 		return
 	}
 	// create event datas for state
@@ -141,24 +143,15 @@ func (d *Dispatcher) OnNewInitialRoomState(ctx context.Context, roomID string, s
 	}
 }
 
-// Called by v2 pollers when we receive new events
-func (d *Dispatcher) OnNewEvents(
-	ctx context.Context, roomID string, events []json.RawMessage, latestPos int64,
-) {
-	for _, event := range events {
-		d.onNewEvent(ctx, roomID, event, latestPos)
-	}
-}
-
-func (d *Dispatcher) onNewEvent(
-	ctx context.Context, roomID string, event json.RawMessage, latestPos int64,
+func (d *Dispatcher) OnNewEvent(
+	ctx context.Context, roomID string, event json.RawMessage, pos int64,
 ) {
 	// keep track of the latest position. We don't care about it, but Receivers do if they want
 	// to atomically load from the global cache and receive updates.
-	if latestPos > d.latestPos {
-		d.latestPos = latestPos
+	if pos > d.latestPos {
+		d.latestPos = pos
 	}
-	ed := d.newEventData(event, roomID, latestPos)
+	ed := d.newEventData(event, roomID, pos)
 
 	// update the tracker
 	targetUser := ""

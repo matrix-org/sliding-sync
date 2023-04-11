@@ -512,7 +512,9 @@ func (h *SyncLiveHandler) Accumulate(p *pubsub.V2Accumulate) {
 	}
 	internal.Logf(ctx, "room", fmt.Sprintf("%s: %d events", p.RoomID, len(events)))
 	// we have new events, notify active connections
-	h.Dispatcher.OnNewEvents(ctx, p.RoomID, events, p.EventNIDs[len(p.EventNIDs)-1])
+	for i := range events {
+		h.Dispatcher.OnNewEvent(ctx, p.RoomID, events[i], p.EventNIDs[i])
+	}
 }
 
 // Called from the v2 poller, implements V2DataReceiver
