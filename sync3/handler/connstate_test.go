@@ -143,7 +143,7 @@ func TestConnStateInitial(t *testing.T) {
 				Ops: []sync3.ResponseOp{
 					&sync3.ResponseOpRange{
 						Operation: "SYNC",
-						Range:     []int64{0, 2},
+						Range:     [2]int64{0, 2},
 						RoomIDs: []string{
 							roomB.RoomID, roomC.RoomID, roomA.RoomID,
 						},
@@ -289,7 +289,7 @@ func TestConnStateMultipleRanges(t *testing.T) {
 				Ops: []sync3.ResponseOp{
 					&sync3.ResponseOpRange{
 						Operation: "SYNC",
-						Range:     []int64{0, 2},
+						Range:     [2]int64{0, 2},
 						RoomIDs:   []string{roomIDs[0], roomIDs[1], roomIDs[2]},
 					},
 				},
@@ -315,7 +315,7 @@ func TestConnStateMultipleRanges(t *testing.T) {
 				Ops: []sync3.ResponseOp{
 					&sync3.ResponseOpRange{
 						Operation: "SYNC",
-						Range:     []int64{4, 6},
+						Range:     [2]int64{4, 6},
 						RoomIDs:   []string{roomIDs[4], roomIDs[5], roomIDs[6]},
 					},
 				},
@@ -465,7 +465,7 @@ func TestBumpToOutsideRange(t *testing.T) {
 				Ops: []sync3.ResponseOp{
 					&sync3.ResponseOpRange{
 						Operation: "SYNC",
-						Range:     []int64{0, 1},
+						Range:     [2]int64{0, 1},
 						RoomIDs: []string{
 							roomA.RoomID, roomB.RoomID,
 						},
@@ -578,7 +578,7 @@ func TestConnStateRoomSubscriptions(t *testing.T) {
 				Ops: []sync3.ResponseOp{
 					&sync3.ResponseOpRange{
 						Operation: "SYNC",
-						Range:     []int64{0, 1},
+						Range:     [2]int64{0, 1},
 						RoomIDs: []string{
 							roomA.RoomID, roomB.RoomID,
 						},
