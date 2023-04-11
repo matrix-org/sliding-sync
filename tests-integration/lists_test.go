@@ -129,7 +129,7 @@ func TestUnreadCountMisordering(t *testing.T) {
 		},
 	})
 	m.MatchResponse(t, res, m.MatchList("a", m.MatchV3Count(3), m.MatchV3Ops(
-		m.MatchV3SyncOp(0, 5, []string{roomA, roomB, roomC}),
+		m.MatchV3SyncOp(0, 2, []string{roomA, roomB, roomC}),
 	))) // A,B,C SYNC
 
 	// Then send a new event in C -> [A,C,B]   DELETE 2, INSERT 1 C

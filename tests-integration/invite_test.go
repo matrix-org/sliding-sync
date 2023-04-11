@@ -52,7 +52,7 @@ func TestStuckInvites(t *testing.T) {
 		},
 	})
 	m.MatchResponse(t, res, m.MatchList("a", m.MatchV3Count(1), m.MatchV3Ops(
-		m.MatchV3SyncOp(0, 10, []string{preSyncInviteRoomID}),
+		m.MatchV3SyncOp(0, 0, []string{preSyncInviteRoomID}),
 	)))
 
 	// live stream invite

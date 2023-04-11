@@ -79,7 +79,7 @@ func TestMultipleConnsAtStartup(t *testing.T) {
 		}},
 	})
 	m.MatchResponse(t, res, m.MatchList("a", m.MatchV3Ops(
-		m.MatchV3SyncOp(0, 10, []string{roomID}),
+		m.MatchV3SyncOp(0, 0, []string{roomID}),
 	)))
 }
 
@@ -393,7 +393,7 @@ func TestTxnIDResponseBuffering(t *testing.T) {
 		}},
 	})
 	m.MatchResponse(t, res, m.MatchTxnID("c"), m.MatchList("a", m.MatchV3Count(1), m.MatchV3Ops(
-		m.MatchV3SyncOp(0, 10, []string{roomC}),
+		m.MatchV3SyncOp(0, 0, []string{roomC}),
 	)))
 	// Send a request with pos=1 to filter for room_name_like = A . Discard the response.
 	v3.mustDoV3RequestWithPos(t, aliceToken, res.Pos, sync3.Request{
@@ -430,8 +430,8 @@ func TestTxnIDResponseBuffering(t *testing.T) {
 	})
 	// this response should be the one for A
 	m.MatchResponse(t, res, m.MatchTxnID("a"), m.MatchList("a", m.MatchV3Count(1), m.MatchV3Ops(
-		m.MatchV3InvalidateOp(0, 10),
-		m.MatchV3SyncOp(0, 10, []string{roomA}),
+		m.MatchV3InvalidateOp(0, 0),
+		m.MatchV3SyncOp(0, 0, []string{roomA}),
 	)))
 
 	// poll again
@@ -439,8 +439,8 @@ func TestTxnIDResponseBuffering(t *testing.T) {
 
 	// now we get the response for B
 	m.MatchResponse(t, res, m.MatchTxnID("b"), m.MatchList("a", m.MatchV3Count(1), m.MatchV3Ops(
-		m.MatchV3InvalidateOp(0, 10),
-		m.MatchV3SyncOp(0, 10, []string{roomB}),
+		m.MatchV3InvalidateOp(0, 0),
+		m.MatchV3SyncOp(0, 0, []string{roomB}),
 	)))
 }
 

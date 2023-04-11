@@ -95,7 +95,7 @@ func TestSpacesFilter(t *testing.T) {
 		t.Logf("requesting initial rooms in spaces %v expecting %v", spaces, wantRoomIDs)
 		return doSpacesListRequest(spaces, nil, m.MatchV3Count(len(wantRoomIDs)), m.MatchV3Ops(
 			m.MatchV3SyncOp(
-				0, 20, wantRoomIDs, true,
+				0, int64(len(wantRoomIDs))-1, wantRoomIDs, true,
 			),
 		))
 	}
@@ -154,8 +154,8 @@ func TestSpacesFilter(t *testing.T) {
 	// now completely change the space filter and ensure we see the right rooms
 	doSpacesListRequest([]string{parentD}, &res.Pos,
 		m.MatchV3Count(2), m.MatchV3Ops(
-			m.MatchV3InvalidateOp(0, 20),
-			m.MatchV3SyncOp(0, 20, []string{roomF, roomE}, true),
+			m.MatchV3InvalidateOp(0, 1),
+			m.MatchV3SyncOp(0, 1, []string{roomF, roomE}, true),
 		),
 	)
 }

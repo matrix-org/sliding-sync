@@ -27,7 +27,7 @@ func TestIncludeOldRooms(t *testing.T) {
 		},
 	})
 	m.MatchResponse(t, res, m.MatchList("a", m.MatchV3Count(1), m.MatchV3Ops(
-		m.MatchV3SyncOp(0, 1, []string{roomID}),
+		m.MatchV3SyncOp(0, 0, []string{roomID}),
 	)))
 	newRoomID := upgradeRoom(t, client, roomID)
 	t.Logf("old %s new %s", roomID, newRoomID)
@@ -99,7 +99,7 @@ func TestIncludeOldRooms(t *testing.T) {
 		},
 	})
 	m.MatchResponse(t, res, m.MatchList("a", m.MatchV3Count(1), m.MatchV3Ops(
-		m.MatchV3SyncOp(0, 2, []string{newRoomID}),
+		m.MatchV3SyncOp(0, 0, []string{newRoomID}),
 	)), m.MatchRoomSubscriptionsStrict(map[string][]m.RoomMatcher{
 		newRoomID: {
 			MatchRoomRequiredState([]Event{
@@ -136,7 +136,7 @@ func TestIncludeOldRooms(t *testing.T) {
 		},
 	})
 	m.MatchResponse(t, res, m.MatchList("a", m.MatchV3Count(1), m.MatchV3Ops(
-		m.MatchV3SyncOp(0, 2, []string{newRoomID}),
+		m.MatchV3SyncOp(0, 0, []string{newRoomID}),
 	)), m.MatchRoomSubscriptionsStrict(map[string][]m.RoomMatcher{
 		newRoomID: {
 			MatchRoomRequiredState([]Event{
@@ -294,7 +294,7 @@ func TestIncludeOldRoomsSubscriptionUnion(t *testing.T) {
 		},
 	})
 	m.MatchResponse(t, res, m.MatchList("a", m.MatchV3Count(1), m.MatchV3Ops(
-		m.MatchV3SyncOp(0, 1, []string{roomB}),
+		m.MatchV3SyncOp(0, 0, []string{roomB}),
 	)), m.MatchRoomSubscriptionsStrict(map[string][]m.RoomMatcher{
 		roomA: {
 			MatchRoomRequiredState([]Event{

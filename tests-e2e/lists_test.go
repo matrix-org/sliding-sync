@@ -726,8 +726,8 @@ func TestChangeSortOrder(t *testing.T) {
 	}
 
 	m.MatchResponse(t, res, m.MatchList("a", m.MatchV3Count(4), m.MatchV3Ops(
-		m.MatchV3InvalidateOp(0, 20),
-		m.MatchV3SyncOp(0, 20, []string{gotNameToIDs["Apple"], gotNameToIDs["Kiwi"], gotNameToIDs["Lemon"], gotNameToIDs["Orange"]}),
+		m.MatchV3InvalidateOp(0, 3),
+		m.MatchV3SyncOp(0, 3, []string{gotNameToIDs["Apple"], gotNameToIDs["Kiwi"], gotNameToIDs["Lemon"], gotNameToIDs["Orange"]}),
 	)))
 }
 
@@ -750,7 +750,7 @@ func TestShrinkRange(t *testing.T) {
 		},
 	})
 	m.MatchResponse(t, res, m.MatchList("a", m.MatchV3Count(10), m.MatchV3Ops(
-		m.MatchV3SyncOp(0, 20, roomIDs),
+		m.MatchV3SyncOp(0, 9, roomIDs),
 	)))
 	// now shrink the window on both ends
 	res = alice.SlidingSync(t, sync3.Request{
@@ -762,7 +762,7 @@ func TestShrinkRange(t *testing.T) {
 	}, WithPos(res.Pos))
 	m.MatchResponse(t, res, m.MatchList("a", m.MatchV3Count(10), m.MatchV3Ops(
 		m.MatchV3InvalidateOp(0, 1),
-		m.MatchV3InvalidateOp(7, 20),
+		m.MatchV3InvalidateOp(7, 9),
 	)))
 }
 
@@ -786,7 +786,7 @@ func TestExpandRange(t *testing.T) {
 		},
 	})
 	m.MatchResponse(t, res, m.MatchList("a", m.MatchV3Count(10), m.MatchV3Ops(
-		m.MatchV3SyncOp(0, 10, roomIDs),
+		m.MatchV3SyncOp(0, 9, roomIDs),
 	)))
 	// now expand the window
 	res = alice.SlidingSync(t, sync3.Request{
@@ -834,10 +834,10 @@ func TestMultipleSameList(t *testing.T) {
 	})
 	m.MatchResponse(t, res,
 		m.MatchList("1", m.MatchV3Count(16), m.MatchV3Ops(
-			m.MatchV3SyncOp(0, 20, roomIDs, false),
+			m.MatchV3SyncOp(0, 15, roomIDs, false),
 		)),
 		m.MatchList("2", m.MatchV3Count(16), m.MatchV3Ops(
-			m.MatchV3SyncOp(0, 16, roomIDs, false),
+			m.MatchV3SyncOp(0, 15, roomIDs, false),
 		)),
 	)
 	// now change both list ranges in a valid but strange way, and get back bad responses
@@ -851,7 +851,6 @@ func TestMultipleSameList(t *testing.T) {
 	m.MatchResponse(t, res,
 		m.MatchList("1", m.MatchV3Count(16), m.MatchV3Ops(
 			m.MatchV3InvalidateOp(0, 1),
-			m.MatchV3InvalidateOp(16, 20),
 		)),
 		m.MatchList("2", m.MatchV3Count(16), m.MatchV3Ops()),
 	)
@@ -923,7 +922,7 @@ func TestBumpEventTypesHandling(t *testing.T) {
 	matchRoom1ThenRoom2 := m.MatchList("room_list",
 		m.MatchV3Count(2),
 		m.MatchV3Ops(
-			m.MatchV3SyncOp(0, 20, []string{room1, room2}, false),
+			m.MatchV3SyncOp(0, 1, []string{room1, room2}, false),
 		))
 	m.MatchResponse(t, aliceRes, matchRoom1ThenRoom2)
 
@@ -977,3 +976,62 @@ func TestBumpEventTypesHandling(t *testing.T) {
 }
 
 // Test joining a room puts it at the top of your list. What about invites?
+
+// Tests the scenario described at
+// https://github.com/matrix-org/sliding-sync/pull/58#discussion_r1159850458
+func TestRangeOutsideTotalRooms(t *testing.T) {
+	alice := registerNewUser(t)
+
+	t.Log("Alice makes three public rooms.")
+	room0 := alice.CreateRoom(t, map[string]interface{}{"preset": "public_chat", "name": "A"})
+	room1 := alice.CreateRoom(t, map[string]interface{}{"preset": "public_chat", "name": "B"})
+	room2 := alice.CreateRoom(t, map[string]interface{}{"preset": "public_chat", "name": "C"})
+
+	t.Log("Alice initial syncs, requesting room ranges [0, 1] and [8, 9]")
+	syncRes := alice.SlidingSync(t, sync3.Request{
+		Lists: map[string]sync3.RequestList{
+			"a": {
+				Sort:   []string{sync3.SortByName},
+				Ranges: sync3.SliceRanges{{0, 1}, {8, 9}},
+			},
+		},
+	})
+
+	t.Log("Alice should only see rooms 0–1 in the sync response.")
+	m.MatchResponse(
+		t,
+		syncRes,
+		m.MatchList(
+			"a",
+			m.MatchV3Count(3),
+			m.MatchV3Ops(
+				m.MatchV3SyncOp(0, 1, []string{room0, room1}),
+			),
+		),
+	)
+
+	t.Log("Alice changes the sort order")
+	syncRes = alice.SlidingSync(
+		t,
+		sync3.Request{
+			Lists: map[string]sync3.RequestList{
+				"a": {
+					Sort: []string{sync3.SortByRecency},
+				},
+			},
+		},
+		WithPos(syncRes.Pos),
+	)
+	m.MatchResponse(
+		t,
+		syncRes,
+		m.MatchList(
+			"a",
+			m.MatchV3Count(3),
+			m.MatchV3Ops(
+				m.MatchV3InvalidateOp(0, 1),
+				m.MatchV3SyncOp(0, 1, []string{room2, room1}),
+			),
+		),
+	)
+}

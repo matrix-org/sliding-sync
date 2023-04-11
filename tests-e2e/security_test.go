@@ -47,7 +47,7 @@ func TestSecurityLiveStreamEventLeftLeak(t *testing.T) {
 			}},
 	})
 	m.MatchResponse(t, aliceRes, m.MatchList("a", m.MatchV3Count(1), m.MatchV3Ops(
-		m.MatchV3SyncOp(0, 10, []string{roomID}),
+		m.MatchV3SyncOp(0, 0, []string{roomID}),
 	)))
 	eveRes := eve.SlidingSync(t, sync3.Request{
 		Lists: map[string]sync3.RequestList{
@@ -58,7 +58,7 @@ func TestSecurityLiveStreamEventLeftLeak(t *testing.T) {
 			}},
 	})
 	m.MatchResponse(t, eveRes, m.MatchList("a", m.MatchV3Count(1), m.MatchV3Ops(
-		m.MatchV3SyncOp(0, 10, []string{roomID}),
+		m.MatchV3SyncOp(0, 0, []string{roomID}),
 	)))
 
 	// kick Eve
@@ -193,7 +193,7 @@ func TestSecurityRoomSubscriptionLeak(t *testing.T) {
 	})
 	// Assert that Eve doesn't see anything
 	m.MatchResponse(t, eveRes, m.MatchList("a", m.MatchV3Count(1), m.MatchV3Ops(
-		m.MatchV3SyncOp(0, 10, []string{eveUnrelatedRoomID}),
+		m.MatchV3SyncOp(0, 0, []string{eveUnrelatedRoomID}),
 	)), m.MatchRoomSubscriptionsStrict(map[string][]m.RoomMatcher{
 		eveUnrelatedRoomID: {},
 	}))

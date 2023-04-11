@@ -358,7 +358,7 @@ func TestInitialFlag(t *testing.T) {
 		}},
 	})
 	m.MatchResponse(t, res, m.MatchList("a", m.MatchV3Ops(
-		m.MatchV3SyncOp(0, 10, []string{roomID}),
+		m.MatchV3SyncOp(0, 0, []string{roomID}),
 	)), m.MatchRoomSubscription(roomID, m.MatchRoomInitial(true)))
 	// send an update
 	v2.queueResponse(alice, sync2.SyncResponse{
@@ -425,7 +425,7 @@ func TestDuplicateEventsInTimeline(t *testing.T) {
 		}},
 	})
 	m.MatchResponse(t, res, m.MatchList("a",
-		m.MatchV3Ops(m.MatchV3SyncOp(0, 10, []string{roomID})),
+		m.MatchV3Ops(m.MatchV3SyncOp(0, 0, []string{roomID})),
 	), m.MatchRoomSubscription(roomID, m.MatchRoomTimelineMostRecent(1, []json.RawMessage{dupeEvent})))
 }
 
@@ -572,7 +572,7 @@ func TestHistoryDoesntIncludeState(t *testing.T) {
 		}},
 	})
 	m.MatchResponse(t, res, m.MatchList("a",
-		m.MatchV3Ops(m.MatchV3SyncOp(0, 10, []string{roomID})),
+		m.MatchV3Ops(m.MatchV3SyncOp(0, 0, []string{roomID})),
 	), m.MatchRoomSubscription(roomID, m.MatchRoomTimeline(room.events), m.MatchRoomPrevBatch(prevBatch)))
 }
 
@@ -762,7 +762,7 @@ func TestPrevBatchInTimeline(t *testing.T) {
 	})
 	m.MatchResponse(t, res, m.MatchList("a",
 		m.MatchV3Ops(
-			m.MatchV3SyncOp(0, 10, []string{roomID}),
+			m.MatchV3SyncOp(0, 0, []string{roomID}),
 		),
 	), m.MatchRoomSubscription(roomID, m.MatchRoomPrevBatch("")))
 
@@ -814,7 +814,7 @@ func TestPrevBatchInTimeline(t *testing.T) {
 		})
 		m.MatchResponse(t, res, m.MatchList("a",
 			m.MatchV3Ops(
-				m.MatchV3SyncOp(0, 10, []string{roomID}),
+				m.MatchV3SyncOp(0, 0, []string{roomID}),
 			),
 		), m.MatchRoomSubscription(roomID, m.MatchRoomPrevBatch(tc.wantPrevBatch)))
 	}

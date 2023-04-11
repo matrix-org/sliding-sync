@@ -209,7 +209,7 @@ func (s *ConnState) onIncomingListRequest(ctx context.Context, builder *RoomsBui
 				Ops: []sync3.ResponseOp{
 					&sync3.ResponseOpRange{
 						Operation: sync3.OpSync,
-						Range:     []int64{0, int64(len(allRoomIDs) - 1)},
+						Range:     [2]int64{0, int64(len(allRoomIDs) - 1)},
 						RoomIDs:   allRoomIDs,
 					},
 				},
@@ -240,10 +240,16 @@ func (s *ConnState) onIncomingListRequest(ctx context.Context, builder *RoomsBui
 		if prevReqList != nil {
 			// there were previous syncs for this list, INVALIDATE the lot
 			logger.Trace().Interface("range", prevRange).Msg("INVALIDATEing because sort/filter ops have changed")
+			allRoomIDs := roomList.RoomIDs()
 			for _, r := range prevRange {
+				if r[0] >= roomList.Len() {
+					// This range will not have been echoed to the client because it is outside
+					// the total length of the room list; do not try to invalidate it.
+					continue
+				}
 				responseOperations = append(responseOperations, &sync3.ResponseOpRange{
 					Operation: sync3.OpInvalidate,
-					Range:     r[:],
+					Range:     clampSliceRangeToListSize(r, int64(len(allRoomIDs))),
 				})
 			}
 		}
@@ -264,9 +270,14 @@ func (s *ConnState) onIncomingListRequest(ctx context.Context, builder *RoomsBui
 		logger.Trace().Interface("range", removedRanges).Msg("INVALIDATEing because ranges were removed")
 	}
 	for i := range removedRanges {
+		if removedRanges[i][0] >= (roomList.Len()) {
+			// This range will not have been echoed to the client because it is outside
+			// the total length of the room list; do not try to invalidate it.
+			continue
+		}
 		responseOperations = append(responseOperations, &sync3.ResponseOpRange{
 			Operation: sync3.OpInvalidate,
-			Range:     removedRanges[i][:],
+			Range:     clampSliceRangeToListSize(removedRanges[i], roomList.Len()),
 		})
 	}
 
@@ -287,7 +298,7 @@ func (s *ConnState) onIncomingListRequest(ctx context.Context, builder *RoomsBui
 
 		responseOperations = append(responseOperations, &sync3.ResponseOpRange{
 			Operation: sync3.OpSync,
-			Range:     addedRanges[i][:],
+			Range:     clampSliceRangeToListSize(addedRanges[i], roomList.Len()),
 			RoomIDs:   roomIDs,
 		})
 	}
@@ -541,5 +552,25 @@ func (s *ConnState) OnRoomUpdate(ctx context.Context, up caches.RoomUpdate) {
 		s.live.onUpdate(update)
 	default:
 		logger.Warn().Str("room_id", up.RoomID()).Msg("OnRoomUpdate unknown update type")
+	}
+}
+
+// clampSliceRangeToListSize helps us to send client-friendly SYNC and INVALIDATE ranges.
+//
+// Suppose the client asks for a window on positions [10, 19]. If the list
+// has exactly 12 rooms, the window will see 3: those at positions 10, 11
+// and 12. In this situation, it is helpful for clients to be given the
+// "effective" range [10, 12] rather than the "conceptual" range [10, 19].
+//
+// The "full" room list occupies positions [0, totalRooms - 1]. If the given range r
+// does not overlap the full room list, return nil. Otherwise, return the intersection
+// of r with the full room list.
+func clampSliceRangeToListSize(r [2]int64, totalRooms int64) [2]int64 {
+	lastIndexWithRoom := totalRooms - 1
+	internal.Assert("Start of range exceeds last room index in list", r[0] <= lastIndexWithRoom)
+	if r[1] <= lastIndexWithRoom {
+		return r
+	} else {
+		return [2]int64{r[0], lastIndexWithRoom}
 	}
 }

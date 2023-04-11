@@ -58,7 +58,7 @@ func TestRoomStateTransitions(t *testing.T) {
 		},
 	})
 	m.MatchResponse(t, bobRes, m.MatchList("a", m.MatchV3Count(2), m.MatchV3Ops(
-		m.MatchV3SyncOp(0, 100, []string{inviteRoomID, joinRoomID}),
+		m.MatchV3SyncOp(0, 1, []string{inviteRoomID, joinRoomID}),
 	)), m.MatchRoomSubscriptions(map[string][]m.RoomMatcher{
 		inviteRoomID: {
 			m.MatchRoomHighlightCount(1),
@@ -132,7 +132,7 @@ func TestInviteRejection(t *testing.T) {
 		},
 	})
 	m.MatchResponse(t, res, m.MatchList("a", m.MatchV3Count(1), m.MatchV3Ops(
-		m.MatchV3SyncOp(0, 20, []string{firstInviteRoomID}),
+		m.MatchV3SyncOp(0, 0, []string{firstInviteRoomID}),
 	)), m.MatchRoomSubscriptionsStrict(map[string][]m.RoomMatcher{
 		firstInviteRoomID: {
 			m.MatchRoomInitial(true),
@@ -238,7 +238,7 @@ func TestInviteAcceptance(t *testing.T) {
 		},
 	})
 	m.MatchResponse(t, res, m.MatchList("a", m.MatchV3Count(1), m.MatchV3Ops(
-		m.MatchV3SyncOp(0, 20, []string{firstInviteRoomID}),
+		m.MatchV3SyncOp(0, 0, []string{firstInviteRoomID}),
 	)), m.MatchRoomSubscriptionsStrict(map[string][]m.RoomMatcher{
 		firstInviteRoomID: {
 			m.MatchRoomInitial(true),
@@ -342,7 +342,7 @@ func TestMemberCounts(t *testing.T) {
 		},
 	})
 	m.MatchResponse(t, res, m.MatchList("a", m.MatchV3Count(2), m.MatchV3Ops(
-		m.MatchV3SyncOp(0, 20, []string{firstRoomID, secondRoomID}, true),
+		m.MatchV3SyncOp(0, 1, []string{firstRoomID, secondRoomID}, true),
 	)), m.MatchRoomSubscriptionsStrict(map[string][]m.RoomMatcher{
 		firstRoomID: {
 			m.MatchRoomInitial(true),
