@@ -1011,3 +1011,84 @@ func TestTrickling(t *testing.T) {
 		)
 	}
 }
+
+func TestNumLiveBulk(t *testing.T) {
+	v2 := runTestV2Server(t)
+	v3 := runTestServer(t, v2, "")
+	defer v2.close()
+	defer v3.close()
+
+	roomID := "!bulk:test"
+	v2.addAccount(alice, aliceToken)
+	v2.queueResponse(alice, sync2.SyncResponse{
+		Rooms: sync2.SyncRoomsResponse{
+			Join: v2JoinTimeline(roomEvents{
+				roomID: roomID,
+				state:  createRoomState(t, alice, time.Now()),
+				events: []json.RawMessage{
+					testutils.NewEvent(t, "m.room.message", alice, map[string]interface{}{"body": "A"}, testutils.WithTimestamp(time.Now().Add(time.Second))),
+				},
+			}),
+		},
+	})
+
+	// initial syncs -> no live events
+	res := v3.mustDoV3Request(t, aliceToken, sync3.Request{
+		Lists: map[string]sync3.RequestList{
+			"the_list": {
+				RoomSubscription: sync3.RoomSubscription{
+					TimelineLimit: 3,
+					RequiredState: [][2]string{
+						{"m.room.encryption", ""},
+						{"m.room.tombstone", ""},
+					},
+				},
+				Sort:   []string{sync3.SortByRecency, sync3.SortByName},
+				Ranges: sync3.SliceRanges{{0, 1}},
+			},
+		},
+	})
+	m.MatchResponse(t, res, m.MatchRoomSubscriptionsStrict(
+		map[string][]m.RoomMatcher{
+			roomID: {
+				m.MatchNumLive(0),
+			},
+		},
+	), m.MatchList("the_list", m.MatchV3Count(1), m.MatchV3Ops(
+		m.MatchV3SyncOp(0, 0, []string{roomID}),
+	)))
+
+	// inject 10 events in batches of 2, 1, 3, 4
+	batchSizes := []int{2, 1, 3, 4}
+	count := 0
+	var completeTimeline []json.RawMessage
+	for _, sz := range batchSizes {
+		var timeline []json.RawMessage
+		for i := 0; i < sz; i++ {
+			timeline = append(timeline, testutils.NewEvent(
+				t, "m.room.message",
+				alice, map[string]interface{}{"body": fmt.Sprintf("Msg %d", count)}, testutils.WithTimestamp(time.Now().Add(time.Minute*time.Duration(1+count))),
+			))
+			count++
+		}
+		v2.queueResponse(aliceToken, sync2.SyncResponse{
+			Rooms: sync2.SyncRoomsResponse{
+				Join: v2JoinTimeline(roomEvents{
+					roomID: roomID,
+					events: timeline,
+				}),
+			},
+		})
+		v2.waitUntilEmpty(t, aliceToken)
+		completeTimeline = append(completeTimeline, timeline...)
+	}
+	res = v3.mustDoV3RequestWithPos(t, aliceToken, res.Pos, sync3.Request{})
+	m.MatchResponse(t, res, m.MatchRoomSubscriptionsStrict(
+		map[string][]m.RoomMatcher{
+			roomID: {
+				m.MatchRoomTimeline(completeTimeline),
+				m.MatchNumLive(10),
+			},
+		},
+	))
+}

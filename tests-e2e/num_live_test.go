@@ -122,7 +122,6 @@ func TestNumLive(t *testing.T) {
 	m.MatchResponse(t, res, m.MatchRoomSubscriptionsStrict(map[string][]m.RoomMatcher{
 		roomID: {
 			m.MatchNumLive(2),
-			// TODO: should we be including event ID 2 given timeline limit is 2?
 			MatchRoomTimeline([]Event{{ID: eventID2}, {ID: eventID3}, {ID: eventID4}}),
 		},
 	}))
