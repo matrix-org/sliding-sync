@@ -311,7 +311,7 @@ func (h *SyncLiveHandler) setupConnection(req *http.Request, syncReq *sync3.Requ
 		}
 	}
 	if v2device.UserID == "" {
-		v2device.UserID, err = h.V2.WhoAmI(accessToken)
+		v2device.UserID, _, err = h.V2.WhoAmI(accessToken)
 		if err != nil {
 			if err == sync2.HTTP401 {
 				return nil, &internal.HandlerError{

@@ -445,8 +445,8 @@ type mockClient struct {
 func (c *mockClient) DoSyncV2(ctx context.Context, authHeader, since string, isFirst, toDeviceOnly bool) (*SyncResponse, int, error) {
 	return c.fn(authHeader, since)
 }
-func (c *mockClient) WhoAmI(authHeader string) (string, error) {
-	return "@alice:localhost", nil
+func (c *mockClient) WhoAmI(authHeader string) (string, string, error) {
+	return "@alice:localhost", "device_123", nil
 }
 
 type mockDataReceiver struct {

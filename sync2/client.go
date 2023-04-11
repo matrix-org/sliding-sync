@@ -18,7 +18,10 @@ var ProxyVersion = ""
 var HTTP401 error = fmt.Errorf("HTTP 401")
 
 type Client interface {
-	WhoAmI(accessToken string) (string, error)
+	// WhoAmI asks the homeserver to lookup the access token using the CSAPI /whoami
+	// endpoint. The response must contain a device ID (meaning that we assume the
+	// homeserver supports Matrix >= 1.1.)
+	WhoAmI(accessToken string) (userID, deviceID string, err error)
 	DoSyncV2(ctx context.Context, accessToken, since string, isFirst bool, toDeviceOnly bool) (*SyncResponse, int, error)
 }
 
@@ -30,29 +33,30 @@ type HTTPClient struct {
 }
 
 // Return sync2.HTTP401 if this request returns 401
-func (v *HTTPClient) WhoAmI(accessToken string) (string, error) {
+func (v *HTTPClient) WhoAmI(accessToken string) (string, string, error) {
 	req, err := http.NewRequest("GET", v.DestinationServer+"/_matrix/client/r0/account/whoami", nil)
 	if err != nil {
-		return "", err
+		return "", "", err
 	}
 	req.Header.Set("User-Agent", "sync-v3-proxy-"+ProxyVersion)
 	req.Header.Set("Authorization", "Bearer "+accessToken)
 	res, err := v.Client.Do(req)
 	if err != nil {
-		return "", err
+		return "", "", err
 	}
 	if res.StatusCode != 200 {
 		if res.StatusCode == 401 {
-			return "", HTTP401
+			return "", "", HTTP401
 		}
-		return "", fmt.Errorf("/whoami returned HTTP %d", res.StatusCode)
+		return "", "", fmt.Errorf("/whoami returned HTTP %d", res.StatusCode)
 	}
 	defer res.Body.Close()
 	body, err := ioutil.ReadAll(res.Body)
 	if err != nil {
-		return "", err
+		return "", "", err
 	}
-	return gjson.GetBytes(body, "user_id").Str, nil
+	response := gjson.ParseBytes(body)
+	return response.Get("user_id").Str, response.Get("device_id").Str, nil
 }
 
 // DoSyncV2 performs a sync v2 request. Returns the sync response and the response status code
