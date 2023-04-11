@@ -976,3 +976,39 @@ func TestBumpEventTypesHandling(t *testing.T) {
 }
 
 // Test joining a room puts it at the top of your list. What about invites?
+
+// Tests the scenario described at
+// https://github.com/matrix-org/sliding-sync/pull/58#discussion_r1159850458
+func TestRangeOutsideTotalRooms(t *testing.T) {
+	alice := registerNewUser(t)
+
+	t.Log("Alice makes three public rooms.")
+	room0 := alice.CreateRoom(t, map[string]interface{}{"preset": "public_chat", "name": "A"})
+	room1 := alice.CreateRoom(t, map[string]interface{}{"preset": "public_chat", "name": "B"})
+	alice.CreateRoom(t, map[string]interface{}{"preset": "public_chat", "name": "C"})
+
+	t.Log("Alice initial syncs, requesting room ranges [0, 1] and [8, 9]")
+	syncReq := sync3.Request{
+		Lists: map[string]sync3.RequestList{
+			"a": {
+				Sort:   []string{sync3.SortByName},
+				Ranges: sync3.SliceRanges{{0, 1}, {8, 9}},
+			},
+		},
+	}
+	syncRes := alice.SlidingSync(t, syncReq)
+
+	t.Log("Alice should only see rooms 0–1 in the sync response.")
+	m.MatchResponse(
+		t,
+		syncRes,
+		m.MatchList(
+			"a",
+			m.MatchV3Count(3),
+			m.MatchV3Ops(
+				m.MatchV3SyncOp(0, 1, []string{room0, room1}),
+			),
+		),
+	)
+
+}
