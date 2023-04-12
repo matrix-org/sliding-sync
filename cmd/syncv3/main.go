@@ -122,10 +122,9 @@ func main() {
 	if args[EnvSentryDsn] != "" {
 		fmt.Printf("Configuring Sentry reporter...\n")
 		err := sentry.Init(sentry.ClientOptions{
-			Dsn:         args[EnvSentryDsn],
-			Release:     version,
-			Dist:        GitCommit,
-			Environment: "dmr-test",
+			Dsn:     args[EnvSentryDsn],
+			Release: version,
+			Dist:    GitCommit,
 		})
 		if err != nil {
 			panic(err)
