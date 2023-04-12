@@ -1,6 +1,7 @@
 package caches_test
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"reflect"
@@ -82,7 +83,7 @@ func TestAnnotateWithTransactionIDs(t *testing.T) {
 			data: tc.eventIDToTxnIDs,
 		}
 		uc := caches.NewUserCache(userID, nil, nil, fetcher)
-		got := uc.AnnotateWithTransactionIDs("DEVICE", convertIDToEventStub(tc.roomIDToEvents))
+		got := uc.AnnotateWithTransactionIDs(context.Background(), "DEVICE", convertIDToEventStub(tc.roomIDToEvents))
 		want := convertIDTxnToEventStub(tc.wantRoomIDToEvents)
 		if !reflect.DeepEqual(got, want) {
 			t.Errorf("%s : got %v want %v", tc.name, js(got), js(want))

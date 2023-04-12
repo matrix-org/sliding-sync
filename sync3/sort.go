@@ -52,6 +52,7 @@ func (s *SortableRooms) Add(roomID string) bool {
 }
 
 func (s *SortableRooms) Get(index int) string {
+	// TODO: find a way to plumb a context into this assert
 	internal.Assert(fmt.Sprintf("index is within len(rooms) %v < %v", index, len(s.roomIDs)), index < len(s.roomIDs))
 	return s.roomIDs[index]
 }
@@ -75,6 +76,7 @@ func (s *SortableRooms) Len() int64 {
 	return int64(len(s.roomIDs))
 }
 func (s *SortableRooms) Subslice(i, j int64) Subslicer {
+	// TODO: find a way to plumb a context.Context through to this assert
 	internal.Assert("i < j and are within len(rooms)", i < j && i < int64(len(s.roomIDs)) && j <= int64(len(s.roomIDs)))
 	return &SortableRooms{
 		roomIDs:       s.roomIDs[i:j],
@@ -83,6 +85,7 @@ func (s *SortableRooms) Subslice(i, j int64) Subslicer {
 }
 
 func (s *SortableRooms) Sort(sortBy []string) error {
+	// TODO: find a way to plumb a context into this assert
 	internal.Assert("sortBy is not empty", len(sortBy) != 0)
 	comparators := []func(i, j int) int{}
 	for _, sort := range sortBy {

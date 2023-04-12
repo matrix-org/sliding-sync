@@ -1,8 +1,10 @@
 package internal
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/getsentry/sentry-go"
 	"os"
 	"runtime"
 
@@ -55,6 +57,8 @@ func ExpiredSessionError() *HandlerError {
 // of the program, and shouldn't be used to log a normal error e.g network errors. Developers can
 // make use of this function by setting SYNCV3_DEBUG=1 when running the server, which will fail-fast
 // whenever a programming or logic error occurs.
+// If expr is false and SYNCV3_SENTRY_DSN is configured, an error event is sent to Sentry, including
+// the msg verbatim.
 //
 // The msg provided should be the expectation of the assert e.g:
 //
@@ -64,6 +68,22 @@ func ExpiredSessionError() *HandlerError {
 //
 //	assertion failed: list is not empty
 func Assert(msg string, expr bool) {
+	assert(msg, expr)
+	if !expr {
+		sentry.CaptureException(fmt.Errorf("assertion failed: %s", msg))
+	}
+}
+
+// AssertWithContext is a version of Assert that associates any sentry events with a
+// request context.
+func AssertWithContext(ctx context.Context, msg string, expr bool) {
+	assert(msg, expr)
+	if !expr {
+		GetSentryHubFromContextOrDefault(ctx).CaptureException(fmt.Errorf("assertion failed: %s", msg))
+	}
+}
+
+func assert(msg string, expr bool) {
 	if expr {
 		return
 	}

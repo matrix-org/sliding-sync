@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"context"
 	"fmt"
 	"sort"
 
@@ -56,8 +57,8 @@ func (rb *RoomsBuilder) AddSubscription(rs sync3.RoomSubscription) (id int) {
 }
 
 // Add rooms to the subscription ID previously added. E.g rooms from a list.
-func (rb *RoomsBuilder) AddRoomsToSubscription(id int, roomIDs []string) {
-	internal.Assert("subscription ID is unknown", id < len(rb.subs))
+func (rb *RoomsBuilder) AddRoomsToSubscription(ctx context.Context, id int, roomIDs []string) {
+	internal.AssertWithContext(ctx, "subscription ID is unknown", id < len(rb.subs))
 	rb.subToRooms[id] = append(rb.subToRooms[id], roomIDs...)
 }
 

@@ -83,8 +83,8 @@ func NewConnState(
 //     N events arrive and get buffered.
 //   - load() bases its current state based on the latest position, which includes processing of these N events.
 //   - post load() we read N events, processing them a 2nd time.
-func (s *ConnState) load() error {
-	initialLoadPosition, joinedRooms, err := s.globalCache.LoadJoinedRooms(s.userID)
+func (s *ConnState) load(ctx context.Context) error {
+	initialLoadPosition, joinedRooms, err := s.globalCache.LoadJoinedRooms(ctx, s.userID)
 	if err != nil {
 		return err
 	}
@@ -120,7 +120,7 @@ func (s *ConnState) OnIncomingRequest(ctx context.Context, cid sync3.ConnID, req
 	if s.loadPosition == -1 {
 		// load() needs no ctx so drop it
 		_, region := internal.StartSpan(ctx, "load")
-		s.load()
+		s.load(ctx)
 		region.End()
 	}
 	return s.onIncomingRequest(ctx, req, isInitial)
@@ -195,14 +195,14 @@ func (s *ConnState) onIncomingRequest(ctx context.Context, req *sync3.Request, i
 func (s *ConnState) onIncomingListRequest(ctx context.Context, builder *RoomsBuilder, listKey string, prevReqList, nextReqList *sync3.RequestList) sync3.ResponseList {
 	ctx, span := internal.StartSpan(ctx, "onIncomingListRequest")
 	defer span.End()
-	roomList, overwritten := s.lists.AssignList(listKey, nextReqList.Filters, nextReqList.Sort, sync3.DoNotOverwrite)
+	roomList, overwritten := s.lists.AssignList(ctx, listKey, nextReqList.Filters, nextReqList.Sort, sync3.DoNotOverwrite)
 
 	if nextReqList.ShouldGetAllRooms() {
 		if overwritten || prevReqList.FiltersChanged(nextReqList) {
 			// this is either a new list or the filters changed, so we need to splat all the rooms to the client.
 			subID := builder.AddSubscription(nextReqList.RoomSubscription)
 			allRoomIDs := roomList.RoomIDs()
-			builder.AddRoomsToSubscription(subID, allRoomIDs)
+			builder.AddRoomsToSubscription(ctx, subID, allRoomIDs)
 			return sync3.ResponseList{
 				// send all the room IDs initially so the user knows which rooms in the top-level rooms map
 				// correspond to this list.
@@ -255,11 +255,12 @@ func (s *ConnState) onIncomingListRequest(ctx context.Context, builder *RoomsBui
 		}
 		if filtersChanged {
 			// we need to re-create the list as the rooms may have completely changed
-			roomList, _ = s.lists.AssignList(listKey, nextReqList.Filters, nextReqList.Sort, sync3.Overwrite)
+			roomList, _ = s.lists.AssignList(ctx, listKey, nextReqList.Filters, nextReqList.Sort, sync3.Overwrite)
 		}
 		// resort as either we changed the sort order or we added/removed a bunch of rooms
 		if err := roomList.Sort(nextReqList.Sort); err != nil {
 			logger.Err(err).Str("key", listKey).Msg("cannot sort list")
+			internal.GetSentryHubFromContextOrDefault(ctx).CaptureException(err)
 		}
 		addedRanges = nextReqList.Ranges
 		removedRanges = nil
@@ -294,7 +295,7 @@ func (s *ConnState) onIncomingListRequest(ctx context.Context, builder *RoomsBui
 		sortableRooms := subslice[0].(*sync3.SortableRooms)
 		roomIDs := sortableRooms.RoomIDs()
 		// the builder will populate this with the right room data
-		builder.AddRoomsToSubscription(subID, roomIDs)
+		builder.AddRoomsToSubscription(ctx, subID, roomIDs)
 
 		responseOperations = append(responseOperations, &sync3.ResponseOpRange{
 			Operation: sync3.OpSync,
@@ -337,7 +338,7 @@ func (s *ConnState) onIncomingListRequest(ctx context.Context, builder *RoomsBui
 					joinedRoomIDs = append(joinedRoomIDs, roomID)
 				}
 				// the builder will populate this with the right room data
-				builder.AddRoomsToSubscription(newSubID, joinedRoomIDs)
+				builder.AddRoomsToSubscription(ctx, newSubID, joinedRoomIDs)
 			}
 		}
 	}
@@ -383,7 +384,7 @@ func (s *ConnState) buildRoomSubscriptions(ctx context.Context, builder *RoomsBu
 		}
 		s.roomSubscriptions[roomID] = sub
 		subID := builder.AddSubscription(sub)
-		builder.AddRoomsToSubscription(subID, []string{roomID})
+		builder.AddRoomsToSubscription(ctx, subID, []string{roomID})
 	}
 	for _, roomID := range unsubs {
 		delete(s.roomSubscriptions, roomID)
@@ -438,8 +439,8 @@ func (s *ConnState) getInitialRoomData(ctx context.Context, roomSub sync3.RoomSu
 	defer span.End()
 	rooms := make(map[string]sync3.Room, len(roomIDs))
 	// We want to grab the user room data and the room metadata for each room ID.
-	roomIDToUserRoomData := s.userCache.LazyLoadTimelines(s.loadPosition, roomIDs, int(roomSub.TimelineLimit))
-	roomMetadatas := s.globalCache.LoadRooms(roomIDs...)
+	roomIDToUserRoomData := s.userCache.LazyLoadTimelines(ctx, s.loadPosition, roomIDs, int(roomSub.TimelineLimit))
+	roomMetadatas := s.globalCache.LoadRooms(ctx, roomIDs...)
 	// prepare lazy loading data structures, txn IDs
 	roomToUsersInTimeline := make(map[string][]string, len(roomIDToUserRoomData))
 	roomToTimeline := make(map[string][]json.RawMessage)
@@ -457,7 +458,7 @@ func (s *ConnState) getInitialRoomData(ctx context.Context, roomSub sync3.RoomSu
 		roomToUsersInTimeline[roomID] = userIDs
 		roomToTimeline[roomID] = urd.Timeline
 	}
-	roomToTimeline = s.userCache.AnnotateWithTransactionIDs(s.deviceID, roomToTimeline)
+	roomToTimeline = s.userCache.AnnotateWithTransactionIDs(ctx, s.deviceID, roomToTimeline)
 	rsm := roomSub.RequiredStateMap(s.userID)
 	roomIDToState := s.globalCache.LoadRoomState(ctx, roomIDs, s.loadPosition, rsm, roomToUsersInTimeline)
 	if roomIDToState == nil { // e.g no required_state
@@ -544,11 +545,11 @@ func (s *ConnState) OnRoomUpdate(ctx context.Context, up caches.RoomUpdate) {
 			// 0 -> this event was from a 'state' block, do not poke active connections
 			return
 		}
-		internal.Assert("missing global room metadata", update.GlobalRoomMetadata() != nil)
+		internal.AssertWithContext(ctx, "missing global room metadata", update.GlobalRoomMetadata() != nil)
 		internal.Logf(ctx, "connstate", "queued update %d", update.EventData.LatestPos)
 		s.live.onUpdate(update)
 	case caches.RoomUpdate:
-		internal.Assert("missing global room metadata", update.GlobalRoomMetadata() != nil)
+		internal.AssertWithContext(ctx, "missing global room metadata", update.GlobalRoomMetadata() != nil)
 		s.live.onUpdate(update)
 	default:
 		logger.Warn().Str("room_id", up.RoomID()).Msg("OnRoomUpdate unknown update type")

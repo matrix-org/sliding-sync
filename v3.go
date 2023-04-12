@@ -3,6 +3,7 @@ package slidingsync
 import (
 	"encoding/json"
 	"fmt"
+	"github.com/getsentry/sentry-go"
 	"net/http"
 	"os"
 	"strings"
@@ -169,6 +170,7 @@ func RunSyncV3Server(h http.Handler, bindAddr, destV2Server, tlsCert, tlsKey str
 	}
 	if err != nil {
 		logger.Fatal().Err(err).Msg("failed to listen and serve")
+		sentry.CaptureException(err)
 	}
 }
 

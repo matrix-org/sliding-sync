@@ -72,14 +72,14 @@ func NewGlobalCache(store *state.Storage) *GlobalCache {
 	}
 }
 
-func (c *GlobalCache) OnRegistered(_ int64) error {
+func (c *GlobalCache) OnRegistered(_ context.Context, _ int64) error {
 	return nil
 }
 
 // Load the current room metadata for the given room IDs. Races unless you call this in a dispatcher loop.
 // Always returns copies of the room metadata so ownership can be passed to other threads.
 // Keeps the ordering of the room IDs given.
-func (c *GlobalCache) LoadRooms(roomIDs ...string) map[string]*internal.RoomMetadata {
+func (c *GlobalCache) LoadRooms(ctx context.Context, roomIDs ...string) map[string]*internal.RoomMetadata {
 	c.roomIDToMetadataMu.RLock()
 	defer c.roomIDToMetadataMu.RUnlock()
 	result := make(map[string]*internal.RoomMetadata, len(roomIDs))
@@ -87,7 +87,7 @@ func (c *GlobalCache) LoadRooms(roomIDs ...string) map[string]*internal.RoomMeta
 		roomID := roomIDs[i]
 		sr := c.roomIDToMetadata[roomID]
 		if sr == nil {
-			logger.Error().Str("room", roomID).Msg("GlobalCache.LoadRoom: no metadata for this room")
+			logger.Warn().Str("room", roomID).Msg("GlobalCache.LoadRoom: no metadata for this room")
 			continue
 		}
 		srCopy := *sr
@@ -103,7 +103,7 @@ func (c *GlobalCache) LoadRooms(roomIDs ...string) map[string]*internal.RoomMeta
 
 // Load all current joined room metadata for the user given. Returns the absolute database position along
 // with the results. TODO: remove with LoadRoomState?
-func (c *GlobalCache) LoadJoinedRooms(userID string) (pos int64, joinedRooms map[string]*internal.RoomMetadata, err error) {
+func (c *GlobalCache) LoadJoinedRooms(ctx context.Context, userID string) (pos int64, joinedRooms map[string]*internal.RoomMetadata, err error) {
 	if c.LoadJoinedRoomsOverride != nil {
 		return c.LoadJoinedRoomsOverride(userID)
 	}
@@ -116,7 +116,7 @@ func (c *GlobalCache) LoadJoinedRooms(userID string) (pos int64, joinedRooms map
 		return 0, nil, err
 	}
 	// TODO: no guarantee that this state is the same as latest unless called in a dispatcher loop
-	rooms := c.LoadRooms(joinedRoomIDs...)
+	rooms := c.LoadRooms(ctx, joinedRoomIDs...)
 	return initialLoadPosition, rooms, nil
 }
 
@@ -126,6 +126,7 @@ func (c *GlobalCache) LoadStateEvent(ctx context.Context, roomID string, loadPos
 	})
 	if err != nil {
 		logger.Err(err).Str("room", roomID).Int64("pos", loadPosition).Msg("failed to load room state")
+		internal.GetSentryHubFromContextOrDefault(ctx).CaptureException(err)
 		return nil
 	}
 	events := roomIDToStateEvents[roomID]
@@ -147,6 +148,7 @@ func (c *GlobalCache) LoadRoomState(ctx context.Context, roomIDs []string, loadP
 	roomIDToStateEvents, err := c.store.RoomStateAfterEventPosition(ctx, roomIDs, loadPosition, requiredStateMap.QueryStateMap())
 	if err != nil {
 		logger.Err(err).Strs("rooms", roomIDs).Int64("pos", loadPosition).Msg("failed to load room state")
+		internal.GetSentryHubFromContextOrDefault(ctx).CaptureException(err)
 		return nil
 	}
 	for roomID, stateEvents := range roomIDToStateEvents {
@@ -295,6 +297,7 @@ func (c *GlobalCache) OnNewEvent(
 					err := c.store.InvitesTable.RemoveInvite(*ed.StateKey, ed.RoomID)
 					if err != nil {
 						logger.Err(err).Str("user", *ed.StateKey).Str("room", ed.RoomID).Msg("failed to remove accepted invite")
+						internal.GetSentryHubFromContextOrDefault(ctx).CaptureException(err)
 					}
 				}
 			}

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/getsentry/sentry-go"
 	"sync"
 
 	lru "github.com/hashicorp/golang-lru"
@@ -97,7 +98,7 @@ type InviteData struct {
 	IsDM                 bool
 }
 
-func NewInviteData(userID, roomID string, inviteState []json.RawMessage) *InviteData {
+func NewInviteData(ctx context.Context, userID, roomID string, inviteState []json.RawMessage) *InviteData {
 	// work out metadata for this invite. There's an origin_server_ts on the invite m.room.member event
 	id := InviteData{
 		roomID:      roomID,
@@ -138,9 +139,17 @@ func NewInviteData(userID, roomID string, inviteState []json.RawMessage) *Invite
 		}
 	}
 	if id.InviteEvent == nil {
-		logger.Error().Str("invitee", userID).Str("room", roomID).Int("num_invite_state", len(inviteState)).Msg(
-			"cannot make invite, missing invite event for user",
-		)
+		const errMsg = "cannot make invite, missing invite event for user"
+		logger.Error().Str("invitee", userID).Str("room", roomID).Int("num_invite_state", len(inviteState)).Msg(errMsg)
+		hub := internal.GetSentryHubFromContextOrDefault(ctx)
+		hub.WithScope(func(scope *sentry.Scope) {
+			scope.SetContext("sliding-sync", map[string]interface{}{
+				"invitee":          userID,
+				"room":             roomID,
+				"num_invite_state": len(inviteState),
+			})
+			hub.CaptureException(fmt.Errorf(errMsg))
+		})
 		return nil
 	}
 	return &id
@@ -213,10 +222,10 @@ func (c *UserCache) Unsubscribe(id int) {
 	delete(c.listeners, id)
 }
 
-func (c *UserCache) OnRegistered(_ int64) error {
+func (c *UserCache) OnRegistered(ctx context.Context, _ int64) error {
 	// select all spaces the user is a part of to seed the cache correctly. This has to be done in
 	// the OnRegistered callback which has locking guarantees. This is why...
-	latestPos, joinedRooms, err := c.globalCache.LoadJoinedRooms(c.UserID)
+	latestPos, joinedRooms, err := c.globalCache.LoadJoinedRooms(ctx, c.UserID)
 	if err != nil {
 		return fmt.Errorf("failed to load joined rooms: %s", err)
 	}
@@ -270,7 +279,7 @@ func (c *UserCache) OnRegistered(_ int64) error {
 	return nil
 }
 
-func (c *UserCache) LazyLoadTimelines(loadPos int64, roomIDs []string, maxTimelineEvents int) map[string]UserRoomData {
+func (c *UserCache) LazyLoadTimelines(ctx context.Context, loadPos int64, roomIDs []string, maxTimelineEvents int) map[string]UserRoomData {
 	if c.LazyRoomDataOverride != nil {
 		return c.LazyRoomDataOverride(loadPos, roomIDs, maxTimelineEvents)
 	}
@@ -306,6 +315,7 @@ func (c *UserCache) LazyLoadTimelines(loadPos int64, roomIDs []string, maxTimeli
 						prevBatch, err := c.store.EventsTable.SelectClosestPrevBatchByID(roomID, eventID)
 						if err != nil {
 							logger.Err(err).Str("room", roomID).Str("event_id", eventID).Msg("failed to get prev batch token for room")
+							internal.GetSentryHubFromContextOrDefault(ctx).CaptureException(err)
 						}
 						urd.SetPrevBatch(eventID, prevBatch)
 					}
@@ -335,6 +345,7 @@ func (c *UserCache) LazyLoadTimelines(loadPos int64, roomIDs []string, maxTimeli
 	roomIDToEvents, roomIDToPrevBatch, err := c.store.LatestEventsInRooms(c.UserID, lazyRoomIDs, loadPos, maxTimelineEvents)
 	if err != nil {
 		logger.Err(err).Strs("rooms", lazyRoomIDs).Msg("failed to get LatestEventsInRooms")
+		internal.GetSentryHubFromContextOrDefault(ctx).CaptureException(err)
 		return nil
 	}
 	c.roomToDataMu.Lock()
@@ -388,10 +399,10 @@ func (c *roomUpdateCache) UserRoomMetadata() *UserRoomData {
 }
 
 // snapshots the user cache / global cache data for this room for sending to connections
-func (c *UserCache) newRoomUpdate(roomID string) RoomUpdate {
+func (c *UserCache) newRoomUpdate(ctx context.Context, roomID string) RoomUpdate {
 	u := c.LoadRoomData(roomID)
 	var r *internal.RoomMetadata
-	globalRooms := c.globalCache.LoadRooms(roomID)
+	globalRooms := c.globalCache.LoadRooms(ctx, roomID)
 	if globalRooms == nil || globalRooms[roomID] == nil {
 		// this can happen when we join a room we didn't know about because we process unread counts
 		// before the timeline events. Warn and send a stub
@@ -402,7 +413,7 @@ func (c *UserCache) newRoomUpdate(roomID string) RoomUpdate {
 	} else {
 		r = globalRooms[roomID]
 	}
-	internal.Assert("missing global room metadata for room "+roomID, r != nil)
+	internal.AssertWithContext(ctx, "missing global room metadata for room "+roomID, r != nil)
 	return &roomUpdateCache{
 		roomID:         roomID,
 		globalRoomData: r,
@@ -428,7 +439,7 @@ func (c *UserCache) Invites() map[string]UserRoomData {
 // events are globally scoped, so if Alice sends a message, Bob might receive it first on his v2 loop
 // which would cause the transaction ID to be missing from the event. Instead, we always look for txn
 // IDs in the v2 poller, and then set them appropriately at request time.
-func (c *UserCache) AnnotateWithTransactionIDs(deviceID string, roomIDToEvents map[string][]json.RawMessage) map[string][]json.RawMessage {
+func (c *UserCache) AnnotateWithTransactionIDs(ctx context.Context, deviceID string, roomIDToEvents map[string][]json.RawMessage) map[string][]json.RawMessage {
 	var eventIDs []string
 	eventIDToEvent := make(map[string]struct {
 		roomID string
@@ -458,6 +469,7 @@ func (c *UserCache) AnnotateWithTransactionIDs(deviceID string, roomIDToEvents m
 		newJSON, err := sjson.SetBytes(event, "unsigned.transaction_id", txnID)
 		if err != nil {
 			logger.Err(err).Str("user", c.UserID).Msg("AnnotateWithTransactionIDs: sjson failed")
+			internal.GetSentryHubFromContextOrDefault(ctx).CaptureException(err)
 		} else {
 			events[data.i] = newJSON
 			roomIDToEvents[data.roomID] = events
@@ -476,7 +488,7 @@ func (c *UserCache) OnEphemeralEvent(ctx context.Context, roomID string, ephEven
 	switch evType {
 	case "m.typing":
 		update = &TypingUpdate{
-			RoomUpdate: c.newRoomUpdate(roomID),
+			RoomUpdate: c.newRoomUpdate(ctx, roomID),
 		}
 	}
 	if update == nil {
@@ -488,7 +500,7 @@ func (c *UserCache) OnEphemeralEvent(ctx context.Context, roomID string, ephEven
 
 func (c *UserCache) OnReceipt(ctx context.Context, receipt internal.Receipt) {
 	c.emitOnRoomUpdate(ctx, &ReceiptUpdate{
-		RoomUpdate: c.newRoomUpdate(receipt.RoomID),
+		RoomUpdate: c.newRoomUpdate(ctx, receipt.RoomID),
 		Receipt:    receipt,
 	})
 }
@@ -535,7 +547,7 @@ func (c *UserCache) OnUnreadCounts(ctx context.Context, roomID string, highlight
 	c.roomToDataMu.Unlock()
 
 	roomUpdate := &UnreadCountUpdate{
-		RoomUpdate:        c.newRoomUpdate(roomID),
+		RoomUpdate:        c.newRoomUpdate(ctx, roomID),
 		HasCountDecreased: hasCountDecreased,
 	}
 
@@ -559,7 +571,7 @@ func (c *UserCache) OnSpaceUpdate(ctx context.Context, parentRoomID, childRoomID
 
 	// now we need to notify connections for the _child_
 	roomUpdate := &RoomEventUpdate{
-		RoomUpdate: c.newRoomUpdate(childRoomID),
+		RoomUpdate: c.newRoomUpdate(ctx, childRoomID),
 		EventData:  eventData,
 	}
 
@@ -592,7 +604,7 @@ func (c *UserCache) OnNewEvent(ctx context.Context, eventData *EventData) {
 	c.roomToDataMu.Unlock()
 
 	roomUpdate := &RoomEventUpdate{
-		RoomUpdate: c.newRoomUpdate(eventData.RoomID),
+		RoomUpdate: c.newRoomUpdate(ctx, eventData.RoomID),
 		EventData:  eventData,
 	}
 
@@ -600,7 +612,7 @@ func (c *UserCache) OnNewEvent(ctx context.Context, eventData *EventData) {
 }
 
 func (c *UserCache) OnInvite(ctx context.Context, roomID string, inviteStateEvents []json.RawMessage) {
-	inviteData := NewInviteData(c.UserID, roomID, inviteStateEvents)
+	inviteData := NewInviteData(ctx, c.UserID, roomID, inviteStateEvents)
 	if inviteData == nil {
 		return // malformed invite
 	}
@@ -718,7 +730,7 @@ func (c *UserCache) OnAccountData(ctx context.Context, datas []state.AccountData
 		} else {
 			roomUpdate := &RoomAccountDataUpdate{
 				AccountData: updates,
-				RoomUpdate:  c.newRoomUpdate(roomID),
+				RoomUpdate:  c.newRoomUpdate(ctx, roomID),
 			}
 			c.emitOnRoomUpdate(ctx, roomUpdate)
 		}

@@ -3,7 +3,6 @@ package extensions
 import (
 	"context"
 	"encoding/json"
-
 	"github.com/matrix-org/sliding-sync/internal"
 	"github.com/matrix-org/sliding-sync/state"
 	"github.com/matrix-org/sliding-sync/sync3/caches"
@@ -43,6 +42,7 @@ func (r *ReceiptsRequest) AppendLive(ctx context.Context, res *Response, extCtx 
 			edu, err := state.PackReceiptsIntoEDU([]internal.Receipt{update.Receipt})
 			if err != nil {
 				logger.Err(err).Str("user", extCtx.UserID).Str("room", update.Receipt.RoomID).Msg("failed to pack receipt into new edu")
+				internal.GetSentryHubFromContextOrDefault(ctx).CaptureException(err)
 				return
 			}
 			res.Receipts = &ReceiptsResponse{
@@ -55,6 +55,7 @@ func (r *ReceiptsRequest) AppendLive(ctx context.Context, res *Response, extCtx 
 			edu, err := state.PackReceiptsIntoEDU([]internal.Receipt{update.Receipt})
 			if err != nil {
 				logger.Err(err).Str("user", extCtx.UserID).Str("room", update.Receipt.RoomID).Msg("failed to pack receipt into edu")
+				internal.GetSentryHubFromContextOrDefault(ctx).CaptureException(err)
 				return
 			}
 			res.Receipts.Rooms[update.RoomID()] = edu
@@ -64,6 +65,7 @@ func (r *ReceiptsRequest) AppendLive(ctx context.Context, res *Response, extCtx 
 			pub, priv, err := state.UnpackReceiptsFromEDU(update.RoomID(), res.Receipts.Rooms[update.RoomID()])
 			if err != nil {
 				logger.Err(err).Str("user", extCtx.UserID).Str("room", update.Receipt.RoomID).Msg("failed to pack receipt into edu")
+				internal.GetSentryHubFromContextOrDefault(ctx).CaptureException(err)
 				return
 			}
 			receipts := append(pub, priv...)
@@ -72,6 +74,7 @@ func (r *ReceiptsRequest) AppendLive(ctx context.Context, res *Response, extCtx 
 			edu, err := state.PackReceiptsIntoEDU(receipts)
 			if err != nil {
 				logger.Err(err).Str("user", extCtx.UserID).Str("room", update.Receipt.RoomID).Msg("failed to pack receipt into edu")
+				internal.GetSentryHubFromContextOrDefault(ctx).CaptureException(err)
 				return
 			}
 			res.Receipts.Rooms[update.RoomID()] = edu
@@ -89,12 +92,14 @@ func (r *ReceiptsRequest) ProcessInitial(ctx context.Context, res *Response, ext
 		receipts, err := extCtx.Store.ReceiptTable.SelectReceiptsForEvents(roomID, timeline)
 		if err != nil {
 			logger.Err(err).Str("user", extCtx.UserID).Str("room", roomID).Msg("failed to SelectReceiptsForEvents")
+			internal.GetSentryHubFromContextOrDefault(ctx).CaptureException(err)
 			continue
 		}
 		// always include your own receipts
 		ownReceipts, err := extCtx.Store.ReceiptTable.SelectReceiptsForUser(roomID, extCtx.UserID)
 		if err != nil {
 			logger.Err(err).Str("user", extCtx.UserID).Str("room", roomID).Msg("failed to SelectReceiptsForUser")
+			internal.GetSentryHubFromContextOrDefault(ctx).CaptureException(err)
 			continue
 		}
 		if len(receipts) == 0 && len(ownReceipts) == 0 {

@@ -2,6 +2,7 @@ package handler2
 
 import (
 	"encoding/json"
+	"github.com/getsentry/sentry-go"
 	"hash/fnv"
 	"os"
 	"sync"
@@ -76,6 +77,7 @@ func (h *Handler) Listen() {
 		err := h.v3Sub.Listen()
 		if err != nil {
 			logger.Err(err).Msg("Failed to listen for v3 messages")
+			sentry.CaptureException(err)
 		}
 	}()
 }
@@ -96,6 +98,7 @@ func (h *Handler) StartV2Pollers() {
 	devices, err := h.v2Store.AllDevices()
 	if err != nil {
 		logger.Err(err).Msg("StartV2Pollers: failed to query devices")
+		sentry.CaptureException(err)
 		return
 	}
 	// how many concurrent pollers to make at startup.
@@ -172,6 +175,7 @@ func (h *Handler) UpdateDeviceSince(deviceID, since string) {
 	err := h.v2Store.UpdateDeviceSince(deviceID, since)
 	if err != nil {
 		logger.Err(err).Str("device", deviceID).Str("since", since).Msg("V2: failed to persist since token")
+		sentry.CaptureException(err)
 	}
 }
 
@@ -189,6 +193,7 @@ func (h *Handler) OnE2EEData(userID, deviceID string, otkCounts map[string]int, 
 	nextPos, err := h.Store.DeviceDataTable.Upsert(&partialDD)
 	if err != nil {
 		logger.Err(err).Str("user", userID).Msg("failed to upsert device data")
+		sentry.CaptureException(err)
 		return
 	}
 	h.v2Pub.Notify(pubsub.ChanV2, &pubsub.V2DeviceData{
@@ -213,6 +218,7 @@ func (h *Handler) Accumulate(deviceID, roomID, prevBatch string, timeline []json
 		err := h.Store.TransactionsTable.Insert(deviceID, eventIDToTxnID)
 		if err != nil {
 			logger.Err(err).Str("device", deviceID).Int("num_txns", len(eventIDToTxnID)).Msg("failed to persist txn IDs for user")
+			sentry.CaptureException(err)
 		}
 	}
 
@@ -220,6 +226,7 @@ func (h *Handler) Accumulate(deviceID, roomID, prevBatch string, timeline []json
 	numNew, latestNIDs, err := h.Store.Accumulate(roomID, prevBatch, timeline)
 	if err != nil {
 		logger.Err(err).Int("timeline", len(timeline)).Str("room", roomID).Msg("V2: failed to accumulate room")
+		sentry.CaptureException(err)
 		return
 	}
 	if numNew == 0 {
@@ -237,6 +244,7 @@ func (h *Handler) Initialise(roomID string, state []json.RawMessage) {
 	added, snapID, err := h.Store.Initialise(roomID, state)
 	if err != nil {
 		logger.Err(err).Int("state", len(state)).Str("room", roomID).Msg("V2: failed to initialise room")
+		sentry.CaptureException(err)
 		return
 	}
 	if !added {
@@ -270,6 +278,7 @@ func (h *Handler) OnReceipt(userID, roomID, ephEventType string, ephEvent json.R
 	newReceipts, err := h.Store.ReceiptTable.Insert(roomID, ephEvent)
 	if err != nil {
 		logger.Err(err).Str("room", roomID).Msg("failed to store receipts")
+		sentry.CaptureException(err)
 		return
 	}
 	if len(newReceipts) == 0 {
@@ -285,6 +294,7 @@ func (h *Handler) AddToDeviceMessages(userID, deviceID string, msgs []json.RawMe
 	_, err := h.Store.ToDeviceTable.InsertMessages(deviceID, msgs)
 	if err != nil {
 		logger.Err(err).Str("user", userID).Str("device", deviceID).Int("msgs", len(msgs)).Msg("V2: failed to store to-device messages")
+		sentry.CaptureException(err)
 	}
 	h.v2Pub.Notify(pubsub.ChanV2, &pubsub.V2DeviceMessages{
 		UserID:   userID,
@@ -319,6 +329,7 @@ func (h *Handler) UpdateUnreadCounts(roomID, userID string, highlightCount, noti
 	err := h.Store.UnreadTable.UpdateUnreadCounters(userID, roomID, highlightCount, notifCount)
 	if err != nil {
 		logger.Err(err).Str("user", userID).Str("room", roomID).Msg("failed to update unread counters")
+		sentry.CaptureException(err)
 	}
 	h.v2Pub.Notify(pubsub.ChanV2, &pubsub.V2UnreadCounts{
 		RoomID:            roomID,
@@ -332,6 +343,7 @@ func (h *Handler) OnAccountData(userID, roomID string, events []json.RawMessage)
 	data, err := h.Store.InsertAccountData(userID, roomID, events)
 	if err != nil {
 		logger.Err(err).Str("user", userID).Str("room", roomID).Msg("failed to update account data")
+		sentry.CaptureException(err)
 		return
 	}
 	var types []string
@@ -349,6 +361,7 @@ func (h *Handler) OnInvite(userID, roomID string, inviteState []json.RawMessage)
 	err := h.Store.InvitesTable.InsertInvite(userID, roomID, inviteState)
 	if err != nil {
 		logger.Err(err).Str("user", userID).Str("room", roomID).Msg("failed to insert invite")
+		sentry.CaptureException(err)
 		return
 	}
 	h.v2Pub.Notify(pubsub.ChanV2, &pubsub.V2InviteRoom{
@@ -362,6 +375,7 @@ func (h *Handler) OnLeftRoom(userID, roomID string) {
 	err := h.Store.InvitesTable.RemoveInvite(userID, roomID)
 	if err != nil {
 		logger.Err(err).Str("user", userID).Str("room", roomID).Msg("failed to retire invite")
+		sentry.CaptureException(err)
 	}
 	h.v2Pub.Notify(pubsub.ChanV2, &pubsub.V2LeaveRoom{
 		UserID: userID,
@@ -377,6 +391,7 @@ func (h *Handler) EnsurePolling(p *pubsub.V3EnsurePolling) {
 	dev, err := h.v2Store.Device(p.DeviceID)
 	if err != nil {
 		logger.Err(err).Str("user", p.UserID).Str("device", p.DeviceID).Msg("V3Sub: EnsurePolling unknown device")
+		sentry.CaptureException(err)
 		return
 	}
 	// don't block us from consuming more pubsub messages just because someone wants to sync

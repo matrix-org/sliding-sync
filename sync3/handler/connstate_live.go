@@ -145,8 +145,8 @@ func (s *connStateLive) lazyLoadTypingMembers(ctx context.Context, response *syn
 }
 
 func (s *connStateLive) processLiveUpdate(ctx context.Context, up caches.Update, response *sync3.Response) bool {
-	internal.Assert("processLiveUpdate: response list length != internal list length", s.lists.Len() == len(response.Lists))
-	internal.Assert("processLiveUpdate: request list length != internal list length", s.lists.Len() == len(s.muxedReq.Lists))
+	internal.AssertWithContext(ctx, "processLiveUpdate: response list length != internal list length", s.lists.Len() == len(response.Lists))
+	internal.AssertWithContext(ctx, "processLiveUpdate: request list length != internal list length", s.lists.Len() == len(s.muxedReq.Lists))
 	roomUpdate, _ := up.(caches.RoomUpdate)
 	roomEventUpdate, _ := up.(*caches.RoomEventUpdate)
 	// if this is a room event update we may not want to process this if the event nid is < loadPos,
@@ -209,7 +209,7 @@ func (s *connStateLive) processLiveUpdate(ctx context.Context, up caches.Update,
 			// - the initial:true room from BuildSubscriptions contains the latest live events in the timeline as it's pulled from the DB
 			// - we then process the live events in turn which adds them again.
 			if !advancedPastEvent {
-				roomIDtoTimeline := s.userCache.AnnotateWithTransactionIDs(s.deviceID, map[string][]json.RawMessage{
+				roomIDtoTimeline := s.userCache.AnnotateWithTransactionIDs(ctx, s.deviceID, map[string][]json.RawMessage{
 					roomEventUpdate.RoomID(): {roomEventUpdate.EventData.Event},
 				})
 				r.Timeline = append(r.Timeline, roomIDtoTimeline[roomEventUpdate.RoomID()]...)
@@ -333,7 +333,7 @@ func (s *connStateLive) processLiveUpdateForList(
 		if update.EventData.ForceInitial {
 			// add room to sub: this applies for when we track all rooms too as we want joins/etc to come through with initial data
 			subID := builder.AddSubscription(reqList.RoomSubscription)
-			builder.AddRoomsToSubscription(subID, []string{update.RoomID()})
+			builder.AddRoomsToSubscription(ctx, subID, []string{update.RoomID()})
 		}
 	case *caches.UnreadCountUpdate:
 		logger.Trace().Str("user", s.userID).Str("room", update.RoomID()).Bool("count_decreased", update.HasCountDecreased).Msg("received unread count update")
@@ -376,17 +376,17 @@ func (s *connStateLive) resort(
 			intList.Add(roomID)
 			// ensure we send data when the user joins a new room
 			subID := builder.AddSubscription(reqList.RoomSubscription)
-			builder.AddRoomsToSubscription(subID, []string{roomID})
+			builder.AddRoomsToSubscription(ctx, subID, []string{roomID})
 		} else if listOp == sync3.ListOpDel {
 			intList.Remove(roomID)
 		}
 		return nil, true
 	}
 
-	ops, subs := sync3.CalculateListOps(reqList, intList, roomID, listOp)
+	ops, subs := sync3.CalculateListOps(ctx, reqList, intList, roomID, listOp)
 	if len(subs) > 0 { // handle rooms which have just come into the window
 		subID := builder.AddSubscription(reqList.RoomSubscription)
-		builder.AddRoomsToSubscription(subID, subs)
+		builder.AddRoomsToSubscription(ctx, subID, subs)
 	}
 
 	// there are updates if we have ops, new subs or if the triggering room is inside the range still

@@ -23,7 +23,7 @@ type Receiver interface {
 	OnNewEvent(ctx context.Context, event *caches.EventData)
 	OnReceipt(ctx context.Context, receipt internal.Receipt)
 	OnEphemeralEvent(ctx context.Context, roomID string, ephEvent json.RawMessage)
-	OnRegistered(latestPos int64) error
+	OnRegistered(ctx context.Context, latestPos int64) error
 }
 
 // Dispatches live events to caches
@@ -61,14 +61,14 @@ func (d *Dispatcher) Unregister(userID string) {
 	delete(d.userToReceiver, userID)
 }
 
-func (d *Dispatcher) Register(userID string, r Receiver) error {
+func (d *Dispatcher) Register(ctx context.Context, userID string, r Receiver) error {
 	d.userToReceiverMu.Lock()
 	defer d.userToReceiverMu.Unlock()
 	if _, ok := d.userToReceiver[userID]; ok {
 		logger.Warn().Str("user", userID).Msg("Dispatcher.Register: receiver already registered")
 	}
 	d.userToReceiver[userID] = r
-	return r.OnRegistered(d.latestPos)
+	return r.OnRegistered(ctx, d.latestPos)
 }
 
 func (d *Dispatcher) newEventData(event json.RawMessage, roomID string, latestPos int64) *caches.EventData {

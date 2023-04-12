@@ -93,8 +93,8 @@ func TestConnStateInitial(t *testing.T) {
 		}, nil
 	}
 	userCache := caches.NewUserCache(userID, globalCache, nil, &NopTransactionFetcher{})
-	dispatcher.Register(userCache.UserID, userCache)
-	dispatcher.Register(sync3.DispatcherAllUsers, globalCache)
+	dispatcher.Register(context.Background(), userCache.UserID, userCache)
+	dispatcher.Register(context.Background(), sync3.DispatcherAllUsers, globalCache)
 	userCache.LazyRoomDataOverride = func(loadPos int64, roomIDs []string, maxTimelineEvents int) map[string]caches.UserRoomData {
 		result := make(map[string]caches.UserRoomData)
 		for _, roomID := range roomIDs {
@@ -262,8 +262,8 @@ func TestConnStateMultipleRanges(t *testing.T) {
 	}
 	userCache := caches.NewUserCache(userID, globalCache, nil, &NopTransactionFetcher{})
 	userCache.LazyRoomDataOverride = mockLazyRoomOverride
-	dispatcher.Register(userCache.UserID, userCache)
-	dispatcher.Register(sync3.DispatcherAllUsers, globalCache)
+	dispatcher.Register(context.Background(), userCache.UserID, userCache)
+	dispatcher.Register(context.Background(), sync3.DispatcherAllUsers, globalCache)
 	cs := NewConnState(userID, deviceID, userCache, globalCache, &NopExtensionHandler{}, &NopJoinTracker{}, nil, 1000)
 
 	// request first page
@@ -435,8 +435,8 @@ func TestBumpToOutsideRange(t *testing.T) {
 	}
 	userCache := caches.NewUserCache(userID, globalCache, nil, &NopTransactionFetcher{})
 	userCache.LazyRoomDataOverride = mockLazyRoomOverride
-	dispatcher.Register(userCache.UserID, userCache)
-	dispatcher.Register(sync3.DispatcherAllUsers, globalCache)
+	dispatcher.Register(context.Background(), userCache.UserID, userCache)
+	dispatcher.Register(context.Background(), sync3.DispatcherAllUsers, globalCache)
 	cs := NewConnState(userID, deviceID, userCache, globalCache, &NopExtensionHandler{}, &NopJoinTracker{}, nil, 1000)
 	// Ask for A,B
 	res, err := cs.OnIncomingRequest(context.Background(), ConnID, &sync3.Request{
@@ -541,8 +541,8 @@ func TestConnStateRoomSubscriptions(t *testing.T) {
 		}
 		return result
 	}
-	dispatcher.Register(userCache.UserID, userCache)
-	dispatcher.Register(sync3.DispatcherAllUsers, globalCache)
+	dispatcher.Register(context.Background(), userCache.UserID, userCache)
+	dispatcher.Register(context.Background(), sync3.DispatcherAllUsers, globalCache)
 	cs := NewConnState(userID, deviceID, userCache, globalCache, &NopExtensionHandler{}, &NopJoinTracker{}, nil, 1000)
 	// subscribe to room D
 	res, err := cs.OnIncomingRequest(context.Background(), ConnID, &sync3.Request{

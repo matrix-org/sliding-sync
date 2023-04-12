@@ -1,6 +1,7 @@
 package sync3
 
 import (
+	"context"
 	"strings"
 
 	"github.com/matrix-org/sliding-sync/internal"
@@ -175,7 +176,7 @@ func (s *InternalRequestLists) ListsByVisibleRoomIDs(muxedReqLists map[string]Re
 
 // Assign a new list at the given key. If Overwrite, any existing list is replaced. If DoNotOverwrite, the existing
 // list is returned if one exists, else a new list is created. Returns the list and true if the list was overwritten.
-func (s *InternalRequestLists) AssignList(listKey string, filters *RequestFilters, sort []string, shouldOverwrite OverwriteVal) (*FilteredSortableRooms, bool) {
+func (s *InternalRequestLists) AssignList(ctx context.Context, listKey string, filters *RequestFilters, sort []string, shouldOverwrite OverwriteVal) (*FilteredSortableRooms, bool) {
 	if shouldOverwrite == DoNotOverwrite {
 		_, exists := s.lists[listKey]
 		if exists {
@@ -194,6 +195,7 @@ func (s *InternalRequestLists) AssignList(listKey string, filters *RequestFilter
 		err := roomList.Sort(sort)
 		if err != nil {
 			logger.Err(err).Strs("sort_by", sort).Msg("failed to sort")
+			internal.GetSentryHubFromContextOrDefault(ctx).CaptureException(err)
 		}
 	}
 	s.lists[listKey] = roomList

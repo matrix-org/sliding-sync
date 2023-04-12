@@ -1,9 +1,11 @@
 package handler
 
+import "C"
 import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/getsentry/sentry-go"
 	"net/http"
 	"net/url"
 	"os"
@@ -98,7 +100,7 @@ func (h *SyncLiveHandler) Startup(storeSnapshot *state.StartupSnapshot) error {
 	if err := h.Dispatcher.Startup(storeSnapshot.AllJoinedMembers); err != nil {
 		return fmt.Errorf("failed to load sync3.Dispatcher: %s", err)
 	}
-	h.Dispatcher.Register(sync3.DispatcherAllUsers, h.GlobalCache)
+	h.Dispatcher.Register(context.Background(), sync3.DispatcherAllUsers, h.GlobalCache)
 	if err := h.GlobalCache.Startup(storeSnapshot.GlobalMetadata); err != nil {
 		return fmt.Errorf("failed to populate global cache: %s", err)
 	}
@@ -111,6 +113,7 @@ func (h *SyncLiveHandler) Listen() {
 		err := h.V2Sub.Listen()
 		if err != nil {
 			logger.Err(err).Msg("Failed to listen for v2 messages")
+			sentry.CaptureException(err)
 		}
 	}()
 }
@@ -423,7 +426,7 @@ func (h *SyncLiveHandler) userCache(userID string) (*caches.UserCache, error) {
 	actualUC, loaded := h.userCaches.LoadOrStore(userID, uc)
 	uc = actualUC.(*caches.UserCache)
 	if !loaded { // we actually inserted the cache, so register with the dispatcher.
-		if err = h.Dispatcher.Register(userID, uc); err != nil {
+		if err = h.Dispatcher.Register(context.Background(), userID, uc); err != nil {
 			h.Dispatcher.Unregister(userID)
 			h.userCaches.Delete(userID)
 			return nil, fmt.Errorf("failed to register user cache with dispatcher: %s", err)
@@ -436,7 +439,7 @@ func (h *SyncLiveHandler) userCache(userID string) (*caches.UserCache, error) {
 // Implements E2EEFetcher
 // DeviceData returns the latest device data for this user. isInitial should be set if this is for
 // an initial /sync request.
-func (h *SyncLiveHandler) DeviceData(userID, deviceID string, isInitial bool) *internal.DeviceData {
+func (h *SyncLiveHandler) DeviceData(ctx context.Context, userID, deviceID string, isInitial bool) *internal.DeviceData {
 	// We have 2 sources of DeviceData:
 	// - pubsub updates stored in deviceDataMap
 	// - the database itself
@@ -472,6 +475,7 @@ func (h *SyncLiveHandler) DeviceData(userID, deviceID string, isInitial bool) *i
 	dd, err := h.Storage.DeviceDataTable.Select(userID, deviceID, shouldSwap)
 	if err != nil {
 		logger.Err(err).Str("user", userID).Msg("failed to SelectAndSwap device data")
+		internal.GetSentryHubFromContextOrDefault(ctx).CaptureException(err)
 		return nil
 	}
 
@@ -498,6 +502,7 @@ func (h *SyncLiveHandler) Accumulate(p *pubsub.V2Accumulate) {
 	events, err := h.Storage.EventNIDs(p.EventNIDs)
 	if err != nil {
 		logger.Err(err).Str("room", p.RoomID).Msg("Accumulate: failed to EventNIDs")
+		internal.GetSentryHubFromContextOrDefault(ctx).CaptureException(err)
 		return
 	}
 	if len(events) == 0 {
@@ -517,6 +522,7 @@ func (h *SyncLiveHandler) Initialise(p *pubsub.V2Initialise) {
 	state, err := h.Storage.StateSnapshot(p.SnapshotNID)
 	if err != nil {
 		logger.Err(err).Int64("snap", p.SnapshotNID).Str("room", p.RoomID).Msg("Initialise: failed to get StateSnapshot")
+		internal.GetSentryHubFromContextOrDefault(ctx).CaptureException(err)
 		return
 	}
 	// we have new state, notify caches
@@ -568,6 +574,7 @@ func (h *SyncLiveHandler) OnInvite(p *pubsub.V2InviteRoom) {
 	inviteState, err := h.Storage.InvitesTable.SelectInviteState(p.UserID, p.RoomID)
 	if err != nil {
 		logger.Err(err).Str("user", p.UserID).Str("room", p.RoomID).Msg("failed to get invite state")
+		internal.GetSentryHubFromContextOrDefault(ctx).CaptureException(err)
 		return
 	}
 	userCache.(*caches.UserCache).OnInvite(ctx, p.RoomID, inviteState)
@@ -618,7 +625,7 @@ func (h *SyncLiveHandler) OnReceipt(p *pubsub.V2Receipt) {
 func (h *SyncLiveHandler) OnTyping(p *pubsub.V2Typing) {
 	ctx, task := internal.StartTask(context.Background(), "OnTyping")
 	defer task.End()
-	rooms := h.GlobalCache.LoadRooms(p.RoomID)
+	rooms := h.GlobalCache.LoadRooms(ctx, p.RoomID)
 	if rooms[p.RoomID] != nil {
 		if reflect.DeepEqual(p.EphemeralEvent, rooms[p.RoomID].TypingEvent) {
 			return // it's a duplicate, which happens when 2+ users are in the same room
@@ -637,6 +644,7 @@ func (h *SyncLiveHandler) OnAccountData(p *pubsub.V2AccountData) {
 	data, err := h.Storage.AccountData(p.UserID, p.RoomID, p.Types)
 	if err != nil {
 		logger.Err(err).Str("user", p.UserID).Str("room", p.RoomID).Msg("OnAccountData: failed to lookup")
+		internal.GetSentryHubFromContextOrDefault(ctx).CaptureException(err)
 		return
 	}
 	userCache.(*caches.UserCache).OnAccountData(ctx, data)

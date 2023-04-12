@@ -2,6 +2,7 @@ package sync3
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"math/rand"
 	"testing"
@@ -141,7 +142,7 @@ func TestCalculateListOps_BasicOperations(t *testing.T) {
 	for _, tc := range testCases {
 		sl := newStringList(tc.before)
 		sl.sortedRoomIDs = tc.after
-		gotOps, gotSubs := CalculateListOps(&RequestList{
+		gotOps, gotSubs := CalculateListOps(context.Background(), &RequestList{
 			Ranges: tc.ranges,
 		}, sl, tc.roomID, tc.listOp)
 		assertEqualOps(t, tc.name, gotOps, tc.wantOps)
@@ -301,7 +302,7 @@ func TestCalculateListOps_SingleWindowOperations(t *testing.T) {
 	for _, tc := range testCases {
 		sl := newStringList(tc.before)
 		sl.sortedRoomIDs = tc.after
-		gotOps, gotSubs := CalculateListOps(&RequestList{
+		gotOps, gotSubs := CalculateListOps(context.Background(), &RequestList{
 			Ranges: tc.ranges,
 		}, sl, tc.roomID, tc.listOp)
 		assertEqualOps(t, tc.name, gotOps, tc.wantOps)
@@ -501,7 +502,7 @@ func TestCalculateListOps_MultipleWindowOperations(t *testing.T) {
 	for _, tc := range testCases {
 		sl := newStringList(tc.before)
 		sl.sortedRoomIDs = tc.after
-		gotOps, gotSubs := CalculateListOps(&RequestList{
+		gotOps, gotSubs := CalculateListOps(context.Background(), &RequestList{
 			Ranges: tc.ranges,
 		}, sl, tc.roomID, tc.listOp)
 		assertEqualOps(t, tc.name, gotOps, tc.wantOps)
@@ -522,7 +523,7 @@ func TestCalculateListOps_TortureSingleWindow_Move(t *testing.T) {
 
 		sl := newStringList(before)
 		sl.sortedRoomIDs = after
-		gotOps, gotSubs := CalculateListOps(&RequestList{
+		gotOps, gotSubs := CalculateListOps(context.Background(), &RequestList{
 			Ranges: ranges,
 		}, sl, roomID, ListOpChange)
 
@@ -589,7 +590,7 @@ func TestCalculateListOps_TortureSingleWindowMiddle_Move(t *testing.T) {
 
 		sl := newStringList(before)
 		sl.sortedRoomIDs = after
-		gotOps, gotSubs := CalculateListOps(&RequestList{
+		gotOps, gotSubs := CalculateListOps(context.Background(), &RequestList{
 			Ranges: ranges,
 		}, sl, roomID, ListOpChange)
 
@@ -664,7 +665,7 @@ func TestCalculateListOpsTortureMultipleWindowsMove(t *testing.T) {
 
 		sl := newStringList(before)
 		sl.sortedRoomIDs = after
-		gotOps, gotSubs := CalculateListOps(&RequestList{
+		gotOps, gotSubs := CalculateListOps(context.Background(), &RequestList{
 			Ranges: ranges,
 		}, sl, roomID, ListOpChange)
 		for _, sub := range gotSubs {
