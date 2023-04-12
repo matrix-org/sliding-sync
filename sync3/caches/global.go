@@ -3,7 +3,6 @@ package caches
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"os"
 	"sort"
 	"sync"
@@ -88,9 +87,7 @@ func (c *GlobalCache) LoadRooms(ctx context.Context, roomIDs ...string) map[stri
 		roomID := roomIDs[i]
 		sr := c.roomIDToMetadata[roomID]
 		if sr == nil {
-			const errMsg = "GlobalCache.LoadRoom: no metadata for this room"
-			logger.Error().Str("room", roomID).Msg(errMsg)
-			internal.GetSentryHubFromContextOrDefault(ctx).CaptureException(fmt.Errorf(errMsg))
+			logger.Warn().Str("room", roomID).Msg("GlobalCache.LoadRoom: no metadata for this room")
 			continue
 		}
 		srCopy := *sr
