@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/getsentry/sentry-go"
 	"sync"
 
 	lru "github.com/hashicorp/golang-lru"
@@ -140,7 +141,15 @@ func NewInviteData(ctx context.Context, userID, roomID string, inviteState []jso
 	if id.InviteEvent == nil {
 		const errMsg = "cannot make invite, missing invite event for user"
 		logger.Error().Str("invitee", userID).Str("room", roomID).Int("num_invite_state", len(inviteState)).Msg(errMsg)
-		internal.GetSentryHubFromContextOrDefault(ctx).CaptureException(fmt.Errorf(errMsg))
+		hub := internal.GetSentryHubFromContextOrDefault(ctx)
+		hub.WithScope(func(scope *sentry.Scope) {
+			scope.SetContext("sliding-sync", map[string]interface{}{
+				"invitee":          userID,
+				"room":             roomID,
+				"num_invite_state": len(inviteState),
+			})
+			hub.CaptureException(fmt.Errorf(errMsg))
+		})
 		return nil
 	}
 	return &id
