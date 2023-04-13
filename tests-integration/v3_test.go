@@ -40,7 +40,12 @@ var (
 	boolTrue = true
 )
 
+// testV2Server is a fake stand-in for the v2 sync API provided by a homeserver.
 type testV2Server struct {
+	// CheckRequest is an arbitrary function which runs after a request has been
+	// received from pollers, but before the resposne is generated. This allows us to
+	// confirm that the proxy is polling the homeserver's v2 sync endpoint in the
+	// manner that we expect.
 	CheckRequest            func(userID, token string, req *http.Request)
 	mu                      *sync.Mutex
 	tokenToUser             map[string]string

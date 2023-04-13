@@ -97,3 +97,80 @@ func TestSecondPollerFiltersToDevice(t *testing.T) {
 	res = v3.mustDoV3RequestWithPos(t, deviceBToken, res.Pos, sync3.Request{})
 	m.MatchResponse(t, res, m.MatchToDeviceMessages([]json.RawMessage{wantMsg}))
 }
+
+// TODO test description
+func TestPollerHandlesUnknownStateEventsOnIncrementalSync(t *testing.T) {
+	pqString := testutils.PrepareDBConnectionString()
+	v2 := runTestV2Server(t)
+	v3 := runTestServer(t, v2, pqString)
+	defer v2.close()
+	defer v3.close()
+	deviceAToken := "DEVICE_A_TOKEN"
+	v2.addAccount(alice, deviceAToken)
+	const roomID = "!unimportant"
+	v2.queueResponse(deviceAToken, sync2.SyncResponse{
+		Rooms: sync2.SyncRoomsResponse{
+			Join: v2JoinTimeline(roomEvents{
+				roomID: roomID,
+				events: createRoomState(t, alice, time.Now()),
+			}),
+		},
+	})
+	res := v3.mustDoV3Request(t, deviceAToken, sync3.Request{
+		Lists: map[string]sync3.RequestList{
+			"a": {
+				Ranges: [][2]int64{{0, 20}},
+			},
+		},
+	})
+
+	t.Log("The poller receives a gappy incremental sync response with a state block")
+	nameEvent := testutils.NewStateEvent(
+		t,
+		"m.room.name",
+		"",
+		alice,
+		map[string]interface{}{"name": "banana"},
+	)
+	powerLevelsEvent := testutils.NewStateEvent(
+		t,
+		"m.room.power_levels",
+		"",
+		alice,
+		map[string]interface{}{
+			"users":          map[string]int{alice: 100},
+			"events_default": 10,
+		},
+	)
+	messageEvent := testutils.NewMessageEvent(t, alice, "hello")
+	v2.queueResponse(deviceAToken, sync2.SyncResponse{
+		Rooms: sync2.SyncRoomsResponse{
+			Join: map[string]sync2.SyncV2JoinResponse{
+				roomID: {
+					State: sync2.EventsResponse{
+						Events: []json.RawMessage{nameEvent, powerLevelsEvent},
+					},
+					Timeline: sync2.TimelineResponse{
+						Events:    []json.RawMessage{messageEvent},
+						Limited:   true,
+						PrevBatch: "batchymcbatchface",
+					},
+				},
+			},
+		},
+	})
+
+	res = v3.mustDoV3RequestWithPos(t, deviceAToken, res.Pos, sync3.Request{})
+	m.MatchResponse(
+		t,
+		res,
+		m.MatchRoomSubscription(
+			roomID,
+			m.MatchRoomTimeline([]json.RawMessage{nameEvent, powerLevelsEvent, messageEvent}),
+		),
+	)
+}
+
+func eventIDFromRawMessage(message json.RawMessage) string {
+	return gjson.ParseBytes(message).Get("event_id").Str
+}
