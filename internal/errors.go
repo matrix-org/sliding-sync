@@ -7,13 +7,14 @@ import (
 	"github.com/getsentry/sentry-go"
 	"os"
 	"runtime"
+	"time"
 
 	"github.com/rs/zerolog"
 )
 
 var logger = zerolog.New(os.Stdout).With().Timestamp().Logger().Output(zerolog.ConsoleWriter{
 	Out:        os.Stderr,
-	TimeFormat: "15:04:05",
+	TimeFormat: time.RFC3339,
 })
 
 type HandlerError struct {
