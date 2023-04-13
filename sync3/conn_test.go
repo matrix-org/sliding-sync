@@ -86,7 +86,7 @@ func TestConnBlocking(t *testing.T) {
 	ch := make(chan string)
 	c := NewConn(connID, &connHandlerMock{func(ctx context.Context, cid ConnID, req *Request, init bool) (*Response, error) {
 		if req.Lists["a"].Sort[0] == "hi" {
-			sentFirstWg.Done()                // tell the 2nd request is can start
+			sentFirstWg.Done()                // tell the 2nd request it can start
 			time.Sleep(20 * time.Millisecond) // simulate a long processing time
 		}
 		ch <- req.Lists["a"].Sort[0]
