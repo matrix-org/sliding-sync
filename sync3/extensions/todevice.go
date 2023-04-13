@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/matrix-org/sliding-sync/internal"
 	"strconv"
 	"sync"
 
@@ -69,12 +70,15 @@ func (r *ToDeviceRequest) ProcessInitial(ctx context.Context, res *Response, ext
 		from, err = strconv.ParseInt(r.Since, 10, 64)
 		if err != nil {
 			l.Err(err).Str("since", r.Since).Msg("invalid since value")
+			// TODO add context to sentry
+			internal.GetSentryHubFromContextOrDefault(ctx).CaptureException(err)
 			return
 		}
 		// the client is confirming messages up to `from` so delete everything up to and including it.
 		if err = extCtx.Store.ToDeviceTable.DeleteMessagesUpToAndIncluding(extCtx.DeviceID, from); err != nil {
 			l.Err(err).Str("since", r.Since).Msg("failed to delete to-device messages up to this value")
-			// non-fatal TODO sentry
+			// TODO add context to sentry
+			internal.GetSentryHubFromContextOrDefault(ctx).CaptureException(err)
 		}
 	}
 	mapMu.Lock()
@@ -82,22 +86,26 @@ func (r *ToDeviceRequest) ProcessInitial(ctx context.Context, res *Response, ext
 	mapMu.Unlock()
 	if from < lastSentPos {
 		// we told the client about a newer position, but yet they are using an older position, yell loudly
-		// TODO sentry
+		const errMsg = "Client did not increment since token: possibly sending back duplicate to-device events!"
 		l.Warn().Int64("last_sent", lastSentPos).Int64("recv", from).Bool("initial", extCtx.IsInitial).Msg(
-			"Client did not increment since token: possibly sending back duplicate to-device events!",
+			errMsg,
 		)
+		// TODO add context to sentry
+		internal.GetSentryHubFromContextOrDefault(ctx).CaptureException(fmt.Errorf(errMsg))
 	}
 
 	msgs, upTo, err := extCtx.Store.ToDeviceTable.Messages(extCtx.DeviceID, from, int64(r.Limit))
 	if err != nil {
 		l.Err(err).Int64("from", from).Msg("cannot query to-device messages")
-		// TODO sentry
+		// TODO add context to sentry
+		internal.GetSentryHubFromContextOrDefault(ctx).CaptureException(err)
 		return
 	}
 	err = extCtx.Store.ToDeviceTable.SetUnackedPosition(extCtx.DeviceID, upTo)
 	if err != nil {
 		l.Err(err).Msg("cannot set unacked position")
-		// TODO sentry
+		// TODO add context to sentry
+		internal.GetSentryHubFromContextOrDefault(ctx).CaptureException(err)
 		return
 	}
 	mapMu.Lock()

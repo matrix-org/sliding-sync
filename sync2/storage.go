@@ -7,6 +7,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+	"github.com/getsentry/sentry-go"
 	"io"
 	"os"
 	"strings"
@@ -44,6 +45,8 @@ type Storage struct {
 func NewStore(postgresURI, secret string) *Storage {
 	db, err := sqlx.Open("postgres", postgresURI)
 	if err != nil {
+		sentry.CaptureException(err)
+		// TODO: if we panic(), will sentry have a chance to flush the event?
 		log.Panic().Err(err).Str("uri", postgresURI).Msg("failed to open SQL DB")
 	}
 	db.MustExec(`

@@ -187,6 +187,7 @@ func (h *SyncLiveHandler) serve(w http.ResponseWriter, req *http.Request) error 
 		defer req.Body.Close()
 		if err := json.NewDecoder(req.Body).Decode(&requestBody); err != nil {
 			log.Err(err).Msg("failed to read/decode request body")
+			internal.GetSentryHubFromContextOrDefault(req.Context()).CaptureException(err)
 			return &internal.HandlerError{
 				StatusCode: 400,
 				Err:        err,
@@ -205,6 +206,7 @@ func (h *SyncLiveHandler) serve(w http.ResponseWriter, req *http.Request) error 
 	conn, err := h.setupConnection(req, &requestBody, req.URL.Query().Get("pos") != "")
 	if err != nil {
 		hlog.FromRequest(req).Err(err).Msg("failed to get or create Conn")
+		internal.GetSentryHubFromContextOrDefault(req.Context()).CaptureException(err)
 		return err
 	}
 	// set pos and timeout if specified
@@ -233,6 +235,7 @@ func (h *SyncLiveHandler) serve(w http.ResponseWriter, req *http.Request) error 
 	resp, herr := conn.OnIncomingRequest(req.Context(), &requestBody)
 	if herr != nil {
 		log.Err(herr).Msg("failed to OnIncomingRequest")
+		internal.GetSentryHubFromContextOrDefault(req.Context()).CaptureException(herr)
 		return herr
 	}
 	// for logging
