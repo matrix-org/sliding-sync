@@ -87,7 +87,7 @@ func (v *HTTPClient) DoSyncV2(ctx context.Context, accessToken, since string, is
 
 func (v *HTTPClient) createSyncURL(since string, isFirst, toDeviceOnly bool) string {
 	qps := "?"
-	if isFirst { // first time syncing in this process
+	if isFirst { // first time polling for v2-sync in this process
 		qps += "timeout=0"
 	} else {
 		qps += "timeout=30000"
@@ -96,24 +96,29 @@ func (v *HTTPClient) createSyncURL(since string, isFirst, toDeviceOnly bool) str
 		qps += "&since=" + since
 	}
 
-	timelineLimitOne := since == ""
-	if timelineLimitOne || toDeviceOnly {
-		room := map[string]interface{}{}
-		if timelineLimitOne {
-			room["timeline"] = map[string]interface{}{
-				"limit": 1,
-			}
-		}
-		if toDeviceOnly {
-			// no rooms match this filter, so we get everything but room data
-			room["rooms"] = []string{}
-		}
-		filter := map[string]interface{}{
-			"room": room,
-		}
-		filterJSON, _ := json.Marshal(filter)
-		qps += "&filter=" + url.QueryEscape(string(filterJSON))
+	// To reduce the likelihood of a gappy v2 sync, ask for a large timeline by default.
+	// Synapse's default is 10; 50 is the maximum allowed, by my reading of
+	// https://github.com/matrix-org/synapse/blob/89a71e73905ffa1c97ae8be27d521cd2ef3f3a0c/synapse/handlers/sync.py#L576-L577
+	// NB: this is a stopgap to reduce the likelihood of hitting
+	// https://github.com/matrix-org/sliding-sync/issues/18
+	timelineLimit := 50
+	if since == "" {
+		// First time the poller has sync v2-ed for this user
+		timelineLimit = 1
 	}
+	room := map[string]interface{}{}
+	room["timeline"] = map[string]interface{}{"limit": timelineLimit}
+
+	if toDeviceOnly {
+		// no rooms match this filter, so we get everything but room data
+		room["rooms"] = []string{}
+	}
+	filter := map[string]interface{}{
+		"room": room,
+	}
+	filterJSON, _ := json.Marshal(filter)
+	qps += "&filter=" + url.QueryEscape(string(filterJSON))
+
 	return v.DestinationServer + "/_matrix/client/r0/sync" + qps
 }
 
