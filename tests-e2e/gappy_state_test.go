@@ -1,8 +1,10 @@
 package syncv3_test
 
 import (
+	"fmt"
 	"github.com/matrix-org/sliding-sync/sync3"
 	"github.com/matrix-org/sliding-sync/testutils/m"
+	"github.com/tidwall/gjson"
 	"testing"
 )
 
@@ -28,22 +30,23 @@ func TestGappyState(t *testing.T) {
 	t.Log("Alice logs in again on her second device.")
 	alice.Login(t, "password", "device2")
 
-	t.Log("Alice sets two pieces of room state while the proxy isn't polling.")
+	t.Log("Alice changes the room name while the proxy isn't polling.")
 	nameContent := map[string]interface{}{"name": "potato"}
-	nameID := alice.SetState(t, roomID, "m.room.name", "", nameContent)
-	powerLevelState := map[string]interface{}{
-		"users":          map[string]int{alice.UserID: 100},
-		"events_default": 10,
+	alice.SetState(t, roomID, "m.room.name", "", nameContent)
+
+	t.Log("Alice sends lots of message events (more than the poller will request in a timeline.")
+	var latestMessageID string
+	for i := 0; i < 51; i++ {
+		latestMessageID = alice.SendEventUnsynced(t, roomID, Event{
+			Type: "m.room.message",
+			Content: map[string]interface{}{
+				"msgtype": "m.text",
+				"body":    fmt.Sprintf("Message number %d", i),
+			},
+		})
 	}
-	powerLevelID := alice.SetState(t, roomID, "m.room.power_levels", "", powerLevelState)
 
-	t.Log("Alice logs out of her second device.")
-	alice.MustDoFunc(t, "POST", []string{"_matrix", "client", "v3", "logout"})
-
-	t.Log("Alice logs in again on her third device.")
-	alice.Login(t, "password", "device3")
-
-	t.Log("Alice does an initial sliding sync.")
+	t.Log("Alice requests an initial sliding sync on device 2.")
 	syncResp := alice.SlidingSync(t,
 		sync3.Request{
 			Lists: map[string]sync3.RequestList{
@@ -54,9 +57,24 @@ func TestGappyState(t *testing.T) {
 		},
 	)
 
-	t.Log("She should see her latest state events in the response")
+	t.Log("She should her latest message with the room updated")
 	// TODO: Behind the scenes, this should have created a new poller which did a v2
 	// initial sync. The v2 response should include the full state of the room, which
-	// we should relay in the sync response. Need to express this with a matcher.
-	m.MatchResponse(t, syncResp, m.LogResponse(t))
+	// we should relay in the sync response.
+	m.MatchResponse(
+		t,
+		syncResp,
+		m.LogResponse(t),
+		m.MatchRoomSubscription(
+			roomID,
+			m.MatchRoomName("potato"),
+			func(r sync3.Room) error {
+				lastReceivedEventID := gjson.ParseBytes(r.Timeline[len(r.Timeline)-1]).Get("event_id").Str
+				if lastReceivedEventID != latestMessageID {
+					return fmt.Errorf("last message in response is %s, expected %s", lastReceivedEventID, latestMessageID)
+				}
+				return nil
+			},
+		),
+	)
 }

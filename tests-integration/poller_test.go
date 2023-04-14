@@ -167,10 +167,7 @@ func TestPollerHandlesUnknownStateEventsOnIncrementalSync(t *testing.T) {
 		m.MatchRoomSubscription(
 			roomID,
 			m.MatchRoomTimeline([]json.RawMessage{nameEvent, powerLevelsEvent, messageEvent}),
+			m.MatchRoomName("banana"),
 		),
 	)
-}
-
-func eventIDFromRawMessage(message json.RawMessage) string {
-	return gjson.ParseBytes(message).Get("event_id").Str
 }
