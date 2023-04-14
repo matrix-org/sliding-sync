@@ -169,8 +169,9 @@ func RunSyncV3Server(h http.Handler, bindAddr, destV2Server, tlsCert, tlsKey str
 		err = http.ListenAndServe(bindAddr, srv)
 	}
 	if err != nil {
-		logger.Fatal().Err(err).Msg("failed to listen and serve")
 		sentry.CaptureException(err)
+		// TODO: Fatal() calls os.Exit. Will that give time for sentry.Flush() to run?
+		logger.Fatal().Err(err).Msg("failed to listen and serve")
 	}
 }
 
