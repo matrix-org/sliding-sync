@@ -48,26 +48,37 @@ func TestSecondPollerFiltersToDevice(t *testing.T) {
 		since := qps.Get("since")
 		filter := qps.Get("filter")
 		t.Logf("CheckRequest: %v %v since=%v filter=%v", userID, token, since, filter)
-		if since != "" {
-			// there should be no filter
-			if filter != "" {
-				t.Errorf("expected no filter when ?since= is supplied, got %v", filter)
+		filterJSON := gjson.Parse(filter)
+		timelineLimit := filterJSON.Get("room.timeline.limit")
+		roomsFilter := filterJSON.Get("room.rooms")
+
+		if !seenInitialRequest {
+			// First poll: should be an initial sync, limit 1, excluding all room timelines.
+			if since != "" {
+				t.Errorf("Expected no since token on first poll, but got %v", since)
 			}
-			return
-		}
-		if filter == "" {
-			t.Errorf("missing ?filter= on initial request")
-			return
+			if timelineLimit.Int() != 1 {
+				t.Errorf("Expected timeline limit of 1 on first poll, but got %d", timelineLimit.Int())
+			}
+			if !roomsFilter.Exists() {
+				t.Errorf("Expected roomsFilter set to empty list on first poll, but got no roomFilter")
+			}
+			if len(roomsFilter.Array()) != 0 {
+				t.Errorf("Expected roomsFilter set to empty list on first poll, but got %v", roomsFilter.Raw)
+			}
+		} else {
+			// Second poll: should be an incremental sync, limit 50, including all room timelines.
+			if since == "" {
+				t.Errorf("Expected nonempty since token on second poll, but got empty")
+			}
+			if timelineLimit.Exists() {
+				t.Errorf("Expected no timeline limit on second poll, but got %d", timelineLimit.Int())
+			}
+			if roomsFilter.Exists() {
+				t.Errorf("Expected missing roomsFilter on second poll, but got %v", roomsFilter.Raw)
+			}
 		}
 
-		filterJSON := gjson.Parse(filter)
-		roomsFilter := filterJSON.Get("room.rooms")
-		if !roomsFilter.Exists() {
-			t.Errorf("missing room.rooms in filter: %s", filter)
-		}
-		if len(roomsFilter.Array()) != 0 {
-			t.Errorf("room.rooms array is >0 : %s", filter)
-		}
 		seenInitialRequest = true
 	}
 
