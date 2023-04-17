@@ -229,7 +229,7 @@ func (a *Accumulator) Initialise(roomID string, state []json.RawMessage) (res In
 					"snapshot_id":       snapshotID,
 					"num_insert_events": len(insertEvents),
 				})
-				sentry.CaptureException(fmt.Errorf("Accumulator.Initialise: patching in events", len(insertEvents)))
+				sentry.CaptureException(fmt.Errorf("Accumulator.Initialise: patching in %d events", len(insertEvents)))
 			})
 		}
 
