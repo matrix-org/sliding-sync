@@ -184,12 +184,10 @@ func (a *Accumulator) Initialise(roomID string, state []json.RawMessage) (bool, 
 		}
 
 		// pull out the event NIDs we just inserted
-		eventIDs := make([]string, len(events))
 		membershipEventIDs := make(map[string]struct{}, len(events))
-		for i := range eventIDs {
-			eventIDs[i] = events[i].ID
-			if events[i].Type == "m.room.member" {
-				membershipEventIDs[events[i].ID] = struct{}{}
+		for _, event := range events {
+			if event.Type == "m.room.member" {
+				membershipEventIDs[event.ID] = struct{}{}
 			}
 		}
 		memberNIDs := make([]int64, 0, len(eventIDToNID))
