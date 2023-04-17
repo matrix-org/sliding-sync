@@ -259,6 +259,25 @@ func (t *EventTable) SelectStrippedEventsByIDs(txn *sqlx.Tx, verifyAll bool, ids
 
 }
 
+// SelectUnknownEventIDs accepts a list of event IDs and returns the subset of those which are not known to the DB.
+// The order of event IDs in the return value is not guaranteed.
+func (t *EventTable) SelectUnknownEventIDs(txn *sqlx.Tx, maybeUnknownEventIDs []string) ([]string, error) {
+	queryStr := `
+	WITH maybe_unknown_events(event_id) AS (SELECT unnest($1::text[]))
+	SELECT event_id
+	FROM maybe_unknown_events LEFT JOIN syncv3_events USING(event_id)
+	WHERE event_nid IS NULL;`
+
+	var unknownEventIDs []string
+	var err error
+	if txn != nil {
+		err = txn.Select(&unknownEventIDs, queryStr, maybeUnknownEventIDs)
+	} else {
+		err = t.db.Select(&unknownEventIDs, queryStr, maybeUnknownEventIDs)
+	}
+	return unknownEventIDs, err
+}
+
 // UpdateBeforeSnapshotID sets the before_state_snapshot_id field to `snapID` for the given NIDs.
 func (t *EventTable) UpdateBeforeSnapshotID(txn *sqlx.Tx, eventNID, snapID, replacesNID int64) error {
 	_, err := txn.Exec(
