@@ -208,6 +208,8 @@ func (a *Accumulator) Initialise(roomID string, state []json.RawMessage) (res In
 			}
 		Outer:
 			for i := range events {
+				// TODO: should this be a set of ids? Otherwise the double loop is
+				// quadratic in the size of the gap.
 				for j := range unknownEventIDs {
 					if events[i].ID == unknownEventIDs[j] {
 						insertEvents = append(insertEvents, events[i])
