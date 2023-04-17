@@ -172,15 +172,7 @@ func (a *Accumulator) Initialise(roomID string, state []json.RawMessage) (res In
 			//
 			// Can we prevent this by passing in a bool initialPollerSync arg?
 			// (Return early if !initialPollerSync and !unknownRoom)
-			const warningMsg = "Accumulator.Initialise called when current snapshot already exists. Patching in events"
-			logger.Warn().Str("room_id", roomID).Int64("snapshot_id", snapshotID).Msg(warningMsg)
-			sentry.WithScope(func(scope *sentry.Scope) {
-				scope.SetContext("sliding-sync", map[string]interface{}{
-					"room_id":     roomID,
-					"snapshot_id": snapshotID,
-				})
-				sentry.CaptureException(fmt.Errorf(warningMsg))
-			})
+			logger.Warn().Str("room_id", roomID).Int64("snapshot_id", snapshotID).Msg("Accumulator.Initialise called when current snapshot already exists. May patch in events.")
 		}
 
 		// Parse the events
@@ -227,6 +219,18 @@ func (a *Accumulator) Initialise(roomID string, state []json.RawMessage) (res In
 		if len(insertEvents) == 0 {
 			// All events known---nothing to do here.
 			return nil
+		}
+
+		if !unknownRoom {
+			logger.Warn().Str("room_id", roomID).Int64("snapshot_id", snapshotID).Int("num_insert_events", len(insertEvents)).Msg("Accumulator.Initialise: patching in events")
+			sentry.WithScope(func(scope *sentry.Scope) {
+				scope.SetContext("sliding-sync", map[string]interface{}{
+					"room_id":           roomID,
+					"snapshot_id":       snapshotID,
+					"num_insert_events": len(insertEvents),
+				})
+				sentry.CaptureException(fmt.Errorf("Accumulator.Initialise: patching in events", len(insertEvents)))
+			})
 		}
 
 		// Insert new events
