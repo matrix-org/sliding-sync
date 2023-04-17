@@ -271,9 +271,9 @@ func (t *EventTable) SelectUnknownEventIDs(txn *sqlx.Tx, maybeUnknownEventIDs []
 	var unknownEventIDs []string
 	var err error
 	if txn != nil {
-		err = txn.Select(&unknownEventIDs, queryStr, maybeUnknownEventIDs)
+		err = txn.Select(&unknownEventIDs, queryStr, pq.StringArray(maybeUnknownEventIDs))
 	} else {
-		err = t.db.Select(&unknownEventIDs, queryStr, maybeUnknownEventIDs)
+		err = t.db.Select(&unknownEventIDs, queryStr, pq.StringArray(maybeUnknownEventIDs))
 	}
 	return unknownEventIDs, err
 }
