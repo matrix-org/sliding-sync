@@ -234,8 +234,12 @@ func (h *SyncLiveHandler) serve(w http.ResponseWriter, req *http.Request) error 
 
 	resp, herr := conn.OnIncomingRequest(req.Context(), &requestBody)
 	if herr != nil {
-		log.Err(herr).Msg("failed to OnIncomingRequest")
-		internal.GetSentryHubFromContextOrDefault(req.Context()).CaptureException(herr)
+		if herr.StatusCode >= 500 {
+			log.Err(herr).Msg("failed to OnIncomingRequest")
+			internal.GetSentryHubFromContextOrDefault(req.Context()).CaptureException(herr)
+		} else {
+			log.Warn().Err(herr).Msg("failed to OnIncomingRequest")
+		}
 		return herr
 	}
 	// for logging
