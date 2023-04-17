@@ -60,7 +60,7 @@ jobs:
             - name: Test
               run: |
                 set -euo pipefail
-                go test -covermode=atomic -coverpkg ./... -p 1 -v -json $(go list ./... | grep -v tests-e2e) -coverprofile synccoverage.out 2>&1 | tee ./test-integration.log | gotestfmt
+                go test -count=1 -covermode=atomic -coverpkg ./... -p 1 -v -json $(go list ./... | grep -v tests-e2e) -coverprofile synccoverage.out 2>&1 | tee ./test-integration.log | gotestfmt
               shell: bash
               env:
                   POSTGRES_HOST: localhost
@@ -136,7 +136,7 @@ jobs:
             - name: Run end-to-end tests
               run: |
                 set -euo pipefail
-                ./run-tests.sh -v -json . 2>&1 | tee test-e2e-runner.log | gotestfmt
+                ./run-tests.sh -count=1 -v -json . 2>&1 | tee test-e2e-runner.log | gotestfmt
               working-directory: tests-e2e
               shell: bash
               env:
