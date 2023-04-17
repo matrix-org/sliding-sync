@@ -208,7 +208,7 @@ func (a *Accumulator) Initialise(roomID string, state []json.RawMessage) (res In
 			}
 			unknownEventIDs, err := a.eventsTable.SelectUnknownEventIDs(txn, eventIDs)
 			if err != nil {
-				return fmt.Errorf("error determing which event IDs are unknown")
+				return fmt.Errorf("error determing which event IDs are unknown: %s", err)
 			}
 			if len(unknownEventIDs) == 0 {
 				// All events known. Odd, but nothing to do.
