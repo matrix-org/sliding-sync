@@ -241,19 +241,19 @@ func (h *Handler) Accumulate(deviceID, roomID, prevBatch string, timeline []json
 }
 
 func (h *Handler) Initialise(roomID string, state []json.RawMessage) {
-	added, snapID, err := h.Store.Initialise(roomID, state)
+	res, err := h.Store.Initialise(roomID, state)
 	if err != nil {
 		logger.Err(err).Int("state", len(state)).Str("room", roomID).Msg("V2: failed to initialise room")
 		sentry.CaptureException(err)
 		return
 	}
-	if !added {
+	if !res.AddedEvents {
 		// no new events
 		return
 	}
 	h.v2Pub.Notify(pubsub.ChanV2, &pubsub.V2Initialise{
 		RoomID:      roomID,
-		SnapshotNID: snapID,
+		SnapshotNID: res.SnapshotID,
 	})
 }
 

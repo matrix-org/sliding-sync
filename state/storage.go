@@ -309,7 +309,7 @@ func (s *Storage) Accumulate(roomID, prevBatch string, timeline []json.RawMessag
 	return s.accumulator.Accumulate(roomID, prevBatch, timeline)
 }
 
-func (s *Storage) Initialise(roomID string, state []json.RawMessage) (bool, int64, error) {
+func (s *Storage) Initialise(roomID string, state []json.RawMessage) (InitialiseResult, error) {
 	return s.accumulator.Initialise(roomID, state)
 }
 

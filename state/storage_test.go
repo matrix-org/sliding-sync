@@ -282,7 +282,7 @@ func TestVisibleEventNIDsBetween(t *testing.T) {
 		},
 	}
 	for roomID, eventMap := range roomIDToEventMap {
-		_, _, err := store.Initialise(roomID, eventMap)
+		_, err := store.Initialise(roomID, eventMap)
 		if err != nil {
 			t.Fatalf("Initialise on %s failed: %s", roomID, err)
 		}
@@ -512,7 +512,7 @@ func TestStorageLatestEventsInRoomsPrevBatch(t *testing.T) {
 		},
 	}
 
-	_, _, err := store.Initialise(roomID, stateEvents)
+	_, err := store.Initialise(roomID, stateEvents)
 	if err != nil {
 		t.Fatalf("failed to initialise: %s", err)
 	}
@@ -616,7 +616,7 @@ func TestGlobalSnapshot(t *testing.T) {
 	store := NewStorage(postgresConnectionString)
 	defer store.Teardown()
 	for roomID, stateEvents := range roomIDToEventMap {
-		_, _, err := store.Initialise(roomID, stateEvents)
+		_, err := store.Initialise(roomID, stateEvents)
 		assertNoError(t, err)
 	}
 	snapshot, err := store.GlobalSnapshot()

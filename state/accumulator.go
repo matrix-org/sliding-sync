@@ -131,21 +131,30 @@ func (a *Accumulator) roomInfoDelta(roomID string, events []Event) RoomInfo {
 	}
 }
 
+type InitialiseResult struct {
+	// AddedEvents is true iff this call to Initialise added new state events to the DB.
+	AddedEvents bool
+	// SnapshotID is the ID of the snapshot which incorporates all added events.
+	// It has no meaning if AddedEvents is False.
+	SnapshotID int64
+	// PrependTimelineEvents is empty if the room was not initialised prior to this call.
+	// Otherwise, it is an order-preserving subset of the `state` argument to Initialise
+	// containing all events that were not persisted prior to the Initialise call. These
+	// should be prepended to the room timeline by the caller.
+	PrependTimelineEvents []json.RawMessage
+}
+
 // Initialise starts a new sync accumulator for the given room using the given state as a baseline.
 // This will only take effect if this is the first time the v3 server has seen this room, and it wasn't
-// possible to get all events up to the create event (e.g Matrix HQ). Returns true if this call actually
-// added new events, along with the snapshot NID.
-//
+// possible to get all events up to the create event (e.g Matrix HQ).
 // This function:
 // - Stores these events
 // - Sets up the current snapshot based on the state list given.
-func (a *Accumulator) Initialise(roomID string, state []json.RawMessage) (bool, int64, error) {
+func (a *Accumulator) Initialise(roomID string, state []json.RawMessage) (res InitialiseResult, err error) {
 	if len(state) == 0 {
-		return false, 0, nil
+		return res, nil
 	}
-	addedEvents := false
-	var snapID int64
-	err := sqlutil.WithTransaction(a.db, func(txn *sqlx.Tx) error {
+	err = sqlutil.WithTransaction(a.db, func(txn *sqlx.Tx) error {
 		// Attempt to short-circuit. This has to be done inside a transaction to make sure
 		// we don't race with multiple calls to Initialise with the same room ID.
 		snapshotID, err := a.roomsTable.CurrentAfterSnapshotID(txn, roomID)
@@ -210,7 +219,7 @@ func (a *Accumulator) Initialise(roomID string, state []json.RawMessage) (bool, 
 		if err != nil {
 			return fmt.Errorf("failed to insert snapshot: %w", err)
 		}
-		addedEvents = true
+		res.AddedEvents = true
 		latestNID := int64(0)
 		for _, nid := range otherNIDs {
 			if nid > latestNID {
@@ -235,10 +244,10 @@ func (a *Accumulator) Initialise(roomID string, state []json.RawMessage) (bool, 
 		// will have an associated state snapshot ID on the event.
 
 		// Set the snapshot ID as the current state
-		snapID = snapshot.SnapshotID
+		res.snapID = snapshot.SnapshotID
 		return a.roomsTable.Upsert(txn, info, snapshot.SnapshotID, latestNID)
 	})
-	return addedEvents, snapID, err
+	return res, err
 }
 
 // Accumulate internal state from a user's sync response. The timeline order MUST be in the order
