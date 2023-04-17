@@ -80,10 +80,14 @@ func TestConnBlocking(t *testing.T) {
 	connID := ConnID{
 		DeviceID: "d",
 	}
+	// synchronisation point which is done when the first request begins to block
+	var sentFirstWg sync.WaitGroup
+	sentFirstWg.Add(1)
 	ch := make(chan string)
 	c := NewConn(connID, &connHandlerMock{func(ctx context.Context, cid ConnID, req *Request, init bool) (*Response, error) {
 		if req.Lists["a"].Sort[0] == "hi" {
-			time.Sleep(10 * time.Millisecond)
+			sentFirstWg.Done()                // tell the 2nd request it can start
+			time.Sleep(20 * time.Millisecond) // simulate a long processing time
 		}
 		ch <- req.Lists["a"].Sort[0]
 		return &Response{}, nil
@@ -106,7 +110,8 @@ func TestConnBlocking(t *testing.T) {
 	}()
 	go func() {
 		defer wg.Done()
-		time.Sleep(1 * time.Millisecond) // this req happens 2nd
+		// wait until the first request has begun to block
+		sentFirstWg.Wait()
 		c.OnIncomingRequest(ctx, &Request{
 			Lists: map[string]RequestList{
 				"a": {

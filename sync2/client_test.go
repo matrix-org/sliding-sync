@@ -45,31 +45,31 @@ func TestSyncURL(t *testing.T) {
 			since:        "112233",
 			isFirst:      false,
 			toDeviceOnly: false,
-			wantURL:      wantBaseURL + `?timeout=30000&since=112233`,
+			wantURL:      wantBaseURL + `?timeout=30000&since=112233&filter=` + url.QueryEscape(`{"room":{"timeline":{"limit":50}}}`),
 		},
 		{
 			since:        "112233",
 			isFirst:      true,
 			toDeviceOnly: false,
-			wantURL:      wantBaseURL + `?timeout=0&since=112233`,
+			wantURL:      wantBaseURL + `?timeout=0&since=112233&filter=` + url.QueryEscape(`{"room":{"timeline":{"limit":50}}}`),
 		},
 		{
 			since:        "112233",
 			isFirst:      false,
 			toDeviceOnly: true,
-			wantURL:      wantBaseURL + `?timeout=30000&since=112233&filter=` + url.QueryEscape(`{"room":{"rooms":[]}}`),
+			wantURL:      wantBaseURL + `?timeout=30000&since=112233&filter=` + url.QueryEscape(`{"room":{"rooms":[],"timeline":{"limit":50}}}`),
 		},
 		{
 			since:        "112233",
 			isFirst:      true,
 			toDeviceOnly: true,
-			wantURL:      wantBaseURL + `?timeout=0&since=112233&filter=` + url.QueryEscape(`{"room":{"rooms":[]}}`),
+			wantURL:      wantBaseURL + `?timeout=0&since=112233&filter=` + url.QueryEscape(`{"room":{"rooms":[],"timeline":{"limit":50}}}`),
 		},
 	}
-	for _, tc := range testCases {
+	for i, tc := range testCases {
 		gotURL := client.createSyncURL(tc.since, tc.isFirst, tc.toDeviceOnly)
 		if gotURL != tc.wantURL {
-			t.Errorf("got %v want %v", gotURL, tc.wantURL)
+			t.Errorf("Case %d/%d: got %v want %v", i+1, len(testCases), gotURL, tc.wantURL)
 		}
 	}
 }

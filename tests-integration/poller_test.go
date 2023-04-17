@@ -48,26 +48,41 @@ func TestSecondPollerFiltersToDevice(t *testing.T) {
 		since := qps.Get("since")
 		filter := qps.Get("filter")
 		t.Logf("CheckRequest: %v %v since=%v filter=%v", userID, token, since, filter)
-		if since != "" {
-			// there should be no filter
-			if filter != "" {
-				t.Errorf("expected no filter when ?since= is supplied, got %v", filter)
-			}
+		if filter == "" {
+			t.Errorf("expected a filter on all v2 syncs from poller, but got none")
 			return
 		}
-		if filter == "" {
-			t.Errorf("missing ?filter= on initial request")
-			return
+		filterJSON := gjson.Parse(filter)
+		timelineLimit := filterJSON.Get("room.timeline.limit").Int()
+		roomsFilter := filterJSON.Get("room.rooms")
+
+		if !seenInitialRequest {
+			// First poll: should be an initial sync, limit 1, excluding all room timelines.
+			if since != "" {
+				t.Errorf("Expected no since token on first poll, but got %v", since)
+			}
+			if timelineLimit != 1 {
+				t.Errorf("Expected timeline limit of 1 on first poll, but got %d", timelineLimit)
+			}
+			if !roomsFilter.Exists() {
+				t.Errorf("Expected roomsFilter set to empty list on first poll, but got no roomFilter")
+			}
+			if len(roomsFilter.Array()) != 0 {
+				t.Errorf("Expected roomsFilter set to empty list on first poll, but got %v", roomsFilter.Raw)
+			}
+		} else {
+			// Second poll: should be an incremental sync, limit 50, including all room timelines.
+			if since == "" {
+				t.Errorf("Expected nonempty since token on second poll, but got empty")
+			}
+			if timelineLimit != 50 {
+				t.Errorf("Expected timeline limit of 50 on second poll, but got %d", timelineLimit)
+			}
+			if roomsFilter.Exists() {
+				t.Errorf("Expected missing roomsFilter on second poll, but got %v", roomsFilter.Raw)
+			}
 		}
 
-		filterJSON := gjson.Parse(filter)
-		roomsFilter := filterJSON.Get("room.rooms")
-		if !roomsFilter.Exists() {
-			t.Errorf("missing room.rooms in filter: %s", filter)
-		}
-		if len(roomsFilter.Array()) != 0 {
-			t.Errorf("room.rooms array is >0 : %s", filter)
-		}
 		seenInitialRequest = true
 	}
 

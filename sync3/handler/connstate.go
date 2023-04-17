@@ -249,7 +249,7 @@ func (s *ConnState) onIncomingListRequest(ctx context.Context, builder *RoomsBui
 				}
 				responseOperations = append(responseOperations, &sync3.ResponseOpRange{
 					Operation: sync3.OpInvalidate,
-					Range:     clampSliceRangeToListSize(r, int64(len(allRoomIDs))),
+					Range:     clampSliceRangeToListSize(ctx, r, int64(len(allRoomIDs))),
 				})
 			}
 		}
@@ -278,7 +278,7 @@ func (s *ConnState) onIncomingListRequest(ctx context.Context, builder *RoomsBui
 		}
 		responseOperations = append(responseOperations, &sync3.ResponseOpRange{
 			Operation: sync3.OpInvalidate,
-			Range:     clampSliceRangeToListSize(removedRanges[i], roomList.Len()),
+			Range:     clampSliceRangeToListSize(ctx, removedRanges[i], roomList.Len()),
 		})
 	}
 
@@ -299,7 +299,7 @@ func (s *ConnState) onIncomingListRequest(ctx context.Context, builder *RoomsBui
 
 		responseOperations = append(responseOperations, &sync3.ResponseOpRange{
 			Operation: sync3.OpSync,
-			Range:     clampSliceRangeToListSize(addedRanges[i], roomList.Len()),
+			Range:     clampSliceRangeToListSize(ctx, addedRanges[i], roomList.Len()),
 			RoomIDs:   roomIDs,
 		})
 	}
@@ -566,9 +566,9 @@ func (s *ConnState) OnRoomUpdate(ctx context.Context, up caches.RoomUpdate) {
 // The "full" room list occupies positions [0, totalRooms - 1]. If the given range r
 // does not overlap the full room list, return nil. Otherwise, return the intersection
 // of r with the full room list.
-func clampSliceRangeToListSize(r [2]int64, totalRooms int64) [2]int64 {
+func clampSliceRangeToListSize(ctx context.Context, r [2]int64, totalRooms int64) [2]int64 {
 	lastIndexWithRoom := totalRooms - 1
-	internal.Assert("Start of range exceeds last room index in list", r[0] <= lastIndexWithRoom)
+	internal.AssertWithContext(ctx, "Start of range exceeds last room index in list", r[0] <= lastIndexWithRoom)
 	if r[1] <= lastIndexWithRoom {
 		return r
 	} else {

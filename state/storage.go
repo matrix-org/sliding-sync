@@ -46,8 +46,9 @@ type Storage struct {
 func NewStorage(postgresURI string) *Storage {
 	db, err := sqlx.Open("postgres", postgresURI)
 	if err != nil {
-		logger.Panic().Err(err).Str("uri", postgresURI).Msg("failed to open SQL DB")
 		sentry.CaptureException(err)
+		// TODO: if we panic(), will sentry have a chance to flush the event?
+		logger.Panic().Err(err).Str("uri", postgresURI).Msg("failed to open SQL DB")
 	}
 	acc := &Accumulator{
 		db:            db,

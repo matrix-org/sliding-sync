@@ -184,28 +184,19 @@ func (a *Accumulator) Initialise(roomID string, state []json.RawMessage) (bool, 
 		}
 
 		// pull out the event NIDs we just inserted
-		eventIDs := make([]string, len(events))
 		membershipEventIDs := make(map[string]struct{}, len(events))
-		for i := range eventIDs {
-			eventIDs[i] = events[i].ID
-			if events[i].Type == "m.room.member" {
-				membershipEventIDs[events[i].ID] = struct{}{}
+		for _, event := range events {
+			if event.Type == "m.room.member" {
+				membershipEventIDs[event.ID] = struct{}{}
 			}
 		}
-		idToNIDs, err := a.eventsTable.SelectNIDsByIDs(txn, eventIDs)
-		if err != nil {
-			return fmt.Errorf("failed to select NIDs for inserted events: %w", err)
-		}
-		if len(idToNIDs) != len(eventIDs) {
-			return fmt.Errorf("missing events just inserted, asked for %v got %v", eventIDs, idToNIDs)
-		}
-		memberNIDs := make([]int64, 0, len(idToNIDs))
-		otherNIDs := make([]int64, 0, len(idToNIDs))
-		for evID, nid := range idToNIDs {
+		memberNIDs := make([]int64, 0, len(eventIDToNID))
+		otherNIDs := make([]int64, 0, len(eventIDToNID))
+		for evID, nid := range eventIDToNID {
 			if _, exists := membershipEventIDs[evID]; exists {
-				memberNIDs = append(memberNIDs, nid)
+				memberNIDs = append(memberNIDs, int64(nid))
 			} else {
-				otherNIDs = append(otherNIDs, nid)
+				otherNIDs = append(otherNIDs, int64(nid))
 			}
 		}
 
