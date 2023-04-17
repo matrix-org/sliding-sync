@@ -48,13 +48,14 @@ type V2DataReceiver interface {
 
 // PollerMap is a map of device ID to Poller
 type PollerMap struct {
-	v2Client            Client
-	callbacks           V2DataReceiver
-	pollerMu            *sync.Mutex
-	Pollers             map[string]*poller // device_id -> poller
-	executor            chan func()
-	executorRunning     bool
-	processHistogramVec *prometheus.HistogramVec
+	v2Client                 Client
+	callbacks                V2DataReceiver
+	pollerMu                 *sync.Mutex
+	Pollers                  map[string]*poller // device_id -> poller
+	executor                 chan func()
+	executorRunning          bool
+	processHistogramVec      *prometheus.HistogramVec
+	timelineSizeHistogramVec *prometheus.HistogramVec
 }
 
 // NewPollerMap makes a new PollerMap. Guarantees that the V2DataReceiver will be called on the same
@@ -97,6 +98,15 @@ func NewPollerMap(v2Client Client, enablePrometheus bool) *PollerMap {
 			Buckets:   []float64{0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10},
 		}, []string{"initial", "first"})
 		prometheus.MustRegister(pm.processHistogramVec)
+		pm.timelineSizeHistogramVec = prometheus.NewHistogramVec(prometheus.HistogramOpts{
+			Namespace: "sliding_sync",
+			Subsystem: "poller",
+			Name:      "timeline_size",
+			Help:      "Number of events seen by the poller in a sync v2 timeline response",
+			Buckets:   []float64{0.0, 1.0, 2.0, 5.0, 10.0, 20.0, 50.0},
+		}, []string{"limited"})
+		prometheus.MustRegister(pm.timelineSizeHistogramVec)
+
 	}
 	return pm
 }
@@ -114,6 +124,9 @@ func (h *PollerMap) Terminate() {
 	}
 	if h.processHistogramVec != nil {
 		prometheus.Unregister(h.processHistogramVec)
+	}
+	if h.timelineSizeHistogramVec != nil {
+		prometheus.Unregister(h.timelineSizeHistogramVec)
 	}
 	close(h.executor)
 }
@@ -167,6 +180,7 @@ func (h *PollerMap) EnsurePolling(accessToken, userID, deviceID, v2since string,
 	// We don't do that on startup though as we cannot be sure that other pollers will not be using expired tokens.
 	poller = newPoller(userID, accessToken, deviceID, h.v2Client, h, logger, !needToWait && !isStartup)
 	poller.processHistogramVec = h.processHistogramVec
+	poller.timelineSizeVec = h.timelineSizeHistogramVec
 	go poller.Poll(v2since)
 	h.Pollers[deviceID] = poller
 
@@ -309,6 +323,7 @@ type poller struct {
 
 	pollHistogramVec    *prometheus.HistogramVec
 	processHistogramVec *prometheus.HistogramVec
+	timelineSizeVec     *prometheus.HistogramVec
 }
 
 func newPoller(userID, accessToken, deviceID string, client Client, receiver V2DataReceiver, logger zerolog.Logger, initialToDeviceOnly bool) *poller {
@@ -517,6 +532,7 @@ func (p *poller) parseRoomsResponse(res *SyncResponse) {
 		}
 		if len(roomData.Timeline.Events) > 0 {
 			timelineCalls++
+			p.trackTimelineSize(len(roomData.Timeline.Events), roomData.Timeline.Limited)
 			p.receiver.Accumulate(p.deviceID, roomID, roomData.Timeline.PrevBatch, roomData.Timeline.Events)
 		}
 
@@ -532,6 +548,7 @@ func (p *poller) parseRoomsResponse(res *SyncResponse) {
 	for roomID, roomData := range res.Rooms.Leave {
 		// TODO: do we care about state?
 		if len(roomData.Timeline.Events) > 0 {
+			p.trackTimelineSize(len(roomData.Timeline.Events), roomData.Timeline.Limited)
 			p.receiver.Accumulate(p.deviceID, roomID, roomData.Timeline.PrevBatch, roomData.Timeline.Events)
 		}
 		p.receiver.OnLeftRoom(p.userID, roomID)
@@ -550,4 +567,15 @@ func (p *poller) parseRoomsResponse(res *SyncResponse) {
 	).Ints(
 		"storage [states,timelines,typing,receipts]", []int{stateCalls, timelineCalls, typingCalls, receiptCalls},
 	).Int("to_device", len(res.ToDevice.Events)).Msg("Poller: accumulated data")
+}
+
+func (p *poller) trackTimelineSize(size int, limited bool) {
+	if p.timelineSizeVec == nil {
+		return
+	}
+	label := "unlimited"
+	if limited {
+		label = "limited"
+	}
+	p.timelineSizeVec.WithLabelValues(label).Observe(float64(size))
 }
