@@ -13,7 +13,8 @@ func TestGappyState(t *testing.T) {
 	alice := registerNewUser(t)
 
 	t.Log("Alice creates a room")
-	roomID := alice.CreateRoom(t, map[string]interface{}{"preset": "public_chat"})
+	firstRoomName := "Romeo Oscar Oscar Mike"
+	roomID := alice.CreateRoom(t, map[string]interface{}{"preset": "public_chat", "name": firstRoomName})
 
 	t.Log("Alice sends a message into that room")
 	alice.SendEventSynced(t, roomID, Event{
@@ -23,6 +24,22 @@ func TestGappyState(t *testing.T) {
 			"body":    "Hello, world!",
 		},
 	})
+
+	t.Log("Alice requests an initial sliding sync on device 1.")
+	syncResp := alice.SlidingSync(t,
+		sync3.Request{
+			Lists: map[string]sync3.RequestList{
+				"a": {
+					Ranges: [][2]int64{{0, 20}},
+				},
+			},
+		},
+	)
+	m.MatchResponse(
+		t,
+		syncResp,
+		m.MatchRoomSubscription(roomID, m.MatchRoomName(firstRoomName)),
+	)
 
 	t.Log("Alice logs out of her first device.")
 	alice.MustDoFunc(t, "POST", []string{"_matrix", "client", "v3", "logout"})
@@ -47,7 +64,7 @@ func TestGappyState(t *testing.T) {
 	}
 
 	t.Log("Alice requests an initial sliding sync on device 2.")
-	syncResp := alice.SlidingSync(t,
+	syncResp = alice.SlidingSync(t,
 		sync3.Request{
 			Lists: map[string]sync3.RequestList{
 				"a": {
@@ -57,10 +74,7 @@ func TestGappyState(t *testing.T) {
 		},
 	)
 
-	t.Log("She should her latest message with the room updated")
-	// TODO: Behind the scenes, this should have created a new poller which did a v2
-	// initial sync. The v2 response should include the full state of the room, which
-	// we should relay in the sync response.
+	t.Log("She should her latest message with the room name updated")
 	m.MatchResponse(
 		t,
 		syncResp,

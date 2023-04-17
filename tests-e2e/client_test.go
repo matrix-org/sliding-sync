@@ -251,6 +251,7 @@ func (c *CSAPI) SendEventUnsynced(t *testing.T, roomID string, e Event) string {
 }
 
 // SendEventSynced sends `e` into the room and waits for its event ID to come down /sync.
+// NB: This is specifically v2 sync, not v3 sliding sync!!
 // Returns the event ID of the sent event.
 func (c *CSAPI) SendEventSynced(t *testing.T, roomID string, e Event) string {
 	t.Helper()
