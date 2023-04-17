@@ -163,6 +163,15 @@ func (a *Accumulator) Initialise(roomID string, state []json.RawMessage) (res In
 		}
 		unknownRoom := snapshotID == 0
 		if !unknownRoom {
+			// TODO: suppose Alice's poller has already initialised this room. Then Bob
+			// shows up and we make a brand new poller for him. When his poller initial
+			// syncs, the state block will be passed here. If that block includes a
+			// state event that Alice's poller hasn't seen, we'll now end up adding it
+			// to the DB here---without a snapshot ID---instead of in an Accumulate
+			// call (with a snapshot ID).
+			//
+			// Can we prevent this by passing in a bool initialPollerSync arg?
+			// (Return early if !initialPollerSync and !unknownRoom)
 			const warningMsg = "Accumulator.Initialise called when current snapshot already exists. Patching in events"
 			logger.Warn().Str("room_id", roomID).Int64("snapshot_id", snapshotID).Msg(warningMsg)
 			sentry.WithScope(func(scope *sentry.Scope) {
