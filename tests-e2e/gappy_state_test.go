@@ -8,6 +8,8 @@ import (
 	"testing"
 )
 
+// Test that state changes "missed" by a poller are injected back into the room when a
+// future poller recieves a v2 incremental sync with a state block.
 func TestGappyState(t *testing.T) {
 	t.Log("Alice registers on the homeserver.")
 	alice := registerNewUser(t)
@@ -17,7 +19,7 @@ func TestGappyState(t *testing.T) {
 	roomID := alice.CreateRoom(t, map[string]interface{}{"preset": "public_chat", "name": firstRoomName})
 
 	t.Log("Alice sends a message into that room")
-	alice.SendEventSynced(t, roomID, Event{
+	firstMessageID := alice.SendEventSynced(t, roomID, Event{
 		Type: "m.room.message",
 		Content: map[string]interface{}{
 			"msgtype": "m.text",
@@ -31,6 +33,9 @@ func TestGappyState(t *testing.T) {
 			Lists: map[string]sync3.RequestList{
 				"a": {
 					Ranges: [][2]int64{{0, 20}},
+					RoomSubscription: sync3.RoomSubscription{
+						TimelineLimit: 10,
+					},
 				},
 			},
 		},
@@ -38,7 +43,20 @@ func TestGappyState(t *testing.T) {
 	m.MatchResponse(
 		t,
 		syncResp,
-		m.MatchRoomSubscription(roomID, m.MatchRoomName(firstRoomName)),
+		m.MatchRoomSubscription(
+			roomID,
+			m.MatchRoomName(firstRoomName),
+			func(r sync3.Room) error {
+				if len(r.Timeline) == 0 {
+					return fmt.Errorf("no/empty timeline in response")
+				}
+				lastReceivedEventID := gjson.ParseBytes(r.Timeline[len(r.Timeline)-1]).Get("event_id").Str
+				if lastReceivedEventID == firstMessageID {
+					return nil
+				}
+				return fmt.Errorf("expected end of timeline to be %s but got %s", firstMessageID, lastReceivedEventID)
+			},
+		),
 	)
 
 	t.Log("Alice logs out of her first device.")
@@ -69,16 +87,18 @@ func TestGappyState(t *testing.T) {
 			Lists: map[string]sync3.RequestList{
 				"a": {
 					Ranges: [][2]int64{{0, 20}},
+					RoomSubscription: sync3.RoomSubscription{
+						TimelineLimit: 10,
+					},
 				},
 			},
 		},
 	)
 
-	t.Log("She should her latest message with the room name updated")
+	t.Log("She should see her latest message with the room name updated")
 	m.MatchResponse(
 		t,
 		syncResp,
-		m.LogResponse(t),
 		m.MatchRoomSubscription(
 			roomID,
 			m.MatchRoomName("potato"),
