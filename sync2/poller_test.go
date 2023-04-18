@@ -460,7 +460,7 @@ type mockDataReceiver struct {
 func (a *mockDataReceiver) Accumulate(userID, roomID, prevBatch string, timeline []json.RawMessage) {
 	a.timelines[roomID] = append(a.timelines[roomID], timeline...)
 }
-func (a *mockDataReceiver) Initialise(roomID string, state []json.RawMessage) {
+func (a *mockDataReceiver) Initialise(roomID string, state []json.RawMessage) []json.RawMessage {
 	a.states[roomID] = state
 	if a.incomingProcess != nil {
 		a.incomingProcess <- struct{}{}
@@ -468,6 +468,9 @@ func (a *mockDataReceiver) Initialise(roomID string, state []json.RawMessage) {
 	if a.unblockProcess != nil {
 		<-a.unblockProcess
 	}
+	// The return value is a list of unknown state events to be prepended to the room
+	// timeline. Untested here---return nil for now.
+	return nil
 }
 func (a *mockDataReceiver) SetTyping(roomID string, ephEvent json.RawMessage) {
 }
