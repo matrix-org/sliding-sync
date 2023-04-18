@@ -83,6 +83,9 @@ func TestGappyState(t *testing.T) {
 			roomID,
 			m.MatchRoomName("potato"),
 			func(r sync3.Room) error {
+				if len(r.Timeline) == 0 {
+					return fmt.Errorf("no timeline in response, expected at least one event")
+				}
 				lastReceivedEventID := gjson.ParseBytes(r.Timeline[len(r.Timeline)-1]).Get("event_id").Str
 				if lastReceivedEventID != latestMessageID {
 					return fmt.Errorf("last message in response is %s, expected %s", lastReceivedEventID, latestMessageID)
