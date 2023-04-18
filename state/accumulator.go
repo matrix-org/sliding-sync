@@ -145,11 +145,18 @@ type InitialiseResult struct {
 }
 
 // Initialise starts a new sync accumulator for the given room using the given state as a baseline.
+//
 // This will only take effect if this is the first time the v3 server has seen this room, and it wasn't
 // possible to get all events up to the create event (e.g Matrix HQ).
 // This function:
 // - Stores these events
 // - Sets up the current snapshot based on the state list given.
+//
+// If the v3 server has seen this room before, this function
+//   - queries the DB to determine which state events are known to th server,
+//   - returns (via InitialiseResult.PrependTimelineEvents) a slice of unknown state events,
+//
+// and otherwise does nothing.
 func (a *Accumulator) Initialise(roomID string, state []json.RawMessage) (InitialiseResult, error) {
 	var res InitialiseResult
 	if len(state) == 0 {
@@ -163,34 +170,24 @@ func (a *Accumulator) Initialise(roomID string, state []json.RawMessage) (Initia
 			return fmt.Errorf("error fetching snapshot id for room %s: %s", roomID, err)
 		}
 		if snapshotID > 0 {
-			// If the state block has a create event, it must be an initial sync. Ignore it.
-			fullState := false
-			for _, event := range state {
-				parsed := gjson.ParseBytes(event)
-				typeField := parsed.Get("type")
-				stateKeyField := parsed.Get("state_key")
-				if typeField.Str == "m.room.create" && stateKeyField.Exists() && stateKeyField.Str == "" {
-					fullState = true
-				}
+			// Poller A has received a gappy sync v2 response with a state block, and
+			// we have seen this room before. If we knew for certain that there is some
+			// other active poller B in this room then we could safely skip this logic.
+
+			// Log at debug for now. If we find an unknown event, we'll return it so
+			// that the poller can log a warning.
+			logger.Debug().Str("room_id", roomID).Int64("snapshot_id", snapshotID).Msg("Accumulator.Initialise called with incremental state but current snapshot already exists.")
+			eventIDs := make([]string, len(state))
+			for i := range state {
+				eventIDs[i] = gjson.ParseBytes(state[i]).Get("event_id").Str
 			}
-			if fullState {
-				logger.Info().Str("room_id", roomID).Int64("snapshot_id", snapshotID).Msg("Accumulator.Initialise called with full state but current snapshot already exists, bailing early")
-			} else {
-				// Otherwise, this is a diff as part of an incremental sync. Work out
-				// which state events (if any) we should prepend to the timeline.
-				logger.Warn().Str("room_id", roomID).Int64("snapshot_id", snapshotID).Msg("Accumulator.Initialise called with incremental state but current snapshot already exists.")
-				eventIDs := make([]string, len(state))
-				for i := range state {
-					eventIDs[i] = gjson.ParseBytes(state[i]).Get("event_id").Str
-				}
-				unknownEventIDs, err := a.eventsTable.SelectUnknownEventIDs(txn, eventIDs)
-				if err != nil {
-					return fmt.Errorf("error determing which event IDs are unknown: %s", err)
-				}
-				for i := range state {
-					if _, unknown := unknownEventIDs[eventIDs[i]]; unknown {
-						res.PrependTimelineEvents = append(res.PrependTimelineEvents, state[i])
-					}
+			unknownEventIDs, err := a.eventsTable.SelectUnknownEventIDs(txn, eventIDs)
+			if err != nil {
+				return fmt.Errorf("error determing which event IDs are unknown: %s", err)
+			}
+			for i := range state {
+				if _, unknown := unknownEventIDs[eventIDs[i]]; unknown {
+					res.PrependTimelineEvents = append(res.PrependTimelineEvents, state[i])
 				}
 			}
 			return nil
