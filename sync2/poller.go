@@ -3,6 +3,7 @@ package sync2
 import (
 	"context"
 	"encoding/json"
+	"github.com/getsentry/sentry-go"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -23,7 +24,8 @@ type V2DataReceiver interface {
 	// Accumulate data for this room. This means the timeline section of the v2 response.
 	Accumulate(deviceID, roomID, prevBatch string, timeline []json.RawMessage) // latest pos with event nids of timeline entries
 	// Initialise the room, if it hasn't been already. This means the state section of the v2 response.
-	Initialise(roomID string, state []json.RawMessage) // snapshot ID?
+	// If given a state delta from an incremental sync, returns the slice of all state events unknown to the DB.
+	Initialise(roomID string, state []json.RawMessage) []json.RawMessage // snapshot ID?
 	// SetTyping indicates which users are typing.
 	SetTyping(roomID string, ephEvent json.RawMessage)
 	// Sent when there is a new receipt
@@ -196,14 +198,15 @@ func (h *PollerMap) Accumulate(deviceID, roomID, prevBatch string, timeline []js
 	}
 	wg.Wait()
 }
-func (h *PollerMap) Initialise(roomID string, state []json.RawMessage) {
+func (h *PollerMap) Initialise(roomID string, state []json.RawMessage) (result []json.RawMessage) {
 	var wg sync.WaitGroup
 	wg.Add(1)
 	h.executor <- func() {
-		h.callbacks.Initialise(roomID, state)
+		result = h.callbacks.Initialise(roomID, state)
 		wg.Done()
 	}
 	wg.Wait()
+	return
 }
 func (h *PollerMap) SetTyping(roomID string, ephEvent json.RawMessage) {
 	var wg sync.WaitGroup
@@ -496,7 +499,24 @@ func (p *poller) parseRoomsResponse(res *SyncResponse) {
 	for roomID, roomData := range res.Rooms.Join {
 		if len(roomData.State.Events) > 0 {
 			stateCalls++
-			p.receiver.Initialise(roomID, roomData.State.Events)
+			prependStateEvents := p.receiver.Initialise(roomID, roomData.State.Events)
+			if len(prependStateEvents) > 0 {
+				// The poller has just learned of these state events due to an
+				// incremental poller sync; we must have missed the opportunity to see
+				// these down /sync in a timeline. As a workaround, inject these into
+				// the timeline now so that future events are received under the
+				// correct room state.
+				const warnMsg = "parseRoomsResponse: prepending state events to timeline after gappy poll"
+				log.Warn().Str("room_id", roomID).Int("prependStateEvents", len(prependStateEvents)).Msg(warnMsg)
+				sentry.WithScope(func(scope *sentry.Scope) {
+					scope.SetContext("sliding-sync", map[string]interface{}{
+						"room_id":                  roomID,
+						"num_prepend_state_events": len(prependStateEvents),
+					})
+					sentry.CaptureMessage(warnMsg)
+				})
+				roomData.Timeline.Events = append(prependStateEvents, roomData.Timeline.Events...)
+			}
 		}
 		// process typing/receipts before events so we seed the caches correctly for when we return the room
 		for _, ephEvent := range roomData.Ephemeral.Events {
