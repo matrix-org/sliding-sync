@@ -260,8 +260,10 @@ func (t *EventTable) SelectStrippedEventsByIDs(txn *sqlx.Tx, verifyAll bool, ids
 }
 
 // SelectUnknownEventIDs accepts a list of event IDs and returns the subset of those which are not known to the DB.
-// The order of event IDs in the return value is not guaranteed.
-func (t *EventTable) SelectUnknownEventIDs(txn *sqlx.Tx, maybeUnknownEventIDs []string) ([]string, error) {
+func (t *EventTable) SelectUnknownEventIDs(txn *sqlx.Tx, maybeUnknownEventIDs []string) (map[string]struct{}, error) {
+	// Note: in practice, the order of rows returned matches the order of rows of
+	// array entries. But I don't think that's guaranteed. Return an (unordered) set
+	// out of paranoia.
 	queryStr := `
 	WITH maybe_unknown_events(event_id) AS (SELECT unnest($1::text[]))
 	SELECT event_id
@@ -275,7 +277,14 @@ func (t *EventTable) SelectUnknownEventIDs(txn *sqlx.Tx, maybeUnknownEventIDs []
 	} else {
 		err = t.db.Select(&unknownEventIDs, queryStr, pq.StringArray(maybeUnknownEventIDs))
 	}
-	return unknownEventIDs, err
+	if err != nil {
+		return nil, err
+	}
+	unknownMap := make(map[string]struct{}, len(unknownEventIDs))
+	for _, eventID := range unknownEventIDs {
+		unknownMap[eventID] = struct{}{}
+	}
+	return unknownMap, nil
 }
 
 // UpdateBeforeSnapshotID sets the before_state_snapshot_id field to `snapID` for the given NIDs.
