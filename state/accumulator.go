@@ -150,32 +150,53 @@ type InitialiseResult struct {
 // This function:
 // - Stores these events
 // - Sets up the current snapshot based on the state list given.
-func (a *Accumulator) Initialise(roomID string, state []json.RawMessage) (res InitialiseResult, outerErr error) {
+func (a *Accumulator) Initialise(roomID string, state []json.RawMessage) (InitialiseResult, error) {
+	var res InitialiseResult
 	if len(state) == 0 {
 		return res, nil
 	}
-	outerErr = sqlutil.WithTransaction(a.db, func(txn *sqlx.Tx) error {
-		// This has to be done inside a transaction to make sure
+	err := sqlutil.WithTransaction(a.db, func(txn *sqlx.Tx) error {
+		// Attempt to short-circuit. This has to be done inside a transaction to make sure
 		// we don't race with multiple calls to Initialise with the same room ID.
 		snapshotID, err := a.roomsTable.CurrentAfterSnapshotID(txn, roomID)
 		if err != nil {
 			return fmt.Errorf("error fetching snapshot id for room %s: %s", roomID, err)
 		}
-		unknownRoom := snapshotID == 0
-		if !unknownRoom {
-			// TODO: suppose Alice's poller has already initialised this room. Then Bob
-			// shows up and we make a brand new poller for him. When his poller initial
-			// syncs, the state block will be passed here. If that block includes a
-			// state event that Alice's poller hasn't seen, we'll now end up adding it
-			// to the DB here---without a snapshot ID---instead of in an Accumulate
-			// call (with a snapshot ID).
-			//
-			// Can we prevent this by passing in a bool initialPollerSync arg?
-			// (Return early if !initialPollerSync and !unknownRoom)
-			logger.Warn().Str("room_id", roomID).Int64("snapshot_id", snapshotID).Msg("Accumulator.Initialise called when current snapshot already exists. May patch in events.")
+		if snapshotID > 0 {
+			// If the state block has a create event, it must be an initial sync. Ignore it.
+			fullState := false
+			for _, event := range state {
+				parsed := gjson.ParseBytes(event)
+				typeField := parsed.Get("type")
+				stateKeyField := parsed.Get("state_key")
+				if typeField.Str == "m.room.create" && stateKeyField.Exists() && stateKeyField.Str == "" {
+					fullState = true
+				}
+			}
+			if fullState {
+				logger.Info().Str("room_id", roomID).Int64("snapshot_id", snapshotID).Msg("Accumulator.Initialise called with full state but current snapshot already exists, bailing early")
+			} else {
+				// Otherwise, this is a diff as part of an incremental sync. Work out
+				// which state events (if any) we should prepend to the timeline.
+				logger.Warn().Str("room_id", roomID).Int64("snapshot_id", snapshotID).Msg("Accumulator.Initialise called with incremental state but current snapshot already exists.")
+				eventIDs := make([]string, len(state))
+				for i := range state {
+					eventIDs[i] = gjson.ParseBytes(state[i]).Get("event_id").Str
+				}
+				unknownEventIDs, err := a.eventsTable.SelectUnknownEventIDs(txn, eventIDs)
+				if err != nil {
+					return fmt.Errorf("error determing which event IDs are unknown: %s", err)
+				}
+				for i := range state {
+					if _, unknown := unknownEventIDs[eventIDs[i]]; unknown {
+						res.PrependTimelineEvents = append(res.PrependTimelineEvents, state[i])
+					}
+				}
+			}
+			return nil
 		}
 
-		// Parse the events
+		// Insert the events
 		events := make([]Event, len(state))
 		for i := range events {
 			events[i] = Event{
@@ -184,59 +205,10 @@ func (a *Accumulator) Initialise(roomID string, state []json.RawMessage) (res In
 				IsState: true,
 			}
 		}
-		if err = ensureFieldsSet(events); err != nil {
+		if err := ensureFieldsSet(events); err != nil {
 			return fmt.Errorf("events malformed: %s", err)
 		}
-
-		// Determine which events should be inserted.
-		var insertEvents []Event
-		if unknownRoom {
-			insertEvents = events
-		} else {
-			// Select the events which do not have a NID
-			eventIDs := make([]string, len(events))
-			for i := range events {
-				eventIDs[i] = events[i].ID
-			}
-			unknownEventIDs, err := a.eventsTable.SelectUnknownEventIDs(txn, eventIDs)
-			if err != nil {
-				return fmt.Errorf("error determing which event IDs are unknown: %s", err)
-			}
-			if len(unknownEventIDs) == 0 {
-				// All events known. Odd, but nothing to do.
-				return nil
-			}
-		Outer:
-			for i := range events {
-				// TODO: should this be a set of ids? Otherwise the double loop is
-				// quadratic in the size of the gap.
-				for j := range unknownEventIDs {
-					if events[i].ID == unknownEventIDs[j] {
-						insertEvents = append(insertEvents, events[i])
-						continue Outer
-					}
-				}
-			}
-		}
-		if len(insertEvents) == 0 {
-			// All events known---nothing to do here.
-			return nil
-		}
-
-		if !unknownRoom {
-			logger.Warn().Str("room_id", roomID).Int64("snapshot_id", snapshotID).Int("num_insert_events", len(insertEvents)).Msg("Accumulator.Initialise: patching in events")
-			sentry.WithScope(func(scope *sentry.Scope) {
-				scope.SetContext("sliding-sync", map[string]interface{}{
-					"room_id":           roomID,
-					"snapshot_id":       snapshotID,
-					"num_insert_events": len(insertEvents),
-				})
-				sentry.CaptureException(fmt.Errorf("Accumulator.Initialise: patching in %d events", len(insertEvents)))
-			})
-		}
-
-		// Insert new events
-		eventIDToNID, err := a.eventsTable.Insert(txn, insertEvents, false)
+		eventIDToNID, err := a.eventsTable.Insert(txn, events, false)
 		if err != nil {
 			return fmt.Errorf("failed to insert events: %w", err)
 		}
@@ -249,45 +221,24 @@ func (a *Accumulator) Initialise(roomID string, state []json.RawMessage) (res In
 			return nil
 		}
 
-		// Determine the NIDs in the snapshot which includes the new state events
-		var memberNIDs, otherNIDs []int64
-		if unknownRoom {
-			// Split the new NIDs into membership and nonmemberships.
-			membershipEventIDs := make(map[string]struct{}, len(events))
-			for _, event := range events {
-				if event.Type == "m.room.member" {
-					membershipEventIDs[event.ID] = struct{}{}
-				}
+		// pull out the event NIDs we just inserted
+		membershipEventIDs := make(map[string]struct{}, len(events))
+		for _, event := range events {
+			if event.Type == "m.room.member" {
+				membershipEventIDs[event.ID] = struct{}{}
 			}
-			memberNIDs = make([]int64, 0, len(eventIDToNID))
-			otherNIDs = make([]int64, 0, len(eventIDToNID))
-			for evID, nid := range eventIDToNID {
-				if _, exists := membershipEventIDs[evID]; exists {
-					memberNIDs = append(memberNIDs, int64(nid))
-				} else {
-					otherNIDs = append(otherNIDs, int64(nid))
-				}
+		}
+		memberNIDs := make([]int64, 0, len(eventIDToNID))
+		otherNIDs := make([]int64, 0, len(eventIDToNID))
+		for evID, nid := range eventIDToNID {
+			if _, exists := membershipEventIDs[evID]; exists {
+				memberNIDs = append(memberNIDs, int64(nid))
+			} else {
+				otherNIDs = append(otherNIDs, int64(nid))
 			}
-			if err != nil {
-				return fmt.Errorf("failed to insert snapshot: %w", err)
-			}
-		} else {
-			// Update the existing snapshot, then extract NIDs.
-			stateEvents, err := a.strippedEventsForSnapshot(txn, snapshotID)
-			if err != nil {
-				return fmt.Errorf("failed to load stripped state events for snapshot %d: %s", snapshotID, err)
-			}
-			var newStripped StrippedEvents
-			for _, ev := range insertEvents {
-				stateEvents, _, err = a.calculateNewSnapshot(stateEvents, ev)
-				if err != nil {
-					return fmt.Errorf("failed to calculateNewSnapshot: %s", err)
-				}
-			}
-			memberNIDs, otherNIDs = newStripped.NIDs()
 		}
 
-		// Insert the new snapshot
+		// Make a current snapshot
 		snapshot := &SnapshotRow{
 			RoomID:           roomID,
 			MembershipEvents: pq.Int64Array(memberNIDs),
@@ -298,12 +249,6 @@ func (a *Accumulator) Initialise(roomID string, state []json.RawMessage) (res In
 			return fmt.Errorf("failed to insert snapshot: %w", err)
 		}
 		res.AddedEvents = true
-		if !unknownRoom {
-			res.PrependTimelineEvents = make([]json.RawMessage, len(insertEvents))
-			for i := range insertEvents {
-				res.PrependTimelineEvents[i] = insertEvents[i].JSON
-			}
-		}
 		latestNID := int64(0)
 		for _, nid := range otherNIDs {
 			if nid > latestNID {
@@ -331,7 +276,7 @@ func (a *Accumulator) Initialise(roomID string, state []json.RawMessage) (res In
 		res.SnapshotID = snapshot.SnapshotID
 		return a.roomsTable.Upsert(txn, info, snapshot.SnapshotID, latestNID)
 	})
-	return res, outerErr
+	return res, err
 }
 
 // Accumulate internal state from a user's sync response. The timeline order MUST be in the order
