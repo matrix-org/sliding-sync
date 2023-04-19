@@ -113,7 +113,10 @@ func TestSecondPollerFiltersToDevice(t *testing.T) {
 	m.MatchResponse(t, res, m.MatchToDeviceMessages([]json.RawMessage{wantMsg}))
 }
 
-// TODO test description
+// Test that the poller makes a best-effort attempt to integrate state seen in a
+// v2 sync state block. Our strategy for doing so is to prepend any unknown state events
+// to the start of the v2 sync response's timeline, which should then be visible to
+// sync v3 clients as ordinary state events in the room timeline.
 func TestPollerHandlesUnknownStateEventsOnIncrementalSync(t *testing.T) {
 	pqString := testutils.PrepareDBConnectionString()
 	v2 := runTestV2Server(t)
