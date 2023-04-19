@@ -79,10 +79,22 @@ func eventsEqual(wantList []Event, gotList []json.RawMessage) error {
 	return nil
 }
 
+// MatchRoomTimelineMostRecent builds a matcher which checks that the last `n` elements
+// of `events` are the same as the last n elements of the room timeline. If either list
+// contains fewer than `n` events, the match fails.
+// Events are tested for equality using `eventsEqual`.
 func MatchRoomTimelineMostRecent(n int, events []Event) m.RoomMatcher {
-	subset := events[len(events)-n:]
 	return func(r sync3.Room) error {
-		return MatchRoomTimeline(subset)(r)
+		if len(events) < n {
+			return fmt.Errorf("list of wanted events has %d events, expected at least %d", len(events), n)
+		}
+		wantList := events[len(events)-n:]
+		if len(r.Timeline) < n {
+			return fmt.Errorf("timeline has %d events, expected at least %d", len(r.Timeline), n)
+		}
+
+		gotList := r.Timeline[len(r.Timeline)-n:]
+		return eventsEqual(wantList, gotList)
 	}
 }
 
