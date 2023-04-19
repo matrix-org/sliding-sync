@@ -260,6 +260,7 @@ func (t *EventTable) SelectStrippedEventsByIDs(txn *sqlx.Tx, verifyAll bool, ids
 }
 
 // SelectUnknownEventIDs accepts a list of event IDs and returns the subset of those which are not known to the DB.
+// It MUST be called within a transaction, or else will panic.
 func (t *EventTable) SelectUnknownEventIDs(txn *sqlx.Tx, maybeUnknownEventIDs []string) (map[string]struct{}, error) {
 	// Note: in practice, the order of rows returned matches the order of rows of
 	// array entries. But I don't think that's guaranteed. Return an (unordered) set
@@ -271,13 +272,7 @@ func (t *EventTable) SelectUnknownEventIDs(txn *sqlx.Tx, maybeUnknownEventIDs []
 	WHERE event_nid IS NULL;`
 
 	var unknownEventIDs []string
-	var err error
-	if txn != nil {
-		err = txn.Select(&unknownEventIDs, queryStr, pq.StringArray(maybeUnknownEventIDs))
-	} else {
-		err = t.db.Select(&unknownEventIDs, queryStr, pq.StringArray(maybeUnknownEventIDs))
-	}
-	if err != nil {
+	if err := txn.Select(&unknownEventIDs, queryStr, pq.StringArray(maybeUnknownEventIDs)); err != nil {
 		return nil, err
 	}
 	unknownMap := make(map[string]struct{}, len(unknownEventIDs))
