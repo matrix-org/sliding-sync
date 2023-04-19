@@ -181,7 +181,7 @@ func (a *Accumulator) Initialise(roomID string, state []json.RawMessage) (Initia
 			for i := range state {
 				eventIDs[i] = gjson.ParseBytes(state[i]).Get("event_id").Str
 			}
-			unknownEventIDs, err := a.eventsTable.SelectUnknownEventIDs(txn, eventIDs)
+			unknownEventIDs, err := a.eventsTable.SelectUnknownEventIds(txn, roomID, eventIDs)
 			if err != nil {
 				return fmt.Errorf("error determing which event IDs are unknown: %s", err)
 			}

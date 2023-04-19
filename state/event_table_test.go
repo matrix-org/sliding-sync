@@ -870,3 +870,66 @@ func TestRemoveUnsignedTXNID(t *testing.T) {
 		}
 	}
 }
+
+func TestSelectUnknownEventIds(t *testing.T) {
+	db, close := connectToDB(t)
+	defer close()
+	txn, err := db.Beginx()
+	if err != nil {
+		t.Fatalf("failed to start txn: %s", err)
+	}
+	defer txn.Rollback()
+	const roomID = "!1:localhost"
+
+	knownEvents := []Event{
+		{
+			Type:     "m.room.create",
+			StateKey: "",
+			IsState:  true,
+			ID:       "$A",
+			RoomID:   roomID,
+		},
+		{
+			Type:     "m.room.name",
+			StateKey: "",
+			IsState:  true,
+			ID:       "$B",
+			RoomID:   roomID,
+		},
+	}
+	table := NewEventTable(db)
+
+	// Insert the events
+	_, err = table.Insert(txn, knownEvents, false)
+	if err != nil {
+		t.Errorf("failed to insert event: %s", err)
+	}
+
+	gotEvents, err := table.SelectByIDs(txn, true, []string{"$A", "$B"})
+	if err != nil {
+		t.Fatalf("failed to select events: %s", err)
+	}
+	if (gotEvents[0].ID == "$A" && gotEvents[1].ID == "$B") || (gotEvents[0].ID == "$B" && gotEvents[1].ID == "$A") {
+		t.Logf("Got expected event IDs after insert. NIDS: %s=%d, %s=%d", gotEvents[0].ID, gotEvents[0].NID, gotEvents[1].ID, gotEvents[1].NID)
+	} else {
+		t.Logf("Event ID mismatch: expected $A and $B, got %v", gotEvents)
+	}
+
+	// Someone else tells us the state of the room is {A, C}. Query which of those
+	// event IDs are unknown.
+	stateBlockIDs := []string{"$A", "$C"}
+	unknownIDs, err := table.SelectUnknownEventIds(txn, roomID, stateBlockIDs)
+	t.Logf("unknownIDs=%v", unknownIDs)
+	if err != nil {
+		t.Errorf("failed to select unknown state events: %s", err)
+	}
+
+	// Only event C should be flagged as unknown.
+	if len(unknownIDs) != 1 {
+		t.Fatalf("Expected 1 unknown id, got %v", unknownIDs)
+	}
+	_, ok := unknownIDs["$C"]
+	if !ok {
+		t.Fatalf("Expected $C to be unknown to the DB, but it wasn't")
+	}
+}
