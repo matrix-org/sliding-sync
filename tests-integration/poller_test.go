@@ -123,10 +123,9 @@ func TestPollerHandlesUnknownStateEventsOnIncrementalSync(t *testing.T) {
 	v3 := runTestServer(t, v2, pqString)
 	defer v2.close()
 	defer v3.close()
-	deviceAToken := "DEVICE_A_TOKEN"
-	v2.addAccount(alice, deviceAToken)
+	v2.addAccount(alice, aliceToken)
 	const roomID = "!unimportant"
-	v2.queueResponse(deviceAToken, sync2.SyncResponse{
+	v2.queueResponse(aliceToken, sync2.SyncResponse{
 		Rooms: sync2.SyncRoomsResponse{
 			Join: v2JoinTimeline(roomEvents{
 				roomID: roomID,
@@ -134,7 +133,7 @@ func TestPollerHandlesUnknownStateEventsOnIncrementalSync(t *testing.T) {
 			}),
 		},
 	})
-	res := v3.mustDoV3Request(t, deviceAToken, sync3.Request{
+	res := v3.mustDoV3Request(t, aliceToken, sync3.Request{
 		Lists: map[string]sync3.RequestList{
 			"a": {
 				Ranges: [][2]int64{{0, 20}},
@@ -142,7 +141,7 @@ func TestPollerHandlesUnknownStateEventsOnIncrementalSync(t *testing.T) {
 		},
 	})
 
-	t.Log("The poller receives a gappy incremental sync response with a state block")
+	t.Log("The poller receives a gappy incremental sync response with a state block. The power levels and room name have changed.")
 	nameEvent := testutils.NewStateEvent(
 		t,
 		"m.room.name",
@@ -161,7 +160,7 @@ func TestPollerHandlesUnknownStateEventsOnIncrementalSync(t *testing.T) {
 		},
 	)
 	messageEvent := testutils.NewMessageEvent(t, alice, "hello")
-	v2.queueResponse(deviceAToken, sync2.SyncResponse{
+	v2.queueResponse(aliceToken, sync2.SyncResponse{
 		Rooms: sync2.SyncRoomsResponse{
 			Join: map[string]sync2.SyncV2JoinResponse{
 				roomID: {
@@ -178,7 +177,7 @@ func TestPollerHandlesUnknownStateEventsOnIncrementalSync(t *testing.T) {
 		},
 	})
 
-	res = v3.mustDoV3RequestWithPos(t, deviceAToken, res.Pos, sync3.Request{})
+	res = v3.mustDoV3RequestWithPos(t, aliceToken, res.Pos, sync3.Request{})
 	m.MatchResponse(
 		t,
 		res,
