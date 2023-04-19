@@ -178,17 +178,21 @@ func (a *Accumulator) Initialise(roomID string, state []json.RawMessage) (Initia
 			// that the poller can log a warning.
 			logger.Debug().Str("room_id", roomID).Int64("snapshot_id", snapshotID).Msg("Accumulator.Initialise called with incremental state but current snapshot already exists.")
 			eventIDs := make([]string, len(state))
+			eventIDToRawEvent := make(map[string]json.RawMessage, len(state))
 			for i := range state {
-				eventIDs[i] = gjson.ParseBytes(state[i]).Get("event_id").Str
+				eventID := gjson.ParseBytes(state[i]).Get("event_id")
+				if !eventID.Exists() || eventID.Type != gjson.String {
+					return fmt.Errorf("Event %d lacks an event ID", i)
+				}
+				eventIDToRawEvent[eventID.Str] = state[i]
+				eventIDs[i] = eventID.Str
 			}
-			unknownEventIDs, err := a.eventsTable.SelectUnknownEventIds(txn, roomID, eventIDs)
+			unknownEventIDs, err := a.eventsTable.SelectUnknownEventIDs(txn, eventIDs)
 			if err != nil {
 				return fmt.Errorf("error determing which event IDs are unknown: %s", err)
 			}
-			for i := range state {
-				if _, unknown := unknownEventIDs[eventIDs[i]]; unknown {
-					res.PrependTimelineEvents = append(res.PrependTimelineEvents, state[i])
-				}
+			for unknownEventID := range unknownEventIDs {
+				res.PrependTimelineEvents = append(res.PrependTimelineEvents, eventIDToRawEvent[unknownEventID])
 			}
 			return nil
 		}
