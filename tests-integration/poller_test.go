@@ -137,6 +137,9 @@ func TestPollerHandlesUnknownStateEventsOnIncrementalSync(t *testing.T) {
 		Lists: map[string]sync3.RequestList{
 			"a": {
 				Ranges: [][2]int64{{0, 20}},
+				RoomSubscription: sync3.RoomSubscription{
+					TimelineLimit: 10,
+				},
 			},
 		},
 	})
@@ -187,4 +190,105 @@ func TestPollerHandlesUnknownStateEventsOnIncrementalSync(t *testing.T) {
 			m.MatchRoomName("banana"),
 		),
 	)
+}
+
+// Similar to TestPollerHandlesUnknownStateEventsOnIncrementalSync. Here we are testing
+// that if Alice's poller sees Bob leave in a state block, the events seen in that
+// timeline are not visible to Bob.
+func TestPollerUpdatesRoomMemberTrackerOnGappySyncStateBlock(t *testing.T) {
+	pqString := testutils.PrepareDBConnectionString()
+	v2 := runTestV2Server(t)
+	v3 := runTestServer(t, v2, pqString)
+	defer v2.close()
+	defer v3.close()
+	v2.addAccount(alice, aliceToken)
+	v2.addAccount(bob, bobToken)
+	const roomID = "!unimportant"
+
+	t.Log("Alice's poller does an initial sync. It sees that Alice and Bob share a room.")
+	initialTimeline := createRoomState(t, alice, time.Now())
+	bobJoin := testutils.NewStateEvent(
+		t,
+		"m.room.member",
+		bob,
+		bob,
+		map[string]interface{}{"membership": "join"},
+	)
+	initialJoinBlock := v2JoinTimeline(roomEvents{
+		roomID: roomID,
+		events: append(initialTimeline, bobJoin),
+	})
+	v2.queueResponse(aliceToken, sync2.SyncResponse{
+		Rooms: sync2.SyncRoomsResponse{Join: initialJoinBlock},
+	})
+
+	t.Log("Alice makes an initial sliding sync request.")
+	aliceRes := v3.mustDoV3Request(t, aliceToken, sync3.Request{
+		Lists: map[string]sync3.RequestList{
+			"a": {
+				Ranges: [][2]int64{{0, 20}},
+				RoomSubscription: sync3.RoomSubscription{
+					TimelineLimit: 10,
+				},
+			},
+		},
+	})
+
+	t.Log("Alice's poller receives a gappy incremental sync response. Bob has left in the gap. The timeline includes a message from Alice.")
+	bobLeave := testutils.NewStateEvent(
+		t,
+		"m.room.member",
+		bob,
+		bob,
+		map[string]interface{}{"membership": "leave"},
+	)
+	aliceMessage := testutils.NewMessageEvent(t, alice, "hello")
+	v2.queueResponse(aliceToken, sync2.SyncResponse{
+		Rooms: sync2.SyncRoomsResponse{
+			Join: map[string]sync2.SyncV2JoinResponse{
+				roomID: {
+					State: sync2.EventsResponse{
+						Events: []json.RawMessage{bobLeave},
+					},
+					Timeline: sync2.TimelineResponse{
+						Events:    []json.RawMessage{aliceMessage},
+						Limited:   true,
+						PrevBatch: "batchymcbatchface",
+					},
+				},
+			},
+		},
+	})
+
+	t.Log("Alice makes an incremental sliding sync request.")
+	aliceRes = v3.mustDoV3RequestWithPos(t, aliceToken, aliceRes.Pos, sync3.Request{})
+
+	t.Log("She should see Bob's leave event and her message at the end of the room timeline.")
+	m.MatchResponse(
+		t,
+		aliceRes,
+		m.MatchRoomSubscription(
+			roomID,
+			m.MatchRoomTimelineMostRecent(2, []json.RawMessage{bobLeave, aliceMessage}),
+		),
+	)
+
+	t.Log("Bob makes an initial sliding sync request.")
+	bobRes := v3.mustDoV3Request(t, bobToken, sync3.Request{
+		Lists: map[string]sync3.RequestList{
+			"a": {
+				Ranges: [][2]int64{{0, 20}},
+				RoomSubscription: sync3.RoomSubscription{
+					TimelineLimit: 10,
+				},
+			},
+		},
+	})
+	t.Log("He should not see himself in the room.")
+	m.MatchResponse(
+		t,
+		bobRes,
+		m.MatchList("a", m.MatchV3Count(0)),
+	)
+
 }
