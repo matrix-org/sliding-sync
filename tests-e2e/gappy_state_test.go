@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"github.com/matrix-org/sliding-sync/sync3"
 	"github.com/matrix-org/sliding-sync/testutils/m"
-	"github.com/tidwall/gjson"
 	"testing"
 )
 
@@ -46,16 +45,7 @@ func TestGappyState(t *testing.T) {
 		m.MatchRoomSubscription(
 			roomID,
 			m.MatchRoomName(firstRoomName),
-			func(r sync3.Room) error {
-				if len(r.Timeline) == 0 {
-					return fmt.Errorf("no/empty timeline in response")
-				}
-				lastReceivedEventID := gjson.ParseBytes(r.Timeline[len(r.Timeline)-1]).Get("event_id").Str
-				if lastReceivedEventID == firstMessageID {
-					return nil
-				}
-				return fmt.Errorf("expected end of timeline to be %s but got %s", firstMessageID, lastReceivedEventID)
-			},
+			MatchRoomTimelineMostRecent(1, []Event{{ID: firstMessageID}}),
 		),
 	)
 
@@ -102,16 +92,7 @@ func TestGappyState(t *testing.T) {
 		m.MatchRoomSubscription(
 			roomID,
 			m.MatchRoomName("potato"),
-			func(r sync3.Room) error {
-				if len(r.Timeline) == 0 {
-					return fmt.Errorf("no timeline in response, expected at least one event")
-				}
-				lastReceivedEventID := gjson.ParseBytes(r.Timeline[len(r.Timeline)-1]).Get("event_id").Str
-				if lastReceivedEventID != latestMessageID {
-					return fmt.Errorf("last message in response is %s, expected %s", lastReceivedEventID, latestMessageID)
-				}
-				return nil
-			},
+			MatchRoomTimelineMostRecent(1, []Event{{ID: latestMessageID}}),
 		),
 	)
 }
