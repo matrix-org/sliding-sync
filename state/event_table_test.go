@@ -918,7 +918,7 @@ func TestSelectUnknownEventIDs(t *testing.T) {
 	// Someone else tells us the state of the room is {A, C}. Query which of those
 	// event IDs are unknown.
 	stateBlockIDs := []string{"$A", "$C"}
-	unknownIDs, err := table.SelectUnknownEventIDs(txn, roomID, stateBlockIDs)
+	unknownIDs, err := table.SelectUnknownEventIDs(txn, stateBlockIDs)
 	t.Logf("unknownIDs=%v", unknownIDs)
 	if err != nil {
 		t.Errorf("failed to select unknown state events: %s", err)
