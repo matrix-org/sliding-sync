@@ -2,6 +2,7 @@ package internal
 
 import (
 	"context"
+	"github.com/getsentry/sentry-go"
 
 	"github.com/rs/zerolog"
 )
@@ -43,6 +44,11 @@ func SetRequestContextUserID(ctx context.Context, userID string) {
 	}
 	da := d.(*data)
 	da.userID = userID
+	if hub := sentry.GetHubFromContext(ctx); hub != nil {
+		sentry.ConfigureScope(func(scope *sentry.Scope) {
+			scope.SetUser(sentry.User{Username: userID})
+		})
+	}
 }
 
 func SetRequestContextResponseInfo(
