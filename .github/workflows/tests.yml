@@ -162,9 +162,13 @@ jobs:
               env:
                 DOCKER_BUILDKIT: 1
               run: docker build -f Dockerfile -t ghcr.io/matrix-org/sliding-sync:ci  .
+            # DMR DEBUG
             - uses: actions/checkout@v3
               with:
-                repository: matrix-org/matrix-react-sdk
+                repository: DMRobertson/matrix-react-sdk
+                ref: dmr/debug
+            # END DMR DEBUG
+            - run: cat scripts/ci/layered.sh
             - uses: actions/setup-node@v3
               with:
                 cache: 'yarn'
