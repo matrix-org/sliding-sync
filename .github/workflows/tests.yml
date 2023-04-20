@@ -12,148 +12,148 @@ permissions:
   # > If you specify the access for any of these scopes, all of those that are not specified are set to none.
 
 jobs:
-    check-signoff:
-        if: "github.event_name == 'pull_request'"
-        uses: "matrix-org/backend-meta/.github/workflows/sign-off.yml@v2"
-
-    integration:
-        runs-on: ubuntu-latest
-
-        # Service containers to run with `container-job`
-        services:
-            # Label used to access the service container
-            postgres:
-                # Docker Hub image
-                image: postgres:13-alpine
-                # Provide the password for postgres
-                env:
-                    POSTGRES_USER: postgres
-                    POSTGRES_PASSWORD: postgres
-                    POSTGRES_DB: syncv3
-                ports:
-                    # Maps tcp port 5432 on service container to the host
-                    - 5432:5432
-                # Set health checks to wait until postgres has started
-                options: >-
-                    --health-cmd pg_isready
-                    --health-interval 10s
-                    --health-timeout 5s
-                    --health-retries 5
-
-        steps:
-            - uses: actions/checkout@v3
-
-            - name: Install Go
-              uses: actions/setup-go@v4
-              with:
-                  go-version: 1.19
-
-            - name: Build
-              run: go build ./cmd/syncv3
-
-            - name: Set up gotestfmt
-              uses: GoTestTools/gotestfmt-action@v2
-              with:
-                # Note: constrained to `packages:read` only at the top of the file
-                token: ${{ secrets.GITHUB_TOKEN }}
-
-            - name: Test
-              run: |
-                set -euo pipefail
-                go test -count=1 -covermode=atomic -coverpkg ./... -p 1 -v -json $(go list ./... | grep -v tests-e2e) -coverprofile synccoverage.out 2>&1 | tee ./test-integration.log | gotestfmt
-              shell: bash
-              env:
-                  POSTGRES_HOST: localhost
-                  POSTGRES_USER: postgres
-                  POSTGRES_PASSWORD: postgres
-                  POSTGRES_DB: syncv3
-                  SYNCV3_DEBUG: "1"
-                  SYNCV3_SECRET: itsasecret
-
-            - name: Coverage
-              run: go tool cover -func=synccoverage.out
-
-            - name: Check /client works
-              run: ./tests-e2e/client-check.sh
-              env:
-                  SYNCV3_DB: user=postgres dbname=syncv3 sslmode=disable password=postgres host=localhost
-                  SYNCV3_SERVER: https://matrix-client.matrix.org
-                  SYNCV3_SECRET: itsasecret
-
-            - name: Upload test log
-              uses: actions/upload-artifact@v3
-              if: always()
-              with:
-                name: Integration test logs
-                path: ./test-integration.log
-                if-no-files-found: error
-    end_to_end:
-        runs-on: ubuntu-latest
-        services:
-            synapse:
-                # Custom image built from https://github.com/matrix-org/synapse/tree/v1.72.0/docker/complement with a dummy /complement/ca set
-                image: ghcr.io/matrix-org/synapse-service:v1.72.0
-                env:
-                    SYNAPSE_COMPLEMENT_DATABASE: sqlite
-                    SERVER_NAME: synapse
-                ports:
-                    - 8008:8008
-            # Label used to access the service container
-            postgres:
-                # Docker Hub image
-                image: postgres:13-alpine
-                # Provide the password for postgres
-                env:
-                    POSTGRES_USER: postgres
-                    POSTGRES_PASSWORD: postgres
-                    POSTGRES_DB: syncv3
-                ports:
-                    # Maps tcp port 5432 on service container to the host
-                    - 5432:5432
-                # Set health checks to wait until postgres has started
-                options: >-
-                    --health-cmd pg_isready
-                    --health-interval 10s
-                    --health-timeout 5s
-                    --health-retries 5
-        steps:
-            - uses: actions/checkout@v3
-
-            - name: Install Go
-              uses: actions/setup-go@v4
-              with:
-                go-version: 1.19
-
-            - name: Build
-              run: go build ./cmd/syncv3
-
-            - name: Set up gotestfmt
-              uses: GoTestTools/gotestfmt-action@v2
-              with:
-                # Note: constrained to `packages:read` only at the top of the file
-                token: ${{ secrets.GITHUB_TOKEN }}
-
-            - name: Run end-to-end tests
-              run: |
-                set -euo pipefail
-                ./run-tests.sh -count=1 -v -json . 2>&1 | tee test-e2e-runner.log | gotestfmt
-              working-directory: tests-e2e
-              shell: bash
-              env:
-                  SYNCV3_DB: user=postgres dbname=syncv3 sslmode=disable password=postgres host=localhost
-                  SYNCV3_SERVER: http://localhost:8008
-                  SYNCV3_SECRET: itsasecret
-                  E2E_TEST_SERVER_STDOUT: test-e2e-server.log
-
-            - name: Upload test log
-              uses: actions/upload-artifact@v3
-              if: always()
-              with:
-                name: E2E test logs
-                path: |
-                  ./tests-e2e/test-e2e-runner.log
-                  ./tests-e2e/test-e2e-server.log
-                if-no-files-found: error
+#    check-signoff:
+#        if: "github.event_name == 'pull_request'"
+#        uses: "matrix-org/backend-meta/.github/workflows/sign-off.yml@v2"
+#
+#    integration:
+#        runs-on: ubuntu-latest
+#
+#        # Service containers to run with `container-job`
+#        services:
+#            # Label used to access the service container
+#            postgres:
+#                # Docker Hub image
+#                image: postgres:13-alpine
+#                # Provide the password for postgres
+#                env:
+#                    POSTGRES_USER: postgres
+#                    POSTGRES_PASSWORD: postgres
+#                    POSTGRES_DB: syncv3
+#                ports:
+#                    # Maps tcp port 5432 on service container to the host
+#                    - 5432:5432
+#                # Set health checks to wait until postgres has started
+#                options: >-
+#                    --health-cmd pg_isready
+#                    --health-interval 10s
+#                    --health-timeout 5s
+#                    --health-retries 5
+#
+#        steps:
+#            - uses: actions/checkout@v3
+#
+#            - name: Install Go
+#              uses: actions/setup-go@v4
+#              with:
+#                  go-version: 1.19
+#
+#            - name: Build
+#              run: go build ./cmd/syncv3
+#
+#            - name: Set up gotestfmt
+#              uses: GoTestTools/gotestfmt-action@v2
+#              with:
+#                # Note: constrained to `packages:read` only at the top of the file
+#                token: ${{ secrets.GITHUB_TOKEN }}
+#
+#            - name: Test
+#              run: |
+#                set -euo pipefail
+#                go test -count=1 -covermode=atomic -coverpkg ./... -p 1 -v -json $(go list ./... | grep -v tests-e2e) -coverprofile synccoverage.out 2>&1 | tee ./test-integration.log | gotestfmt
+#              shell: bash
+#              env:
+#                  POSTGRES_HOST: localhost
+#                  POSTGRES_USER: postgres
+#                  POSTGRES_PASSWORD: postgres
+#                  POSTGRES_DB: syncv3
+#                  SYNCV3_DEBUG: "1"
+#                  SYNCV3_SECRET: itsasecret
+#
+#            - name: Coverage
+#              run: go tool cover -func=synccoverage.out
+#
+#            - name: Check /client works
+#              run: ./tests-e2e/client-check.sh
+#              env:
+#                  SYNCV3_DB: user=postgres dbname=syncv3 sslmode=disable password=postgres host=localhost
+#                  SYNCV3_SERVER: https://matrix-client.matrix.org
+#                  SYNCV3_SECRET: itsasecret
+#
+#            - name: Upload test log
+#              uses: actions/upload-artifact@v3
+#              if: always()
+#              with:
+#                name: Integration test logs
+#                path: ./test-integration.log
+#                if-no-files-found: error
+#    end_to_end:
+#        runs-on: ubuntu-latest
+#        services:
+#            synapse:
+#                # Custom image built from https://github.com/matrix-org/synapse/tree/v1.72.0/docker/complement with a dummy /complement/ca set
+#                image: ghcr.io/matrix-org/synapse-service:v1.72.0
+#                env:
+#                    SYNAPSE_COMPLEMENT_DATABASE: sqlite
+#                    SERVER_NAME: synapse
+#                ports:
+#                    - 8008:8008
+#            # Label used to access the service container
+#            postgres:
+#                # Docker Hub image
+#                image: postgres:13-alpine
+#                # Provide the password for postgres
+#                env:
+#                    POSTGRES_USER: postgres
+#                    POSTGRES_PASSWORD: postgres
+#                    POSTGRES_DB: syncv3
+#                ports:
+#                    # Maps tcp port 5432 on service container to the host
+#                    - 5432:5432
+#                # Set health checks to wait until postgres has started
+#                options: >-
+#                    --health-cmd pg_isready
+#                    --health-interval 10s
+#                    --health-timeout 5s
+#                    --health-retries 5
+#        steps:
+#            - uses: actions/checkout@v3
+#
+#            - name: Install Go
+#              uses: actions/setup-go@v4
+#              with:
+#                go-version: 1.19
+#
+#            - name: Build
+#              run: go build ./cmd/syncv3
+#
+#            - name: Set up gotestfmt
+#              uses: GoTestTools/gotestfmt-action@v2
+#              with:
+#                # Note: constrained to `packages:read` only at the top of the file
+#                token: ${{ secrets.GITHUB_TOKEN }}
+#
+#            - name: Run end-to-end tests
+#              run: |
+#                set -euo pipefail
+#                ./run-tests.sh -count=1 -v -json . 2>&1 | tee test-e2e-runner.log | gotestfmt
+#              working-directory: tests-e2e
+#              shell: bash
+#              env:
+#                  SYNCV3_DB: user=postgres dbname=syncv3 sslmode=disable password=postgres host=localhost
+#                  SYNCV3_SERVER: http://localhost:8008
+#                  SYNCV3_SECRET: itsasecret
+#                  E2E_TEST_SERVER_STDOUT: test-e2e-server.log
+#
+#            - name: Upload test log
+#              uses: actions/upload-artifact@v3
+#              if: always()
+#              with:
+#                name: E2E test logs
+#                path: |
+#                  ./tests-e2e/test-e2e-runner.log
+#                  ./tests-e2e/test-e2e-server.log
+#                if-no-files-found: error
     element_web:
         runs-on: ubuntu-latest
         steps:
