@@ -928,20 +928,21 @@ func TestEventTableSelectUnknownEventIDs(t *testing.T) {
 
 	// Someone else tells us the state of the room is {A, C}. Query which of those
 	// event IDs are unknown.
-	const unknownEventID = "$C-SelectUnknownEventIDs"
-	stateBlockIDs := []string{eventID1, unknownEventID}
+	shouldBeUnknownIDs := []string{"$C-SelectUnknownEventIDs", "$D-SelectUnknownEventIDs"}
+	stateBlockIDs := append(shouldBeUnknownIDs, eventID1)
 	unknownIDs, err := table.SelectUnknownEventIDs(txn, stateBlockIDs)
 	t.Logf("unknownIDs=%v", unknownIDs)
 	if err != nil {
 		t.Fatalf("failed to select unknown state events: %s", err)
 	}
 
-	// Only event C should be flagged as unknown.
-	if len(unknownIDs) != 1 {
-		t.Fatalf("Expected 1 unknown id, got %v", unknownIDs)
+	// Event C and D should be flagged as unknown.
+	if len(unknownIDs) != len(shouldBeUnknownIDs) {
+		t.Fatalf("Expected %d unknown ids, got %v", len(shouldBeUnknownIDs), unknownIDs)
 	}
-	_, ok := unknownIDs[unknownEventID]
-	if !ok {
-		t.Fatalf("Expected $C-SelectUnknownEventIDs to be unknown to the DB, but it wasn't")
+	for _, unknownEventID := range shouldBeUnknownIDs {
+		if _, ok := unknownIDs[unknownEventID]; !ok {
+			t.Errorf("Expected %s to be unknown to the DB, but it wasn't", unknownEventID)
+		}
 	}
 }
