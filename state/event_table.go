@@ -149,6 +149,8 @@ func (t *EventTable) SelectHighestNID() (highest int64, err error) {
 }
 
 // Insert events into the event table. Returns a map of event ID to NID for new events only.
+// The NIDs assigned to new events will respect the order of the given events, e.g. if
+// we insert new events A and B in that order, then NID(A) < NID(B).
 func (t *EventTable) Insert(txn *sqlx.Tx, events []Event, checkFields bool) (map[string]int, error) {
 	if checkFields {
 		ensureFieldsSet(events)
@@ -211,6 +213,10 @@ func (t *EventTable) SelectByNIDs(txn *sqlx.Tx, verifyAll bool, nids []int64) (e
 	WHERE event_nid = ANY ($1) ORDER BY event_nid ASC;`, pq.Int64Array(nids))
 }
 
+// SelectByIDs fetches all events with the given event IDs from the DB as Event structs.
+// If verifyAll is true, the function will check that each event ID has a matching
+// event row in the database. The returned events are ordered by ascending NID; the
+// order of the event IDs is irrelevant.
 func (t *EventTable) SelectByIDs(txn *sqlx.Tx, verifyAll bool, ids []string) (events []Event, err error) {
 	wanted := 0
 	if verifyAll {

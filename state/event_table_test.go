@@ -920,7 +920,7 @@ func TestEventTableSelectUnknownEventIDs(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to select events: %s", err)
 	}
-	if (gotEvents[0].ID == eventID1 && gotEvents[1].ID == eventID2) || (gotEvents[0].ID == eventID2 && gotEvents[1].ID == eventID1) {
+	if gotEvents[0].ID == eventID1 && gotEvents[1].ID == eventID2 {
 		t.Logf("Got expected event IDs after insert. NIDS: %s=%d, %s=%d", gotEvents[0].ID, gotEvents[0].NID, gotEvents[1].ID, gotEvents[1].NID)
 	} else {
 		t.Fatalf("Event ID mismatch: expected $A-SelectUnknownEventIDs and $B-SelectUnknownEventIDs, got %v", gotEvents)
