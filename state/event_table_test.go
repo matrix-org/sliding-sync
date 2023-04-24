@@ -879,10 +879,10 @@ func TestEventTableSelectUnknownEventIDs(t *testing.T) {
 		t.Fatalf("failed to start txn: %s", err)
 	}
 	defer txn.Rollback()
-	const roomID = "!1:localhost"
+	const roomID = "!1TestEventTableSelectUnknownEventIDs:localhost"
 
 	// Note: there shouldn't be any other events with these IDs inserted before this
-	// transaction. $A and $B seem to be inserted and commit in TestEventTablePrevBatch.
+	// transaction. "$A" and "$B" seem to be inserted and commit in TestEventTablePrevBatch.
 	const eventID1 = "$A-SelectUnknownEventIDs"
 	const eventID2 = "$B-SelectUnknownEventIDs"
 
@@ -930,7 +930,7 @@ func TestEventTableSelectUnknownEventIDs(t *testing.T) {
 	// event IDs are unknown.
 	shouldBeUnknownIDs := []string{"$C-SelectUnknownEventIDs", "$D-SelectUnknownEventIDs"}
 	stateBlockIDs := append(shouldBeUnknownIDs, eventID1)
-	unknownIDs, err := table.SelectUnknownEventIDs(txn, stateBlockIDs)
+	unknownIDs, err := table.SelectUnknownEventIDs(txn, roomID, stateBlockIDs)
 	t.Logf("unknownIDs=%v", unknownIDs)
 	if err != nil {
 		t.Fatalf("failed to select unknown state events: %s", err)

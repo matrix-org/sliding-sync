@@ -267,18 +267,18 @@ func (t *EventTable) SelectStrippedEventsByIDs(txn *sqlx.Tx, verifyAll bool, ids
 
 // SelectUnknownEventIDs accepts a list of event IDs and returns the subset of those which are not known to the DB.
 // It MUST be called within a transaction, or else will panic.
-func (t *EventTable) SelectUnknownEventIDs(txn *sqlx.Tx, maybeUnknownEventIDs []string) (map[string]struct{}, error) {
+func (t *EventTable) SelectUnknownEventIDs(txn *sqlx.Tx, roomID string, maybeUnknownEventIDs []string) (map[string]struct{}, error) {
 	// Note: in practice, the order of rows returned matches the order of rows of
 	// array entries. But I don't think that's guaranteed. Return an (unordered) set
 	// out of paranoia.
 	queryStr := `
-	WITH maybe_unknown_events(event_id) AS (SELECT unnest($1::text[]))
+	WITH maybe_unknown_events(event_id) AS (SELECT unnest($2::text[]))
 	SELECT event_id
 	FROM maybe_unknown_events LEFT JOIN syncv3_events USING(event_id)
-	WHERE event_nid IS NULL;`
+	WHERE room_id = $1 AND event_nid IS NULL;`
 
 	var unknownEventIDs []string
-	if err := txn.Select(&unknownEventIDs, queryStr, pq.StringArray(maybeUnknownEventIDs)); err != nil {
+	if err := txn.Select(&unknownEventIDs, queryStr, roomID, pq.StringArray(maybeUnknownEventIDs)); err != nil {
 		return nil, err
 	}
 	unknownMap := make(map[string]struct{}, len(unknownEventIDs))
