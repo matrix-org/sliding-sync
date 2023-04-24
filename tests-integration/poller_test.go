@@ -221,7 +221,7 @@ func TestPollerUpdatesRoomMemberTrackerOnGappySyncStateBlock(t *testing.T) {
 	v2.queueResponse(aliceToken, sync2.SyncResponse{
 		Rooms: sync2.SyncRoomsResponse{Join: initialJoinBlock},
 	})
-	v2.queueResponse(aliceToken, sync2.SyncResponse{
+	v2.queueResponse(bobToken, sync2.SyncResponse{
 		Rooms: sync2.SyncRoomsResponse{Join: initialJoinBlock},
 	})
 
