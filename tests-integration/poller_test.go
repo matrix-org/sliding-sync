@@ -205,7 +205,7 @@ func TestPollerUpdatesRoomMemberTrackerOnGappySyncStateBlock(t *testing.T) {
 	v2.addAccount(bob, bobToken)
 	const roomID = "!unimportant"
 
-	t.Log("Alice's poller does an initial sync. It sees that Alice and Bob share a room.")
+	t.Log("Alice and Bob's pollers initial sync. Both see the same state: that Alice and Bob share a room.")
 	initialTimeline := createRoomState(t, alice, time.Now())
 	bobJoin := testutils.NewStateEvent(
 		t,
@@ -221,9 +221,12 @@ func TestPollerUpdatesRoomMemberTrackerOnGappySyncStateBlock(t *testing.T) {
 	v2.queueResponse(aliceToken, sync2.SyncResponse{
 		Rooms: sync2.SyncRoomsResponse{Join: initialJoinBlock},
 	})
+	v2.queueResponse(aliceToken, sync2.SyncResponse{
+		Rooms: sync2.SyncRoomsResponse{Join: initialJoinBlock},
+	})
 
 	t.Log("Alice makes an initial sliding sync request.")
-	aliceRes := v3.mustDoV3Request(t, aliceToken, sync3.Request{
+	syncRequest := sync3.Request{
 		Lists: map[string]sync3.RequestList{
 			"a": {
 				Ranges: [][2]int64{{0, 20}},
@@ -232,7 +235,35 @@ func TestPollerUpdatesRoomMemberTrackerOnGappySyncStateBlock(t *testing.T) {
 				},
 			},
 		},
-	})
+	}
+	aliceRes := v3.mustDoV3Request(t, aliceToken, syncRequest)
+
+	t.Log("Alice sees herself and Bob joined to the room.")
+	m.MatchResponse(
+		t,
+		aliceRes,
+		m.MatchList(
+			"a",
+			m.MatchV3Count(1),
+			m.MatchV3Ops(m.MatchV3SyncOp(0, 0, []string{roomID})),
+		),
+		m.MatchRoomSubscription(roomID, m.MatchRoomTimelineMostRecent(1, []json.RawMessage{bobJoin})),
+	)
+
+	t.Log("Bob makes an initial sliding sync request.")
+	bobRes := v3.mustDoV3Request(t, bobToken, syncRequest)
+
+	t.Log("Bob sees himself and Alice joined to the room.")
+	m.MatchResponse(
+		t,
+		bobRes,
+		m.MatchList(
+			"a",
+			m.MatchV3Count(1),
+			m.MatchV3Ops(m.MatchV3SyncOp(0, 0, []string{roomID})),
+		),
+		m.MatchRoomSubscription(roomID, m.MatchJoinCount(2)),
+	)
 
 	t.Log("Alice's poller receives a gappy incremental sync response. Bob has left in the gap. The timeline includes a message from Alice.")
 	bobLeave := testutils.NewStateEvent(
@@ -260,35 +291,13 @@ func TestPollerUpdatesRoomMemberTrackerOnGappySyncStateBlock(t *testing.T) {
 		},
 	})
 
-	t.Log("Alice makes an incremental sliding sync request.")
-	aliceRes = v3.mustDoV3RequestWithPos(t, aliceToken, aliceRes.Pos, sync3.Request{})
-
-	t.Log("She should see Bob's leave event and her message at the end of the room timeline.")
-	m.MatchResponse(
-		t,
-		aliceRes,
-		m.MatchRoomSubscription(
-			roomID,
-			m.MatchRoomTimelineMostRecent(2, []json.RawMessage{bobLeave, aliceMessage}),
-		),
-	)
-
-	t.Log("Bob makes an initial sliding sync request.")
-	bobRes := v3.mustDoV3Request(t, bobToken, sync3.Request{
-		Lists: map[string]sync3.RequestList{
-			"a": {
-				Ranges: [][2]int64{{0, 20}},
-				RoomSubscription: sync3.RoomSubscription{
-					TimelineLimit: 10,
-				},
-			},
-		},
-	})
-	t.Log("He should not see himself in the room.")
+	t.Log("Bob makes an incremental sliding sync request.")
+	bobRes = v3.mustDoV3RequestWithPos(t, bobToken, bobRes.Pos, sync3.Request{})
+	t.Log("He should see his leave event in the room timeline.")
 	m.MatchResponse(
 		t,
 		bobRes,
-		m.MatchList("a", m.MatchV3Count(0)),
+		m.MatchList("a", m.MatchV3Count(1)),
+		m.MatchRoomSubscription(roomID, m.MatchRoomTimelineMostRecent(1, []json.RawMessage{bobLeave})),
 	)
-
 }
