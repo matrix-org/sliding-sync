@@ -131,20 +131,37 @@ func (a *Accumulator) roomInfoDelta(roomID string, events []Event) RoomInfo {
 	}
 }
 
+type InitialiseResult struct {
+	// AddedEvents is true iff this call to Initialise added new state events to the DB.
+	AddedEvents bool
+	// SnapshotID is the ID of the snapshot which incorporates all added events.
+	// It has no meaning if AddedEvents is False.
+	SnapshotID int64
+	// PrependTimelineEvents is empty if the room was not initialised prior to this call.
+	// Otherwise, it is an order-preserving subset of the `state` argument to Initialise
+	// containing all events that were not persisted prior to the Initialise call. These
+	// should be prepended to the room timeline by the caller.
+	PrependTimelineEvents []json.RawMessage
+}
+
 // Initialise starts a new sync accumulator for the given room using the given state as a baseline.
-// This will only take effect if this is the first time the v3 server has seen this room, and it wasn't
-// possible to get all events up to the create event (e.g Matrix HQ). Returns true if this call actually
-// added new events, along with the snapshot NID.
 //
+// This will only take effect if this is the first time the v3 server has seen this room, and it wasn't
+// possible to get all events up to the create event (e.g Matrix HQ).
 // This function:
 // - Stores these events
 // - Sets up the current snapshot based on the state list given.
-func (a *Accumulator) Initialise(roomID string, state []json.RawMessage) (bool, int64, error) {
+//
+// If the v3 server has seen this room before, this function
+//   - queries the DB to determine which state events are known to th server,
+//   - returns (via InitialiseResult.PrependTimelineEvents) a slice of unknown state events,
+//
+// and otherwise does nothing.
+func (a *Accumulator) Initialise(roomID string, state []json.RawMessage) (InitialiseResult, error) {
+	var res InitialiseResult
 	if len(state) == 0 {
-		return false, 0, nil
+		return res, nil
 	}
-	addedEvents := false
-	var snapID int64
 	err := sqlutil.WithTransaction(a.db, func(txn *sqlx.Tx) error {
 		// Attempt to short-circuit. This has to be done inside a transaction to make sure
 		// we don't race with multiple calls to Initialise with the same room ID.
@@ -153,8 +170,30 @@ func (a *Accumulator) Initialise(roomID string, state []json.RawMessage) (bool, 
 			return fmt.Errorf("error fetching snapshot id for room %s: %s", roomID, err)
 		}
 		if snapshotID > 0 {
-			// we only initialise rooms once
-			logger.Info().Str("room_id", roomID).Int64("snapshot_id", snapshotID).Msg("Accumulator.Initialise called but current snapshot already exists, bailing early")
+			// Poller A has received a gappy sync v2 response with a state block, and
+			// we have seen this room before. If we knew for certain that there is some
+			// other active poller B in this room then we could safely skip this logic.
+
+			// Log at debug for now. If we find an unknown event, we'll return it so
+			// that the poller can log a warning.
+			logger.Debug().Str("room_id", roomID).Int64("snapshot_id", snapshotID).Msg("Accumulator.Initialise called with incremental state but current snapshot already exists.")
+			eventIDs := make([]string, len(state))
+			eventIDToRawEvent := make(map[string]json.RawMessage, len(state))
+			for i := range state {
+				eventID := gjson.ParseBytes(state[i]).Get("event_id")
+				if !eventID.Exists() || eventID.Type != gjson.String {
+					return fmt.Errorf("Event %d lacks an event ID", i)
+				}
+				eventIDToRawEvent[eventID.Str] = state[i]
+				eventIDs[i] = eventID.Str
+			}
+			unknownEventIDs, err := a.eventsTable.SelectUnknownEventIDs(txn, eventIDs)
+			if err != nil {
+				return fmt.Errorf("error determing which event IDs are unknown: %s", err)
+			}
+			for unknownEventID := range unknownEventIDs {
+				res.PrependTimelineEvents = append(res.PrependTimelineEvents, eventIDToRawEvent[unknownEventID])
+			}
 			return nil
 		}
 
@@ -184,28 +223,19 @@ func (a *Accumulator) Initialise(roomID string, state []json.RawMessage) (bool, 
 		}
 
 		// pull out the event NIDs we just inserted
-		eventIDs := make([]string, len(events))
 		membershipEventIDs := make(map[string]struct{}, len(events))
-		for i := range eventIDs {
-			eventIDs[i] = events[i].ID
-			if events[i].Type == "m.room.member" {
-				membershipEventIDs[events[i].ID] = struct{}{}
+		for _, event := range events {
+			if event.Type == "m.room.member" {
+				membershipEventIDs[event.ID] = struct{}{}
 			}
 		}
-		idToNIDs, err := a.eventsTable.SelectNIDsByIDs(txn, eventIDs)
-		if err != nil {
-			return fmt.Errorf("failed to select NIDs for inserted events: %w", err)
-		}
-		if len(idToNIDs) != len(eventIDs) {
-			return fmt.Errorf("missing events just inserted, asked for %v got %v", eventIDs, idToNIDs)
-		}
-		memberNIDs := make([]int64, 0, len(idToNIDs))
-		otherNIDs := make([]int64, 0, len(idToNIDs))
-		for evID, nid := range idToNIDs {
+		memberNIDs := make([]int64, 0, len(eventIDToNID))
+		otherNIDs := make([]int64, 0, len(eventIDToNID))
+		for evID, nid := range eventIDToNID {
 			if _, exists := membershipEventIDs[evID]; exists {
-				memberNIDs = append(memberNIDs, nid)
+				memberNIDs = append(memberNIDs, int64(nid))
 			} else {
-				otherNIDs = append(otherNIDs, nid)
+				otherNIDs = append(otherNIDs, int64(nid))
 			}
 		}
 
@@ -219,7 +249,7 @@ func (a *Accumulator) Initialise(roomID string, state []json.RawMessage) (bool, 
 		if err != nil {
 			return fmt.Errorf("failed to insert snapshot: %w", err)
 		}
-		addedEvents = true
+		res.AddedEvents = true
 		latestNID := int64(0)
 		for _, nid := range otherNIDs {
 			if nid > latestNID {
@@ -244,10 +274,10 @@ func (a *Accumulator) Initialise(roomID string, state []json.RawMessage) (bool, 
 		// will have an associated state snapshot ID on the event.
 
 		// Set the snapshot ID as the current state
-		snapID = snapshot.SnapshotID
+		res.SnapshotID = snapshot.SnapshotID
 		return a.roomsTable.Upsert(txn, info, snapshot.SnapshotID, latestNID)
 	})
-	return addedEvents, snapID, err
+	return res, err
 }
 
 // Accumulate internal state from a user's sync response. The timeline order MUST be in the order

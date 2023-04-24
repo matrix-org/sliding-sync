@@ -236,9 +236,8 @@ func (c *CSAPI) SetRoomAccountData(t *testing.T, roomID, eventType string, conte
 	return c.MustDoFunc(t, "PUT", []string{"_matrix", "client", "v3", "user", c.UserID, "rooms", roomID, "account_data", eventType}, WithJSONBody(t, content))
 }
 
-// SendEventSynced sends `e` into the room and waits for its event ID to come down /sync.
-// Returns the event ID of the sent event.
-func (c *CSAPI) SendEventSynced(t *testing.T, roomID string, e Event) string {
+// SendEventUnsynced sends `e` into the room and returns the event ID of the sent event.
+func (c *CSAPI) SendEventUnsynced(t *testing.T, roomID string, e Event) string {
 	t.Helper()
 	c.txnID++
 	paths := []string{"_matrix", "client", "v3", "rooms", roomID, "send", e.Type, strconv.Itoa(c.txnID)}
@@ -248,6 +247,15 @@ func (c *CSAPI) SendEventSynced(t *testing.T, roomID string, e Event) string {
 	res := c.MustDo(t, "PUT", paths, e.Content)
 	body := ParseJSON(t, res)
 	eventID := GetJSONFieldStr(t, body, "event_id")
+	return eventID
+}
+
+// SendEventSynced sends `e` into the room and waits for its event ID to come down /sync.
+// NB: This is specifically v2 sync, not v3 sliding sync!!
+// Returns the event ID of the sent event.
+func (c *CSAPI) SendEventSynced(t *testing.T, roomID string, e Event) string {
+	t.Helper()
+	eventID := c.SendEventUnsynced(t, roomID, e)
 	t.Logf("SendEventSynced waiting for event ID %s", eventID)
 	c.MustSyncUntil(t, SyncReq{}, SyncTimelineHas(roomID, func(r gjson.Result) bool {
 		return r.Get("event_id").Str == eventID
@@ -403,6 +411,61 @@ func (c *CSAPI) RegisterUser(t *testing.T, localpart, password string) (userID, 
 	accessToken = gjson.GetBytes(body, "access_token").Str
 	deviceID = gjson.GetBytes(body, "device_id").Str
 	return userID, accessToken, deviceID
+}
+
+// LoginUser will create a new device for the given user.
+// The new access token and device ID are overwrite those of the current CSAPI instance.
+func (c *CSAPI) Login(t *testing.T, password, deviceID string) {
+	t.Helper()
+	reqBody := map[string]interface{}{
+		"type":     "m.login.password",
+		"password": password,
+		"identifier": map[string]interface{}{
+			"type": "m.id.user",
+			"user": c.UserID,
+		},
+		"device_id": deviceID,
+	}
+	res := c.MustDoFunc(t, "POST", []string{"_matrix", "client", "v3", "login"}, WithJSONBody(t, reqBody))
+
+	body, err := io.ReadAll(res.Body)
+	if err != nil {
+		t.Fatalf("unable to read response body: %v", err)
+	}
+
+	userID := gjson.GetBytes(body, "user_id").Str
+	if c.UserID != userID {
+		t.Fatalf("Logged in as %s but response included user_id=%s", c.UserID, userID)
+	}
+	gotDeviceID := gjson.GetBytes(body, "device_id").Str
+	if gotDeviceID != deviceID {
+		t.Fatalf("Asked for device ID %s but got %s", deviceID, gotDeviceID)
+	}
+	accessToken := gjson.GetBytes(body, "access_token").Str
+	if c.AccessToken == accessToken {
+		t.Fatalf("Logged in as %s but access token did not change (still %s)", c.UserID, c.AccessToken)
+	}
+
+	c.AccessToken = accessToken
+	c.DeviceID = deviceID
+}
+
+// SetState PUTs a piece of state in a room and returns the event ID of the created state event.
+func (c *CSAPI) SetState(t *testing.T, roomID, eventType, stateKey string, content map[string]interface{}) string {
+	t.Helper()
+	res := c.MustDoFunc(
+		t,
+		"PUT",
+		[]string{"_matrix", "client", "v3", "rooms", roomID, "state", eventType, stateKey},
+		WithJSONBody(t, content),
+	)
+
+	body, err := io.ReadAll(res.Body)
+	if err != nil {
+		t.Fatalf("unable to read response body: %v", err)
+	}
+
+	return gjson.ParseBytes(body).Get("event_id").Str
 }
 
 // RegisterSharedSecret registers a new account with a shared secret via HMAC

@@ -23,11 +23,11 @@ func TestAccumulatorInitialise(t *testing.T) {
 	db, close := connectToDB(t)
 	defer close()
 	accumulator := NewAccumulator(db)
-	added, initSnapID, err := accumulator.Initialise(roomID, roomEvents)
+	res, err := accumulator.Initialise(roomID, roomEvents)
 	if err != nil {
 		t.Fatalf("falied to Initialise accumulator: %s", err)
 	}
-	if !added {
+	if !res.AddedEvents {
 		t.Fatalf("didn't add events, wanted it to")
 	}
 
@@ -45,8 +45,8 @@ func TestAccumulatorInitialise(t *testing.T) {
 	if snapID == 0 {
 		t.Fatalf("Initialise did not store a current snapshot")
 	}
-	if snapID != initSnapID {
-		t.Fatalf("Initialise returned wrong snapshot ID, got %v want %v", initSnapID, snapID)
+	if snapID != res.SnapshotID {
+		t.Fatalf("Initialise returned wrong snapshot ID, got %v want %v", res.SnapshotID, snapID)
 	}
 
 	// this snapshot should have 1 member event and 2 other events in it
@@ -80,11 +80,11 @@ func TestAccumulatorInitialise(t *testing.T) {
 	}
 
 	// Subsequent calls do nothing and are not an error
-	added, _, err = accumulator.Initialise(roomID, roomEvents)
+	res, err = accumulator.Initialise(roomID, roomEvents)
 	if err != nil {
 		t.Fatalf("falied to Initialise accumulator: %s", err)
 	}
-	if added {
+	if res.AddedEvents {
 		t.Fatalf("added events when it shouldn't have")
 	}
 }
@@ -99,7 +99,7 @@ func TestAccumulatorAccumulate(t *testing.T) {
 	db, close := connectToDB(t)
 	defer close()
 	accumulator := NewAccumulator(db)
-	_, _, err := accumulator.Initialise(roomID, roomEvents)
+	_, err := accumulator.Initialise(roomID, roomEvents)
 	if err != nil {
 		t.Fatalf("failed to Initialise accumulator: %s", err)
 	}
@@ -195,7 +195,7 @@ func TestAccumulatorDelta(t *testing.T) {
 	db, close := connectToDB(t)
 	defer close()
 	accumulator := NewAccumulator(db)
-	_, _, err := accumulator.Initialise(roomID, nil)
+	_, err := accumulator.Initialise(roomID, nil)
 	if err != nil {
 		t.Fatalf("failed to Initialise accumulator: %s", err)
 	}
@@ -244,7 +244,7 @@ func TestAccumulatorMembershipLogs(t *testing.T) {
 	db, close := connectToDB(t)
 	defer close()
 	accumulator := NewAccumulator(db)
-	_, _, err := accumulator.Initialise(roomID, nil)
+	_, err := accumulator.Initialise(roomID, nil)
 	if err != nil {
 		t.Fatalf("failed to Initialise accumulator: %s", err)
 	}
@@ -384,7 +384,7 @@ func TestAccumulatorDupeEvents(t *testing.T) {
 	defer close()
 	accumulator := NewAccumulator(db)
 	roomID := "!buggy:localhost"
-	_, _, err := accumulator.Initialise(roomID, joinRoom.State.Events)
+	_, err := accumulator.Initialise(roomID, joinRoom.State.Events)
 	if err != nil {
 		t.Fatalf("failed to Initialise accumulator: %s", err)
 	}
@@ -426,7 +426,7 @@ func TestAccumulatorMisorderedGraceful(t *testing.T) {
 	accumulator := NewAccumulator(db)
 	roomID := "!TestAccumulatorStateReset:localhost"
 	// Create a room with initial state A,C
-	_, _, err := accumulator.Initialise(roomID, []json.RawMessage{
+	_, err := accumulator.Initialise(roomID, []json.RawMessage{
 		eventA, eventC,
 	})
 	if err != nil {
