@@ -2,6 +2,7 @@ package syncv3_test
 
 import (
 	"fmt"
+	"github.com/matrix-org/sliding-sync/sync3/extensions"
 	"sync"
 	"testing"
 	"time"
@@ -947,7 +948,7 @@ func TestBumpEventTypesHandling(t *testing.T) {
 	m.MatchResponse(t, bobRes, matchRoom1ThenRoom2)
 
 	t.Log("Charlie joins room 2.")
-	charlie.JoinRoom(t, room2, nil)
+	charlieJoinEventID := charlie.JoinRoom(t, room2, nil)
 
 	t.Log("Alice syncs until she sees Charlie's membership.")
 	aliceRes = alice.SlidingSyncUntilMembership(t, aliceRes.Pos, room2, charlie, "join")
@@ -973,9 +974,35 @@ func TestBumpEventTypesHandling(t *testing.T) {
 	)
 
 	m.MatchResponse(t, bobRes, matchBobSeesRoom2Bumped)
-}
 
-// Test joining a room puts it at the top of your list. What about invites?
+	// The read receipt stuff here specifically checks for the bug in
+	// https://github.com/matrix-org/sliding-sync/issues/83
+	t.Log("Alice marks herself as having seen Charlie's join.")
+	alice.SendReceipt(t, room2, charlieJoinEventID, "m.read")
+
+	t.Log("Alice syncs until she sees her receipt. At no point should see see any room list operations.")
+	alice.SlidingSyncUntil(
+		t,
+		aliceRes.Pos,
+		sync3.Request{Extensions: extensions.Request{
+			Receipts: &extensions.ReceiptsRequest{
+				Core: extensions.Core{Enabled: &boolTrue},
+			},
+		}},
+		func(response *sync3.Response) error {
+			if err := m.MatchNoV3Ops()(response); err != nil {
+				t.Fatalf("expected no ops while waiting for receipt: %s", err)
+			}
+			matchReceipt := m.MatchReceipts(room2, []m.Receipt{{
+				EventID: charlieJoinEventID,
+				UserID:  alice.UserID,
+				Type:    "m.read",
+			}})
+			return matchReceipt(response)
+		},
+	)
+
+}
 
 // Tests the scenario described at
 // https://github.com/matrix-org/sliding-sync/pull/58#discussion_r1159850458
