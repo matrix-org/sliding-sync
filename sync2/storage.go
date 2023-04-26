@@ -126,6 +126,17 @@ func (s *Storage) Device(deviceID string) (*Device, error) {
 	return &d, err
 }
 
+func (s *Storage) DeviceByPlaintextAccessToken(plainToken string) (*Device, error) {
+	var d Device
+	encToken := s.encrypt(plainToken)
+	err := s.db.Get(&d, `SELECT device_id, user_id, since, v2_token_encrypted FROM syncv3_sync2_devices WHERE v2_token_encrypted=$1`, encToken)
+	if err != nil {
+		return nil, fmt.Errorf("failed to lookup device with encrypted access token '%s': %s", encToken, err)
+	}
+	d.AccessToken = plainToken
+	return &d, err
+}
+
 func (s *Storage) AllDevices() (devices []Device, err error) {
 	err = s.db.Select(&devices, `SELECT device_id, user_id, since, v2_token_encrypted FROM syncv3_sync2_devices`)
 	if err != nil {
@@ -145,40 +156,33 @@ func (s *Storage) RemoveDevice(deviceID string) error {
 	return err
 }
 
-func (s *Storage) InsertDevice(deviceID, accessToken string) (*Device, error) {
+func (s *Storage) InsertDevice(userID, deviceID, accessToken string) (*Device, error) {
 	var device Device
 	device.AccessToken = accessToken
 	device.AccessTokenEncrypted = s.encrypt(accessToken)
 	err := sqlutil.WithTransaction(s.db, func(txn *sqlx.Tx) error {
 		// make sure there is a device entry for this device ID. If one already exists, don't clobber
 		// the since value else we'll forget our position!
-		result, err := txn.Exec(`
+		row := txn.QueryRow(`
 			INSERT INTO syncv3_sync2_devices(device_id, since, user_id, v2_token_encrypted) VALUES($1,$2,$3,$4)
-			ON CONFLICT (device_id) DO NOTHING`,
-			deviceID, "", "", device.AccessTokenEncrypted,
+			ON CONFLICT (device_id) DO
+			-- overwrite with the latest access token, but keep the old since value
+			UPDATE SET v2_token_encrypted = excluded.v2_token_encrypted
+			RETURNING since`,
+			deviceID, "", userID, device.AccessTokenEncrypted,
 		)
+		err := row.Scan(&device.Since)
 		if err != nil {
 			return err
 		}
+		device.UserID = userID
 		device.DeviceID = deviceID
-
-		// if we inserted a row that means it's a brand new device ergo there is no since token
-		if ra, err := result.RowsAffected(); err == nil && ra == 1 {
-			return nil
-		}
-
-		// Return the since value as we may start a new poller with this session.
-		return txn.QueryRow("SELECT since, user_id FROM syncv3_sync2_devices WHERE device_id = $1", deviceID).Scan(&device.Since, &device.UserID)
+		return nil
 	})
 	return &device, err
 }
 
 func (s *Storage) UpdateDeviceSince(deviceID, since string) error {
 	_, err := s.db.Exec(`UPDATE syncv3_sync2_devices SET since = $1 WHERE device_id = $2`, since, deviceID)
-	return err
-}
-
-func (s *Storage) UpdateUserIDForDevice(deviceID, userID string) error {
-	_, err := s.db.Exec(`UPDATE syncv3_sync2_devices SET user_id = $1 WHERE device_id = $2`, userID, deviceID)
 	return err
 }

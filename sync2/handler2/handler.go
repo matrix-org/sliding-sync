@@ -493,13 +493,13 @@ func (h *Handler) OnLeftRoom(userID, roomID string) {
 }
 
 func (h *Handler) EnsurePolling(p *pubsub.V3EnsurePolling) {
-	logger.Info().Str("user", p.UserID).Msg("EnsurePolling: new request")
+	logger.Info().Str("device", p.DeviceID).Msg("EnsurePolling: new request")
 	defer func() {
-		logger.Info().Str("user", p.UserID).Msg("EnsurePolling: request finished")
+		logger.Info().Str("device", p.DeviceID).Msg("EnsurePolling: request finished")
 	}()
 	dev, err := h.v2Store.Device(p.DeviceID)
 	if err != nil {
-		logger.Err(err).Str("user", p.UserID).Str("device", p.DeviceID).Msg("V3Sub: EnsurePolling unknown device")
+		logger.Err(err).Str("device", p.DeviceID).Msg("V3Sub: EnsurePolling unknown device")
 		sentry.CaptureException(err)
 		return
 	}

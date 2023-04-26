@@ -1,24 +1,16 @@
 package internal
 
 import (
-	"crypto/sha256"
-	"encoding/hex"
 	"fmt"
 	"net/http"
 	"strings"
 )
 
-func HashedTokenFromRequest(req *http.Request) (hashAccessToken string, accessToken string, err error) {
-	// return a hash of the access token
+func ExtractAccessToken(req *http.Request) (accessToken string, err error) {
 	ah := req.Header.Get("Authorization")
 	if ah == "" {
-		return "", "", fmt.Errorf("missing Authorization header")
+		return "", fmt.Errorf("missing Authorization header")
 	}
 	accessToken = strings.TrimPrefix(ah, "Bearer ")
-	// important that this is a cryptographically secure hash function to prevent
-	// preimage attacks where Eve can use a fake token to hash to an existing device ID
-	// on the server.
-	hash := sha256.New()
-	hash.Write([]byte(accessToken))
-	return hex.EncodeToString(hash.Sum(nil)), accessToken, nil
+	return accessToken, nil
 }

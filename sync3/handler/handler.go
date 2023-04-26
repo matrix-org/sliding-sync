@@ -280,20 +280,29 @@ func (h *SyncLiveHandler) setupConnection(req *http.Request, syncReq *sync3.Requ
 	var conn *sync3.Conn
 
 	// Identify the device
-	deviceID, accessToken, err := internal.HashedTokenFromRequest(req)
+	accessToken, err := internal.ExtractAccessToken(req)
 	if err != nil || accessToken == "" {
-		log.Warn().Err(err).Msg("failed to get device ID from request")
+		log.Warn().Err(err).Msg("failed to get access token from request")
 		return nil, &internal.HandlerError{
-			StatusCode: 400,
+			StatusCode: http.StatusUnauthorized,
 			Err:        err,
 		}
+	}
+
+	v2device, err := h.V2Store.DeviceByPlaintextAccessToken(accessToken)
+	if err != nil {
+		newv2device, herr := h.identifyAccessToken(accessToken)
+		if herr != nil {
+			return nil, herr
+		}
+		v2device = newv2device
 	}
 
 	// client thinks they have a connection
 	if containsPos {
 		// Lookup the connection
 		conn = h.ConnMap.Conn(sync3.ConnID{
-			DeviceID: deviceID,
+			DeviceID: v2device.DeviceID,
 		})
 		if conn != nil {
 			log.Trace().Str("conn", conn.ConnID.String()).Msg("reusing conn")
@@ -303,36 +312,6 @@ func (h *SyncLiveHandler) setupConnection(req *http.Request, syncReq *sync3.Requ
 		return nil, internal.ExpiredSessionError()
 	}
 
-	// We're going to make a new connection
-	// Ensure we have the v2 side of things hooked up
-	v2device, err := h.V2Store.InsertDevice(deviceID, accessToken)
-	if err != nil {
-		log.Warn().Err(err).Str("device_id", deviceID).Msg("failed to insert v2 device")
-		return nil, &internal.HandlerError{
-			StatusCode: 500,
-			Err:        err,
-		}
-	}
-	if v2device.UserID == "" {
-		v2device.UserID, _, err = h.V2.WhoAmI(accessToken)
-		if err != nil {
-			if err == sync2.HTTP401 {
-				return nil, &internal.HandlerError{
-					StatusCode: 401,
-					Err:        fmt.Errorf("/whoami returned HTTP 401"),
-				}
-			}
-			log.Warn().Err(err).Str("device_id", deviceID).Msg("failed to get user ID from device ID")
-			return nil, &internal.HandlerError{
-				StatusCode: http.StatusBadGateway,
-				Err:        err,
-			}
-		}
-		if err = h.V2Store.UpdateUserIDForDevice(deviceID, v2device.UserID); err != nil {
-			log.Warn().Err(err).Str("device_id", deviceID).Msg("failed to persist user ID -> device ID mapping")
-			// non-fatal, we can still work without doing this
-		}
-	}
 
 	log.Trace().Str("user", v2device.UserID).Msg("checking poller exists and is running")
 	h.V3Pub.EnsurePolling(v2device.UserID, v2device.DeviceID)
@@ -367,7 +346,7 @@ func (h *SyncLiveHandler) setupConnection(req *http.Request, syncReq *sync3.Requ
 	// to check for an existing connection though, as it's possible for the client to call /sync
 	// twice for a new connection.
 	conn, created := h.ConnMap.CreateConn(sync3.ConnID{
-		DeviceID: deviceID,
+		DeviceID: v2device.DeviceID,
 	}, func() sync3.ConnHandler {
 		return NewConnState(v2device.UserID, v2device.DeviceID, userCache, h.GlobalCache, h.Extensions, h.Dispatcher, h.histVec, h.maxPendingEventUpdates)
 	})
@@ -377,6 +356,38 @@ func (h *SyncLiveHandler) setupConnection(req *http.Request, syncReq *sync3.Requ
 		log.Info().Str("user", v2device.UserID).Str("conn_id", conn.ConnID.String()).Msg("using existing connection")
 	}
 	return conn, nil
+}
+
+func (h *SyncLiveHandler) identifyAccessToken(accessToken string) (*sync2.Device, *internal.HandlerError) {
+	// We don't recognise the given accessToken. Ask the homeserver who owns it.
+	userID, hsDeviceID, err := h.V2.WhoAmI(accessToken)
+	if err != nil {
+		if err == sync2.HTTP401 {
+			return nil, &internal.HandlerError{
+				StatusCode: 401,
+				Err:        fmt.Errorf("/whoami returned HTTP 401"),
+			}
+		}
+		log.Warn().Err(err).Str("device_id", hsDeviceID).Msg("failed to get user ID from device ID")
+		return nil, &internal.HandlerError{
+			StatusCode: http.StatusBadGateway,
+			Err:        err,
+		}
+	}
+
+	// Either: create a brand-new row for this device, or
+	// update an existing row for this device with the latest access token.
+	// TODO: If the latter, we need to tell any existing poller about the new token.
+	proxyDeviceID := internal.ProxyDeviceID(userID, hsDeviceID)
+	v2device, err := h.V2Store.InsertDevice(userID, proxyDeviceID, accessToken)
+	if err != nil {
+		log.Warn().Err(err).Str("device_id", hsDeviceID).Msg("failed to insert v2 device")
+		return nil, &internal.HandlerError{
+			StatusCode: 500,
+			Err:        err,
+		}
+	}
+	return v2device, nil
 }
 
 func (h *SyncLiveHandler) CacheForUser(userID string) *caches.UserCache {
