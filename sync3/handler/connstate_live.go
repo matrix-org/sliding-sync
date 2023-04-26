@@ -287,20 +287,19 @@ func (s *connStateLive) processUpdatesForSubscriptions(ctx context.Context, buil
 
 // this function does any updates which apply to the connection, regardless of which lists/subs exist.
 func (s *connStateLive) processGlobalUpdates(ctx context.Context, builder *RoomsBuilder, up caches.Update) (delta sync3.RoomDelta) {
-	bumpThisRoom := true
+	// If this connection hasn't provided BumpEventTypes (nil) or has provided an
+	// empty BumpEventTypes list, bump the room list for all room updates.
+	specifiedBumpEventTypes := s.muxedReq.BumpEventTypes != nil && len(s.muxedReq.BumpEventTypes) > 0
+	bumpThisRoom := !specifiedBumpEventTypes
 
 	roomEventUpdate, isRoomEventUpdate := up.(*caches.RoomEventUpdate)
-	if isRoomEventUpdate {
-		// If this connection hasn't provided BumpEventTypes (nil) or has provided an
-		// empty BumpEventTypes list, bump the room list for all events.
-		// Otherwise, only bump for room updates that the connection cares about.
-		if s.muxedReq.BumpEventTypes != nil && len(s.muxedReq.BumpEventTypes) > 0 {
-			bumpThisRoom = false
-			for _, eventType := range s.muxedReq.BumpEventTypes {
-				if eventType == roomEventUpdate.EventData.EventType {
-					bumpThisRoom = true
-					break
-				}
+	// If BumpEventTypes are provided, only bump the room if the we see an event
+	// matching one of the bump types.
+	if isRoomEventUpdate && specifiedBumpEventTypes {
+		for _, eventType := range s.muxedReq.BumpEventTypes {
+			if eventType == roomEventUpdate.EventData.EventType {
+				bumpThisRoom = true
+				break
 			}
 		}
 	}
