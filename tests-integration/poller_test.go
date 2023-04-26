@@ -24,7 +24,7 @@ func TestSecondPollerFiltersToDevice(t *testing.T) {
 	defer v2.close()
 	defer v3.close()
 	deviceAToken := "DEVICE_A_TOKEN"
-	v2.addAccount(alice, deviceAToken)
+	v2.addAccountWithDeviceID(alice, "A", deviceAToken)
 	v2.queueResponse(deviceAToken, sync2.SyncResponse{
 		Rooms: sync2.SyncRoomsResponse{
 			Join: v2JoinTimeline(roomEvents{
@@ -38,7 +38,7 @@ func TestSecondPollerFiltersToDevice(t *testing.T) {
 
 	// now sync with device B, and check we send the filter up
 	deviceBToken := "DEVICE_B_TOKEN"
-	v2.addAccount(alice, deviceBToken)
+	v2.addAccountWithDeviceID(alice, "B", deviceBToken)
 	seenInitialRequest := false
 	v2.CheckRequest = func(userID, token string, req *http.Request) {
 		if userID != alice || token != deviceBToken {

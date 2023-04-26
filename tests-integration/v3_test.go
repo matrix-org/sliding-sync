@@ -57,10 +57,13 @@ type testV2Server struct {
 	timeToWaitForV2Response time.Duration
 }
 
+// Most tests only use a single device per user. Give them this helper so they don't
+// have to care about providing a device name.
 func (s *testV2Server) addAccount(userID, token string) {
 	s.addAccountWithDeviceID(userID, userID+"_device", token)
 }
 
+// Tests that use multiple devices for the same user need to be more explicit.
 func (s *testV2Server) addAccountWithDeviceID(userID, deviceID, token string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()

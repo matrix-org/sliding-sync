@@ -639,17 +639,10 @@ func TestExpiredAccessToken(t *testing.T) {
 	})
 	// now expire the token
 	v2.invalidateToken(aliceToken)
-	// now do another request, this should 400 as it expires the session
+	// now do another request, this should 401 as the auth token has expired
 	req := sync3.Request{}
 	req.SetTimeoutMSecs(1)
 	_, body, statusCode := v3.doV3Request(t, context.Background(), aliceToken, res.Pos, req)
-	if statusCode != 400 {
-		t.Fatalf("got %d want 400 : %v", statusCode, string(body))
-	}
-	// do a fresh request, this should 401
-	req = sync3.Request{}
-	req.SetTimeoutMSecs(1)
-	_, body, statusCode = v3.doV3Request(t, context.Background(), aliceToken, "", req)
 	if statusCode != 401 {
 		t.Fatalf("got %d want 401 : %v", statusCode, string(body))
 	}
