@@ -51,8 +51,8 @@ func NewStore(postgresURI, secret string) *Storage {
 	}
 	db.MustExec(`
 	CREATE TABLE IF NOT EXISTS syncv3_sync2_devices (
-		device_id TEXT PRIMARY KEY,
-		user_id TEXT NOT NULL, -- populated from /whoami
+		device_id TEXT PRIMARY KEY, -- user_id + Unit Separator + actual device_id from homeserver
+		user_id TEXT NOT NULL,      -- populated from /whoami
 		v2_token_encrypted TEXT NOT NULL,
 		since TEXT NOT NULL
 	);`)

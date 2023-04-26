@@ -2,7 +2,10 @@ package handler2
 
 import (
 	"encoding/json"
+	"fmt"
 	"github.com/getsentry/sentry-go"
+	"github.com/jmoiron/sqlx"
+	"github.com/matrix-org/sliding-sync/sqlutil"
 	"hash/fnv"
 	"os"
 	"sync"
@@ -123,6 +126,23 @@ func (h *Handler) StartV2Pollers() {
 		go func() {
 			defer wg.Done()
 			for d := range ch {
+				// Migrate this device to the new format, if it's not been migrated already.
+				// If the migration fails, don't start a poller for this device and move on
+				// to the next one.
+				if migrateErr := h.ensureDeviceIDMigrated(d); migrateErr != nil {
+					logger.Warn().
+						Str("user_id", d.UserID).
+						Str("old_device_id", d.DeviceID).
+						Msg("Failed to determine new device ID, ignoring this device")
+					sentry.WithScope(func(scope *sentry.Scope) {
+						scope.SetContext("sliding-sync", map[string]interface{}{
+							"user_id":       d.UserID,
+							"old_device_id": d.DeviceID,
+						})
+						sentry.CaptureException(migrateErr)
+					})
+					continue
+				}
 				h.pMap.EnsurePolling(
 					d.AccessToken, d.UserID, d.DeviceID, d.Since, true,
 					logger.With().Str("user_id", d.UserID).Logger(),
@@ -137,6 +157,96 @@ func (h *Handler) StartV2Pollers() {
 	wg.Wait()
 	logger.Info().Msg("StartV2Pollers finished")
 	h.updateMetrics()
+}
+
+// ensureDeviceIDMigrated takes a Device row and ensures that its DeviceID has been
+// migrated to the new format across the DB. If it has, this function does nothing.
+// Otherwise this function
+//   - contacts the homeserver to fetch the "real" device ID,
+//   - builds the new device ID and updates the DB accordingly, and
+//   - updates the given sync2.Device with the new device ID.
+//
+// The DB updates for this device are updated atomically in a transaction.
+func (h *Handler) ensureDeviceIDMigrated(d sync2.Device) error {
+	if internal.IsNewDeviceID(d.DeviceID) {
+		return nil
+	}
+
+	// Migration is required. Fetch the "real" device ID.
+	gotUserID, gotHSDeviceID, err := h.client.WhoAmI(d.AccessToken)
+	if err != nil {
+		return err
+	}
+	// Sanity check the user ID from the HS matches our records
+	if gotUserID != d.UserID {
+		return fmt.Errorf(
+			"/whoami response was for the wrong user. Queried for %s, but got response for %s",
+			d.UserID, gotUserID,
+		)
+	}
+
+	newDeviceID := internal.ProxyDeviceID(gotUserID, gotHSDeviceID)
+	// Note: I'm assuming that h.Store.DB and h.v2Store.db point to the same DB
+	// so that I can do migrate across both stores in one transaction.
+	// TODO: I've put the DB writing logic here. It's icky that sync2 is mucking around
+	// with sync3's data. Maybe move this out to a new file, e.g. internal/migrations.go?
+	err = sqlutil.WithTransaction(h.Store.DB, func(txn *sqlx.Tx) (dbErr error) {
+		dbErr = migrateDeviceID(txn, "syncv3_sync2_devices", "device_id", d.DeviceID, newDeviceID, true)
+		if dbErr != nil {
+			return
+		}
+		dbErr = migrateDeviceID(txn, "syncv3_device_data", "device_id", d.DeviceID, newDeviceID, true)
+		if dbErr != nil {
+			return
+		}
+		dbErr = migrateDeviceID(txn, "syncv3_to_device_messages", "device_id", d.DeviceID, newDeviceID, false)
+		if dbErr != nil {
+			return
+		}
+		dbErr = migrateDeviceID(txn, "syncv3_to_device_ack_pos", "device_id", d.DeviceID, newDeviceID, true)
+		if dbErr != nil {
+			return
+		}
+		// "user_id" here is not a bug; the column is poorly named.
+		dbErr = migrateDeviceID(txn, "syncv3_txns", "user_id", d.DeviceID, newDeviceID, false)
+		if dbErr != nil {
+			return
+		}
+		return
+	})
+
+	if err != nil {
+		return err
+	}
+
+	d.DeviceID = newDeviceID
+	return nil
+}
+
+// MigrateDeviceID updates the device_id field for a single row in a single table.
+// It should be used only to migrate from the old device_id format to the new.
+//
+// If singleRow is true, we check that we updated exactly one row. Otherwise we check
+// that we updated at least one row.
+func migrateDeviceID(txn *sqlx.Tx, table, column, oldDeviceID, newDeviceID string, singleRow bool) error {
+	res, err := txn.Exec(`UPDATE $1 SET $2 = $4 WHERE $2 = $3`, table, column, oldDeviceID, newDeviceID)
+	if err != nil {
+		return err
+	}
+	rowsAffected, err := res.RowsAffected()
+	if singleRow && rowsAffected != 1 {
+		return fmt.Errorf(
+			"migrateDeviceID(%s): expected %s -> %s to update 1 row, but actually updated %d rows",
+			table, oldDeviceID, newDeviceID, rowsAffected,
+		)
+	}
+	if !singleRow && rowsAffected == 0 {
+		return fmt.Errorf(
+			"migrateDeviceID(%s): expected %s -> %s to update at least 1 row, but actually updated 0 rows",
+			table, oldDeviceID, newDeviceID,
+		)
+	}
+	return nil
 }
 
 func (h *Handler) updateMetrics() {
