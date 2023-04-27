@@ -126,12 +126,16 @@ func (s *Storage) Device(deviceID string) (*Device, error) {
 	return &d, err
 }
 
+// DeviceByPlaintextAccessToken looks up an existing device by an access token.
+// If we fail to do so, this returns a nil *Device, along with either
+//   - an sql.ErrNoRows error if no such device exists, or
+//   - an unspecified error otherwise.
 func (s *Storage) DeviceByPlaintextAccessToken(plainToken string) (*Device, error) {
 	var d Device
 	encToken := s.encrypt(plainToken)
 	err := s.db.Get(&d, `SELECT device_id, user_id, since, v2_token_encrypted FROM syncv3_sync2_devices WHERE v2_token_encrypted=$1`, encToken)
 	if err != nil {
-		return nil, fmt.Errorf("failed to lookup device with encrypted access token '%s': %s", encToken, err)
+		return nil, err
 	}
 	d.AccessToken = plainToken
 	return &d, err
