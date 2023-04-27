@@ -320,6 +320,58 @@ func TestInviteAcceptance(t *testing.T) {
 	m.MatchResponse(t, res, m.MatchNoV3Ops(), m.MatchRoomSubscriptionsStrict(nil), m.MatchList("a", m.MatchV3Count(0)))
 }
 
+// Regression test for https://github.com/matrix-org/sliding-sync/issues/66
+// whereby the invite fails to appear to clients when you invite->reject->invite
+func TestInviteRejectionTwice(t *testing.T) {
+	alice := registerNewUser(t)
+	bob := registerNewUser(t)
+	roomName := "It's-a-me-invitio"
+	inviteRoomID := alice.CreateRoom(t, map[string]interface{}{"preset": "private_chat", "name": roomName})
+	t.Logf("TestInviteRejectionTwice room %s", inviteRoomID)
+
+	// sync as bob, we see no invites yet.
+	res := bob.SlidingSync(t, sync3.Request{
+		Lists: map[string]sync3.RequestList{
+			"a": {
+				Ranges: sync3.SliceRanges{{0, 20}},
+				Filters: &sync3.RequestFilters{
+					IsInvite: &boolTrue,
+				},
+			},
+		},
+	})
+	m.MatchResponse(t, res, m.MatchList("a", m.MatchV3Count(0)), m.MatchRoomSubscriptionsStrict(nil))
+
+	// now invite bob
+	alice.InviteRoom(t, inviteRoomID, bob.UserID)
+	// sync as bob until we see the room (we aren't interested in this invite)
+	res = bob.SlidingSyncUntilMembership(t, res.Pos, inviteRoomID, bob, "invite")
+	t.Logf("bob is invited")
+	// reject the invite and sync until we see it disappear (we aren't interested in this rejection either!)
+	bob.LeaveRoom(t, inviteRoomID)
+	res = bob.SlidingSyncUntilMembership(t, res.Pos, inviteRoomID, bob, "leave")
+
+	// now invite bob again, we should see this (the regression was that we didn't until we initial synced!)
+	alice.InviteRoom(t, inviteRoomID, bob.UserID)
+	bob.SlidingSyncUntil(t, res.Pos, sync3.Request{}, func(r *sync3.Response) error {
+		return m.MatchRoomSubscriptionsStrict(map[string][]m.RoomMatcher{
+			inviteRoomID: {
+				m.LogRoom(t),
+				m.MatchInviteCount(1),
+				MatchRoomInviteState([]Event{
+					{
+						Type:     "m.room.name",
+						StateKey: ptr(""),
+						Content: map[string]interface{}{
+							"name": roomName,
+						},
+					},
+				}, true),
+			},
+		})(r)
+	})
+}
+
 // test invite/join counts update and are accurate
 func TestMemberCounts(t *testing.T) {
 	alice := registerNewUser(t)
