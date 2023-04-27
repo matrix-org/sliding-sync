@@ -2,6 +2,7 @@ package syncv3
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"testing"
 	"time"
@@ -186,7 +187,16 @@ func TestPollerHandlesUnknownStateEventsOnIncrementalSync(t *testing.T) {
 		res,
 		m.MatchRoomSubscription(
 			roomID,
-			m.MatchRoomTimeline([]json.RawMessage{nameEvent, powerLevelsEvent, messageEvent}),
+			func(r sync3.Room) error {
+				// syncv2 doesn't assign any meaning to the order of events in a state
+				// block, so check for both possibilities
+				nameFirst := m.MatchRoomTimeline([]json.RawMessage{nameEvent, powerLevelsEvent, messageEvent})
+				powerLevelsFirst := m.MatchRoomTimeline([]json.RawMessage{powerLevelsEvent, nameEvent, messageEvent})
+				if nameFirst(r) != nil && powerLevelsFirst(r) != nil {
+					return fmt.Errorf("did not see state before message")
+				}
+				return nil
+			},
 			m.MatchRoomName("banana"),
 		),
 	)
