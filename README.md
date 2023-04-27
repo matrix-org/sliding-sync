@@ -21,6 +21,9 @@ Proxy version to MSC API specification:
     -   Support for `errcode` when sessions expire.
 -   Version 0.99.x [2023/01/20](https://github.com/matrix-org/matrix-spec-proposals/blob/b4b4e7ff306920d2c862c6ff4d245110f6fa5bc7/proposals/3575-sync.md)
     -   Preparing for major v1.x release: lists-as-keys support.
+    -   Experimental support for `bump_event_types` when ordering rooms by recency.
+    -   Support for opting in to extensions on a per-list and per-room basis.
+    -   Sentry support.
 
 ## Usage
 
