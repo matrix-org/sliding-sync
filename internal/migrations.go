@@ -6,6 +6,20 @@ import (
 	"github.com/matrix-org/sliding-sync/sqlutil"
 )
 
+func IsNewDeviceID(deviceID string) bool {
+	for _, char := range deviceID {
+		if char == '\x1f' {
+			return true
+		}
+	}
+	return false
+}
+
+func ProxyDeviceID(userID, hsDeviceID string) string {
+	// ASCII 1F is "Unit Separator"
+	return fmt.Sprintf("%s\x1f%s", userID, hsDeviceID)
+}
+
 // MigrateDeviceIDs atomically updates a single device ID across all tables holding
 // device IDs. If any error occurs, the transaction is aborted and no updates are
 // committed.
