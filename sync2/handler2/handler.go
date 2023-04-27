@@ -4,8 +4,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"github.com/getsentry/sentry-go"
-	"github.com/jmoiron/sqlx"
-	"github.com/matrix-org/sliding-sync/sqlutil"
 	"hash/fnv"
 	"os"
 	"sync"
@@ -186,66 +184,14 @@ func (h *Handler) ensureDeviceIDMigrated(d sync2.Device) error {
 	}
 
 	newDeviceID := internal.ProxyDeviceID(gotUserID, gotHSDeviceID)
-	// Note: I'm assuming that h.Store.DB and h.v2Store.db point to the same DB
-	// so that I can do migrate across both stores in one transaction.
-	// TODO: I've put the DB writing logic here. It's icky that sync2 is mucking around
-	// with sync3's data. Maybe move this out to a new file, e.g. internal/migrations.go?
-	err = sqlutil.WithTransaction(h.Store.DB, func(txn *sqlx.Tx) (dbErr error) {
-		dbErr = migrateDeviceID(txn, "syncv3_sync2_devices", "device_id", d.DeviceID, newDeviceID, true)
-		if dbErr != nil {
-			return
-		}
-		dbErr = migrateDeviceID(txn, "syncv3_device_data", "device_id", d.DeviceID, newDeviceID, true)
-		if dbErr != nil {
-			return
-		}
-		dbErr = migrateDeviceID(txn, "syncv3_to_device_messages", "device_id", d.DeviceID, newDeviceID, false)
-		if dbErr != nil {
-			return
-		}
-		dbErr = migrateDeviceID(txn, "syncv3_to_device_ack_pos", "device_id", d.DeviceID, newDeviceID, true)
-		if dbErr != nil {
-			return
-		}
-		// "user_id" here is not a bug; the column is poorly named.
-		dbErr = migrateDeviceID(txn, "syncv3_txns", "user_id", d.DeviceID, newDeviceID, false)
-		if dbErr != nil {
-			return
-		}
-		return
-	})
-
+	// Note: I'm assuming that h.Store.DB and h.v2Store.db point to the same database,
+	// so that I can migrate across both stores in one transaction.
+	err = internal.MigrateDeviceIDs(h.Store.DB, d.DeviceID, newDeviceID)
 	if err != nil {
 		return err
 	}
 
 	d.DeviceID = newDeviceID
-	return nil
-}
-
-// MigrateDeviceID updates the device_id field for a single row in a single table.
-// It should be used only to migrate from the old device_id format to the new.
-//
-// If singleRow is true, we check that we updated exactly one row. Otherwise we check
-// that we updated at least one row.
-func migrateDeviceID(txn *sqlx.Tx, table, column, oldDeviceID, newDeviceID string, singleRow bool) error {
-	res, err := txn.Exec(`UPDATE $1 SET $2 = $4 WHERE $2 = $3`, table, column, oldDeviceID, newDeviceID)
-	if err != nil {
-		return err
-	}
-	rowsAffected, err := res.RowsAffected()
-	if singleRow && rowsAffected != 1 {
-		return fmt.Errorf(
-			"migrateDeviceID(%s): expected %s -> %s to update 1 row, but actually updated %d rows",
-			table, oldDeviceID, newDeviceID, rowsAffected,
-		)
-	}
-	if !singleRow && rowsAffected == 0 {
-		return fmt.Errorf(
-			"migrateDeviceID(%s): expected %s -> %s to update at least 1 row, but actually updated 0 rows",
-			table, oldDeviceID, newDeviceID,
-		)
-	}
 	return nil
 }
 
