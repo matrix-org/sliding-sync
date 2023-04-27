@@ -3,6 +3,7 @@ package handler
 import "C"
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"fmt"
 	"github.com/getsentry/sentry-go"
@@ -276,7 +277,7 @@ func (h *SyncLiveHandler) serve(w http.ResponseWriter, req *http.Request) error 
 // It also sets a v2 sync poll loop going if one didn't exist already for this user.
 // When this function returns, the connection is alive and active.
 func (h *SyncLiveHandler) setupConnection(req *http.Request, syncReq *sync3.Request, containsPos bool) (*sync3.Conn, error) {
-	log := hlog.FromRequest(req)
+	log := hlog.FromRequest(req).With().Str("txn_id", syncReq.TxnID).Logger()
 	var conn *sync3.Conn
 
 	// Identify the device
@@ -291,11 +292,20 @@ func (h *SyncLiveHandler) setupConnection(req *http.Request, syncReq *sync3.Requ
 
 	v2device, err := h.V2Store.DeviceByPlaintextAccessToken(accessToken)
 	if err != nil {
-		newv2device, herr := h.identifyAccessToken(accessToken)
-		if herr != nil {
-			return nil, herr
+		if err == sql.ErrNoRows {
+			log.Info().Msg("Received connection from unknown access token, contacting homeserver")
+			newv2device, herr := h.identifyAccessToken(accessToken)
+			if herr != nil {
+				return nil, herr
+			}
+			v2device = newv2device
+		} else {
+			log.Err(err).Msg("Failed to lookup access token")
+			return nil, &internal.HandlerError{
+				StatusCode: http.StatusInternalServerError,
+				Err:        err,
+			}
 		}
-		v2device = newv2device
 	}
 
 	// client thinks they have a connection
