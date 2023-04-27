@@ -17,6 +17,16 @@ type ListMatcher func(list sync3.ResponseList) error
 type OpMatcher func(op sync3.ResponseOp) error
 type RoomMatcher func(r sync3.Room) error
 
+// LogRoom builds a matcher that always succeeds. As a side-effect, it pretty-prints
+// the given room to the test log. This is useful when debugging a test.
+func LogRoom(t *testing.T) RoomMatcher {
+	return func(room sync3.Room) error {
+		dump, _ := json.MarshalIndent(room, "", "    ")
+		t.Logf("Response was: %s", dump)
+		return nil
+	}
+}
+
 func MatchRoomName(name string) RoomMatcher {
 	return func(r sync3.Room) error {
 		if name == "" {
