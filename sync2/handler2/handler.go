@@ -25,7 +25,7 @@ var logger = zerolog.New(os.Stdout).With().Timestamp().Logger().Output(zerolog.C
 // processing v2 data and publishing updates, and receiving and processing EnsurePolling events.
 type Handler struct {
 	pMap      *sync2.PollerMap
-	v2Store   *sync2.Storage
+	v2Store   *sync2.DevicesTable
 	Store     *state.Storage
 	v2Pub     pubsub.Notifier
 	v3Sub     *pubsub.V3Sub
@@ -42,7 +42,7 @@ type Handler struct {
 }
 
 func NewHandler(
-	connStr string, pMap *sync2.PollerMap, v2Store *sync2.Storage, store *state.Storage, client sync2.Client,
+	connStr string, pMap *sync2.PollerMap, v2Store *sync2.DevicesTable, store *state.Storage, client sync2.Client,
 	pub pubsub.Notifier, sub pubsub.Listener, enablePrometheus bool,
 ) (*Handler, error) {
 	h := &Handler{

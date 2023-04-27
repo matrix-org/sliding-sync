@@ -39,7 +39,7 @@ var logger = zerolog.New(os.Stdout).With().Timestamp().Logger().Output(zerolog.C
 type SyncLiveHandler struct {
 	V2         sync2.Client
 	Storage    *state.Storage
-	V2Store    *sync2.Storage
+	V2Store    *sync2.DevicesTable
 	V2Sub      *pubsub.V2Sub
 	V3Pub      *EnsurePoller
 	ConnMap    *sync3.ConnMap
@@ -59,7 +59,7 @@ type SyncLiveHandler struct {
 }
 
 func NewSync3Handler(
-	store *state.Storage, storev2 *sync2.Storage, v2Client sync2.Client, postgresDBURI, secret string,
+	store *state.Storage, storev2 *sync2.DevicesTable, v2Client sync2.Client, postgresDBURI, secret string,
 	debug bool, pub pubsub.Notifier, sub pubsub.Listener, enablePrometheus bool, maxPendingEventUpdates int,
 ) (*SyncLiveHandler, error) {
 	logger.Info().Msg("creating handler")

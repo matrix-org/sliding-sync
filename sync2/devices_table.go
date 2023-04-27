@@ -31,8 +31,8 @@ type Device struct {
 	AccessTokenEncrypted string `db:"v2_token_encrypted"`
 }
 
-// Storage remembers sync v2 tokens per-device
-type Storage struct {
+// DevicesTable remembers sync v2 tokens per-device
+type DevicesTable struct {
 	db *sqlx.DB
 	// A separate secret used to en/decrypt access tokens prior to / after retrieval from the database.
 	// This provides additional security as a simple SQL injection attack would be insufficient to retrieve
@@ -42,7 +42,7 @@ type Storage struct {
 	key256 []byte
 }
 
-func NewStore(postgresURI, secret string) *Storage {
+func NewStore(postgresURI, secret string) *DevicesTable {
 	db, err := sqlx.Open("postgres", postgresURI)
 	if err != nil {
 		sentry.CaptureException(err)
@@ -61,35 +61,35 @@ func NewStore(postgresURI, secret string) *Storage {
 	hash := sha256.New()
 	hash.Write([]byte(secret))
 
-	return &Storage{
+	return &DevicesTable{
 		db:     db,
 		key256: hash.Sum(nil),
 	}
 }
 
-func (s *Storage) Teardown() {
+func (s *DevicesTable) Teardown() {
 	err := s.db.Close()
 	if err != nil {
 		panic("V2Storage.Teardown: " + err.Error())
 	}
 }
 
-func (s *Storage) encrypt(token string) string {
+func (s *DevicesTable) encrypt(token string) string {
 	block, err := aes.NewCipher(s.key256)
 	if err != nil {
-		panic("sync2.Storage encrypt: " + err.Error())
+		panic("sync2.DevicesTable encrypt: " + err.Error())
 	}
 	gcm, err := cipher.NewGCM(block)
 	if err != nil {
-		panic("sync2.Storage encrypt: " + err.Error())
+		panic("sync2.DevicesTable encrypt: " + err.Error())
 	}
 	nonce := make([]byte, gcm.NonceSize())
 	if _, err = io.ReadFull(rand.Reader, nonce); err != nil {
-		panic("sync2.Storage encrypt: " + err.Error())
+		panic("sync2.DevicesTable encrypt: " + err.Error())
 	}
 	return hex.EncodeToString(nonce) + " " + hex.EncodeToString(gcm.Seal(nil, nonce, []byte(token), nil))
 }
-func (s *Storage) decrypt(nonceAndEncToken string) (string, error) {
+func (s *DevicesTable) decrypt(nonceAndEncToken string) (string, error) {
 	segs := strings.Split(nonceAndEncToken, " ")
 	nonce := segs[0]
 	nonceBytes, err := hex.DecodeString(nonce)
@@ -116,7 +116,7 @@ func (s *Storage) decrypt(nonceAndEncToken string) (string, error) {
 	return string(token), nil
 }
 
-func (s *Storage) Device(deviceID string) (*Device, error) {
+func (s *DevicesTable) Device(deviceID string) (*Device, error) {
 	var d Device
 	err := s.db.Get(&d, `SELECT device_id, user_id, since, v2_token_encrypted FROM syncv3_sync2_devices WHERE device_id=$1`, deviceID)
 	if err != nil {
@@ -126,7 +126,7 @@ func (s *Storage) Device(deviceID string) (*Device, error) {
 	return &d, err
 }
 
-func (s *Storage) AllDevices() (devices []Device, err error) {
+func (s *DevicesTable) AllDevices() (devices []Device, err error) {
 	err = s.db.Select(&devices, `SELECT device_id, user_id, since, v2_token_encrypted FROM syncv3_sync2_devices`)
 	if err != nil {
 		return
@@ -137,7 +137,7 @@ func (s *Storage) AllDevices() (devices []Device, err error) {
 	return
 }
 
-func (s *Storage) RemoveDevice(deviceID string) error {
+func (s *DevicesTable) RemoveDevice(deviceID string) error {
 	_, err := s.db.Exec(
 		`DELETE FROM syncv3_sync2_devices WHERE device_id = $1`, deviceID,
 	)
@@ -145,7 +145,7 @@ func (s *Storage) RemoveDevice(deviceID string) error {
 	return err
 }
 
-func (s *Storage) InsertDevice(deviceID, accessToken string) (*Device, error) {
+func (s *DevicesTable) InsertDevice(deviceID, accessToken string) (*Device, error) {
 	var device Device
 	device.AccessToken = accessToken
 	device.AccessTokenEncrypted = s.encrypt(accessToken)
@@ -173,12 +173,12 @@ func (s *Storage) InsertDevice(deviceID, accessToken string) (*Device, error) {
 	return &device, err
 }
 
-func (s *Storage) UpdateDeviceSince(deviceID, since string) error {
+func (s *DevicesTable) UpdateDeviceSince(deviceID, since string) error {
 	_, err := s.db.Exec(`UPDATE syncv3_sync2_devices SET since = $1 WHERE device_id = $2`, since, deviceID)
 	return err
 }
 
-func (s *Storage) UpdateUserIDForDevice(deviceID, userID string) error {
+func (s *DevicesTable) UpdateUserIDForDevice(deviceID, userID string) error {
 	_, err := s.db.Exec(`UPDATE syncv3_sync2_devices SET user_id = $1 WHERE device_id = $2`, userID, deviceID)
 	return err
 }
