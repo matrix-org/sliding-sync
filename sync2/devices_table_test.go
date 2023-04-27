@@ -1,6 +1,7 @@
 package sync2
 
 import (
+	"github.com/jmoiron/sqlx"
 	"os"
 	"sort"
 	"testing"
@@ -16,25 +17,31 @@ func TestMain(m *testing.M) {
 	os.Exit(exitCode)
 }
 
-func TestStorage(t *testing.T) {
+func TestDevicesTable(t *testing.T) {
+	db, err := sqlx.Open("postgres", postgresConnectionString)
+	if err != nil {
+		t.Fatalf("failed to open SQL db: %s", err)
+	}
+	defer db.Close()
+	table := NewDevicesTable(db, "my_secret")
+
 	deviceID := "ALICE"
 	accessToken := "my_access_token"
-	store := NewStore(postgresConnectionString, "my_secret")
-	device, err := store.InsertDevice(deviceID, accessToken)
+	device, err := table.InsertDevice(deviceID, accessToken)
 	if err != nil {
 		t.Fatalf("Failed to InsertDevice: %s", err)
 	}
 	assertEqual(t, device.DeviceID, deviceID, "Device.DeviceID mismatch")
 	assertEqual(t, device.AccessToken, accessToken, "Device.AccessToken mismatch")
-	if err = store.UpdateDeviceSince(deviceID, "s1"); err != nil {
+	if err = table.UpdateDeviceSince(deviceID, "s1"); err != nil {
 		t.Fatalf("UpdateDeviceSince returned error: %s", err)
 	}
-	if err = store.UpdateUserIDForDevice(deviceID, "@alice:localhost"); err != nil {
+	if err = table.UpdateUserIDForDevice(deviceID, "@alice:localhost"); err != nil {
 		t.Fatalf("UpdateUserIDForDevice returned error: %s", err)
 	}
 
 	// now check that device retrieval has the latest values
-	device, err = store.Device(deviceID)
+	device, err = table.Device(deviceID)
 	if err != nil {
 		t.Fatalf("Device returned error: %s", err)
 	}
@@ -44,7 +51,7 @@ func TestStorage(t *testing.T) {
 	assertEqual(t, device.AccessToken, accessToken, "Device.AccessToken mismatch")
 
 	// now check new devices remember the v2 since value and user ID
-	s2, err := store.InsertDevice(deviceID, accessToken)
+	s2, err := table.InsertDevice(deviceID, accessToken)
 	if err != nil {
 		t.Fatalf("InsertDevice returned error: %s", err)
 	}
@@ -56,11 +63,11 @@ func TestStorage(t *testing.T) {
 	// check all devices works
 	deviceID2 := "BOB"
 	accessToken2 := "BOB_ACCESS_TOKEN"
-	bobDevice, err := store.InsertDevice(deviceID2, accessToken2)
+	bobDevice, err := table.InsertDevice(deviceID2, accessToken2)
 	if err != nil {
 		t.Fatalf("InsertDevice returned error: %s", err)
 	}
-	devices, err := store.AllDevices()
+	devices, err := table.AllDevices()
 	if err != nil {
 		t.Fatalf("AllDevices: %s", err)
 	}

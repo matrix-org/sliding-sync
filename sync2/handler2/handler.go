@@ -25,7 +25,7 @@ var logger = zerolog.New(os.Stdout).With().Timestamp().Logger().Output(zerolog.C
 // processing v2 data and publishing updates, and receiving and processing EnsurePolling events.
 type Handler struct {
 	pMap      *sync2.PollerMap
-	v2Store   *sync2.DevicesTable
+	v2Store   *sync2.Storage
 	Store     *state.Storage
 	v2Pub     pubsub.Notifier
 	v3Sub     *pubsub.V3Sub
@@ -42,7 +42,7 @@ type Handler struct {
 }
 
 func NewHandler(
-	connStr string, pMap *sync2.PollerMap, v2Store *sync2.DevicesTable, store *state.Storage, client sync2.Client,
+	connStr string, pMap *sync2.PollerMap, v2Store *sync2.Storage, store *state.Storage, client sync2.Client,
 	pub pubsub.Notifier, sub pubsub.Listener, enablePrometheus bool,
 ) (*Handler, error) {
 	h := &Handler{
@@ -95,7 +95,7 @@ func (h *Handler) Teardown() {
 }
 
 func (h *Handler) StartV2Pollers() {
-	devices, err := h.v2Store.AllDevices()
+	devices, err := h.v2Store.DevicesTable.AllDevices()
 	if err != nil {
 		logger.Err(err).Msg("StartV2Pollers: failed to query devices")
 		sentry.CaptureException(err)
@@ -151,7 +151,7 @@ func (h *Handler) OnTerminated(userID, deviceID string) {
 }
 
 func (h *Handler) OnExpiredToken(userID, deviceID string) {
-	h.v2Store.RemoveDevice(deviceID)
+	h.v2Store.DevicesTable.RemoveDevice(deviceID)
 	h.Store.ToDeviceTable.DeleteAllMessagesForDevice(deviceID)
 	h.Store.DeviceDataTable.DeleteDevice(userID, deviceID)
 	// also notify v3 side so it can remove the connection from ConnMap
@@ -172,7 +172,7 @@ func (h *Handler) addPrometheusMetrics() {
 
 // Emits nothing as no downstream components need it.
 func (h *Handler) UpdateDeviceSince(deviceID, since string) {
-	err := h.v2Store.UpdateDeviceSince(deviceID, since)
+	err := h.v2Store.DevicesTable.UpdateDeviceSince(deviceID, since)
 	if err != nil {
 		logger.Err(err).Str("device", deviceID).Str("since", since).Msg("V2: failed to persist since token")
 		sentry.CaptureException(err)
@@ -387,7 +387,7 @@ func (h *Handler) EnsurePolling(p *pubsub.V3EnsurePolling) {
 	defer func() {
 		logger.Info().Str("user", p.UserID).Msg("EnsurePolling: request finished")
 	}()
-	dev, err := h.v2Store.Device(p.DeviceID)
+	dev, err := h.v2Store.DevicesTable.Device(p.DeviceID)
 	if err != nil {
 		logger.Err(err).Str("user", p.UserID).Str("device", p.DeviceID).Msg("V3Sub: EnsurePolling unknown device")
 		sentry.CaptureException(err)

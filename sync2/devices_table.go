@@ -7,7 +7,6 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
-	"github.com/getsentry/sentry-go"
 	"io"
 	"os"
 	"strings"
@@ -42,13 +41,7 @@ type DevicesTable struct {
 	key256 []byte
 }
 
-func NewStore(postgresURI, secret string) *DevicesTable {
-	db, err := sqlx.Open("postgres", postgresURI)
-	if err != nil {
-		sentry.CaptureException(err)
-		// TODO: if we panic(), will sentry have a chance to flush the event?
-		log.Panic().Err(err).Str("uri", postgresURI).Msg("failed to open SQL DB")
-	}
+func NewDevicesTable(db *sqlx.DB, secret string) *DevicesTable {
 	db.MustExec(`
 	CREATE TABLE IF NOT EXISTS syncv3_sync2_devices (
 		device_id TEXT PRIMARY KEY,
@@ -64,13 +57,6 @@ func NewStore(postgresURI, secret string) *DevicesTable {
 	return &DevicesTable{
 		db:     db,
 		key256: hash.Sum(nil),
-	}
-}
-
-func (s *DevicesTable) Teardown() {
-	err := s.db.Close()
-	if err != nil {
-		panic("V2Storage.Teardown: " + err.Error())
 	}
 }
 

@@ -39,7 +39,7 @@ var logger = zerolog.New(os.Stdout).With().Timestamp().Logger().Output(zerolog.C
 type SyncLiveHandler struct {
 	V2         sync2.Client
 	Storage    *state.Storage
-	V2Store    *sync2.DevicesTable
+	V2Store    *sync2.Storage
 	V2Sub      *pubsub.V2Sub
 	V3Pub      *EnsurePoller
 	ConnMap    *sync3.ConnMap
@@ -59,7 +59,7 @@ type SyncLiveHandler struct {
 }
 
 func NewSync3Handler(
-	store *state.Storage, storev2 *sync2.DevicesTable, v2Client sync2.Client, postgresDBURI, secret string,
+	store *state.Storage, storev2 *sync2.Storage, v2Client sync2.Client, postgresDBURI, secret string,
 	debug bool, pub pubsub.Notifier, sub pubsub.Listener, enablePrometheus bool, maxPendingEventUpdates int,
 ) (*SyncLiveHandler, error) {
 	logger.Info().Msg("creating handler")
@@ -305,7 +305,7 @@ func (h *SyncLiveHandler) setupConnection(req *http.Request, syncReq *sync3.Requ
 
 	// We're going to make a new connection
 	// Ensure we have the v2 side of things hooked up
-	v2device, err := h.V2Store.InsertDevice(deviceID, accessToken)
+	v2device, err := h.V2Store.DevicesTable.InsertDevice(deviceID, accessToken)
 	if err != nil {
 		log.Warn().Err(err).Str("device_id", deviceID).Msg("failed to insert v2 device")
 		return nil, &internal.HandlerError{
@@ -328,7 +328,7 @@ func (h *SyncLiveHandler) setupConnection(req *http.Request, syncReq *sync3.Requ
 				Err:        err,
 			}
 		}
-		if err = h.V2Store.UpdateUserIDForDevice(deviceID, v2device.UserID); err != nil {
+		if err = h.V2Store.DevicesTable.UpdateUserIDForDevice(deviceID, v2device.UserID); err != nil {
 			log.Warn().Err(err).Str("device_id", deviceID).Msg("failed to persist user ID -> device ID mapping")
 			// non-fatal, we can still work without doing this
 		}
