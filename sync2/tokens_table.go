@@ -120,12 +120,13 @@ func (t *TokensTable) Token(plaintextToken string) (*Token, error) {
 	if err != nil {
 		return nil, err
 	}
+	token.AccessToken = plaintextToken
 	token.AccessTokenHash = tokenHash
 	return &token, nil
 }
 
 type TokenWithSince struct {
-	Token
+	*Token
 	Since string `db:"since"`
 }
 
@@ -158,15 +159,21 @@ func (t *TokensTable) Insert(plaintextToken, userID, deviceID string, lastSeen t
 	encToken := t.encrypt(plaintextToken)
 	_, err := t.db.Exec(
 		`INSERT INTO syncv3_sync2_tokens(token_hash, token_encrypted, user_id, device_id, last_seen)
-		VALUES ($1, $2, $3, $4, $5);`,
+		VALUES ($1, $2, $3, $4, $5)
+		ON CONFLICT (token_hash) DO NOTHING;`,
 		hashedToken, encToken, userID, deviceID, lastSeen,
 	)
 	if err != nil {
 		return nil, err
 	}
 	return &Token{
-		AccessToken:          plaintextToken,
-		AccessTokenHash:      hashedToken,
+		AccessToken:     plaintextToken,
+		AccessTokenHash: hashedToken,
+		// Note: if this token already exists in the DB, encToken will differ from
+		// the DB token_encrypted column. (t.encrypt is nondeterministic, see e.g.
+		// https://en.wikipedia.org/wiki/Probabilistic_encryption).
+		// The rest of the program should ignore this field; it only lives here so
+		// we can Scan the DB row into the Tokens struct. Could make it private?
 		AccessTokenEncrypted: encToken,
 		UserID:               userID,
 		DeviceID:             deviceID,
