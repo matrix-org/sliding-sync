@@ -176,8 +176,8 @@ func (h *Handler) addPrometheusMetrics() {
 }
 
 // Emits nothing as no downstream components need it.
-func (h *Handler) UpdateDeviceSince(deviceID, since string) {
-	err := h.v2Store.DevicesTable.UpdateDeviceSince(deviceID, since)
+func (h *Handler) UpdateDeviceSince(userID, deviceID, since string) {
+	err := h.v2Store.DevicesTable.UpdateDeviceSince(userID, deviceID, since)
 	if err != nil {
 		logger.Err(err).Str("device", deviceID).Str("since", since).Msg("V2: failed to persist since token")
 		sentry.CaptureException(err)

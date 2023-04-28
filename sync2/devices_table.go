@@ -23,7 +23,7 @@ type DevicesTable struct {
 	db *sqlx.DB
 }
 
-func NewDevicesTable(db *sqlx.DB, secret string) *DevicesTable {
+func NewDevicesTable(db *sqlx.DB) *DevicesTable {
 	db.MustExec(`
 	CREATE TABLE IF NOT EXISTS syncv3_sync2_devices (
 		user_id TEXT NOT NULL,
@@ -37,18 +37,10 @@ func NewDevicesTable(db *sqlx.DB, secret string) *DevicesTable {
 	}
 }
 
-func (s *DevicesTable) RemoveDevice(deviceID string) error {
-	_, err := s.db.Exec(
-		`DELETE FROM syncv3_sync2_devices WHERE device_id = $1`, deviceID,
-	)
-	log.Info().Str("device", deviceID).Msg("Deleting device")
-	return err
-}
-
 // InsertDevice creates a new devices row with a blank since token if no such row
 // exists. Otherwise, it does nothing.
-func (s *DevicesTable) InsertDevice(userID, deviceID string) error {
-	_, err := s.db.Exec(
+func (t *DevicesTable) InsertDevice(userID, deviceID string) error {
+	_, err := t.db.Exec(
 		` INSERT INTO syncv3_sync2_devices(user_id, device_id, since) VALUES($1,$2,$3)
 		ON CONFLICT (user_id, device_id) DO NOTHING`,
 		userID, deviceID, "",
@@ -56,7 +48,7 @@ func (s *DevicesTable) InsertDevice(userID, deviceID string) error {
 	return err
 }
 
-func (s *DevicesTable) UpdateDeviceSince(deviceID, since string) error {
-	_, err := s.db.Exec(`UPDATE syncv3_sync2_devices SET since = $1 WHERE device_id = $2`, since, deviceID)
+func (t *DevicesTable) UpdateDeviceSince(userID, deviceID, since string) error {
+	_, err := t.db.Exec(`UPDATE syncv3_sync2_devices SET since = $1 WHERE user_id = $2 AND device_id = $3`, since, userID, deviceID)
 	return err
 }

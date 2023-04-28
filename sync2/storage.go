@@ -26,7 +26,7 @@ func NewStore(postgresURI, secret string) *Storage {
 		log.Panic().Err(err).Str("uri", postgresURI).Msg("failed to open SQL DB")
 	}
 	return &Storage{
-		DevicesTable: NewDevicesTable(db, secret),
+		DevicesTable: NewDevicesTable(db),
 		TokensTable:  NewTokensTable(db, secret),
 		DB:           db,
 	}
