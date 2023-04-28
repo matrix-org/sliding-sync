@@ -4,8 +4,9 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"github.com/getsentry/sentry-go"
 	"sync"
+
+	"github.com/getsentry/sentry-go"
 
 	lru "github.com/hashicorp/golang-lru"
 	"github.com/matrix-org/sliding-sync/internal"
@@ -96,6 +97,7 @@ type InviteData struct {
 	LastMessageTimestamp uint64
 	Encrypted            bool
 	IsDM                 bool
+	RoomType             string
 }
 
 func NewInviteData(ctx context.Context, userID, roomID string, inviteState []json.RawMessage) *InviteData {
@@ -136,6 +138,8 @@ func NewInviteData(ctx context.Context, userID, roomID string, inviteState []jso
 			id.CanonicalAlias = j.Get("content.alias").Str
 		case "m.room.encryption":
 			id.Encrypted = true
+		case "m.room.create":
+			id.RoomType = j.Get("content.type").Str
 		}
 	}
 	if id.InviteEvent == nil {
@@ -156,6 +160,10 @@ func NewInviteData(ctx context.Context, userID, roomID string, inviteState []jso
 }
 
 func (i *InviteData) RoomMetadata() *internal.RoomMetadata {
+	var roomType *string
+	if i.RoomType != "" {
+		roomType = &i.RoomType
+	}
 	return &internal.RoomMetadata{
 		RoomID:               i.roomID,
 		Heroes:               i.Heroes,
@@ -165,6 +173,7 @@ func (i *InviteData) RoomMetadata() *internal.RoomMetadata {
 		JoinCount:            1,
 		LastMessageTimestamp: i.LastMessageTimestamp,
 		Encrypted:            i.Encrypted,
+		RoomType:             roomType,
 	}
 }
 
