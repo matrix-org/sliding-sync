@@ -15,6 +15,7 @@ import (
 
 type Token struct {
 	AccessToken          string
+	AccessTokenHash      string
 	AccessTokenEncrypted string    `db:"token_encrypted"`
 	UserID               string    `db:"user_id"`
 	DeviceID             string    `db:"device_id"`
@@ -116,7 +117,39 @@ func (t *TokensTable) Token(plaintextToken string) (*Token, error) {
 		`SELECT token_encrypted, user_id, device_id, last_seen FROM syncv3_sync2_tokens WHERE token_hash=$1`,
 		tokenHash,
 	)
-	return &token, err
+	if err != nil {
+		return nil, err
+	}
+	token.AccessTokenHash = tokenHash
+	return &token, nil
+}
+
+type TokenWithSince struct {
+	Token
+	Since string `db:"since"`
+}
+
+func (t *TokensTable) TokenForEachDevice() (tokens []TokenWithSince, err error) {
+	// Fetches the most recently seen token for each device, see e.g.
+	// https://www.postgresql.org/docs/11/sql-select.html#SQL-DISTINCT
+	err = t.db.Select(
+		&tokens,
+		`SELECT DISTINCT ON (user_id, device_id) token_encrypted, user_id, device_id, last_seen, since
+		FROM syncv3_sync2_tokens JOIN syncv3_sync2_devices USING (user_id, device_id)
+		ORDER BY user_id, device_id, last_seen DESC
+	`)
+	if err != nil {
+		return
+	}
+	for _, token := range tokens {
+		token.AccessToken, err = t.decrypt(token.AccessTokenEncrypted)
+		if err != nil {
+			// Ignore decryption failure.
+			continue
+		}
+		token.AccessTokenHash = hashToken(token.AccessToken)
+	}
+	return
 }
 
 // Insert a new token into the table.
@@ -133,6 +166,7 @@ func (t *TokensTable) Insert(plaintextToken, userID, deviceID string, lastSeen t
 	}
 	return &Token{
 		AccessToken:          plaintextToken,
+		AccessTokenHash:      hashedToken,
 		AccessTokenEncrypted: encToken,
 		UserID:               userID,
 		DeviceID:             deviceID,
@@ -145,14 +179,13 @@ func (t *TokensTable) Insert(plaintextToken, userID, deviceID string, lastSeen t
 // we only update the last seen timestamp or the if it is at least 24 hours old.
 // The timestamp is updated on the Token struct if and only if it is updated in the DB.
 func (t *TokensTable) MaybeUpdateLastSeen(token *Token, newLastSeen time.Time) error {
-	hashedToken := hashToken(token.AccessToken)
 	sinceLastSeen := newLastSeen.Sub(token.LastSeen)
 	if sinceLastSeen < (24 * time.Hour) {
 		return nil
 	}
 	_, err := t.db.Exec(
 		`UPDATE syncv3_sync2_tokens SET last_seen = $1 WHERE token_hash = $2`,
-		newLastSeen, hashedToken,
+		newLastSeen, token.AccessTokenHash,
 	)
 	if err != nil {
 		return err

@@ -1,7 +1,6 @@
 package sync2
 
 import (
-	"fmt"
 	"github.com/jmoiron/sqlx"
 	_ "github.com/lib/pq"
 	"github.com/rs/zerolog"
@@ -14,11 +13,9 @@ var log = zerolog.New(os.Stdout).With().Timestamp().Logger().Output(zerolog.Cons
 })
 
 type Device struct {
-	UserID               string `db:"user_id"`
-	DeviceID             string `db:"device_id"`
-	Since                string `db:"since"`
-	AccessToken          string
-	AccessTokenEncrypted string `db:"v2_token_encrypted"`
+	UserID   string `db:"user_id"`
+	DeviceID string `db:"device_id"`
+	Since    string `db:"since"`
 }
 
 // DevicesTable remembers syncv2 since positions per-device
@@ -38,23 +35,6 @@ func NewDevicesTable(db *sqlx.DB, secret string) *DevicesTable {
 	return &DevicesTable{
 		db: db,
 	}
-}
-
-func (s *DevicesTable) Device(deviceID string) (*Device, error) {
-	var d Device
-	err := s.db.Get(&d, `SELECT user_id, device_id, since FROM syncv3_sync2_devices WHERE device_id=$1`, deviceID)
-	if err != nil {
-		return nil, fmt.Errorf("failed to lookup device '%s': %s", deviceID, err)
-	}
-	return &d, err
-}
-
-func (s *DevicesTable) AllDevices() (devices []Device, err error) {
-	err = s.db.Select(&devices, `SELECT device_id, user_id, since, v2_token_encrypted FROM syncv3_sync2_devices`)
-	if err != nil {
-		return
-	}
-	return
 }
 
 func (s *DevicesTable) RemoveDevice(deviceID string) error {

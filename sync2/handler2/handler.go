@@ -95,9 +95,9 @@ func (h *Handler) Teardown() {
 }
 
 func (h *Handler) StartV2Pollers() {
-	devices, err := h.v2Store.DevicesTable.AllDevices()
+	tokens, err := h.v2Store.TokensTable.TokenForEachDevice()
 	if err != nil {
-		logger.Err(err).Msg("StartV2Pollers: failed to query devices")
+		logger.Err(err).Msg("StartV2Pollers: failed to query tokens")
 		sentry.CaptureException(err)
 		return
 	}
@@ -106,30 +106,34 @@ func (h *Handler) StartV2Pollers() {
 	// Too low and this will take ages for the v2 pollers to startup.
 	numWorkers := 16
 	numFails := 0
-	ch := make(chan sync2.Device, len(devices))
-	for _, d := range devices {
+	ch := make(chan sync2.TokenWithSince, len(tokens))
+	for _, t := range tokens {
 		// if we fail to decrypt the access token, skip it.
-		if d.AccessToken == "" {
+		if t.AccessToken == "" {
 			numFails++
 			continue
 		}
-		ch <- d
+		ch <- t
 	}
 	close(ch)
-	logger.Info().Int("num_devices", len(devices)).Int("num_fail_decrypt", numFails).Msg("StartV2Pollers")
+	logger.Info().Int("num_devices", len(tokens)).Int("num_fail_decrypt", numFails).Msg("StartV2Pollers")
 	var wg sync.WaitGroup
 	wg.Add(numWorkers)
 	for i := 0; i < numWorkers; i++ {
 		go func() {
 			defer wg.Done()
-			for d := range ch {
+			for t := range ch {
+				pid := sync2.PollerID{
+					UserID:   t.UserID,
+					DeviceID: t.DeviceID,
+				}
 				h.pMap.EnsurePolling(
-					d.AccessToken, d.UserID, d.DeviceID, d.Since, true,
-					logger.With().Str("user_id", d.UserID).Logger(),
+					pid, t.AccessToken, t.Since, true,
+					logger.With().Str("user_id", t.UserID).Str("device_id", t.DeviceID).Logger(),
 				)
 				h.v2Pub.Notify(pubsub.ChanV2, &pubsub.V2InitialSyncComplete{
-					UserID:   d.UserID,
-					DeviceID: d.DeviceID,
+					UserID:   t.UserID,
+					DeviceID: t.DeviceID,
 				})
 			}
 		}()
@@ -396,8 +400,12 @@ func (h *Handler) EnsurePolling(p *pubsub.V3EnsurePolling) {
 	// don't block us from consuming more pubsub messages just because someone wants to sync
 	go func() {
 		// blocks until an initial sync is done
+		pid := sync2.PollerID{
+			UserID:   p.UserID,
+			DeviceID: p.DeviceID,
+		}
 		h.pMap.EnsurePolling(
-			accessToken, p.UserID, p.DeviceID, since, false,
+			pid, accessToken, since, false,
 			logger.With().Str("user_id", p.UserID).Str("device_id", p.DeviceID).Logger(),
 		)
 		h.updateMetrics()
