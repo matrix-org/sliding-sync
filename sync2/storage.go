@@ -14,6 +14,7 @@ var logger = zerolog.New(os.Stdout).With().Timestamp().Logger().Output(zerolog.C
 
 type Storage struct {
 	DevicesTable *DevicesTable
+	TokensTable  *TokensTable
 	DB           *sqlx.DB
 }
 
@@ -26,6 +27,7 @@ func NewStore(postgresURI, secret string) *Storage {
 	}
 	return &Storage{
 		DevicesTable: NewDevicesTable(db, secret),
+		TokensTable:  NewTokensTable(db, secret),
 		DB:           db,
 	}
 }
