@@ -49,6 +49,7 @@ type testV2Server struct {
 	CheckRequest            func(userID, token string, req *http.Request)
 	mu                      *sync.Mutex
 	tokenToUser             map[string]string
+	tokenToDevice           map[string]string
 	queues                  map[string]chan sync2.SyncResponse
 	waiting                 map[string]*sync.Cond // broadcasts when the server is about to read a blocking input
 	srv                     *httptest.Server
@@ -56,10 +57,18 @@ type testV2Server struct {
 	timeToWaitForV2Response time.Duration
 }
 
+// Most tests only use a single device per user. Give them this helper so they don't
+// have to care about providing a device name.
 func (s *testV2Server) addAccount(userID, token string) {
+	s.addAccountWithDeviceID(userID, "my_device", token)
+}
+
+// Tests that use multiple devices for the same user need to be more explicit.
+func (s *testV2Server) addAccountWithDeviceID(userID, deviceID, token string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.tokenToUser[token] = userID
+	s.tokenToDevice[token] = deviceID
 	s.queues[token] = make(chan sync2.SyncResponse, 100)
 	s.waiting[token] = &sync.Cond{
 		L: &sync.Mutex{},
@@ -77,6 +86,7 @@ func (s *testV2Server) invalidateToken(token string) {
 		wg.Done()
 	}
 	delete(s.tokenToUser, token)
+	delete(s.tokenToDevice, token)
 	s.mu.Unlock()
 
 	// kick over the connection so the next request 401s and wait till we get said request
@@ -95,6 +105,12 @@ func (s *testV2Server) userID(token string) string {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return s.tokenToUser[token]
+}
+
+func (s *testV2Server) deviceID(token string) string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.tokenToDevice[token]
 }
 
 func (s *testV2Server) queueResponse(userIDOrToken string, resp sync2.SyncResponse) {
@@ -185,6 +201,7 @@ func runTestV2Server(t testutils.TestBenchInterface) *testV2Server {
 	t.Helper()
 	server := &testV2Server{
 		tokenToUser:             make(map[string]string),
+		tokenToDevice:           make(map[string]string),
 		queues:                  make(map[string]chan sync2.SyncResponse),
 		waiting:                 make(map[string]*sync.Cond),
 		invalidations:           make(map[string]func()),
@@ -195,7 +212,8 @@ func runTestV2Server(t testutils.TestBenchInterface) *testV2Server {
 	r.HandleFunc("/_matrix/client/r0/account/whoami", func(w http.ResponseWriter, req *http.Request) {
 		token := strings.TrimPrefix(req.Header.Get("Authorization"), "Bearer ")
 		userID := server.userID(token)
-		if userID == "" {
+		deviceID := server.deviceID(token)
+		if userID == "" || deviceID == "" {
 			w.WriteHeader(401)
 			server.mu.Lock()
 			fn := server.invalidations[token]
@@ -206,7 +224,7 @@ func runTestV2Server(t testutils.TestBenchInterface) *testV2Server {
 			return
 		}
 		w.WriteHeader(200)
-		w.Write([]byte(fmt.Sprintf(`{"user_id":"%s"}`, userID)))
+		w.Write([]byte(fmt.Sprintf(`{"user_id":"%s","device_id":"%s"}`, userID, deviceID)))
 	})
 	r.HandleFunc("/_matrix/client/r0/sync", func(w http.ResponseWriter, req *http.Request) {
 		token := strings.TrimPrefix(req.Header.Get("Authorization"), "Bearer ")

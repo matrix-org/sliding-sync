@@ -51,7 +51,10 @@ func TestPollerMapEnsurePolling(t *testing.T) {
 
 	ensurePollingUnblocked := make(chan struct{})
 	go func() {
-		pm.EnsurePolling("access_token", "@alice:localhost", "FOOBAR", "", false, zerolog.New(os.Stderr))
+		pm.EnsurePolling(PollerID{
+			UserID:   "alice:localhost",
+			DeviceID: "FOOBAR",
+		}, "access_token", "", false, zerolog.New(os.Stderr))
 		close(ensurePollingUnblocked)
 	}()
 	ensureBlocking := func() {
@@ -136,7 +139,7 @@ func TestPollerMapEnsurePollingIdempotent(t *testing.T) {
 	for i := 0; i < n; i++ {
 		go func() {
 			t.Logf("EnsurePolling")
-			pm.EnsurePolling("access_token", "@alice:localhost", "FOOBAR", "", false, zerolog.New(os.Stderr))
+			pm.EnsurePolling(PollerID{UserID: "@alice:localhost", DeviceID: "FOOBAR"}, "access_token", "", false, zerolog.New(os.Stderr))
 			wg.Done()
 			t.Logf("EnsurePolling unblocked")
 		}()
@@ -195,7 +198,7 @@ func TestPollerMapEnsurePollingIdempotent(t *testing.T) {
 // Check that a call to Poll starts polling and accumulating, and terminates on 401s.
 func TestPollerPollFromNothing(t *testing.T) {
 	nextSince := "next"
-	deviceID := "FOOBAR"
+	pid := PollerID{UserID: "@alice:localhost", DeviceID: "FOOBAR"}
 	roomID := "!foo:bar"
 	roomState := []json.RawMessage{
 		json.RawMessage(`{"event":1}`),
@@ -224,7 +227,7 @@ func TestPollerPollFromNothing(t *testing.T) {
 	})
 	var wg sync.WaitGroup
 	wg.Add(1)
-	poller := newPoller("@alice:localhost", "Authorization: hello world", deviceID, client, accumulator, zerolog.New(os.Stderr), false)
+	poller := newPoller(pid, "Authorization: hello world", client, accumulator, zerolog.New(os.Stderr), false)
 	go func() {
 		defer wg.Done()
 		poller.Poll("")
@@ -244,14 +247,14 @@ func TestPollerPollFromNothing(t *testing.T) {
 	if len(accumulator.states[roomID]) != len(roomState) {
 		t.Errorf("did not accumulate initial state for room, got %d events want %d", len(accumulator.states[roomID]), len(roomState))
 	}
-	if accumulator.deviceIDToSince[deviceID] != nextSince {
-		t.Errorf("did not persist latest since token, got %s want %s", accumulator.deviceIDToSince[deviceID], nextSince)
+	if accumulator.pollerIDToSince[pid] != nextSince {
+		t.Errorf("did not persist latest since token, got %s want %s", accumulator.pollerIDToSince[pid], nextSince)
 	}
 }
 
 // Check that a call to Poll starts polling with an existing since token and accumulates timeline entries
 func TestPollerPollFromExisting(t *testing.T) {
-	deviceID := "FOOBAR"
+	pid := PollerID{UserID: "@alice:localhost", DeviceID: "FOOBAR"}
 	roomID := "!foo:bar"
 	since := "0"
 	roomTimelineResponses := [][]json.RawMessage{
@@ -307,7 +310,7 @@ func TestPollerPollFromExisting(t *testing.T) {
 	})
 	var wg sync.WaitGroup
 	wg.Add(1)
-	poller := newPoller("@alice:localhost", "Authorization: hello world", deviceID, client, accumulator, zerolog.New(os.Stderr), false)
+	poller := newPoller(pid, "Authorization: hello world", client, accumulator, zerolog.New(os.Stderr), false)
 	go func() {
 		defer wg.Done()
 		poller.Poll(since)
@@ -328,8 +331,8 @@ func TestPollerPollFromExisting(t *testing.T) {
 		t.Errorf("did not accumulate timelines for room, got %d events want %d", len(accumulator.timelines[roomID]), 10)
 	}
 	wantSince := fmt.Sprintf("%d", len(roomTimelineResponses))
-	if accumulator.deviceIDToSince[deviceID] != wantSince {
-		t.Errorf("did not persist latest since token, got %s want %s", accumulator.deviceIDToSince[deviceID], wantSince)
+	if accumulator.pollerIDToSince[pid] != wantSince {
+		t.Errorf("did not persist latest since token, got %s want %s", accumulator.pollerIDToSince[pid], wantSince)
 	}
 }
 
@@ -383,7 +386,7 @@ func TestPollerBackoff(t *testing.T) {
 	}
 	var wg sync.WaitGroup
 	wg.Add(1)
-	poller := newPoller("@alice:localhost", "Authorization: hello world", deviceID, client, accumulator, zerolog.New(os.Stderr), false)
+	poller := newPoller(PollerID{UserID: "@alice:localhost", DeviceID: deviceID}, "Authorization: hello world", client, accumulator, zerolog.New(os.Stderr), false)
 	go func() {
 		defer wg.Done()
 		poller.Poll("some_since_value")
@@ -413,7 +416,7 @@ func TestPollerUnblocksIfTerminatedInitially(t *testing.T) {
 
 	pollUnblocked := make(chan struct{})
 	waitUntilInitialSyncUnblocked := make(chan struct{})
-	poller := newPoller("@alice:localhost", "Authorization: hello world", deviceID, client, accumulator, zerolog.New(os.Stderr), false)
+	poller := newPoller(PollerID{UserID: "@alice:localhost", DeviceID: deviceID}, "Authorization: hello world", client, accumulator, zerolog.New(os.Stderr), false)
 	go func() {
 		poller.Poll("")
 		close(pollUnblocked)
@@ -452,7 +455,7 @@ func (c *mockClient) WhoAmI(authHeader string) (string, string, error) {
 type mockDataReceiver struct {
 	states          map[string][]json.RawMessage
 	timelines       map[string][]json.RawMessage
-	deviceIDToSince map[string]string
+	pollerIDToSince map[PollerID]string
 	incomingProcess chan struct{}
 	unblockProcess  chan struct{}
 }
@@ -474,8 +477,8 @@ func (a *mockDataReceiver) Initialise(roomID string, state []json.RawMessage) []
 }
 func (a *mockDataReceiver) SetTyping(roomID string, ephEvent json.RawMessage) {
 }
-func (s *mockDataReceiver) UpdateDeviceSince(deviceID, since string) {
-	s.deviceIDToSince[deviceID] = since
+func (s *mockDataReceiver) UpdateDeviceSince(userID, deviceID, since string) {
+	s.pollerIDToSince[PollerID{UserID: userID, DeviceID: deviceID}] = since
 }
 func (s *mockDataReceiver) AddToDeviceMessages(userID, deviceID string, msgs []json.RawMessage) {
 }
@@ -498,7 +501,7 @@ func newMocks(doSyncV2 func(authHeader, since string) (*SyncResponse, int, error
 	accumulator := &mockDataReceiver{
 		states:          make(map[string][]json.RawMessage),
 		timelines:       make(map[string][]json.RawMessage),
-		deviceIDToSince: make(map[string]string),
+		pollerIDToSince: make(map[PollerID]string),
 	}
 	return accumulator, client
 }

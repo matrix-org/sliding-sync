@@ -8,6 +8,8 @@ type V3Listener interface {
 }
 
 type V3EnsurePolling struct {
+	// TODO: we only really need to provide the access token hash here.
+	// Passing through a user means we can log something sensible though.
 	UserID          string
 	DeviceID        string
 	AccessTokenHash string
