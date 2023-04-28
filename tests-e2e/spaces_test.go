@@ -159,3 +159,42 @@ func TestSpacesFilter(t *testing.T) {
 		),
 	)
 }
+
+// Regression test for https://github.com/matrix-org/sliding-sync/issues/81 which has a list
+// for invites EXCLUDING spaces, and yet space invites went into this list.
+func TestSpacesFilterInvite(t *testing.T) {
+	alice := registerNewUser(t)
+	bob := registerNewUser(t)
+	spaceRoomID := alice.CreateRoom(t, map[string]interface{}{
+		"preset": "public_chat",
+		"name":   "Space Room",
+		"creation_content": map[string]string{
+			"type": "m.space",
+		},
+	})
+	normalRoomID := alice.CreateRoom(t, map[string]interface{}{
+		"preset": "public_chat",
+		"name":   "Normal Room",
+	})
+	t.Logf("Created space %v normal %v", spaceRoomID, normalRoomID)
+	alice.InviteRoom(t, spaceRoomID, bob.UserID)
+	alice.InviteRoom(t, normalRoomID, bob.UserID)
+	// bob request invites for non-space rooms
+	res := bob.SlidingSync(t, sync3.Request{
+		Lists: map[string]sync3.RequestList{
+			"a": {
+				Ranges: sync3.SliceRanges{{0, 20}},
+				Filters: &sync3.RequestFilters{
+					IsInvite:     &boolTrue,
+					NotRoomTypes: []*string{ptr("m.space")},
+				},
+				RoomSubscription: sync3.RoomSubscription{
+					RequiredState: [][2]string{{"m.room.name", ""}},
+				},
+			},
+		},
+	})
+	m.MatchResponse(t, res, m.MatchList("a", m.MatchV3Count(1), m.MatchV3Ops(
+		m.MatchV3SyncOp(0, 0, []string{normalRoomID}),
+	)))
+}
