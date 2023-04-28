@@ -160,3 +160,24 @@ func (t *TokensTable) MaybeUpdateLastSeen(token *Token, newLastSeen time.Time) e
 	token.LastSeen = newLastSeen
 	return nil
 }
+
+func (t *TokensTable) GetTokenAndSince(userID, deviceID, tokenHash string) (accessToken, since string, err error) {
+	var encToken, gotUserID, gotDeviceID string
+	row := t.db.QueryRow(`
+		SELECT token_encrypted, since, user_id, device_id
+		FROM syncv3_sync2_tokens JOIN syncv3_sync2_devices USING (user_id, device_id)
+		WHERE token_hash = $1;
+	`, tokenHash)
+	err = row.Scan(&encToken, &since, &gotUserID, &gotDeviceID)
+	if err != nil {
+		return
+	}
+	if gotUserID != userID || gotDeviceID != deviceID {
+		return "", "", fmt.Errorf(
+			"token (hash %s) found with user+device mismatch: got (%s, %s), expected (%s, %s)",
+			tokenHash, gotUserID, gotDeviceID, userID, deviceID,
+		)
+	}
+	accessToken, err = t.decrypt(encToken)
+	return
+}

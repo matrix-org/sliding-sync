@@ -398,6 +398,7 @@ func (h *SyncLiveHandler) identifyUnknownAccessToken(accessToken string) (*sync2
 		}
 	}
 
+	// TODO: should the two inserts be wrapped in a transaction?
 	// Create a brand-new row for this token.
 	token, err := h.V2Store.TokensTable.Insert(accessToken, userID, deviceID, time.Now())
 	if err != nil {
@@ -407,6 +408,17 @@ func (h *SyncLiveHandler) identifyUnknownAccessToken(accessToken string) (*sync2
 			Err:        err,
 		}
 	}
+
+	// Ensure we have a device row for this token.
+	err = h.V2Store.DevicesTable.InsertDevice(userID, deviceID)
+	if err != nil {
+		log.Warn().Err(err).Str("user", userID).Str("device", deviceID).Msg("failed to insert v2 device")
+		return nil, &internal.HandlerError{
+			StatusCode: 500,
+			Err:        err,
+		}
+	}
+
 	return token, nil
 }
 

@@ -387,7 +387,7 @@ func (h *Handler) EnsurePolling(p *pubsub.V3EnsurePolling) {
 	defer func() {
 		logger.Info().Str("user", p.UserID).Msg("EnsurePolling: request finished")
 	}()
-	dev, err := h.v2Store.DevicesTable.Device(p.DeviceID)
+	accessToken, since, err := h.v2Store.TokensTable.GetTokenAndSince(p.UserID, p.DeviceID, p.AccessTokenHash)
 	if err != nil {
 		logger.Err(err).Str("user", p.UserID).Str("device", p.DeviceID).Msg("V3Sub: EnsurePolling unknown device")
 		sentry.CaptureException(err)
@@ -397,8 +397,8 @@ func (h *Handler) EnsurePolling(p *pubsub.V3EnsurePolling) {
 	go func() {
 		// blocks until an initial sync is done
 		h.pMap.EnsurePolling(
-			dev.AccessToken, dev.UserID, dev.DeviceID, dev.Since, false,
-			logger.With().Str("user_id", dev.UserID).Logger(),
+			accessToken, p.UserID, p.DeviceID, since, false,
+			logger.With().Str("user_id", p.UserID).Str("device_id", p.DeviceID).Logger(),
 		)
 		h.updateMetrics()
 		h.v2Pub.Notify(pubsub.ChanV2, &pubsub.V2InitialSyncComplete{

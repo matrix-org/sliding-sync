@@ -8,8 +8,9 @@ type V3Listener interface {
 }
 
 type V3EnsurePolling struct {
-	UserID   string
-	DeviceID string
+	UserID          string
+	DeviceID        string
+	AccessTokenHash string
 }
 
 func (*V3EnsurePolling) Type() string { return "V3EnsurePolling" }
