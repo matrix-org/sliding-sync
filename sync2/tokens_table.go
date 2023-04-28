@@ -221,3 +221,13 @@ func (t *TokensTable) GetTokenAndSince(userID, deviceID, tokenHash string) (acce
 	accessToken, err = t.decrypt(encToken)
 	return
 }
+
+// Delete looks up a token by its hash and deletes the row.
+// TODO: what happens if the hash isn't found?
+func (t *TokensTable) Delete(accessTokenHash string) error {
+	_, err := t.db.Exec(
+		`DELETE FROM syncv3_sync2_tokens WHERE token_hash = $1`,
+		accessTokenHash,
+	)
+	return err
+}

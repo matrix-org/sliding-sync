@@ -154,11 +154,9 @@ func (h *Handler) OnTerminated(userID, deviceID string) {
 	h.updateMetrics()
 }
 
-func (h *Handler) OnExpiredToken(userID, deviceID string) {
-	h.v2Store.DevicesTable.RemoveDevice(deviceID)
-	h.Store.ToDeviceTable.DeleteAllMessagesForDevice(deviceID)
-	h.Store.DeviceDataTable.DeleteDevice(userID, deviceID)
-	// also notify v3 side so it can remove the connection from ConnMap
+func (h *Handler) OnExpiredToken(accessTokenHash, userID, deviceID string) {
+	h.v2Store.TokensTable.Delete(accessTokenHash)
+	// Notify v3 side so it can remove the connection from ConnMap
 	h.v2Pub.Notify(pubsub.ChanV2, &pubsub.V2ExpiredToken{
 		UserID:   userID,
 		DeviceID: deviceID,

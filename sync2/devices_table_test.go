@@ -179,6 +179,40 @@ func TestDevicesAndTokensTables(t *testing.T) {
 	}
 }
 
+func TestDeletingTokens(t *testing.T) {
+	db, err := sqlx.Open("postgres", postgresConnectionString)
+	if err != nil {
+		t.Fatalf("failed to open SQL db: %s", err)
+	}
+	defer db.Close()
+	tokens := NewTokensTable(db, "my_secret")
+	t.Log("Insert a new token from Alice.")
+	accessToken := "mytoken"
+	token, err := tokens.Insert(accessToken, "@bob:builders.com", "device", time.Time{})
+	if err != nil {
+		t.Fatalf("Failed to Insert token: %s", err)
+	}
+
+	t.Log("We should be able to fetch this token without error.")
+	_, err = tokens.Token(accessToken)
+	if err != nil {
+		t.Fatalf("Failed to fetch token: %s", err)
+	}
+
+	t.Log("Delete the token")
+	err = tokens.Delete(token.AccessTokenHash)
+
+	if err != nil {
+		t.Fatalf("Failed to delete token: %s", err)
+	}
+
+	t.Log("We should no longer be able to fetch this token.")
+	token, err = tokens.Token(accessToken)
+	if token != nil || err == nil {
+		t.Fatalf("Fetching token after deletion did not fail: got %s, %s", token, err)
+	}
+}
+
 func assertEqualTokens(t *testing.T, table *TokensTable, got *Token, accessToken, userID, deviceID string, lastSeen time.Time) {
 	t.Helper()
 	assertEqual(t, got.AccessToken, accessToken, "Token.AccessToken mismatch")

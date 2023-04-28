@@ -50,7 +50,7 @@ type V2DataReceiver interface {
 	// Sent when the poll loop terminates
 	OnTerminated(userID, deviceID string)
 	// Sent when the token gets a 401 response
-	OnExpiredToken(userID, deviceID string)
+	OnExpiredToken(accessTokenHash, userID, deviceID string)
 }
 
 // PollerMap is a map of device ID to Poller
@@ -275,8 +275,8 @@ func (h *PollerMap) OnTerminated(userID, deviceID string) {
 	h.callbacks.OnTerminated(userID, deviceID)
 }
 
-func (h *PollerMap) OnExpiredToken(userID, deviceID string) {
-	h.callbacks.OnExpiredToken(userID, deviceID)
+func (h *PollerMap) OnExpiredToken(accessTokenHash, userID, deviceID string) {
+	h.callbacks.OnExpiredToken(accessTokenHash, userID, deviceID)
 }
 
 func (h *PollerMap) UpdateUnreadCounts(roomID, userID string, highlightCount, notifCount *int) {
@@ -404,7 +404,7 @@ func (p *poller) Poll(since string) {
 				continue
 			} else {
 				p.logger.Warn().Msg("Poller: access token has been invalidated, terminating loop")
-				p.receiver.OnExpiredToken(p.userID, p.deviceID)
+				p.receiver.OnExpiredToken(hashToken(p.accessToken), p.userID, p.deviceID)
 				p.Terminate()
 				break
 			}
