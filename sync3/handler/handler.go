@@ -220,8 +220,8 @@ func (h *SyncLiveHandler) serve(w http.ResponseWriter, req *http.Request) error 
 		return herr
 	}
 	requestBody.SetPos(cpos)
-	internal.SetRequestContextUserID(req.Context(), conn.UserID())
-	log := hlog.FromRequest(req).With().Str("user", conn.UserID()).Int64("pos", cpos).Logger()
+	internal.SetRequestContextUserID(req.Context(), conn.UserID)
+	log := hlog.FromRequest(req).With().Str("user", conn.UserID).Int64("pos", cpos).Logger()
 
 	var timeout int
 	if req.URL.Query().Get("timeout") == "" {
@@ -320,7 +320,10 @@ func (h *SyncLiveHandler) setupConnection(req *http.Request, syncReq *sync3.Requ
 		log.Warn().Msg("Unable to update last seen timestamp")
 	}
 
-	connID := connIDFromToken(token)
+	connID := sync3.ConnID{
+		UserID:   token.UserID,
+		DeviceID: token.DeviceID,
+	}
 	// client thinks they have a connection
 	if containsPos {
 		// Lookup the connection
@@ -373,13 +376,6 @@ func (h *SyncLiveHandler) setupConnection(req *http.Request, syncReq *sync3.Requ
 		log.Info().Msg("using existing connection")
 	}
 	return conn, nil
-}
-
-func connIDFromToken(token *sync2.Token) sync3.ConnID {
-	return sync3.ConnID{
-		// TODO: change ConnID to be a (user, device) ID pair
-		DeviceID: token.DeviceID,
-	}
 }
 
 func (h *SyncLiveHandler) identifyUnknownAccessToken(accessToken string) (*sync2.Token, *internal.HandlerError) {
@@ -595,6 +591,7 @@ func (h *SyncLiveHandler) OnDeviceData(p *pubsub.V2DeviceData) {
 	ctx, task := internal.StartTask(context.Background(), "OnDeviceData")
 	defer task.End()
 	conn := h.ConnMap.Conn(sync3.ConnID{
+		UserID:   p.UserID,
 		DeviceID: p.DeviceID,
 	})
 	if conn == nil {
@@ -607,6 +604,7 @@ func (h *SyncLiveHandler) OnDeviceMessages(p *pubsub.V2DeviceMessages) {
 	ctx, task := internal.StartTask(context.Background(), "OnDeviceMessages")
 	defer task.End()
 	conn := h.ConnMap.Conn(sync3.ConnID{
+		UserID:   p.UserID,
 		DeviceID: p.DeviceID,
 	})
 	if conn == nil {
@@ -703,6 +701,7 @@ func (h *SyncLiveHandler) OnAccountData(p *pubsub.V2AccountData) {
 
 func (h *SyncLiveHandler) OnExpiredToken(p *pubsub.V2ExpiredToken) {
 	h.ConnMap.CloseConn(sync3.ConnID{
+		UserID:   p.UserID,
 		DeviceID: p.DeviceID,
 	})
 }

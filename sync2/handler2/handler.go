@@ -160,6 +160,7 @@ func (h *Handler) OnExpiredToken(userID, deviceID string) {
 	h.Store.DeviceDataTable.DeleteDevice(userID, deviceID)
 	// also notify v3 side so it can remove the connection from ConnMap
 	h.v2Pub.Notify(pubsub.ChanV2, &pubsub.V2ExpiredToken{
+		UserID:   userID,
 		DeviceID: deviceID,
 	})
 }
@@ -201,6 +202,7 @@ func (h *Handler) OnE2EEData(userID, deviceID string, otkCounts map[string]int, 
 		return
 	}
 	h.v2Pub.Notify(pubsub.ChanV2, &pubsub.V2DeviceData{
+		UserID:   userID,
 		DeviceID: deviceID,
 		Pos:      nextPos,
 	})
