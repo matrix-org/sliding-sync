@@ -60,7 +60,10 @@ type testV2Server struct {
 // Most tests only use a single device per user. Give them this helper so they don't
 // have to care about providing a device name.
 func (s *testV2Server) addAccount(userID, token string) {
-	s.addAccountWithDeviceID(userID, "my_device", token)
+	// To keep our future selves sane while debugging, use a device name that
+	// includes the mxid localpart.
+	atLocalPart, _, _ := strings.Cut(userID, ":")
+	s.addAccountWithDeviceID(userID, atLocalPart[1:]+"_device", token)
 }
 
 // Tests that use multiple devices for the same user need to be more explicit.
