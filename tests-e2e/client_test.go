@@ -658,6 +658,25 @@ func (c *CSAPI) SlidingSyncUntilMembership(t *testing.T, pos string, roomID stri
 		content["displayname"] = target.Localpart
 	}
 
+	if membership == "invite" && c == target {
+		return c.SlidingSyncUntil(t, pos, sync3.Request{
+			RoomSubscriptions: map[string]sync3.RoomSubscription{
+				roomID: {
+					TimelineLimit: 10,
+				},
+			},
+		}, func(r *sync3.Response) error {
+			room, exists := r.Rooms[roomID]
+			if !exists {
+				return fmt.Errorf("room %v does not exist", roomID)
+			}
+			if len(room.InviteState) > 0 {
+				return nil
+			}
+			return fmt.Errorf("found room %v but it has no invite_state: %+v", roomID, room)
+		})
+	}
+
 	return c.SlidingSyncUntilEvent(t, pos, sync3.Request{
 		RoomSubscriptions: map[string]sync3.RoomSubscription{
 			roomID: {

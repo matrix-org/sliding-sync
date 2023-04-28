@@ -628,6 +628,7 @@ func (c *UserCache) OnInvite(ctx context.Context, roomID string, inviteStateEven
 
 	urd := c.LoadRoomData(roomID)
 	urd.IsInvite = true
+	urd.HasLeft = false
 	urd.HighlightCount = InvitesAreHighlightsValue
 	urd.IsDM = inviteData.IsDM
 	urd.Invite = inviteData
