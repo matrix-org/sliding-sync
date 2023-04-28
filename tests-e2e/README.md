@@ -16,7 +16,7 @@ Counter examples include testing restarts of the proxy, testing out-of-order res
 Run a Synapse in a separate terminal:
 
 ```bash
-docker run --rm -e "SYNAPSE_COMPLEMENT_DATABASE=sqlite" -e "SERVER_NAME=synapse" -p 8008:8008 ghcr.io/matrix-org/synapse-service:v1.62.0
+docker run --rm -e "SYNAPSE_COMPLEMENT_DATABASE=sqlite" -e "SERVER_NAME=synapse" -p 8008:8008 ghcr.io/matrix-org/synapse-service:v1.72.0
 ```
 
 (You will need to [`docker login` to the GitHub container registry](
