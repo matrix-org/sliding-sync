@@ -54,6 +54,7 @@ func (s *connStateLive) liveUpdate(
 	ctx context.Context, req *sync3.Request, ex extensions.Request, isInitial bool,
 	response *sync3.Response,
 ) {
+	log := logger.With().Str("user", s.userID).Str("device", s.deviceID).Logger()
 	// we need to ensure that we keep consuming from the updates channel, even if they want a response
 	// immediately. If we have new list data we won't wait, but if we don't then we need to be able to
 	// catch-up to the current head position, hence giving 100ms grace period for processing.
@@ -67,17 +68,17 @@ func (s *connStateLive) liveUpdate(
 		timeWaited := time.Since(startTime)
 		timeLeftToWait := timeToWait - timeWaited
 		if timeLeftToWait < 0 {
-			logger.Trace().Str("user", s.userID).Str("time_waited", timeWaited.String()).Msg("liveUpdate: timed out")
+			log.Trace().Str("time_waited", timeWaited.String()).Msg("liveUpdate: timed out")
 			return
 		}
-		logger.Trace().Str("user", s.userID).Str("dur", timeLeftToWait.String()).Msg("liveUpdate: no response data yet; blocking")
+		log.Trace().Str("dur", timeLeftToWait.String()).Msg("liveUpdate: no response data yet; blocking")
 		select {
 		case <-ctx.Done(): // client has given up
-			logger.Trace().Str("user", s.userID).Msg("liveUpdate: client gave up")
+			log.Trace().Msg("liveUpdate: client gave up")
 			internal.Logf(ctx, "liveUpdate", "context cancelled")
 			return
 		case <-time.After(timeLeftToWait): // we've timed out
-			logger.Trace().Str("user", s.userID).Msg("liveUpdate: timed out")
+			log.Trace().Msg("liveUpdate: timed out")
 			internal.Logf(ctx, "liveUpdate", "timed out after %v", timeLeftToWait)
 			return
 		case update := <-s.updates:
@@ -111,7 +112,7 @@ func (s *connStateLive) liveUpdate(
 			}
 		}
 	}
-	logger.Trace().Str("user", s.userID).Int("subs", len(response.Rooms)).Msg("liveUpdate: returning")
+	log.Trace().Msg("liveUpdate: returning")
 	// TODO: op consolidation
 }
 
