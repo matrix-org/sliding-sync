@@ -4,8 +4,9 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"github.com/getsentry/sentry-go"
 	"sync"
+
+	"github.com/getsentry/sentry-go"
 
 	lru "github.com/hashicorp/golang-lru"
 	"github.com/matrix-org/sliding-sync/internal"
@@ -619,6 +620,7 @@ func (c *UserCache) OnInvite(ctx context.Context, roomID string, inviteStateEven
 
 	urd := c.LoadRoomData(roomID)
 	urd.IsInvite = true
+	urd.HasLeft = false
 	urd.HighlightCount = InvitesAreHighlightsValue
 	urd.IsDM = inviteData.IsDM
 	urd.Invite = inviteData
