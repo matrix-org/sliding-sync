@@ -130,3 +130,29 @@ To debug **why the proxy is using 100% CPU**, run:
 wget -O 'profile.pprof' 'http://localhost:6060/debug/pprof/profile?seconds=10'
 ```
 Then send `profile.pprof` to someone who will then run `go tool pprof -http :5656 profile.pprof` and typically view the flame graph: View -> Flame Graph.
+
+
+### Developers' cheat sheet
+
+Sanity check everything builds:
+
+```shell
+go build ./cmd/syncv3
+go list ./... | xargs -n1 go test -c -o /dev/null
+```
+
+Run all unit and integration tests:
+
+```shell
+go test -p 1 -count 1 $(go list ./... | grep -v tests-e2e) -timeout 120s
+```
+
+Run end-to-end tests:
+
+```shell
+# Run each line in a separate terminal windows. Will need to `docker login`
+# to ghcr and pull the image.
+docker run --rm -e "SYNAPSE_COMPLEMENT_DATABASE=sqlite" -e "SERVER_NAME=synapse" -p 8888:8008 ghcr.io/matrix-org/synapse-service:v1.72.0
+(dropdb syncv3_test || true) && createdb syncv3_test && go build ./cmd/syncv3 && SYNCV3_SERVER=http://localhost:8888 SYNCV3_DB="user=$(whoami) dbname=syncv3_test sslmode=disable" SYNCV3_SECRET=secret SYNCV3_BINDADDR=0.0.0.0:8844 SYNCV3_ADDR='http://localhost:8844' SYNCV3_DEBUG=1 ./syncv3
+SYNCV3_SERVER=http://localhost:8888 SYNCV3_ADDR=http://localhost:8844 go test ./tests-e2e -count=1 -v
+```
