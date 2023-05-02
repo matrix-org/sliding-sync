@@ -78,6 +78,7 @@ type V2InitialSyncComplete struct {
 func (*V2InitialSyncComplete) Type() string { return "V2InitialSyncComplete" }
 
 type V2DeviceData struct {
+	UserID   string
 	DeviceID string
 	Pos      int64
 }
@@ -106,6 +107,7 @@ type V2DeviceMessages struct {
 func (*V2DeviceMessages) Type() string { return "V2DeviceMessages" }
 
 type V2ExpiredToken struct {
+	UserID   string
 	DeviceID string
 }
 

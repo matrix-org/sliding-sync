@@ -8,8 +8,11 @@ type V3Listener interface {
 }
 
 type V3EnsurePolling struct {
-	UserID   string
-	DeviceID string
+	// TODO: we only really need to provide the access token hash here.
+	// Passing through a user means we can log something sensible though.
+	UserID          string
+	DeviceID        string
+	AccessTokenHash string
 }
 
 func (*V3EnsurePolling) Type() string { return "V3EnsurePolling" }

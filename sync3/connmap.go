@@ -71,7 +71,7 @@ func (m *ConnMap) CreateConn(cid ConnID, newConnHandler func() ConnHandler) (*Co
 	conn = NewConn(cid, h)
 	m.cache.Set(cid.String(), conn)
 	m.connIDToConn[cid.String()] = conn
-	m.userIDToConn[h.UserID()] = append(m.userIDToConn[h.UserID()], conn)
+	m.userIDToConn[cid.UserID] = append(m.userIDToConn[cid.UserID], conn)
 	return conn, true
 }
 
@@ -94,20 +94,20 @@ func (m *ConnMap) closeConn(conn *Conn) {
 		return
 	}
 
-	connID := conn.ConnID.String()
-	logger.Trace().Str("conn", connID).Msg("closing connection")
+	connKey := conn.ConnID.String()
+	logger.Trace().Str("conn", connKey).Msg("closing connection")
 	// remove conn from all the maps
-	delete(m.connIDToConn, connID)
+	delete(m.connIDToConn, connKey)
 	h := conn.handler
-	conns := m.userIDToConn[h.UserID()]
+	conns := m.userIDToConn[conn.UserID]
 	for i := 0; i < len(conns); i++ {
-		if conns[i].ConnID.String() == connID {
+		if conns[i].DeviceID == conn.DeviceID {
 			// delete without preserving order
 			conns[i] = conns[len(conns)-1]
 			conns = conns[:len(conns)-1]
 		}
 	}
-	m.userIDToConn[h.UserID()] = conns
+	m.userIDToConn[conn.UserID] = conns
 	// remove user cache listeners etc
 	h.Destroy()
 }

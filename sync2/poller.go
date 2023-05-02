@@ -14,13 +14,18 @@ import (
 	"github.com/tidwall/gjson"
 )
 
+type PollerID struct {
+	UserID   string
+	DeviceID string
+}
+
 // alias time.Sleep so tests can monkey patch it out
 var timeSleep = time.Sleep
 
 // V2DataReceiver is the receiver for all the v2 sync data the poller gets
 type V2DataReceiver interface {
 	// Update the since token for this device. Called AFTER all other data in this sync response has been processed.
-	UpdateDeviceSince(deviceID, since string)
+	UpdateDeviceSince(userID, deviceID, since string)
 	// Accumulate data for this room. This means the timeline section of the v2 response.
 	Accumulate(deviceID, roomID, prevBatch string, timeline []json.RawMessage) // latest pos with event nids of timeline entries
 	// Initialise the room, if it hasn't been already. This means the state section of the v2 response.
@@ -45,7 +50,7 @@ type V2DataReceiver interface {
 	// Sent when the poll loop terminates
 	OnTerminated(userID, deviceID string)
 	// Sent when the token gets a 401 response
-	OnExpiredToken(userID, deviceID string)
+	OnExpiredToken(accessTokenHash, userID, deviceID string)
 }
 
 // PollerMap is a map of device ID to Poller
@@ -53,7 +58,7 @@ type PollerMap struct {
 	v2Client                 Client
 	callbacks                V2DataReceiver
 	pollerMu                 *sync.Mutex
-	Pollers                  map[string]*poller // device_id -> poller
+	Pollers                  map[PollerID]*poller
 	executor                 chan func()
 	executorRunning          bool
 	processHistogramVec      *prometheus.HistogramVec
@@ -88,7 +93,7 @@ func NewPollerMap(v2Client Client, enablePrometheus bool) *PollerMap {
 	pm := &PollerMap{
 		v2Client: v2Client,
 		pollerMu: &sync.Mutex{},
-		Pollers:  make(map[string]*poller),
+		Pollers:  make(map[PollerID]*poller),
 		executor: make(chan func(), 0),
 	}
 	if enablePrometheus {
@@ -151,15 +156,18 @@ func (h *PollerMap) NumPollers() (count int) {
 // Note that we will immediately return if there is a poller for the same user but a different device.
 // We do this to allow for logins on clients to be snappy fast, even though they won't yet have the
 // to-device msgs to decrypt E2EE roms.
-func (h *PollerMap) EnsurePolling(accessToken, userID, deviceID, v2since string, isStartup bool, logger zerolog.Logger) {
+func (h *PollerMap) EnsurePolling(pid PollerID, accessToken, v2since string, isStartup bool, logger zerolog.Logger) {
 	h.pollerMu.Lock()
 	if !h.executorRunning {
 		h.executorRunning = true
 		go h.execute()
 	}
-	poller, ok := h.Pollers[deviceID]
+	poller, ok := h.Pollers[pid]
 	// a poller exists and hasn't been terminated so we don't need to do anything
 	if ok && !poller.terminated.Load() {
+		if poller.accessToken != accessToken {
+			logger.Warn().Msg("PollerMap.EnsurePolling: poller already running with different access token")
+		}
 		h.pollerMu.Unlock()
 		// this existing poller may not have completed the initial sync yet, so we need to make sure
 		// it has before we return.
@@ -169,28 +177,31 @@ func (h *PollerMap) EnsurePolling(accessToken, userID, deviceID, v2since string,
 	// check if we need to wait at all: we don't need to if this user is already syncing on a different device
 	// This is O(n) so we may want to map this if we get a lot of users...
 	needToWait := true
-	for pollerDeviceID, poller := range h.Pollers {
-		if deviceID == pollerDeviceID {
+	for existingPID, poller := range h.Pollers {
+		// Ignore different users. Also ignore same-user same-device.
+		if pid.UserID != existingPID.UserID || pid.DeviceID == existingPID.DeviceID {
 			continue
 		}
-		if poller.userID == userID && !poller.terminated.Load() {
+		// Now we have same-user different-device.
+		if !poller.terminated.Load() {
 			needToWait = false
+			break
 		}
 	}
 
 	// replace the poller. If we don't need to wait, then we just want to nab to-device events initially.
 	// We don't do that on startup though as we cannot be sure that other pollers will not be using expired tokens.
-	poller = newPoller(userID, accessToken, deviceID, h.v2Client, h, logger, !needToWait && !isStartup)
+	poller = newPoller(pid, accessToken, h.v2Client, h, logger, !needToWait && !isStartup)
 	poller.processHistogramVec = h.processHistogramVec
 	poller.timelineSizeVec = h.timelineSizeHistogramVec
 	go poller.Poll(v2since)
-	h.Pollers[deviceID] = poller
+	h.Pollers[pid] = poller
 
 	h.pollerMu.Unlock()
 	if needToWait {
 		poller.WaitUntilInitialSync()
 	} else {
-		logger.Info().Str("user", userID).Msg("a poller exists for this user; not waiting for this device to do an initial sync")
+		logger.Info().Msg("a poller exists for this user; not waiting for this device to do an initial sync")
 	}
 }
 
@@ -200,8 +211,8 @@ func (h *PollerMap) execute() {
 	}
 }
 
-func (h *PollerMap) UpdateDeviceSince(deviceID, since string) {
-	h.callbacks.UpdateDeviceSince(deviceID, since)
+func (h *PollerMap) UpdateDeviceSince(userID, deviceID, since string) {
+	h.callbacks.UpdateDeviceSince(userID, deviceID, since)
 }
 func (h *PollerMap) Accumulate(deviceID, roomID, prevBatch string, timeline []json.RawMessage) {
 	var wg sync.WaitGroup
@@ -261,8 +272,8 @@ func (h *PollerMap) OnTerminated(userID, deviceID string) {
 	h.callbacks.OnTerminated(userID, deviceID)
 }
 
-func (h *PollerMap) OnExpiredToken(userID, deviceID string) {
-	h.callbacks.OnExpiredToken(userID, deviceID)
+func (h *PollerMap) OnExpiredToken(accessTokenHash, userID, deviceID string) {
+	h.callbacks.OnExpiredToken(accessTokenHash, userID, deviceID)
 }
 
 func (h *PollerMap) UpdateUnreadCounts(roomID, userID string, highlightCount, notifCount *int) {
@@ -308,8 +319,8 @@ func (h *PollerMap) OnE2EEData(userID, deviceID string, otkCounts map[string]int
 // Poller can automatically poll the sync v2 endpoint and accumulate the responses in storage
 type poller struct {
 	userID      string
-	accessToken string
 	deviceID    string
+	accessToken string
 	client      Client
 	receiver    V2DataReceiver
 	logger      zerolog.Logger
@@ -329,13 +340,13 @@ type poller struct {
 	timelineSizeVec     *prometheus.HistogramVec
 }
 
-func newPoller(userID, accessToken, deviceID string, client Client, receiver V2DataReceiver, logger zerolog.Logger, initialToDeviceOnly bool) *poller {
+func newPoller(pid PollerID, accessToken string, client Client, receiver V2DataReceiver, logger zerolog.Logger, initialToDeviceOnly bool) *poller {
 	var wg sync.WaitGroup
 	wg.Add(1)
 	return &poller{
+		userID:              pid.UserID,
+		deviceID:            pid.DeviceID,
 		accessToken:         accessToken,
-		userID:              userID,
-		deviceID:            deviceID,
 		client:              client,
 		receiver:            receiver,
 		terminated:          &atomic.Bool{},
@@ -390,7 +401,7 @@ func (p *poller) Poll(since string) {
 				continue
 			} else {
 				p.logger.Warn().Msg("Poller: access token has been invalidated, terminating loop")
-				p.receiver.OnExpiredToken(p.userID, p.deviceID)
+				p.receiver.OnExpiredToken(hashToken(p.accessToken), p.userID, p.deviceID)
 				p.Terminate()
 				break
 			}
@@ -411,7 +422,7 @@ func (p *poller) Poll(since string) {
 
 		since = resp.NextBatch
 		// persist the since token (TODO: this could get slow if we hammer the DB too much)
-		p.receiver.UpdateDeviceSince(p.deviceID, since)
+		p.receiver.UpdateDeviceSince(p.userID, p.deviceID, since)
 
 		if firstTime {
 			firstTime = false
@@ -522,7 +533,7 @@ func (p *poller) parseRoomsResponse(res *SyncResponse) {
 				// the timeline now so that future events are received under the
 				// correct room state.
 				const warnMsg = "parseRoomsResponse: prepending state events to timeline after gappy poll"
-				log.Warn().Str("room_id", roomID).Int("prependStateEvents", len(prependStateEvents)).Msg(warnMsg)
+				logger.Warn().Str("room_id", roomID).Int("prependStateEvents", len(prependStateEvents)).Msg(warnMsg)
 				sentry.WithScope(func(scope *sentry.Scope) {
 					scope.SetContext("sliding-sync", map[string]interface{}{
 						"room_id":                  roomID,
