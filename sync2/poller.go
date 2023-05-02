@@ -166,10 +166,7 @@ func (h *PollerMap) EnsurePolling(pid PollerID, accessToken, v2since string, isS
 	// a poller exists and hasn't been terminated so we don't need to do anything
 	if ok && !poller.terminated.Load() {
 		if poller.accessToken != accessToken {
-			logger.Warn().
-				Str("user_id", pid.UserID).
-				Str("device_id", pid.DeviceID).
-				Msg("PollerMap.EnsurePolling: poller already running with different access token")
+			logger.Warn().Msg("PollerMap.EnsurePolling: poller already running with different access token")
 		}
 		h.pollerMu.Unlock()
 		// this existing poller may not have completed the initial sync yet, so we need to make sure
@@ -204,7 +201,7 @@ func (h *PollerMap) EnsurePolling(pid PollerID, accessToken, v2since string, isS
 	if needToWait {
 		poller.WaitUntilInitialSync()
 	} else {
-		logger.Info().Str("user", poller.userID).Msg("a poller exists for this user; not waiting for this device to do an initial sync")
+		logger.Info().Msg("a poller exists for this user; not waiting for this device to do an initial sync")
 	}
 }
 

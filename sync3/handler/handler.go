@@ -317,7 +317,7 @@ func (h *SyncLiveHandler) setupConnection(req *http.Request, syncReq *sync3.Requ
 	err = h.V2Store.TokensTable.MaybeUpdateLastSeen(token, time.Now())
 	if err != nil {
 		// Not fatal---log and continue.
-		log.Warn().Msg("Unable to update last seen timestamp")
+		log.Warn().Err(err).Msg("Unable to update last seen timestamp")
 	}
 
 	connID := sync3.ConnID{

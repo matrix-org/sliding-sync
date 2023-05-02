@@ -177,7 +177,7 @@ func (h *Handler) addPrometheusMetrics() {
 func (h *Handler) UpdateDeviceSince(userID, deviceID, since string) {
 	err := h.v2Store.DevicesTable.UpdateDeviceSince(userID, deviceID, since)
 	if err != nil {
-		logger.Err(err).Str("device", deviceID).Str("since", since).Msg("V2: failed to persist since token")
+		logger.Err(err).Str("user", userID).Str("device", deviceID).Str("since", since).Msg("V2: failed to persist since token")
 		sentry.CaptureException(err)
 	}
 }
