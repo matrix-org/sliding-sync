@@ -221,12 +221,23 @@ func (t *TokensTable) GetTokenAndSince(userID, deviceID, tokenHash string) (acce
 	return
 }
 
-// Delete looks up a token by its hash and deletes the row.
-// TODO: what happens if the hash isn't found?
+// Delete looks up a token by its hash and deletes the row. If no token exists with the
+// given hash, a warning is logged but no error is returned.
 func (t *TokensTable) Delete(accessTokenHash string) error {
-	_, err := t.db.Exec(
+	result, err := t.db.Exec(
 		`DELETE FROM syncv3_sync2_tokens WHERE token_hash = $1`,
 		accessTokenHash,
 	)
-	return err
+	if err != nil {
+		return err
+	}
+
+	ra, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if ra != 1 {
+		logger.Warn().Msgf("Tokens.Delete: expected to delete one token, but actually deleted %d", ra)
+	}
+	return nil
 }
