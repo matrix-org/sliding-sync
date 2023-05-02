@@ -294,7 +294,7 @@ func (h *Handler) OnReceipt(userID, roomID, ephEventType string, ephEvent json.R
 }
 
 func (h *Handler) AddToDeviceMessages(userID, deviceID string, msgs []json.RawMessage) {
-	_, err := h.Store.ToDeviceTable.InsertMessages(deviceID, msgs)
+	_, err := h.Store.ToDeviceTable.InsertMessages(userID, deviceID, msgs)
 	if err != nil {
 		logger.Err(err).Str("user", userID).Str("device", deviceID).Int("msgs", len(msgs)).Msg("V2: failed to store to-device messages")
 		sentry.CaptureException(err)
