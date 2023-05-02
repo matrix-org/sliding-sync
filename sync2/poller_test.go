@@ -460,7 +460,7 @@ type mockDataReceiver struct {
 	unblockProcess  chan struct{}
 }
 
-func (a *mockDataReceiver) Accumulate(userID, roomID, prevBatch string, timeline []json.RawMessage) {
+func (a *mockDataReceiver) Accumulate(userID, deviceID, roomID, prevBatch string, timeline []json.RawMessage) {
 	a.timelines[roomID] = append(a.timelines[roomID], timeline...)
 }
 func (a *mockDataReceiver) Initialise(roomID string, state []json.RawMessage) []json.RawMessage {

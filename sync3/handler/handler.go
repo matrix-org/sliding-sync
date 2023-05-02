@@ -533,8 +533,8 @@ func (h *SyncLiveHandler) DeviceData(ctx context.Context, userID, deviceID strin
 }
 
 // Implements TransactionIDFetcher
-func (h *SyncLiveHandler) TransactionIDForEvents(deviceID string, eventIDs []string) (eventIDToTxnID map[string]string) {
-	eventIDToTxnID, err := h.Storage.TransactionsTable.Select(deviceID, eventIDs)
+func (h *SyncLiveHandler) TransactionIDForEvents(userID string, deviceID string, eventIDs []string) (eventIDToTxnID map[string]string) {
+	eventIDToTxnID, err := h.Storage.TransactionsTable.Select(userID, deviceID, eventIDs)
 	if err != nil {
 		logger.Warn().Str("err", err.Error()).Str("device", deviceID).Msg("failed to select txn IDs for events")
 	}

@@ -14,7 +14,7 @@ type txnIDFetcher struct {
 	data map[string]string
 }
 
-func (t *txnIDFetcher) TransactionIDForEvents(deviceID string, eventIDs []string) (eventIDToTxnID map[string]string) {
+func (t *txnIDFetcher) TransactionIDForEvents(userID string, deviceID string, eventIDs []string) (eventIDToTxnID map[string]string) {
 	eventIDToTxnID = make(map[string]string)
 	for _, eventID := range eventIDs {
 		txnID, ok := t.data[eventID]
@@ -83,7 +83,7 @@ func TestAnnotateWithTransactionIDs(t *testing.T) {
 			data: tc.eventIDToTxnIDs,
 		}
 		uc := caches.NewUserCache(userID, nil, nil, fetcher)
-		got := uc.AnnotateWithTransactionIDs(context.Background(), "DEVICE", convertIDToEventStub(tc.roomIDToEvents))
+		got := uc.AnnotateWithTransactionIDs(context.Background(), userID, "DEVICE", convertIDToEventStub(tc.roomIDToEvents))
 		want := convertIDTxnToEventStub(tc.wantRoomIDToEvents)
 		if !reflect.DeepEqual(got, want) {
 			t.Errorf("%s : got %v want %v", tc.name, js(got), js(want))

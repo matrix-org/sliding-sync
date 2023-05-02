@@ -33,7 +33,7 @@ func (t *NopJoinTracker) IsUserJoined(userID, roomID string) bool {
 
 type NopTransactionFetcher struct{}
 
-func (t *NopTransactionFetcher) TransactionIDForEvents(userID string, eventID []string) (eventIDToTxnID map[string]string) {
+func (t *NopTransactionFetcher) TransactionIDForEvents(userID, deviceID string, eventIDs []string) (eventIDToTxnID map[string]string) {
 	return
 }
 
