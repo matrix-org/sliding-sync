@@ -3,14 +3,7 @@ package sync2
 import (
 	"github.com/jmoiron/sqlx"
 	_ "github.com/lib/pq"
-	"github.com/rs/zerolog"
-	"os"
 )
-
-var log = zerolog.New(os.Stdout).With().Timestamp().Logger().Output(zerolog.ConsoleWriter{
-	Out:        os.Stderr,
-	TimeFormat: "15:04:05",
-})
 
 type Device struct {
 	UserID   string `db:"user_id"`

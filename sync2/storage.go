@@ -23,7 +23,7 @@ func NewStore(postgresURI, secret string) *Storage {
 	if err != nil {
 		sentry.CaptureException(err)
 		// TODO: if we panic(), will sentry have a chance to flush the event?
-		log.Panic().Err(err).Str("uri", postgresURI).Msg("failed to open SQL DB")
+		logger.Panic().Err(err).Str("uri", postgresURI).Msg("failed to open SQL DB")
 	}
 	return &Storage{
 		DevicesTable: NewDevicesTable(db),
