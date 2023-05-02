@@ -144,9 +144,9 @@ func TestTokenForEachDevice(t *testing.T) {
 		t.Fatalf("Failed TokenForEachDevice: %s", err)
 	}
 
-	expectAlice := TokenWithSince{Token: aliceToken2, Since: sinceValue}
-	expectBob := TokenWithSince{Token: bobToken, Since: ""}
-	wantTokens := []*TokenWithSince{&expectAlice, &expectBob}
+	expectAlice := TokenForPoller{Token: aliceToken2, Since: sinceValue}
+	expectBob := TokenForPoller{Token: bobToken, Since: ""}
+	wantTokens := []*TokenForPoller{&expectAlice, &expectBob}
 
 	if len(gotTokens) != len(wantTokens) {
 		t.Fatalf("AllDevices: got %d tokens, want %d", len(gotTokens), len(wantTokens))

@@ -125,12 +125,14 @@ func (t *TokensTable) Token(plaintextToken string) (*Token, error) {
 	return &token, nil
 }
 
-type TokenWithSince struct {
+// TokenForPoller represents a row of the tokens table, together with any data
+// maintained by pollers for that token's device.
+type TokenForPoller struct {
 	*Token
 	Since string `db:"since"`
 }
 
-func (t *TokensTable) TokenForEachDevice() (tokens []TokenWithSince, err error) {
+func (t *TokensTable) TokenForEachDevice() (tokens []TokenForPoller, err error) {
 	// Fetches the most recently seen token for each device, see e.g.
 	// https://www.postgresql.org/docs/11/sql-select.html#SQL-DISTINCT
 	err = t.db.Select(

@@ -106,7 +106,7 @@ func (h *Handler) StartV2Pollers() {
 	// Too low and this will take ages for the v2 pollers to startup.
 	numWorkers := 16
 	numFails := 0
-	ch := make(chan sync2.TokenWithSince, len(tokens))
+	ch := make(chan sync2.TokenForPoller, len(tokens))
 	for _, t := range tokens {
 		// if we fail to decrypt the access token, skip it.
 		if t.AccessToken == "" {
