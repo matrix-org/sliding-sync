@@ -57,7 +57,7 @@ func NewToDeviceTable(db *sqlx.DB) *ToDeviceTable {
 		action SMALLINT DEFAULT 0 -- 0 means unknown
 	);
 	CREATE TABLE IF NOT EXISTS syncv3_to_device_ack_pos (
-	    user_id TEXT NOT NULL,
+		user_id TEXT NOT NULL,
 		device_id TEXT NOT NULL,
 		PRIMARY KEY (user_id, device_id),
 		unack_pos BIGINT NOT NULL
