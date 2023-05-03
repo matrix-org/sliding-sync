@@ -1,12 +1,13 @@
 package sync2
 
 import (
+	"crypto/sha256"
 	"fmt"
 	"github.com/jmoiron/sqlx"
 	"github.com/matrix-org/sliding-sync/sqlutil"
 )
 
-func MigrateDeviceIDs(db *sqlx.DB, whoamiClient Client, commit bool) error {
+func MigrateDeviceIDs(db *sqlx.DB, secret string, whoamiClient Client, commit bool) error {
 	return sqlutil.WithTransaction(db, func(txn *sqlx.Tx) (err error) {
 		migrated, err := isMigrated(txn)
 		if err != nil {
@@ -21,7 +22,7 @@ func MigrateDeviceIDs(db *sqlx.DB, whoamiClient Client, commit bool) error {
 			return
 		}
 
-		err = runMigration(txn, whoamiClient)
+		err = runMigration(txn, secret, whoamiClient)
 		if err != nil {
 			return
 		}
@@ -90,15 +91,14 @@ func alterTables(txn *sqlx.Tx) (err error) {
 }
 
 type oldDevice struct {
-	AccessToken          string
+	AccessToken          string // not a DB row, but it's convenient to write to here
 	AccessTokenHash      string `db:"device_id"`
 	UserID               string `db:"user_id"`
 	AccessTokenEncrypted string `db:"v2_token_encrypted"`
 	Since                string `db:"since"`
 }
 
-func runMigration(txn *sqlx.Tx, whoamiClient Client) (err error) {
-
+func runMigration(txn *sqlx.Tx, secret string, whoamiClient Client) (err error) {
 	logger.Info().Msg("Loading old-style devices into memory")
 	var devices []oldDevice
 	err = txn.Select(
@@ -109,8 +109,20 @@ func runMigration(txn *sqlx.Tx, whoamiClient Client) (err error) {
 		return
 	}
 
-	logger.Info().Msgf("Got %s devices to migrate", len(devices))
-	for _, device := range devices {
+	logger.Info().Msgf("Got %d devices to migrate", len(devices))
+
+	hasher := sha256.New()
+	hasher.Write([]byte(secret))
+	key := hasher.Sum(nil)
+
+	// TODO: can we get away with doing this sequentially, or should we parallelise
+	//       this like the poller startup routine does?
+	for i, device := range devices {
+		device.AccessToken, err = decrypt(device.AccessTokenEncrypted, key)
+		if err != nil {
+			return
+		}
+		logger.Info().Msgf("%4d/%4d migrating device %s", i+1, len(devices), device.AccessTokenHash)
 		err = migrateDevice(txn, whoamiClient, &device)
 		if err != nil {
 			return
@@ -121,20 +133,95 @@ func runMigration(txn *sqlx.Tx, whoamiClient Client) (err error) {
 }
 
 func migrateDevice(txn *sqlx.Tx, whoamiClient Client, device *oldDevice) (err error) {
-	// Migration is required. Fetch the "real" device ID.
-	gotUserID, gotHSDeviceID, err := whoamiClient.WhoAmI(device.)
+	gotUserID, gotDeviceID, err := whoamiClient.WhoAmI(device.AccessToken)
 	if err != nil {
 		return err
 	}
 	// Sanity check the user ID from the HS matches our records
-	if gotUserID != d.UserID {
+	if gotUserID != device.UserID {
 		return fmt.Errorf(
 			"/whoami response was for the wrong user. Queried for %s, but got response for %s",
-			d.UserID, gotUserID,
+			device.UserID, gotUserID,
 		)
 	}
+
+	// For these first four tables:
+	// - use the actual device ID instead of the access token hash, and
+	// - ensure a user ID is set.
+	err = exec(
+		txn,
+		`UPDATE syncv3_sync2_devices SET user_id = $1, device_id = $2 WHERE device_id = $3`,
+		expectOneRowAffected,
+		gotUserID, gotDeviceID, device.AccessTokenHash,
+	)
+	if err != nil {
+		return
+	}
+
+	err = exec(
+		txn,
+		`UPDATE syncv3_to_device_messages SET user_id = $1, device_id = $2 WHERE device_id = $3`,
+		expectAnyNumberOfRowsAffected,
+		gotUserID, gotDeviceID, device.AccessTokenHash,
+	)
+	if err != nil {
+		return
+	}
+
+	err = exec(
+		txn,
+		`UPDATE syncv3_to_device_ack_pos SET user_id = $1, device_id = $2 WHERE device_id = $3`,
+		expectAtMostOneRowAffected,
+		gotUserID, gotDeviceID, device.AccessTokenHash,
+	)
+	if err != nil {
+		return
+	}
+
+	err = exec(
+		txn,
+		`UPDATE syncv3_device_data SET user_id = $1, device_id = $2 WHERE device_id = $3`,
+		expectAtMostOneRowAffected,
+		gotUserID, gotDeviceID, device.AccessTokenHash,
+	)
+	if err != nil {
+		return
+	}
+
+	// Confusingly, the txns table used to store access token hashes under the user_id
+	// column. Write the actual user ID to the user_id column, and the actual device ID
+	// to the device_id column.
+	err = exec(
+		txn,
+		`UPDATE syncv3_txns SET user_id = $1, device_id = $2 WHERE user_id = $3`,
+		expectAtMostOneRowAffected,
+		gotUserID, gotDeviceID, device.AccessTokenHash,
+	)
+	if err != nil {
+		return
+	}
+
 	return
 }
+
+func exec(txn *sqlx.Tx, query string, checkRowsAffected func(ra int64) bool, args ...any) error {
+	res, err := txn.Exec(query, args...)
+	if err != nil {
+		return err
+	}
+	ra, err := res.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if !checkRowsAffected(ra) {
+		return fmt.Errorf("Failed checkRowsAffected: got %d", ra)
+	}
+	return nil
+}
+
+func expectOneRowAffected(ra int64) bool          { return ra == 1 }
+func expectAnyNumberOfRowsAffected(ra int64) bool { return true }
+func expectAtMostOneRowAffected(ra int64) bool    { return ra == 0 || ra == 1 }
 
 func finish(txn *sqlx.Tx) (err error) {
 	_, err = txn.Exec(`
