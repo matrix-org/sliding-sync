@@ -458,7 +458,7 @@ func (s *ConnState) getInitialRoomData(ctx context.Context, roomSub sync3.RoomSu
 		roomToUsersInTimeline[roomID] = userIDs
 		roomToTimeline[roomID] = urd.Timeline
 	}
-	roomToTimeline = s.userCache.AnnotateWithTransactionIDs(ctx, s.deviceID, roomToTimeline)
+	roomToTimeline = s.userCache.AnnotateWithTransactionIDs(ctx, s.userID, s.deviceID, roomToTimeline)
 	rsm := roomSub.RequiredStateMap(s.userID)
 	roomIDToState := s.globalCache.LoadRoomState(ctx, roomIDs, s.loadPosition, rsm, roomToUsersInTimeline)
 	if roomIDToState == nil { // e.g no required_state

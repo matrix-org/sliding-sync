@@ -26,33 +26,34 @@ func TestTransactionTable(t *testing.T) {
 	db, close := connectToDB(t)
 	defer close()
 	userID := "@alice:txns"
+	deviceID := "alice_phone"
 	eventA := "$A"
 	eventB := "$B"
 	txnIDA := "txn_A"
 	txnIDB := "txn_B"
 	table := NewTransactionsTable(db)
 	// empty table select
-	gotTxns, err := table.Select(userID, []string{eventA})
+	gotTxns, err := table.Select(userID, deviceID, []string{eventA})
 	assertNoError(t, err)
 	assertTxns(t, gotTxns, nil)
 
 	// basic insert and select
-	err = table.Insert(userID, map[string]string{
+	err = table.Insert(userID, deviceID, map[string]string{
 		eventA: txnIDA,
 	})
 	assertNoError(t, err)
-	gotTxns, err = table.Select(userID, []string{eventA})
+	gotTxns, err = table.Select(userID, deviceID, []string{eventA})
 	assertNoError(t, err)
 	assertTxns(t, gotTxns, map[string]string{
 		eventA: txnIDA,
 	})
 
 	// multiple txns
-	err = table.Insert(userID, map[string]string{
+	err = table.Insert(userID, deviceID, map[string]string{
 		eventB: txnIDB,
 	})
 	assertNoError(t, err)
-	gotTxns, err = table.Select(userID, []string{eventA, eventB})
+	gotTxns, err = table.Select(userID, deviceID, []string{eventA, eventB})
 	assertNoError(t, err)
 	assertTxns(t, gotTxns, map[string]string{
 		eventA: txnIDA,
@@ -60,14 +61,14 @@ func TestTransactionTable(t *testing.T) {
 	})
 
 	// different user select
-	gotTxns, err = table.Select("@another", []string{eventA, eventB})
+	gotTxns, err = table.Select("@another", "another_device", []string{eventA, eventB})
 	assertNoError(t, err)
 	assertTxns(t, gotTxns, nil)
 
 	// no-op cleanup
 	err = table.Clean(time.Now().Add(-1 * time.Minute))
 	assertNoError(t, err)
-	gotTxns, err = table.Select(userID, []string{eventA, eventB})
+	gotTxns, err = table.Select(userID, deviceID, []string{eventA, eventB})
 	assertNoError(t, err)
 	assertTxns(t, gotTxns, map[string]string{
 		eventA: txnIDA,
@@ -77,7 +78,7 @@ func TestTransactionTable(t *testing.T) {
 	// real cleanup
 	err = table.Clean(time.Now())
 	assertNoError(t, err)
-	gotTxns, err = table.Select(userID, []string{eventA, eventB})
+	gotTxns, err = table.Select(userID, deviceID, []string{eventA, eventB})
 	assertNoError(t, err)
 	assertTxns(t, gotTxns, nil)
 

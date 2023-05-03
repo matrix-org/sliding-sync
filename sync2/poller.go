@@ -27,7 +27,7 @@ type V2DataReceiver interface {
 	// Update the since token for this device. Called AFTER all other data in this sync response has been processed.
 	UpdateDeviceSince(userID, deviceID, since string)
 	// Accumulate data for this room. This means the timeline section of the v2 response.
-	Accumulate(deviceID, roomID, prevBatch string, timeline []json.RawMessage) // latest pos with event nids of timeline entries
+	Accumulate(userID, deviceID, roomID, prevBatch string, timeline []json.RawMessage) // latest pos with event nids of timeline entries
 	// Initialise the room, if it hasn't been already. This means the state section of the v2 response.
 	// If given a state delta from an incremental sync, returns the slice of all state events unknown to the DB.
 	Initialise(roomID string, state []json.RawMessage) []json.RawMessage // snapshot ID?
@@ -201,7 +201,7 @@ func (h *PollerMap) EnsurePolling(pid PollerID, accessToken, v2since string, isS
 	if needToWait {
 		poller.WaitUntilInitialSync()
 	} else {
-		logger.Info().Msg("a poller exists for this user; not waiting for this device to do an initial sync")
+		logger.Info().Str("user", poller.userID).Msg("a poller exists for this user; not waiting for this device to do an initial sync")
 	}
 }
 
@@ -214,11 +214,11 @@ func (h *PollerMap) execute() {
 func (h *PollerMap) UpdateDeviceSince(userID, deviceID, since string) {
 	h.callbacks.UpdateDeviceSince(userID, deviceID, since)
 }
-func (h *PollerMap) Accumulate(deviceID, roomID, prevBatch string, timeline []json.RawMessage) {
+func (h *PollerMap) Accumulate(userID, deviceID, roomID, prevBatch string, timeline []json.RawMessage) {
 	var wg sync.WaitGroup
 	wg.Add(1)
 	h.executor <- func() {
-		h.callbacks.Accumulate(deviceID, roomID, prevBatch, timeline)
+		h.callbacks.Accumulate(userID, deviceID, roomID, prevBatch, timeline)
 		wg.Done()
 	}
 	wg.Wait()
@@ -564,7 +564,7 @@ func (p *poller) parseRoomsResponse(res *SyncResponse) {
 		if len(roomData.Timeline.Events) > 0 {
 			timelineCalls++
 			p.trackTimelineSize(len(roomData.Timeline.Events), roomData.Timeline.Limited)
-			p.receiver.Accumulate(p.deviceID, roomID, roomData.Timeline.PrevBatch, roomData.Timeline.Events)
+			p.receiver.Accumulate(p.userID, p.deviceID, roomID, roomData.Timeline.PrevBatch, roomData.Timeline.Events)
 		}
 
 		// process unread counts AFTER events so global caches have been updated by the time this metadata is added.
@@ -580,7 +580,7 @@ func (p *poller) parseRoomsResponse(res *SyncResponse) {
 		// TODO: do we care about state?
 		if len(roomData.Timeline.Events) > 0 {
 			p.trackTimelineSize(len(roomData.Timeline.Events), roomData.Timeline.Limited)
-			p.receiver.Accumulate(p.deviceID, roomID, roomData.Timeline.PrevBatch, roomData.Timeline.Events)
+			p.receiver.Accumulate(p.userID, p.deviceID, roomID, roomData.Timeline.PrevBatch, roomData.Timeline.Events)
 		}
 		p.receiver.OnLeftRoom(p.userID, roomID)
 	}

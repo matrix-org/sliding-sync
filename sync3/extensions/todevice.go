@@ -75,7 +75,7 @@ func (r *ToDeviceRequest) ProcessInitial(ctx context.Context, res *Response, ext
 			return
 		}
 		// the client is confirming messages up to `from` so delete everything up to and including it.
-		if err = extCtx.Store.ToDeviceTable.DeleteMessagesUpToAndIncluding(extCtx.DeviceID, from); err != nil {
+		if err = extCtx.Store.ToDeviceTable.DeleteMessagesUpToAndIncluding(extCtx.UserID, extCtx.DeviceID, from); err != nil {
 			l.Err(err).Str("since", r.Since).Msg("failed to delete to-device messages up to this value")
 			// TODO add context to sentry
 			internal.GetSentryHubFromContextOrDefault(ctx).CaptureException(err)
@@ -94,14 +94,14 @@ func (r *ToDeviceRequest) ProcessInitial(ctx context.Context, res *Response, ext
 		internal.GetSentryHubFromContextOrDefault(ctx).CaptureException(fmt.Errorf(errMsg))
 	}
 
-	msgs, upTo, err := extCtx.Store.ToDeviceTable.Messages(extCtx.DeviceID, from, int64(r.Limit))
+	msgs, upTo, err := extCtx.Store.ToDeviceTable.Messages(extCtx.UserID, extCtx.DeviceID, from, int64(r.Limit))
 	if err != nil {
 		l.Err(err).Int64("from", from).Msg("cannot query to-device messages")
 		// TODO add context to sentry
 		internal.GetSentryHubFromContextOrDefault(ctx).CaptureException(err)
 		return
 	}
-	err = extCtx.Store.ToDeviceTable.SetUnackedPosition(extCtx.DeviceID, upTo)
+	err = extCtx.Store.ToDeviceTable.SetUnackedPosition(extCtx.UserID, extCtx.DeviceID, upTo)
 	if err != nil {
 		l.Err(err).Msg("cannot set unacked position")
 		// TODO add context to sentry

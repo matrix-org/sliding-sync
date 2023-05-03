@@ -206,7 +206,7 @@ func (h *Handler) OnE2EEData(userID, deviceID string, otkCounts map[string]int, 
 	})
 }
 
-func (h *Handler) Accumulate(deviceID, roomID, prevBatch string, timeline []json.RawMessage) {
+func (h *Handler) Accumulate(userID, deviceID, roomID, prevBatch string, timeline []json.RawMessage) {
 	// Remember any transaction IDs that may be unique to this user
 	eventIDToTxnID := make(map[string]string, len(timeline)) // event_id -> txn_id
 	for _, e := range timeline {
@@ -219,9 +219,9 @@ func (h *Handler) Accumulate(deviceID, roomID, prevBatch string, timeline []json
 	}
 	if len(eventIDToTxnID) > 0 {
 		// persist the txn IDs
-		err := h.Store.TransactionsTable.Insert(deviceID, eventIDToTxnID)
+		err := h.Store.TransactionsTable.Insert(userID, deviceID, eventIDToTxnID)
 		if err != nil {
-			logger.Err(err).Str("device", deviceID).Int("num_txns", len(eventIDToTxnID)).Msg("failed to persist txn IDs for user")
+			logger.Err(err).Str("user", userID).Str("device", deviceID).Int("num_txns", len(eventIDToTxnID)).Msg("failed to persist txn IDs for user")
 			sentry.CaptureException(err)
 		}
 	}
@@ -294,7 +294,7 @@ func (h *Handler) OnReceipt(userID, roomID, ephEventType string, ephEvent json.R
 }
 
 func (h *Handler) AddToDeviceMessages(userID, deviceID string, msgs []json.RawMessage) {
-	_, err := h.Store.ToDeviceTable.InsertMessages(deviceID, msgs)
+	_, err := h.Store.ToDeviceTable.InsertMessages(userID, deviceID, msgs)
 	if err != nil {
 		logger.Err(err).Str("user", userID).Str("device", deviceID).Int("msgs", len(msgs)).Msg("V2: failed to store to-device messages")
 		sentry.CaptureException(err)
