@@ -60,14 +60,9 @@ type SyncLiveHandler struct {
 
 func NewSync3Handler(
 	store *state.Storage, storev2 *sync2.Storage, v2Client sync2.Client, postgresDBURI, secret string,
-	debug bool, pub pubsub.Notifier, sub pubsub.Listener, enablePrometheus bool, maxPendingEventUpdates int,
+	pub pubsub.Notifier, sub pubsub.Listener, enablePrometheus bool, maxPendingEventUpdates int,
 ) (*SyncLiveHandler, error) {
 	logger.Info().Msg("creating handler")
-	if debug {
-		zerolog.SetGlobalLevel(zerolog.TraceLevel)
-	} else {
-		zerolog.SetGlobalLevel(zerolog.InfoLevel)
-	}
 	sh := &SyncLiveHandler{
 		V2:                     v2Client,
 		Storage:                store,
