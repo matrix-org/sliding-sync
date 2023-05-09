@@ -136,6 +136,10 @@ func runMigration(txn *sqlx.Tx, secret string, whoamiClient Client) error {
 		}
 		logger.Info().Msgf("%4d/%4d migrating device %s", i+1, len(devices), device.AccessTokenHash)
 		err = migrateDevice(txn, whoamiClient, &device)
+		if err == HTTP401 {
+			logger.Warn().Msgf("runMigration: device %s has already expired", device.AccessTokenHash)
+			panic("TODO handle expired tokens")
+		}
 		if err != nil {
 			logger.Err(err).Msgf("runMigration: failed to migrate device %s", device.AccessTokenHash)
 			numErrors++
