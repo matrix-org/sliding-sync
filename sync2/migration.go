@@ -136,10 +136,6 @@ func runMigration(txn *sqlx.Tx, secret string, whoamiClient Client) error {
 		}
 		logger.Info().Msgf("%4d/%4d migrating device %s", i+1, len(devices), device.AccessTokenHash)
 		err = migrateDevice(txn, whoamiClient, &device)
-		if err == HTTP401 {
-			logger.Warn().Msgf("runMigration: device %s has already expired", device.AccessTokenHash)
-			panic("TODO handle expired tokens")
-		}
 		if err != nil {
 			logger.Err(err).Msgf("runMigration: failed to migrate device %s", device.AccessTokenHash)
 			numErrors++
@@ -154,6 +150,19 @@ func runMigration(txn *sqlx.Tx, secret string, whoamiClient Client) error {
 
 func migrateDevice(txn *sqlx.Tx, whoamiClient Client, device *oldDevice) (err error) {
 	gotUserID, gotDeviceID, err := whoamiClient.WhoAmI(device.AccessToken)
+	if err == HTTP401 {
+		logger.Warn().Msgf(
+			"migrateDevice: access token for %s has expired. Keeping device row without a token",
+			device.AccessTokenHash,
+		)
+		// Keep the devices row around---we may be able to use the since token if the
+		// device comes back to us with a new access token. Ditto for any to-device
+		// messages, device data entries.
+		//
+		// Since he v2_token_encrypted column will get dropped at the end of the
+		// migration, there is nothing to do here.
+		return nil
+	}
 	if err != nil {
 		return err
 	}
