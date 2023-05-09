@@ -76,7 +76,6 @@ func alterTables(txn *sqlx.Tx) (err error) {
 
 	_, err = txn.Exec(`
 		ALTER TABLE syncv3_to_device_messages
-		DROP CONSTRAINT syncv3_to_device_messages_pkey,
 		ADD COLUMN user_id TEXT;
 	`)
 	if err != nil {
@@ -264,8 +263,7 @@ func finish(txn *sqlx.Tx) (err error) {
 
 	_, err = txn.Exec(`
 		ALTER TABLE syncv3_to_device_messages
-		ALTER COLUMN user_id SET NOT NULL,
-		ADD PRIMARY KEY (user_id, device_id);
+		ALTER COLUMN user_id SET NOT NULL;
 	`)
 	if err != nil {
 		return
