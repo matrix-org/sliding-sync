@@ -23,7 +23,7 @@ func MigrateDeviceIDs(db *sqlx.DB, secret string, whoamiClient Client, commit bo
 			logger.Debug().Msg("MigrateDeviceIDs: migration has already taken place")
 			return nil
 		}
-		logger.Info().Msg("MigrateDeviceIDs: starting")
+		logger.Info().Msgf("MigrateDeviceIDs: starting (commit=%t)", commit)
 
 		err = alterTables(txn)
 		if err != nil {
