@@ -27,7 +27,6 @@ var logger = zerolog.New(os.Stdout).With().Timestamp().Logger().Output(zerolog.C
 var Version string
 
 type Opts struct {
-	Debug                bool
 	AddPrometheusMetrics bool
 	// The max number of events the client is eligible to read (unfiltered) which we are willing to
 	// buffer on this connection. Too large and we consume lots of memory. Too small and busy accounts
@@ -91,7 +90,7 @@ func Setup(destHomeserver, postgresURI, secret string, opts Opts) (*handler2.Han
 	}
 
 	// create v3 handler
-	h3, err := handler.NewSync3Handler(store, storev2, v2Client, postgresURI, secret, opts.Debug, pubSub, pubSub, opts.AddPrometheusMetrics, opts.MaxPendingEventUpdates)
+	h3, err := handler.NewSync3Handler(store, storev2, v2Client, postgresURI, secret, pubSub, pubSub, opts.AddPrometheusMetrics, opts.MaxPendingEventUpdates)
 	if err != nil {
 		panic(err)
 	}
