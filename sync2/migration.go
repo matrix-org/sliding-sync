@@ -259,7 +259,7 @@ func cleanupDevice(txn *sqlx.Tx, device *oldDevice) (err error) {
 	err = exec(
 		txn,
 		`DELETE FROM syncv3_to_device_ack_pos WHERE device_id = $1`,
-		expectAnyNumberOfRowsAffected,
+		expectAtMostOneRowAffected,
 		device.AccessTokenHash,
 	)
 	if err != nil {
@@ -269,6 +269,16 @@ func cleanupDevice(txn *sqlx.Tx, device *oldDevice) (err error) {
 	err = exec(
 		txn,
 		`DELETE FROM syncv3_device_data WHERE device_id = $1`,
+		expectAtMostOneRowAffected,
+		device.AccessTokenHash,
+	)
+	if err != nil {
+		return
+	}
+
+	err = exec(
+		txn,
+		`DELETE FROM syncv3_txns WHERE user_id = $1`,
 		expectAnyNumberOfRowsAffected,
 		device.AccessTokenHash,
 	)
