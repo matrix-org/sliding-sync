@@ -41,7 +41,7 @@ $ SYNCV3_SECRET=$(cat .secret) SYNCV3_SERVER="https://matrix-client.matrix.org" 
 ```
 Using a Docker image:
 ```
-docker run --rm -e "SYNCV3_SERVER=https://matrix-client.matrix.org" -e "SYNCV3_SECRET=$(cat .secret)" -e "SYNCV3_BINDADDR=:8008" -e "SYNCV3_DB=user=$(whoami) dbname=syncv3 sslmode=disable host=host.docker.internal" -p 8008:8008 ghcr.io/matrix-org/sliding-sync:v0.98.0
+docker run --rm -e "SYNCV3_SERVER=https://matrix-client.matrix.org" -e "SYNCV3_SECRET=$(cat .secret)" -e "SYNCV3_BINDADDR=:8008" -e "SYNCV3_DB=user=$(whoami) dbname=syncv3 sslmode=disable host=database.host:5432" -p 8008:8008 ghcr.io/matrix-org/sliding-sync:v0.98.0
 ```
 Optionally also set `SYNCV3_TLS_CERT=path/to/cert.pem` and `SYNCV3_TLS_KEY=path/to/key.pem` to listen on HTTPS instead of HTTP.
 
@@ -56,6 +56,8 @@ INF Poller: v2 poll loop started ip=::1 since= user_id=@kegan:matrix.org
 ```
 
 Wait for the first initial v2 sync to be processed (this can take minutes!) and then v3 APIs will be responsive.
+
+Note that some clients might require that your home server advertises support for sliding-sync in the `.well-known/matrix/client` endpoint; details are in [the work-in-progress specification document](https://github.com/matrix-org/matrix-spec-proposals/blob/kegan/sync-v3/proposals/3575-sync.md#unstable-prefix).
 
 ### Prometheus
 
