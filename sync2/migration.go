@@ -109,15 +109,15 @@ type oldDevice struct {
 	Since                string `db:"since"`
 }
 
-func runMigration(txn *sqlx.Tx, secret string, whoamiClient Client) (err error) {
+func runMigration(txn *sqlx.Tx, secret string, whoamiClient Client) error {
 	logger.Info().Msg("Loading old-style devices into memory")
 	var devices []oldDevice
-	err = txn.Select(
+	err := txn.Select(
 		&devices,
 		`SELECT device_id, user_id, v2_token_encrypted, since FROM syncv3_sync2_devices;`,
 	)
 	if err != nil {
-		return
+		return fmt.Errorf("runMigration: failed to select devices: %s", err)
 	}
 
 	logger.Info().Msgf("Got %d devices to migrate", len(devices))
@@ -128,19 +128,24 @@ func runMigration(txn *sqlx.Tx, secret string, whoamiClient Client) (err error) 
 
 	// TODO: can we get away with doing this sequentially, or should we parallelise
 	//       this like the poller startup routine does?
+	numErrors := 0
 	for i, device := range devices {
 		device.AccessToken, err = decrypt(device.AccessTokenEncrypted, key)
 		if err != nil {
-			return
+			return fmt.Errorf("runMigration: failed to decrypt device: %s", err)
 		}
 		logger.Info().Msgf("%4d/%4d migrating device %s", i+1, len(devices), device.AccessTokenHash)
 		err = migrateDevice(txn, whoamiClient, &device)
 		if err != nil {
-			return
+			logger.Err(err).Msgf("runMigration: failed to migrate device %s", device.AccessTokenHash)
+			numErrors++
 		}
 	}
+	if numErrors > 0 {
+		return fmt.Errorf("runMigration: there were %d failures", numErrors)
+	}
 
-	return
+	return nil
 }
 
 func migrateDevice(txn *sqlx.Tx, whoamiClient Client, device *oldDevice) (err error) {
