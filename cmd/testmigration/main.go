@@ -38,7 +38,7 @@ func main() {
 		DestinationServer: args[EnvServer],
 	}
 
-	err = sync2.MigrateDeviceIDs(db, args[EnvDB], v2Client, args[EnvMigrationCommit] != "")
+	err = sync2.MigrateDeviceIDs(db, args[EnvSecret], v2Client, args[EnvMigrationCommit] != "")
 	if err != nil {
 		panic(err)
 	}

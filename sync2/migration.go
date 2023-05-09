@@ -55,7 +55,7 @@ func isMigrated(txn *sqlx.Tx) (migrated bool, err error) {
 	err = txn.QueryRow(`
 		SELECT EXISTS(
 		    SELECT 1 FROM information_schema.columns
-			WHERE table_name = 'syncv3_txns' AND column_name = 'user_id'
+			WHERE table_name = 'syncv3_txns' AND column_name = 'device_id'
 		);
 	`).Scan(&migrated)
 
@@ -95,7 +95,7 @@ func alterTables(txn *sqlx.Tx) (err error) {
 	_, err = txn.Exec(`
 		ALTER TABLE syncv3_txns
 		DROP CONSTRAINT syncv3_txns_user_id_event_id_key,
-		ADD COLUMN user_id TEXT;
+		ADD COLUMN device_id TEXT;
 	`)
 
 	return
