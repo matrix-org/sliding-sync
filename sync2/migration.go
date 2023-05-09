@@ -5,17 +5,25 @@ import (
 	"fmt"
 	"github.com/jmoiron/sqlx"
 	"github.com/matrix-org/sliding-sync/sqlutil"
+	"time"
 )
 
 func MigrateDeviceIDs(db *sqlx.DB, secret string, whoamiClient Client, commit bool) error {
+	start := time.Now()
+	defer func() {
+		elapsed := time.Since(start)
+		logger.Debug().Msgf("MigrateDeviceIDs: took %s", elapsed)
+	}()
 	return sqlutil.WithTransaction(db, func(txn *sqlx.Tx) (err error) {
 		migrated, err := isMigrated(txn)
 		if err != nil {
 			return
 		}
 		if migrated {
-			logger.Debug().Msg("MigrateDeviceIDs: migration has already taken place.")
+			logger.Debug().Msg("MigrateDeviceIDs: migration has already taken place")
+			return nil
 		}
+		logger.Info().Msg("MigrateDeviceIDs: starting")
 
 		err = alterTables(txn)
 		if err != nil {
@@ -41,6 +49,9 @@ func MigrateDeviceIDs(db *sqlx.DB, secret string, whoamiClient Client, commit bo
 }
 
 func isMigrated(txn *sqlx.Tx) (migrated bool, err error) {
+	// Keep this dead simple for now. This is a one-off migration, before version 1.0.
+	// In the future we'll rip this out and tell people that it's the job to ensure this
+	// migration has ran before they upgrade beyond the rip-out point.
 	err = txn.QueryRow(`
 		SELECT EXISTS(
 		    SELECT 1 FROM information_schema.columns
