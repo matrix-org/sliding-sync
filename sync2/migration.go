@@ -55,7 +55,7 @@ func isMigrated(txn *sqlx.Tx) (migrated bool, err error) {
 	err = txn.QueryRow(`
 		SELECT EXISTS(
 		    SELECT 1 FROM information_schema.columns
-			WHERE table_name = 'syncv3_sync2_devices' AND column_name = 'user_id'
+			WHERE table_name = 'syncv3_txns' AND column_name = 'user_id'
 		);
 	`).Scan(&migrated)
 
