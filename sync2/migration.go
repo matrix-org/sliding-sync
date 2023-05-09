@@ -151,16 +151,10 @@ func migrateDevice(txn *sqlx.Tx, whoamiClient Client, device *oldDevice) (err er
 	gotUserID, gotDeviceID, err := whoamiClient.WhoAmI(device.AccessToken)
 	if err == HTTP401 {
 		logger.Warn().Msgf(
-			"migrateDevice: access token for %s has expired. Keeping device row without a token",
-			device.AccessTokenHash,
+			"migrateDevice: access token for %s %s has expired. Dropping device and metadata.",
+			device.UserID, device.AccessTokenHash,
 		)
-		// Keep the devices row around---we may be able to use the since token if the
-		// device comes back to us with a new access token. Ditto for any to-device
-		// messages, device data entries.
-		//
-		// Since he v2_token_encrypted column will get dropped at the end of the
-		// migration, there is nothing to do here.
-		return nil
+		return cleanupDevice(txn, device)
 	}
 	if err != nil {
 		return err
@@ -224,6 +218,59 @@ func migrateDevice(txn *sqlx.Tx, whoamiClient Client, device *oldDevice) (err er
 		`UPDATE syncv3_txns SET user_id = $1, device_id = $2 WHERE user_id = $3`,
 		expectAtMostOneRowAffected,
 		gotUserID, gotDeviceID, device.AccessTokenHash,
+	)
+	if err != nil {
+		return
+	}
+
+	return
+}
+
+func cleanupDevice(txn *sqlx.Tx, device *oldDevice) (err error) {
+	// The homeserver does not recognise this access token. Because we have no
+	// record of the device_id from the homeserver, it will never be possible to
+	// spot that a future refreshed access token belongs to the device we're
+	// handling here. Therefore this device is not useful to the proxy.
+	//
+	// If we leave this device's rows in situ, we may end up with rows in
+	// syncv3_to_device_messages, syncv3_to_device_ack_pos and syncv3_txns which have
+	// null values for the new fields, which will mean we fail to impose the uniqueness
+	// constraints at the end of the migration. Instead, drop those rows.
+	err = exec(
+		txn,
+		`DELETE FROM syncv3_sync2_devices WHERE device_id = $1`,
+		expectOneRowAffected,
+		device.AccessTokenHash,
+	)
+	if err != nil {
+		return
+	}
+
+	err = exec(
+		txn,
+		`DELETE FROM syncv3_to_device_messages WHERE device_id = $1`,
+		expectAnyNumberOfRowsAffected,
+		device.AccessTokenHash,
+	)
+	if err != nil {
+		return
+	}
+
+	err = exec(
+		txn,
+		`DELETE FROM syncv3_to_device_ack_pos WHERE device_id = $1`,
+		expectAnyNumberOfRowsAffected,
+		device.AccessTokenHash,
+	)
+	if err != nil {
+		return
+	}
+
+	err = exec(
+		txn,
+		`DELETE FROM syncv3_device_data WHERE device_id = $1`,
+		expectAnyNumberOfRowsAffected,
+		device.AccessTokenHash,
 	)
 	if err != nil {
 		return
