@@ -54,10 +54,30 @@ func MigrateDeviceIDs(db *sqlx.DB, secret string, whoamiClient Client, commit bo
 	})
 }
 
-func isMigrated(txn *sqlx.Tx) (migrated bool, err error) {
+func isMigrated(txn *sqlx.Tx) (bool, error) {
 	// Keep this dead simple for now. This is a one-off migration, before version 1.0.
 	// In the future we'll rip this out and tell people that it's the job to ensure this
 	// migration has run before they upgrade beyond the rip-out point.
+
+	// We're going to detect if the migration has run by testing for the existence of
+	// a column added by the migration. First, check that the table exists.
+	var tableExists bool
+	err := txn.QueryRow(`
+		SELECT EXISTS(
+		    SELECT 1 FROM information_schema.columns
+			WHERE table_name = 'syncv3_txns' AND column_name = 'device_id'
+		);
+	`).Scan(&tableExists)
+	if err != nil {
+		return false, fmt.Errorf("isMigrated: %s", err)
+	}
+	if !tableExists {
+		// The proxy has never been run before and its tables have never been created.
+		// We do not need to run the migration.
+		return true, nil
+	}
+
+	var migrated bool
 	err = txn.QueryRow(`
 		SELECT EXISTS(
 		    SELECT 1 FROM information_schema.columns
@@ -66,9 +86,9 @@ func isMigrated(txn *sqlx.Tx) (migrated bool, err error) {
 	`).Scan(&migrated)
 
 	if err != nil {
-		err = fmt.Errorf("checkNotMigrated failed: %s", err)
+		return false, fmt.Errorf("isMigrated: %s", err)
 	}
-	return
+	return migrated, nil
 }
 
 func alterTables(txn *sqlx.Tx) (err error) {
