@@ -647,3 +647,45 @@ func TestExpiredAccessToken(t *testing.T) {
 		t.Fatalf("got %d want 401 : %v", statusCode, string(body))
 	}
 }
+
+func TestExpiredAccessTokenMultipleConns(t *testing.T) {
+	pqString := testutils.PrepareDBConnectionString()
+	v2 := runTestV2Server(t)
+	v2.addAccount(alice, aliceToken)
+	v3 := runTestServer(t, v2, pqString)
+	roomID := "!doesnt:matter"
+	resA := v3.mustDoV3Request(t, aliceToken, sync3.Request{
+		ConnID: "A",
+		RoomSubscriptions: map[string]sync3.RoomSubscription{
+			roomID: {
+				TimelineLimit: 1,
+			},
+		},
+	})
+	resB := v3.mustDoV3Request(t, aliceToken, sync3.Request{
+		ConnID: "B",
+		RoomSubscriptions: map[string]sync3.RoomSubscription{
+			roomID: {
+				TimelineLimit: 1,
+			},
+		},
+	})
+	// now expire the token
+	v2.invalidateToken(aliceToken)
+	// now do another request for each conn, this should 401
+	testCases := []struct {
+		ConnID string
+		Res    *sync3.Response
+	}{
+		{ConnID: "A", Res: resA},
+		{ConnID: "B", Res: resB},
+	}
+	for _, tc := range testCases {
+		req := sync3.Request{ConnID: tc.ConnID}
+		req.SetTimeoutMSecs(1)
+		_, body, statusCode := v3.doV3Request(t, context.Background(), aliceToken, tc.Res.Pos, req)
+		if statusCode != 401 {
+			t.Fatalf("got %d want 401 : %v", statusCode, string(body))
+		}
+	}
+}
