@@ -29,6 +29,9 @@ func MigrateDeviceIDs(destHomeserver, postgresURI, secret string, commit bool) e
 		logger.Panic().Err(err).Str("uri", postgresURI).Msg("failed to open SQL DB")
 	}
 
+	// Ensure the new table exists.
+	NewTokensTable(db, secret)
+
 	return sqlutil.WithTransaction(db, func(txn *sqlx.Tx) (err error) {
 		migrated, err := isMigrated(txn)
 		if err != nil {
@@ -205,6 +208,17 @@ func migrateDevice(txn *sqlx.Tx, whoamiClient Client, device *oldDevice) (err er
 			"/whoami response was for the wrong user. Queried for %s, but got response for %s",
 			device.UserID, gotUserID,
 		)
+	}
+
+	err = exec(
+		txn,
+		`INSERT INTO syncv3_sync2_tokens(token_hash, token_encrypted, user_id, device_id, last_seen)
+VALUES ($1, $2, $3, $4, $5)`,
+		expectOneRowAffected,
+		device.AccessTokenHash, device.AccessTokenEncrypted, gotDeviceID, gotDeviceID, time.Now(),
+	)
+	if err != nil {
+		return
 	}
 
 	// For these first four tables:
