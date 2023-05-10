@@ -130,12 +130,13 @@ type SyncReq struct {
 }
 
 type CSAPI struct {
-	UserID      string
-	Localpart   string
-	AccessToken string
-	DeviceID    string
-	BaseURL     string
-	Client      *http.Client
+	UserID       string
+	Localpart    string
+	AccessToken  string
+	RefreshToken string
+	DeviceID     string
+	BaseURL      string
+	Client       *http.Client
 	// how long are we willing to wait for MustSyncUntil.... calls
 	SyncUntilTimeout time.Duration
 	// True to enable verbose logging
@@ -448,6 +449,34 @@ func (c *CSAPI) Login(t *testing.T, password, deviceID string) {
 
 	c.AccessToken = accessToken
 	c.DeviceID = deviceID
+}
+
+// RefreshAccessToken asks the homeserver for a new access token and updates the CSAPI
+// struct with the new token. If the homeserver provides a new refresh token, that is
+// also copied onto the CSAPI struct.
+//
+// Fails the test if called with a CSAPI struct that doesn't have a refresh token.
+func (c *CSAPI) RefreshAccessToken(t *testing.T) {
+	t.Helper()
+	if c.RefreshToken == "" {
+		t.Errorf("%s has no refresh token", c.UserID)
+	}
+	resp := c.MustDoFunc(
+		t,
+		"POST",
+		[]string{"_matrix", "client", "v3", "refresh"},
+		WithJSONBody(t, map[string]interface{}{"refresh_token": c.RefreshToken}),
+	)
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		t.Errorf("Failed to read body: %s", err)
+	}
+	parsed := gjson.ParseBytes(body)
+	newRefreshToken := parsed.Get("refresh_token").Str
+	if newRefreshToken != "" {
+		c.RefreshToken = newRefreshToken
+	}
+	c.AccessToken = parsed.Get("access_token").Str
 }
 
 // SetState PUTs a piece of state in a room and returns the event ID of the created state event.
