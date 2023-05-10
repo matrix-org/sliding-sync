@@ -13,7 +13,7 @@ import (
 type ConnID struct {
 	UserID   string
 	DeviceID string
-	CID      string // client-supplied connn_id
+	CID      string // client-supplied conn_id
 }
 
 func (c *ConnID) String() string {
