@@ -306,9 +306,31 @@ func exec(txn *sqlx.Tx, query string, checkRowsAffected func(ra int64) bool, arg
 
 func expectOneRowAffected(ra int64) bool          { return ra == 1 }
 func expectAnyNumberOfRowsAffected(ra int64) bool { return true }
-func expectAtMostOneRowAffected(ra int64) bool    { return ra == 0 || ra == 1 }
+func logRowsAffected(msg string) func(ra int64) bool {
+	return func(ra int64) bool {
+		logger.Info().Msgf(msg, ra)
+		return true
+	}
+}
+func expectAtMostOneRowAffected(ra int64) bool { return ra == 0 || ra == 1 }
 
 func finish(txn *sqlx.Tx) (err error) {
+	// OnExpiredToken used to delete from the to-device table, but not from the
+	// to-device ack pos table. Fix this up by deleting any orphaned ack pos rows.
+	err = exec(
+		txn,
+		`
+		DELETE FROM syncv3_to_device_ack_pos
+		WHERE device_id IN (
+		    SELECT syncv3_to_device_ack_pos.device_id
+		    FROM syncv3_to_device_ack_pos LEFT JOIN syncv3_sync2_devices USING (device_id)
+		);`,
+		logRowsAffected("Deleted %d stale rows from syncv3_to_device_ack_pos"),
+	)
+	if err != nil {
+		return
+	}
+
 	_, err = txn.Exec(`
 		ALTER TABLE syncv3_sync2_devices
 		DROP COLUMN v2_token_encrypted,
