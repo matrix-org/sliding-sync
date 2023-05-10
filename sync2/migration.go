@@ -8,12 +8,13 @@ import (
 	"time"
 )
 
+// MigrateDeviceIDs performs a one-off DB migration from the old device ids (hash of
+// access token) to the new device ids (actual device ids from the homeserver). This is
+// not backwards compatible. If the migration has already taken place, this function is
+// a no-op.
+//
+// This code will be removed in a future version of the proxy.
 func MigrateDeviceIDs(db *sqlx.DB, secret string, whoamiClient Client, commit bool) error {
-	start := time.Now()
-	defer func() {
-		elapsed := time.Since(start)
-		logger.Debug().Msgf("MigrateDeviceIDs: took %s", elapsed)
-	}()
 	return sqlutil.WithTransaction(db, func(txn *sqlx.Tx) (err error) {
 		migrated, err := isMigrated(txn)
 		if err != nil {
@@ -25,6 +26,11 @@ func MigrateDeviceIDs(db *sqlx.DB, secret string, whoamiClient Client, commit bo
 		}
 		logger.Info().Msgf("MigrateDeviceIDs: starting (commit=%t)", commit)
 
+		start := time.Now()
+		defer func() {
+			elapsed := time.Since(start)
+			logger.Debug().Msgf("MigrateDeviceIDs: took %s", elapsed)
+		}()
 		err = alterTables(txn)
 		if err != nil {
 			return
@@ -51,7 +57,7 @@ func MigrateDeviceIDs(db *sqlx.DB, secret string, whoamiClient Client, commit bo
 func isMigrated(txn *sqlx.Tx) (migrated bool, err error) {
 	// Keep this dead simple for now. This is a one-off migration, before version 1.0.
 	// In the future we'll rip this out and tell people that it's the job to ensure this
-	// migration has ran before they upgrade beyond the rip-out point.
+	// migration has run before they upgrade beyond the rip-out point.
 	err = txn.QueryRow(`
 		SELECT EXISTS(
 		    SELECT 1 FROM information_schema.columns
@@ -125,8 +131,8 @@ func runMigration(txn *sqlx.Tx, secret string, whoamiClient Client) error {
 	hasher.Write([]byte(secret))
 	key := hasher.Sum(nil)
 
-	// TODO: can we get away with doing this sequentially, or should we parallelise
-	//       this like the poller startup routine does?
+	// This migration runs sequentially, one device at a time. We have found this to be
+	// quick enough in practice.
 	numErrors := 0
 	for i, device := range devices {
 		device.AccessToken, err = decrypt(device.AccessTokenEncrypted, key)
