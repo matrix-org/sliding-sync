@@ -3,8 +3,10 @@ package sync2
 import (
 	"crypto/sha256"
 	"fmt"
+	"github.com/getsentry/sentry-go"
 	"github.com/jmoiron/sqlx"
 	"github.com/matrix-org/sliding-sync/sqlutil"
+	"net/http"
 	"time"
 )
 
@@ -14,7 +16,19 @@ import (
 // a no-op.
 //
 // This code will be removed in a future version of the proxy.
-func MigrateDeviceIDs(db *sqlx.DB, secret string, whoamiClient Client, commit bool) error {
+func MigrateDeviceIDs(destHomeserver, postgresURI, secret string, commit bool) error {
+	whoamiClient := &HTTPClient{
+		Client: &http.Client{
+			Timeout: 5 * time.Minute,
+		},
+		DestinationServer: destHomeserver,
+	}
+	db, err := sqlx.Open("postgres", postgresURI)
+	if err != nil {
+		sentry.CaptureException(err)
+		logger.Panic().Err(err).Str("uri", postgresURI).Msg("failed to open SQL DB")
+	}
+
 	return sqlutil.WithTransaction(db, func(txn *sqlx.Tx) (err error) {
 		migrated, err := isMigrated(txn)
 		if err != nil {
