@@ -81,7 +81,12 @@ func (t *ToDeviceTable) DeleteMessagesUpToAndIncluding(userID, deviceID string, 
 }
 
 func (t *ToDeviceTable) DeleteAllMessagesForDevice(userID, deviceID string) error {
+	// TODO: should these deletes take place in a transaction?
 	_, err := t.db.Exec(`DELETE FROM syncv3_to_device_messages WHERE user_id = $1 AND device_id = $2`, userID, deviceID)
+	if err != nil {
+		return err
+	}
+	_, err = t.db.Exec(`DELETE FROM syncv3_to_device_ack_pos WHERE user_id = $1 AND device_id = $2`, userID, deviceID)
 	return err
 }
 
