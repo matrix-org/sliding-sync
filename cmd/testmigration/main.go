@@ -1,11 +1,8 @@
 package main
 
 import (
-	"github.com/jmoiron/sqlx"
 	"github.com/matrix-org/sliding-sync/sync2"
-	"net/http"
 	"os"
-	"time"
 )
 
 const (
@@ -26,19 +23,7 @@ func main() {
 		EnvMigrationCommit: os.Getenv(EnvMigrationCommit),
 	}
 
-	db, err := sqlx.Open("postgres", args[EnvDB])
-	if err != nil {
-		panic(err)
-	}
-
-	v2Client := &sync2.HTTPClient{
-		Client: &http.Client{
-			Timeout: 5 * time.Minute,
-		},
-		DestinationServer: args[EnvServer],
-	}
-
-	err = sync2.MigrateDeviceIDs(db, args[EnvSecret], v2Client, args[EnvMigrationCommit] != "")
+	err := sync2.MigrateDeviceIDs(args[EnvServer], args[EnvDB], args[EnvSecret], args[EnvMigrationCommit] != "")
 	if err != nil {
 		panic(err)
 	}
