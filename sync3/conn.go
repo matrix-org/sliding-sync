@@ -13,10 +13,11 @@ import (
 type ConnID struct {
 	UserID   string
 	DeviceID string
+	CID      string // client-supplied conn_id
 }
 
 func (c *ConnID) String() string {
-	return c.UserID + "|" + c.DeviceID
+	return fmt.Sprintf("%s|%s|%s", c.UserID, c.DeviceID, c.CID)
 }
 
 type ConnHandler interface {

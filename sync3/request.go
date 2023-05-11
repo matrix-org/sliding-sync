@@ -3,6 +3,7 @@ package sync3
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"strings"
 
 	"github.com/matrix-org/sliding-sync/internal"
@@ -27,6 +28,7 @@ var (
 
 type Request struct {
 	TxnID             string                      `json:"txn_id"`
+	ConnID            string                      `json:"conn_id"`
 	Lists             map[string]RequestList      `json:"lists"`
 	BumpEventTypes    []string                    `json:"bump_event_types"`
 	RoomSubscriptions map[string]RoomSubscription `json:"room_subscriptions"`
@@ -36,6 +38,16 @@ type Request struct {
 	// set via query params or inferred
 	pos          int64
 	timeoutMSecs int
+}
+
+func (r *Request) Validate() error {
+	if len(r.ConnID) > 16 {
+		return fmt.Errorf("conn_id is too long: %d > 16", len(r.ConnID))
+	}
+	if len(r.TxnID) > 64 {
+		return fmt.Errorf("txn_id is too long: %d > 64", len(r.TxnID))
+	}
+	return nil
 }
 
 type RequestList struct {
@@ -304,6 +316,10 @@ func (r *Request) ApplyDelta(nextReq *Request) (result *Request, delta *RequestD
 			Extensions: r.Extensions.ApplyDelta(&nextReq.Extensions),
 		}
 	}
+	// conn ID isn't sticky, always use the nextReq value. This is only useful for logging,
+	// as the conn ID is used primarily in conn_map.go
+	result.ConnID = nextReq.ConnID
+
 	listKeys := make(set)
 	for k := range nextReq.Lists {
 		listKeys[k] = struct{}{}
@@ -426,7 +442,12 @@ func (r *Request) ApplyDelta(nextReq *Request) (result *Request, delta *RequestD
 	}
 	// new subscriptions are the delta between old room subs and the newly calculated ones
 	for roomID := range resultSubs {
-		if _, ok := r.RoomSubscriptions[roomID]; ok {
+		if oldSub, ok := r.RoomSubscriptions[roomID]; ok {
+			// if the subscription is different, mark it as a delta, else skip it as it hasn't changed
+			newSub := resultSubs[roomID]
+			if oldSub.RequiredStateChanged(newSub) || oldSub.TimelineLimit != newSub.TimelineLimit {
+				delta.Subs = append(delta.Subs, roomID)
+			}
 			continue // already subscribed
 		}
 		delta.Subs = append(delta.Subs, roomID)

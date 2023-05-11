@@ -501,7 +501,7 @@ func TestRequestApplyDeltas(t *testing.T) {
 					},
 					wantDelta: func(input *Request, d testData) RequestDelta {
 						return RequestDelta{
-							Subs:   nil,
+							Subs:   []string{"!foo:bar"}, // because the timeline limit changed from 10 to 100
 							Unsubs: nil,
 							Lists: map[string]RequestListDelta{
 								"q": {

@@ -6,9 +6,6 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
-	"github.com/getsentry/sentry-go"
-	"github.com/jmoiron/sqlx"
-	"github.com/matrix-org/sliding-sync/sqlutil"
 	"net/http"
 	"net/url"
 	"os"
@@ -16,6 +13,10 @@ import (
 	"strconv"
 	"sync"
 	"time"
+
+	"github.com/getsentry/sentry-go"
+	"github.com/jmoiron/sqlx"
+	"github.com/matrix-org/sliding-sync/sqlutil"
 
 	"github.com/matrix-org/sliding-sync/internal"
 	"github.com/matrix-org/sliding-sync/pubsub"
@@ -196,6 +197,12 @@ func (h *SyncLiveHandler) serve(w http.ResponseWriter, req *http.Request) error 
 				Err:        err,
 			}
 		}
+		if err := requestBody.Validate(); err != nil {
+			return &internal.HandlerError{
+				StatusCode: 400,
+				Err:        err,
+			}
+		}
 	}
 	hlog.FromRequest(req).UpdateContext(func(c zerolog.Context) zerolog.Context {
 		c.Str("txn_id", requestBody.TxnID)
@@ -325,6 +332,7 @@ func (h *SyncLiveHandler) setupConnection(req *http.Request, syncReq *sync3.Requ
 	connID := sync3.ConnID{
 		UserID:   token.UserID,
 		DeviceID: token.DeviceID,
+		CID:      syncReq.ConnID,
 	}
 	// client thinks they have a connection
 	if containsPos {
@@ -593,27 +601,20 @@ func (h *SyncLiveHandler) OnUnreadCounts(p *pubsub.V2UnreadCounts) {
 func (h *SyncLiveHandler) OnDeviceData(p *pubsub.V2DeviceData) {
 	ctx, task := internal.StartTask(context.Background(), "OnDeviceData")
 	defer task.End()
-	conn := h.ConnMap.Conn(sync3.ConnID{
-		UserID:   p.UserID,
-		DeviceID: p.DeviceID,
-	})
-	if conn == nil {
-		return
+	conns := h.ConnMap.Conns(p.UserID, p.DeviceID)
+	for _, conn := range conns {
+		conn.OnUpdate(ctx, caches.DeviceDataUpdate{})
 	}
-	conn.OnUpdate(ctx, caches.DeviceDataUpdate{})
 }
 
 func (h *SyncLiveHandler) OnDeviceMessages(p *pubsub.V2DeviceMessages) {
 	ctx, task := internal.StartTask(context.Background(), "OnDeviceMessages")
 	defer task.End()
-	conn := h.ConnMap.Conn(sync3.ConnID{
-		UserID:   p.UserID,
-		DeviceID: p.DeviceID,
-	})
-	if conn == nil {
-		return
+	conns := h.ConnMap.Conns(p.UserID, p.DeviceID)
+	for _, conn := range conns {
+		conn.OnUpdate(ctx, caches.DeviceEventsUpdate{})
 	}
-	conn.OnUpdate(ctx, caches.DeviceEventsUpdate{})
+
 }
 
 func (h *SyncLiveHandler) OnInvite(p *pubsub.V2InviteRoom) {
@@ -703,10 +704,7 @@ func (h *SyncLiveHandler) OnAccountData(p *pubsub.V2AccountData) {
 }
 
 func (h *SyncLiveHandler) OnExpiredToken(p *pubsub.V2ExpiredToken) {
-	h.ConnMap.CloseConn(sync3.ConnID{
-		UserID:   p.UserID,
-		DeviceID: p.DeviceID,
-	})
+	h.ConnMap.CloseConnsForDevice(p.UserID, p.DeviceID)
 }
 
 func parseIntFromQuery(u *url.URL, param string) (result int64, err *internal.HandlerError) {
