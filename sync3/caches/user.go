@@ -363,6 +363,7 @@ func (c *UserCache) LazyLoadTimelines(ctx context.Context, loadPos int64, roomID
 		if !ok {
 			urd = NewUserRoomData()
 		}
+		oldLoadPos := urd.LoadPos
 		urd.Timeline = events
 		urd.LoadPos = loadPos
 		if len(events) > 0 {
@@ -371,7 +372,13 @@ func (c *UserCache) LazyLoadTimelines(ctx context.Context, loadPos int64, roomID
 		}
 
 		result[roomID] = urd
-		c.roomToData[roomID] = urd
+		// only replace our knowledge if it is the future
+		// TODO FIXME: this is an incomplete solution as all the non-Timeline fields we return in this
+		// function will be AHEAD of the load pos provided, meaning you could see a stale timeline with
+		// incorrect notif counts (until you've consumed the channel)
+		if oldLoadPos < loadPos {
+			c.roomToData[roomID] = urd
+		}
 	}
 	c.roomToDataMu.Unlock()
 	return result
