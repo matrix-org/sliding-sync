@@ -72,7 +72,7 @@ func TestRoomSubscriptionJoinRoomRace(t *testing.T) {
 // Caused by: the user cache getting corrupted and missing events, caused by it incorrectly replacing
 // its timeline with an older one.
 // To the end user, it manifests as missing messages in the timeline, because the proxy incorrectly
-// said the events are A,B,F,G and not A,B,C,D,E,F,G.
+// said the events are C,F,G and not E,F,G.
 func TestRoomSubscriptionMisorderedTimeline(t *testing.T) {
 	pqString := testutils.PrepareDBConnectionString()
 	// setup code
