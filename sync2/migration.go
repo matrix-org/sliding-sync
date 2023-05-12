@@ -177,7 +177,14 @@ func runMigration(txn *sqlx.Tx, secret string, whoamiClient Client) error {
 		if err != nil {
 			return fmt.Errorf("runMigration: failed to decrypt device: %s", err)
 		}
-		logger.Info().Msgf("%4d/%4d migrating device %s", i+1, len(devices), device.AccessTokenHash)
+		userID := device.UserID
+		if userID == "" {
+			userID = "<unknown user>"
+		}
+		logger.Info().Msgf(
+			"%4d/%4d migrating device %s %s",
+			i+1, len(devices), userID, device.AccessTokenHash,
+		)
 		err = migrateDevice(txn, whoamiClient, &device)
 		if err != nil {
 			logger.Err(err).Msgf("runMigration: failed to migrate device %s", device.AccessTokenHash)
@@ -194,9 +201,13 @@ func runMigration(txn *sqlx.Tx, secret string, whoamiClient Client) error {
 func migrateDevice(txn *sqlx.Tx, whoamiClient Client, device *oldDevice) (err error) {
 	gotUserID, gotDeviceID, err := whoamiClient.WhoAmI(device.AccessToken)
 	if err == HTTP401 {
+		userID := device.UserID
+		if userID == "" {
+			userID = "<unknown user>"
+		}
 		logger.Warn().Msgf(
 			"migrateDevice: access token for %s %s has expired. Dropping device and metadata.",
-			device.UserID, device.AccessTokenHash,
+			userID, device.AccessTokenHash,
 		)
 		return cleanupDevice(txn, device)
 	}
