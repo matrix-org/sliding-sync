@@ -5,6 +5,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/rs/zerolog"
+	"github.com/rs/zerolog/hlog"
 	"io/ioutil"
 	"log"
 	"net/http"
@@ -26,6 +28,11 @@ import (
 	"github.com/matrix-org/sliding-sync/testutils/m"
 	"github.com/tidwall/gjson"
 )
+
+var logger = zerolog.New(os.Stdout).With().Timestamp().Logger().Output(zerolog.ConsoleWriter{
+	Out:        os.Stderr,
+	TimeFormat: "15:04:05",
+})
 
 // Integration tests for the sync-v3 server
 
@@ -361,6 +368,7 @@ func runTestServer(t testutils.TestBenchInterface, v2Server *testV2Server, postg
 	})
 	// for ease of use we don't start v2 pollers at startup in tests
 	r := mux.NewRouter()
+	r.Use(hlog.NewHandler(logger))
 	r.Handle("/_matrix/client/v3/sync", h3)
 	r.Handle("/_matrix/client/unstable/org.matrix.msc3575/sync", h3)
 	srv := httptest.NewServer(r)
