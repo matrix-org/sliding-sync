@@ -10,7 +10,7 @@ import (
 	"time"
 )
 
-func TestSyncsAroundTokenRefresh(t *testing.T) {
+func TestSyncWithNewTokenAfterOldExpires(t *testing.T) {
 	pqString := testutils.PrepareDBConnectionString()
 	v2 := runTestV2Server(t)
 	v3 := runTestServer(t, v2, pqString)
