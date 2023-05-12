@@ -638,6 +638,7 @@ func TestGlobalSnapshot(t *testing.T) {
 			Heroes:               []internal.Hero{{ID: alice}},
 			Encrypted:            true,
 			PredecessorRoomID:    &oldRoomID,
+			ChildSpaceRooms:      make(map[string]struct{}),
 		},
 		roomBob: {
 			RoomID:               roomBob,
@@ -646,6 +647,7 @@ func TestGlobalSnapshot(t *testing.T) {
 			Heroes:               []internal.Hero{{ID: bob}},
 			NameEvent:            "My Room",
 			RoomType:             &roomType,
+			ChildSpaceRooms:      make(map[string]struct{}),
 		},
 		roomAliceBob: {
 			RoomID:               roomAliceBob,
@@ -654,6 +656,7 @@ func TestGlobalSnapshot(t *testing.T) {
 			Heroes:               []internal.Hero{{ID: bob}, {ID: alice}},
 			CanonicalAlias:       "#alias",
 			UpgradedRoomID:       &newRoomID,
+			ChildSpaceRooms:      make(map[string]struct{}),
 		},
 		roomSpace: {
 			RoomID:               roomSpace,

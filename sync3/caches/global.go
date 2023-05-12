@@ -208,10 +208,7 @@ func (c *GlobalCache) OnEphemeralEvent(ctx context.Context, roomID string, ephEv
 	defer c.roomIDToMetadataMu.Unlock()
 	metadata := c.roomIDToMetadata[roomID]
 	if metadata == nil {
-		metadata = &internal.RoomMetadata{
-			RoomID:          roomID,
-			ChildSpaceRooms: make(map[string]struct{}),
-		}
+		metadata = internal.NewRoomMetadata(roomID)
 	}
 
 	switch evType {
@@ -233,10 +230,7 @@ func (c *GlobalCache) OnNewEvent(
 	defer c.roomIDToMetadataMu.Unlock()
 	metadata := c.roomIDToMetadata[ed.RoomID]
 	if metadata == nil {
-		metadata = &internal.RoomMetadata{
-			RoomID:          ed.RoomID,
-			ChildSpaceRooms: make(map[string]struct{}),
-		}
+		metadata = internal.NewRoomMetadata(ed.RoomID)
 	}
 	switch ed.EventType {
 	case "m.room.name":
