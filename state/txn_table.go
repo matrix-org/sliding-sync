@@ -23,7 +23,7 @@ func NewTransactionsTable(db *sqlx.DB) *TransactionsTable {
 	// make sure tables are made
 	db.MustExec(`
 	CREATE TABLE IF NOT EXISTS syncv3_txns (
-		user_id TEXT NOT NULL, -- was actually device_id before migration
+		user_id TEXT NOT NULL,
 		device_id TEXT NOT NULL,
 		event_id TEXT NOT NULL,
 		txn_id TEXT NOT NULL,

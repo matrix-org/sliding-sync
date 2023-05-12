@@ -131,6 +131,11 @@ func main() {
 		}
 	}
 
+	err := sync2.MigrateDeviceIDs(args[EnvServer], args[EnvDB], args[EnvSecret], true)
+	if err != nil {
+		panic(err)
+	}
+
 	h2, h3 := syncv3.Setup(args[EnvServer], args[EnvDB], args[EnvSecret], syncv3.Opts{
 		Debug:                args[EnvDebug] == "1",
 		AddPrometheusMetrics: args[EnvPrometheus] != "",

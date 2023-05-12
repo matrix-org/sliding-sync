@@ -71,6 +71,11 @@ func (t *TokensTable) encrypt(token string) string {
 	return hex.EncodeToString(nonce) + " " + hex.EncodeToString(gcm.Seal(nil, nonce, []byte(token), nil))
 }
 func (t *TokensTable) decrypt(nonceAndEncToken string) (string, error) {
+	return decrypt(nonceAndEncToken, t.key256)
+}
+
+// Pulled out to a free function to use in the device ID migration.
+func decrypt(nonceAndEncToken string, key []byte) (string, error) {
 	segs := strings.Split(nonceAndEncToken, " ")
 	nonce := segs[0]
 	nonceBytes, err := hex.DecodeString(nonce)
@@ -82,7 +87,7 @@ func (t *TokensTable) decrypt(nonceAndEncToken string) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("decrypt token: failed to decode hex: %s", err)
 	}
-	block, err := aes.NewCipher(t.key256)
+	block, err := aes.NewCipher(key)
 	if err != nil {
 		return "", err
 	}
