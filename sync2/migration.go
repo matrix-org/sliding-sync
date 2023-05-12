@@ -73,8 +73,8 @@ func MigrateDeviceIDs(destHomeserver, postgresURI, secret string, commit bool) e
 
 func isMigrated(txn *sqlx.Tx) (bool, error) {
 	// Keep this dead simple for now. This is a one-off migration, before version 1.0.
-	// In the future we'll rip this out and tell people that it's the job to ensure this
-	// migration has run before they upgrade beyond the rip-out point.
+	// In the future we'll rip this out and tell people that it's their job to ensure
+	// this migration has run before they upgrade beyond the rip-out point.
 
 	// We're going to detect if the migration has run by testing for the existence of
 	// a column added by the migration. First, check that the table exists.
@@ -82,7 +82,7 @@ func isMigrated(txn *sqlx.Tx) (bool, error) {
 	err := txn.QueryRow(`
 		SELECT EXISTS(
 		    SELECT 1 FROM information_schema.columns
-			WHERE table_name = 'syncv3_txns' AND column_name = 'device_id'
+			WHERE table_name = 'syncv3_txns'
 		);
 	`).Scan(&tableExists)
 	if err != nil {
@@ -91,6 +91,7 @@ func isMigrated(txn *sqlx.Tx) (bool, error) {
 	if !tableExists {
 		// The proxy has never been run before and its tables have never been created.
 		// We do not need to run the migration.
+		logger.Debug().Msg("isMigrated: no syncv3_txns table, no migration needed")
 		return true, nil
 	}
 
