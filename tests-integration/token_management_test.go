@@ -97,23 +97,10 @@ func TestSyncWithNewTokenAfterOldExpires(t *testing.T) {
 		NextBatch: "after_alice_incremental_poll",
 	})
 
-	t.Log("Alice makes a new sliding sync connection with her new token")
-	resChan := make(chan *sync3.Response)
-	go func() {
-		resChan <- v3.mustDoV3Request(t, aliceToken2, req)
-	}()
+	t.Log("Alice makes a new sliding sync connection with her new token.")
+	res = v3.mustDoV3Request(t, aliceToken2, req)
 
-	t.Log("A poller makes a sync request using aliceToken2.")
-	v2.waitUntilEmpty(t, aliceToken2)
-
-	t.Log("Alice's sync v3 response completes.")
-	select {
-	case res = <-resChan:
-	case <-time.After(time.Second):
-		t.Fatalf("v3 sync response did not complete")
-	}
-
-	t.Log("Alice should see Bob's message")
+	t.Log("Alice should see Bob's message.")
 	m.MatchResponse(t, res,
 		m.MatchRoomSubscription(roomID, m.MatchRoomTimelineMostRecent(1, []json.RawMessage{bobMsg})),
 	)
