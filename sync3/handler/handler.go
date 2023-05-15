@@ -44,9 +44,9 @@ type SyncLiveHandler struct {
 	V2         sync2.Client
 	Storage    *state.Storage
 	V2Store    *sync2.Storage
-	V2Sub      *pubsub.V2Sub
-	V3Pub      *EnsurePoller
-	ConnMap    *sync3.ConnMap
+	V2Sub        *pubsub.V2Sub
+	EnsurePoller *EnsurePoller
+	ConnMap      *sync3.ConnMap
 	Extensions *extensions.Handler
 
 	// inserts are done by v2 poll loops, selects are done by v3 request threads
@@ -94,7 +94,7 @@ func NewSync3Handler(
 	}
 
 	// set up pubsub mechanism to start from this point
-	sh.V3Pub = NewEnsurePoller(pub)
+	sh.EnsurePoller = NewEnsurePoller(pub)
 	sh.V2Sub = pubsub.NewV2Sub(sub, sh)
 
 	return sh, nil
@@ -127,7 +127,7 @@ func (h *SyncLiveHandler) Teardown() {
 	// tear down DB conns
 	h.Storage.Teardown()
 	h.V2Sub.Teardown()
-	h.V3Pub.Teardown()
+	h.EnsurePoller.Teardown()
 	h.ConnMap.Teardown()
 	if h.numConns != nil {
 		prometheus.Unregister(h.numConns)
@@ -348,7 +348,7 @@ func (h *SyncLiveHandler) setupConnection(req *http.Request, syncReq *sync3.Requ
 
 	log.Trace().Msg("checking poller exists and is running")
 	pid := sync2.PollerID{UserID: token.UserID, DeviceID: token.DeviceID}
-	h.V3Pub.EnsurePolling(pid, token.AccessTokenHash)
+	h.EnsurePoller.EnsurePolling(pid, token.AccessTokenHash)
 	log.Trace().Msg("poller exists and is running")
 	// this may take a while so if the client has given up (e.g timed out) by this point, just stop.
 	// We'll be quicker next time as the poller will already exist.
@@ -550,7 +550,7 @@ func (h *SyncLiveHandler) TransactionIDForEvents(userID string, deviceID string,
 }
 
 func (h *SyncLiveHandler) OnInitialSyncComplete(p *pubsub.V2InitialSyncComplete) {
-	h.V3Pub.OnInitialSyncComplete(p)
+	h.EnsurePoller.OnInitialSyncComplete(p)
 }
 
 // Called from the v2 poller, implements V2DataReceiver
@@ -704,7 +704,7 @@ func (h *SyncLiveHandler) OnAccountData(p *pubsub.V2AccountData) {
 }
 
 func (h *SyncLiveHandler) OnExpiredToken(p *pubsub.V2ExpiredToken) {
-	h.V3Pub.OnTokenExpired(p)
+	h.EnsurePoller.OnTokenExpired(p)
 	h.ConnMap.CloseConnsForDevice(p.UserID, p.DeviceID)
 }
 
