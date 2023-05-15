@@ -7,14 +7,25 @@ import (
 	"github.com/matrix-org/sliding-sync/pubsub"
 )
 
+// pendingInfo tracks the status of a poller that we are (or previously were) waiting
+// to start.
 type pendingInfo struct {
+	// done is set to true when we confirm that this poller has started polling.
 	done bool
-	ch   chan struct{}
+	// ch is a dummy channel which never receives any data. A call to
+	// EnsurePoller.OnInitialSyncComplete will close the channel (unblocking any
+	// EnsurePoller.EnsurePolling calls which are waiting on it) and then set the ch
+	// field to nil.
+	ch chan struct{}
 }
 
+// EnsurePoller is a gadget used by the sliding sync request handler to ensure that
+// we are running a v2 poller for a given device.
 type EnsurePoller struct {
-	chanName     string
-	mu           *sync.Mutex
+	chanName string
+	// mu guards reads and writes to pendingPolls.
+	mu *sync.Mutex
+	// pendingPolls tracks the status of pollers that we are waiting to start.
 	pendingPolls map[sync2.PollerID]pendingInfo
 	notifier     pubsub.Notifier
 }
@@ -33,6 +44,11 @@ func NewEnsurePoller(notifier pubsub.Notifier) *EnsurePoller {
 func (p *EnsurePoller) EnsurePolling(pid sync2.PollerID, tokenHash string) {
 	p.mu.Lock()
 	// do we need to wait?
+	// TODO: this lookup is based on (user, device) pair. If the same user logs in on
+	// another device, we will wait for the poller to make an initial sync. We could do
+	// better here by using the data we've accumulated for the first device. However
+	// that wouldn't include any to-device messages, so encrypted messages would be
+	// undecrypted.
 	if p.pendingPolls[pid].done {
 		p.mu.Unlock()
 		return
