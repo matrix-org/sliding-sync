@@ -3,6 +3,7 @@ package syncv3
 import (
 	"context"
 	"encoding/json"
+	"github.com/tidwall/gjson"
 	"net/http"
 	"testing"
 	"time"
@@ -11,7 +12,6 @@ import (
 	"github.com/matrix-org/sliding-sync/sync3"
 	"github.com/matrix-org/sliding-sync/testutils"
 	"github.com/matrix-org/sliding-sync/testutils/m"
-	"github.com/tidwall/gjson"
 )
 
 func TestSyncWithNewTokenAfterOldExpires(t *testing.T) {
@@ -101,6 +101,87 @@ func TestSyncWithNewTokenAfterOldExpires(t *testing.T) {
 
 	t.Log("Alice makes a new sliding sync connection with her new token.")
 	res = v3.mustDoV3Request(t, aliceToken2, req)
+
+	t.Log("Alice should see Bob's message.")
+	m.MatchResponse(t, res,
+		m.MatchRoomSubscription(roomID, m.MatchRoomTimelineMostRecent(1, []json.RawMessage{bobMsg})),
+	)
+
+}
+
+func TestSyncWithNewTokenBeforeOldExpires(t *testing.T) {
+	pqString := testutils.PrepareDBConnectionString()
+	v2 := runTestV2Server(t)
+	v3 := runTestServer(t, v2, pqString)
+	defer v2.close()
+	defer v3.close()
+
+	aliceToken1 := "alice_token_1"
+	aliceToken2 := "alice_token_2"
+	roomID := "!room:test"
+	v2.addAccount(t, alice, aliceToken1)
+
+	t.Log("Prepare to tell a poller using aliceToken1 that Alice created a room and that Bob joined it.")
+
+	bobJoin := testutils.NewJoinEvent(t, bob)
+	v2.queueResponse(aliceToken1, sync2.SyncResponse{
+		Rooms: sync2.SyncRoomsResponse{
+			Join: v2JoinTimeline(roomEvents{
+				roomID: roomID,
+				state:  createRoomState(t, alice, time.Now()),
+				events: []json.RawMessage{bobJoin},
+			}),
+		},
+		NextBatch: "after_alice_initial_poll",
+	})
+	t.Log("Alice makes an initial sliding sync.")
+	req := sync3.Request{
+		RoomSubscriptions: map[string]sync3.RoomSubscription{
+			roomID: {TimelineLimit: 10},
+		},
+	}
+	res := v3.mustDoV3Request(t, aliceToken1, req)
+
+	t.Log("Alice should see Bob's membership")
+	m.MatchResponse(t, res,
+		m.MatchRoomSubscription(roomID, m.MatchRoomTimelineMostRecent(1, []json.RawMessage{bobJoin})),
+	)
+
+	t.Log("From this point forward, the poller should not make any initial sync requests.")
+	v2.SetCheckRequest(func(userID, token string, req *http.Request) {
+		if userID != alice {
+			t.Errorf("Got unexpected poll for %s, expected %s only", userID, alice)
+		}
+		switch token {
+		case aliceToken1: // either is okay
+		case aliceToken2:
+			t.Logf("Got poll for %s", token)
+		default:
+			t.Errorf("Got unexpected poll for %s", token)
+		}
+		since := req.URL.Query().Get("since")
+		if since == "" {
+			t.Errorf("Got unexpected initial sync poll for token %s", token)
+		}
+	})
+
+	t.Log("Alice refreshes her access token. The old one has yet to expire.")
+	v2.addAccount(t, alice, aliceToken2)
+
+	t.Log("Prepare to tell a poller using aliceToken1 that Alice created a room and that Bob joined it.")
+	bobMsg := testutils.NewMessageEvent(t, bob, "Hello, world!")
+	v2.queueResponse(aliceToken1, sync2.SyncResponse{
+		Rooms: sync2.SyncRoomsResponse{
+			Join: v2JoinTimeline(roomEvents{
+				roomID: roomID,
+				events: []json.RawMessage{bobMsg},
+			}),
+		},
+		NextBatch: "after_alice_incremental_poll",
+	})
+
+	t.Log("Alice makes an incremental sliding sync with the new token.")
+	res = v3.mustDoV3RequestWithPos(t, aliceToken2, res.Pos, req)
 
 	t.Log("Alice should see Bob's message.")
 	m.MatchResponse(t, res,
