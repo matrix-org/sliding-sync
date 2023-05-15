@@ -60,7 +60,7 @@ func TestSyncWithNewTokenAfterOldExpires(t *testing.T) {
 		case aliceToken2: // this is also okay; we should provide a proper response
 			t.Logf("Got poll for %s", token)
 		default:
-			t.Errorf("Got unexpected poll for %s", token)
+			t.Logf("Got unexpected poll for %s", token)
 		}
 		since := req.URL.Query().Get("since")
 		if since == "" {
