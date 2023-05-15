@@ -73,11 +73,13 @@ func (s *testV2Server) SetCheckRequest(fn func(userID, token string, req *http.R
 
 // Most tests only use a single device per user. Give them this helper so they don't
 // have to care about providing a device name.
-func (s *testV2Server) addAccount(userID, token string) {
-	// To keep our future selves sane while debugging, use a device name that
-	// includes the mxid localpart.
+func (s *testV2Server) addAccount(t testutils.TestBenchInterface, userID, token string) {
+	// To keep our future selves sane while debugging use a device name that
+	//  - includes the mxid localpart, and
+	//  - includes the test name (to avoid leaking state from previous tests).
 	atLocalPart, _, _ := strings.Cut(userID, ":")
-	s.addAccountWithDeviceID(userID, atLocalPart[1:]+"_device", token)
+	deviceID := fmt.Sprintf("%s_%s_device", atLocalPart[1:], t.Name())
+	s.addAccountWithDeviceID(userID, deviceID, token)
 }
 
 // Tests that use multiple devices for the same user need to be more explicit.

@@ -27,7 +27,7 @@ func TestStuckInvites(t *testing.T) {
 		"membership": "invite",
 	}))
 
-	v2.addAccount(alice, aliceToken)
+	v2.addAccount(t, alice, aliceToken)
 	v2.queueResponse(alice, sync2.SyncResponse{
 		Rooms: sync2.SyncRoomsResponse{
 			Invite: map[string]sync2.SyncV2InviteResponse{

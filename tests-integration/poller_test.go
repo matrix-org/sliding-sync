@@ -124,7 +124,7 @@ func TestPollerHandlesUnknownStateEventsOnIncrementalSync(t *testing.T) {
 	v3 := runTestServer(t, v2, pqString)
 	defer v2.close()
 	defer v3.close()
-	v2.addAccount(alice, aliceToken)
+	v2.addAccount(t, alice, aliceToken)
 	const roomID = "!unimportant"
 	v2.queueResponse(aliceToken, sync2.SyncResponse{
 		Rooms: sync2.SyncRoomsResponse{
@@ -211,8 +211,8 @@ func TestPollerUpdatesRoomMemberTrackerOnGappySyncStateBlock(t *testing.T) {
 	v3 := runTestServer(t, v2, pqString)
 	defer v2.close()
 	defer v3.close()
-	v2.addAccount(alice, aliceToken)
-	v2.addAccount(bob, bobToken)
+	v2.addAccount(t, alice, aliceToken)
+	v2.addAccount(t, bob, bobToken)
 	const roomID = "!unimportant"
 
 	t.Log("Alice and Bob's pollers initial sync. Both see the same state: that Alice and Bob share a room.")

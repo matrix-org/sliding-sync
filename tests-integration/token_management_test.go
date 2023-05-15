@@ -18,11 +18,13 @@ func TestSyncWithNewTokenAfterOldExpires(t *testing.T) {
 	pqString := testutils.PrepareDBConnectionString()
 	v2 := runTestV2Server(t)
 	v3 := runTestServer(t, v2, pqString)
+	defer v2.close()
+	defer v3.close()
 
 	aliceToken1 := "alice_token_1"
 	aliceToken2 := "alice_token_2"
 	roomID := "!room:test"
-	v2.addAccount(alice, aliceToken1)
+	v2.addAccount(t, alice, aliceToken1)
 
 	t.Log("Prepare to tell a poller using aliceToken1 that Alice created a room and that Bob joined it.")
 
@@ -69,7 +71,7 @@ func TestSyncWithNewTokenAfterOldExpires(t *testing.T) {
 	})
 
 	t.Log("Alice refreshes her access token. The old one expires.")
-	v2.addAccount(alice, aliceToken2)
+	v2.addAccount(t, alice, aliceToken2)
 	v2.invalidateToken(aliceToken1)
 
 	t.Log("Alice makes an incremental sliding sync with the new token.")
