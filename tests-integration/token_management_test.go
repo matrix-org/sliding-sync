@@ -3,14 +3,15 @@ package syncv3
 import (
 	"context"
 	"encoding/json"
+	"net/http"
+	"testing"
+	"time"
+
 	"github.com/matrix-org/sliding-sync/sync2"
 	"github.com/matrix-org/sliding-sync/sync3"
 	"github.com/matrix-org/sliding-sync/testutils"
 	"github.com/matrix-org/sliding-sync/testutils/m"
 	"github.com/tidwall/gjson"
-	"net/http"
-	"testing"
-	"time"
 )
 
 func TestSyncWithNewTokenAfterOldExpires(t *testing.T) {
@@ -50,7 +51,7 @@ func TestSyncWithNewTokenAfterOldExpires(t *testing.T) {
 	)
 
 	t.Log("From this point forward, the poller should not make any initial sync requests.")
-	v2.CheckRequest = func(userID, token string, req *http.Request) {
+	v2.SetCheckRequest(func(userID, token string, req *http.Request) {
 		if userID != alice {
 			t.Errorf("Got unexpected poll for %s, expected %s only", userID, alice)
 		}
@@ -65,7 +66,7 @@ func TestSyncWithNewTokenAfterOldExpires(t *testing.T) {
 		if since == "" {
 			t.Errorf("Got unexpected initial sync poll for token %s", token)
 		}
-	}
+	})
 
 	t.Log("Alice refreshes her access token. The old one expires.")
 	v2.addAccount(alice, aliceToken2)

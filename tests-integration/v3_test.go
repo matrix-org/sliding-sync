@@ -5,8 +5,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"github.com/rs/zerolog"
-	"github.com/rs/zerolog/hlog"
 	"io/ioutil"
 	"log"
 	"net/http"
@@ -16,6 +14,9 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/rs/zerolog"
+	"github.com/rs/zerolog/hlog"
 
 	"github.com/gorilla/mux"
 	"github.com/matrix-org/gomatrixserverlib"
@@ -62,6 +63,12 @@ type testV2Server struct {
 	srv                     *httptest.Server
 	invalidations           map[string]func() // token -> callback
 	timeToWaitForV2Response time.Duration
+}
+
+func (s *testV2Server) SetCheckRequest(fn func(userID, token string, req *http.Request)) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.CheckRequest = fn
 }
 
 // Most tests only use a single device per user. Give them this helper so they don't
@@ -249,8 +256,11 @@ func runTestV2Server(t testutils.TestBenchInterface) *testV2Server {
 			server.mu.Unlock()
 			return
 		}
-		if server.CheckRequest != nil {
-			server.CheckRequest(userID, token, req)
+		server.mu.Lock()
+		check := server.CheckRequest
+		server.mu.Unlock()
+		if check != nil {
+			check(userID, token, req)
 		}
 		resp := server.nextResponse(userID, token)
 		body, err := json.Marshal(resp)
