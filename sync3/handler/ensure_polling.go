@@ -109,6 +109,38 @@ func (p *EnsurePoller) OnInitialSyncComplete(payload *pubsub.V2InitialSyncComple
 	close(ch)
 }
 
+func (p *EnsurePoller) OnTokenExpired(payload *pubsub.V2ExpiredToken) {
+	pid := sync2.PollerID{UserID: payload.UserID, DeviceID: payload.DeviceID}
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	pending, exists := p.pendingPolls[pid]
+	if !exists {
+		// We weren't tracking the state of this poller, so we have nothing to clean up.
+		return
+	}
+	// There's a potential race here. Suppose that
+	//
+	//  - a v3 request arrives for a brand-new device
+	//  - homeserver recognises the access token in the /whoami call
+	//  - we call EnsurePolling for that token
+	//  - the poller makes an initial sync and learns that the token has expired
+	//
+	// If we close the channel, the EnsurePolling call that's blocking on it will
+	// continue as-if there was initial sync data to receive. But there isn't.
+	//
+	// I think this is okay though, because clients should learn that their token has
+	// expired when making another request (either to the proxy or to the homeserver).
+	// Then:
+	//
+	//  - Non-refreshing token clients should logout the device.
+	//  - Refreshing token clients should request a new sliding sync with a new token.
+	//
+	if pending.ch != nil {
+		close(pending.ch)
+	}
+	delete(p.pendingPolls, pid)
+}
+
 func (p *EnsurePoller) Teardown() {
 	p.notifier.Close()
 }

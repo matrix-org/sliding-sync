@@ -704,6 +704,7 @@ func (h *SyncLiveHandler) OnAccountData(p *pubsub.V2AccountData) {
 }
 
 func (h *SyncLiveHandler) OnExpiredToken(p *pubsub.V2ExpiredToken) {
+	h.V3Pub.OnTokenExpired(p)
 	h.ConnMap.CloseConnsForDevice(p.UserID, p.DeviceID)
 }
 
