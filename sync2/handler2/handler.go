@@ -387,13 +387,14 @@ func (h *Handler) OnLeftRoom(userID, roomID string) {
 }
 
 func (h *Handler) EnsurePolling(p *pubsub.V3EnsurePolling) {
-	logger.Info().Str("user", p.UserID).Msg("EnsurePolling: new request")
+	log := logger.With().Str("user_id", p.UserID).Str("device_id", p.DeviceID).Logger()
+	log.Info().Msg("EnsurePolling: new request")
 	defer func() {
-		logger.Info().Str("user", p.UserID).Msg("EnsurePolling: request finished")
+		log.Info().Msg("EnsurePolling: request finished")
 	}()
 	accessToken, since, err := h.v2Store.TokensTable.GetTokenAndSince(p.UserID, p.DeviceID, p.AccessTokenHash)
 	if err != nil {
-		logger.Err(err).Str("user", p.UserID).Str("device", p.DeviceID).Msg("V3Sub: EnsurePolling unknown device")
+		log.Err(err).Msg("V3Sub: EnsurePolling unknown device")
 		sentry.CaptureException(err)
 		return
 	}
@@ -405,8 +406,7 @@ func (h *Handler) EnsurePolling(p *pubsub.V3EnsurePolling) {
 			DeviceID: p.DeviceID,
 		}
 		h.pMap.EnsurePolling(
-			pid, accessToken, since, false,
-			logger.With().Str("user_id", p.UserID).Str("device_id", p.DeviceID).Logger(),
+			pid, accessToken, since, false, log,
 		)
 		h.updateMetrics()
 		h.v2Pub.Notify(pubsub.ChanV2, &pubsub.V2InitialSyncComplete{
