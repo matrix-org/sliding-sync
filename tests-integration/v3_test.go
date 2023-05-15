@@ -186,14 +186,14 @@ func (s *testV2Server) nextResponse(userID, token string) *sync2.SyncResponse {
 	case data := <-ch:
 		if !testutils.Quiet {
 			log.Printf(
-				"testV2Server: nextResponse %s returning data: [invite=%d,join=%d,leave=%d]",
-				userID, len(data.Rooms.Invite), len(data.Rooms.Join), len(data.Rooms.Leave),
+				"testV2Server: nextResponse %s %s returning data: [invite=%d,join=%d,leave=%d]",
+				userID, token, len(data.Rooms.Invite), len(data.Rooms.Join), len(data.Rooms.Leave),
 			)
 		}
 		return &data
 	case <-time.After(s.timeToWaitForV2Response):
 		if !testutils.Quiet {
-			log.Printf("testV2Server: nextResponse %s waited >%v for data, returning null", userID, s.timeToWaitForV2Response)
+			log.Printf("testV2Server: nextResponse %s %s waited >%v for data, returning null", userID, token, s.timeToWaitForV2Response)
 		}
 		return nil
 	}

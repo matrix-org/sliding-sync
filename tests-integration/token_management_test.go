@@ -1,11 +1,13 @@
 package syncv3
 
 import (
+	"context"
 	"encoding/json"
 	"github.com/matrix-org/sliding-sync/sync2"
 	"github.com/matrix-org/sliding-sync/sync3"
 	"github.com/matrix-org/sliding-sync/testutils"
 	"github.com/matrix-org/sliding-sync/testutils/m"
+	"github.com/tidwall/gjson"
 	"testing"
 	"time"
 )
@@ -32,11 +34,12 @@ func TestSyncWithNewTokenAfterOldExpires(t *testing.T) {
 		},
 	})
 	t.Log("Alice makes an initial sliding sync.")
-	res := v3.mustDoV3Request(t, aliceToken1, sync3.Request{
+	req := sync3.Request{
 		RoomSubscriptions: map[string]sync3.RoomSubscription{
 			roomID: {TimelineLimit: 10},
 		},
-	})
+	}
+	res := v3.mustDoV3Request(t, aliceToken1, req)
 
 	t.Log("Alice should see Bob's membership")
 	m.MatchResponse(t, res,
@@ -59,7 +62,27 @@ func TestSyncWithNewTokenAfterOldExpires(t *testing.T) {
 		},
 	})
 
-	t.Log("Alice makes an incremental sliding sync.")
+	// TODO: check there are no future incremental syncs
+
+	t.Log("Alice makes an incremental sliding sync with the new token.")
+	_, body, code := v3.doV3Request(t, context.Background(), aliceToken2, res.Pos, sync3.Request{})
+	// TODO: in principle the proxy could remember the previous Pos and serve this
+	// request immediately. For now we keep things simple and require the client to make
+	// a new connection.
+	t.Log("The connection should be expired.")
+	if code != 400 {
+		t.Errorf("got HTTP %d want 400", code)
+	}
+	if gjson.ParseBytes(body).Get("errcode").Str != "M_UNKNOWN_POS" {
+		t.Errorf("got %v want errcode=M_UNKNOWN_POS", string(body))
+	}
+
+	t.Log("Alice makes a new sliding sync connection with her new token")
+	res = v3.mustDoV3Request(t, aliceToken2, req)
+
+	v2.waitUntilEmpty(t, aliceToken2)
+
+	t.Log("Alice makes a new sliding sync connection with her new token")
 	res = v3.mustDoV3RequestWithPos(t, aliceToken2, res.Pos, sync3.Request{})
 
 	t.Log("Alice should see Bob's message")
