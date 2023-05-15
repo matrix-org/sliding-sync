@@ -109,7 +109,7 @@ func (p *EnsurePoller) OnInitialSyncComplete(payload *pubsub.V2InitialSyncComple
 	close(ch)
 }
 
-func (p *EnsurePoller) OnTokenExpired(payload *pubsub.V2ExpiredToken) {
+func (p *EnsurePoller) OnExpiredToken(payload *pubsub.V2ExpiredToken) {
 	pid := sync2.PollerID{UserID: payload.UserID, DeviceID: payload.DeviceID}
 	p.mu.Lock()
 	defer p.mu.Unlock()
