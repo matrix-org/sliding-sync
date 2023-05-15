@@ -149,13 +149,13 @@ func (h *PollerMap) NumPollers() (count int) {
 	return
 }
 
-// EnsurePolling makes sure there is a poller for this user, making one if need be.
+// EnsurePolling makes sure there is a poller for this device, making one if need be.
 // Blocks until at least 1 sync is done if and only if the poller was just created.
 // This ensures that calls to the database will return data.
 // Guarantees only 1 poller will be running per deviceID.
 // Note that we will immediately return if there is a poller for the same user but a different device.
 // We do this to allow for logins on clients to be snappy fast, even though they won't yet have the
-// to-device msgs to decrypt E2EE roms.
+// to-device msgs to decrypt E2EE rooms.
 func (h *PollerMap) EnsurePolling(pid PollerID, accessToken, v2since string, isStartup bool, logger zerolog.Logger) {
 	h.pollerMu.Lock()
 	if !h.executorRunning {

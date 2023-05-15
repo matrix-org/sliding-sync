@@ -44,11 +44,6 @@ func NewEnsurePoller(notifier pubsub.Notifier) *EnsurePoller {
 func (p *EnsurePoller) EnsurePolling(pid sync2.PollerID, tokenHash string) {
 	p.mu.Lock()
 	// do we need to wait?
-	// TODO: this lookup is based on (user, device) pair. If the same user logs in on
-	// another device, we will wait for the poller to make an initial sync. We could do
-	// better here by using the data we've accumulated for the first device. However
-	// that wouldn't include any to-device messages, so encrypted messages would be
-	// undecrypted.
 	if p.pendingPolls[pid].done {
 		p.mu.Unlock()
 		return
