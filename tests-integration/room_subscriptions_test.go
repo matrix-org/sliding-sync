@@ -90,7 +90,7 @@ func TestRoomSubscriptionMisorderedTimeline(t *testing.T) {
 		roomID: "!room:localhost",
 		events: append(roomState, abcInitialEvents...),
 	}
-	v2.addAccount(alice, aliceToken)
+	v2.addAccount(t, alice, aliceToken)
 	v2.queueResponse(alice, sync2.SyncResponse{
 		Rooms: sync2.SyncRoomsResponse{
 			Join: v2JoinTimeline(room),
