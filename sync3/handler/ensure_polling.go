@@ -7,14 +7,25 @@ import (
 	"github.com/matrix-org/sliding-sync/pubsub"
 )
 
+// pendingInfo tracks the status of a poller that we are (or previously were) waiting
+// to start.
 type pendingInfo struct {
+	// done is set to true when we confirm that this poller has started polling.
 	done bool
-	ch   chan struct{}
+	// ch is a dummy channel which never receives any data. A call to
+	// EnsurePoller.OnInitialSyncComplete will close the channel (unblocking any
+	// EnsurePoller.EnsurePolling calls which are waiting on it) and then set the ch
+	// field to nil.
+	ch chan struct{}
 }
 
+// EnsurePoller is a gadget used by the sliding sync request handler to ensure that
+// we are running a v2 poller for a given device.
 type EnsurePoller struct {
-	chanName     string
-	mu           *sync.Mutex
+	chanName string
+	// mu guards reads and writes to pendingPolls.
+	mu *sync.Mutex
+	// pendingPolls tracks the status of pollers that we are waiting to start.
 	pendingPolls map[sync2.PollerID]pendingInfo
 	notifier     pubsub.Notifier
 }
@@ -91,6 +102,21 @@ func (p *EnsurePoller) OnInitialSyncComplete(payload *pubsub.V2InitialSyncComple
 	pending.ch = nil
 	p.pendingPolls[pid] = pending
 	close(ch)
+}
+
+func (p *EnsurePoller) OnExpiredToken(payload *pubsub.V2ExpiredToken) {
+	pid := sync2.PollerID{UserID: payload.UserID, DeviceID: payload.DeviceID}
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	pending, exists := p.pendingPolls[pid]
+	if !exists {
+		// We weren't tracking the state of this poller, so we have nothing to clean up.
+		return
+	}
+	if pending.ch != nil {
+		close(pending.ch)
+	}
+	delete(p.pendingPolls, pid)
 }
 
 func (p *EnsurePoller) Teardown() {

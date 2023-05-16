@@ -15,6 +15,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/rs/zerolog"
+	"github.com/rs/zerolog/hlog"
+
 	"github.com/gorilla/mux"
 	"github.com/matrix-org/gomatrixserverlib"
 	syncv3 "github.com/matrix-org/sliding-sync"
@@ -26,6 +29,11 @@ import (
 	"github.com/matrix-org/sliding-sync/testutils/m"
 	"github.com/tidwall/gjson"
 )
+
+var logger = zerolog.New(os.Stdout).With().Timestamp().Logger().Output(zerolog.ConsoleWriter{
+	Out:        os.Stderr,
+	TimeFormat: "15:04:05",
+})
 
 // Integration tests for the sync-v3 server
 
@@ -43,7 +51,7 @@ var (
 // testV2Server is a fake stand-in for the v2 sync API provided by a homeserver.
 type testV2Server struct {
 	// CheckRequest is an arbitrary function which runs after a request has been
-	// received from pollers, but before the resposne is generated. This allows us to
+	// received from pollers, but before the response is generated. This allows us to
 	// confirm that the proxy is polling the homeserver's v2 sync endpoint in the
 	// manner that we expect.
 	CheckRequest            func(userID, token string, req *http.Request)
@@ -57,13 +65,21 @@ type testV2Server struct {
 	timeToWaitForV2Response time.Duration
 }
 
+func (s *testV2Server) SetCheckRequest(fn func(userID, token string, req *http.Request)) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.CheckRequest = fn
+}
+
 // Most tests only use a single device per user. Give them this helper so they don't
 // have to care about providing a device name.
-func (s *testV2Server) addAccount(userID, token string) {
-	// To keep our future selves sane while debugging, use a device name that
-	// includes the mxid localpart.
+func (s *testV2Server) addAccount(t testutils.TestBenchInterface, userID, token string) {
+	// To keep our future selves sane while debugging use a device name that
+	//  - includes the mxid localpart, and
+	//  - includes the test name (to avoid leaking state from previous tests).
 	atLocalPart, _, _ := strings.Cut(userID, ":")
-	s.addAccountWithDeviceID(userID, atLocalPart[1:]+"_device", token)
+	deviceID := fmt.Sprintf("%s_%s_device", atLocalPart[1:], t.Name())
+	s.addAccountWithDeviceID(userID, deviceID, token)
 }
 
 // Tests that use multiple devices for the same user need to be more explicit.
@@ -179,14 +195,14 @@ func (s *testV2Server) nextResponse(userID, token string) *sync2.SyncResponse {
 	case data := <-ch:
 		if !testutils.Quiet {
 			log.Printf(
-				"testV2Server: nextResponse %s returning data: [invite=%d,join=%d,leave=%d]",
-				userID, len(data.Rooms.Invite), len(data.Rooms.Join), len(data.Rooms.Leave),
+				"testV2Server: nextResponse %s %s returning data: [invite=%d,join=%d,leave=%d]",
+				userID, token, len(data.Rooms.Invite), len(data.Rooms.Join), len(data.Rooms.Leave),
 			)
 		}
 		return &data
 	case <-time.After(s.timeToWaitForV2Response):
 		if !testutils.Quiet {
-			log.Printf("testV2Server: nextResponse %s waited >%v for data, returning null", userID, s.timeToWaitForV2Response)
+			log.Printf("testV2Server: nextResponse %s %s waited >%v for data, returning null", userID, token, s.timeToWaitForV2Response)
 		}
 		return nil
 	}
@@ -242,8 +258,11 @@ func runTestV2Server(t testutils.TestBenchInterface) *testV2Server {
 			server.mu.Unlock()
 			return
 		}
-		if server.CheckRequest != nil {
-			server.CheckRequest(userID, token, req)
+		server.mu.Lock()
+		check := server.CheckRequest
+		server.mu.Unlock()
+		if check != nil {
+			check(userID, token, req)
 		}
 		resp := server.nextResponse(userID, token)
 		body, err := json.Marshal(resp)
@@ -361,6 +380,7 @@ func runTestServer(t testutils.TestBenchInterface, v2Server *testV2Server, postg
 	})
 	// for ease of use we don't start v2 pollers at startup in tests
 	r := mux.NewRouter()
+	r.Use(hlog.NewHandler(logger))
 	r.Handle("/_matrix/client/v3/sync", h3)
 	r.Handle("/_matrix/client/unstable/org.matrix.msc3575/sync", h3)
 	srv := httptest.NewServer(r)

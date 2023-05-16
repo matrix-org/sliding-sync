@@ -29,7 +29,7 @@ func TestExtensionE2EE(t *testing.T) {
 		"signed_curve25519": 100,
 	}
 	fallbackKeyTypes := []string{"signed_curve25519"}
-	v2.addAccount(alice, aliceToken)
+	v2.addAccount(t, alice, aliceToken)
 	v2.queueResponse(alice, sync2.SyncResponse{
 		DeviceListsOTKCount:          otkCounts,
 		DeviceUnusedFallbackKeyTypes: fallbackKeyTypes,
@@ -211,7 +211,7 @@ func TestExtensionToDevice(t *testing.T) {
 	defer v3.close()
 	alice := "@TestExtensionToDevice_alice:localhost"
 	aliceToken := "ALICE_BEARER_TOKEN_TestExtensionToDevice"
-	v2.addAccount(alice, aliceToken)
+	v2.addAccount(t, alice, aliceToken)
 	toDeviceMsgs := []json.RawMessage{
 		json.RawMessage(`{"sender":"alice","type":"something","content":{"foo":"1"}}`),
 		json.RawMessage(`{"sender":"alice","type":"something","content":{"foo":"2"}}`),
@@ -410,7 +410,7 @@ func TestExtensionAccountData(t *testing.T) {
 		testutils.NewAccountData(t, "im-c", map[string]interface{}{"body": "yep c"}),
 		testutils.NewAccountData(t, "im-also-c", map[string]interface{}{"body": "yep C"}),
 	}
-	v2.addAccount(alice, aliceToken)
+	v2.addAccount(t, alice, aliceToken)
 	v2.queueResponse(alice, sync2.SyncResponse{
 		AccountData: sync2.EventsResponse{
 			Events: globalAccountData,
@@ -577,7 +577,7 @@ func TestExtensionLateEnable(t *testing.T) {
 	defer v2.close()
 	defer v3.close()
 
-	v2.addAccount(alice, aliceToken)
+	v2.addAccount(t, alice, aliceToken)
 	v2.queueResponse(alice, sync2.SyncResponse{
 		Rooms: sync2.SyncRoomsResponse{
 			Join: v2JoinTimeline(roomEvents{

@@ -25,7 +25,7 @@ func TestRoomSubscriptionJoinRoomRace(t *testing.T) {
 		events: createRoomState(t, alice, time.Now()),
 	}
 	// add the account and queue a dummy response so there is a poll loop and we can get requests serviced
-	v2.addAccount(alice, aliceToken)
+	v2.addAccount(t, alice, aliceToken)
 	v2.queueResponse(alice, sync2.SyncResponse{
 		Rooms: sync2.SyncRoomsResponse{
 			Join: v2JoinTimeline(roomEvents{

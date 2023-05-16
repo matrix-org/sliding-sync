@@ -3,6 +3,7 @@ package pubsub
 // The channel which has V3* payloads
 const ChanV3 = "v3ch"
 
+// V3Listener describes the messages that incoming sliding sync requests will publish.
 type V3Listener interface {
 	EnsurePolling(p *V3EnsurePolling)
 }

@@ -9,6 +9,7 @@ import (
 // The channel which has V2* payloads
 const ChanV2 = "v2ch"
 
+// V2Listener describes the messages that sync v2 pollers will publish.
 type V2Listener interface {
 	Initialise(p *V2Initialise)
 	Accumulate(p *V2Accumulate)
