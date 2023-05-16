@@ -36,5 +36,7 @@ func ReportPanicsToSentry() {
 		sentry.Flush(time.Second * 5)
 	}
 	// We still want to fail loudly here.
-	panic(panicData)
+	if panicData != nil {
+		panic(panicData)
+	}
 }
