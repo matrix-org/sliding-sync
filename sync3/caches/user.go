@@ -24,7 +24,7 @@ type CacheFinder interface {
 }
 
 type TransactionIDFetcher interface {
-	TransactionIDForEvents(deviceID string, eventIDs []string) (eventIDToTxnID map[string]string)
+	TransactionIDForEvents(userID, deviceID string, eventIDs []string) (eventIDToTxnID map[string]string)
 }
 
 type UserRoomData struct {
@@ -452,7 +452,7 @@ func (c *UserCache) Invites() map[string]UserRoomData {
 // events are globally scoped, so if Alice sends a message, Bob might receive it first on his v2 loop
 // which would cause the transaction ID to be missing from the event. Instead, we always look for txn
 // IDs in the v2 poller, and then set them appropriately at request time.
-func (c *UserCache) AnnotateWithTransactionIDs(ctx context.Context, deviceID string, roomIDToEvents map[string][]json.RawMessage) map[string][]json.RawMessage {
+func (c *UserCache) AnnotateWithTransactionIDs(ctx context.Context, userID string, deviceID string, roomIDToEvents map[string][]json.RawMessage) map[string][]json.RawMessage {
 	var eventIDs []string
 	eventIDToEvent := make(map[string]struct {
 		roomID string
@@ -471,7 +471,7 @@ func (c *UserCache) AnnotateWithTransactionIDs(ctx context.Context, deviceID str
 			}
 		}
 	}
-	eventIDToTxnID := c.txnIDs.TransactionIDForEvents(deviceID, eventIDs)
+	eventIDToTxnID := c.txnIDs.TransactionIDForEvents(userID, deviceID, eventIDs)
 	for eventID, txnID := range eventIDToTxnID {
 		data, ok := eventIDToEvent[eventID]
 		if !ok {

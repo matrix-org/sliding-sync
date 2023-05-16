@@ -29,7 +29,7 @@ func TestExtensionE2EE(t *testing.T) {
 		"signed_curve25519": 100,
 	}
 	fallbackKeyTypes := []string{"signed_curve25519"}
-	v2.addAccount(alice, aliceToken)
+	v2.addAccount(t, alice, aliceToken)
 	v2.queueResponse(alice, sync2.SyncResponse{
 		DeviceListsOTKCount:          otkCounts,
 		DeviceUnusedFallbackKeyTypes: fallbackKeyTypes,
@@ -211,7 +211,7 @@ func TestExtensionToDevice(t *testing.T) {
 	defer v3.close()
 	alice := "@TestExtensionToDevice_alice:localhost"
 	aliceToken := "ALICE_BEARER_TOKEN_TestExtensionToDevice"
-	v2.addAccount(alice, aliceToken)
+	v2.addAccount(t, alice, aliceToken)
 	toDeviceMsgs := []json.RawMessage{
 		json.RawMessage(`{"sender":"alice","type":"something","content":{"foo":"1"}}`),
 		json.RawMessage(`{"sender":"alice","type":"something","content":{"foo":"2"}}`),
@@ -224,7 +224,7 @@ func TestExtensionToDevice(t *testing.T) {
 		},
 	})
 
-	// 1: check that a fresh sync returns to-device messages
+	t.Log("1: check that a fresh sync returns to-device messages")
 	res := v3.mustDoV3Request(t, aliceToken, sync3.Request{
 		Lists: map[string]sync3.RequestList{"a": {
 			Ranges: sync3.SliceRanges{
@@ -239,7 +239,7 @@ func TestExtensionToDevice(t *testing.T) {
 	})
 	m.MatchResponse(t, res, m.MatchList("a", m.MatchV3Count(0)), m.MatchToDeviceMessages(toDeviceMsgs))
 
-	// 2: repeating the fresh sync request returns the same messages (not deleted)
+	t.Log("2: repeating the fresh sync request returns the same messages (not deleted)")
 	res = v3.mustDoV3Request(t, aliceToken, sync3.Request{
 		Lists: map[string]sync3.RequestList{"a": {
 			Ranges: sync3.SliceRanges{
@@ -254,7 +254,7 @@ func TestExtensionToDevice(t *testing.T) {
 	})
 	m.MatchResponse(t, res, m.MatchList("a", m.MatchV3Count(0)), m.MatchToDeviceMessages(toDeviceMsgs))
 
-	// 3: update the since token -> no new messages
+	t.Log("3: update the since token -> no new messages")
 	res = v3.mustDoV3Request(t, aliceToken, sync3.Request{
 		Lists: map[string]sync3.RequestList{"a": {
 			Ranges: sync3.SliceRanges{
@@ -270,7 +270,7 @@ func TestExtensionToDevice(t *testing.T) {
 	})
 	m.MatchResponse(t, res, m.MatchList("a", m.MatchV3Count(0)), m.MatchToDeviceMessages([]json.RawMessage{}))
 
-	// 4: inject live to-device messages -> receive them only.
+	t.Log("4: inject live to-device messages -> receive them only.")
 	sinceBeforeMsgs := res.Extensions.ToDevice.NextBatch
 	newToDeviceMsgs := []json.RawMessage{
 		json.RawMessage(`{"sender":"alice","type":"something","content":{"foo":"5"}}`),
@@ -296,7 +296,7 @@ func TestExtensionToDevice(t *testing.T) {
 	})
 	m.MatchResponse(t, res, m.MatchList("a", m.MatchV3Count(0)), m.MatchToDeviceMessages(newToDeviceMsgs))
 
-	// 5: repeating the previous sync request returns the same live to-device messages (retransmit)
+	t.Log("5: repeating the previous sync request returns the same live to-device messages (retransmit)")
 	res = v3.mustDoV3RequestWithPos(t, aliceToken, res.Pos, sync3.Request{
 		Lists: map[string]sync3.RequestList{"a": {
 			Ranges: sync3.SliceRanges{
@@ -327,7 +327,7 @@ func TestExtensionToDevice(t *testing.T) {
 	// this response contains nothing
 	m.MatchResponse(t, res, m.MatchList("a", m.MatchV3Count(0)), m.MatchToDeviceMessages([]json.RawMessage{}))
 
-	// 6: using an old since token does not return to-device messages anymore as they were deleted.
+	t.Log("6: using an old since token does not return to-device messages anymore as they were deleted.")
 	res = v3.mustDoV3RequestWithPos(t, aliceToken, res.Pos, sync3.Request{
 		Lists: map[string]sync3.RequestList{"a": {
 			Ranges: sync3.SliceRanges{
@@ -343,7 +343,7 @@ func TestExtensionToDevice(t *testing.T) {
 
 	m.MatchResponse(t, res, m.MatchList("a", m.MatchV3Count(0)), m.MatchToDeviceMessages([]json.RawMessage{}))
 
-	// live stream and block, then send a to-device msg which should go through immediately
+	t.Log("7: live stream and block, then send a to-device msg which should go through immediately")
 	start := time.Now()
 	go func() {
 		time.Sleep(500 * time.Millisecond)
@@ -410,7 +410,7 @@ func TestExtensionAccountData(t *testing.T) {
 		testutils.NewAccountData(t, "im-c", map[string]interface{}{"body": "yep c"}),
 		testutils.NewAccountData(t, "im-also-c", map[string]interface{}{"body": "yep C"}),
 	}
-	v2.addAccount(alice, aliceToken)
+	v2.addAccount(t, alice, aliceToken)
 	v2.queueResponse(alice, sync2.SyncResponse{
 		AccountData: sync2.EventsResponse{
 			Events: globalAccountData,
@@ -577,7 +577,7 @@ func TestExtensionLateEnable(t *testing.T) {
 	defer v2.close()
 	defer v3.close()
 
-	v2.addAccount(alice, aliceToken)
+	v2.addAccount(t, alice, aliceToken)
 	v2.queueResponse(alice, sync2.SyncResponse{
 		Rooms: sync2.SyncRoomsResponse{
 			Join: v2JoinTimeline(roomEvents{

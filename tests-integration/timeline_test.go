@@ -42,7 +42,7 @@ func TestTimelines(t *testing.T) {
 		}
 	}
 	latestTimestamp := time.Now().Add(10 * time.Hour)
-	v2.addAccount(alice, aliceToken)
+	v2.addAccount(t, alice, aliceToken)
 	v2.queueResponse(alice, sync2.SyncResponse{
 		Rooms: sync2.SyncRoomsResponse{
 			Join: v2JoinTimeline(allRooms...),
@@ -124,7 +124,7 @@ func TestTimelinesLiveStream(t *testing.T) {
 			latestTimestamp = ts.Add(10 * time.Second)
 		}
 	}
-	v2.addAccount(alice, aliceToken)
+	v2.addAccount(t, alice, aliceToken)
 	v2.queueResponse(alice, sync2.SyncResponse{
 		Rooms: sync2.SyncRoomsResponse{
 			Join: v2JoinTimeline(allRooms...),
@@ -256,7 +256,7 @@ func TestMultipleWindows(t *testing.T) {
 			}...),
 		}
 	}
-	v2.addAccount(alice, aliceToken)
+	v2.addAccount(t, alice, aliceToken)
 	v2.queueResponse(alice, sync2.SyncResponse{
 		Rooms: sync2.SyncRoomsResponse{
 			Join: v2JoinTimeline(allRooms...),
@@ -338,7 +338,7 @@ func TestInitialFlag(t *testing.T) {
 	defer v2.close()
 	defer v3.close()
 	roomID := "!a:localhost"
-	v2.addAccount(alice, aliceToken)
+	v2.addAccount(t, alice, aliceToken)
 	v2.queueResponse(alice, sync2.SyncResponse{
 		Rooms: sync2.SyncRoomsResponse{
 			Join: v2JoinTimeline(roomEvents{
@@ -401,7 +401,7 @@ func TestDuplicateEventsInTimeline(t *testing.T) {
 	roomID := "!a:localhost"
 
 	dupeEvent := testutils.NewStateEvent(t, "m.room.name", "", alice, map[string]interface{}{})
-	v2.addAccount(alice, aliceToken)
+	v2.addAccount(t, alice, aliceToken)
 	v2.queueResponse(alice, sync2.SyncResponse{
 		Rooms: sync2.SyncRoomsResponse{
 			Join: v2JoinTimeline(roomEvents{
@@ -459,7 +459,7 @@ func TestTimelineMiddleWindowZeroTimelineLimit(t *testing.T) {
 			}...),
 		}
 	}
-	v2.addAccount(alice, aliceToken)
+	v2.addAccount(t, alice, aliceToken)
 	v2.queueResponse(alice, sync2.SyncResponse{
 		Rooms: sync2.SyncRoomsResponse{
 			Join: v2JoinTimeline(allRooms...),
@@ -555,7 +555,7 @@ func TestHistoryDoesntIncludeState(t *testing.T) {
 		},
 		prevBatch: prevBatch,
 	}
-	v2.addAccount(alice, aliceToken)
+	v2.addAccount(t, alice, aliceToken)
 	v2.queueResponse(alice, sync2.SyncResponse{
 		Rooms: sync2.SyncRoomsResponse{
 			Join: v2JoinTimeline(room),
@@ -595,8 +595,8 @@ func TestTimelineTxnID(t *testing.T) {
 			testutils.NewJoinEvent(t, bob),
 		),
 	}
-	v2.addAccount(alice, aliceToken)
-	v2.addAccount(bob, bobToken)
+	v2.addAccount(t, alice, aliceToken)
+	v2.addAccount(t, bob, bobToken)
 	v2.queueResponse(alice, sync2.SyncResponse{
 		Rooms: sync2.SyncRoomsResponse{
 			Join: v2JoinTimeline(room),
@@ -736,7 +736,7 @@ func TestPrevBatchInTimeline(t *testing.T) {
 	defer v2.close()
 	defer v3.close()
 	roomID := "!a:localhost"
-	v2.addAccount(alice, aliceToken)
+	v2.addAccount(t, alice, aliceToken)
 	v2.queueResponse(alice, sync2.SyncResponse{
 		Rooms: sync2.SyncRoomsResponse{
 			Join: v2JoinTimeline(roomEvents{
@@ -845,7 +845,7 @@ func TestTrickling(t *testing.T) {
 			}...),
 		}
 	}
-	v2.addAccount(alice, aliceToken)
+	v2.addAccount(t, alice, aliceToken)
 	v2.queueResponse(alice, sync2.SyncResponse{
 		Rooms: sync2.SyncRoomsResponse{
 			Join: v2JoinTimeline(allRooms...),
@@ -1019,7 +1019,7 @@ func TestNumLiveBulk(t *testing.T) {
 	defer v3.close()
 
 	roomID := "!bulk:test"
-	v2.addAccount(alice, aliceToken)
+	v2.addAccount(t, alice, aliceToken)
 	v2.queueResponse(alice, sync2.SyncResponse{
 		Rooms: sync2.SyncRoomsResponse{
 			Join: v2JoinTimeline(roomEvents{

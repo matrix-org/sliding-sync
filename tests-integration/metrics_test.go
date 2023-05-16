@@ -70,7 +70,7 @@ func TestMetricsNumPollers(t *testing.T) {
 	metrics := getMetrics(t, metricsServer)
 	assertMetric(t, metrics, metricKey, "0")
 	// start a poller
-	v2.addAccount(alice, aliceToken)
+	v2.addAccount(t, alice, aliceToken)
 	v2.queueResponse(alice, sync2.SyncResponse{
 		Rooms: sync2.SyncRoomsResponse{
 			Join: v2JoinTimeline(roomEvents{
@@ -84,7 +84,7 @@ func TestMetricsNumPollers(t *testing.T) {
 	metrics = getMetrics(t, metricsServer)
 	assertMetric(t, metrics, metricKey, "1")
 	// start another poller
-	v2.addAccount(bob, bobToken)
+	v2.addAccount(t, bob, bobToken)
 	v2.queueResponse(bob, sync2.SyncResponse{
 		Rooms: sync2.SyncRoomsResponse{
 			Join: v2JoinTimeline(roomEvents{
@@ -119,7 +119,7 @@ func TestMetricsNumConns(t *testing.T) {
 	metrics := getMetrics(t, metricsServer)
 	assertMetric(t, metrics, metricKey, "0")
 	// start a poller
-	v2.addAccount(alice, aliceToken)
+	v2.addAccount(t, alice, aliceToken)
 	v2.queueResponse(alice, sync2.SyncResponse{
 		Rooms: sync2.SyncRoomsResponse{
 			Join: v2JoinTimeline(roomEvents{
@@ -133,7 +133,7 @@ func TestMetricsNumConns(t *testing.T) {
 	metrics = getMetrics(t, metricsServer)
 	assertMetric(t, metrics, metricKey, "1")
 	// start another poller
-	v2.addAccount(bob, bobToken)
+	v2.addAccount(t, bob, bobToken)
 	v2.queueResponse(bob, sync2.SyncResponse{
 		Rooms: sync2.SyncRoomsResponse{
 			Join: v2JoinTimeline(roomEvents{

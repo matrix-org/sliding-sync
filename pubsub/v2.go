@@ -9,6 +9,7 @@ import (
 // The channel which has V2* payloads
 const ChanV2 = "v2ch"
 
+// V2Listener describes the messages that sync v2 pollers will publish.
 type V2Listener interface {
 	Initialise(p *V2Initialise)
 	Accumulate(p *V2Accumulate)
@@ -78,6 +79,7 @@ type V2InitialSyncComplete struct {
 func (*V2InitialSyncComplete) Type() string { return "V2InitialSyncComplete" }
 
 type V2DeviceData struct {
+	UserID   string
 	DeviceID string
 	Pos      int64
 }
@@ -106,6 +108,7 @@ type V2DeviceMessages struct {
 func (*V2DeviceMessages) Type() string { return "V2DeviceMessages" }
 
 type V2ExpiredToken struct {
+	UserID   string
 	DeviceID string
 }
 

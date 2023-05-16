@@ -113,7 +113,7 @@ func TestUnreadCountMisordering(t *testing.T) {
 			notifCount: &info.notifCount,
 		})
 	}
-	v2.addAccount(alice, aliceToken)
+	v2.addAccount(t, alice, aliceToken)
 	v2.queueResponse(alice, sync2.SyncResponse{
 		Rooms: sync2.SyncRoomsResponse{
 			Join: v2JoinTimeline(re...),

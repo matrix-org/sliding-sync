@@ -11,11 +11,13 @@ import (
 )
 
 type ConnID struct {
+	UserID   string
 	DeviceID string
+	CID      string // client-supplied conn_id
 }
 
 func (c *ConnID) String() string {
-	return c.DeviceID
+	return fmt.Sprintf("%s|%s|%s", c.UserID, c.DeviceID, c.CID)
 }
 
 type ConnHandler interface {
@@ -24,7 +26,6 @@ type ConnHandler interface {
 	// status code to send back.
 	OnIncomingRequest(ctx context.Context, cid ConnID, req *Request, isInitial bool) (*Response, error)
 	OnUpdate(ctx context.Context, update caches.Update)
-	UserID() string
 	Destroy()
 	Alive() bool
 }
@@ -33,7 +34,7 @@ type ConnHandler interface {
 // of the /sync request, including sending cached data in the event of retries. It does not handle
 // the contents of the data at all.
 type Conn struct {
-	ConnID ConnID
+	ConnID
 
 	handler ConnHandler
 
@@ -63,10 +64,6 @@ func NewConn(connID ConnID, h ConnHandler) *Conn {
 		mu:                         &sync.Mutex{},
 		cancelOutstandingRequestMu: &sync.Mutex{},
 	}
-}
-
-func (c *Conn) UserID() string {
-	return c.handler.UserID()
 }
 
 func (c *Conn) Alive() bool {
@@ -105,7 +102,7 @@ func (c *Conn) tryRequest(ctx context.Context, req *Request) (res *Response, err
 	}
 	ctx, task := internal.StartTask(ctx, taskType)
 	defer task.End()
-	internal.Logf(ctx, "connstate", "starting user=%v device=%v pos=%v", c.handler.UserID(), c.ConnID.DeviceID, req.pos)
+	internal.Logf(ctx, "connstate", "starting user=%v device=%v pos=%v", c.UserID, c.ConnID.DeviceID, req.pos)
 	return c.handler.OnIncomingRequest(ctx, c.ConnID, req, req.pos == 0)
 }
 
@@ -164,7 +161,7 @@ func (c *Conn) OnIncomingRequest(ctx context.Context, req *Request) (resp *Respo
 	c.serverResponses = c.serverResponses[delIndex+1:] // slice out the first delIndex+1 elements
 
 	defer func() {
-		l := logger.Trace().Int("num_res_acks", delIndex+1).Bool("is_retransmit", isRetransmit).Bool("is_first", isFirstRequest).Bool("is_same", isSameRequest).Int64("pos", req.pos).Str("user", c.handler.UserID())
+		l := logger.Trace().Int("num_res_acks", delIndex+1).Bool("is_retransmit", isRetransmit).Bool("is_first", isFirstRequest).Bool("is_same", isSameRequest).Int64("pos", req.pos).Str("user", c.UserID)
 		if nextUnACKedResponse != nil {
 			l.Int64("new_pos", nextUnACKedResponse.PosInt())
 		}

@@ -3,13 +3,17 @@ package pubsub
 // The channel which has V3* payloads
 const ChanV3 = "v3ch"
 
+// V3Listener describes the messages that incoming sliding sync requests will publish.
 type V3Listener interface {
 	EnsurePolling(p *V3EnsurePolling)
 }
 
 type V3EnsurePolling struct {
-	UserID   string
-	DeviceID string
+	// TODO: we only really need to provide the access token hash here.
+	// Passing through a user means we can log something sensible though.
+	UserID          string
+	DeviceID        string
+	AccessTokenHash string
 }
 
 func (*V3EnsurePolling) Type() string { return "V3EnsurePolling" }

@@ -38,7 +38,7 @@ func (r *testRig) SetupV2RoomsForUser(t *testing.T, v2UserID string, f FlushEnum
 	_, userExists := r.tokens[v2UserID]
 	if !userExists {
 		r.tokens[v2UserID] = "access_token_for_" + v2UserID
-		r.V2.addAccount(v2UserID, r.tokens[v2UserID])
+		r.V2.addAccount(t, v2UserID, r.tokens[v2UserID])
 	}
 	inviteRooms := make(map[string]sync2.SyncV2InviteResponse)
 	joinRooms := make(map[string]sync2.SyncV2JoinResponse)

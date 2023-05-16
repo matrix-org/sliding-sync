@@ -19,7 +19,7 @@ func TestBecomingASpaceDoesntCrash(t *testing.T) {
 	defer v2.close()
 	defer v3.close()
 	roomID := "!foo:bar"
-	v2.addAccount(alice, aliceToken)
+	v2.addAccount(t, alice, aliceToken)
 	v2.queueResponse(alice, sync2.SyncResponse{
 		Rooms: sync2.SyncRoomsResponse{
 			Join: v2JoinTimeline(roomEvents{
@@ -38,7 +38,7 @@ func TestBecomingASpaceDoesntCrash(t *testing.T) {
 		"via": []string{"example.com"},
 	})
 	// TODO: we inject bob here because alice's sync stream seems to discard this response post-restart for unknown reasons
-	v2.addAccount(bob, bobToken)
+	v2.addAccount(t, bob, bobToken)
 	v2.queueResponse(bob, sync2.SyncResponse{
 		Rooms: sync2.SyncRoomsResponse{
 			Join: v2JoinTimeline(roomEvents{

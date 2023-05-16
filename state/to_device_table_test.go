@@ -12,6 +12,7 @@ func TestToDeviceTable(t *testing.T) {
 	db, close := connectToDB(t)
 	defer close()
 	table := NewToDeviceTable(db)
+	sender := "@alice:localhost"
 	deviceID := "FOO"
 	var limit int64 = 999
 	msgs := []json.RawMessage{
@@ -20,13 +21,13 @@ func TestToDeviceTable(t *testing.T) {
 	}
 	var lastPos int64
 	var err error
-	if lastPos, err = table.InsertMessages(deviceID, msgs); err != nil {
+	if lastPos, err = table.InsertMessages(sender, deviceID, msgs); err != nil {
 		t.Fatalf("InsertMessages: %s", err)
 	}
 	if lastPos != 2 {
 		t.Fatalf("InsertMessages: bad pos returned, got %d want 2", lastPos)
 	}
-	gotMsgs, upTo, err := table.Messages(deviceID, 0, limit)
+	gotMsgs, upTo, err := table.Messages(sender, deviceID, 0, limit)
 	if err != nil {
 		t.Fatalf("Messages: %s", err)
 	}
@@ -43,7 +44,7 @@ func TestToDeviceTable(t *testing.T) {
 	}
 
 	// same to= token, no messages
-	gotMsgs, upTo, err = table.Messages(deviceID, lastPos, limit)
+	gotMsgs, upTo, err = table.Messages(sender, deviceID, lastPos, limit)
 	if err != nil {
 		t.Fatalf("Messages: %s", err)
 	}
@@ -55,7 +56,7 @@ func TestToDeviceTable(t *testing.T) {
 	}
 
 	// different device ID, no messages
-	gotMsgs, upTo, err = table.Messages("OTHER_DEVICE", 0, limit)
+	gotMsgs, upTo, err = table.Messages(sender, "OTHER_DEVICE", 0, limit)
 	if err != nil {
 		t.Fatalf("Messages: %s", err)
 	}
@@ -67,7 +68,7 @@ func TestToDeviceTable(t *testing.T) {
 	}
 
 	// zero limit, no messages
-	gotMsgs, upTo, err = table.Messages(deviceID, 0, 0)
+	gotMsgs, upTo, err = table.Messages(sender, deviceID, 0, 0)
 	if err != nil {
 		t.Fatalf("Messages: %s", err)
 	}
@@ -80,7 +81,7 @@ func TestToDeviceTable(t *testing.T) {
 
 	// lower limit, cap out
 	var wantLimit int64 = 1
-	gotMsgs, upTo, err = table.Messages(deviceID, 0, wantLimit)
+	gotMsgs, upTo, err = table.Messages(sender, deviceID, 0, wantLimit)
 	if err != nil {
 		t.Fatalf("Messages: %s", err)
 	}
@@ -93,10 +94,10 @@ func TestToDeviceTable(t *testing.T) {
 	}
 
 	// delete the first message, requerying only gives 1 message
-	if err := table.DeleteMessagesUpToAndIncluding(deviceID, lastPos-1); err != nil {
+	if err := table.DeleteMessagesUpToAndIncluding(sender, deviceID, lastPos-1); err != nil {
 		t.Fatalf("DeleteMessagesUpTo: %s", err)
 	}
-	gotMsgs, upTo, err = table.Messages(deviceID, 0, limit)
+	gotMsgs, upTo, err = table.Messages(sender, deviceID, 0, limit)
 	if err != nil {
 		t.Fatalf("Messages: %s", err)
 	}
@@ -114,9 +115,9 @@ func TestToDeviceTable(t *testing.T) {
 		t.Fatalf("Messages: deleted message but unexpected message left: got %s want %s", string(gotMsgs[0]), string(want))
 	}
 	// delete everything and check it works
-	err = table.DeleteAllMessagesForDevice(deviceID)
+	err = table.DeleteAllMessagesForDevice(sender, deviceID)
 	assertNoError(t, err)
-	msgs, _, err = table.Messages(deviceID, -1, 10)
+	msgs, _, err = table.Messages(sender, deviceID, -1, 10)
 	assertNoError(t, err)
 	assertVal(t, "wanted 0 msgs", len(msgs), 0)
 }
@@ -132,41 +133,41 @@ func TestToDeviceTableDeleteCancels(t *testing.T) {
 	reqEv1 := newRoomKeyEvent(t, "request", "1", sender, map[string]interface{}{
 		"foo": "bar",
 	})
-	_, err := table.InsertMessages(destination, []json.RawMessage{reqEv1})
+	_, err := table.InsertMessages(sender, destination, []json.RawMessage{reqEv1})
 	assertNoError(t, err)
-	gotMsgs, _, err := table.Messages(destination, 0, 10)
+	gotMsgs, _, err := table.Messages(sender, destination, 0, 10)
 	assertNoError(t, err)
 	bytesEqual(t, gotMsgs[0], reqEv1)
 	reqEv2 := newRoomKeyEvent(t, "request", "2", sender, map[string]interface{}{
 		"foo": "baz",
 	})
-	_, err = table.InsertMessages(destination, []json.RawMessage{reqEv2})
+	_, err = table.InsertMessages(sender, destination, []json.RawMessage{reqEv2})
 	assertNoError(t, err)
-	gotMsgs, _, err = table.Messages(destination, 0, 10)
+	gotMsgs, _, err = table.Messages(sender, destination, 0, 10)
 	assertNoError(t, err)
 	bytesEqual(t, gotMsgs[1], reqEv2)
 
 	// now delete 1
 	cancelEv1 := newRoomKeyEvent(t, "request_cancellation", "1", sender, nil)
-	_, err = table.InsertMessages(destination, []json.RawMessage{cancelEv1})
+	_, err = table.InsertMessages(sender, destination, []json.RawMessage{cancelEv1})
 	assertNoError(t, err)
 	// selecting messages now returns only reqEv2
-	gotMsgs, _, err = table.Messages(destination, 0, 10)
+	gotMsgs, _, err = table.Messages(sender, destination, 0, 10)
 	assertNoError(t, err)
 	bytesEqual(t, gotMsgs[0], reqEv2)
 
 	// now do lots of close but not quite cancellation requests that should not match reqEv2
-	_, err = table.InsertMessages(destination, []json.RawMessage{
+	_, err = table.InsertMessages(sender, destination, []json.RawMessage{
 		newRoomKeyEvent(t, "cancellation", "2", sender, nil),                      // wrong action
 		newRoomKeyEvent(t, "request_cancellation", "22", sender, nil),             // wrong request ID
 		newRoomKeyEvent(t, "request_cancellation", "2", "not_who_you_think", nil), // wrong req device id
 	})
 	assertNoError(t, err)
-	_, err = table.InsertMessages("wrong_destination", []json.RawMessage{ // wrong destination
+	_, err = table.InsertMessages(sender, "wrong_destination", []json.RawMessage{ // wrong destination
 		newRoomKeyEvent(t, "request_cancellation", "2", sender, nil),
 	})
 	assertNoError(t, err)
-	gotMsgs, _, err = table.Messages(destination, 0, 10)
+	gotMsgs, _, err = table.Messages(sender, destination, 0, 10)
 	assertNoError(t, err)
 	bytesEqual(t, gotMsgs[0], reqEv2) // the request lives on
 	if len(gotMsgs) != 4 {            // the cancellations live on too, but not the one sent to the wrong dest
@@ -175,14 +176,14 @@ func TestToDeviceTableDeleteCancels(t *testing.T) {
 
 	// request + cancel in one go => nothing inserted
 	destination2 := "DEST2"
-	_, err = table.InsertMessages(destination2, []json.RawMessage{
+	_, err = table.InsertMessages(sender, destination2, []json.RawMessage{
 		newRoomKeyEvent(t, "request", "A", sender, map[string]interface{}{
 			"foo": "baz",
 		}),
 		newRoomKeyEvent(t, "request_cancellation", "A", sender, nil),
 	})
 	assertNoError(t, err)
-	gotMsgs, _, err = table.Messages(destination2, 0, 10)
+	gotMsgs, _, err = table.Messages(sender, destination2, 0, 10)
 	assertNoError(t, err)
 	if len(gotMsgs) > 0 {
 		t.Errorf("Got %+v want nothing", jsonArrStr(gotMsgs))
@@ -200,18 +201,18 @@ func TestToDeviceTableNoDeleteUnacks(t *testing.T) {
 	reqEv := newRoomKeyEvent(t, "request", "1", sender, map[string]interface{}{
 		"foo": "bar",
 	})
-	pos, err := table.InsertMessages(destination, []json.RawMessage{reqEv})
+	pos, err := table.InsertMessages(sender, destination, []json.RawMessage{reqEv})
 	assertNoError(t, err)
 	// mark this position as unacked: this means the client MAY know about this request so it isn't
 	// safe to delete it
-	err = table.SetUnackedPosition(destination, pos)
+	err = table.SetUnackedPosition(sender, destination, pos)
 	assertNoError(t, err)
 	// now issue a cancellation: this should NOT result in a cancellation due to protection for unacked events
 	cancelEv := newRoomKeyEvent(t, "request_cancellation", "1", sender, nil)
-	_, err = table.InsertMessages(destination, []json.RawMessage{cancelEv})
+	_, err = table.InsertMessages(sender, destination, []json.RawMessage{cancelEv})
 	assertNoError(t, err)
 	// selecting messages returns both events
-	gotMsgs, _, err := table.Messages(destination, 0, 10)
+	gotMsgs, _, err := table.Messages(sender, destination, 0, 10)
 	assertNoError(t, err)
 	if len(gotMsgs) != 2 {
 		t.Fatalf("got %d msgs, want 2: %v", len(gotMsgs), jsonArrStr(gotMsgs))
@@ -220,14 +221,14 @@ func TestToDeviceTableNoDeleteUnacks(t *testing.T) {
 	bytesEqual(t, gotMsgs[1], cancelEv)
 
 	// test that injecting another req/cancel does cause them to be deleted
-	_, err = table.InsertMessages(destination, []json.RawMessage{newRoomKeyEvent(t, "request", "2", sender, map[string]interface{}{
+	_, err = table.InsertMessages(sender, destination, []json.RawMessage{newRoomKeyEvent(t, "request", "2", sender, map[string]interface{}{
 		"foo": "bar",
 	})})
 	assertNoError(t, err)
-	_, err = table.InsertMessages(destination, []json.RawMessage{newRoomKeyEvent(t, "request_cancellation", "2", sender, nil)})
+	_, err = table.InsertMessages(sender, destination, []json.RawMessage{newRoomKeyEvent(t, "request_cancellation", "2", sender, nil)})
 	assertNoError(t, err)
 	// selecting messages returns the same as before
-	gotMsgs, _, err = table.Messages(destination, 0, 10)
+	gotMsgs, _, err = table.Messages(sender, destination, 0, 10)
 	assertNoError(t, err)
 	if len(gotMsgs) != 2 {
 		t.Fatalf("got %d msgs, want 2: %v", len(gotMsgs), jsonArrStr(gotMsgs))
@@ -240,6 +241,7 @@ func TestToDeviceTableNoDeleteUnacks(t *testing.T) {
 func TestToDeviceTableBytesInEqualBytesOut(t *testing.T) {
 	db, close := connectToDB(t)
 	defer close()
+	sender := "@sendymcsendface:localhost"
 	table := NewToDeviceTable(db)
 	testCases := []json.RawMessage{
 		json.RawMessage(`{}`),
@@ -250,11 +252,11 @@ func TestToDeviceTableBytesInEqualBytesOut(t *testing.T) {
 	}
 	var pos int64
 	for _, msg := range testCases {
-		nextPos, err := table.InsertMessages("A", []json.RawMessage{msg})
+		nextPos, err := table.InsertMessages(sender, "A", []json.RawMessage{msg})
 		if err != nil {
 			t.Fatalf("InsertMessages: %s", err)
 		}
-		got, _, err := table.Messages("A", pos, 1)
+		got, _, err := table.Messages(sender, "A", pos, 1)
 		if err != nil {
 			t.Fatalf("Messages: %s", err)
 		}
@@ -262,11 +264,11 @@ func TestToDeviceTableBytesInEqualBytesOut(t *testing.T) {
 		pos = nextPos
 	}
 	// and all at once
-	_, err := table.InsertMessages("B", testCases)
+	_, err := table.InsertMessages(sender, "B", testCases)
 	if err != nil {
 		t.Fatalf("InsertMessages: %s", err)
 	}
-	got, _, err := table.Messages("B", 0, 100)
+	got, _, err := table.Messages(sender, "B", 0, 100)
 	if err != nil {
 		t.Fatalf("Messages: %s", err)
 	}

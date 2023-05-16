@@ -23,6 +23,7 @@ type ToDeviceTable struct {
 
 type ToDeviceRow struct {
 	Position  int64   `db:"position"`
+	UserID    string  `db:"user_id"`
 	DeviceID  string  `db:"device_id"`
 	Message   string  `db:"message"`
 	Type      string  `db:"event_type"`
@@ -46,6 +47,7 @@ func NewToDeviceTable(db *sqlx.DB) *ToDeviceTable {
 	CREATE SEQUENCE IF NOT EXISTS syncv3_to_device_messages_seq;
 	CREATE TABLE IF NOT EXISTS syncv3_to_device_messages (
 		position BIGINT NOT NULL PRIMARY KEY DEFAULT nextval('syncv3_to_device_messages_seq'),
+		user_id TEXT NOT NULL,
 		device_id TEXT NOT NULL,
 		event_type TEXT NOT NULL,
 		sender TEXT NOT NULL,
@@ -55,7 +57,9 @@ func NewToDeviceTable(db *sqlx.DB) *ToDeviceTable {
 		action SMALLINT DEFAULT 0 -- 0 means unknown
 	);
 	CREATE TABLE IF NOT EXISTS syncv3_to_device_ack_pos (
-		device_id TEXT NOT NULL PRIMARY KEY,
+		user_id TEXT NOT NULL,
+		device_id TEXT NOT NULL,
+		PRIMARY KEY (user_id, device_id),
 		unack_pos BIGINT NOT NULL
 	);
 	CREATE INDEX IF NOT EXISTS syncv3_to_device_messages_device_idx ON syncv3_to_device_messages(device_id);
@@ -65,29 +69,36 @@ func NewToDeviceTable(db *sqlx.DB) *ToDeviceTable {
 	return &ToDeviceTable{db}
 }
 
-func (t *ToDeviceTable) SetUnackedPosition(deviceID string, pos int64) error {
-	_, err := t.db.Exec(`INSERT INTO syncv3_to_device_ack_pos(device_id, unack_pos) VALUES($1,$2) ON CONFLICT (device_id)
-	DO UPDATE SET unack_pos=$2`, deviceID, pos)
+func (t *ToDeviceTable) SetUnackedPosition(userID, deviceID string, pos int64) error {
+	_, err := t.db.Exec(`INSERT INTO syncv3_to_device_ack_pos(user_id, device_id, unack_pos) VALUES($1,$2,$3) ON CONFLICT (user_id, device_id)
+	DO UPDATE SET unack_pos=excluded.unack_pos`, userID, deviceID, pos)
 	return err
 }
 
-func (t *ToDeviceTable) DeleteMessagesUpToAndIncluding(deviceID string, toIncl int64) error {
-	_, err := t.db.Exec(`DELETE FROM syncv3_to_device_messages WHERE device_id = $1 AND position <= $2`, deviceID, toIncl)
+func (t *ToDeviceTable) DeleteMessagesUpToAndIncluding(userID, deviceID string, toIncl int64) error {
+	_, err := t.db.Exec(`DELETE FROM syncv3_to_device_messages WHERE user_id = $1 AND device_id = $2 AND position <= $3`, userID, deviceID, toIncl)
 	return err
 }
 
-func (t *ToDeviceTable) DeleteAllMessagesForDevice(deviceID string) error {
-	_, err := t.db.Exec(`DELETE FROM syncv3_to_device_messages WHERE device_id = $1`, deviceID)
+func (t *ToDeviceTable) DeleteAllMessagesForDevice(userID, deviceID string) error {
+	// TODO: should these deletes take place in a transaction?
+	_, err := t.db.Exec(`DELETE FROM syncv3_to_device_messages WHERE user_id = $1 AND device_id = $2`, userID, deviceID)
+	if err != nil {
+		return err
+	}
+	_, err = t.db.Exec(`DELETE FROM syncv3_to_device_ack_pos WHERE user_id = $1 AND device_id = $2`, userID, deviceID)
 	return err
 }
 
-// Query to-device messages for this device, exclusive of from and inclusive of to. If a to value is unknown, use -1.
-func (t *ToDeviceTable) Messages(deviceID string, from, limit int64) (msgs []json.RawMessage, upTo int64, err error) {
+// Messages fetches up to `limit` to-device messages for this device, starting from and excluding `from`.
+// Returns the fetches messages ordered by ascending position, as well as the position of the last to-device message
+// fetched.
+func (t *ToDeviceTable) Messages(userID, deviceID string, from, limit int64) (msgs []json.RawMessage, upTo int64, err error) {
 	upTo = from
 	var rows []ToDeviceRow
 	err = t.db.Select(&rows,
-		`SELECT position, message FROM syncv3_to_device_messages WHERE device_id = $1 AND position > $2 ORDER BY position ASC LIMIT $3`,
-		deviceID, from, limit,
+		`SELECT position, message FROM syncv3_to_device_messages WHERE user_id = $1 AND device_id = $2 AND position > $3 ORDER BY position ASC LIMIT $4`,
+		userID, deviceID, from, limit,
 	)
 	if len(rows) == 0 {
 		return
@@ -98,18 +109,18 @@ func (t *ToDeviceTable) Messages(deviceID string, from, limit int64) (msgs []jso
 		m := gjson.ParseBytes(msgs[i])
 		msgId := m.Get(`content.org\.matrix\.msgid`).Str
 		if msgId != "" {
-			logger.Info().Str("msgid", msgId).Str("device", deviceID).Msg("ToDeviceTable.Messages")
+			logger.Info().Str("msgid", msgId).Str("user", userID).Str("device", deviceID).Msg("ToDeviceTable.Messages")
 		}
 	}
 	upTo = rows[len(rows)-1].Position
 	return
 }
 
-func (t *ToDeviceTable) InsertMessages(deviceID string, msgs []json.RawMessage) (pos int64, err error) {
+func (t *ToDeviceTable) InsertMessages(userID, deviceID string, msgs []json.RawMessage) (pos int64, err error) {
 	var lastPos int64
 	err = sqlutil.WithTransaction(t.db, func(txn *sqlx.Tx) error {
 		var unackPos int64
-		err = txn.QueryRow(`SELECT unack_pos FROM syncv3_to_device_ack_pos WHERE device_id=$1`, deviceID).Scan(&unackPos)
+		err = txn.QueryRow(`SELECT unack_pos FROM syncv3_to_device_ack_pos WHERE user_id=$1 AND device_id=$2`, userID, deviceID).Scan(&unackPos)
 		if err != nil && err != sql.ErrNoRows {
 			return fmt.Errorf("unable to select unacked pos: %s", err)
 		}
@@ -124,6 +135,7 @@ func (t *ToDeviceTable) InsertMessages(deviceID string, msgs []json.RawMessage) 
 		for i := range msgs {
 			m := gjson.ParseBytes(msgs[i])
 			rows[i] = ToDeviceRow{
+				UserID:   userID,
 				DeviceID: deviceID,
 				Message:  string(msgs[i]),
 				Type:     m.Get("type").Str,
@@ -131,7 +143,7 @@ func (t *ToDeviceTable) InsertMessages(deviceID string, msgs []json.RawMessage) 
 			}
 			msgId := m.Get(`content.org\.matrix\.msgid`).Str
 			if msgId != "" {
-				logger.Debug().Str("msgid", msgId).Str("device", deviceID).Msg("ToDeviceTable.InsertMessages")
+				logger.Debug().Str("msgid", msgId).Str("user", userID).Str("device", deviceID).Msg("ToDeviceTable.InsertMessages")
 			}
 			switch rows[i].Type {
 			case "m.room_key_request":
@@ -155,8 +167,8 @@ func (t *ToDeviceTable) InsertMessages(deviceID string, msgs []json.RawMessage) 
 		if len(cancels) > 0 {
 			var cancelled []string
 			// delete action: request events which have the same unique key, for this device inbox, only if they are not sent to the client already (unacked)
-			err = txn.Select(&cancelled, `DELETE FROM syncv3_to_device_messages WHERE unique_key = ANY($1) AND device_id = $2 AND position > $3 RETURNING unique_key`,
-				pq.StringArray(cancels), deviceID, unackPos)
+			err = txn.Select(&cancelled, `DELETE FROM syncv3_to_device_messages WHERE unique_key = ANY($1) AND user_id = $2 AND device_id = $3 AND position > $4 RETURNING unique_key`,
+				pq.StringArray(cancels), userID, deviceID, unackPos)
 			if err != nil {
 				return fmt.Errorf("failed to delete cancelled events: %s", err)
 			}
@@ -189,10 +201,10 @@ func (t *ToDeviceTable) InsertMessages(deviceID string, msgs []json.RawMessage) 
 			return nil
 		}
 
-		chunks := sqlutil.Chunkify(6, MaxPostgresParameters, ToDeviceRowChunker(rows))
+		chunks := sqlutil.Chunkify(7, MaxPostgresParameters, ToDeviceRowChunker(rows))
 		for _, chunk := range chunks {
-			result, err := txn.NamedQuery(`INSERT INTO syncv3_to_device_messages (device_id, message, event_type, sender, action, unique_key)
-        VALUES (:device_id, :message, :event_type, :sender, :action, :unique_key) RETURNING position`, chunk)
+			result, err := txn.NamedQuery(`INSERT INTO syncv3_to_device_messages (user_id, device_id, message, event_type, sender, action, unique_key)
+        VALUES (:user_id, :device_id, :message, :event_type, :sender, :action, :unique_key) RETURNING position`, chunk)
 			if err != nil {
 				return err
 			}

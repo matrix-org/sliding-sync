@@ -60,7 +60,7 @@ func TestRoomNames(t *testing.T) {
 			},
 		},
 	}
-	v2.addAccount(alice, aliceToken)
+	v2.addAccount(t, alice, aliceToken)
 	v2.queueResponse(alice, sync2.SyncResponse{
 		Rooms: sync2.SyncRoomsResponse{
 			Join: v2JoinTimeline(allRooms...),
