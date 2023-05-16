@@ -373,7 +373,6 @@ func runTestServer(t testutils.TestBenchInterface, v2Server *testV2Server, postg
 		}
 	}
 	h2, h3 := syncv3.Setup(v2Server.url(), postgresConnectionString, os.Getenv("SYNCV3_SECRET"), syncv3.Opts{
-		Debug:                    true,
 		TestingSynchronousPubsub: true, // critical to avoid flakey tests
 		MaxPendingEventUpdates:   maxPendingEventUpdates,
 		AddPrometheusMetrics:     metricsEnabled,

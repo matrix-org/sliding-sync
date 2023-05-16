@@ -25,6 +25,13 @@ type RoomMetadata struct {
 	TypingEvent json.RawMessage
 }
 
+func NewRoomMetadata(roomID string) *RoomMetadata {
+	return &RoomMetadata{
+		RoomID:          roomID,
+		ChildSpaceRooms: make(map[string]struct{}),
+	}
+}
+
 // SameRoomName checks if the fields relevant for room names have changed between the two metadatas.
 // Returns true if there are no changes.
 func (m *RoomMetadata) SameRoomName(other *RoomMetadata) bool {

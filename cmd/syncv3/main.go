@@ -8,6 +8,7 @@ import (
 	"github.com/matrix-org/sliding-sync/internal"
 	"github.com/matrix-org/sliding-sync/sync2"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
+	"github.com/rs/zerolog"
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 	"net/http"
 	_ "net/http/pprof"
@@ -37,6 +38,7 @@ const (
 	EnvDebug      = "SYNCV3_DEBUG"
 	EnvJaeger     = "SYNCV3_JAEGER_URL"
 	EnvSentryDsn  = "SYNCV3_SENTRY_DSN"
+	EnvLogLevel   = "SYNCV3_LOG_LEVEL"
 )
 
 var helpMsg = fmt.Sprintf(`
@@ -51,7 +53,8 @@ Environment var
 %s       Default: unset. The bind addr for Prometheus metrics, which will be accessible at /metrics at this address.
 %s Default: unset. The Jaeger URL to send spans to e.g http://localhost:14268/api/traces - if unset does not send OTLP traces.
 %s Default: unset. The Sentry DSN to report events to e.g https://sliding-sync@sentry.example.com/123 - if unset does not send sentry events.
-`, EnvServer, EnvDB, EnvSecret, EnvBindAddr, EnvTLSCert, EnvTLSKey, EnvPPROF, EnvPrometheus, EnvJaeger, EnvSentryDsn)
+%s  Default: info. The level of verbosity for messages logged. Available values are trace, debug, info, warn, error and fatal
+`, EnvServer, EnvDB, EnvSecret, EnvBindAddr, EnvTLSCert, EnvTLSKey, EnvPPROF, EnvPrometheus, EnvJaeger, EnvSentryDsn, EnvLogLevel)
 
 func defaulting(in, dft string) string {
 	if in == "" {
@@ -76,6 +79,7 @@ func main() {
 		EnvDebug:      os.Getenv(EnvDebug),
 		EnvJaeger:     os.Getenv(EnvJaeger),
 		EnvSentryDsn:  os.Getenv(EnvSentryDsn),
+		EnvLogLevel:   os.Getenv(EnvLogLevel),
 	}
 	requiredEnvVars := []string{EnvServer, EnvDB, EnvSecret, EnvBindAddr}
 	for _, requiredEnvVar := range requiredEnvVars {
@@ -131,13 +135,33 @@ func main() {
 		}
 	}
 
+	if args[EnvDebug] == "1" {
+		zerolog.SetGlobalLevel(zerolog.TraceLevel)
+	} else {
+		switch strings.ToLower(args[EnvLogLevel]) {
+		case "trace":
+			zerolog.SetGlobalLevel(zerolog.TraceLevel)
+		case "debug":
+			zerolog.SetGlobalLevel(zerolog.DebugLevel)
+		case "info":
+			zerolog.SetGlobalLevel(zerolog.InfoLevel)
+		case "warn":
+			zerolog.SetGlobalLevel(zerolog.WarnLevel)
+		case "err", "error":
+			zerolog.SetGlobalLevel(zerolog.ErrorLevel)
+		case "fatal":
+			zerolog.SetGlobalLevel(zerolog.FatalLevel)
+		default:
+			zerolog.SetGlobalLevel(zerolog.InfoLevel)
+		}
+	}
+
 	err := sync2.MigrateDeviceIDs(args[EnvServer], args[EnvDB], args[EnvSecret], true)
 	if err != nil {
 		panic(err)
 	}
 
 	h2, h3 := syncv3.Setup(args[EnvServer], args[EnvDB], args[EnvSecret], syncv3.Opts{
-		Debug:                args[EnvDebug] == "1",
 		AddPrometheusMetrics: args[EnvPrometheus] != "",
 	})
 

@@ -64,14 +64,9 @@ type SyncLiveHandler struct {
 
 func NewSync3Handler(
 	store *state.Storage, storev2 *sync2.Storage, v2Client sync2.Client, postgresDBURI, secret string,
-	debug bool, pub pubsub.Notifier, sub pubsub.Listener, enablePrometheus bool, maxPendingEventUpdates int,
+	pub pubsub.Notifier, sub pubsub.Listener, enablePrometheus bool, maxPendingEventUpdates int,
 ) (*SyncLiveHandler, error) {
 	logger.Info().Msg("creating handler")
-	if debug {
-		zerolog.SetGlobalLevel(zerolog.TraceLevel)
-	} else {
-		zerolog.SetGlobalLevel(zerolog.InfoLevel)
-	}
 	sh := &SyncLiveHandler{
 		V2:                     v2Client,
 		Storage:                store,
@@ -217,11 +212,19 @@ func (h *SyncLiveHandler) serve(w http.ResponseWriter, req *http.Request) error 
 		}
 	}
 
-	conn, err := h.setupConnection(req, &requestBody, req.URL.Query().Get("pos") != "")
-	if err != nil {
-		hlog.FromRequest(req).Err(err).Msg("failed to get or create Conn")
-		internal.GetSentryHubFromContextOrDefault(req.Context()).CaptureException(err)
-		return err
+	logErrorAndReport500s := func(msg string, herr *internal.HandlerError) {
+		if herr.StatusCode >= 500 {
+			hlog.FromRequest(req).Err(herr).Msg(msg)
+			internal.GetSentryHubFromContextOrDefault(req.Context()).CaptureException(herr)
+		} else {
+			hlog.FromRequest(req).Warn().Err(herr).Msg(msg)
+		}
+	}
+
+	conn, herr := h.setupConnection(req, &requestBody, req.URL.Query().Get("pos") != "")
+	if herr != nil {
+		logErrorAndReport500s("failed to get or create Conn", herr)
+		return herr
 	}
 	// set pos and timeout if specified
 	cpos, herr := parseIntFromQuery(req.URL, "pos")
@@ -248,12 +251,7 @@ func (h *SyncLiveHandler) serve(w http.ResponseWriter, req *http.Request) error 
 
 	resp, herr := conn.OnIncomingRequest(req.Context(), &requestBody)
 	if herr != nil {
-		if herr.StatusCode >= 500 {
-			log.Err(herr).Msg("failed to OnIncomingRequest")
-			internal.GetSentryHubFromContextOrDefault(req.Context()).CaptureException(herr)
-		} else {
-			log.Warn().Err(herr).Msg("failed to OnIncomingRequest")
-		}
+		logErrorAndReport500s("failed to OnIncomingRequest", herr)
 		return herr
 	}
 	// for logging
@@ -278,10 +276,12 @@ func (h *SyncLiveHandler) serve(w http.ResponseWriter, req *http.Request) error 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(200)
 	if err := json.NewEncoder(w).Encode(resp); err != nil {
-		return &internal.HandlerError{
+		herr = &internal.HandlerError{
 			StatusCode: 500,
 			Err:        err,
 		}
+		logErrorAndReport500s("failed to JSON-encode result", herr)
+		return herr
 	}
 	return nil
 }
@@ -289,7 +289,8 @@ func (h *SyncLiveHandler) serve(w http.ResponseWriter, req *http.Request) error 
 // setupConnection associates this request with an existing connection or makes a new connection.
 // It also sets a v2 sync poll loop going if one didn't exist already for this user.
 // When this function returns, the connection is alive and active.
-func (h *SyncLiveHandler) setupConnection(req *http.Request, syncReq *sync3.Request, containsPos bool) (*sync3.Conn, error) {
+
+func (h *SyncLiveHandler) setupConnection(req *http.Request, syncReq *sync3.Request, containsPos bool) (*sync3.Conn, *internal.HandlerError) {
 	var conn *sync3.Conn
 	// Extract an access token
 	accessToken, err := internal.ExtractAccessToken(req)

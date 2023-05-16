@@ -164,17 +164,16 @@ func (i *InviteData) RoomMetadata() *internal.RoomMetadata {
 	if i.RoomType != "" {
 		roomType = &i.RoomType
 	}
-	return &internal.RoomMetadata{
-		RoomID:               i.roomID,
-		Heroes:               i.Heroes,
-		NameEvent:            i.NameEvent,
-		CanonicalAlias:       i.CanonicalAlias,
-		InviteCount:          1,
-		JoinCount:            1,
-		LastMessageTimestamp: i.LastMessageTimestamp,
-		Encrypted:            i.Encrypted,
-		RoomType:             roomType,
-	}
+	metadata := internal.NewRoomMetadata(i.roomID)
+	metadata.Heroes = i.Heroes
+	metadata.NameEvent = i.NameEvent
+	metadata.CanonicalAlias = i.CanonicalAlias
+	metadata.InviteCount = 1
+	metadata.JoinCount = 1
+	metadata.LastMessageTimestamp = i.LastMessageTimestamp
+	metadata.Encrypted = i.Encrypted
+	metadata.RoomType = roomType
+	return metadata
 }
 
 type UserCacheListener interface {
@@ -363,6 +362,7 @@ func (c *UserCache) LazyLoadTimelines(ctx context.Context, loadPos int64, roomID
 		if !ok {
 			urd = NewUserRoomData()
 		}
+		oldLoadPos := urd.LoadPos
 		urd.Timeline = events
 		urd.LoadPos = loadPos
 		if len(events) > 0 {
@@ -371,7 +371,13 @@ func (c *UserCache) LazyLoadTimelines(ctx context.Context, loadPos int64, roomID
 		}
 
 		result[roomID] = urd
-		c.roomToData[roomID] = urd
+		// only replace our knowledge if it is the future
+		// TODO FIXME: this is an incomplete solution as all the non-Timeline fields we return in this
+		// function will be AHEAD of the load pos provided, meaning you could see a stale timeline with
+		// incorrect notif counts (until you've consumed the channel)
+		if oldLoadPos < loadPos {
+			c.roomToData[roomID] = urd
+		}
 	}
 	c.roomToDataMu.Unlock()
 	return result
@@ -416,9 +422,7 @@ func (c *UserCache) newRoomUpdate(ctx context.Context, roomID string) RoomUpdate
 		// this can happen when we join a room we didn't know about because we process unread counts
 		// before the timeline events. Warn and send a stub
 		logger.Warn().Str("room", roomID).Msg("UserCache update: room doesn't exist in global cache yet, generating stub")
-		r = &internal.RoomMetadata{
-			RoomID: roomID,
-		}
+		r = internal.NewRoomMetadata(roomID)
 	} else {
 		r = globalRooms[roomID]
 	}
@@ -664,10 +668,8 @@ func (c *UserCache) OnLeftRoom(ctx context.Context, roomID string) {
 			roomID: roomID,
 			// do NOT pull from the global cache as it is a snapshot of the room at the point of
 			// the invite: don't leak additional data!!!
-			globalRoomData: &internal.RoomMetadata{
-				RoomID: roomID,
-			},
-			userRoomData: &urd,
+			globalRoomData: internal.NewRoomMetadata(roomID),
+			userRoomData:   &urd,
 		},
 	}
 	c.emitOnRoomUpdate(ctx, up)

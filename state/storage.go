@@ -4,9 +4,10 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"github.com/getsentry/sentry-go"
 	"os"
 	"strings"
+
+	"github.com/getsentry/sentry-go"
 
 	"github.com/jmoiron/sqlx"
 	"github.com/lib/pq"
@@ -173,7 +174,7 @@ func (s *Storage) MetadataForAllRooms(txn *sqlx.Tx, result map[string]internal.R
 		metadata := result[ev.RoomID]
 		metadata.LastMessageTimestamp = gjson.ParseBytes(ev.JSON).Get("origin_server_ts").Uint()
 		// it's possible the latest event is a brand new room not caught by the first SELECT for joined
-		// rooms e.g when you're invited to a room so we need to make sure to se the metadata again here
+		// rooms e.g when you're invited to a room so we need to make sure to set the metadata again here
 		metadata.RoomID = ev.RoomID
 		result[ev.RoomID] = metadata
 	}
@@ -766,9 +767,9 @@ func (s *Storage) AllJoinedMembers(txn *sqlx.Tx) (result map[string][]string, me
 	}
 	metadata = make(map[string]internal.RoomMetadata)
 	for roomID, joinedMembers := range result {
-		metadata[roomID] = internal.RoomMetadata{
-			JoinCount: len(joinedMembers),
-		}
+		m := internal.NewRoomMetadata(roomID)
+		m.JoinCount = len(joinedMembers)
+		metadata[roomID] = *m
 	}
 	return result, metadata, nil
 }
