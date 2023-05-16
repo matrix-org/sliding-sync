@@ -74,6 +74,7 @@ func NewHandler(
 // Listen starts all consumers
 func (h *Handler) Listen() {
 	go func() {
+		defer internal.ReportPanicsToSentry()
 		err := h.v3Sub.Listen()
 		if err != nil {
 			logger.Err(err).Msg("Failed to listen for v3 messages")

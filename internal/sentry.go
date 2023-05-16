@@ -3,6 +3,7 @@ package internal
 import (
 	"context"
 	"github.com/getsentry/sentry-go"
+	"time"
 )
 
 // GetSentryHubFromContextOrDefault is a version of sentry.GetHubFromContext which
@@ -21,4 +22,19 @@ func GetSentryHubFromContextOrDefault(ctx context.Context) *sentry.Hub {
 		hub = sentry.CurrentHub()
 	}
 	return hub
+}
+
+// ReportPanicsToSentry checks for panics by calling recover, reports any panic found to
+// sentry, and then reraises the panic. To have tracebacks included in the report, make
+// sure you call panic with an error, not a string.
+//
+// Typically, you want to call this in the form `defer internal.ReportPanicsToSentry()`.
+func ReportPanicsToSentry() {
+	panicData := recover()
+	if panicData != nil {
+		sentry.CurrentHub().Recover(panicData)
+		sentry.Flush(time.Second * 5)
+	}
+	// We still want to fail loudly here.
+	panic(panicData)
 }
