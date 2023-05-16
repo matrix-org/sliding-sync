@@ -470,7 +470,6 @@ func (s *ConnState) getInitialRoomData(ctx context.Context, roomSub sync3.RoomSu
 			userRoomData = caches.NewUserRoomData()
 		}
 		metadata := roomMetadatas[roomID]
-		internal.Assert("Metadata is not nil", metadata != nil)
 		var inviteState []json.RawMessage
 		// handle invites specially as we do not want to leak additional data beyond the invite_state and if
 		// we happen to have this room in the global cache we will do.
@@ -478,6 +477,7 @@ func (s *ConnState) getInitialRoomData(ctx context.Context, roomSub sync3.RoomSu
 			metadata = userRoomData.Invite.RoomMetadata()
 			inviteState = userRoomData.Invite.InviteState
 		}
+		internal.Assert("Metadata is not nil", metadata != nil)
 		metadata.RemoveHero(s.userID)
 		var requiredState []json.RawMessage
 		if !userRoomData.IsInvite {
