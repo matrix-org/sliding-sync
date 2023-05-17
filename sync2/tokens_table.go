@@ -137,10 +137,20 @@ type TokenForPoller struct {
 	Since string `db:"since"`
 }
 
-func (t *TokensTable) TokenForEachDevice() (tokens []TokenForPoller, err error) {
+// TokenForEachDevice loads the most recently used token for each device. If given a
+// transaction, it will SELECT inside that transaction.
+func (t *TokensTable) TokenForEachDevice(txn *sqlx.Tx) (tokens []TokenForPoller, err error) {
+	var db sqlx.Queryer
+	if txn != nil {
+		db = txn
+	} else {
+		db = t.db
+	}
+
 	// Fetches the most recently seen token for each device, see e.g.
 	// https://www.postgresql.org/docs/11/sql-select.html#SQL-DISTINCT
-	err = t.db.Select(
+	err = sqlx.Select(
+		db,
 		&tokens,
 		`SELECT DISTINCT ON (user_id, device_id) token_encrypted, user_id, device_id, last_seen, since
 		FROM syncv3_sync2_tokens JOIN syncv3_sync2_devices USING (user_id, device_id)

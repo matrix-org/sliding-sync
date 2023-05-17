@@ -62,6 +62,13 @@ func MigrateDeviceIDs(destHomeserver, postgresURI, secret string, commit bool) e
 			return
 		}
 
+		s := NewStore(postgresURI, secret)
+		tokens, err := s.TokensTable.TokenForEachDevice(txn)
+		if err != nil {
+			return
+		}
+		logger.Debug().Msgf("Got %d tokens after migration", len(tokens))
+
 		if !commit {
 			err = fmt.Errorf("MigrateDeviceIDs: migration succeeded without errors, but commit is false - rolling back anyway")
 		} else {
