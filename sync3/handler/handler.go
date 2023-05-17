@@ -41,13 +41,13 @@ var logger = zerolog.New(os.Stdout).With().Timestamp().Logger().Output(zerolog.C
 // This is a net.http Handler for sync v3. It is responsible for pairing requests to Conns and to
 // ensure that the sync v2 poller is running for this client.
 type SyncLiveHandler struct {
-	V2         sync2.Client
-	Storage    *state.Storage
-	V2Store    *sync2.Storage
+	V2           sync2.Client
+	Storage      *state.Storage
+	V2Store      *sync2.Storage
 	V2Sub        *pubsub.V2Sub
 	EnsurePoller *EnsurePoller
 	ConnMap      *sync3.ConnMap
-	Extensions *extensions.Handler
+	Extensions   *extensions.Handler
 
 	// inserts are done by v2 poll loops, selects are done by v3 request threads
 	// but the v3 requests touch non-overlapping keys, which is a good use case for sync.Map
@@ -109,6 +109,7 @@ func (h *SyncLiveHandler) Startup(storeSnapshot *state.StartupSnapshot) error {
 // Listen starts all consumers
 func (h *SyncLiveHandler) Listen() {
 	go func() {
+		defer internal.ReportPanicsToSentry()
 		err := h.V2Sub.Listen()
 		if err != nil {
 			logger.Err(err).Msg("Failed to listen for v2 messages")
