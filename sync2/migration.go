@@ -382,17 +382,25 @@ func expectAtMostOneRowAffected(ra int64) bool { return ra == 0 || ra == 1 }
 
 func finish(txn *sqlx.Tx) (err error) {
 	// OnExpiredToken used to delete from the devices and to-device tables, but not from
-	// the to-device ack pos table. Fix this up by deleting any orphaned ack pos rows.
+	// the to-device ack pos or the txn tables. Fix this up by deleting orphaned rows.
 	err = exec(
 		txn,
 		`
 		DELETE FROM syncv3_to_device_ack_pos
-		WHERE device_id IN (
-		    SELECT syncv3_to_device_ack_pos.device_id
-		    FROM syncv3_to_device_ack_pos LEFT JOIN syncv3_sync2_devices USING (device_id)
-		    WHERE syncv3_sync2_devices.device_id IS NULL
-		);`,
+		WHERE device_id NOT IN (SELECT device_id FROM syncv3_sync2_devices)
+		;`,
 		logRowsAffected("Deleted %d stale rows from syncv3_to_device_ack_pos"),
+	)
+	if err != nil {
+		return
+	}
+
+	err = exec(
+		txn,
+		`
+		DELETE FROM syncv3_txns WHERE device_id IS NULL;
+		`,
+		logRowsAffected("Deleted %d stale rows from syncv3_txns"),
 	)
 	if err != nil {
 		return
