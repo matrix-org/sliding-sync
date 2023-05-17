@@ -446,7 +446,7 @@ func (s *ConnState) getInitialRoomData(ctx context.Context, roomSub sync3.RoomSu
 	roomToTimeline := make(map[string][]json.RawMessage)
 	for roomID, urd := range roomIDToUserRoomData {
 		set := make(map[string]struct{})
-		for _, ev := range urd.Timeline {
+		for _, ev := range urd.RequestedTimeline {
 			set[gjson.GetBytes(ev, "sender").Str] = struct{}{}
 		}
 		userIDs := make([]string, len(set))
@@ -456,7 +456,7 @@ func (s *ConnState) getInitialRoomData(ctx context.Context, roomSub sync3.RoomSu
 			i++
 		}
 		roomToUsersInTimeline[roomID] = userIDs
-		roomToTimeline[roomID] = urd.Timeline
+		roomToTimeline[roomID] = urd.RequestedTimeline
 	}
 	roomToTimeline = s.userCache.AnnotateWithTransactionIDs(ctx, s.userID, s.deviceID, roomToTimeline)
 	rsm := roomSub.RequiredStateMap(s.userID)
@@ -473,6 +473,8 @@ func (s *ConnState) getInitialRoomData(ctx context.Context, roomSub sync3.RoomSu
 		var inviteState []json.RawMessage
 		// handle invites specially as we do not want to leak additional data beyond the invite_state and if
 		// we happen to have this room in the global cache we will do.
+		// Furthermore, rooms we have been invited to for the first time ever will not be in the global cache yet,
+		// which will cause errors below when we try calling functions on a nil metadata.
 		if userRoomData.IsInvite {
 			metadata = userRoomData.Invite.RoomMetadata()
 			inviteState = userRoomData.Invite.InviteState
@@ -485,7 +487,6 @@ func (s *ConnState) getInitialRoomData(ctx context.Context, roomSub sync3.RoomSu
 				requiredState = make([]json.RawMessage, 0)
 			}
 		}
-		prevBatch, _ := userRoomData.PrevBatch()
 		rooms[roomID] = sync3.Room{
 			Name:              internal.CalculateRoomName(metadata, 5), // TODO: customisable?
 			NotificationCount: int64(userRoomData.NotificationCount),
@@ -497,7 +498,7 @@ func (s *ConnState) getInitialRoomData(ctx context.Context, roomSub sync3.RoomSu
 			IsDM:              userRoomData.IsDM,
 			JoinedCount:       metadata.JoinCount,
 			InvitedCount:      metadata.InviteCount,
-			PrevBatch:         prevBatch,
+			PrevBatch:         userRoomData.RequestedPrevBatch,
 		}
 	}
 

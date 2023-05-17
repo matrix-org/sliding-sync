@@ -91,6 +91,7 @@ func TestSecurityLiveStreamEventLeftLeak(t *testing.T) {
 				},
 			}},
 	}, func(r *sync3.Response) error {
+		// keep syncing until we see 2 events in the timeline
 		timeline = append(timeline, r.Rooms[roomID].Timeline...)
 		if len(timeline) != 2 {
 			return fmt.Errorf("waiting for more messages, got %v", len(timeline))
@@ -98,7 +99,7 @@ func TestSecurityLiveStreamEventLeftLeak(t *testing.T) {
 		return nil
 	})
 
-	lastTwoEvents := timeline[len(timeline)-2:]
+	// check Alice sees both events
 	assertEventsEqual(t, []Event{
 		{
 			Type:     "m.room.member",
@@ -117,15 +118,9 @@ func TestSecurityLiveStreamEventLeftLeak(t *testing.T) {
 			Sender: alice.UserID,
 			ID:     sensitiveEventID,
 		},
-	}, lastTwoEvents)
-	sensitiveEvent := lastTwoEvents[1]
-	kickEvent := lastTwoEvents[0]
+	}, timeline)
 
-	// TODO: WE should be returning updated values for name and required_state
-	m.MatchResponse(t, aliceRes, m.MatchList("a", m.MatchV3Count(1)), m.MatchNoV3Ops(), m.MatchRoomSubscription(
-		roomID, m.MatchRoomTimelineMostRecent(2, []json.RawMessage{kickEvent, sensitiveEvent}),
-	))
-
+	kickEvent := timeline[0]
 	// Ensure Eve doesn't see this message in the timeline, name calc or required_state
 	eveRes = eve.SlidingSync(t, sync3.Request{
 		Lists: map[string]sync3.RequestList{

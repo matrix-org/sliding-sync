@@ -8,7 +8,6 @@ import (
 
 	"github.com/getsentry/sentry-go"
 
-	lru "github.com/hashicorp/golang-lru"
 	"github.com/matrix-org/sliding-sync/internal"
 	"github.com/matrix-org/sliding-sync/state"
 	"github.com/tidwall/gjson"
@@ -33,12 +32,12 @@ type UserRoomData struct {
 	HasLeft           bool
 	NotificationCount int
 	HighlightCount    int
-	// (event_id, last_event_id) -> closest prev_batch
-	// We mux in last_event_id so we can invalidate prev batch tokens for the same event ID when a new timeline event
-	// comes in, without having to do a SQL query.
-	PrevBatches       *lru.Cache
-	Timeline          []json.RawMessage
 	Invite            *InviteData
+
+	// these fields are set by LazyLoadTimelines and are per-function call, and are not persisted in-memory.
+	RequestedPrevBatch string
+	RequestedTimeline  []json.RawMessage
+
 	CanonicalisedName string // stripped leading symbols like #, all in lower case
 	// Set of spaces this room is a part of, from the perspective of this user. This is NOT global room data
 	// as the set of spaces may be different for different users.
@@ -51,38 +50,10 @@ type UserRoomData struct {
 }
 
 func NewUserRoomData() UserRoomData {
-	l, _ := lru.New(64) // 64 tokens least recently used evicted
 	return UserRoomData{
-		PrevBatches: l,
-		Spaces:      make(map[string]struct{}),
-		Tags:        make(map[string]float64),
+		Spaces: make(map[string]struct{}),
+		Tags:   make(map[string]float64),
 	}
-}
-
-// fetch the prev batch for this timeline
-func (u UserRoomData) PrevBatch() (string, bool) {
-	if len(u.Timeline) == 0 {
-		return "", false
-	}
-	eventID := gjson.GetBytes(u.Timeline[0], "event_id").Str
-	lastEventID := gjson.GetBytes(u.Timeline[len(u.Timeline)-1], "event_id").Str
-	val, ok := u.PrevBatches.Get(eventID + lastEventID)
-	if !ok {
-		return "", false
-	}
-	return val.(string), true
-}
-
-// set the prev batch token for the given event ID. This should come from the database. The prev batch
-// cache will be updated to return this prev batch token for this event ID as well as the latest event
-// ID in this timeline.
-func (u UserRoomData) SetPrevBatch(eventID string, pb string) {
-	if len(u.Timeline) == 0 {
-		return
-	}
-	lastEventID := gjson.GetBytes(u.Timeline[len(u.Timeline)-1], "event_id").Str
-	u.PrevBatches.Add(eventID+lastEventID, pb)
-	u.PrevBatches.Add(eventID+eventID, pb)
 }
 
 // Subset of data from internal.RoomMetadata which we can glean from invite_state.
@@ -287,97 +258,32 @@ func (c *UserCache) OnRegistered(ctx context.Context, _ int64) error {
 	return nil
 }
 
+// Load timelines from the database. Uses cached UserRoomData for metadata purposes only.
 func (c *UserCache) LazyLoadTimelines(ctx context.Context, loadPos int64, roomIDs []string, maxTimelineEvents int) map[string]UserRoomData {
 	if c.LazyRoomDataOverride != nil {
 		return c.LazyRoomDataOverride(loadPos, roomIDs, maxTimelineEvents)
 	}
 	result := make(map[string]UserRoomData)
-	var lazyRoomIDs []string
-	for _, roomID := range roomIDs {
-		urd := c.LoadRoomData(roomID)
-		if len(urd.Timeline) > 0 && urd.LoadPos <= loadPos {
-			timeline := urd.Timeline
-			if len(timeline) > maxTimelineEvents {
-				timeline = timeline[len(timeline)-maxTimelineEvents:]
-			}
-			// ensure that if the user initially wants 1 event in this room then bumps up to 50 that
-			// we actually give them 50. This is more than just a length check as the room may not
-			// have 50 events, we can tell this based on the create event
-			createEventExists := false
-			if len(timeline) < maxTimelineEvents {
-				for _, ev := range timeline {
-					if gjson.GetBytes(ev, "type").Str == "m.room.create" && gjson.GetBytes(ev, "state_key").Str == "" {
-						createEventExists = true
-						break
-					}
-				}
-			}
-
-			// either we satisfied their request or we can't get any more events, either way that's good enough
-			if len(timeline) == maxTimelineEvents || createEventExists {
-				if !createEventExists && len(timeline) > 0 {
-					// fetch a prev batch token for the earliest event
-					_, ok := urd.PrevBatch()
-					if !ok {
-						eventID := gjson.ParseBytes(timeline[0]).Get("event_id").Str
-						prevBatch, err := c.store.EventsTable.SelectClosestPrevBatchByID(roomID, eventID)
-						if err != nil {
-							logger.Err(err).Str("room", roomID).Str("event_id", eventID).Msg("failed to get prev batch token for room")
-							internal.GetSentryHubFromContextOrDefault(ctx).CaptureException(err)
-						}
-						urd.SetPrevBatch(eventID, prevBatch)
-					}
-				}
-
-				// we already have data, use it
-				u := NewUserRoomData()
-				u.NotificationCount = urd.NotificationCount
-				u.HighlightCount = urd.HighlightCount
-				u.Timeline = timeline
-				u.PrevBatches = urd.PrevBatches
-				result[roomID] = u
-			} else {
-				// refetch from the db
-				lazyRoomIDs = append(lazyRoomIDs, roomID)
-			}
-		} else {
-			lazyRoomIDs = append(lazyRoomIDs, roomID)
-			// in case the room is left/invited, we may not add them to the result here so do it now,
-			// we'll clobber if we get a timeline
-			result[roomID] = urd
-		}
-	}
-	if len(lazyRoomIDs) == 0 {
-		return result
-	}
-	roomIDToEvents, roomIDToPrevBatch, err := c.store.LatestEventsInRooms(c.UserID, lazyRoomIDs, loadPos, maxTimelineEvents)
+	roomIDToEvents, roomIDToPrevBatch, err := c.store.LatestEventsInRooms(c.UserID, roomIDs, loadPos, maxTimelineEvents)
 	if err != nil {
-		logger.Err(err).Strs("rooms", lazyRoomIDs).Msg("failed to get LatestEventsInRooms")
+		logger.Err(err).Strs("rooms", roomIDs).Msg("failed to get LatestEventsInRooms")
 		internal.GetSentryHubFromContextOrDefault(ctx).CaptureException(err)
 		return nil
 	}
 	c.roomToDataMu.Lock()
-	for roomID, events := range roomIDToEvents {
-		urd, ok := c.roomToData[roomID]
+	for _, requestedRoomID := range roomIDs {
+		events := roomIDToEvents[requestedRoomID]
+		urd, ok := c.roomToData[requestedRoomID]
 		if !ok {
 			urd = NewUserRoomData()
 		}
-		oldLoadPos := urd.LoadPos
-		urd.Timeline = events
+		urd.RequestedTimeline = events
 		urd.LoadPos = loadPos
 		if len(events) > 0 {
-			eventID := gjson.ParseBytes(events[0]).Get("event_id").Str
-			urd.SetPrevBatch(eventID, roomIDToPrevBatch[roomID])
+			urd.RequestedPrevBatch = roomIDToPrevBatch[requestedRoomID]
 		}
 
-		result[roomID] = urd
-		// only replace our knowledge if it is the future
-		// TODO FIXME: this is an incomplete solution as all the non-Timeline fields we return in this
-		// function will be AHEAD of the load pos provided, meaning you could see a stale timeline with
-		// incorrect notif counts (until you've consumed the channel)
-		if oldLoadPos < loadPos {
-			c.roomToData[roomID] = urd
-		}
+		result[requestedRoomID] = urd
 	}
 	c.roomToDataMu.Unlock()
 	return result
@@ -594,11 +500,7 @@ func (c *UserCache) OnSpaceUpdate(ctx context.Context, parentRoomID, childRoomID
 func (c *UserCache) OnNewEvent(ctx context.Context, eventData *EventData) {
 	// add this to our tracked timelines if we have one
 	urd := c.LoadRoomData(eventData.RoomID)
-	if len(urd.Timeline) > 0 {
-		// we're tracking timelines, add this message too
-		urd.Timeline = append(urd.Timeline, eventData.Event)
-		urd.LoadPos = eventData.LatestPos
-	}
+	urd.LoadPos = eventData.LatestPos
 	// reset the IsInvite field when the user actually joins/rejects the invite
 	if urd.IsInvite && eventData.EventType == "m.room.member" && eventData.StateKey != nil && *eventData.StateKey == c.UserID {
 		urd.IsInvite = eventData.Content.Get("membership").Str == "invite"

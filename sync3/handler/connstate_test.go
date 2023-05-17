@@ -49,7 +49,7 @@ func mockLazyRoomOverride(loadPos int64, roomIDs []string, maxTimelineEvents int
 	result := make(map[string]caches.UserRoomData)
 	for _, roomID := range roomIDs {
 		u := caches.NewUserRoomData()
-		u.Timeline = []json.RawMessage{[]byte(`{}`)}
+		u.RequestedTimeline = []json.RawMessage{[]byte(`{}`)}
 		result[roomID] = u
 	}
 	return result
@@ -99,7 +99,7 @@ func TestConnStateInitial(t *testing.T) {
 		result := make(map[string]caches.UserRoomData)
 		for _, roomID := range roomIDs {
 			u := caches.NewUserRoomData()
-			u.Timeline = []json.RawMessage{timeline[roomID]}
+			u.RequestedTimeline = []json.RawMessage{timeline[roomID]}
 			result[roomID] = u
 		}
 		return result
@@ -536,7 +536,7 @@ func TestConnStateRoomSubscriptions(t *testing.T) {
 		result := make(map[string]caches.UserRoomData)
 		for _, roomID := range roomIDs {
 			u := caches.NewUserRoomData()
-			u.Timeline = []json.RawMessage{timeline[roomID]}
+			u.RequestedTimeline = []json.RawMessage{timeline[roomID]}
 			result[roomID] = u
 		}
 		return result
