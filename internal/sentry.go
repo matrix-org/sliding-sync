@@ -26,7 +26,12 @@ func GetSentryHubFromContextOrDefault(ctx context.Context) *sentry.Hub {
 
 // ReportPanicsToSentry checks for panics by calling recover, reports any panic found to
 // sentry, and then reraises the panic. To have tracebacks included in the report, make
-// sure you call panic with an error, not a string.
+// sure you call panic with something that implements error. (Anything else will be
+// reported as a "message" rather than an "exception" in Sentry; by default, only
+// "exceptions" are reported with tracebacks. See e.g.
+//
+//	   https://github.com/getsentry/sentry-go/blob/eec094e9470dd3855eaf47b025d853bcbc13df68/client.go#L438-L447
+//	for some of the machinery.)
 //
 // Typically, you want to call this in the form `defer internal.ReportPanicsToSentry()`.
 func ReportPanicsToSentry() {
