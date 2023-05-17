@@ -227,7 +227,7 @@ func migrateDevice(txn *sqlx.Tx, whoamiClient Client, device *oldDevice) (err er
 		`INSERT INTO syncv3_sync2_tokens(token_hash, token_encrypted, user_id, device_id, last_seen)
 VALUES ($1, $2, $3, $4, $5)`,
 		expectOneRowAffected,
-		device.AccessTokenHash, device.AccessTokenEncrypted, gotDeviceID, gotDeviceID, time.Now(),
+		device.AccessTokenHash, device.AccessTokenEncrypted, gotUserID, gotDeviceID, time.Now(),
 	)
 	if err != nil {
 		return
