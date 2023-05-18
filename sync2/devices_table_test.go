@@ -139,7 +139,7 @@ func TestTokenForEachDevice(t *testing.T) {
 	}
 
 	t.Log("Fetch a token for every device")
-	gotTokens, err := tokens.TokenForEachDevice()
+	gotTokens, err := tokens.TokenForEachDevice(nil)
 	if err != nil {
 		t.Fatalf("Failed TokenForEachDevice: %s", err)
 	}

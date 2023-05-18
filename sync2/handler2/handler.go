@@ -96,7 +96,7 @@ func (h *Handler) Teardown() {
 }
 
 func (h *Handler) StartV2Pollers() {
-	tokens, err := h.v2Store.TokensTable.TokenForEachDevice()
+	tokens, err := h.v2Store.TokensTable.TokenForEachDevice(nil)
 	if err != nil {
 		logger.Err(err).Msg("StartV2Pollers: failed to query tokens")
 		sentry.CaptureException(err)
