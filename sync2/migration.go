@@ -372,7 +372,7 @@ func exec(txn *sqlx.Tx, query string, checkRowsAffected func(ra int64) bool, arg
 		return err
 	}
 	if !checkRowsAffected(ra) {
-		return fmt.Errorf("Failed checkRowsAffected: got %d", ra)
+		return fmt.Errorf("query \"%s\" unexpectedly affected %d rows", query, ra)
 	}
 	return nil
 }
