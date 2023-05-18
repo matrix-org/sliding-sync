@@ -45,7 +45,7 @@ type UserRoomData struct {
 	// Map of tag to order float.
 	// See https://spec.matrix.org/latest/client-server-api/#room-tagging
 	Tags map[string]float64
-	// the load state of the timeline
+	// LoadPos is an event NID. UserRoomData instances represent the status of this room after the corresponding event, as seen by this user.
 	LoadPos int64
 }
 

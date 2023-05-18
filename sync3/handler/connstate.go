@@ -473,7 +473,7 @@ func (s *ConnState) getInitialRoomData(ctx context.Context, roomSub sync3.RoomSu
 		var inviteState []json.RawMessage
 		// handle invites specially as we do not want to leak additional data beyond the invite_state and if
 		// we happen to have this room in the global cache we will do.
-		// Furthermore, rooms we have been invited to for the first time ever will not be in the global cache yet,
+		// Furthermore, rooms the proxy have been invited to for the first time ever will not be in the global cache yet,
 		// which will cause errors below when we try calling functions on a nil metadata.
 		if userRoomData.IsInvite {
 			metadata = userRoomData.Invite.RoomMetadata()
