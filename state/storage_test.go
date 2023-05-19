@@ -214,7 +214,11 @@ func TestStorageJoinedRoomsAfterPosition(t *testing.T) {
 			JoinCount: 2,
 		},
 	}
-	err = store.MetadataForAllRooms(txn, roomIDToMetadata)
+	tempTableName, err := store.PrepareSnapshot(txn)
+	if err != nil {
+		t.Fatalf("PrepareSnapshot: %s", err)
+	}
+	err = store.MetadataForAllRooms(txn, tempTableName, roomIDToMetadata)
 	txn.Commit()
 	if err != nil {
 		t.Fatalf("MetadataForAllRooms: %s", err)

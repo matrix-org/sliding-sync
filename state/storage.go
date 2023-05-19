@@ -120,17 +120,37 @@ func (s *Storage) InsertAccountData(userID, roomID string, events []json.RawMess
 	return data, err
 }
 
+// Prepare a snapshot of the database for calling snapshot functions.
+func (s *Storage) PrepareSnapshot(txn *sqlx.Tx) (tableName string, err error) {
+	// create a temporary table with all the membership nids for the current snapshots for all rooms.
+	// A temporary table will be deleted when the postgres session ends (this process quits).
+	// We insert these into a temporary table to let the query planner make better decisions. In practice,
+	// if we instead nest this SELECT as a subselect, we see very poor query times for large tables as
+	// each event NID is queried using a btree index, rather than doing a seq scan as this query will pull
+	// out ~50% of the rows in syncv3_events.
+	tempTableName := "temp_snapshot"
+	_, err = txn.Exec(
+		`SELECT UNNEST(membership_events) AS membership_nid INTO TEMP ` + tempTableName + ` FROM syncv3_snapshots
+		JOIN syncv3_rooms ON syncv3_snapshots.snapshot_id = syncv3_rooms.current_snapshot_id`,
+	)
+	return tempTableName, err
+}
+
 // GlobalSnapshot snapshots the entire database for the purposes of initialising
 // a sliding sync instance. It will atomically grab metadata for all rooms and all joined members
 // in a single transaction.
 func (s *Storage) GlobalSnapshot() (ss StartupSnapshot, err error) {
 	err = sqlutil.WithTransaction(s.accumulator.db, func(txn *sqlx.Tx) error {
-		var metadata map[string]internal.RoomMetadata
-		ss.AllJoinedMembers, metadata, err = s.AllJoinedMembers(txn)
+		tempTableName, err := s.PrepareSnapshot(txn)
 		if err != nil {
 			return err
 		}
-		err = s.MetadataForAllRooms(txn, metadata)
+		var metadata map[string]internal.RoomMetadata
+		ss.AllJoinedMembers, metadata, err = s.AllJoinedMembers(txn, tempTableName)
+		if err != nil {
+			return err
+		}
+		err = s.MetadataForAllRooms(txn, tempTableName, metadata)
 		if err != nil {
 			return err
 		}
@@ -140,16 +160,12 @@ func (s *Storage) GlobalSnapshot() (ss StartupSnapshot, err error) {
 	return
 }
 
-// Extract hero info for all rooms.
-func (s *Storage) MetadataForAllRooms(txn *sqlx.Tx, result map[string]internal.RoomMetadata) error {
+// Extract hero info for all rooms. Requires a prepared snapshot in order to be called.
+func (s *Storage) MetadataForAllRooms(txn *sqlx.Tx, tempTableName string, result map[string]internal.RoomMetadata) error {
 	// Select the invited member counts
 	rows, err := txn.Query(`
-	SELECT room_id, count(state_key) FROM syncv3_events
-		WHERE (membership='_invite' OR membership = 'invite') AND event_type='m.room.member' AND event_nid IN (
-			SELECT unnest(membership_events) FROM syncv3_snapshots WHERE syncv3_snapshots.snapshot_id IN (
-				SELECT current_snapshot_id FROM syncv3_rooms
-			)
-		) GROUP BY room_id`)
+	SELECT room_id, count(state_key) FROM syncv3_events INNER JOIN ` + tempTableName + ` ON membership_nid=event_nid
+		WHERE (membership='_invite' OR membership = 'invite') AND event_type='m.room.member' GROUP BY room_id`)
 	if err != nil {
 		return err
 	}
@@ -206,14 +222,10 @@ func (s *Storage) MetadataForAllRooms(txn *sqlx.Tx, result map[string]internal.R
 	SELECT rf.* FROM (
 		SELECT room_id, event, rank() OVER (
 			PARTITION BY room_id ORDER BY event_nid DESC
-		) FROM syncv3_events WHERE (
+		) FROM syncv3_events INNER JOIN ` + tempTableName + ` ON membership_nid=event_nid WHERE (
 			membership='join' OR membership='invite' OR membership='_join'
-		) AND event_type='m.room.member' AND event_nid IN (
-			SELECT unnest(membership_events) FROM syncv3_snapshots WHERE syncv3_snapshots.snapshot_id IN (
-				SELECT current_snapshot_id FROM syncv3_rooms
-			)
-		)
-	) rf WHERE rank <= 6`)
+		) AND event_type='m.room.member'
+	) rf WHERE rank <= 6;`)
 	if err != nil {
 		return fmt.Errorf("failed to query heroes: %s", err)
 	}
@@ -744,11 +756,10 @@ func (s *Storage) RoomMembershipDelta(roomID string, from, to int64, limit int) 
 	return
 }
 
-func (s *Storage) AllJoinedMembers(txn *sqlx.Tx) (result map[string][]string, metadata map[string]internal.RoomMetadata, err error) {
+// Extract all rooms with joined members, and include the joined user list. Requires a prepared snapshot in order to be called.
+func (s *Storage) AllJoinedMembers(txn *sqlx.Tx, tempTableName string) (result map[string][]string, metadata map[string]internal.RoomMetadata, err error) {
 	rows, err := txn.Query(
-		`SELECT room_id, state_key from syncv3_events WHERE (membership='join' OR membership='_join') AND event_nid IN (
-			SELECT UNNEST(membership_events) FROM syncv3_snapshots JOIN syncv3_rooms ON syncv3_snapshots.snapshot_id = syncv3_rooms.current_snapshot_id
-		) ORDER BY event_nid ASC`,
+		`SELECT room_id, state_key from ` + tempTableName + ` INNER JOIN syncv3_events on membership_nid = event_nid WHERE membership='join' OR membership='_join' ORDER BY event_nid ASC`,
 	)
 	if err != nil {
 		return nil, nil, err
