@@ -289,7 +289,7 @@ VALUES ($1, $2, $3, $4, $5)`,
 	err = exec(
 		txn,
 		`UPDATE syncv3_txns SET user_id = $1, device_id = $2 WHERE user_id = $3`,
-		expectAtMostOneRowAffected,
+		expectAnyNumberOfRowsAffected,
 		gotUserID, gotDeviceID, device.AccessTokenHash,
 	)
 	if err != nil {
