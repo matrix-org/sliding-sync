@@ -71,6 +71,12 @@ func (d *Dispatcher) Register(ctx context.Context, userID string, r Receiver) er
 	return r.OnRegistered(ctx, d.latestPos)
 }
 
+func (d *Dispatcher) ReceiverForUser(userID string) Receiver {
+	d.userToReceiverMu.RLock()
+	defer d.userToReceiverMu.RUnlock()
+	return d.userToReceiver[userID]
+}
+
 func (d *Dispatcher) newEventData(event json.RawMessage, roomID string, latestPos int64) *caches.EventData {
 	// parse the event to pull out fields we care about
 	var stateKey *string
@@ -131,8 +137,7 @@ func (d *Dispatcher) OnNewInitialRoomState(ctx context.Context, roomID string, s
 		if userID == DispatcherAllUsers {
 			return false // safety guard to prevent dupe global callbacks
 		}
-		_, exists := d.userToReceiver[userID]
-		return exists
+		return d.ReceiverForUser(userID) != nil
 	})
 
 	// notify listeners
@@ -181,8 +186,7 @@ func (d *Dispatcher) OnNewEvent(
 		if userID == DispatcherAllUsers {
 			return false // safety guard to prevent dupe global callbacks
 		}
-		_, exists := d.userToReceiver[userID]
-		return exists
+		return d.ReceiverForUser(userID) != nil
 	})
 	ed.JoinCount = joinCount
 	d.notifyListeners(ctx, ed, userIDs, targetUser, shouldForceInitial, membership)
@@ -193,8 +197,7 @@ func (d *Dispatcher) OnEphemeralEvent(ctx context.Context, roomID string, ephEve
 		if userID == DispatcherAllUsers {
 			return false // safety guard to prevent dupe global callbacks
 		}
-		_, exists := d.userToReceiver[userID]
-		return exists
+		return d.ReceiverForUser(userID) != nil
 	})
 
 	d.userToReceiverMu.RLock()
@@ -221,8 +224,7 @@ func (d *Dispatcher) OnReceipt(ctx context.Context, receipt internal.Receipt) {
 		if userID == DispatcherAllUsers {
 			return false // safety guard to prevent dupe global callbacks
 		}
-		_, exists := d.userToReceiver[userID]
-		return exists
+		return d.ReceiverForUser(userID) != nil
 	})
 
 	d.userToReceiverMu.RLock()
