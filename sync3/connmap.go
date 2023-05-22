@@ -77,7 +77,14 @@ func (m *ConnMap) CreateConn(cid ConnID, newConnHandler func() ConnHandler) (*Co
 	conn := m.Conn(cid)
 	if conn != nil {
 		// tear down this connection and fallthrough
-		logger.Trace().Str("conn", cid.String()).Msg("closing connection due to CreateConn called again")
+		isSpamming := conn.lastPos <= 1
+		if isSpamming {
+			// the existing connection has only just been used for one response, and now they are asking
+			// for a new connection. Apply an artificial delay here to stop buggy clients from spamming
+			// /sync without a `?pos=` value.
+			time.Sleep(SpamProtectionInterval)
+		}
+		logger.Trace().Str("conn", cid.String()).Bool("spamming", isSpamming).Msg("closing connection due to CreateConn called again")
 		m.closeConn(conn)
 	}
 	h := newConnHandler()

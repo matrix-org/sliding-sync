@@ -363,6 +363,9 @@ func runTestServer(t testutils.TestBenchInterface, v2Server *testV2Server, postg
 	if postgresConnectionString == "" {
 		postgresConnectionString = testutils.PrepareDBConnectionString()
 	}
+	//tests often repeat requests. To ensure tests remain fast, reduce the spam protection limits.
+	sync3.SpamProtectionInterval = time.Millisecond
+
 	metricsEnabled := false
 	maxPendingEventUpdates := 200
 	if len(opts) > 0 {
