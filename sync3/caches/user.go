@@ -26,6 +26,14 @@ type TransactionIDFetcher interface {
 	TransactionIDForEvents(userID, deviceID string, eventIDs []string) (eventIDToTxnID map[string]string)
 }
 
+// UserRoomData describes a single room from the perspective of particular user.
+// It is primarily used in two places:
+//   - in the caches.UserCache, to hold the latest version of user-specific data; and
+//   - in the sync3.RoomConnMetadata struct, to hold the version of data last seen by
+//     a given sync connection.
+//
+// Roughly speaking, the sync3.RoomConnMetadata is constantly catching up with changes
+// in the caches.UserCache.
 type UserRoomData struct {
 	IsDM              bool
 	IsInvite          bool
@@ -38,6 +46,7 @@ type UserRoomData struct {
 	RequestedPrevBatch string
 	RequestedTimeline  []json.RawMessage
 
+	// TODO: should Canonicalised really be in RoomConMetadata? It's only set in SetRoom AFAICS
 	CanonicalisedName string // stripped leading symbols like #, all in lower case
 	// Set of spaces this room is a part of, from the perspective of this user. This is NOT global room data
 	// as the set of spaces may be different for different users.

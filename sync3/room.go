@@ -2,8 +2,8 @@ package sync3
 
 import (
 	"encoding/json"
-
 	"github.com/matrix-org/sliding-sync/internal"
+
 	"github.com/matrix-org/sliding-sync/sync3/caches"
 )
 
@@ -22,7 +22,13 @@ type Room struct {
 	NumLive           int               `json:"num_live,omitempty"`
 }
 
+// RoomConnMetadata represents a room as seen by one specific connection (hence once
+// specific device).
 type RoomConnMetadata struct {
+	// We enclose copies of the data kept in the global and user caches. These snapshots
+	// represent the state we reported to the connection the last time they requested
+	// a sync. Note that we are free to tweak fields within these copies if we want, to
+	// report more appropriate data to clients that kept in the caches.
 	internal.RoomMetadata
 	caches.UserRoomData
 }

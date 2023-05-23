@@ -6,7 +6,14 @@ import (
 	"strings"
 )
 
-// Metadata about a room that is consistent between all users in the room.
+// RoomMetadata holds room-scoped data. It is primarily used in two places:
+//   - in the caches.GlobalCache, to hold the latest version of data that is consistent
+//     between all users in the room; and
+//   - in the sync3.RoomConnMetadata struct, to hold the version of data last seen by
+//     a given user sync connection.
+//
+// Roughly speaking, the sync3.RoomConnMetadata is constantly catching up with changes
+// in the caches.GlobalCache.
 type RoomMetadata struct {
 	RoomID               string
 	Heroes               []Hero
