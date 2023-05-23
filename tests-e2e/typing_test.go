@@ -167,7 +167,6 @@ func TestTypingLazyLoad(t *testing.T) {
 				TimelineLimit: 1,
 				RequiredState: [][2]string{
 					{"m.room.member", "$LAZY"},
-					{"m.room.member", "$ME"},
 				},
 			},
 		},
@@ -303,7 +302,6 @@ func waitUntilTypingData(t *testing.T, client *CSAPI, roomID string, wantUserIDs
 				TimelineLimit: 1,
 				RequiredState: [][2]string{
 					{"m.room.member", "$LAZY"},
-					{"m.room.member", "$ME"},
 				},
 			},
 		},

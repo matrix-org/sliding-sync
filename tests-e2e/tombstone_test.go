@@ -66,7 +66,7 @@ func TestIncludeOldRooms(t *testing.T) {
 			m.MatchRoomInitial(true),
 			m.MatchJoinCount(1),
 			func(r sync3.Room) error { // nest it so the previous matcher has time to set tombstoneEventID
-				return MatchRoomRequiredState([]Event{
+				return MatchRoomRequiredStateStrict([]Event{
 					{
 						Type:     "m.room.create",
 						StateKey: ptr(""),
@@ -102,7 +102,7 @@ func TestIncludeOldRooms(t *testing.T) {
 		m.MatchV3SyncOp(0, 0, []string{newRoomID}),
 	)), m.MatchRoomSubscriptionsStrict(map[string][]m.RoomMatcher{
 		newRoomID: {
-			MatchRoomRequiredState([]Event{
+			MatchRoomRequiredStateStrict([]Event{
 				{
 					Type:     "m.room.member",
 					StateKey: &client.UserID,
@@ -110,7 +110,7 @@ func TestIncludeOldRooms(t *testing.T) {
 			}),
 		},
 		roomID: {
-			MatchRoomRequiredState([]Event{
+			MatchRoomRequiredStateStrict([]Event{
 				{
 					Type:     "m.room.create",
 					StateKey: ptr(""),
@@ -139,7 +139,7 @@ func TestIncludeOldRooms(t *testing.T) {
 		m.MatchV3SyncOp(0, 0, []string{newRoomID}),
 	)), m.MatchRoomSubscriptionsStrict(map[string][]m.RoomMatcher{
 		newRoomID: {
-			MatchRoomRequiredState([]Event{
+			MatchRoomRequiredStateStrict([]Event{
 				{
 					Type:     "m.room.member",
 					StateKey: &client.UserID,
@@ -203,7 +203,7 @@ func TestIncludeOldRoomsLongChain(t *testing.T) {
 	})
 	m.MatchResponse(t, res, m.MatchNoV3Ops(), m.MatchRoomSubscriptionsStrict(map[string][]m.RoomMatcher{
 		roomA: {
-			MatchRoomRequiredState([]Event{
+			MatchRoomRequiredStateStrict([]Event{
 				{
 					Type:     "m.room.create",
 					StateKey: ptr(""),
@@ -211,7 +211,7 @@ func TestIncludeOldRoomsLongChain(t *testing.T) {
 			}),
 		},
 		roomB: {
-			MatchRoomRequiredState([]Event{
+			MatchRoomRequiredStateStrict([]Event{
 				{
 					Type:     "m.room.member",
 					StateKey: &client.UserID,
@@ -245,7 +245,7 @@ func TestIncludeOldRoomsLongChain(t *testing.T) {
 	})
 	m.MatchResponse(t, res, m.MatchNoV3Ops(), m.MatchRoomSubscriptionsStrict(map[string][]m.RoomMatcher{
 		roomC: {
-			MatchRoomRequiredState([]Event{
+			MatchRoomRequiredStateStrict([]Event{
 				{
 					Type:     "m.room.create",
 					StateKey: ptr(""),
@@ -253,7 +253,7 @@ func TestIncludeOldRoomsLongChain(t *testing.T) {
 			}),
 		},
 		roomD: {
-			MatchRoomRequiredState([]Event{
+			MatchRoomRequiredStateStrict([]Event{
 				{
 					Type:     "m.room.member",
 					StateKey: &client.UserID,
@@ -297,7 +297,7 @@ func TestIncludeOldRoomsSubscriptionUnion(t *testing.T) {
 		m.MatchV3SyncOp(0, 0, []string{roomB}),
 	)), m.MatchRoomSubscriptionsStrict(map[string][]m.RoomMatcher{
 		roomA: {
-			MatchRoomRequiredState([]Event{
+			MatchRoomRequiredStateStrict([]Event{
 				{
 					Type: "m.room.create", StateKey: ptr(""),
 				},
@@ -316,7 +316,7 @@ func TestIncludeOldRoomsSubscriptionUnion(t *testing.T) {
 			},
 		},
 		roomB: {
-			MatchRoomRequiredState(nil),
+			MatchRoomRequiredStateStrict(nil),
 			MatchRoomTimeline(nil),
 		},
 	}))

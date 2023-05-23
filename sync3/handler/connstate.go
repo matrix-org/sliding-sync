@@ -189,6 +189,12 @@ func (s *ConnState) onIncomingRequest(ctx context.Context, req *sync3.Request, i
 		l.Count = s.lists.Count(listKey)
 		response.Lists[listKey] = l
 	}
+
+	// Add membership events for users sending typing notifications. We do this after live update
+	// and initial room loading code so we LL room members in all cases.
+	if response.Extensions.Typing != nil && response.Extensions.Typing.HasData(isInitial) {
+		s.lazyLoadTypingMembers(ctx, response)
+	}
 	return response, nil
 }
 
@@ -432,6 +438,35 @@ func (s *ConnState) buildRooms(ctx context.Context, builtSubs []BuiltSubscriptio
 		}
 	}
 	return result
+}
+
+func (s *ConnState) lazyLoadTypingMembers(ctx context.Context, response *sync3.Response) {
+	for roomID, typingEvent := range response.Extensions.Typing.Rooms {
+		if !s.lazyCache.IsLazyLoading(roomID) {
+			continue
+		}
+		room, ok := response.Rooms[roomID]
+		if !ok {
+			room = sync3.Room{}
+		}
+		typingUsers := gjson.GetBytes(typingEvent, "content.user_ids")
+		for _, typingUserID := range typingUsers.Array() {
+			if s.lazyCache.IsSet(roomID, typingUserID.Str) {
+				// client should already know about this member
+				continue
+			}
+			// load the state event
+			memberEvent := s.globalCache.LoadStateEvent(ctx, roomID, s.loadPosition, "m.room.member", typingUserID.Str)
+			if memberEvent != nil {
+				room.RequiredState = append(room.RequiredState, memberEvent)
+				s.lazyCache.AddUser(roomID, typingUserID.Str)
+			}
+		}
+		// only add the room if we have membership events
+		if len(room.RequiredState) > 0 {
+			response.Rooms[roomID] = room
+		}
+	}
 }
 
 func (s *ConnState) getInitialRoomData(ctx context.Context, roomSub sync3.RoomSubscription, roomIDs ...string) map[string]sync3.Room {
