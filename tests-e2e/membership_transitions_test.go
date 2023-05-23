@@ -87,7 +87,7 @@ func TestRoomStateTransitions(t *testing.T) {
 		},
 	}, WithPos(bobRes.Pos))
 	m.MatchResponse(t, bobRes, m.MatchNoV3Ops(), m.MatchList("a", m.MatchV3Count(2)), m.MatchRoomSubscription(inviteRoomID,
-		MatchRoomRequiredState([]Event{
+		MatchRoomRequiredStateStrict([]Event{
 			{
 				Type:     "m.room.create",
 				StateKey: ptr(""),

@@ -56,7 +56,7 @@ func TestLazyLoading(t *testing.T) {
 	})
 	m.MatchResponse(t, res, m.MatchRoomSubscriptionsStrict(map[string][]m.RoomMatcher{
 		roomID: {
-			MatchRoomRequiredState([]Event{
+			MatchRoomRequiredStateStrict([]Event{
 				{
 					Type:     "m.room.member",
 					StateKey: &charlie.UserID,
@@ -82,7 +82,7 @@ func TestLazyLoading(t *testing.T) {
 	})
 	m.MatchResponse(t, bobRes, m.MatchRoomSubscriptionsStrict(map[string][]m.RoomMatcher{
 		roomID: {
-			MatchRoomRequiredState([]Event{
+			MatchRoomRequiredStateStrict([]Event{
 				{
 					Type:     "m.room.member",
 					StateKey: &charlie.UserID,
@@ -113,7 +113,7 @@ func TestLazyLoading(t *testing.T) {
 	})
 	m.MatchResponse(t, charlieRes, m.MatchRoomSubscriptionsStrict(map[string][]m.RoomMatcher{
 		roomID: {
-			MatchRoomRequiredState([]Event{
+			MatchRoomRequiredStateStrict([]Event{
 				{
 					Type:     "m.room.member",
 					StateKey: &charlie.UserID,
@@ -153,7 +153,7 @@ func TestLazyLoading(t *testing.T) {
 				Type: "m.room.message",
 				ID:   aliceEventID,
 			}}),
-			MatchRoomRequiredState([]Event{{
+			MatchRoomRequiredStateStrict([]Event{{
 				Type:     "m.room.member",
 				StateKey: &alice.UserID,
 			}}),
@@ -172,7 +172,7 @@ func TestLazyLoading(t *testing.T) {
 				Type: "m.room.message",
 				ID:   aliceEventID2,
 			}}),
-			MatchRoomRequiredState(nil),
+			MatchRoomRequiredStateStrict(nil),
 		},
 	}))
 
@@ -190,7 +190,7 @@ func TestLazyLoading(t *testing.T) {
 					ID:   aliceEventID2,
 				},
 			}),
-			MatchRoomRequiredState([]Event{{
+			MatchRoomRequiredStateStrict([]Event{{
 				Type:     "m.room.member",
 				StateKey: &alice.UserID,
 			}}),

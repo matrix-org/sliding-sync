@@ -5,10 +5,16 @@ import (
 	"fmt"
 	"runtime/debug"
 	"sync"
+	"time"
 
 	"github.com/matrix-org/sliding-sync/internal"
 	"github.com/matrix-org/sliding-sync/sync3/caches"
 )
+
+// The amount of time to artificially wait if the server detects spamming clients. This time will
+// be added to responses when the server detects the same request being sent over and over e.g
+// /sync?pos=5 then /sync?pos=5 over and over. Likewise /sync without a ?pos=.
+var SpamProtectionInterval = time.Second
 
 type ConnID struct {
 	UserID   string
@@ -176,7 +182,10 @@ func (c *Conn) OnIncomingRequest(ctx context.Context, req *Request) (resp *Respo
 			if isSameRequest {
 				// this is the 2nd+ time we've seen this request, meaning the client likely retried this
 				// request. Send the response we sent before.
-				logger.Trace().Int64("pos", req.pos).Msg("returning cached response for pos")
+				logger.Trace().Int64("pos", req.pos).Msg("returning cached response for pos, with delay")
+				// apply a small artificial wait to protect the proxy in case this is caused by a buggy
+				// client sending the same request over and over
+				time.Sleep(SpamProtectionInterval)
 				return nextUnACKedResponse, nil
 			} else {
 				logger.Info().Int64("pos", req.pos).Msg("client has resent this pos with different request data")

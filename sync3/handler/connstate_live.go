@@ -9,7 +9,6 @@ import (
 	"github.com/matrix-org/sliding-sync/sync3"
 	"github.com/matrix-org/sliding-sync/sync3/caches"
 	"github.com/matrix-org/sliding-sync/sync3/extensions"
-	"github.com/tidwall/gjson"
 )
 
 // the amount of time to try to insert into a full buffer before giving up.
@@ -63,7 +62,9 @@ func (s *connStateLive) liveUpdate(
 	}
 	// block until we get a new event, with appropriate timeout
 	startTime := time.Now()
+	hasLiveStreamed := false
 	for response.ListOps() == 0 && len(response.Rooms) == 0 && !response.Extensions.HasData(isInitial) {
+		hasLiveStreamed = true
 		timeToWait := time.Duration(req.TimeoutMSecs()) * time.Millisecond
 		timeWaited := time.Since(startTime)
 		timeLeftToWait := timeToWait - timeWaited
@@ -106,43 +107,10 @@ func (s *connStateLive) liveUpdate(
 					RoomIDsToLists:   roomIDsToLists,
 				})
 			}
-			// Add membership events for users sending typing notifications
-			if response.Extensions.Typing != nil && response.Extensions.Typing.HasData(isInitial) {
-				s.lazyLoadTypingMembers(ctx, response)
-			}
 		}
 	}
-	log.Trace().Msg("liveUpdate: returning")
+	log.Trace().Bool("live_streamed", hasLiveStreamed).Msg("liveUpdate: returning")
 	// TODO: op consolidation
-}
-
-func (s *connStateLive) lazyLoadTypingMembers(ctx context.Context, response *sync3.Response) {
-	for roomID, typingEvent := range response.Extensions.Typing.Rooms {
-		if !s.lazyCache.IsLazyLoading(roomID) {
-			continue
-		}
-		room, ok := response.Rooms[roomID]
-		if !ok {
-			room = sync3.Room{}
-		}
-		typingUsers := gjson.GetBytes(typingEvent, "content.user_ids")
-		for _, typingUserID := range typingUsers.Array() {
-			if s.lazyCache.IsSet(roomID, typingUserID.Str) {
-				// client should already know about this member
-				continue
-			}
-			// load the state event
-			memberEvent := s.globalCache.LoadStateEvent(ctx, roomID, s.loadPosition, "m.room.member", typingUserID.Str)
-			if memberEvent != nil {
-				room.RequiredState = append(room.RequiredState, memberEvent)
-				s.lazyCache.AddUser(roomID, typingUserID.Str)
-			}
-		}
-		// only add the room if we have membership events
-		if len(room.RequiredState) > 0 {
-			response.Rooms[roomID] = room
-		}
-	}
 }
 
 func (s *connStateLive) processLiveUpdate(ctx context.Context, up caches.Update, response *sync3.Response) bool {

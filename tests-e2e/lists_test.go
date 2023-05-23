@@ -415,7 +415,7 @@ func TestMultipleOverlappingLists(t *testing.T) {
 			// encrypted rooms just come from the encrypted only list
 			encryptedRoomIDs[0]: {
 				m.MatchRoomInitial(true),
-				MatchRoomRequiredState([]Event{
+				MatchRoomRequiredStateStrict([]Event{
 					{
 						Type:     "m.room.join_rules",
 						StateKey: ptr(""),
@@ -428,7 +428,7 @@ func TestMultipleOverlappingLists(t *testing.T) {
 			},
 			encryptedRoomIDs[1]: {
 				m.MatchRoomInitial(true),
-				MatchRoomRequiredState([]Event{
+				MatchRoomRequiredStateStrict([]Event{
 					{
 						Type:     "m.room.join_rules",
 						StateKey: ptr(""),
@@ -441,7 +441,7 @@ func TestMultipleOverlappingLists(t *testing.T) {
 			},
 			encryptedRoomIDs[2]: {
 				m.MatchRoomInitial(true),
-				MatchRoomRequiredState([]Event{
+				MatchRoomRequiredStateStrict([]Event{
 					{
 						Type:     "m.room.join_rules",
 						StateKey: ptr(""),
@@ -455,7 +455,7 @@ func TestMultipleOverlappingLists(t *testing.T) {
 			// overlapping with DM rooms
 			encryptedRoomIDs[3]: {
 				m.MatchRoomInitial(true),
-				MatchRoomRequiredState([]Event{
+				MatchRoomRequiredStateStrict([]Event{
 					{
 						Type:     "m.room.join_rules",
 						StateKey: ptr(""),
@@ -472,7 +472,7 @@ func TestMultipleOverlappingLists(t *testing.T) {
 			},
 			encryptedRoomIDs[4]: {
 				m.MatchRoomInitial(true),
-				MatchRoomRequiredState([]Event{
+				MatchRoomRequiredStateStrict([]Event{
 					{
 						Type:     "m.room.join_rules",
 						StateKey: ptr(""),
@@ -490,7 +490,7 @@ func TestMultipleOverlappingLists(t *testing.T) {
 			// DM only rooms
 			dmRoomIDs[2]: {
 				m.MatchRoomInitial(true),
-				MatchRoomRequiredState([]Event{
+				MatchRoomRequiredStateStrict([]Event{
 					{
 						Type:     "m.room.power_levels",
 						StateKey: ptr(""),
@@ -500,7 +500,7 @@ func TestMultipleOverlappingLists(t *testing.T) {
 			},
 			dmRoomIDs[3]: {
 				m.MatchRoomInitial(true),
-				MatchRoomRequiredState([]Event{
+				MatchRoomRequiredStateStrict([]Event{
 					{
 						Type:     "m.room.power_levels",
 						StateKey: ptr(""),
@@ -510,7 +510,7 @@ func TestMultipleOverlappingLists(t *testing.T) {
 			},
 			dmRoomIDs[4]: {
 				m.MatchRoomInitial(true),
-				MatchRoomRequiredState([]Event{
+				MatchRoomRequiredStateStrict([]Event{
 					{
 						Type:     "m.room.power_levels",
 						StateKey: ptr(""),

@@ -86,7 +86,7 @@ func TestMultipleConns(t *testing.T) {
 		},
 	}}, WithPos(resB.Pos))
 	m.MatchResponse(t, resB, m.MatchRoomSubscriptionsStrict(map[string][]m.RoomMatcher{
-		roomID: {MatchRoomRequiredState([]Event{{Type: "m.room.create", StateKey: ptr("")}})},
+		roomID: {MatchRoomRequiredStateStrict([]Event{{Type: "m.room.create", StateKey: ptr("")}})},
 	}))
 
 	// Conn C: create a list

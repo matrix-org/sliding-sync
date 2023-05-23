@@ -118,9 +118,6 @@ func MatchRoomTimelineContains(event Event) m.RoomMatcher {
 
 func MatchRoomRequiredState(events []Event) m.RoomMatcher {
 	return func(r sync3.Room) error {
-		if len(r.RequiredState) != len(events) {
-			return fmt.Errorf("required state length mismatch, got %d want %d", len(r.RequiredState), len(events))
-		}
 		// allow any ordering for required state
 		for _, want := range events {
 			found := false
@@ -135,6 +132,15 @@ func MatchRoomRequiredState(events []Event) m.RoomMatcher {
 			}
 		}
 		return nil
+	}
+}
+
+func MatchRoomRequiredStateStrict(events []Event) m.RoomMatcher {
+	return func(r sync3.Room) error {
+		if len(r.RequiredState) != len(events) {
+			return fmt.Errorf("required state length mismatch, got %d want %d", len(r.RequiredState), len(events))
+		}
+		return MatchRoomRequiredState(events)(r)
 	}
 }
 
