@@ -96,6 +96,10 @@ func (s *ConnState) load(ctx context.Context) error {
 		rooms[i] = sync3.RoomConnMetadata{
 			RoomMetadata: *metadata,
 			UserRoomData: urd,
+			// Best-effort only: we're not going to scan the database for all events in
+			// the entire room's history to give you a fully accurate timestamp
+			// according to your bump_event_types.
+			LastActivityTimestamp: metadata.LastMessageTimestamp,
 		}
 		i++
 	}
@@ -105,6 +109,9 @@ func (s *ConnState) load(ctx context.Context) error {
 		rooms = append(rooms, sync3.RoomConnMetadata{
 			RoomMetadata: *metadata,
 			UserRoomData: urd,
+			// Best-effort only. Not going to be accurate if you've sent
+			// bump_event_types to exclude membership events.
+			LastActivityTimestamp: metadata.LastMessageTimestamp,
 		})
 	}
 
