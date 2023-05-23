@@ -15,12 +15,14 @@ import (
 // Roughly speaking, the sync3.RoomConnMetadata is constantly catching up with changes
 // in the caches.GlobalCache.
 type RoomMetadata struct {
-	RoomID               string
-	Heroes               []Hero
-	NameEvent            string // the content of m.room.name, NOT the calculated name
-	CanonicalAlias       string
-	JoinCount            int
-	InviteCount          int
+	RoomID         string
+	Heroes         []Hero
+	NameEvent      string // the content of m.room.name, NOT the calculated name
+	CanonicalAlias string
+	JoinCount      int
+	InviteCount    int
+	// LastMessageTimestamp is the largest origin_server_ts of events seen in this room.
+	// It should never decrease.
 	LastMessageTimestamp uint64
 	Encrypted            bool
 	PredecessorRoomID    *string

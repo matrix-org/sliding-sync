@@ -314,6 +314,8 @@ func (c *GlobalCache) OnNewEvent(
 			}
 		}
 	}
-	metadata.LastMessageTimestamp = ed.Timestamp
+	if ed.Timestamp > metadata.LastMessageTimestamp {
+		metadata.LastMessageTimestamp = ed.Timestamp
+	}
 	c.roomIDToMetadata[ed.RoomID] = metadata
 }
