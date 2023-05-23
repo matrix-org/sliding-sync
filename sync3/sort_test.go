@@ -39,47 +39,47 @@ func TestSortBySingleOperation(t *testing.T) {
 	rooms := []*RoomConnMetadata{
 		{
 			RoomMetadata: internal.RoomMetadata{
-				RoomID:               room1,
-				LastMessageTimestamp: 600,
+				RoomID: room1,
 			},
 			UserRoomData: caches.UserRoomData{
 				HighlightCount:    3,
 				NotificationCount: 12,
 				CanonicalisedName: "foo",
 			},
+			LastActivityTimestamp: 600,
 		},
 		{
 			RoomMetadata: internal.RoomMetadata{
-				RoomID:               room2,
-				LastMessageTimestamp: 700,
+				RoomID: room2,
 			},
 			UserRoomData: caches.UserRoomData{
 				HighlightCount:    0,
 				NotificationCount: 3,
 				CanonicalisedName: "koo",
 			},
+			LastActivityTimestamp: 700,
 		},
 		{
 			RoomMetadata: internal.RoomMetadata{
-				RoomID:               room3,
-				LastMessageTimestamp: 900,
+				RoomID: room3,
 			},
 			UserRoomData: caches.UserRoomData{
 				HighlightCount:    2,
 				NotificationCount: 7,
 				CanonicalisedName: "yoo",
 			},
+			LastActivityTimestamp: 900,
 		},
 		{
 			RoomMetadata: internal.RoomMetadata{
-				RoomID:               room4,
-				LastMessageTimestamp: 800,
+				RoomID: room4,
 			},
 			UserRoomData: caches.UserRoomData{
 				HighlightCount:    1,
 				NotificationCount: 1,
 				CanonicalisedName: "boo",
 			},
+			LastActivityTimestamp: 800,
 		},
 	}
 	// name: 4,1,2,3
@@ -118,47 +118,47 @@ func TestSortByMultipleOperations(t *testing.T) {
 	rooms := []*RoomConnMetadata{
 		{
 			RoomMetadata: internal.RoomMetadata{
-				RoomID:               room1,
-				LastMessageTimestamp: 600,
+				RoomID: room1,
 			},
 			UserRoomData: caches.UserRoomData{
 				HighlightCount:    1,
 				NotificationCount: 1,
 				CanonicalisedName: "foo",
 			},
+			LastActivityTimestamp: 600,
 		},
 		{
 			RoomMetadata: internal.RoomMetadata{
-				RoomID:               room2,
-				LastMessageTimestamp: 700,
+				RoomID: room2,
 			},
 			UserRoomData: caches.UserRoomData{
 				HighlightCount:    1,
 				NotificationCount: 5,
 				CanonicalisedName: "koo",
 			},
+			LastActivityTimestamp: 700,
 		},
 		{
 			RoomMetadata: internal.RoomMetadata{
-				RoomID:               room3,
-				LastMessageTimestamp: 800,
+				RoomID: room3,
 			},
 			UserRoomData: caches.UserRoomData{
 				HighlightCount:    0,
 				NotificationCount: 0,
 				CanonicalisedName: "yoo",
 			},
+			LastActivityTimestamp: 800,
 		},
 		{
 			RoomMetadata: internal.RoomMetadata{
-				RoomID:               room4,
-				LastMessageTimestamp: 900,
+				RoomID: room4,
 			},
 			UserRoomData: caches.UserRoomData{
 				HighlightCount:    0,
 				NotificationCount: 0,
 				CanonicalisedName: "boo",
 			},
+			LastActivityTimestamp: 900,
 		},
 	}
 	testCases := []struct {
@@ -205,25 +205,25 @@ func TestSortableRoomsRemove(t *testing.T) {
 	rooms := []*RoomConnMetadata{
 		{
 			RoomMetadata: internal.RoomMetadata{
-				RoomID:               room1,
-				LastMessageTimestamp: 700,
+				RoomID: room1,
 			},
 			UserRoomData: caches.UserRoomData{
 				HighlightCount:    1,
 				NotificationCount: 1,
 				CanonicalisedName: "foo",
 			},
+			LastActivityTimestamp: 700,
 		},
 		{
 			RoomMetadata: internal.RoomMetadata{
-				RoomID:               room2,
-				LastMessageTimestamp: 600,
+				RoomID: room2,
 			},
 			UserRoomData: caches.UserRoomData{
 				HighlightCount:    2,
 				NotificationCount: 2,
 				CanonicalisedName: "foo2",
 			},
+			LastActivityTimestamp: 600,
 		},
 	}
 	f := newFinder(rooms)
@@ -265,85 +265,85 @@ func TestSortByNotificationLevel(t *testing.T) {
 	roomsMap := map[string]*RoomConnMetadata{
 		roomUnencHC: {
 			RoomMetadata: internal.RoomMetadata{
-				LastMessageTimestamp: 1,
-				Encrypted:            false,
+				Encrypted: false,
 			},
 			UserRoomData: caches.UserRoomData{
 				HighlightCount:    1,
 				NotificationCount: 0,
 			},
+			LastActivityTimestamp: 1,
 		},
 		roomUnencHCNC: {
 			RoomMetadata: internal.RoomMetadata{
-				LastMessageTimestamp: 2,
-				Encrypted:            false,
+				Encrypted: false,
 			},
 			UserRoomData: caches.UserRoomData{
 				HighlightCount:    1,
 				NotificationCount: 1,
 			},
+			LastActivityTimestamp: 2,
 		},
 		roomUnencNC: {
 			RoomMetadata: internal.RoomMetadata{
-				LastMessageTimestamp: 3,
-				Encrypted:            false,
+				Encrypted: false,
 			},
 			UserRoomData: caches.UserRoomData{
 				HighlightCount:    0,
 				NotificationCount: 1,
 			},
+			LastActivityTimestamp: 3,
 		},
 		roomUnenc: {
 			RoomMetadata: internal.RoomMetadata{
-				LastMessageTimestamp: 4,
-				Encrypted:            false,
+				Encrypted: false,
 			},
 			UserRoomData: caches.UserRoomData{
 				HighlightCount:    0,
 				NotificationCount: 0,
 			},
+			LastActivityTimestamp: 4,
 		},
 		roomEncHC: {
 			RoomMetadata: internal.RoomMetadata{
-				LastMessageTimestamp: 5,
-				Encrypted:            true,
+				Encrypted: true,
 			},
 			UserRoomData: caches.UserRoomData{
 				HighlightCount:    1,
 				NotificationCount: 0,
 			},
+			LastActivityTimestamp: 5,
 		},
 		roomEncHCNC: {
 			RoomMetadata: internal.RoomMetadata{
-				LastMessageTimestamp: 6,
-				Encrypted:            true,
+				Encrypted: true,
 			},
 			UserRoomData: caches.UserRoomData{
 				HighlightCount:    1,
 				NotificationCount: 1,
 			},
+			LastActivityTimestamp: 6,
 		},
 		roomEncNC: {
 			RoomMetadata: internal.RoomMetadata{
-				RoomID:               roomEncNC,
-				LastMessageTimestamp: 7,
-				Encrypted:            true,
+				RoomID:    roomEncNC,
+				Encrypted: true,
 			},
 			UserRoomData: caches.UserRoomData{
 				HighlightCount:    0,
 				NotificationCount: 1,
 			},
+			LastActivityTimestamp: 7,
 		},
 		roomEnc: {
 			RoomMetadata: internal.RoomMetadata{
-				RoomID:               roomEnc,
-				LastMessageTimestamp: 8,
-				Encrypted:            true,
+				RoomID:    roomEnc,
+				Encrypted: true,
 			},
 			UserRoomData: caches.UserRoomData{
 				HighlightCount:    0,
 				NotificationCount: 0,
 			},
+			LastActivityTimestamp: 8,
 		},
 	}
 	roomIDs := make([]string, len(roomsMap))
