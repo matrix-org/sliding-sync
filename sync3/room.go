@@ -22,7 +22,7 @@ type Room struct {
 	NumLive           int               `json:"num_live,omitempty"`
 }
 
-// RoomConnMetadata represents a room as seen by one specific connection (hence once
+// RoomConnMetadata represents a room as seen by one specific connection (hence one
 // specific device).
 type RoomConnMetadata struct {
 	// We enclose copies of the data kept in the global and user caches. These snapshots
