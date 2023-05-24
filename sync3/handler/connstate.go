@@ -109,8 +109,10 @@ func (s *ConnState) load(ctx context.Context) error {
 		rooms = append(rooms, sync3.RoomConnMetadata{
 			RoomMetadata: *metadata,
 			UserRoomData: urd,
-			// Best-effort only. Not going to be accurate if you've sent
-			// bump_event_types to exclude membership events.
+			// NB: If you've sent bump_event_types to exclude membership events and
+			// there are no interesting messages after your invite event, when you join
+			// this timestamp is going to roll back to the last interesting event before
+			// your invite.
 			LastInterestedEventTimestamp: metadata.LastMessageTimestamp,
 		})
 	}
