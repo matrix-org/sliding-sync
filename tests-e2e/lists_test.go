@@ -859,9 +859,9 @@ func TestMultipleSameList(t *testing.T) {
 
 // NB: assumes bump_event_types is sticky
 func TestBumpEventTypesHandling(t *testing.T) {
-	alice := registerNewUser(t)
-	bob := registerNewUser(t)
-	charlie := registerNewUser(t)
+	alice := registerNamedUser(t, "alice")
+	bob := registerNamedUser(t, "bob")
+	charlie := registerNamedUser(t, "charlie")
 
 	t.Log("Alice creates two rooms")
 	room1 := alice.CreateRoom(
@@ -910,7 +910,7 @@ func TestBumpEventTypesHandling(t *testing.T) {
 	}
 	aliceSyncRequest := sync3.Request{
 		Lists: map[string]sync3.RequestList{
-			"room_list": aliceReqList,
+			"alice_list": aliceReqList,
 		},
 		BumpEventTypes: []string{"m.room.message", "m.room.encrypted"},
 	}
@@ -920,12 +920,13 @@ func TestBumpEventTypesHandling(t *testing.T) {
 	aliceRes := alice.SlidingSync(t, aliceSyncRequest)
 
 	t.Log("Alice's sync response should include room1 ahead of room 2.")
-	matchRoom1ThenRoom2 := m.MatchList("room_list",
+	matchRoom1ThenRoom2 := []m.ListMatcher{
 		m.MatchV3Count(2),
 		m.MatchV3Ops(
 			m.MatchV3SyncOp(0, 1, []string{room1, room2}, false),
-		))
-	m.MatchResponse(t, aliceRes, matchRoom1ThenRoom2)
+		),
+	}
+	m.MatchResponse(t, aliceRes, m.MatchList("alice_list", matchRoom1ThenRoom2...))
 
 	t.Log("Bob requests a sliding sync that bumps rooms on messages and memberships.")
 	bobReqList := sync3.RequestList{
@@ -938,14 +939,14 @@ func TestBumpEventTypesHandling(t *testing.T) {
 	}
 	bobSyncRequest := sync3.Request{
 		Lists: map[string]sync3.RequestList{
-			"room_list": bobReqList,
+			"bob_list": bobReqList,
 		},
 		BumpEventTypes: []string{"m.room.message", "m.room.encrypted", "m.room.member"},
 	}
 	bobRes := bob.SlidingSync(t, bobSyncRequest)
 
 	t.Log("Bob should also see room 1 ahead of room 2 in his sliding sync response.")
-	m.MatchResponse(t, bobRes, matchRoom1ThenRoom2)
+	m.MatchResponse(t, bobRes, m.MatchList("bob_list", matchRoom1ThenRoom2...))
 
 	t.Log("Charlie joins room 2.")
 	charlieJoinEventID := charlie.JoinRoom(t, room2, nil)
@@ -957,7 +958,7 @@ func TestBumpEventTypesHandling(t *testing.T) {
 	m.MatchResponse(
 		t,
 		aliceRes,
-		m.MatchList("room_list", m.MatchV3Count(2)),
+		m.MatchList("alice_list", m.MatchV3Count(2)),
 		m.MatchNoV3Ops(),
 	)
 
@@ -965,7 +966,7 @@ func TestBumpEventTypesHandling(t *testing.T) {
 	bobRes = bob.SlidingSyncUntilMembership(t, bobRes.Pos, room2, charlie, "join")
 
 	t.Log("Bob should see room 2 at the top of his list.")
-	matchBobSeesRoom2Bumped := m.MatchList("room_list",
+	matchBobSeesRoom2Bumped := m.MatchList("bob_list",
 		m.MatchV3Count(2),
 		m.MatchV3Ops(
 			m.MatchV3DeleteOp(1),
