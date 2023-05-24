@@ -83,7 +83,7 @@ func NewConnState(
 //     N events arrive and get buffered.
 //   - load() bases its current state based on the latest position, which includes processing of these N events.
 //   - post load() we read N events, processing them a 2nd time.
-func (s *ConnState) load(ctx context.Context) error {
+func (s *ConnState) load(ctx context.Context, req *sync3.Request) error {
 	initialLoadPosition, joinedRooms, err := s.globalCache.LoadJoinedRooms(ctx, s.userID)
 	if err != nil {
 		return err
@@ -93,32 +93,40 @@ func (s *ConnState) load(ctx context.Context) error {
 	for _, metadata := range joinedRooms {
 		metadata.RemoveHero(s.userID)
 		urd := s.userCache.LoadRoomData(metadata.RoomID)
-		rooms[i] = sync3.RoomConnMetadata{
-			RoomMetadata: *metadata,
-			UserRoomData: urd,
+		timestamps := make(map[string]uint64, len(req.Lists))
+		for listKey, _ := range req.Lists {
 			// Best-effort only: we're not going to scan the database for all events in
 			// the entire room's history to give you a fully accurate timestamp
 			// according to your bump_event_types.
-			LastInterestedEventTimestamp: metadata.LastMessageTimestamp,
+			timestamps[listKey] = metadata.LastMessageTimestamp
+		}
+		rooms[i] = sync3.RoomConnMetadata{
+			RoomMetadata:                  *metadata,
+			UserRoomData:                  urd,
+			LastInterestedEventTimestamps: timestamps,
 		}
 		i++
 	}
 	invites := s.userCache.Invites()
 	for _, urd := range invites {
 		metadata := urd.Invite.RoomMetadata()
-		rooms = append(rooms, sync3.RoomConnMetadata{
-			RoomMetadata: *metadata,
-			UserRoomData: urd,
-			// NB: If you've sent bump_event_types to exclude membership events and
+		timestamps := make(map[string]uint64, len(req.Lists))
+		for listKey, _ := range req.Lists {
+			// NB: If you've set bump_event_types to exclude membership events and
 			// there are no interesting messages after your invite event, when you join
 			// this timestamp is going to roll back to the last interesting event before
 			// your invite.
-			LastInterestedEventTimestamp: metadata.LastMessageTimestamp,
+			timestamps[listKey] = metadata.LastMessageTimestamp
+		}
+		rooms = append(rooms, sync3.RoomConnMetadata{
+			RoomMetadata:                  *metadata,
+			UserRoomData:                  urd,
+			LastInterestedEventTimestamps: timestamps,
 		})
 	}
 
 	for _, r := range rooms {
-		s.lists.SetRoom(r, true)
+		s.lists.SetRoom(r)
 	}
 	s.loadPosition = initialLoadPosition
 	return nil
@@ -129,7 +137,7 @@ func (s *ConnState) OnIncomingRequest(ctx context.Context, cid sync3.ConnID, req
 	if s.loadPosition == -1 {
 		// load() needs no ctx so drop it
 		_, region := internal.StartSpan(ctx, "load")
-		s.load(ctx)
+		s.load(ctx, req)
 		region.End()
 	}
 	return s.onIncomingRequest(ctx, req, isInitial)

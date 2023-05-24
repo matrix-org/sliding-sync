@@ -256,29 +256,35 @@ func (s *connStateLive) processUpdatesForSubscriptions(ctx context.Context, buil
 
 // this function does any updates which apply to the connection, regardless of which lists/subs exist.
 func (s *connStateLive) processGlobalUpdates(ctx context.Context, builder *RoomsBuilder, up caches.Update) (delta sync3.RoomDelta) {
-	// If this connection hasn't provided BumpEventTypes (nil) or has provided an
-	// empty BumpEventTypes list, bump the room list for all room updates.
-	specifiedBumpEventTypes := s.muxedReq.BumpEventTypes != nil && len(s.muxedReq.BumpEventTypes) > 0
-	bumpThisRoom := !specifiedBumpEventTypes
-
 	roomEventUpdate, isRoomEventUpdate := up.(*caches.RoomEventUpdate)
-	// If BumpEventTypes are provided, only bump the room if the we see an event
-	// matching one of the bump types.
-	if isRoomEventUpdate && specifiedBumpEventTypes {
-		for _, eventType := range s.muxedReq.BumpEventTypes {
-			if eventType == roomEventUpdate.EventData.EventType {
-				bumpThisRoom = true
-				break
-			}
-		}
-	}
 
+	bumpTimestampInList := make(map[string]uint64, len(s.muxedReq.Lists))
 	rup, isRoomUpdate := up.(caches.RoomUpdate)
 	if isRoomUpdate {
+		updateTimestamp := rup.GlobalRoomMetadata().LastMessageTimestamp
+		for listKey, list := range s.muxedReq.Lists {
+			specifiedBumpEventTypes := list.BumpEventTypes != nil && len(list.BumpEventTypes) > 0
+			if !specifiedBumpEventTypes {
+				// If this list hasn't provided BumpEventTypes (nil) or has provided an
+				// empty BumpEventTypes list, bump the room list for all room updates.
+				bumpTimestampInList[listKey] = updateTimestamp
+			} else if isRoomEventUpdate {
+				// If BumpEventTypes are provided, only bump the room if we see an event
+				// matching one of the bump types.
+				for _, eventType := range list.BumpEventTypes {
+					if eventType == roomEventUpdate.EventData.EventType {
+						bumpTimestampInList[listKey] = updateTimestamp
+						break
+					}
+				}
+			}
+		}
+
 		delta = s.lists.SetRoom(sync3.RoomConnMetadata{
-			RoomMetadata: *rup.GlobalRoomMetadata(),
-			UserRoomData: *rup.UserRoomMetadata(),
-		}, bumpThisRoom)
+			RoomMetadata:                  *rup.GlobalRoomMetadata(),
+			UserRoomData:                  *rup.UserRoomMetadata(),
+			LastInterestedEventTimestamps: bumpTimestampInList,
+		})
 	}
 
 	if isRoomEventUpdate {

@@ -33,10 +33,13 @@ type RoomConnMetadata struct {
 	caches.UserRoomData
 	// plus any per-conn data.
 
-	// LastInterestedEventTimestamp is the origin_server_ts of the most recent event
-	// seen in the room that this connection is interested in. Connections can specify
-	// that they are only in certain event types by providing "bump_event_types" in
-	// their sliding sync request.
+	// LastInterestedEventTimestamps is a map from list names to the origin_server_ts of
+	// the most recent event seen in the room that the list is interested in.
+	// Connections can specify that a list is only interested in certain event types by
+	// providing "bump_event_types" in their sliding sync request. This happens on a
+	// list-by-list basis. Because the same room can appear in different lists with
+	// different bump criteria, we need to track a LastInterestedEventTimestamp for each
+	// list.
 	//
 	// While this conceptually tracks the internal.RoomMetadata.LastMessageTimestamp
 	// field, said field can decrease rapidly at any moment---so
@@ -44,5 +47,5 @@ type RoomConnMetadata struct {
 	// recency, this means rooms can suddenly fall down and jump back up the room
 	// list. See also the description of this in the React SDK docs:
 	//     https://github.com/matrix-org/matrix-react-sdk/blob/526645c79160ab1ad4b4c3845de27d51263a405e/docs/room-list-store.md#tag-sorting-algorithm-recent
-	LastInterestedEventTimestamp uint64
+	LastInterestedEventTimestamps map[string]uint64
 }

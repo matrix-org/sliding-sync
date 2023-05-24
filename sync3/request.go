@@ -30,7 +30,6 @@ type Request struct {
 	TxnID             string                      `json:"txn_id"`
 	ConnID            string                      `json:"conn_id"`
 	Lists             map[string]RequestList      `json:"lists"`
-	BumpEventTypes    []string                    `json:"bump_event_types"`
 	RoomSubscriptions map[string]RoomSubscription `json:"room_subscriptions"`
 	UnsubscribeRooms  []string                    `json:"unsubscribe_rooms"`
 	Extensions        extensions.Request          `json:"extensions"`
@@ -57,6 +56,7 @@ type RequestList struct {
 	Filters         *RequestFilters `json:"filters"`
 	SlowGetAllRooms *bool           `json:"slow_get_all_rooms,omitempty"`
 	Deleted         bool            `json:"deleted,omitempty"`
+	BumpEventTypes  []string        `json:"bump_event_types"`
 }
 
 func (rl *RequestList) ShouldGetAllRooms() bool {
@@ -381,6 +381,10 @@ func (r *Request) ApplyDelta(nextReq *Request) (result *Request, delta *RequestD
 		if filters == nil {
 			filters = existingList.Filters
 		}
+		bumpEventTypes := nextList.BumpEventTypes
+		if bumpEventTypes == nil {
+			bumpEventTypes = existingList.BumpEventTypes
+		}
 
 		calculatedLists[listKey] = RequestList{
 			RoomSubscription: RoomSubscription{
@@ -392,6 +396,7 @@ func (r *Request) ApplyDelta(nextReq *Request) (result *Request, delta *RequestD
 			Sort:            sort,
 			Filters:         filters,
 			SlowGetAllRooms: slowGetAllRooms,
+			BumpEventTypes:  bumpEventTypes,
 		}
 	}
 	result.Lists = calculatedLists
@@ -453,12 +458,6 @@ func (r *Request) ApplyDelta(nextReq *Request) (result *Request, delta *RequestD
 		delta.Subs = append(delta.Subs, roomID)
 	}
 	result.RoomSubscriptions = resultSubs
-
-	// Make bump_event_types sticky.
-	result.BumpEventTypes = nextReq.BumpEventTypes
-	if result.BumpEventTypes == nil {
-		result.BumpEventTypes = r.BumpEventTypes
-	}
 
 	return
 }
