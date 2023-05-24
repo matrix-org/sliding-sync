@@ -49,3 +49,19 @@ type RoomConnMetadata struct {
 	//     https://github.com/matrix-org/matrix-react-sdk/blob/526645c79160ab1ad4b4c3845de27d51263a405e/docs/room-list-store.md#tag-sorting-algorithm-recent
 	LastInterestedEventTimestamps map[string]uint64
 }
+
+func (r *RoomConnMetadata) GetLastInterestedEventTimestamp(listKey string) uint64 {
+	ts, ok := r.LastInterestedEventTimestamps[listKey]
+	if !ok {
+		// SetRoom is responsible for maintaining LastInterestedEventTimestamps.
+		// However, if a brand-new list appears and we don't call SetRoom, we need to
+		// ensure we hand back a sensible timestamp. So: use the (current)
+		// LastMessageTimestamp as a fallback.
+		ts = r.LastMessageTimestamp
+		// Write this value into the map. If we don't and only uninteresting events
+		// arrive after, the fallback value will have jumped ahead despite nothing of
+		// interest happening.
+		r.LastInterestedEventTimestamps[listKey] = ts
+	}
+	return ts
+}
