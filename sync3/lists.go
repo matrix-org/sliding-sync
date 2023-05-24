@@ -194,7 +194,7 @@ func (s *InternalRequestLists) AssignList(ctx context.Context, listKey string, f
 		i++
 	}
 
-	roomList := NewFilteredSortableRooms(s, roomIDs, filters)
+	roomList := NewFilteredSortableRooms(s, listKey, roomIDs, filters)
 	if sort != nil {
 		err := roomList.Sort(sort)
 		if err != nil {

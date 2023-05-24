@@ -15,14 +15,16 @@ type RoomFinder interface {
 // room IDs to current index positions after sorting.
 type SortableRooms struct {
 	finder        RoomFinder
+	listKey       string
 	roomIDs       []string
 	roomIDToIndex map[string]int // room_id -> index in rooms
 }
 
-func NewSortableRooms(finder RoomFinder, rooms []string) *SortableRooms {
+func NewSortableRooms(finder RoomFinder, listKey string, rooms []string) *SortableRooms {
 	return &SortableRooms{
 		roomIDs:       rooms,
 		finder:        finder,
+		listKey:       listKey,
 		roomIDToIndex: make(map[string]int),
 	}
 }
@@ -216,7 +218,7 @@ type FilteredSortableRooms struct {
 	filter *RequestFilters
 }
 
-func NewFilteredSortableRooms(finder RoomFinder, roomIDs []string, filter *RequestFilters) *FilteredSortableRooms {
+func NewFilteredSortableRooms(finder RoomFinder, listKey string, roomIDs []string, filter *RequestFilters) *FilteredSortableRooms {
 	var filteredRooms []string
 	if filter == nil {
 		filter = &RequestFilters{}
@@ -228,7 +230,7 @@ func NewFilteredSortableRooms(finder RoomFinder, roomIDs []string, filter *Reque
 		}
 	}
 	return &FilteredSortableRooms{
-		SortableRooms: NewSortableRooms(finder, filteredRooms),
+		SortableRooms: NewSortableRooms(finder, listKey, filteredRooms),
 		filter:        filter,
 	}
 }
