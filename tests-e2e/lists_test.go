@@ -907,12 +907,12 @@ func TestBumpEventTypesHandling(t *testing.T) {
 			RequiredState: [][2]string{{"m.room.avatar", ""}, {"m.room.encryption", ""}},
 			TimelineLimit: 10,
 		},
+		BumpEventTypes: []string{"m.room.message", "m.room.encrypted"},
 	}
 	aliceSyncRequest := sync3.Request{
 		Lists: map[string]sync3.RequestList{
 			"alice_list": aliceReqList,
 		},
-		BumpEventTypes: []string{"m.room.message", "m.room.encrypted"},
 	}
 	// This sync should include both of Bob's messages. The proxy will make an initial
 	// V2 sync to the HS, which should include the latest event in both rooms.
@@ -936,12 +936,12 @@ func TestBumpEventTypesHandling(t *testing.T) {
 			RequiredState: [][2]string{{"m.room.avatar", ""}, {"m.room.encryption", ""}},
 			TimelineLimit: 10,
 		},
+		BumpEventTypes: []string{"m.room.message", "m.room.encrypted", "m.room.member"},
 	}
 	bobSyncRequest := sync3.Request{
 		Lists: map[string]sync3.RequestList{
 			"bob_list": bobReqList,
 		},
-		BumpEventTypes: []string{"m.room.message", "m.room.encrypted", "m.room.member"},
 	}
 	bobRes := bob.SlidingSync(t, bobSyncRequest)
 

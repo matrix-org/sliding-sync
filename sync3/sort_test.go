@@ -32,6 +32,7 @@ func newFinder(rooms []*RoomConnMetadata) finder {
 }
 
 func TestSortBySingleOperation(t *testing.T) {
+	const listKey = "my_list"
 	room1 := "!1:localhost"
 	room2 := "!2:localhost"
 	room3 := "!3:localhost"
@@ -46,7 +47,7 @@ func TestSortBySingleOperation(t *testing.T) {
 				NotificationCount: 12,
 				CanonicalisedName: "foo",
 			},
-			LastInterestedEventTimestamp: 600,
+			LastInterestedEventTimestamps: map[string]uint64{listKey: 600},
 		},
 		{
 			RoomMetadata: internal.RoomMetadata{
@@ -57,7 +58,7 @@ func TestSortBySingleOperation(t *testing.T) {
 				NotificationCount: 3,
 				CanonicalisedName: "koo",
 			},
-			LastInterestedEventTimestamp: 700,
+			LastInterestedEventTimestamps: map[string]uint64{listKey: 700},
 		},
 		{
 			RoomMetadata: internal.RoomMetadata{
@@ -68,7 +69,7 @@ func TestSortBySingleOperation(t *testing.T) {
 				NotificationCount: 7,
 				CanonicalisedName: "yoo",
 			},
-			LastInterestedEventTimestamp: 900,
+			LastInterestedEventTimestamps: map[string]uint64{listKey: 900},
 		},
 		{
 			RoomMetadata: internal.RoomMetadata{
@@ -79,7 +80,7 @@ func TestSortBySingleOperation(t *testing.T) {
 				NotificationCount: 1,
 				CanonicalisedName: "boo",
 			},
-			LastInterestedEventTimestamp: 800,
+			LastInterestedEventTimestamps: map[string]uint64{listKey: 800},
 		},
 	}
 	// name: 4,1,2,3
@@ -95,7 +96,7 @@ func TestSortBySingleOperation(t *testing.T) {
 		SortByNotificationLevel + " " + SortByRecency: {room3, room4, room1, room2},
 	}
 	f := newFinder(rooms)
-	sr := NewSortableRooms(f, f.roomIDs)
+	sr := NewSortableRooms(f, listKey, f.roomIDs)
 	for sortBy, wantOrder := range wantMap {
 		sr.Sort(strings.Split(sortBy, " "))
 		var gotRoomIDs []string
@@ -111,6 +112,7 @@ func TestSortBySingleOperation(t *testing.T) {
 }
 
 func TestSortByMultipleOperations(t *testing.T) {
+	const listKey = "my_list"
 	room1 := "!1:localhost"
 	room2 := "!2:localhost"
 	room3 := "!3:localhost"
@@ -125,7 +127,7 @@ func TestSortByMultipleOperations(t *testing.T) {
 				NotificationCount: 1,
 				CanonicalisedName: "foo",
 			},
-			LastInterestedEventTimestamp: 600,
+			LastInterestedEventTimestamps: map[string]uint64{listKey: 600},
 		},
 		{
 			RoomMetadata: internal.RoomMetadata{
@@ -136,7 +138,7 @@ func TestSortByMultipleOperations(t *testing.T) {
 				NotificationCount: 5,
 				CanonicalisedName: "koo",
 			},
-			LastInterestedEventTimestamp: 700,
+			LastInterestedEventTimestamps: map[string]uint64{listKey: 700},
 		},
 		{
 			RoomMetadata: internal.RoomMetadata{
@@ -147,7 +149,7 @@ func TestSortByMultipleOperations(t *testing.T) {
 				NotificationCount: 0,
 				CanonicalisedName: "yoo",
 			},
-			LastInterestedEventTimestamp: 800,
+			LastInterestedEventTimestamps: map[string]uint64{listKey: 800},
 		},
 		{
 			RoomMetadata: internal.RoomMetadata{
@@ -158,7 +160,7 @@ func TestSortByMultipleOperations(t *testing.T) {
 				NotificationCount: 0,
 				CanonicalisedName: "boo",
 			},
-			LastInterestedEventTimestamp: 900,
+			LastInterestedEventTimestamps: map[string]uint64{listKey: 900},
 		},
 	}
 	testCases := []struct {
@@ -183,7 +185,7 @@ func TestSortByMultipleOperations(t *testing.T) {
 		},
 	}
 	f := newFinder(rooms)
-	sr := NewSortableRooms(f, f.roomIDs)
+	sr := NewSortableRooms(f, listKey, f.roomIDs)
 	for _, tc := range testCases {
 		sr.Sort(tc.SortBy)
 		var gotRoomIDs []string
@@ -200,6 +202,7 @@ func TestSortByMultipleOperations(t *testing.T) {
 
 // Test that if you remove a room, it updates the lookup map.
 func TestSortableRoomsRemove(t *testing.T) {
+	const listKey = "my_list"
 	room1 := "!1:localhost"
 	room2 := "!2:localhost"
 	rooms := []*RoomConnMetadata{
@@ -212,7 +215,7 @@ func TestSortableRoomsRemove(t *testing.T) {
 				NotificationCount: 1,
 				CanonicalisedName: "foo",
 			},
-			LastInterestedEventTimestamp: 700,
+			LastInterestedEventTimestamps: map[string]uint64{listKey: 700},
 		},
 		{
 			RoomMetadata: internal.RoomMetadata{
@@ -223,11 +226,11 @@ func TestSortableRoomsRemove(t *testing.T) {
 				NotificationCount: 2,
 				CanonicalisedName: "foo2",
 			},
-			LastInterestedEventTimestamp: 600,
+			LastInterestedEventTimestamps: map[string]uint64{listKey: 600},
 		},
 	}
 	f := newFinder(rooms)
-	sr := NewSortableRooms(f, f.roomIDs)
+	sr := NewSortableRooms(f, listKey, f.roomIDs)
 	if err := sr.Sort([]string{SortByRecency}); err != nil { // room 1 is first, then room 2
 		t.Fatalf("Sort: %s", err)
 	}
@@ -253,6 +256,7 @@ func TestSortableRoomsRemove(t *testing.T) {
 
 // dedicated test as it relies on multiple fields
 func TestSortByNotificationLevel(t *testing.T) {
+	const listKey = "my_list"
 	// create the full set of possible sort variables, most recent message last
 	roomUnencHC := "!unencrypted-highlight-count:localhost"
 	roomUnencHCNC := "!unencrypted-highlight-and-notif-count:localhost"
@@ -271,7 +275,7 @@ func TestSortByNotificationLevel(t *testing.T) {
 				HighlightCount:    1,
 				NotificationCount: 0,
 			},
-			LastInterestedEventTimestamp: 1,
+			LastInterestedEventTimestamps: map[string]uint64{listKey: 1},
 		},
 		roomUnencHCNC: {
 			RoomMetadata: internal.RoomMetadata{
@@ -281,7 +285,7 @@ func TestSortByNotificationLevel(t *testing.T) {
 				HighlightCount:    1,
 				NotificationCount: 1,
 			},
-			LastInterestedEventTimestamp: 2,
+			LastInterestedEventTimestamps: map[string]uint64{listKey: 2},
 		},
 		roomUnencNC: {
 			RoomMetadata: internal.RoomMetadata{
@@ -291,7 +295,7 @@ func TestSortByNotificationLevel(t *testing.T) {
 				HighlightCount:    0,
 				NotificationCount: 1,
 			},
-			LastInterestedEventTimestamp: 3,
+			LastInterestedEventTimestamps: map[string]uint64{listKey: 3},
 		},
 		roomUnenc: {
 			RoomMetadata: internal.RoomMetadata{
@@ -301,7 +305,7 @@ func TestSortByNotificationLevel(t *testing.T) {
 				HighlightCount:    0,
 				NotificationCount: 0,
 			},
-			LastInterestedEventTimestamp: 4,
+			LastInterestedEventTimestamps: map[string]uint64{listKey: 4},
 		},
 		roomEncHC: {
 			RoomMetadata: internal.RoomMetadata{
@@ -311,7 +315,7 @@ func TestSortByNotificationLevel(t *testing.T) {
 				HighlightCount:    1,
 				NotificationCount: 0,
 			},
-			LastInterestedEventTimestamp: 5,
+			LastInterestedEventTimestamps: map[string]uint64{listKey: 5},
 		},
 		roomEncHCNC: {
 			RoomMetadata: internal.RoomMetadata{
@@ -321,7 +325,7 @@ func TestSortByNotificationLevel(t *testing.T) {
 				HighlightCount:    1,
 				NotificationCount: 1,
 			},
-			LastInterestedEventTimestamp: 6,
+			LastInterestedEventTimestamps: map[string]uint64{listKey: 6},
 		},
 		roomEncNC: {
 			RoomMetadata: internal.RoomMetadata{
@@ -332,7 +336,7 @@ func TestSortByNotificationLevel(t *testing.T) {
 				HighlightCount:    0,
 				NotificationCount: 1,
 			},
-			LastInterestedEventTimestamp: 7,
+			LastInterestedEventTimestamps: map[string]uint64{listKey: 7},
 		},
 		roomEnc: {
 			RoomMetadata: internal.RoomMetadata{
@@ -343,7 +347,7 @@ func TestSortByNotificationLevel(t *testing.T) {
 				HighlightCount:    0,
 				NotificationCount: 0,
 			},
-			LastInterestedEventTimestamp: 8,
+			LastInterestedEventTimestamps: map[string]uint64{listKey: 8},
 		},
 	}
 	roomIDs := make([]string, len(roomsMap))
@@ -357,7 +361,7 @@ func TestSortByNotificationLevel(t *testing.T) {
 	}
 	t.Logf("%v", roomIDs)
 	f := newFinder(rooms)
-	sr := NewSortableRooms(f, roomIDs)
+	sr := NewSortableRooms(f, listKey, roomIDs)
 	if err := sr.Sort([]string{SortByNotificationLevel, SortByRecency}); err != nil {
 		t.Fatalf("Sort: %s", err)
 	}
