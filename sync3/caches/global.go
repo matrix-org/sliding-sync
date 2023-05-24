@@ -314,8 +314,7 @@ func (c *GlobalCache) OnNewEvent(
 			}
 		}
 	}
-	if ed.Timestamp > metadata.LastMessageTimestamp {
-		metadata.LastMessageTimestamp = ed.Timestamp
-	}
+	// Note: this means the LastMessageTimestamp can _decrease_; it is not monotonic.
+	metadata.LastMessageTimestamp = ed.Timestamp
 	c.roomIDToMetadata[ed.RoomID] = metadata
 }
