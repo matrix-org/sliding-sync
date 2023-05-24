@@ -145,10 +145,10 @@ func (s *SortableRooms) comparatorSortByName(i, j int) int {
 
 func (s *SortableRooms) comparatorSortByRecency(i, j int) int {
 	ri, rj := s.resolveRooms(i, j)
-	if ri.LastMessageTimestamp == rj.LastMessageTimestamp {
+	if ri.LastInterestedEventTimestamp == rj.LastInterestedEventTimestamp {
 		return 0
 	}
-	if ri.LastMessageTimestamp > rj.LastMessageTimestamp {
+	if ri.LastInterestedEventTimestamp > rj.LastInterestedEventTimestamp {
 		return 1
 	}
 	return -1

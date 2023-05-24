@@ -314,6 +314,7 @@ func (c *GlobalCache) OnNewEvent(
 			}
 		}
 	}
+	// Note: this means the LastMessageTimestamp can _decrease_; it is not monotonic.
 	metadata.LastMessageTimestamp = ed.Timestamp
 	c.roomIDToMetadata[ed.RoomID] = metadata
 }

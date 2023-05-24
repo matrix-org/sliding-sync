@@ -96,6 +96,10 @@ func (s *ConnState) load(ctx context.Context) error {
 		rooms[i] = sync3.RoomConnMetadata{
 			RoomMetadata: *metadata,
 			UserRoomData: urd,
+			// Best-effort only: we're not going to scan the database for all events in
+			// the entire room's history to give you a fully accurate timestamp
+			// according to your bump_event_types.
+			LastInterestedEventTimestamp: metadata.LastMessageTimestamp,
 		}
 		i++
 	}
@@ -105,6 +109,11 @@ func (s *ConnState) load(ctx context.Context) error {
 		rooms = append(rooms, sync3.RoomConnMetadata{
 			RoomMetadata: *metadata,
 			UserRoomData: urd,
+			// NB: If you've sent bump_event_types to exclude membership events and
+			// there are no interesting messages after your invite event, when you join
+			// this timestamp is going to roll back to the last interesting event before
+			// your invite.
+			LastInterestedEventTimestamp: metadata.LastMessageTimestamp,
 		})
 	}
 

@@ -6,14 +6,25 @@ import (
 	"strings"
 )
 
-// Metadata about a room that is consistent between all users in the room.
+// RoomMetadata holds room-scoped data. It is primarily used in two places:
+//   - in the caches.GlobalCache, to hold the latest version of data that is consistent
+//     between all users in the room; and
+//   - in the sync3.RoomConnMetadata struct, to hold the version of data last seen by
+//     a given user sync connection.
+//
+// Roughly speaking, the sync3.RoomConnMetadata is constantly catching up with changes
+// in the caches.GlobalCache.
 type RoomMetadata struct {
-	RoomID               string
-	Heroes               []Hero
-	NameEvent            string // the content of m.room.name, NOT the calculated name
-	CanonicalAlias       string
-	JoinCount            int
-	InviteCount          int
+	RoomID         string
+	Heroes         []Hero
+	NameEvent      string // the content of m.room.name, NOT the calculated name
+	CanonicalAlias string
+	JoinCount      int
+	InviteCount    int
+	// LastMessageTimestamp is the origin_server_ts of the event most recently seen in
+	// this room. Because events arrive at the upstream homeserver out-of-order (and
+	// because origin_server_ts is an untrusted event field), this timestamp can
+	// _decrease_ as new events come in.
 	LastMessageTimestamp uint64
 	Encrypted            bool
 	PredecessorRoomID    *string

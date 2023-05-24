@@ -74,16 +74,20 @@ func (s *InternalRequestLists) SetRoom(r RoomConnMetadata, replacePreviousTimest
 			)
 		}
 
-		// Don't bump this room in the room list if the update isn't of interest to
-		// the client.
-		if !replacePreviousTimestamp {
-			r.LastMessageTimestamp = existing.LastMessageTimestamp
+		// Only bump this room in the room list if the update is of interest to the
+		// client.
+		if replacePreviousTimestamp {
+			r.LastInterestedEventTimestamp = r.LastMessageTimestamp
+		} else {
+			r.LastInterestedEventTimestamp = existing.LastInterestedEventTimestamp
 		}
 	} else {
 		// set the canonical name to allow room name sorting to work
 		r.CanonicalisedName = strings.ToLower(
 			strings.Trim(internal.CalculateRoomName(&r.RoomMetadata, 5), "#!():_@"),
 		)
+		// Also set a lastActivityTimestamp so recency sorting works.
+		r.LastInterestedEventTimestamp = r.LastMessageTimestamp
 	}
 	// filter.Include may call on this room ID in the RoomFinder, so make sure it finds it.
 	s.allRooms[r.RoomID] = &r
