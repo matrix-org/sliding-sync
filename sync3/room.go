@@ -33,8 +33,8 @@ type RoomConnMetadata struct {
 	caches.UserRoomData
 	// plus any per-conn data.
 
-	// LastActivityTimestamp is the largest origin_server_ts of events seen in the room
+	// LastInterestedEventTimestamp is the largest origin_server_ts of events seen in the room
 	// that this connection is interested in. It should be less than or equal to
 	// internal.RoomMetadata.LastMessageTimestamp.
-	LastActivityTimestamp uint64
+	LastInterestedEventTimestamp uint64
 }

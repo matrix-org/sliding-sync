@@ -46,7 +46,7 @@ func TestSortBySingleOperation(t *testing.T) {
 				NotificationCount: 12,
 				CanonicalisedName: "foo",
 			},
-			LastActivityTimestamp: 600,
+			LastInterestedEventTimestamp: 600,
 		},
 		{
 			RoomMetadata: internal.RoomMetadata{
@@ -57,7 +57,7 @@ func TestSortBySingleOperation(t *testing.T) {
 				NotificationCount: 3,
 				CanonicalisedName: "koo",
 			},
-			LastActivityTimestamp: 700,
+			LastInterestedEventTimestamp: 700,
 		},
 		{
 			RoomMetadata: internal.RoomMetadata{
@@ -68,7 +68,7 @@ func TestSortBySingleOperation(t *testing.T) {
 				NotificationCount: 7,
 				CanonicalisedName: "yoo",
 			},
-			LastActivityTimestamp: 900,
+			LastInterestedEventTimestamp: 900,
 		},
 		{
 			RoomMetadata: internal.RoomMetadata{
@@ -79,7 +79,7 @@ func TestSortBySingleOperation(t *testing.T) {
 				NotificationCount: 1,
 				CanonicalisedName: "boo",
 			},
-			LastActivityTimestamp: 800,
+			LastInterestedEventTimestamp: 800,
 		},
 	}
 	// name: 4,1,2,3
@@ -125,7 +125,7 @@ func TestSortByMultipleOperations(t *testing.T) {
 				NotificationCount: 1,
 				CanonicalisedName: "foo",
 			},
-			LastActivityTimestamp: 600,
+			LastInterestedEventTimestamp: 600,
 		},
 		{
 			RoomMetadata: internal.RoomMetadata{
@@ -136,7 +136,7 @@ func TestSortByMultipleOperations(t *testing.T) {
 				NotificationCount: 5,
 				CanonicalisedName: "koo",
 			},
-			LastActivityTimestamp: 700,
+			LastInterestedEventTimestamp: 700,
 		},
 		{
 			RoomMetadata: internal.RoomMetadata{
@@ -147,7 +147,7 @@ func TestSortByMultipleOperations(t *testing.T) {
 				NotificationCount: 0,
 				CanonicalisedName: "yoo",
 			},
-			LastActivityTimestamp: 800,
+			LastInterestedEventTimestamp: 800,
 		},
 		{
 			RoomMetadata: internal.RoomMetadata{
@@ -158,7 +158,7 @@ func TestSortByMultipleOperations(t *testing.T) {
 				NotificationCount: 0,
 				CanonicalisedName: "boo",
 			},
-			LastActivityTimestamp: 900,
+			LastInterestedEventTimestamp: 900,
 		},
 	}
 	testCases := []struct {
@@ -212,7 +212,7 @@ func TestSortableRoomsRemove(t *testing.T) {
 				NotificationCount: 1,
 				CanonicalisedName: "foo",
 			},
-			LastActivityTimestamp: 700,
+			LastInterestedEventTimestamp: 700,
 		},
 		{
 			RoomMetadata: internal.RoomMetadata{
@@ -223,7 +223,7 @@ func TestSortableRoomsRemove(t *testing.T) {
 				NotificationCount: 2,
 				CanonicalisedName: "foo2",
 			},
-			LastActivityTimestamp: 600,
+			LastInterestedEventTimestamp: 600,
 		},
 	}
 	f := newFinder(rooms)
@@ -271,7 +271,7 @@ func TestSortByNotificationLevel(t *testing.T) {
 				HighlightCount:    1,
 				NotificationCount: 0,
 			},
-			LastActivityTimestamp: 1,
+			LastInterestedEventTimestamp: 1,
 		},
 		roomUnencHCNC: {
 			RoomMetadata: internal.RoomMetadata{
@@ -281,7 +281,7 @@ func TestSortByNotificationLevel(t *testing.T) {
 				HighlightCount:    1,
 				NotificationCount: 1,
 			},
-			LastActivityTimestamp: 2,
+			LastInterestedEventTimestamp: 2,
 		},
 		roomUnencNC: {
 			RoomMetadata: internal.RoomMetadata{
@@ -291,7 +291,7 @@ func TestSortByNotificationLevel(t *testing.T) {
 				HighlightCount:    0,
 				NotificationCount: 1,
 			},
-			LastActivityTimestamp: 3,
+			LastInterestedEventTimestamp: 3,
 		},
 		roomUnenc: {
 			RoomMetadata: internal.RoomMetadata{
@@ -301,7 +301,7 @@ func TestSortByNotificationLevel(t *testing.T) {
 				HighlightCount:    0,
 				NotificationCount: 0,
 			},
-			LastActivityTimestamp: 4,
+			LastInterestedEventTimestamp: 4,
 		},
 		roomEncHC: {
 			RoomMetadata: internal.RoomMetadata{
@@ -311,7 +311,7 @@ func TestSortByNotificationLevel(t *testing.T) {
 				HighlightCount:    1,
 				NotificationCount: 0,
 			},
-			LastActivityTimestamp: 5,
+			LastInterestedEventTimestamp: 5,
 		},
 		roomEncHCNC: {
 			RoomMetadata: internal.RoomMetadata{
@@ -321,7 +321,7 @@ func TestSortByNotificationLevel(t *testing.T) {
 				HighlightCount:    1,
 				NotificationCount: 1,
 			},
-			LastActivityTimestamp: 6,
+			LastInterestedEventTimestamp: 6,
 		},
 		roomEncNC: {
 			RoomMetadata: internal.RoomMetadata{
@@ -332,7 +332,7 @@ func TestSortByNotificationLevel(t *testing.T) {
 				HighlightCount:    0,
 				NotificationCount: 1,
 			},
-			LastActivityTimestamp: 7,
+			LastInterestedEventTimestamp: 7,
 		},
 		roomEnc: {
 			RoomMetadata: internal.RoomMetadata{
@@ -343,7 +343,7 @@ func TestSortByNotificationLevel(t *testing.T) {
 				HighlightCount:    0,
 				NotificationCount: 0,
 			},
-			LastActivityTimestamp: 8,
+			LastInterestedEventTimestamp: 8,
 		},
 	}
 	roomIDs := make([]string, len(roomsMap))
