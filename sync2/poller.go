@@ -535,7 +535,7 @@ func (p *poller) parseRoomsResponse(res *SyncResponse) {
 				const warnMsg = "parseRoomsResponse: prepending state events to timeline after gappy poll"
 				logger.Warn().Str("room_id", roomID).Int("prependStateEvents", len(prependStateEvents)).Msg(warnMsg)
 				sentry.WithScope(func(scope *sentry.Scope) {
-					scope.SetContext("sliding-sync", map[string]interface{}{
+					scope.SetContext(internal.SentryCtxKey, map[string]interface{}{
 						"room_id":                  roomID,
 						"num_prepend_state_events": len(prependStateEvents),
 					})
