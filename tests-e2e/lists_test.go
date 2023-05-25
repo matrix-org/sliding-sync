@@ -3,6 +3,7 @@ package syncv3_test
 import (
 	"fmt"
 	"github.com/matrix-org/sliding-sync/sync3/extensions"
+	"github.com/tidwall/gjson"
 	"sync"
 	"testing"
 	"time"
@@ -948,7 +949,7 @@ func TestBumpEventTypesHandling(t *testing.T) {
 	m.MatchResponse(t, bobRes, matchRoom1ThenRoom2)
 
 	t.Log("Charlie joins room 2.")
-	charlieJoinEventID := charlie.JoinRoom(t, room2, nil)
+	charlie.JoinRoom(t, room2, nil)
 
 	t.Log("Alice syncs until she sees Charlie's membership.")
 	aliceRes = alice.SlidingSyncUntilMembership(t, aliceRes.Pos, room2, charlie, "join")
@@ -977,8 +978,14 @@ func TestBumpEventTypesHandling(t *testing.T) {
 
 	// The read receipt stuff here specifically checks for the bug in
 	// https://github.com/matrix-org/sliding-sync/issues/83
+	aliceRoom2Timeline := aliceRes.Rooms[room2].Timeline
+	aliceLastSeenEvent := aliceRoom2Timeline[len(aliceRoom2Timeline)-1]
+	aliceLastSeenEventID := gjson.ParseBytes(aliceLastSeenEvent).Get("event_id").Str
+	if aliceLastSeenEventID == "" {
+		t.Error("Could not find event ID for the last event in Alice's timeline.")
+	}
 	t.Log("Alice marks herself as having seen Charlie's join.")
-	alice.SendReceipt(t, room2, charlieJoinEventID, "m.read")
+	alice.SendReceipt(t, room2, aliceLastSeenEventID, "m.read")
 
 	t.Log("Alice syncs until she sees her receipt. At no point should see see any room list operations.")
 	alice.SlidingSyncUntil(
@@ -994,7 +1001,7 @@ func TestBumpEventTypesHandling(t *testing.T) {
 				t.Fatalf("expected no ops while waiting for receipt: %s", err)
 			}
 			matchReceipt := m.MatchReceipts(room2, []m.Receipt{{
-				EventID: charlieJoinEventID,
+				EventID: aliceLastSeenEventID,
 				UserID:  alice.UserID,
 				Type:    "m.read",
 			}})
