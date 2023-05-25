@@ -98,8 +98,6 @@ func (c *Conn) tryRequest(ctx context.Context, req *Request) (res *Response, err
 			// I'm guessing that Sentry will use the former to display panicErr as
 			// having come from a panic.
 			internal.GetSentryHubFromContextOrDefault(ctx).RecoverWithContext(ctx, panicErr)
-		} else if err != nil {
-			internal.GetSentryHubFromContextOrDefault(ctx).CaptureException(err)
 		}
 	}()
 	taskType := "OnIncomingRequest"
