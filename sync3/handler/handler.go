@@ -183,7 +183,7 @@ func (h *SyncLiveHandler) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 // Entry point for sync v3
 func (h *SyncLiveHandler) serve(w http.ResponseWriter, req *http.Request) error {
 	var requestBody sync3.Request
-	if req.Body != nil {
+	if req.ContentLength != 0 {
 		defer req.Body.Close()
 		if err := json.NewDecoder(req.Body).Decode(&requestBody); err != nil {
 			log.Err(err).Msg("failed to read/decode request body")
