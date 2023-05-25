@@ -93,35 +93,35 @@ func (s *ConnState) load(ctx context.Context, req *sync3.Request) error {
 	for _, metadata := range joinedRooms {
 		metadata.RemoveHero(s.userID)
 		urd := s.userCache.LoadRoomData(metadata.RoomID)
-		timestamps := make(map[string]uint64, len(req.Lists))
+		interestedEventTimestampsByList := make(map[string]uint64, len(req.Lists))
 		for listKey, _ := range req.Lists {
 			// Best-effort only: we're not going to scan the database for all events in
 			// the entire room's history to give you a fully accurate timestamp
 			// according to your bump_event_types.
-			timestamps[listKey] = metadata.LastMessageTimestamp
+			interestedEventTimestampsByList[listKey] = metadata.LastMessageTimestamp
 		}
 		rooms[i] = sync3.RoomConnMetadata{
 			RoomMetadata:                  *metadata,
 			UserRoomData:                  urd,
-			LastInterestedEventTimestamps: timestamps,
+			LastInterestedEventTimestamps: interestedEventTimestampsByList,
 		}
 		i++
 	}
 	invites := s.userCache.Invites()
 	for _, urd := range invites {
 		metadata := urd.Invite.RoomMetadata()
-		timestamps := make(map[string]uint64, len(req.Lists))
+		inviteTimestampsByList := make(map[string]uint64, len(req.Lists))
 		for listKey, _ := range req.Lists {
 			// NB: If you've set bump_event_types to exclude membership events and
 			// there are no interesting messages after your invite event, when you join
 			// this timestamp is going to roll back to the last interesting event before
 			// your invite.
-			timestamps[listKey] = metadata.LastMessageTimestamp
+			inviteTimestampsByList[listKey] = metadata.LastMessageTimestamp
 		}
 		rooms = append(rooms, sync3.RoomConnMetadata{
 			RoomMetadata:                  *metadata,
 			UserRoomData:                  urd,
-			LastInterestedEventTimestamps: timestamps,
+			LastInterestedEventTimestamps: inviteTimestampsByList,
 		})
 	}
 
