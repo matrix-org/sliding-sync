@@ -156,6 +156,18 @@ func (s *InternalRequestLists) Get(listKey string) *FilteredSortableRooms {
 	return s.lists[listKey]
 }
 
+// ListKeys returns a copy of the list keys currently tracked by this
+// InternalRequestLists struct, in no particular order. Outside of test code, you
+// probably don't want to call this---you probably have the set of list keys tracked
+// elsewhere in the application.
+func (s *InternalRequestLists) ListKeys() []string {
+	keys := make([]string, len(s.lists))
+	for listKey, _ := range s.lists {
+		keys = append(keys, listKey)
+	}
+	return keys
+}
+
 // ListsByVisibleRoomIDs builds a map from room IDs to a slice of list names. Keys are
 // all room IDs that are currently visible in at least one sliding window. Values are
 // the names of all lists (in no particular order) in which the given room ID is
