@@ -76,10 +76,10 @@ func (s *InternalRequestLists) SetRoom(r RoomConnMetadata) (delta RoomDelta) {
 
 		// Interpret the timestamp map on r as the changes we should apply atop the
 		// existing timestamps.
-		bumpListsTo := r.LastInterestedEventTimestamps
+		newTimestamps := r.LastInterestedEventTimestamps
 		r.LastInterestedEventTimestamps = make(map[string]uint64, len(s.lists))
 		for listKey := range s.lists {
-			newTs, bump := bumpListsTo[listKey]
+			newTs, bump := newTimestamps[listKey]
 			if bump {
 				r.LastInterestedEventTimestamps[listKey] = newTs
 			} else {
