@@ -460,10 +460,10 @@ type mockDataReceiver struct {
 	unblockProcess  chan struct{}
 }
 
-func (a *mockDataReceiver) Accumulate(userID, deviceID, roomID, prevBatch string, timeline []json.RawMessage) {
+func (a *mockDataReceiver) Accumulate(ctx context.Context, userID, deviceID, roomID, prevBatch string, timeline []json.RawMessage) {
 	a.timelines[roomID] = append(a.timelines[roomID], timeline...)
 }
-func (a *mockDataReceiver) Initialise(roomID string, state []json.RawMessage) []json.RawMessage {
+func (a *mockDataReceiver) Initialise(ctx context.Context, roomID string, state []json.RawMessage) []json.RawMessage {
 	a.states[roomID] = state
 	if a.incomingProcess != nil {
 		a.incomingProcess <- struct{}{}
@@ -475,24 +475,28 @@ func (a *mockDataReceiver) Initialise(roomID string, state []json.RawMessage) []
 	// timeline. Untested here---return nil for now.
 	return nil
 }
-func (a *mockDataReceiver) SetTyping(roomID string, ephEvent json.RawMessage) {
+func (a *mockDataReceiver) SetTyping(ctx context.Context, roomID string, ephEvent json.RawMessage) {
 }
-func (s *mockDataReceiver) UpdateDeviceSince(userID, deviceID, since string) {
+func (s *mockDataReceiver) UpdateDeviceSince(ctx context.Context, userID, deviceID, since string) {
 	s.pollerIDToSince[PollerID{UserID: userID, DeviceID: deviceID}] = since
 }
-func (s *mockDataReceiver) AddToDeviceMessages(userID, deviceID string, msgs []json.RawMessage) {
+func (s *mockDataReceiver) AddToDeviceMessages(ctx context.Context, userID, deviceID string, msgs []json.RawMessage) {
 }
 
-func (s *mockDataReceiver) UpdateUnreadCounts(roomID, userID string, highlightCount, notifCount *int) {
+func (s *mockDataReceiver) UpdateUnreadCounts(ctx context.Context, roomID, userID string, highlightCount, notifCount *int) {
 }
-func (s *mockDataReceiver) OnAccountData(userID, roomID string, events []json.RawMessage)          {}
-func (s *mockDataReceiver) OnReceipt(userID, roomID, ephEvenType string, ephEvent json.RawMessage) {}
-func (s *mockDataReceiver) OnInvite(userID, roomID string, inviteState []json.RawMessage)          {}
-func (s *mockDataReceiver) OnLeftRoom(userID, roomID string)                                       {}
-func (s *mockDataReceiver) OnE2EEData(userID, deviceID string, otkCounts map[string]int, fallbackKeyTypes []string, deviceListChanges map[string]int) {
+func (s *mockDataReceiver) OnAccountData(ctx context.Context, userID, roomID string, events []json.RawMessage) {
 }
-func (s *mockDataReceiver) OnTerminated(userID, deviceID string)                    {}
-func (s *mockDataReceiver) OnExpiredToken(accessTokenHash, userID, deviceID string) {}
+func (s *mockDataReceiver) OnReceipt(ctx context.Context, userID, roomID, ephEventType string, ephEvent json.RawMessage) {
+}
+func (s *mockDataReceiver) OnInvite(ctx context.Context, userID, roomID string, inviteState []json.RawMessage) {
+}
+func (s *mockDataReceiver) OnLeftRoom(ctx context.Context, userID, roomID string) {}
+func (s *mockDataReceiver) OnE2EEData(ctx context.Context, userID, deviceID string, otkCounts map[string]int, fallbackKeyTypes []string, deviceListChanges map[string]int) {
+}
+func (s *mockDataReceiver) OnTerminated(ctx context.Context, userID, deviceID string) {}
+func (s *mockDataReceiver) OnExpiredToken(ctx context.Context, accessTokenHash, userID, deviceID string) {
+}
 
 func newMocks(doSyncV2 func(authHeader, since string) (*SyncResponse, int, error)) (*mockDataReceiver, *mockClient) {
 	client := &mockClient{

@@ -1,6 +1,7 @@
 package handler2
 
 import (
+	"context"
 	"encoding/json"
 	"github.com/getsentry/sentry-go"
 	"hash/fnv"
@@ -151,12 +152,16 @@ func (h *Handler) updateMetrics() {
 	h.numPollers.Set(float64(h.pMap.NumPollers()))
 }
 
-func (h *Handler) OnTerminated(userID, deviceID string) {
+func (h *Handler) OnTerminated(ctx context.Context, userID, deviceID string) {
 	h.updateMetrics()
 }
 
-func (h *Handler) OnExpiredToken(accessTokenHash, userID, deviceID string) {
-	h.v2Store.TokensTable.Delete(accessTokenHash)
+func (h *Handler) OnExpiredToken(ctx context.Context, accessTokenHash, userID, deviceID string) {
+	err := h.v2Store.TokensTable.Delete(accessTokenHash)
+	if err != nil {
+		logger.Err(err).Str("user", userID).Str("device", deviceID).Str("access_token_hash", accessTokenHash).Msg("V2: failed to expire token")
+		internal.GetSentryHubFromContextOrDefault(ctx).CaptureException(err)
+	}
 	// Notify v3 side so it can remove the connection from ConnMap
 	h.v2Pub.Notify(pubsub.ChanV2, &pubsub.V2ExpiredToken{
 		UserID:   userID,
@@ -175,15 +180,15 @@ func (h *Handler) addPrometheusMetrics() {
 }
 
 // Emits nothing as no downstream components need it.
-func (h *Handler) UpdateDeviceSince(userID, deviceID, since string) {
+func (h *Handler) UpdateDeviceSince(ctx context.Context, userID, deviceID, since string) {
 	err := h.v2Store.DevicesTable.UpdateDeviceSince(userID, deviceID, since)
 	if err != nil {
 		logger.Err(err).Str("user", userID).Str("device", deviceID).Str("since", since).Msg("V2: failed to persist since token")
-		sentry.CaptureException(err)
+		internal.GetSentryHubFromContextOrDefault(ctx).CaptureException(err)
 	}
 }
 
-func (h *Handler) OnE2EEData(userID, deviceID string, otkCounts map[string]int, fallbackKeyTypes []string, deviceListChanges map[string]int) {
+func (h *Handler) OnE2EEData(ctx context.Context, userID, deviceID string, otkCounts map[string]int, fallbackKeyTypes []string, deviceListChanges map[string]int) {
 	// some of these fields may be set
 	partialDD := internal.DeviceData{
 		UserID:           userID,
@@ -197,7 +202,7 @@ func (h *Handler) OnE2EEData(userID, deviceID string, otkCounts map[string]int, 
 	nextPos, err := h.Store.DeviceDataTable.Upsert(&partialDD)
 	if err != nil {
 		logger.Err(err).Str("user", userID).Msg("failed to upsert device data")
-		sentry.CaptureException(err)
+		internal.GetSentryHubFromContextOrDefault(ctx).CaptureException(err)
 		return
 	}
 	h.v2Pub.Notify(pubsub.ChanV2, &pubsub.V2DeviceData{
@@ -207,7 +212,7 @@ func (h *Handler) OnE2EEData(userID, deviceID string, otkCounts map[string]int, 
 	})
 }
 
-func (h *Handler) Accumulate(userID, deviceID, roomID, prevBatch string, timeline []json.RawMessage) {
+func (h *Handler) Accumulate(ctx context.Context, userID, deviceID, roomID, prevBatch string, timeline []json.RawMessage) {
 	// Remember any transaction IDs that may be unique to this user
 	eventIDToTxnID := make(map[string]string, len(timeline)) // event_id -> txn_id
 	for _, e := range timeline {
@@ -223,7 +228,7 @@ func (h *Handler) Accumulate(userID, deviceID, roomID, prevBatch string, timelin
 		err := h.Store.TransactionsTable.Insert(userID, deviceID, eventIDToTxnID)
 		if err != nil {
 			logger.Err(err).Str("user", userID).Str("device", deviceID).Int("num_txns", len(eventIDToTxnID)).Msg("failed to persist txn IDs for user")
-			sentry.CaptureException(err)
+			internal.GetSentryHubFromContextOrDefault(ctx).CaptureException(err)
 		}
 	}
 
@@ -231,7 +236,7 @@ func (h *Handler) Accumulate(userID, deviceID, roomID, prevBatch string, timelin
 	numNew, latestNIDs, err := h.Store.Accumulate(roomID, prevBatch, timeline)
 	if err != nil {
 		logger.Err(err).Int("timeline", len(timeline)).Str("room", roomID).Msg("V2: failed to accumulate room")
-		sentry.CaptureException(err)
+		internal.GetSentryHubFromContextOrDefault(ctx).CaptureException(err)
 		return
 	}
 	if numNew == 0 {
@@ -245,11 +250,11 @@ func (h *Handler) Accumulate(userID, deviceID, roomID, prevBatch string, timelin
 	})
 }
 
-func (h *Handler) Initialise(roomID string, state []json.RawMessage) []json.RawMessage {
+func (h *Handler) Initialise(ctx context.Context, roomID string, state []json.RawMessage) []json.RawMessage {
 	res, err := h.Store.Initialise(roomID, state)
 	if err != nil {
 		logger.Err(err).Int("state", len(state)).Str("room", roomID).Msg("V2: failed to initialise room")
-		sentry.CaptureException(err)
+		internal.GetSentryHubFromContextOrDefault(ctx).CaptureException(err)
 		return nil
 	}
 	if res.AddedEvents {
@@ -261,7 +266,7 @@ func (h *Handler) Initialise(roomID string, state []json.RawMessage) []json.RawM
 	return res.PrependTimelineEvents
 }
 
-func (h *Handler) SetTyping(roomID string, ephEvent json.RawMessage) {
+func (h *Handler) SetTyping(ctx context.Context, roomID string, ephEvent json.RawMessage) {
 	next := typingHash(ephEvent)
 	existing := h.typingMap[roomID]
 	if existing == next {
@@ -276,13 +281,13 @@ func (h *Handler) SetTyping(roomID string, ephEvent json.RawMessage) {
 	})
 }
 
-func (h *Handler) OnReceipt(userID, roomID, ephEventType string, ephEvent json.RawMessage) {
+func (h *Handler) OnReceipt(ctx context.Context, userID, roomID, ephEventType string, ephEvent json.RawMessage) {
 	// update our records - we make an artifically new RR event if there are genuine changes
 	// else it returns nil
 	newReceipts, err := h.Store.ReceiptTable.Insert(roomID, ephEvent)
 	if err != nil {
 		logger.Err(err).Str("room", roomID).Msg("failed to store receipts")
-		sentry.CaptureException(err)
+		internal.GetSentryHubFromContextOrDefault(ctx).CaptureException(err)
 		return
 	}
 	if len(newReceipts) == 0 {
@@ -294,11 +299,11 @@ func (h *Handler) OnReceipt(userID, roomID, ephEventType string, ephEvent json.R
 	})
 }
 
-func (h *Handler) AddToDeviceMessages(userID, deviceID string, msgs []json.RawMessage) {
+func (h *Handler) AddToDeviceMessages(ctx context.Context, userID, deviceID string, msgs []json.RawMessage) {
 	_, err := h.Store.ToDeviceTable.InsertMessages(userID, deviceID, msgs)
 	if err != nil {
 		logger.Err(err).Str("user", userID).Str("device", deviceID).Int("msgs", len(msgs)).Msg("V2: failed to store to-device messages")
-		sentry.CaptureException(err)
+		internal.GetSentryHubFromContextOrDefault(ctx).CaptureException(err)
 	}
 	h.v2Pub.Notify(pubsub.ChanV2, &pubsub.V2DeviceMessages{
 		UserID:   userID,
@@ -306,7 +311,7 @@ func (h *Handler) AddToDeviceMessages(userID, deviceID string, msgs []json.RawMe
 	})
 }
 
-func (h *Handler) UpdateUnreadCounts(roomID, userID string, highlightCount, notifCount *int) {
+func (h *Handler) UpdateUnreadCounts(ctx context.Context, roomID, userID string, highlightCount, notifCount *int) {
 	// only touch the DB and notify if they have changed. sync v2 will alwyas include the counts
 	// even if they haven't changed :(
 	key := roomID + userID
@@ -333,7 +338,7 @@ func (h *Handler) UpdateUnreadCounts(roomID, userID string, highlightCount, noti
 	err := h.Store.UnreadTable.UpdateUnreadCounters(userID, roomID, highlightCount, notifCount)
 	if err != nil {
 		logger.Err(err).Str("user", userID).Str("room", roomID).Msg("failed to update unread counters")
-		sentry.CaptureException(err)
+		internal.GetSentryHubFromContextOrDefault(ctx).CaptureException(err)
 	}
 	h.v2Pub.Notify(pubsub.ChanV2, &pubsub.V2UnreadCounts{
 		RoomID:            roomID,
@@ -343,7 +348,7 @@ func (h *Handler) UpdateUnreadCounts(roomID, userID string, highlightCount, noti
 	})
 }
 
-func (h *Handler) OnAccountData(userID, roomID string, events []json.RawMessage) {
+func (h *Handler) OnAccountData(ctx context.Context, userID, roomID string, events []json.RawMessage) {
 	data, err := h.Store.InsertAccountData(userID, roomID, events)
 	if err != nil {
 		logger.Err(err).Str("user", userID).Str("room", roomID).Msg("failed to update account data")
@@ -361,11 +366,11 @@ func (h *Handler) OnAccountData(userID, roomID string, events []json.RawMessage)
 	})
 }
 
-func (h *Handler) OnInvite(userID, roomID string, inviteState []json.RawMessage) {
+func (h *Handler) OnInvite(ctx context.Context, userID, roomID string, inviteState []json.RawMessage) {
 	err := h.Store.InvitesTable.InsertInvite(userID, roomID, inviteState)
 	if err != nil {
 		logger.Err(err).Str("user", userID).Str("room", roomID).Msg("failed to insert invite")
-		sentry.CaptureException(err)
+		internal.GetSentryHubFromContextOrDefault(ctx).CaptureException(err)
 		return
 	}
 	h.v2Pub.Notify(pubsub.ChanV2, &pubsub.V2InviteRoom{
@@ -374,12 +379,12 @@ func (h *Handler) OnInvite(userID, roomID string, inviteState []json.RawMessage)
 	})
 }
 
-func (h *Handler) OnLeftRoom(userID, roomID string) {
+func (h *Handler) OnLeftRoom(ctx context.Context, userID, roomID string) {
 	// remove any invites for this user if they are rejecting an invite
 	err := h.Store.InvitesTable.RemoveInvite(userID, roomID)
 	if err != nil {
 		logger.Err(err).Str("user", userID).Str("room", roomID).Msg("failed to retire invite")
-		sentry.CaptureException(err)
+		internal.GetSentryHubFromContextOrDefault(ctx).CaptureException(err)
 	}
 	h.v2Pub.Notify(pubsub.ChanV2, &pubsub.V2LeaveRoom{
 		UserID: userID,
