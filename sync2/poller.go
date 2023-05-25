@@ -369,6 +369,19 @@ func (p *poller) Terminate() {
 // Returns if the access token gets invalidated or if there was a fatal error processing v2 responses.
 // Use WaitUntilInitialSync() to wait until the first poll has been processed.
 func (p *poller) Poll(since string) {
+	// Basing the sentry-wrangling on the sentry-go net/http integration, see e.g.
+	// https://github.com/getsentry/sentry-go/blob/02e712a638c40cd9701ad52d5d1309d65d556ef9/http/sentryhttp.go#L84
+	// TODO is this the correct way to create hub? Should the cloning be done by the
+	// caller and passed down?
+	hub := sentry.CurrentHub().Clone()
+	hub.ConfigureScope(func(scope *sentry.Scope) {
+		scope.SetUser(sentry.User{Username: p.userID})
+		scope.SetContext(internal.SentryCtxKey, map[string]interface{}{
+			"device_id": p.deviceID,
+		})
+	})
+	ctx := sentry.SetHubOnContext(context.Background(), hub)
+
 	p.logger.Info().Str("since", since).Msg("Poller: v2 poll loop started")
 	defer func() {
 		p.receiver.OnTerminated(p.userID, p.deviceID)
@@ -388,7 +401,7 @@ func (p *poller) Poll(since string) {
 			break
 		}
 		start := time.Now()
-		resp, statusCode, err := p.client.DoSyncV2(context.Background(), p.accessToken, since, firstTime, p.initialToDeviceOnly)
+		resp, statusCode, err := p.client.DoSyncV2(ctx, p.accessToken, since, firstTime, p.initialToDeviceOnly)
 		p.trackRequestDuration(time.Since(start), since == "", firstTime)
 		if p.terminated.Load() {
 			break
