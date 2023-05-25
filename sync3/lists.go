@@ -97,9 +97,17 @@ func (s *InternalRequestLists) SetRoom(r RoomConnMetadata) (delta RoomDelta) {
 		r.CanonicalisedName = strings.ToLower(
 			strings.Trim(internal.CalculateRoomName(&r.RoomMetadata, 5), "#!():_@"),
 		)
-		// We do not set LastInterestedEventTimestamps here. If there is no existing
-		// RoomConnMetadata, we use the timestamps provided by the caller. If those are
-		// missing, the sorter will we fall back to the LastMessageTimestamp.
+		// Set LastInterestedEventTimestamps here so that recency sorts work. We use the
+		// timestamps provided by the caller, but otherwise fall back to that in the
+		// global event metadata.
+		newTimestamps := r.LastInterestedEventTimestamps
+		r.LastInterestedEventTimestamps = make(map[string]uint64, len(s.lists))
+		for listKey := range s.lists {
+			_, ok := newTimestamps[listKey]
+			if !ok {
+				newTimestamps[listKey] = r.LastMessageTimestamp
+			}
+		}
 	}
 	// filter.Include may call on this room ID in the RoomFinder, so make sure it finds it.
 	s.allRooms[r.RoomID] = &r
