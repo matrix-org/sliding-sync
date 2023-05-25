@@ -150,16 +150,20 @@ func (s *InternalRequestLists) RemoveRoom(roomID string) {
 }
 
 func (s *InternalRequestLists) DeleteList(listKey string) {
-	// TODO
-	// TODO: could remove listKey's LastInterestedMessageTimestamp entries in allRooms
+	delete(s.lists, listKey)
+	for _, room := range s.allRooms {
+		delete(room.LastInterestedEventTimestamps, listKey)
+	}
 }
 
-// Returns the underlying Room object. Returns a shared pointer, not a copy.
+// Returns the underlying RoomConnMetadata object. Returns a shared pointer, not a copy.
 // It is only safe to read this data, never to write.
 func (s *InternalRequestLists) ReadOnlyRoom(roomID string) *RoomConnMetadata {
 	return s.allRooms[roomID]
 }
 
+// Get returns the sorted list of rooms. Returns a shared pointer, not a copy.
+// It is only safe to read this data, never to write.
 func (s *InternalRequestLists) Get(listKey string) *FilteredSortableRooms {
 	return s.lists[listKey]
 }
