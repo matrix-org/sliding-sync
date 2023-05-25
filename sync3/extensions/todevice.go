@@ -86,12 +86,9 @@ func (r *ToDeviceRequest) ProcessInitial(ctx context.Context, res *Response, ext
 	mapMu.Unlock()
 	if from < lastSentPos {
 		// we told the client about a newer position, but yet they are using an older position, yell loudly
-		const errMsg = "Client did not increment since token: possibly sending back duplicate to-device events!"
 		l.Warn().Int64("last_sent", lastSentPos).Int64("recv", from).Bool("initial", extCtx.IsInitial).Msg(
-			errMsg,
+			"Client did not increment since token: possibly sending back duplicate to-device events!",
 		)
-		// TODO add context to sentry
-		internal.GetSentryHubFromContextOrDefault(ctx).CaptureException(fmt.Errorf(errMsg))
 	}
 
 	msgs, upTo, err := extCtx.Store.ToDeviceTable.Messages(extCtx.UserID, extCtx.DeviceID, from, int64(r.Limit))
