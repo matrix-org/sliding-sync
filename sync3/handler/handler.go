@@ -215,10 +215,9 @@ func (h *SyncLiveHandler) serve(w http.ResponseWriter, req *http.Request) error 
 		}
 	}
 
-	logErrorAndReport500s := func(msg string, herr *internal.HandlerError) {
+	logErrorOrWarning := func(msg string, herr *internal.HandlerError) {
 		if herr.StatusCode >= 500 {
 			hlog.FromRequest(req).Err(herr).Msg(msg)
-			internal.GetSentryHubFromContextOrDefault(req.Context()).CaptureException(herr)
 		} else {
 			hlog.FromRequest(req).Warn().Err(herr).Msg(msg)
 		}
@@ -226,7 +225,7 @@ func (h *SyncLiveHandler) serve(w http.ResponseWriter, req *http.Request) error 
 
 	conn, herr := h.setupConnection(req, &requestBody, req.URL.Query().Get("pos") != "")
 	if herr != nil {
-		logErrorAndReport500s("failed to get or create Conn", herr)
+		logErrorOrWarning("failed to get or create Conn", herr)
 		return herr
 	}
 	// set pos and timeout if specified
@@ -254,7 +253,7 @@ func (h *SyncLiveHandler) serve(w http.ResponseWriter, req *http.Request) error 
 
 	resp, herr := conn.OnIncomingRequest(req.Context(), &requestBody)
 	if herr != nil {
-		logErrorAndReport500s("failed to OnIncomingRequest", herr)
+		logErrorOrWarning("failed to OnIncomingRequest", herr)
 		return herr
 	}
 	// for logging
@@ -293,7 +292,7 @@ func (h *SyncLiveHandler) serve(w http.ResponseWriter, req *http.Request) error 
 			herr.StatusCode = 499
 		}
 
-		logErrorAndReport500s("failed to JSON-encode result", herr)
+		logErrorOrWarning("failed to JSON-encode result", herr)
 		return herr
 	}
 	return nil
