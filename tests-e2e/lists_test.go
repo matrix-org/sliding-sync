@@ -1005,6 +1005,110 @@ func TestBumpEventTypesHandling(t *testing.T) {
 
 }
 
+func TestBumpEventTypesInOverlappingLists(t *testing.T) {
+	alice := registerNamedUser(t, "alice")
+	bob := registerNamedUser(t, "bob")
+
+	t.Log("Alice creates four rooms")
+	room1 := alice.CreateRoom(t, map[string]interface{}{"preset": "public_chat", "name": "room1"})
+	room2 := alice.CreateRoom(t, map[string]interface{}{"preset": "public_chat", "name": "room2"})
+	room3 := alice.CreateRoom(t, map[string]interface{}{"preset": "public_chat", "name": "room3"})
+	room4 := alice.CreateRoom(t, map[string]interface{}{"preset": "public_chat", "name": "room4"})
+
+	t.Log("Alice writes a message in all four rooms.")
+	// Note: all lists bump on messages, so this will ensure the recency order is sensible.
+	helloWorld := map[string]interface{}{"body": "Hello world", "msgtype": "m.text"}
+	alice.SendEventUnsynced(t, room1, Event{Type: "m.room.message", Content: helloWorld})
+	alice.SendEventUnsynced(t, room2, Event{Type: "m.room.message", Content: helloWorld})
+	alice.SendEventUnsynced(t, room3, Event{Type: "m.room.message", Content: helloWorld})
+	alice.SendEventSynced(t, room4, Event{Type: "m.room.message", Content: helloWorld})
+
+	t.Log("Alice requests a sync with three lists: one bumping on messages, a second bumping on messages and memberships, and a third bumping on all events.")
+	const listMsg = "message"
+	const listMsgMember = "message_membership"
+	const listAll = "all"
+	req := sync3.Request{
+		Lists: map[string]sync3.RequestList{
+			listMsg: {
+				Sort:             []string{sync3.SortByRecency},
+				RoomSubscription: sync3.RoomSubscription{TimelineLimit: 10},
+				Ranges:           sync3.SliceRanges{{0, 10}},
+				BumpEventTypes:   []string{"m.room.message"},
+			},
+			listMsgMember: {
+				Sort:             []string{sync3.SortByRecency},
+				RoomSubscription: sync3.RoomSubscription{TimelineLimit: 10},
+				Ranges:           sync3.SliceRanges{{0, 10}},
+				BumpEventTypes:   []string{"m.room.message", "m.room.member"},
+			},
+			listAll: {
+				Sort:             []string{sync3.SortByRecency},
+				RoomSubscription: sync3.RoomSubscription{TimelineLimit: 10},
+				Ranges:           sync3.SliceRanges{{0, 10}},
+				BumpEventTypes:   nil,
+			},
+		},
+	}
+	res := alice.SlidingSync(t, req)
+
+	t.Log("Alice sees the rooms in order 4, 3, 2, 1.")
+	// Note: first sync, so first poll, so should see all four message events.
+	see4321 := []m.ListMatcher{
+		m.MatchV3Count(4),
+		m.MatchV3Ops(m.MatchV3SyncOp(0, 3, []string{room4, room3, room2, room1}, false)),
+	}
+	m.MatchResponse(t, res, m.MatchLists(map[string][]m.ListMatcher{
+		listMsg:       see4321,
+		listMsgMember: see4321,
+		listAll:       see4321,
+	}))
+
+	t.Log("Bob joins room 1. Alice syncs until she sees Bob's join.")
+	bob.JoinRoom(t, room1, nil)
+	res = alice.SlidingSyncUntilMembership(t, res.Pos, room1, bob, "join")
+
+	t.Logf("Alice should see room1 bumped in the lists %s and %s, but not %s", listMsgMember, listAll, listMsg)
+	noMovement := []m.ListMatcher{
+		m.MatchV3Count(4),
+		m.MatchV3Ops(),
+	}
+	bumpToTop := func(roomID string, fromIdx int) []m.ListMatcher {
+		return []m.ListMatcher{
+			m.MatchV3Count(4),
+			m.MatchV3Ops(m.MatchV3DeleteOp(fromIdx), m.MatchV3InsertOp(0, roomID)),
+		}
+	}
+
+	m.MatchResponse(t, res, m.MatchLists(map[string][]m.ListMatcher{
+		listMsg:       noMovement,          // 4321
+		listMsgMember: bumpToTop(room1, 3), // 4321 -> 1432
+		listAll:       bumpToTop(room1, 3), // 4321 -> 1432
+	}))
+
+	t.Log("Alice sets a room topic in room 3, and syncs until she sees the topic.")
+	topicEventID := alice.SetState(t, room3, "m.room.topic", "", map[string]interface{}{"topic": "spicy meatballs"})
+	res = alice.SlidingSyncUntilEventID(t, res.Pos, room3, topicEventID)
+
+	t.Logf("Alice sees room3 bump in the %s list only", listAll)
+	m.MatchResponse(t, res, m.MatchLists(map[string][]m.ListMatcher{
+		listMsg:       noMovement,          // 4321
+		listMsgMember: noMovement,          // 1432
+		listAll:       bumpToTop(room3, 2), // 1432 -> 3142
+	}))
+
+	t.Logf("Alice sends a message in room 2, and syncs until she sees it.")
+	msgEventID := alice.SendEventUnsynced(t, room2, Event{Type: "m.room.message", Content: helloWorld})
+	res = alice.SlidingSyncUntilEventID(t, res.Pos, room2, msgEventID)
+
+	t.Logf("Alice sees room2 bump in all lists")
+	m.MatchResponse(t, res, m.MatchLists(map[string][]m.ListMatcher{
+		listMsg:       bumpToTop(room2, 2), // 4321 -> 2431
+		listMsgMember: bumpToTop(room2, 3), // 1432 -> 2143
+		listAll:       bumpToTop(room2, 3), // 3142 -> 2314
+	}))
+
+}
+
 // Tests the scenario described at
 // https://github.com/matrix-org/sliding-sync/pull/58#discussion_r1159850458
 func TestRangeOutsideTotalRooms(t *testing.T) {
