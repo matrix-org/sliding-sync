@@ -88,7 +88,7 @@ func (s *connStateLive) liveUpdate(
 			s.processLiveUpdate(ctx, update, response)
 			// pass event to extensions AFTER processing
 			roomIDsToLists := s.lists.ListsByVisibleRoomIDs(s.muxedReq.Lists)
-			s.extensionsHandler.HandleLiveUpdate(update, ex, &response.Extensions, extensions.Context{
+			s.extensionsHandler.HandleLiveUpdate(ctx, update, ex, &response.Extensions, extensions.Context{
 				IsInitial:        false,
 				RoomIDToTimeline: response.RoomIDsToTimelineEventIDs(),
 				UserID:           s.userID,
@@ -99,7 +99,7 @@ func (s *connStateLive) liveUpdate(
 			for len(s.updates) > 0 && response.ListOps() < 50 {
 				update = <-s.updates
 				s.processLiveUpdate(ctx, update, response)
-				s.extensionsHandler.HandleLiveUpdate(update, ex, &response.Extensions, extensions.Context{
+				s.extensionsHandler.HandleLiveUpdate(ctx, update, ex, &response.Extensions, extensions.Context{
 					IsInitial:        false,
 					RoomIDToTimeline: response.RoomIDsToTimelineEventIDs(),
 					UserID:           s.userID,
