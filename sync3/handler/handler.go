@@ -5,6 +5,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -12,6 +13,7 @@ import (
 	"reflect"
 	"strconv"
 	"sync"
+	"syscall"
 	"time"
 
 	"github.com/getsentry/sentry-go"
@@ -281,6 +283,16 @@ func (h *SyncLiveHandler) serve(w http.ResponseWriter, req *http.Request) error 
 			StatusCode: 500,
 			Err:        err,
 		}
+		if errors.Is(err, syscall.EPIPE) {
+			// Client closed the connection. Use a 499 status code internally so that
+			// we consider this a warning rather than an error. 499 is nonstandard,
+			// but a) the client has already gone, so this status code will only show
+			// up in our logs; and b) nginx uses 499 to mean "Client Closed Request",
+			// see e.g.
+			// https://www.nginx.com/resources/wiki/extending/api/http/#http-return-codes
+			herr.StatusCode = 499
+		}
+
 		logErrorAndReport500s("failed to JSON-encode result", herr)
 		return herr
 	}
