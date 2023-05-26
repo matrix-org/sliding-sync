@@ -255,7 +255,7 @@ func (c *UserCache) OnRegistered(ctx context.Context, _ int64) error {
 		// inject space children events
 		if room.IsSpace() {
 			for childRoomID := range room.ChildSpaceRooms {
-				c.OnSpaceUpdate(context.Background(), room.RoomID, childRoomID, false, &EventData{
+				c.OnSpaceUpdate(ctx, room.RoomID, childRoomID, false, &EventData{
 					RoomID:    room.RoomID,
 					EventType: "m.space.child",
 					StateKey:  &childRoomID,
