@@ -19,8 +19,9 @@ Proxy version to MSC API specification:
     -   Support for `by_notification_level` and `include_old_rooms`.
     -   Support for `$ME` and `$LAZY`.
     -   Support for `errcode` when sessions expire.
--   Version 0.99.x [2023/01/20](https://github.com/matrix-org/matrix-spec-proposals/blob/b4b4e7ff306920d2c862c6ff4d245110f6fa5bc7/proposals/3575-sync.md)
+-   Version 0.99.1 [2023/01/20](https://github.com/matrix-org/matrix-spec-proposals/blob/b4b4e7ff306920d2c862c6ff4d245110f6fa5bc7/proposals/3575-sync.md)
     -   Preparing for major v1.x release: lists-as-keys support.
+-   Version 0.99.2 [2024/07/27](https://github.com/matrix-org/matrix-spec-proposals/blob/eab643cb3ca63b03537a260fa343e1fb2d1ee284/proposals/3575-sync.md)
     -   Experimental support for `bump_event_types` when ordering rooms by recency.
     -   Support for opting in to extensions on a per-list and per-room basis.
     -   Sentry support.
@@ -132,3 +133,28 @@ To debug **why the proxy is using 100% CPU**, run:
 wget -O 'profile.pprof' 'http://localhost:6060/debug/pprof/profile?seconds=10'
 ```
 Then send `profile.pprof` to someone who will then run `go tool pprof -http :5656 profile.pprof` and typically view the flame graph: View -> Flame Graph.
+
+
+### Developers' cheat sheet
+
+Sanity check everything builds:
+
+```shell
+go build ./cmd/syncv3
+go list ./... | xargs -n1 go test -c -o /dev/null
+```
+
+Run all unit and integration tests:
+
+```shell
+go test -p 1 -count 1 $(go list ./... | grep -v tests-e2e) -timeout 120s
+```
+
+Run end-to-end tests:
+
+```shell
+# Run each line in a separate terminal windows. Will need to `docker login`
+# to ghcr and pull the image.
+docker run --rm -e "SYNAPSE_COMPLEMENT_DATABASE=sqlite" -e "SERVER_NAME=synapse" -p 8888:8008 ghcr.io/matrix-org/synapse-service:v1.72.0
+(go build ./cmd/syncv3 && dropdb syncv3_test && createdb syncv3_test && cd tests-e2e && ./run-tests.sh -count=1 .)
+```
