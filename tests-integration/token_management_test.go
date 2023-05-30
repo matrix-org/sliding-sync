@@ -87,7 +87,7 @@ func TestSyncWithNewTokenAfterOldExpires(t *testing.T) {
 		t.Errorf("got %v want errcode=M_UNKNOWN_POS", string(body))
 	}
 
-	t.Log("Prepare to tell a poller using aliceToken2 that Alice created a room and that Bob joined it.")
+	t.Log("Prepare to tell a poller using aliceToken2 about a new message from bob.")
 	bobMsg := testutils.NewMessageEvent(t, bob, "Hello, world!")
 	v2.queueResponse(aliceToken2, sync2.SyncResponse{
 		Rooms: sync2.SyncRoomsResponse{
@@ -168,7 +168,7 @@ func TestSyncWithNewTokenBeforeOldExpires(t *testing.T) {
 	t.Log("Alice refreshes her access token. The old one has yet to expire.")
 	v2.addAccount(t, alice, aliceToken2)
 
-	t.Log("Prepare to tell a poller using aliceToken1 that Alice created a room and that Bob joined it.")
+	t.Log("Prepare to tell a poller using aliceToken1 that Bob sent a message.")
 	bobMsg := testutils.NewMessageEvent(t, bob, "Hello, world!")
 	v2.queueResponse(aliceToken1, sync2.SyncResponse{
 		Rooms: sync2.SyncRoomsResponse{
