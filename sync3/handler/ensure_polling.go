@@ -114,6 +114,7 @@ func (p *EnsurePoller) OnExpiredToken(payload *pubsub.V2ExpiredToken) {
 		return
 	}
 	if pending.ch != nil {
+		// unblock anything waiting on this sync, it's never going to happen now.
 		close(pending.ch)
 	}
 	delete(p.pendingPolls, pid)
