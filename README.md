@@ -153,6 +153,5 @@ Run end-to-end tests:
 # Run each line in a separate terminal windows. Will need to `docker login`
 # to ghcr and pull the image.
 docker run --rm -e "SYNAPSE_COMPLEMENT_DATABASE=sqlite" -e "SERVER_NAME=synapse" -p 8888:8008 ghcr.io/matrix-org/synapse-service:v1.72.0
-(dropdb syncv3_test || true) && createdb syncv3_test && go build ./cmd/syncv3 && SYNCV3_SERVER=http://localhost:8888 SYNCV3_DB="user=$(whoami) dbname=syncv3_test sslmode=disable" SYNCV3_SECRET=secret SYNCV3_BINDADDR=0.0.0.0:8844 SYNCV3_ADDR='http://localhost:8844' SYNCV3_DEBUG=1 ./syncv3
-SYNCV3_SERVER=http://localhost:8888 SYNCV3_ADDR=http://localhost:8844 go test ./tests-e2e -count=1 -v
+(go build ./cmd/syncv3 && dropdb syncv3_test && createdb syncv3_test && cd tests-e2e && ./run-tests.sh -count=1 .)
 ```
