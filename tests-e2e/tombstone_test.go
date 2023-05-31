@@ -149,6 +149,94 @@ func TestIncludeOldRooms(t *testing.T) {
 	}))
 }
 
+// Like TestIncludeOldRooms, but using MSC3946 to retroactively mark room B as replacing
+// room A (instead of upgrading room A directly).
+func TestIncludeOldRoomsUsingMSC3946(t *testing.T) {
+	client := registerNewUser(t)
+	t.Log("Alice creates a room.")
+	roomA := client.CreateRoom(t, map[string]interface{}{})
+
+	t.Log("Alice can see the room in the response from an initial sliding sync.")
+	res := client.SlidingSync(t, sync3.Request{
+		Lists: map[string]sync3.RequestList{
+			"rooms": {
+				Ranges: [][2]int64{{0, 1}},
+				RoomSubscription: sync3.RoomSubscription{
+					TimelineLimit: 20,
+				},
+				Sort: []string{sync3.SortByRecency},
+			},
+		},
+	})
+	m.MatchResponse(t, res, m.MatchList("rooms", m.MatchV3Count(1), m.MatchV3Ops(
+		m.MatchV3SyncOp(0, 0, []string{roomA}),
+	)))
+
+	t.Log("Alice creates a second room.")
+	roomB := client.CreateRoom(t, map[string]interface{}{})
+
+	t.Log("Alice can see the second room in an incremental sliding sync.")
+	res = client.SlidingSyncUntilMembership(t, res.Pos, roomB, client, "join")
+	m.MatchResponse(t, res, m.MatchList("rooms",
+		m.MatchV3Count(2),
+		m.MatchV3Ops(
+			// TODO: the Delete op is odd here, see https://github.com/matrix-org/sliding-sync/issues/138
+			m.MatchV3DeleteOp(1),
+			m.MatchV3InsertOp(0, roomB),
+		)))
+
+	t.Log("Alice marks the second room as replacing the first.")
+	predecessorEventID := client.SetState(t, roomB, "org.matrix.msc3946.room_predecessor", "", map[string]interface{}{
+		"predecessor_room_id": roomA,
+	})
+
+	t.Log("Alice syncs until she sees the predecessor event.")
+	res = client.SlidingSyncUntilEventID(t, res.Pos, roomB, predecessorEventID)
+
+	t.Log("Her sync response should remove the original room.")
+	m.MatchResponse(t, res, m.MatchList("rooms", m.MatchV3Count(1), m.MatchV3Ops(
+		m.MatchV3DeleteOp(1),
+	)))
+
+	t.Log("Alice requests a new sliding sync connection, including old rooms")
+	res = client.SlidingSync(t, sync3.Request{
+		Lists: map[string]sync3.RequestList{
+			"rooms": {
+				Ranges: [][2]int64{{0, 2}},
+				RoomSubscription: sync3.RoomSubscription{
+					TimelineLimit: 20,
+					IncludeOldRooms: &sync3.RoomSubscription{
+						TimelineLimit: 20,
+					},
+				},
+				Sort: []string{sync3.SortByRecency},
+			},
+		},
+	})
+	t.Log("The response should include both rooms.")
+	m.MatchResponse(t, res, m.MatchList("rooms", m.MatchV3Count(2), m.MatchV3Ops(
+		m.MatchV3SyncOp(0, 1, []string{roomB, roomA}),
+	)))
+
+	t.Log("Alice requests a new sliding sync connection, excluding old rooms")
+	res = client.SlidingSync(t, sync3.Request{
+		Lists: map[string]sync3.RequestList{
+			"rooms": {
+				Ranges: [][2]int64{{0, 2}},
+				RoomSubscription: sync3.RoomSubscription{
+					TimelineLimit: 20,
+				},
+				Sort: []string{sync3.SortByRecency},
+			},
+		},
+	})
+
+	t.Log("She should see the new room only.")
+	m.MatchResponse(t, res, m.MatchList("rooms", m.MatchV3Count(1), m.MatchV3Ops(
+		m.MatchV3SyncOp(0, 0, []string{roomB}),
+	)))
+}
+
 // make a long upgrade chain of A -> B -> C -> D and then make sure that we can:
 // - explicitly subscribe to old rooms e.g B
 // - in that subscription, include old rooms to return A and nothing else.
