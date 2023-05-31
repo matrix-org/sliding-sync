@@ -90,6 +90,19 @@ func (t *RoomsTable) Upsert(txn *sqlx.Tx, info RoomInfo, snapshotID, latestNID i
 	return err
 }
 
+// MarkAsReplaced updates the DB to reflect that oldRoomID has been replaced by
+// newRoomID. The usual way of replacing a room---upgrading it---does not need to call
+// this function, as we will Upsert a new row for the old room when a poller sees a
+// tombstone event. But the proposal in MSC3946 marks a new room as replacing an old one
+// without sending an event into the old room.
+//
+// This function updates any existing row for the old room. If no such row exists, this
+// function does nothing.
+func (t *RoomsTable) MarkAsReplaced(txn *sqlx.Tx, oldRoomID, newRoomID string) (err error) {
+	_, err = txn.Exec(`UPDATE syncv3_rooms SET upgraded_room_id = $2 WHERE room_id = $1`, oldRoomID, newRoomID)
+	return err
+}
+
 func (t *RoomsTable) LatestNIDs(txn *sqlx.Tx, roomIDs []string) (nids map[string]int64, err error) {
 	nids = make(map[string]int64, len(roomIDs))
 	rows, err := txn.Query(`SELECT room_id, latest_nid FROM syncv3_rooms WHERE room_id = ANY($1)`, pq.StringArray(roomIDs))

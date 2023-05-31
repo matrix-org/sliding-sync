@@ -211,6 +211,56 @@ func TestRoomsTable(t *testing.T) {
 
 }
 
+func TestMarkAsReplaced(t *testing.T) {
+	db, close := connectToDB(t)
+	defer close()
+	_, err := db.Exec(`DROP TABLE IF EXISTS syncv3_rooms`)
+	if err != nil {
+		t.Fatalf("failed to drop rooms table: %s", err)
+	}
+	txn, err := db.Beginx()
+	if err != nil {
+		t.Fatalf("failed to start txn: %s", err)
+	}
+	defer txn.Rollback()
+	table := NewRoomsTable(db)
+
+	t.Log("Insert row for a room")
+	const oldID = "!replaceme:localhost"
+	err = table.Upsert(txn, RoomInfo{ID: oldID}, 100, 1)
+	if err != nil {
+		t.Errorf("failed to create room: %s", err)
+	}
+
+	t.Log("The room should have no predecessor and no replacement.")
+	beforeInfo := getRoomInfo(t, txn, table, oldID)
+	if beforeInfo.PredecessorRoomID != nil {
+		t.Errorf("Expected predecessor room to be nil, but got %s", *beforeInfo.PredecessorRoomID)
+	}
+	if beforeInfo.UpgradedRoomID != nil {
+		t.Errorf("Expected upgraded room to be nil, but got %s", *beforeInfo.UpgradedRoomID)
+	}
+
+	t.Log("Mark the room as being replaced.")
+	const newID = "!brandspankingnew:localhost"
+	err = table.MarkAsReplaced(txn, oldID, newID)
+	if err != nil {
+		t.Errorf("Failed to mark room as replaced: %s", err)
+	}
+
+	t.Log("The room should have a replacement, but still have no predecessor.")
+	afterInfo := getRoomInfo(t, txn, table, oldID)
+	if afterInfo.PredecessorRoomID != nil {
+		t.Errorf("Expected predecessor room to be nil, but got %s", *afterInfo.PredecessorRoomID)
+	}
+	if afterInfo.UpgradedRoomID == nil {
+		t.Errorf("Expected upgraded room to be %s, but got nil", newID)
+	} else if *afterInfo.UpgradedRoomID != newID {
+		t.Errorf("Expected upgraded room to be %s, but got %s", newID, *afterInfo.UpgradedRoomID)
+	}
+
+}
+
 func getRoomInfo(t *testing.T, txn *sqlx.Tx, table *RoomsTable, roomID string) RoomInfo {
 	t.Helper()
 	infos, err := table.SelectRoomInfos(txn)
