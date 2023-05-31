@@ -105,9 +105,16 @@ func (a *Accumulator) roomInfoDelta(roomID string, events []Event) RoomInfo {
 			isEncrypted = true
 		}
 		if ev.Type == "m.room.tombstone" && ev.StateKey == "" {
-			contentType := gjson.GetBytes(ev.JSON, "content.replacement_room")
-			if contentType.Exists() && contentType.Type == gjson.String {
-				upgradedRoomID = &contentType.Str
+			replacementRoomID := gjson.GetBytes(ev.JSON, "content.replacement_room")
+			if replacementRoomID.Exists() && replacementRoomID.Type == gjson.String {
+				upgradedRoomID = &replacementRoomID.Str
+			}
+		}
+		// TODO: use stable identifier if MSC is accepted
+		if ev.Type == "org.matrix.msc3946.room_predecessor" && ev.StateKey == "" {
+			predecessorRoomID := gjson.GetBytes(ev.JSON, "content.predecessor_room_id")
+			if predecessorRoomID.Exists() && predecessorRoomID.Type == gjson.String {
+				pred = &predecessorRoomID.Str
 			}
 		}
 		if ev.Type == "m.room.create" && ev.StateKey == "" {
