@@ -30,7 +30,7 @@ func TestStorageRoomStateBeforeAndAfterEventPosition(t *testing.T) {
 		testutils.NewStateEvent(t, "m.room.join_rules", "", alice, map[string]interface{}{"join_rule": "invite"}),
 		testutils.NewStateEvent(t, "m.room.member", bob, alice, map[string]interface{}{"membership": "invite"}),
 	}
-	_, latestNIDs, err := store.Accumulate(roomID, "", events)
+	_, latestNIDs, _, err := store.Accumulate(roomID, "", events)
 	if err != nil {
 		t.Fatalf("Accumulate returned error: %s", err)
 	}
@@ -154,7 +154,7 @@ func TestStorageJoinedRoomsAfterPosition(t *testing.T) {
 	var latestNIDs []int64
 	var err error
 	for roomID, eventMap := range roomIDToEventMap {
-		_, latestNIDs, err = store.Accumulate(roomID, "", eventMap)
+		_, latestNIDs, _, err = store.Accumulate(roomID, "", eventMap)
 		if err != nil {
 			t.Fatalf("Accumulate on %s failed: %s", roomID, err)
 		}
@@ -339,7 +339,7 @@ func TestVisibleEventNIDsBetween(t *testing.T) {
 		},
 	}
 	for _, tl := range timelineInjections {
-		numNew, _, err := store.Accumulate(tl.RoomID, "", tl.Events)
+		numNew, _, _, err := store.Accumulate(tl.RoomID, "", tl.Events)
 		if err != nil {
 			t.Fatalf("Accumulate on %s failed: %s", tl.RoomID, err)
 		}
@@ -442,7 +442,7 @@ func TestVisibleEventNIDsBetween(t *testing.T) {
 		t.Fatalf("LatestEventNID: %s", err)
 	}
 	for _, tl := range timelineInjections {
-		numNew, _, err := store.Accumulate(tl.RoomID, "", tl.Events)
+		numNew, _, _, err := store.Accumulate(tl.RoomID, "", tl.Events)
 		if err != nil {
 			t.Fatalf("Accumulate on %s failed: %s", tl.RoomID, err)
 		}
@@ -522,7 +522,7 @@ func TestStorageLatestEventsInRoomsPrevBatch(t *testing.T) {
 	}
 	eventIDs := []string{}
 	for _, timeline := range timelines {
-		_, _, err = store.Accumulate(roomID, timeline.prevBatch, timeline.timeline)
+		_, _, _, err = store.Accumulate(roomID, timeline.prevBatch, timeline.timeline)
 		if err != nil {
 			t.Fatalf("failed to accumulate: %s", err)
 		}

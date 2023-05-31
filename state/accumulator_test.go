@@ -115,7 +115,7 @@ func TestAccumulatorAccumulate(t *testing.T) {
 	}
 	var numNew int
 	var latestNIDs []int64
-	if numNew, latestNIDs, err = accumulator.Accumulate(roomID, "", newEvents); err != nil {
+	if numNew, latestNIDs, _, err = accumulator.Accumulate(roomID, "", newEvents); err != nil {
 		t.Fatalf("failed to Accumulate: %s", err)
 	}
 	if numNew != len(newEvents) {
@@ -185,7 +185,7 @@ func TestAccumulatorAccumulate(t *testing.T) {
 	}
 
 	// subsequent calls do nothing and are not an error
-	if _, _, err = accumulator.Accumulate(roomID, "", newEvents); err != nil {
+	if _, _, _, err = accumulator.Accumulate(roomID, "", newEvents); err != nil {
 		t.Fatalf("failed to Accumulate: %s", err)
 	}
 }
@@ -207,7 +207,7 @@ func TestAccumulatorDelta(t *testing.T) {
 		[]byte(`{"event_id":"aH", "type":"m.room.join_rules", "state_key":"", "content":{"join_rule":"public"}}`),
 		[]byte(`{"event_id":"aI", "type":"m.room.history_visibility", "state_key":"", "content":{"visibility":"public"}}`),
 	}
-	if _, _, err = accumulator.Accumulate(roomID, "", roomEvents); err != nil {
+	if _, _, _, err = accumulator.Accumulate(roomID, "", roomEvents); err != nil {
 		t.Fatalf("failed to Accumulate: %s", err)
 	}
 
@@ -266,7 +266,7 @@ func TestAccumulatorMembershipLogs(t *testing.T) {
 		// @me leaves the room
 		[]byte(`{"event_id":"` + roomEventIDs[7] + `", "type":"m.room.member", "state_key":"@me:localhost","unsigned":{"prev_content":{"membership":"join", "displayname":"Me"}}, "content":{"membership":"leave"}}`),
 	}
-	if _, _, err = accumulator.Accumulate(roomID, "", roomEvents); err != nil {
+	if _, _, _, err = accumulator.Accumulate(roomID, "", roomEvents); err != nil {
 		t.Fatalf("failed to Accumulate: %s", err)
 	}
 	txn, err := accumulator.db.Beginx()
@@ -389,7 +389,7 @@ func TestAccumulatorDupeEvents(t *testing.T) {
 		t.Fatalf("failed to Initialise accumulator: %s", err)
 	}
 
-	_, _, err = accumulator.Accumulate(roomID, "", joinRoom.Timeline.Events)
+	_, _, _, err = accumulator.Accumulate(roomID, "", joinRoom.Timeline.Events)
 	if err != nil {
 		t.Fatalf("failed to Accumulate: %s", err)
 	}
@@ -434,7 +434,7 @@ func TestAccumulatorMisorderedGraceful(t *testing.T) {
 	}
 
 	// Accumulate events D, A, B(msg).
-	_, _, err = accumulator.Accumulate(roomID, "", []json.RawMessage{eventD, eventA, eventBMsg})
+	_, _, _, err = accumulator.Accumulate(roomID, "", []json.RawMessage{eventD, eventA, eventBMsg})
 	if err != nil {
 		t.Fatalf("failed to Accumulate: %s", err)
 	}

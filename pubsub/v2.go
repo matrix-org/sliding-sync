@@ -36,6 +36,10 @@ type V2Accumulate struct {
 	RoomID    string
 	PrevBatch string
 	EventNIDs []int64
+	// RoomReplacements is a slice of string pairs (old, new). Each entry corresponds
+	// to a state event that the poller has just seen in the new room which marks the
+	// new room as replacing the old room.
+	RoomReplacements [][2]string
 }
 
 func (*V2Accumulate) Type() string { return "V2Accumulate" }

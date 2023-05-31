@@ -298,9 +298,11 @@ func (a *Accumulator) Initialise(roomID string, state []json.RawMessage) (Initia
 //     to exist in the database, and the sync stream is already linearised for us.
 //   - Else it creates a new room state snapshot if the timeline contains state events (as this now represents the current state)
 //   - It adds entries to the membership log for membership events.
-func (a *Accumulator) Accumulate(roomID string, prevBatch string, timeline []json.RawMessage) (numNew int, timelineNIDs []int64, err error) {
+func (a *Accumulator) Accumulate(roomID string, prevBatch string, timeline []json.RawMessage) (
+	numNew int, timelineNIDs []int64, roomReplacements [][2]string, err error,
+) {
 	if len(timeline) == 0 {
-		return 0, nil, nil
+		return 0, nil, nil, nil
 	}
 	err = sqlutil.WithTransaction(a.db, func(txn *sqlx.Tx) error {
 		// Insert the events. Check for duplicates which can happen in the real world when joining
@@ -417,12 +419,26 @@ func (a *Accumulator) Accumulate(roomID string, prevBatch string, timeline []jso
 
 		// the last fetched snapshot ID is the current one
 		info := a.roomInfoDelta(roomID, newEvents)
+		logger.Warn().Any("info", info).Msg("DMR: got info")
 		if err = a.roomsTable.Upsert(txn, info, snapID, latestNID); err != nil {
 			return fmt.Errorf("failed to UpdateCurrentSnapshotID to %d: %w", snapID, err)
 		}
+		// If we have just learned that this room replaces another, mark the replaced
+		// room as being replaced.
+		//
+		// (We will do this when we see a tombstone event for the replaced room.
+		// However, the experimental `m.room.predecessor` state event only appears in
+		// the replacement room; there is no indication in the replaced room that it has
+		// been replaced.)
+		if info.PredecessorRoomID != nil {
+			if err = a.roomsTable.MarkAsReplaced(txn, *info.PredecessorRoomID, roomID); err != nil {
+				return fmt.Errorf("failed to mark %s as being replaced by %s", *info.PredecessorRoomID, roomID)
+			}
+			roomReplacements = append(roomReplacements, [2]string{*info.PredecessorRoomID, roomID})
+		}
 		return nil
 	})
-	return numNew, timelineNIDs, err
+	return numNew, timelineNIDs, roomReplacements, err
 }
 
 // Delta returns a list of events of at most `limit` for the room not including `lastEventNID`.

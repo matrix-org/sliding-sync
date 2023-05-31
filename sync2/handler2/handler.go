@@ -228,7 +228,7 @@ func (h *Handler) Accumulate(userID, deviceID, roomID, prevBatch string, timelin
 	}
 
 	// Insert new events
-	numNew, latestNIDs, err := h.Store.Accumulate(roomID, prevBatch, timeline)
+	numNew, latestNIDs, roomReplacements, err := h.Store.Accumulate(roomID, prevBatch, timeline)
 	if err != nil {
 		logger.Err(err).Int("timeline", len(timeline)).Str("room", roomID).Msg("V2: failed to accumulate room")
 		sentry.CaptureException(err)
@@ -242,6 +242,10 @@ func (h *Handler) Accumulate(userID, deviceID, roomID, prevBatch string, timelin
 		RoomID:    roomID,
 		PrevBatch: prevBatch,
 		EventNIDs: latestNIDs,
+		// TODO: for now I've just shoved this into V2Accumulate. But maybe we ought to
+		// have a new pubsub Payload type, say V2RoomReplacement dedicated to this?
+		// TODO: push this through to the V2DataReceiver and update caches on the V3 side?
+		RoomReplacements: roomReplacements,
 	})
 }
 

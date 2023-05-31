@@ -318,7 +318,9 @@ func (s *Storage) currentNotMembershipStateEventsInAllRooms(txn *sqlx.Tx, eventT
 	return result, nil
 }
 
-func (s *Storage) Accumulate(roomID, prevBatch string, timeline []json.RawMessage) (numNew int, timelineNIDs []int64, err error) {
+func (s *Storage) Accumulate(roomID, prevBatch string, timeline []json.RawMessage) (
+	numNew int, timelineNIDs []int64, roomReplacements [][2]string, err error,
+) {
 	return s.accumulator.Accumulate(roomID, prevBatch, timeline)
 }
 
