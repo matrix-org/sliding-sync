@@ -182,13 +182,22 @@ func (s *Storage) MetadataForAllRooms(txn *sqlx.Tx, tempTableName string, result
 	}
 
 	// work out latest timestamps
-	events, err := s.accumulator.eventsTable.selectLatestEventInAllRooms(txn)
+	events, err := s.accumulator.eventsTable.selectLatestEventByTypeInAllRooms(txn)
 	if err != nil {
 		return err
 	}
 	for _, ev := range events {
-		metadata := result[ev.RoomID]
+		metadata, ok := result[ev.RoomID]
 		metadata.LastMessageTimestamp = gjson.ParseBytes(ev.JSON).Get("origin_server_ts").Uint()
+		if !ok {
+			metadata = *internal.NewRoomMetadata(ev.RoomID)
+		}
+		parsed := gjson.ParseBytes(ev.JSON)
+		eventMetadata := internal.EventMetadata{
+			NID:       ev.NID,
+			Timestamp: parsed.Get("origin_server_ts").Uint(),
+		}
+		metadata.LatestEventsByType[parsed.Get("type").Str] = eventMetadata
 		// it's possible the latest event is a brand new room not caught by the first SELECT for joined
 		// rooms e.g when you're invited to a room so we need to make sure to set the metadata again here
 		metadata.RoomID = ev.RoomID

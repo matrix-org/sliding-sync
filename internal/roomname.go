@@ -6,6 +6,13 @@ import (
 	"strings"
 )
 
+// EventMetadata holds timing information about an event, to be used when sorting room
+// lists by recency.
+type EventMetadata struct {
+	NID       int64
+	Timestamp uint64
+}
+
 // RoomMetadata holds room-scoped data. It is primarily used in two places:
 //   - in the caches.GlobalCache, to hold the latest version of data that is consistent
 //     between all users in the room; and
@@ -21,15 +28,15 @@ type RoomMetadata struct {
 	CanonicalAlias string
 	JoinCount      int
 	InviteCount    int
-	// LastMessageTimestamp is the origin_server_ts of the event most recently seen in
-	// this room. Because events arrive at the upstream homeserver out-of-order (and
-	// because origin_server_ts is an untrusted event field), this timestamp can
-	// _decrease_ as new events come in.
+	// TODO removeme
 	LastMessageTimestamp uint64
-	Encrypted            bool
-	PredecessorRoomID    *string
-	UpgradedRoomID       *string
-	RoomType             *string
+	// LatestEventsByType tracks timing information for the latest event in the room,
+	// grouped by event type.
+	LatestEventsByType map[string]EventMetadata
+	Encrypted          bool
+	PredecessorRoomID  *string
+	UpgradedRoomID     *string
+	RoomType           *string
 	// if this room is a space, which rooms are m.space.child state events. This is the same for all users hence is global.
 	ChildSpaceRooms map[string]struct{}
 	// The latest m.typing ephemeral event for this room.
@@ -38,8 +45,9 @@ type RoomMetadata struct {
 
 func NewRoomMetadata(roomID string) *RoomMetadata {
 	return &RoomMetadata{
-		RoomID:          roomID,
-		ChildSpaceRooms: make(map[string]struct{}),
+		RoomID:             roomID,
+		LatestEventsByType: make(map[string]EventMetadata),
+		ChildSpaceRooms:    make(map[string]struct{}),
 	}
 }
 

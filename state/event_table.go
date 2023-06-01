@@ -328,10 +328,20 @@ func (t *EventTable) SelectLatestEventsBetween(txn *sqlx.Tx, roomID string, lowe
 	return events, err
 }
 
-func (t *EventTable) selectLatestEventInAllRooms(txn *sqlx.Tx) ([]Event, error) {
+func (t *EventTable) selectLatestEventByTypeInAllRooms(txn *sqlx.Tx) ([]Event, error) {
 	result := []Event{}
+	// TODO: this query ends up doing a sequential scan on the events table. We have
+	// an index on (event_type, room_id, event_nid) so I'm a little surprised that PG
+	// decides to do so. Can we do something better here? Ideas:
+	// - Find a better query for selecting the newest event of each type in a room.
+	// - At present we only care about the _timestamps_ of these events. Perhaps we
+	//   could store those in the DB (and even in an index) as a column and select
+	//   those, to avoid having to parse the event bodies.
+	// - We could have the application maintain a `latest_events` table so that the
+	//   rows can be directly read. Assuming a mostly-static set of event types, reads
+	//   are then linear in the number of rooms.
 	rows, err := txn.Query(
-		`SELECT room_id, event FROM syncv3_events WHERE event_nid in (SELECT MAX(event_nid) FROM syncv3_events GROUP BY room_id)`,
+		`SELECT room_id, event_nid, event FROM syncv3_events WHERE event_nid in (SELECT MAX(event_nid) FROM syncv3_events GROUP BY room_id, event_type)`,
 	)
 	if err != nil {
 		return nil, err
@@ -339,7 +349,7 @@ func (t *EventTable) selectLatestEventInAllRooms(txn *sqlx.Tx) ([]Event, error) 
 	defer rows.Close()
 	for rows.Next() {
 		var ev Event
-		if err := rows.Scan(&ev.RoomID, &ev.JSON); err != nil {
+		if err := rows.Scan(&ev.RoomID, &ev.NID, &ev.JSON); err != nil {
 			return nil, err
 		}
 		result = append(result, ev)
