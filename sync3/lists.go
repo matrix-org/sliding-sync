@@ -55,7 +55,7 @@ func NewInternalRequestLists() *InternalRequestLists {
 	}
 }
 
-func (s *InternalRequestLists) SetRoom(r RoomConnMetadata, replacePreviousTimestamp bool) (delta RoomDelta) {
+func (s *InternalRequestLists) SetRoom(r RoomConnMetadata) (delta RoomDelta) {
 	existing, exists := s.allRooms[r.RoomID]
 	if exists {
 		if existing.NotificationCount != r.NotificationCount {
@@ -74,20 +74,40 @@ func (s *InternalRequestLists) SetRoom(r RoomConnMetadata, replacePreviousTimest
 			)
 		}
 
-		// Only bump this room in the room list if the update is of interest to the
-		// client.
-		if replacePreviousTimestamp {
-			r.LastInterestedEventTimestamp = r.LastMessageTimestamp
-		} else {
-			r.LastInterestedEventTimestamp = existing.LastInterestedEventTimestamp
+		// Interpret the timestamp map on r as the changes we should apply atop the
+		// existing timestamps.
+		newTimestamps := r.LastInterestedEventTimestamps
+		r.LastInterestedEventTimestamps = make(map[string]uint64, len(s.lists))
+		for listKey := range s.lists {
+			newTs, bump := newTimestamps[listKey]
+			if bump {
+				r.LastInterestedEventTimestamps[listKey] = newTs
+			} else {
+				prevTs, hadPreviousTs := existing.LastInterestedEventTimestamps[listKey]
+				if hadPreviousTs {
+					r.LastInterestedEventTimestamps[listKey] = prevTs
+				} else {
+					// This can happen if the listKey is brand-new in this request.
+					r.LastInterestedEventTimestamps[listKey] = existing.LastMessageTimestamp
+				}
+			}
 		}
 	} else {
 		// set the canonical name to allow room name sorting to work
 		r.CanonicalisedName = strings.ToLower(
 			strings.Trim(internal.CalculateRoomName(&r.RoomMetadata, 5), "#!():_@"),
 		)
-		// Also set a lastActivityTimestamp so recency sorting works.
-		r.LastInterestedEventTimestamp = r.LastMessageTimestamp
+		// Set LastInterestedEventTimestamps here so that recency sorts work. We use the
+		// timestamps provided by the caller, but otherwise fall back to that in the
+		// global event metadata.
+		newTimestamps := r.LastInterestedEventTimestamps
+		r.LastInterestedEventTimestamps = make(map[string]uint64, len(s.lists))
+		for listKey := range s.lists {
+			_, ok := newTimestamps[listKey]
+			if !ok {
+				newTimestamps[listKey] = r.LastMessageTimestamp
+			}
+		}
 	}
 	// filter.Include may call on this room ID in the RoomFinder, so make sure it finds it.
 	s.allRooms[r.RoomID] = &r
@@ -130,17 +150,34 @@ func (s *InternalRequestLists) RemoveRoom(roomID string) {
 }
 
 func (s *InternalRequestLists) DeleteList(listKey string) {
-	// TODO
+	delete(s.lists, listKey)
+	for _, room := range s.allRooms {
+		delete(room.LastInterestedEventTimestamps, listKey)
+	}
 }
 
-// Returns the underlying Room object. Returns a shared pointer, not a copy.
+// Returns the underlying RoomConnMetadata object. Returns a shared pointer, not a copy.
 // It is only safe to read this data, never to write.
 func (s *InternalRequestLists) ReadOnlyRoom(roomID string) *RoomConnMetadata {
 	return s.allRooms[roomID]
 }
 
+// Get returns the sorted list of rooms. Returns a shared pointer, not a copy.
+// It is only safe to read this data, never to write.
 func (s *InternalRequestLists) Get(listKey string) *FilteredSortableRooms {
 	return s.lists[listKey]
+}
+
+// ListKeys returns a copy of the list keys currently tracked by this
+// InternalRequestLists struct, in no particular order. Outside of test code, you
+// probably don't want to call this---you probably have the set of list keys tracked
+// elsewhere in the application.
+func (s *InternalRequestLists) ListKeys() []string {
+	keys := make([]string, len(s.lists))
+	for listKey, _ := range s.lists {
+		keys = append(keys, listKey)
+	}
+	return keys
 }
 
 // ListsByVisibleRoomIDs builds a map from room IDs to a slice of list names. Keys are
@@ -153,8 +190,8 @@ func (s *InternalRequestLists) Get(listKey string) *FilteredSortableRooms {
 func (s *InternalRequestLists) ListsByVisibleRoomIDs(muxedReqLists map[string]RequestList) map[string][]string {
 	listsByRoomIDs := make(map[string][]string, len(muxedReqLists))
 	// Loop over each list, and mark each room in its sliding window as being visible in this list.
-	for listName, reqList := range muxedReqLists {
-		sortedRooms := s.lists[listName].SortableRooms
+	for listKey, reqList := range muxedReqLists {
+		sortedRooms := s.lists[listKey].SortableRooms
 		if sortedRooms == nil {
 			continue
 		}
@@ -163,14 +200,14 @@ func (s *InternalRequestLists) ListsByVisibleRoomIDs(muxedReqLists map[string]Re
 		// have to worry about extracting room IDs in the sliding windows' ranges.
 		if reqList.SlowGetAllRooms != nil && *reqList.SlowGetAllRooms {
 			for _, roomID := range sortedRooms.RoomIDs() {
-				listsByRoomIDs[roomID] = append(listsByRoomIDs[roomID], listName)
+				listsByRoomIDs[roomID] = append(listsByRoomIDs[roomID], listKey)
 			}
 		} else {
 			subslices := reqList.Ranges.SliceInto(sortedRooms)
 			for _, subslice := range subslices {
 				sortedRooms = subslice.(*SortableRooms)
 				for _, roomID := range sortedRooms.RoomIDs() {
-					listsByRoomIDs[roomID] = append(listsByRoomIDs[roomID], listName)
+					listsByRoomIDs[roomID] = append(listsByRoomIDs[roomID], listKey)
 				}
 			}
 		}
@@ -194,7 +231,7 @@ func (s *InternalRequestLists) AssignList(ctx context.Context, listKey string, f
 		i++
 	}
 
-	roomList := NewFilteredSortableRooms(s, roomIDs, filters)
+	roomList := NewFilteredSortableRooms(s, listKey, roomIDs, filters)
 	if sort != nil {
 		err := roomList.Sort(sort)
 		if err != nil {

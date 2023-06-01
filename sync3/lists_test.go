@@ -31,6 +31,10 @@ func addRooms(list *sync3.InternalRequestLists, n int) {
 	for i := 0; i < n; i++ {
 		next := roomCounter.Add(1)
 		messageTimestamp := uint64(timestamp.Add(time.Duration(next) * time.Minute).UnixMilli())
+		lastInterestedEventTimestamps := make(map[string]uint64)
+		for _, listKey := range list.ListKeys() {
+			lastInterestedEventTimestamps[listKey] = messageTimestamp
+		}
 		list.SetRoom(sync3.RoomConnMetadata{
 			RoomMetadata: internal.RoomMetadata{
 				RoomID:               fmt.Sprintf("!%d:benchmark", next),
@@ -41,7 +45,7 @@ func addRooms(list *sync3.InternalRequestLists, n int) {
 			UserRoomData: caches.UserRoomData{
 				IsDM: next%10 == 0,
 			},
-			LastInterestedEventTimestamp: messageTimestamp,
-		}, true)
+			LastInterestedEventTimestamps: lastInterestedEventTimestamps,
+		})
 	}
 }

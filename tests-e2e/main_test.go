@@ -167,14 +167,18 @@ func MatchRoomInviteState(events []Event, partial bool) m.RoomMatcher {
 }
 
 func registerNewUser(t *testing.T) *CSAPI {
+	return registerNamedUser(t, "user")
+}
+
+func registerNamedUser(t *testing.T, localpartPrefix string) *CSAPI {
 	// create user
+	localpart := fmt.Sprintf("%s-%d-%d", localpartPrefix, time.Now().Unix(), atomic.AddUint64(&userCounter, 1))
 	httpClient := NewLoggedClient(t, "localhost", nil)
 	client := &CSAPI{
 		Client:           httpClient,
 		BaseURL:          homeserverBaseURL,
 		SyncUntilTimeout: 3 * time.Second,
 	}
-	localpart := fmt.Sprintf("user-%d-%d", time.Now().Unix(), atomic.AddUint64(&userCounter, 1))
 
 	client.UserID, client.AccessToken, client.DeviceID = client.RegisterUser(t, localpart, "password")
 	client.Localpart = strings.Split(client.UserID, ":")[0][1:]
