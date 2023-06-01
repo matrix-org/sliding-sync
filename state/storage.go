@@ -610,7 +610,7 @@ func (s *Storage) visibleEventNIDsBetweenForRooms(userID string, roomIDs []strin
 			return nil, fmt.Errorf("VisibleEventNIDsBetweenForRooms.SelectEventsWithTypeStateKeyInRooms: %s", err)
 		}
 	}
-	joinedRoomIDs, err := s.joinedRoomsAfterPositionWithEvents(membershipEvents, userID, from)
+	joinedRoomIDs, _, err := s.determineJoinedRoomsFromMemberships(membershipEvents)
 	if err != nil {
 		return nil, fmt.Errorf("failed to work out joined rooms for %s at pos %d: %s", userID, from, err)
 	}
@@ -651,7 +651,7 @@ func (s *Storage) visibleEventNIDsBetweenForRooms(userID string, roomIDs []strin
 //	- For Room E: from=1, to=15 returns { RoomE: [ [3,3], [13,15] ] } (tests invites)
 func (s *Storage) VisibleEventNIDsBetween(userID string, from, to int64) (map[string][][2]int64, error) {
 	// load *ALL* joined rooms for this user at from (inclusive)
-	joinedRoomIDs, err := s.JoinedRoomsAfterPosition(userID, from)
+	joinedRoomIDs, _, err := s.JoinedRoomsAfterPosition(userID, from)
 	if err != nil {
 		return nil, fmt.Errorf("failed to work out joined rooms for %s at pos %d: %s", userID, from, err)
 	}
@@ -794,38 +794,53 @@ func (s *Storage) AllJoinedMembers(txn *sqlx.Tx, tempTableName string) (result m
 	return result, metadata, nil
 }
 
-func (s *Storage) JoinedRoomsAfterPosition(userID string, pos int64) ([]string, error) {
+func (s *Storage) JoinedRoomsAfterPosition(userID string, pos int64) (
+	joinedRoomIDs []string, joinedRoomNIDs []int64, err error,
+) {
 	// fetch all the membership events up to and including pos
 	membershipEvents, err := s.accumulator.eventsTable.SelectEventsWithTypeStateKey("m.room.member", userID, 0, pos)
 	if err != nil {
-		return nil, fmt.Errorf("JoinedRoomsAfterPosition.SelectEventsWithTypeStateKey: %s", err)
+		return nil, nil, fmt.Errorf("JoinedRoomsAfterPosition.SelectEventsWithTypeStateKey: %s", err)
 	}
-	return s.joinedRoomsAfterPositionWithEvents(membershipEvents, userID, pos)
+	return s.determineJoinedRoomsFromMemberships(membershipEvents)
 }
 
-func (s *Storage) joinedRoomsAfterPositionWithEvents(membershipEvents []Event, userID string, pos int64) ([]string, error) {
-	joinedRoomsSet := make(map[string]bool)
+// determineJoinedRoomsFromMemberships scans a slice of membership events from multiple
+// rooms, to determine which rooms a user is currently joined to. Those events MUST be
+// - sorted by ascending NIDs, and
+// - only memberships for the given user;
+// neither of these preconditions are checked by this function.
+//
+// Returns a slice of joined room IDs and a slice of joined event NIDs, whose entries
+// correspond to one another. Rooms appear in these slices in no particular order.
+func (s *Storage) determineJoinedRoomsFromMemberships(membershipEvents []Event) (
+	joinedRoomIDs []string, joinedRoomNIDs []int64, err error,
+) {
+	joinedNIDsByRoom := make(map[string]int64, len(membershipEvents))
 	for _, ev := range membershipEvents {
-		// some of these events will be profile changes but that's ok as we're just interested in the
-		// end result, not the deltas
 		membership := gjson.GetBytes(ev.JSON, "content.membership").Str
 		switch membership {
+		// These are "join" and the only memberships that you can transition to after
+		// a join: see e.g. the transition diagram in
+		// https://spec.matrix.org/v1.7/client-server-api/#room-membership
 		case "join":
-			joinedRoomsSet[ev.RoomID] = true
+			if _, alreadyJoined := joinedNIDsByRoom[ev.RoomID]; !alreadyJoined {
+				joinedNIDsByRoom[ev.RoomID] = ev.NID
+			}
 		case "ban":
 			fallthrough
 		case "leave":
-			joinedRoomsSet[ev.RoomID] = false
+			delete(joinedNIDsByRoom, ev.RoomID)
 		}
 	}
-	joinedRooms := make([]string, 0, len(joinedRoomsSet))
-	for roomID, joined := range joinedRoomsSet {
-		if joined {
-			joinedRooms = append(joinedRooms, roomID)
-		}
+	joinedRoomIDs = make([]string, 0, len(joinedNIDsByRoom))
+	joinedRoomNIDs = make([]int64, 0, len(joinedNIDsByRoom))
+	for roomID, nid := range joinedNIDsByRoom {
+		joinedRoomIDs = append(joinedRoomIDs, roomID)
+		joinedRoomNIDs = append(joinedRoomNIDs, nid)
 	}
 
-	return joinedRooms, nil
+	return joinedRoomIDs, joinedRoomNIDs, nil
 }
 
 func (s *Storage) Teardown() {

@@ -84,7 +84,7 @@ func NewConnState(
 //   - load() bases its current state based on the latest position, which includes processing of these N events.
 //   - post load() we read N events, processing them a 2nd time.
 func (s *ConnState) load(ctx context.Context, req *sync3.Request) error {
-	initialLoadPosition, joinedRooms, err := s.globalCache.LoadJoinedRooms(ctx, s.userID)
+	initialLoadPosition, joinedRooms, joinNIDs, err := s.globalCache.LoadJoinedRooms(ctx, s.userID)
 	if err != nil {
 		return err
 	}
@@ -93,6 +93,9 @@ func (s *ConnState) load(ctx context.Context, req *sync3.Request) error {
 	for _, metadata := range joinedRooms {
 		metadata.RemoveHero(s.userID)
 		urd := s.userCache.LoadRoomData(metadata.RoomID)
+		// TODO: is this necessary---will the joinNID already be in the UserCache?
+		urd.JoinNID = joinNIDs[metadata.RoomID]
+
 		interestedEventTimestampsByList := make(map[string]uint64, len(req.Lists))
 		for listKey, _ := range req.Lists {
 			// Best-effort only: we're not going to scan the database for all events in
@@ -101,8 +104,8 @@ func (s *ConnState) load(ctx context.Context, req *sync3.Request) error {
 			interestedEventTimestampsByList[listKey] = metadata.LastMessageTimestamp
 		}
 		rooms[i] = sync3.RoomConnMetadata{
-			RoomMetadata:                  *metadata,
-			UserRoomData:                  urd,
+			RoomMetadata: *metadata,
+			UserRoomData: urd,
 			LastInterestedEventTimestamps: interestedEventTimestampsByList,
 		}
 		i++

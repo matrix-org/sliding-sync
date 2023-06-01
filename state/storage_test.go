@@ -160,14 +160,14 @@ func TestStorageJoinedRoomsAfterPosition(t *testing.T) {
 		}
 		latestPos = latestNIDs[len(latestNIDs)-1]
 	}
-	aliceJoinedRooms, err := store.JoinedRoomsAfterPosition(alice, latestPos)
+	aliceJoinedRooms, _, err := store.JoinedRoomsAfterPosition(alice, latestPos)
 	if err != nil {
 		t.Fatalf("failed to JoinedRoomsAfterPosition: %s", err)
 	}
 	if len(aliceJoinedRooms) != 1 || aliceJoinedRooms[0] != joinedRoomID {
 		t.Fatalf("JoinedRoomsAfterPosition at %v for %s got %v want %v", latestPos, alice, aliceJoinedRooms, joinedRoomID)
 	}
-	bobJoinedRooms, err := store.JoinedRoomsAfterPosition(bob, latestPos)
+	bobJoinedRooms, _, err := store.JoinedRoomsAfterPosition(bob, latestPos)
 	if err != nil {
 		t.Fatalf("failed to JoinedRoomsAfterPosition: %s", err)
 	}

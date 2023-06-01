@@ -52,7 +52,8 @@ var logger = zerolog.New(os.Stdout).With().Timestamp().Logger().Output(zerolog.C
 // information is populated at startup from the database and then kept up-to-date by hooking into the
 // Dispatcher for new events.
 type GlobalCache struct {
-	LoadJoinedRoomsOverride func(userID string) (pos int64, joinedRooms map[string]*internal.RoomMetadata, err error)
+	// LoadJoinedRoomsOverride allows tests to mock out the behaviour of LoadJoinedRooms.
+	LoadJoinedRoomsOverride func(userID string) (pos int64, joinedRooms map[string]*internal.RoomMetadata, joinNIDs map[string]int64, err error)
 
 	// inserts are done by v2 poll loops, selects are done by v3 request threads
 	// there are lots of overlapping keys as many users (threads) can be joined to the same room (key)
@@ -101,23 +102,31 @@ func (c *GlobalCache) LoadRooms(ctx context.Context, roomIDs ...string) map[stri
 	return result
 }
 
-// Load all current joined room metadata for the user given. Returns the absolute database position along
-// with the results. TODO: remove with LoadRoomState?
-func (c *GlobalCache) LoadJoinedRooms(ctx context.Context, userID string) (pos int64, joinedRooms map[string]*internal.RoomMetadata, err error) {
+// Load all current joined room metadata for the user given, augmented with the NID of
+// the user's latest join to the room. Returns the absolute database position (the
+// latest event NID across the whole DB) - along with the results.
+// TODO: remove with LoadRoomState?
+func (c *GlobalCache) LoadJoinedRooms(ctx context.Context, userID string) (
+	pos int64, joinedRooms map[string]*internal.RoomMetadata, joinNIDs map[string]int64, err error,
+) {
 	if c.LoadJoinedRoomsOverride != nil {
 		return c.LoadJoinedRoomsOverride(userID)
 	}
 	initialLoadPosition, err := c.store.LatestEventNID()
 	if err != nil {
-		return 0, nil, err
+		return 0, nil, nil, err
 	}
-	joinedRoomIDs, err := c.store.JoinedRoomsAfterPosition(userID, initialLoadPosition)
+	joinedRoomIDs, joinNIDsSlice, err := c.store.JoinedRoomsAfterPosition(userID, initialLoadPosition)
 	if err != nil {
-		return 0, nil, err
+		return 0, nil, nil, err
+	}
+	joinNIDs = make(map[string]int64, len(joinNIDsSlice))
+	for i, nid := range joinNIDsSlice {
+		joinNIDs[joinedRoomIDs[i]] = nid
 	}
 	// TODO: no guarantee that this state is the same as latest unless called in a dispatcher loop
 	rooms := c.LoadRooms(ctx, joinedRoomIDs...)
-	return initialLoadPosition, rooms, nil
+	return initialLoadPosition, rooms, joinNIDs, nil
 }
 
 func (c *GlobalCache) LoadStateEvent(ctx context.Context, roomID string, loadPosition int64, evType, stateKey string) json.RawMessage {
