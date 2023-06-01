@@ -19,10 +19,14 @@ var logger = zerolog.New(os.Stdout).With().Timestamp().Logger().Output(zerolog.C
 
 const DispatcherAllUsers = "-"
 
+// Receiver represents the callbacks that a Dispatcher may fire.
 type Receiver interface {
 	OnNewEvent(ctx context.Context, event *caches.EventData)
 	OnReceipt(ctx context.Context, receipt internal.Receipt)
 	OnEphemeralEvent(ctx context.Context, roomID string, ephEvent json.RawMessage)
+	// OnRegistered is called after a successful call to Dispatcher.Register. After
+	// this call, the receiver will be told about events whose NID is greater than
+	// latestPos.
 	OnRegistered(ctx context.Context, latestPos int64) error
 }
 
@@ -31,7 +35,8 @@ type Dispatcher struct {
 	jrt              *JoinedRoomsTracker
 	userToReceiver   map[string]Receiver
 	userToReceiverMu *sync.RWMutex
-	latestPos        int64
+	// latestPos is an eventNID, the largest that this dispatcher has seen.
+	latestPos int64
 }
 
 func NewDispatcher() *Dispatcher {

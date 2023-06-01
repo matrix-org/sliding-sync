@@ -56,6 +56,8 @@ type UserRoomData struct {
 	Tags map[string]float64
 	// LoadPos is an event NID. UserRoomData instances represent the status of this room after the corresponding event, as seen by this user.
 	LoadPos int64
+	// JoinNID is the NID of our latest join to the room, excluding profile changes.
+	JoinNID int64
 }
 
 func NewUserRoomData() UserRoomData {
@@ -210,10 +212,14 @@ func (c *UserCache) Unsubscribe(id int) {
 	delete(c.listeners, id)
 }
 
+// OnRegistered is called after the sync3.Dispatcher has successfully registered this
+// cache to receive updates. We use this to run some final initialisation logic that
+// is sensitive to race conditions; confusingly, most of the initialisation is driven
+// externally by sync3.SyncLiveHandler.userCache.
 func (c *UserCache) OnRegistered(ctx context.Context, _ int64) error {
 	// select all spaces the user is a part of to seed the cache correctly. This has to be done in
 	// the OnRegistered callback which has locking guarantees. This is why...
-	latestPos, joinedRooms, _, err := c.globalCache.LoadJoinedRooms(ctx, c.UserID)
+	latestPos, joinedRooms, joinNIDs, err := c.globalCache.LoadJoinedRooms(ctx, c.UserID)
 	if err != nil {
 		return fmt.Errorf("failed to load joined rooms: %s", err)
 	}
@@ -249,7 +255,8 @@ func (c *UserCache) OnRegistered(ctx context.Context, _ int64) error {
 	//    |<--------new space event---------------|
 	//
 
-	// the db pos is _always_ equal to or ahead of the dispatcher, so we will discard any position less than this.
+	// the db pos is _always_ equal to or ahead of the dispatcher, so we will discard
+	// any updates from the dispatcher with position less than this.
 	c.latestPos = latestPos
 	for _, room := range joinedRooms {
 		// inject space children events
@@ -263,6 +270,17 @@ func (c *UserCache) OnRegistered(ctx context.Context, _ int64) error {
 				})
 			}
 		}
+
+		// Record when we joined the room. We've just had to scan the history of our
+		// membership in this room to produce joinedRooms above, so we may as well
+		// do this here too.
+		c.roomToDataMu.Lock()
+		urd, ok := c.roomToData[room.RoomID]
+		if !ok {
+			urd = NewUserRoomData()
+		}
+		urd.JoinNID = joinNIDs[room.RoomID]
+		c.roomToDataMu.Unlock()
 	}
 	return nil
 }

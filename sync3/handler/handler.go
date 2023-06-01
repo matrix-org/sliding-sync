@@ -440,6 +440,14 @@ func (h *SyncLiveHandler) CacheForUser(userID string) *caches.UserCache {
 	return nil
 }
 
+// userCache fetches an existing caches.UserCache for this user if one exists. If not,
+// it
+//  - creates a blank caches.UserCache struct,
+//  - fires callbacks on that struct as necessary to populate it with initial state,
+//  - stores the struct so it will not be recreated in the future, and
+//  - registers the cache with the Dispatcher.
+//
+// Some extra initialisation takes place in caches.UserCache.OnRegister.
 func (h *SyncLiveHandler) userCache(userID string) (*caches.UserCache, error) {
 	// bail if we already have a cache
 	c, ok := h.userCaches.Load(userID)
