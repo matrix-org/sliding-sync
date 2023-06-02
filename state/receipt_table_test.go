@@ -192,9 +192,9 @@ func TestReceiptTable(t *testing.T) {
 		},
 	})
 
-	got, err = table.SelectReceiptsForUser(roomA, "@self:example.org")
+	gotMap, err := table.SelectReceiptsForUser([]string{roomA}, "@self:example.org")
 	assertNoError(t, err)
-	parsedReceiptsEqual(t, got, []internal.Receipt{
+	parsedReceiptsEqual(t, gotMap[roomA], []internal.Receipt{
 		{
 			RoomID:    roomA,
 			EventID:   "$1435641916114394fHBLK:matrix.org",
