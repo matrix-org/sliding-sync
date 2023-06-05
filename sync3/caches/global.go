@@ -77,29 +77,48 @@ func (c *GlobalCache) OnRegistered(_ context.Context, _ int64) error {
 	return nil
 }
 
-// Load the current room metadata for the given room IDs. Races unless you call this in a dispatcher loop.
+// LoadRooms loads the current room metadata for the given room IDs. Races unless you call this in a dispatcher loop.
 // Always returns copies of the room metadata so ownership can be passed to other threads.
-// Keeps the ordering of the room IDs given.
 func (c *GlobalCache) LoadRooms(ctx context.Context, roomIDs ...string) map[string]*internal.RoomMetadata {
 	c.roomIDToMetadataMu.RLock()
 	defer c.roomIDToMetadataMu.RUnlock()
 	result := make(map[string]*internal.RoomMetadata, len(roomIDs))
 	for i := range roomIDs {
 		roomID := roomIDs[i]
-		sr := c.roomIDToMetadata[roomID]
-		if sr == nil {
-			logger.Warn().Str("room", roomID).Msg("GlobalCache.LoadRoom: no metadata for this room")
-			continue
-		}
-		srCopy := *sr
-		// copy the heroes or else we may modify the same slice which would be bad :(
-		srCopy.Heroes = make([]internal.Hero, len(sr.Heroes))
-		for i := range sr.Heroes {
-			srCopy.Heroes[i] = sr.Heroes[i]
-		}
-		result[roomID] = &srCopy
+		result[roomID] = c.copyRoom(roomID)
 	}
 	return result
+}
+
+// LoadRoomsFromMap is like LoadRooms, except it is given a map with room IDs as keys.
+// The values in that map are completely ignored.
+func (c *GlobalCache) LoadRoomsFromMap(ctx context.Context, joinNIDsByRoomID map[string]int64) map[string]*internal.RoomMetadata {
+	c.roomIDToMetadataMu.RLock()
+	defer c.roomIDToMetadataMu.RUnlock()
+	result := make(map[string]*internal.RoomMetadata, len(joinNIDsByRoomID))
+	for roomID, _ := range joinNIDsByRoomID {
+		result[roomID] = c.copyRoom(roomID)
+	}
+	return result
+}
+
+// copyRoom returns a copy of the internal.RoomMetadata stored for this room.
+// This is an internal implementation detail of LoadRooms and LoadRoomsFromMap.
+// If the room is not present in the global cache, returns nil.
+// The caller MUST acquire a read lock on roomIDToMetadataMu before calling this.
+func (c *GlobalCache) copyRoom(roomID string) *internal.RoomMetadata {
+	sr := c.roomIDToMetadata[roomID]
+	if sr == nil {
+		logger.Warn().Str("room", roomID).Msg("GlobalCache.LoadRoom: no metadata for this room")
+		return nil
+	}
+	srCopy := *sr
+	// copy the heroes or else we may modify the same slice which would be bad :(
+	srCopy.Heroes = make([]internal.Hero, len(sr.Heroes))
+	for i := range sr.Heroes {
+		srCopy.Heroes[i] = sr.Heroes[i]
+	}
+	return &srCopy
 }
 
 // LoadJoinedRooms loads all current joined room metadata for the user given, together
@@ -108,7 +127,7 @@ func (c *GlobalCache) LoadRooms(ctx context.Context, roomIDs ...string) map[stri
 // along with the results.
 // TODO: remove with LoadRoomState?
 func (c *GlobalCache) LoadJoinedRooms(ctx context.Context, userID string) (
-	pos int64, joinedRooms map[string]*internal.RoomMetadata, joinNIDs map[string]int64, err error,
+	pos int64, joinedRooms map[string]*internal.RoomMetadata, joinNIDsByRoomID map[string]int64, err error,
 ) {
 	if c.LoadJoinedRoomsOverride != nil {
 		return c.LoadJoinedRoomsOverride(userID)
@@ -117,17 +136,13 @@ func (c *GlobalCache) LoadJoinedRooms(ctx context.Context, userID string) (
 	if err != nil {
 		return 0, nil, nil, err
 	}
-	joinedRoomIDs, joinNIDsSlice, err := c.store.JoinedRoomsAfterPosition(userID, initialLoadPosition)
+	joinNIDsByRoomID, err = c.store.JoinedRoomsAfterPosition(userID, initialLoadPosition)
 	if err != nil {
 		return 0, nil, nil, err
 	}
-	joinNIDs = make(map[string]int64, len(joinNIDsSlice))
-	for i, nid := range joinNIDsSlice {
-		joinNIDs[joinedRoomIDs[i]] = nid
-	}
 	// TODO: no guarantee that this state is the same as latest unless called in a dispatcher loop
-	rooms := c.LoadRooms(ctx, joinedRoomIDs...)
-	return initialLoadPosition, rooms, joinNIDs, nil
+	rooms := c.LoadRoomsFromMap(ctx, joinNIDsByRoomID)
+	return initialLoadPosition, rooms, joinNIDsByRoomID, nil
 }
 
 func (c *GlobalCache) LoadStateEvent(ctx context.Context, roomID string, loadPosition int64, evType, stateKey string) json.RawMessage {

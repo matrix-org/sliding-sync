@@ -610,7 +610,7 @@ func (s *Storage) visibleEventNIDsBetweenForRooms(userID string, roomIDs []strin
 			return nil, fmt.Errorf("VisibleEventNIDsBetweenForRooms.SelectEventsWithTypeStateKeyInRooms: %s", err)
 		}
 	}
-	joinedRoomIDs, _, err := s.determineJoinedRoomsFromMemberships(membershipEvents)
+	joinNIDsByRoomID, err := s.determineJoinedRoomsFromMemberships(membershipEvents)
 	if err != nil {
 		return nil, fmt.Errorf("failed to work out joined rooms for %s at pos %d: %s", userID, from, err)
 	}
@@ -621,7 +621,7 @@ func (s *Storage) visibleEventNIDsBetweenForRooms(userID string, roomIDs []strin
 		return nil, fmt.Errorf("failed to load membership events: %s", err)
 	}
 
-	return s.visibleEventNIDsWithData(joinedRoomIDs, membershipEvents, userID, from, to)
+	return s.visibleEventNIDsWithData(joinNIDsByRoomID, membershipEvents, userID, from, to)
 }
 
 // Work out the NID ranges to pull events from for this user. Given a from and to event nid stream position,
@@ -651,7 +651,7 @@ func (s *Storage) visibleEventNIDsBetweenForRooms(userID string, roomIDs []strin
 //	- For Room E: from=1, to=15 returns { RoomE: [ [3,3], [13,15] ] } (tests invites)
 func (s *Storage) VisibleEventNIDsBetween(userID string, from, to int64) (map[string][][2]int64, error) {
 	// load *ALL* joined rooms for this user at from (inclusive)
-	joinedRoomIDs, _, err := s.JoinedRoomsAfterPosition(userID, from)
+	joinNIDsByRoomID, err := s.JoinedRoomsAfterPosition(userID, from)
 	if err != nil {
 		return nil, fmt.Errorf("failed to work out joined rooms for %s at pos %d: %s", userID, from, err)
 	}
@@ -662,10 +662,10 @@ func (s *Storage) VisibleEventNIDsBetween(userID string, from, to int64) (map[st
 		return nil, fmt.Errorf("failed to load membership events: %s", err)
 	}
 
-	return s.visibleEventNIDsWithData(joinedRoomIDs, membershipEvents, userID, from, to)
+	return s.visibleEventNIDsWithData(joinNIDsByRoomID, membershipEvents, userID, from, to)
 }
 
-func (s *Storage) visibleEventNIDsWithData(joinedRoomIDs []string, membershipEvents []Event, userID string, from, to int64) (map[string][][2]int64, error) {
+func (s *Storage) visibleEventNIDsWithData(joinNIDsByRoomID map[string]int64, membershipEvents []Event, userID string, from, to int64) (map[string][][2]int64, error) {
 	// load membership events in order and bucket based on room ID
 	roomIDToLogs := make(map[string][]membershipEvent)
 	for _, ev := range membershipEvents {
@@ -727,7 +727,7 @@ func (s *Storage) visibleEventNIDsWithData(joinedRoomIDs []string, membershipEve
 
 	// For each joined room, perform the algorithm and delete the logs afterwards
 	result := make(map[string][][2]int64)
-	for _, joinedRoomID := range joinedRoomIDs {
+	for joinedRoomID, _ := range joinNIDsByRoomID {
 		roomResult := calculateVisibleEventNIDs(true, from, to, roomIDToLogs[joinedRoomID])
 		result[joinedRoomID] = roomResult
 		delete(roomIDToLogs, joinedRoomID)
@@ -795,12 +795,12 @@ func (s *Storage) AllJoinedMembers(txn *sqlx.Tx, tempTableName string) (result m
 }
 
 func (s *Storage) JoinedRoomsAfterPosition(userID string, pos int64) (
-	joinedRoomIDs []string, joinEventNIDs []int64, err error,
+	joinedRoomsWithJoinNIDs map[string]int64, err error,
 ) {
 	// fetch all the membership events up to and including pos
 	membershipEvents, err := s.accumulator.eventsTable.SelectEventsWithTypeStateKey("m.room.member", userID, 0, pos)
 	if err != nil {
-		return nil, nil, fmt.Errorf("JoinedRoomsAfterPosition.SelectEventsWithTypeStateKey: %s", err)
+		return nil, fmt.Errorf("JoinedRoomsAfterPosition.SelectEventsWithTypeStateKey: %s", err)
 	}
 	return s.determineJoinedRoomsFromMemberships(membershipEvents)
 }
@@ -814,9 +814,9 @@ func (s *Storage) JoinedRoomsAfterPosition(userID string, pos int64) (
 // Returns a slice of joined room IDs and a slice of joined event NIDs, whose entries
 // correspond to one another. Rooms appear in these slices in no particular order.
 func (s *Storage) determineJoinedRoomsFromMemberships(membershipEvents []Event) (
-	joinedRoomIDs []string, joinEventNIDs []int64, err error,
+	joinNIDsByRoomID map[string]int64, err error,
 ) {
-	joinedNIDsByRoom := make(map[string]int64, len(membershipEvents))
+	joinNIDsByRoomID = make(map[string]int64, len(membershipEvents))
 	for _, ev := range membershipEvents {
 		membership := gjson.GetBytes(ev.JSON, "content.membership").Str
 		switch membership {
@@ -826,23 +826,17 @@ func (s *Storage) determineJoinedRoomsFromMemberships(membershipEvents []Event) 
 		case "join":
 			// Only remember a join NID if we are not joined to this room according to
 			// the state before ev.
-			if _, currentlyJoined := joinedNIDsByRoom[ev.RoomID]; !currentlyJoined {
-				joinedNIDsByRoom[ev.RoomID] = ev.NID
+			if _, currentlyJoined := joinNIDsByRoomID[ev.RoomID]; !currentlyJoined {
+				joinNIDsByRoomID[ev.RoomID] = ev.NID
 			}
 		case "ban":
 			fallthrough
 		case "leave":
-			delete(joinedNIDsByRoom, ev.RoomID)
+			delete(joinNIDsByRoomID, ev.RoomID)
 		}
 	}
-	joinedRoomIDs = make([]string, 0, len(joinedNIDsByRoom))
-	joinEventNIDs = make([]int64, 0, len(joinedNIDsByRoom))
-	for roomID, nid := range joinedNIDsByRoom {
-		joinedRoomIDs = append(joinedRoomIDs, roomID)
-		joinEventNIDs = append(joinEventNIDs, nid)
-	}
 
-	return joinedRoomIDs, joinEventNIDs, nil
+	return joinNIDsByRoomID, nil
 }
 
 func (s *Storage) Teardown() {
