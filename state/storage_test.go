@@ -21,6 +21,8 @@ func TestStorageRoomStateBeforeAndAfterEventPosition(t *testing.T) {
 	ctx := context.Background()
 	store := NewStorage(postgresConnectionString)
 	defer store.Teardown()
+	// Ensure we clean up after ourselves.
+	defer store.DB.MustExec(`TRUNCATE TABLE syncv3_events;`)
 	roomID := "!TestStorageRoomStateAfterEventPosition:localhost"
 	alice := "@alice:localhost"
 	bob := "@bob:localhost"
