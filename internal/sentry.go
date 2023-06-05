@@ -6,6 +6,10 @@ import (
 	"time"
 )
 
+// SentryCtxKey is a namespace under which we can report arbitrary key-value pairs to
+// sentry.
+const SentryCtxKey = "sliding-sync"
+
 // GetSentryHubFromContextOrDefault is a version of sentry.GetHubFromContext which
 // automatically falls back to sentry.CurrentHub if the given context has not been
 // attached a hub.

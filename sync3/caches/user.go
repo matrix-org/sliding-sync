@@ -127,7 +127,7 @@ func NewInviteData(ctx context.Context, userID, roomID string, inviteState []jso
 		logger.Error().Str("invitee", userID).Str("room", roomID).Int("num_invite_state", len(inviteState)).Msg(errMsg)
 		hub := internal.GetSentryHubFromContextOrDefault(ctx)
 		hub.WithScope(func(scope *sentry.Scope) {
-			scope.SetContext("sliding-sync", map[string]interface{}{
+			scope.SetContext(internal.SentryCtxKey, map[string]interface{}{
 				"invitee":          userID,
 				"room":             roomID,
 				"num_invite_state": len(inviteState),
