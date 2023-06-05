@@ -280,6 +280,7 @@ func (c *UserCache) OnRegistered(ctx context.Context, _ int64) error {
 			urd = NewUserRoomData()
 		}
 		urd.JoinNID = joinNIDs[room.RoomID]
+		c.roomToData[room.RoomID] = urd
 		c.roomToDataMu.Unlock()
 	}
 	return nil
