@@ -198,3 +198,40 @@ func TestSpacesFilterInvite(t *testing.T) {
 		m.MatchV3SyncOp(0, 0, []string{normalRoomID}),
 	)))
 }
+
+// Regression test to catch https://github.com/matrix-org/sliding-sync/issues/85
+func TestAddingUnknownChildToSpace(t *testing.T) {
+	alice := registerNewUser(t)
+	bob := registerNewUser(t)
+
+	t.Log("Alice creates a space and invites Bob.")
+	parentID := alice.CreateRoom(t, map[string]interface{}{
+		"type":   "m.space",
+		"invite": []string{bob.UserID},
+	})
+
+	t.Log("Bob accepts the invite.")
+	bob.JoinRoom(t, parentID, nil)
+
+	t.Log("Bob requests a new sliding sync.")
+	res := bob.SlidingSync(t, sync3.Request{
+		Lists: map[string]sync3.RequestList{
+			"bob_list": {
+				RoomSubscription: sync3.RoomSubscription{
+					TimelineLimit: 10,
+				},
+				Ranges: sync3.SliceRanges{{0, 10}},
+			},
+		},
+	})
+
+	t.Log("Alice creates a room and marks it as a child of the space.")
+	childID := alice.CreateRoom(t, map[string]interface{}{"preset": "public_chat"})
+	childEventID := alice.SetState(t, parentID, "m.space.child", childID, map[string]interface{}{
+		"via": []string{"localhost"},
+	})
+
+	t.Log("Bob syncs until he sees the m.space.child event in the space.")
+	// Before the fix, this would panic inside getInitialRoomData, resulting in a 500
+	res = bob.SlidingSyncUntilEventID(t, res.Pos, parentID, childEventID)
+}

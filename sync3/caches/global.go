@@ -87,8 +87,9 @@ func (c *GlobalCache) LoadRooms(ctx context.Context, roomIDs ...string) map[stri
 		roomID := roomIDs[i]
 		sr := c.roomIDToMetadata[roomID]
 		if sr == nil {
-			logger.Warn().Str("room", roomID).Msg("GlobalCache.LoadRoom: no metadata for this room")
-			continue
+			logger.Warn().Str("room", roomID).Msg("GlobalCache.LoadRoom: no metadata for this room, generating stub")
+			c.roomIDToMetadata[roomID] = internal.NewRoomMetadata(roomID)
+			sr = c.roomIDToMetadata[roomID]
 		}
 		srCopy := *sr
 		// copy the heroes or else we may modify the same slice which would be bad :(
