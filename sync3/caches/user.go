@@ -215,7 +215,9 @@ func (c *UserCache) Unsubscribe(id int) {
 // OnRegistered is called after the sync3.Dispatcher has successfully registered this
 // cache to receive updates. We use this to run some final initialisation logic that
 // is sensitive to race conditions; confusingly, most of the initialisation is driven
-// externally by sync3.SyncLiveHandler.userCache.
+// externally by sync3.SyncLiveHandler.userCache. It's importatn that we don't spend too
+// long inside this function, because it is called within a global lock on the
+// sync3.Dispatcher (see sync3.Dispatcher.Register).
 func (c *UserCache) OnRegistered(ctx context.Context, _ int64) error {
 	// select all spaces the user is a part of to seed the cache correctly. This has to be done in
 	// the OnRegistered callback which has locking guarantees. This is why...

@@ -824,7 +824,9 @@ func (s *Storage) determineJoinedRoomsFromMemberships(membershipEvents []Event) 
 		// a join: see e.g. the transition diagram in
 		// https://spec.matrix.org/v1.7/client-server-api/#room-membership
 		case "join":
-			if _, alreadyJoined := joinedNIDsByRoom[ev.RoomID]; !alreadyJoined {
+			// Only remember a join NID if we are not joined to this room according to
+			// the state before ev.
+			if _, currentlyJoined := joinedNIDsByRoom[ev.RoomID]; !currentlyJoined {
 				joinedNIDsByRoom[ev.RoomID] = ev.NID
 			}
 		case "ban":
