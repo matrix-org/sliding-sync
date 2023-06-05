@@ -21,8 +21,6 @@ func TestStorageRoomStateBeforeAndAfterEventPosition(t *testing.T) {
 	ctx := context.Background()
 	store := NewStorage(postgresConnectionString)
 	defer store.Teardown()
-	// Ensure we clean up after ourselves.
-	defer store.DB.MustExec(`TRUNCATE TABLE syncv3_events;`)
 	roomID := "!TestStorageRoomStateAfterEventPosition:localhost"
 	alice := "@alice:localhost"
 	bob := "@bob:localhost"
@@ -115,6 +113,12 @@ func TestStorageRoomStateBeforeAndAfterEventPosition(t *testing.T) {
 }
 
 func TestStorageJoinedRoomsAfterPosition(t *testing.T) {
+	// Clean DB. If we don't, other tests' events will be in the DB, but we won't
+	// provide keys in the metadata dict we pass to MetadataForAllRooms, leading to a
+	// panic.
+	if err := cleanDB(t); err != nil {
+		t.Fatalf("failed to wipe DB: %s", err)
+	}
 	store := NewStorage(postgresConnectionString)
 	defer store.Teardown()
 	joinedRoomID := "!joined:bar"
@@ -612,17 +616,10 @@ func TestGlobalSnapshot(t *testing.T) {
 			testutils.NewStateEvent(t, "m.room.member", alice, bob, map[string]interface{}{"membership": "invite"}),
 		},
 	}
-	// make a fresh DB which is unpolluted from other tests
-	db, close := connectToDB(t)
-	_, err := db.Exec(`
-	DROP TABLE IF EXISTS syncv3_rooms;
-	DROP TABLE IF EXISTS syncv3_invites;
-	DROP TABLE IF EXISTS syncv3_snapshots;
-	DROP TABLE IF EXISTS syncv3_spaces;`)
-	if err != nil {
+	if err := cleanDB(t); err != nil {
 		t.Fatalf("failed to wipe DB: %s", err)
 	}
-	close()
+
 	store := NewStorage(postgresConnectionString)
 	defer store.Teardown()
 	for roomID, stateEvents := range roomIDToEventMap {
@@ -683,6 +680,18 @@ func TestGlobalSnapshot(t *testing.T) {
 	for roomID, want := range wantMetadata {
 		assertRoomMetadata(t, snapshot.GlobalMetadata[roomID], want)
 	}
+}
+
+func cleanDB(t *testing.T) error {
+	// make a fresh DB which is unpolluted from other tests
+	db, close := connectToDB(t)
+	_, err := db.Exec(`
+	DROP TABLE IF EXISTS syncv3_rooms;
+	DROP TABLE IF EXISTS syncv3_invites;
+	DROP TABLE IF EXISTS syncv3_snapshots;
+	DROP TABLE IF EXISTS syncv3_spaces;`)
+	close()
+	return err
 }
 
 func assertRoomMetadata(t *testing.T, got, want internal.RoomMetadata) {
