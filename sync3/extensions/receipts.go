@@ -118,7 +118,7 @@ func (r *ReceiptsRequest) ProcessInitial(ctx context.Context, res *Response, ext
 		if len(receipts) == 0 {
 			continue
 		}
-		rooms[roomID], _ = state.PackReceiptsIntoEDU(append(receipts, receipts...))
+		rooms[roomID], _ = state.PackReceiptsIntoEDU(receipts)
 	}
 
 	if len(rooms) > 0 {

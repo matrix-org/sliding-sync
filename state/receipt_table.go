@@ -96,7 +96,7 @@ func (t *ReceiptTable) SelectReceiptsForEvents(roomID string, eventIDs []string)
 	return
 }
 
-// Select all (including private) receipts for this user in this room.
+// Select all (including private) receipts for this user in these rooms.
 func (t *ReceiptTable) SelectReceiptsForUser(roomIDs []string, userID string) (receiptsByRoom map[string][]internal.Receipt, err error) {
 	var receipts []internal.Receipt
 	err = t.db.Select(&receipts, `SELECT room_id, event_id, user_id, ts, thread_id FROM syncv3_receipts
