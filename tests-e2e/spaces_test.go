@@ -232,5 +232,6 @@ func TestAddingUnknownChildToSpace(t *testing.T) {
 	})
 
 	t.Log("Bob syncs until he sees the m.space.child event in the space.")
+	// Before the fix, this would panic inside getInitialRoomData, resulting in a 500
 	res = bob.SlidingSyncUntilEventID(t, res.Pos, parentID, childEventID)
 }
