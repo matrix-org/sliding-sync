@@ -795,7 +795,7 @@ func (s *Storage) AllJoinedMembers(txn *sqlx.Tx, tempTableName string) (result m
 }
 
 func (s *Storage) JoinedRoomsAfterPosition(userID string, pos int64) (
-	joinedRoomIDs []string, joinedRoomNIDs []int64, err error,
+	joinedRoomIDs []string, joinEventNIDs []int64, err error,
 ) {
 	// fetch all the membership events up to and including pos
 	membershipEvents, err := s.accumulator.eventsTable.SelectEventsWithTypeStateKey("m.room.member", userID, 0, pos)
@@ -814,7 +814,7 @@ func (s *Storage) JoinedRoomsAfterPosition(userID string, pos int64) (
 // Returns a slice of joined room IDs and a slice of joined event NIDs, whose entries
 // correspond to one another. Rooms appear in these slices in no particular order.
 func (s *Storage) determineJoinedRoomsFromMemberships(membershipEvents []Event) (
-	joinedRoomIDs []string, joinedRoomNIDs []int64, err error,
+	joinedRoomIDs []string, joinEventNIDs []int64, err error,
 ) {
 	joinedNIDsByRoom := make(map[string]int64, len(membershipEvents))
 	for _, ev := range membershipEvents {
@@ -836,13 +836,13 @@ func (s *Storage) determineJoinedRoomsFromMemberships(membershipEvents []Event) 
 		}
 	}
 	joinedRoomIDs = make([]string, 0, len(joinedNIDsByRoom))
-	joinedRoomNIDs = make([]int64, 0, len(joinedNIDsByRoom))
+	joinEventNIDs = make([]int64, 0, len(joinedNIDsByRoom))
 	for roomID, nid := range joinedNIDsByRoom {
 		joinedRoomIDs = append(joinedRoomIDs, roomID)
-		joinedRoomNIDs = append(joinedRoomNIDs, nid)
+		joinEventNIDs = append(joinEventNIDs, nid)
 	}
 
-	return joinedRoomIDs, joinedRoomNIDs, nil
+	return joinedRoomIDs, joinEventNIDs, nil
 }
 
 func (s *Storage) Teardown() {
