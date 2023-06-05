@@ -180,7 +180,8 @@ func (c *CSAPI) CreateRoom(t *testing.T, creationContent interface{}) string {
 	return GetJSONFieldStr(t, body, "room_id")
 }
 
-// JoinRoom joins the room ID or alias given, else fails the test. Returns the room ID.
+// JoinRoom joins the room ID or alias given, else fails the test. Returns the room ID,
+// NOT the join event ID! (c.f. https://github.com/matrix-org/matrix-spec/issues/1545)
 func (c *CSAPI) JoinRoom(t *testing.T, roomIDOrAlias string, serverNames []string) string {
 	t.Helper()
 	// construct URL query parameters

@@ -104,13 +104,14 @@ func (c *GlobalCache) LoadRoomsFromMap(ctx context.Context, joinNIDsByRoomID map
 
 // copyRoom returns a copy of the internal.RoomMetadata stored for this room.
 // This is an internal implementation detail of LoadRooms and LoadRoomsFromMap.
-// If the room is not present in the global cache, returns nil.
+// If the room is not present in the global cache, returns a stub metadata entry.
 // The caller MUST acquire a read lock on roomIDToMetadataMu before calling this.
 func (c *GlobalCache) copyRoom(roomID string) *internal.RoomMetadata {
 	sr := c.roomIDToMetadata[roomID]
 	if sr == nil {
-		logger.Warn().Str("room", roomID).Msg("GlobalCache.LoadRoom: no metadata for this room")
-		return nil
+		logger.Warn().Str("room", roomID).Msg("GlobalCache.LoadRoom: no metadata for this room, generating stub")
+		c.roomIDToMetadata[roomID] = internal.NewRoomMetadata(roomID)
+		sr = c.roomIDToMetadata[roomID]
 	}
 	srCopy := *sr
 	// copy the heroes or else we may modify the same slice which would be bad :(

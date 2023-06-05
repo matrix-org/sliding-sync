@@ -26,6 +26,10 @@ func (e *HandlerError) Error() string {
 	return fmt.Sprintf("HTTP %d : %s", e.StatusCode, e.Err.Error())
 }
 
+func (e *HandlerError) Unwrap() error {
+	return e.Err
+}
+
 type jsonError struct {
 	Err  string `json:"error"`
 	Code string `json:"errcode,omitempty"`

@@ -22,7 +22,7 @@ func (h *NopExtensionHandler) Handle(ctx context.Context, req extensions.Request
 	return
 }
 
-func (h *NopExtensionHandler) HandleLiveUpdate(u caches.Update, req extensions.Request, res *extensions.Response, extCtx extensions.Context) {
+func (h *NopExtensionHandler) HandleLiveUpdate(ctx context.Context, update caches.Update, req extensions.Request, res *extensions.Response, extCtx extensions.Context) {
 }
 
 type NopJoinTracker struct{}
