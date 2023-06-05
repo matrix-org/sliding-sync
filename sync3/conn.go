@@ -80,8 +80,17 @@ func (c *Conn) OnUpdate(ctx context.Context, update caches.Update) {
 	c.handler.OnUpdate(ctx, update)
 }
 
+// tryRequest is a wrapper around ConnHandler.OnIncomingRequest which automatically
+// starts and closes a tracing task.
+//
+// If the wrapped call panics, it is recovered from, reported to Sentry, and an error
+// is passed to the caller. If the wrapped call returns an error, that error is passed
+// upwards but will NOT be logged to Sentry (neither here nor by the caller). Errors
+// should be reported to Sentry as close as possible to the point of creating the error,
+// to provide the best possible Sentry traceback.
 func (c *Conn) tryRequest(ctx context.Context, req *Request) (res *Response, err error) {
 	// TODO: include useful information from the request in the sentry hub/context
+	// Might be better done in the caller though?
 	defer func() {
 		panicErr := recover()
 		if panicErr != nil {
@@ -98,8 +107,6 @@ func (c *Conn) tryRequest(ctx context.Context, req *Request) (res *Response, err
 			// I'm guessing that Sentry will use the former to display panicErr as
 			// having come from a panic.
 			internal.GetSentryHubFromContextOrDefault(ctx).RecoverWithContext(ctx, panicErr)
-		} else if err != nil {
-			internal.GetSentryHubFromContextOrDefault(ctx).CaptureException(err)
 		}
 	}()
 	taskType := "OnIncomingRequest"
@@ -121,7 +128,10 @@ func (c *Conn) isOutstanding(pos int64) bool {
 	return false
 }
 
-// OnIncomingRequest advances the clients position in the stream, returning the response position and data.
+// OnIncomingRequest advances the client's position in the stream, returning the response position and data.
+// If an error is returned, it will be logged by the caller and transmitted to the
+// client. It will NOT be reported to Sentry---this should happen as close as possible
+// to the creation of the error (or else Sentry cannot provide a meaningful traceback.)
 func (c *Conn) OnIncomingRequest(ctx context.Context, req *Request) (resp *Response, herr *internal.HandlerError) {
 	c.cancelOutstandingRequestMu.Lock()
 	if c.cancelOutstandingRequest != nil {

@@ -5,6 +5,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -12,6 +13,7 @@ import (
 	"reflect"
 	"strconv"
 	"sync"
+	"syscall"
 	"time"
 
 	"github.com/getsentry/sentry-go"
@@ -213,10 +215,9 @@ func (h *SyncLiveHandler) serve(w http.ResponseWriter, req *http.Request) error 
 		}
 	}
 
-	logErrorAndReport500s := func(msg string, herr *internal.HandlerError) {
+	logErrorOrWarning := func(msg string, herr *internal.HandlerError) {
 		if herr.StatusCode >= 500 {
 			hlog.FromRequest(req).Err(herr).Msg(msg)
-			internal.GetSentryHubFromContextOrDefault(req.Context()).CaptureException(herr)
 		} else {
 			hlog.FromRequest(req).Warn().Err(herr).Msg(msg)
 		}
@@ -224,7 +225,7 @@ func (h *SyncLiveHandler) serve(w http.ResponseWriter, req *http.Request) error 
 
 	conn, herr := h.setupConnection(req, &requestBody, req.URL.Query().Get("pos") != "")
 	if herr != nil {
-		logErrorAndReport500s("failed to get or create Conn", herr)
+		logErrorOrWarning("failed to get or create Conn", herr)
 		return herr
 	}
 	// set pos and timeout if specified
@@ -252,7 +253,7 @@ func (h *SyncLiveHandler) serve(w http.ResponseWriter, req *http.Request) error 
 
 	resp, herr := conn.OnIncomingRequest(req.Context(), &requestBody)
 	if herr != nil {
-		logErrorAndReport500s("failed to OnIncomingRequest", herr)
+		logErrorOrWarning("failed to OnIncomingRequest", herr)
 		return herr
 	}
 	// for logging
@@ -281,7 +282,17 @@ func (h *SyncLiveHandler) serve(w http.ResponseWriter, req *http.Request) error 
 			StatusCode: 500,
 			Err:        err,
 		}
-		logErrorAndReport500s("failed to JSON-encode result", herr)
+		if errors.Is(err, syscall.EPIPE) {
+			// Client closed the connection. Use a 499 status code internally so that
+			// we consider this a warning rather than an error. 499 is nonstandard,
+			// but a) the client has already gone, so this status code will only show
+			// up in our logs; and b) nginx uses 499 to mean "Client Closed Request",
+			// see e.g.
+			// https://www.nginx.com/resources/wiki/extending/api/http/#http-return-codes
+			herr.StatusCode = 499
+		}
+
+		logErrorOrWarning("failed to JSON-encode result", herr)
 		return herr
 	}
 	return nil

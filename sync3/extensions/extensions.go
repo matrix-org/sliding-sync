@@ -257,7 +257,7 @@ type Context struct {
 
 type HandlerInterface interface {
 	Handle(ctx context.Context, req Request, extCtx Context) (res Response)
-	HandleLiveUpdate(update caches.Update, req Request, res *Response, extCtx Context)
+	HandleLiveUpdate(ctx context.Context, update caches.Update, req Request, res *Response, extCtx Context)
 }
 
 type Handler struct {
@@ -266,11 +266,11 @@ type Handler struct {
 	GlobalCache *caches.GlobalCache
 }
 
-func (h *Handler) HandleLiveUpdate(update caches.Update, req Request, res *Response, extCtx Context) {
+func (h *Handler) HandleLiveUpdate(ctx context.Context, update caches.Update, req Request, res *Response, extCtx Context) {
 	extCtx.Handler = h
 	exts := req.EnabledExtensions()
 	for _, ext := range exts {
-		ext.AppendLive(context.Background(), res, extCtx, update)
+		ext.AppendLive(ctx, res, extCtx, update)
 	}
 }
 
