@@ -199,26 +199,6 @@ func (c *CSAPI) JoinRoom(t *testing.T, roomIDOrAlias string, serverNames []strin
 	return GetJSONFieldStr(t, body, "room_id")
 }
 
-// KnockRoom knocks on the room with the given room ID or alias given, else fails the
-// test. Returns the room ID.
-func (c *CSAPI) KnockRoom(t *testing.T, roomIDOrAlias string, serverNames []string) string {
-	t.Helper()
-	// construct URL query parameters
-	query := make(url.Values, len(serverNames))
-	for _, serverName := range serverNames {
-		query.Add("server_name", serverName)
-	}
-	// join the room
-	res := c.MustDoFunc(t, "POST", []string{"_matrix", "client", "v3", "knock", roomIDOrAlias}, WithQueries(query), WithRawBody([]byte("{}")))
-	// return the room ID if we joined with it
-	if roomIDOrAlias[0] == '!' {
-		return roomIDOrAlias
-	}
-	// otherwise we should be told the room ID if we joined via an alias
-	body := ParseJSON(t, res)
-	return GetJSONFieldStr(t, body, "room_id")
-}
-
 func (c *CSAPI) SendTyping(t *testing.T, roomID string, isTyping bool, durMs int) {
 	t.Helper()
 	c.MustDoFunc(t, "PUT", []string{"_matrix", "client", "v3", "rooms", roomID, "typing", c.UserID}, WithJSONBody(t, map[string]interface{}{
