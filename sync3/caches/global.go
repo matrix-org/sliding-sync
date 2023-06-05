@@ -102,9 +102,10 @@ func (c *GlobalCache) LoadRooms(ctx context.Context, roomIDs ...string) map[stri
 	return result
 }
 
-// Load all current joined room metadata for the user given, augmented with the NID of
-// the user's latest join to the room. Returns the absolute database position (the
-// latest event NID across the whole DB) - along with the results.
+// LoadJoinedRooms loads all current joined room metadata for the user given, together
+// with the NID of the user's latest join (excluding profile changes) to the room.
+// Returns the absolute database position (the latest event NID across the whole DB),
+// along with the results.
 // TODO: remove with LoadRoomState?
 func (c *GlobalCache) LoadJoinedRooms(ctx context.Context, userID string) (
 	pos int64, joinedRooms map[string]*internal.RoomMetadata, joinNIDs map[string]int64, err error,
