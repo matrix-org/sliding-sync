@@ -120,7 +120,7 @@ func (s *connStateLive) processLiveUpdate(ctx context.Context, up caches.Update,
 	roomEventUpdate, _ := up.(*caches.RoomEventUpdate)
 	// if this is a room event update we may not want to process this if the event nid is < loadPos,
 	// as that means we have already taken it into account
-	if roomEventUpdate != nil && roomEventUpdate.EventData.LatestPos != caches.PosAlwaysProcess && roomEventUpdate.EventData.LatestPos < s.loadPosition {
+	if roomEventUpdate != nil && roomEventUpdate.EventData.NID != caches.PosAlwaysProcess && roomEventUpdate.EventData.NID < s.loadPosition {
 		return false
 	}
 
@@ -167,11 +167,11 @@ func (s *connStateLive) processLiveUpdate(ctx context.Context, up caches.Update,
 		if roomEventUpdate != nil && roomEventUpdate.EventData.Event != nil {
 			r.NumLive++
 			advancedPastEvent := false
-			if roomEventUpdate.EventData.LatestPos <= s.loadPositions[roomEventUpdate.RoomID()] {
+			if roomEventUpdate.EventData.NID <= s.loadPositions[roomEventUpdate.RoomID()] {
 				// this update has been accounted for by the initial:true room snapshot
 				advancedPastEvent = true
 			}
-			s.loadPositions[roomEventUpdate.RoomID()] = roomEventUpdate.EventData.LatestPos
+			s.loadPositions[roomEventUpdate.RoomID()] = roomEventUpdate.EventData.NID
 			// we only append to the timeline if we haven't already got this event. This can happen when:
 			// - 2 live events for a room mid-connection
 			// - next request bumps a room from outside to inside the window
@@ -289,10 +289,10 @@ func (s *connStateLive) processGlobalUpdates(ctx context.Context, builder *Rooms
 
 	if isRoomEventUpdate {
 		// TODO: we should do this check before lists.SetRoom
-		if roomEventUpdate.EventData.LatestPos <= s.loadPosition {
+		if roomEventUpdate.EventData.NID <= s.loadPosition {
 			return // if this update is in the past then ignore it
 		}
-		s.loadPosition = roomEventUpdate.EventData.LatestPos
+		s.loadPosition = roomEventUpdate.EventData.NID
 	}
 	return
 }

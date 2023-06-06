@@ -31,10 +31,12 @@ type EventData struct {
 	JoinCount   int
 	InviteCount int
 
-	// the absolute latest position for this event data. The NID for this event is guaranteed to
-	// be <= this value. See PosAlwaysProcess and PosDoNotProcess for things outside the event timeline
-	// e.g invites
-	LatestPos int64
+	// NID is the nid for this event; or a non-nid sentinel value. Current sentinels are
+	//  - PosAlwaysProcess and PosDoNotProcess, for things outside the event timeline
+	//    e.g invites; and
+	//  - `0` used by UserCache.OnRegistered to inject space children events at startup.
+	//    It's referenced in ConnState.OnRoomUpdateand UserCache.OnSpaceUpdate
+	NID int64
 
 	// Flag set when this event should force the room contents to be resent e.g
 	// state res, initial join, etc

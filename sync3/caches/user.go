@@ -54,7 +54,8 @@ type UserRoomData struct {
 	// Map of tag to order float.
 	// See https://spec.matrix.org/latest/client-server-api/#room-tagging
 	Tags map[string]float64
-	// LoadPos is an event NID. UserRoomData instances represent the status of this room after the corresponding event, as seen by this user.
+	// LoadPos is an event NID, or a sentinal value (see EventData.NID).
+	// UserRoomData instances represent the status of this room after the corresponding event, as seen by this user.
 	LoadPos int64
 	// JoinNID is the NID of our latest join to the room, excluding profile changes.
 	JoinNID int64
@@ -105,7 +106,7 @@ func NewInviteData(ctx context.Context, userID, roomID string, inviteState []jso
 					StateKey:  &target,
 					Content:   j.Get("content"),
 					Timestamp: uint64(ts),
-					LatestPos: PosAlwaysProcess,
+					NID:       PosAlwaysProcess,
 				}
 				id.IsDM = j.Get("is_direct").Bool()
 			} else if target == j.Get("sender").Str {
@@ -268,7 +269,7 @@ func (c *UserCache) OnRegistered(ctx context.Context, _ int64) error {
 					RoomID:    room.RoomID,
 					EventType: "m.space.child",
 					StateKey:  &childRoomID,
-					LatestPos: 0,
+					NID:       0,
 				})
 			}
 		}
@@ -504,7 +505,7 @@ func (c *UserCache) OnUnreadCounts(ctx context.Context, roomID string, highlight
 }
 
 func (c *UserCache) OnSpaceUpdate(ctx context.Context, parentRoomID, childRoomID string, isDeleted bool, eventData *EventData) {
-	if eventData.LatestPos > 0 && eventData.LatestPos < c.latestPos {
+	if eventData.NID > 0 && eventData.NID < c.latestPos {
 		// this is possible when we race when seeding spaces on init with live data
 		return
 	}
@@ -530,7 +531,7 @@ func (c *UserCache) OnSpaceUpdate(ctx context.Context, parentRoomID, childRoomID
 func (c *UserCache) OnNewEvent(ctx context.Context, eventData *EventData) {
 	// add this to our tracked timelines if we have one
 	urd := c.LoadRoomData(eventData.RoomID)
-	urd.LoadPos = eventData.LatestPos
+	urd.LoadPos = eventData.NID
 	// reset the IsInvite field when the user actually joins/rejects the invite
 	if urd.IsInvite && eventData.EventType == "m.room.member" && eventData.StateKey != nil && *eventData.StateKey == c.UserID {
 		urd.IsInvite = eventData.Content.Get("membership").Str == "invite"

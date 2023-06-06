@@ -103,8 +103,8 @@ func (s *ConnState) load(ctx context.Context, req *sync3.Request) error {
 			interestedEventTimestampsByList[listKey] = metadata.LastMessageTimestamp
 		}
 		rooms[i] = sync3.RoomConnMetadata{
-			RoomMetadata: *metadata,
-			UserRoomData: urd,
+			RoomMetadata:                  *metadata,
+			UserRoomData:                  urd,
 			LastInterestedEventTimestamps: interestedEventTimestampsByList,
 		}
 		i++
@@ -596,12 +596,12 @@ func (s *ConnState) OnUpdate(ctx context.Context, up caches.Update) {
 func (s *ConnState) OnRoomUpdate(ctx context.Context, up caches.RoomUpdate) {
 	switch update := up.(type) {
 	case *caches.RoomEventUpdate:
-		if update.EventData.LatestPos != caches.PosAlwaysProcess && update.EventData.LatestPos == 0 {
+		if update.EventData.NID != caches.PosAlwaysProcess && update.EventData.NID == 0 {
 			// 0 -> this event was from a 'state' block, do not poke active connections
 			return
 		}
 		internal.AssertWithContext(ctx, "missing global room metadata", update.GlobalRoomMetadata() != nil)
-		internal.Logf(ctx, "connstate", "queued update %d", update.EventData.LatestPos)
+		internal.Logf(ctx, "connstate", "queued update %d", update.EventData.NID)
 		s.live.onUpdate(update)
 	case caches.RoomUpdate:
 		internal.AssertWithContext(ctx, "missing global room metadata", update.GlobalRoomMetadata() != nil)

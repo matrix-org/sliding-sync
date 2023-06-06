@@ -97,7 +97,7 @@ func (d *Dispatcher) newEventData(event json.RawMessage, roomID string, latestPo
 		EventType: eventType,
 		StateKey:  stateKey,
 		Content:   ev.Get("content"),
-		LatestPos: latestPos,
+		NID:       latestPos,
 		Timestamp: ev.Get("origin_server_ts").Uint(),
 		Sender:    ev.Get("sender").Str,
 	}
@@ -252,7 +252,7 @@ func (d *Dispatcher) OnReceipt(ctx context.Context, receipt internal.Receipt) {
 }
 
 func (d *Dispatcher) notifyListeners(ctx context.Context, ed *caches.EventData, userIDs []string, targetUser string, shouldForceInitial bool, membership string) {
-	internal.Logf(ctx, "dispatcher", "%s: notify %d users (nid=%d,join_count=%d)", ed.RoomID, len(userIDs), ed.LatestPos, ed.JoinCount)
+	internal.Logf(ctx, "dispatcher", "%s: notify %d users (nid=%d,join_count=%d)", ed.RoomID, len(userIDs), ed.NID, ed.JoinCount)
 	// invoke listeners
 	d.userToReceiverMu.RLock()
 	defer d.userToReceiverMu.RUnlock()
