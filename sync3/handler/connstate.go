@@ -93,7 +93,6 @@ func (s *ConnState) load(ctx context.Context, req *sync3.Request) error {
 	for _, metadata := range joinedRooms {
 		metadata.RemoveHero(s.userID)
 		urd := s.userCache.LoadRoomData(metadata.RoomID)
-		// TODO: is this necessary---will the joinNID already be in the UserCache?
 		urd.JoinNID = joinNIDs[metadata.RoomID]
 
 		interestedEventTimestampsByList := make(map[string]uint64, len(req.Lists))
