@@ -182,7 +182,10 @@ func (s *Storage) MetadataForAllRooms(txn *sqlx.Tx, tempTableName string, result
 		if err := rows.Scan(&roomID, &inviteCount); err != nil {
 			return err
 		}
-		metadata := result[roomID]
+		metadata, ok := result[roomID]
+		if !ok {
+			metadata = *internal.NewRoomMetadata(roomID)
+		}
 		metadata.InviteCount = inviteCount
 		result[roomID] = metadata
 	}
@@ -206,6 +209,8 @@ func (s *Storage) MetadataForAllRooms(txn *sqlx.Tx, tempTableName string, result
 		metadata.LatestEventsByType[parsed.Get("type").Str] = eventMetadata
 		// it's possible the latest event is a brand new room not caught by the first SELECT for joined
 		// rooms e.g when you're invited to a room so we need to make sure to set the metadata again here
+		// TODO: is the comment above now that we explicitly call NewRoomMetadata above
+		//       when handling invites?
 		metadata.RoomID = ev.RoomID
 		result[ev.RoomID] = metadata
 	}
