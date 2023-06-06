@@ -55,7 +55,7 @@ var logger = zerolog.New(os.Stdout).With().Timestamp().Logger().Output(zerolog.C
 // Dispatcher for new events.
 type GlobalCache struct {
 	// LoadJoinedRoomsOverride allows tests to mock out the behaviour of LoadJoinedRooms.
-	LoadJoinedRoomsOverride func(userID string) (pos int64, joinedRooms map[string]*internal.RoomMetadata, joinNIDs map[string]int64, err error)
+	LoadJoinedRoomsOverride func(userID string) (pos int64, joinedRooms map[string]*internal.RoomMetadata, joinTimings map[string]internal.EventMetadata, err error)
 
 	// inserts are done by v2 poll loops, selects are done by v3 request threads
 	// there are lots of overlapping keys as many users (threads) can be joined to the same room (key)
@@ -94,11 +94,11 @@ func (c *GlobalCache) LoadRooms(ctx context.Context, roomIDs ...string) map[stri
 
 // LoadRoomsFromMap is like LoadRooms, except it is given a map with room IDs as keys.
 // The values in that map are completely ignored.
-func (c *GlobalCache) LoadRoomsFromMap(ctx context.Context, joinNIDsByRoomID map[string]int64) map[string]*internal.RoomMetadata {
+func (c *GlobalCache) LoadRoomsFromMap(ctx context.Context, joinTimingsByRoomID map[string]internal.EventMetadata) map[string]*internal.RoomMetadata {
 	c.roomIDToMetadataMu.RLock()
 	defer c.roomIDToMetadataMu.RUnlock()
-	result := make(map[string]*internal.RoomMetadata, len(joinNIDsByRoomID))
-	for roomID, _ := range joinNIDsByRoomID {
+	result := make(map[string]*internal.RoomMetadata, len(joinTimingsByRoomID))
+	for roomID, _ := range joinTimingsByRoomID {
 		result[roomID] = c.copyRoom(roomID)
 	}
 	return result
@@ -129,7 +129,7 @@ func (c *GlobalCache) copyRoom(roomID string) *internal.RoomMetadata {
 // along with the results.
 // TODO: remove with LoadRoomState?
 func (c *GlobalCache) LoadJoinedRooms(ctx context.Context, userID string) (
-	pos int64, joinedRooms map[string]*internal.RoomMetadata, joinNIDsByRoomID map[string]int64, err error,
+	pos int64, joinedRooms map[string]*internal.RoomMetadata, joinTimingByRoomID map[string]internal.EventMetadata, err error,
 ) {
 	if c.LoadJoinedRoomsOverride != nil {
 		return c.LoadJoinedRoomsOverride(userID)
@@ -138,13 +138,13 @@ func (c *GlobalCache) LoadJoinedRooms(ctx context.Context, userID string) (
 	if err != nil {
 		return 0, nil, nil, err
 	}
-	joinNIDsByRoomID, err = c.store.JoinedRoomsAfterPosition(userID, initialLoadPosition)
+	joinTimingByRoomID, err = c.store.JoinedRoomsAfterPosition(userID, initialLoadPosition)
 	if err != nil {
 		return 0, nil, nil, err
 	}
 	// TODO: no guarantee that this state is the same as latest unless called in a dispatcher loop
-	rooms := c.LoadRoomsFromMap(ctx, joinNIDsByRoomID)
-	return initialLoadPosition, rooms, joinNIDsByRoomID, nil
+	rooms := c.LoadRoomsFromMap(ctx, joinTimingByRoomID)
+	return initialLoadPosition, rooms, joinTimingByRoomID, nil
 }
 
 func (c *GlobalCache) LoadStateEvent(ctx context.Context, roomID string, loadPosition int64, evType, stateKey string) json.RawMessage {
