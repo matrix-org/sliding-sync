@@ -85,12 +85,16 @@ func TestConnStateInitial(t *testing.T) {
 		roomB.RoomID: {userID},
 		roomC.RoomID: {userID},
 	})
-	globalCache.LoadJoinedRoomsOverride = func(userID string) (pos int64, joinedRooms map[string]*internal.RoomMetadata, err error) {
+	globalCache.LoadJoinedRoomsOverride = func(userID string) (pos int64, joinedRooms map[string]*internal.RoomMetadata, joinNIDs map[string]int64, err error) {
 		return 1, map[string]*internal.RoomMetadata{
-			roomA.RoomID: &roomA,
-			roomB.RoomID: &roomB,
-			roomC.RoomID: &roomC,
-		}, nil
+				roomA.RoomID: &roomA,
+				roomB.RoomID: &roomB,
+				roomC.RoomID: &roomC,
+			}, map[string]int64{
+				roomA.RoomID: 123,
+				roomB.RoomID: 456,
+				roomC.RoomID: 789,
+			}, nil
 	}
 	userCache := caches.NewUserCache(userID, globalCache, nil, &NopTransactionFetcher{})
 	dispatcher.Register(context.Background(), userCache.UserID, userCache)
@@ -253,12 +257,14 @@ func TestConnStateMultipleRanges(t *testing.T) {
 			roomID: {userID},
 		})
 	}
-	globalCache.LoadJoinedRoomsOverride = func(userID string) (pos int64, joinedRooms map[string]*internal.RoomMetadata, err error) {
-		res := make(map[string]*internal.RoomMetadata)
+	globalCache.LoadJoinedRoomsOverride = func(userID string) (pos int64, joinedRooms map[string]*internal.RoomMetadata, joinNIDs map[string]int64, err error) {
+		roomMetadata := make(map[string]*internal.RoomMetadata)
+		joinNIDs = make(map[string]int64)
 		for i, r := range rooms {
-			res[r.RoomID] = rooms[i]
+			roomMetadata[r.RoomID] = rooms[i]
+			joinNIDs[r.RoomID] = 123456 // Dummy value
 		}
-		return 1, res, nil
+		return 1, roomMetadata, joinNIDs, nil
 	}
 	userCache := caches.NewUserCache(userID, globalCache, nil, &NopTransactionFetcher{})
 	userCache.LazyRoomDataOverride = mockLazyRoomOverride
@@ -425,13 +431,19 @@ func TestBumpToOutsideRange(t *testing.T) {
 		roomC.RoomID: {userID},
 		roomD.RoomID: {userID},
 	})
-	globalCache.LoadJoinedRoomsOverride = func(userID string) (pos int64, joinedRooms map[string]*internal.RoomMetadata, err error) {
+	globalCache.LoadJoinedRoomsOverride = func(userID string) (pos int64, joinedRooms map[string]*internal.RoomMetadata, joinNIDs map[string]int64, err error) {
 		return 1, map[string]*internal.RoomMetadata{
-			roomA.RoomID: &roomA,
-			roomB.RoomID: &roomB,
-			roomC.RoomID: &roomC,
-			roomD.RoomID: &roomD,
-		}, nil
+				roomA.RoomID: &roomA,
+				roomB.RoomID: &roomB,
+				roomC.RoomID: &roomC,
+				roomD.RoomID: &roomD,
+			}, map[string]int64{
+				roomA.RoomID: 1,
+				roomB.RoomID: 2,
+				roomC.RoomID: 3,
+				roomD.RoomID: 4,
+			}, nil
+
 	}
 	userCache := caches.NewUserCache(userID, globalCache, nil, &NopTransactionFetcher{})
 	userCache.LazyRoomDataOverride = mockLazyRoomOverride
@@ -523,13 +535,19 @@ func TestConnStateRoomSubscriptions(t *testing.T) {
 		roomC.RoomID: testutils.NewEvent(t, "m.room.message", userID, map[string]interface{}{"body": "c"}),
 		roomD.RoomID: testutils.NewEvent(t, "m.room.message", userID, map[string]interface{}{"body": "d"}),
 	}
-	globalCache.LoadJoinedRoomsOverride = func(userID string) (pos int64, joinedRooms map[string]*internal.RoomMetadata, err error) {
+	globalCache.LoadJoinedRoomsOverride = func(userID string) (pos int64, joinedRooms map[string]*internal.RoomMetadata, joinNIDs map[string]int64, err error) {
 		return 1, map[string]*internal.RoomMetadata{
-			roomA.RoomID: &roomA,
-			roomB.RoomID: &roomB,
-			roomC.RoomID: &roomC,
-			roomD.RoomID: &roomD,
-		}, nil
+				roomA.RoomID: &roomA,
+				roomB.RoomID: &roomB,
+				roomC.RoomID: &roomC,
+				roomD.RoomID: &roomD,
+			}, map[string]int64{
+				roomA.RoomID: 1,
+				roomB.RoomID: 2,
+				roomC.RoomID: 3,
+				roomD.RoomID: 4,
+			}, nil
+
 	}
 	userCache := caches.NewUserCache(userID, globalCache, nil, &NopTransactionFetcher{})
 	userCache.LazyRoomDataOverride = func(loadPos int64, roomIDs []string, maxTimelineEvents int) map[string]caches.UserRoomData {

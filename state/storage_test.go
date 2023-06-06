@@ -113,6 +113,12 @@ func TestStorageRoomStateBeforeAndAfterEventPosition(t *testing.T) {
 }
 
 func TestStorageJoinedRoomsAfterPosition(t *testing.T) {
+	// Clean DB. If we don't, other tests' events will be in the DB, but we won't
+	// provide keys in the metadata dict we pass to MetadataForAllRooms, leading to a
+	// panic.
+	if err := cleanDB(t); err != nil {
+		t.Fatalf("failed to wipe DB: %s", err)
+	}
 	store := NewStorage(postgresConnectionString)
 	defer store.Teardown()
 	joinedRoomID := "!joined:bar"
@@ -160,19 +166,24 @@ func TestStorageJoinedRoomsAfterPosition(t *testing.T) {
 		}
 		latestPos = latestNIDs[len(latestNIDs)-1]
 	}
-	aliceJoinedRooms, err := store.JoinedRoomsAfterPosition(alice, latestPos)
+	aliceJoinNIDsByRoomID, err := store.JoinedRoomsAfterPosition(alice, latestPos)
 	if err != nil {
 		t.Fatalf("failed to JoinedRoomsAfterPosition: %s", err)
 	}
-	if len(aliceJoinedRooms) != 1 || aliceJoinedRooms[0] != joinedRoomID {
-		t.Fatalf("JoinedRoomsAfterPosition at %v for %s got %v want %v", latestPos, alice, aliceJoinedRooms, joinedRoomID)
+	if len(aliceJoinNIDsByRoomID) != 1 {
+		t.Fatalf("JoinedRoomsAfterPosition at %v for %s got %v, want room %s only", latestPos, alice, aliceJoinNIDsByRoomID, joinedRoomID)
 	}
-	bobJoinedRooms, err := store.JoinedRoomsAfterPosition(bob, latestPos)
+	for gotRoomID, _ := range aliceJoinNIDsByRoomID {
+		if gotRoomID != joinedRoomID {
+			t.Fatalf("JoinedRoomsAfterPosition at %v for %s got %v want %v", latestPos, alice, gotRoomID, joinedRoomID)
+		}
+	}
+	bobJoinNIDsByRoomID, err := store.JoinedRoomsAfterPosition(bob, latestPos)
 	if err != nil {
 		t.Fatalf("failed to JoinedRoomsAfterPosition: %s", err)
 	}
-	if len(bobJoinedRooms) != 3 {
-		t.Fatalf("JoinedRoomsAfterPosition for %s got %v rooms want %v", bob, len(bobJoinedRooms), 3)
+	if len(bobJoinNIDsByRoomID) != 3 {
+		t.Fatalf("JoinedRoomsAfterPosition for %s got %v rooms want %v", bob, len(bobJoinNIDsByRoomID), 3)
 	}
 
 	// also test currentNotMembershipStateEventsInAllRooms
@@ -199,21 +210,20 @@ func TestStorageJoinedRoomsAfterPosition(t *testing.T) {
 		}
 	}
 
+	newMetadata := func(roomID string, joinCount int) internal.RoomMetadata {
+		m := internal.NewRoomMetadata(roomID)
+		m.JoinCount = joinCount
+		return *m
+	}
+
 	// also test MetadataForAllRooms
 	roomIDToMetadata := map[string]internal.RoomMetadata{
-		joinedRoomID: {
-			JoinCount: 1,
-		},
-		invitedRoomID: {
-			JoinCount: 1,
-		},
-		banRoomID: {
-			JoinCount: 1,
-		},
-		bobJoinedRoomID: {
-			JoinCount: 2,
-		},
+		joinedRoomID:    newMetadata(joinedRoomID, 1),
+		invitedRoomID:   newMetadata(invitedRoomID, 1),
+		banRoomID:       newMetadata(banRoomID, 1),
+		bobJoinedRoomID: newMetadata(bobJoinedRoomID, 2),
 	}
+
 	tempTableName, err := store.PrepareSnapshot(txn)
 	if err != nil {
 		t.Fatalf("PrepareSnapshot: %s", err)
@@ -606,17 +616,10 @@ func TestGlobalSnapshot(t *testing.T) {
 			testutils.NewStateEvent(t, "m.room.member", alice, bob, map[string]interface{}{"membership": "invite"}),
 		},
 	}
-	// make a fresh DB which is unpolluted from other tests
-	db, close := connectToDB(t)
-	_, err := db.Exec(`
-	DROP TABLE IF EXISTS syncv3_rooms;
-	DROP TABLE IF EXISTS syncv3_invites;
-	DROP TABLE IF EXISTS syncv3_snapshots;
-	DROP TABLE IF EXISTS syncv3_spaces;`)
-	if err != nil {
+	if err := cleanDB(t); err != nil {
 		t.Fatalf("failed to wipe DB: %s", err)
 	}
-	close()
+
 	store := NewStorage(postgresConnectionString)
 	defer store.Teardown()
 	for roomID, stateEvents := range roomIDToEventMap {
@@ -677,6 +680,18 @@ func TestGlobalSnapshot(t *testing.T) {
 	for roomID, want := range wantMetadata {
 		assertRoomMetadata(t, snapshot.GlobalMetadata[roomID], want)
 	}
+}
+
+func cleanDB(t *testing.T) error {
+	// make a fresh DB which is unpolluted from other tests
+	db, close := connectToDB(t)
+	_, err := db.Exec(`
+	DROP TABLE IF EXISTS syncv3_rooms;
+	DROP TABLE IF EXISTS syncv3_invites;
+	DROP TABLE IF EXISTS syncv3_snapshots;
+	DROP TABLE IF EXISTS syncv3_spaces;`)
+	close()
+	return err
 }
 
 func assertRoomMetadata(t *testing.T, got, want internal.RoomMetadata) {
