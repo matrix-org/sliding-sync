@@ -38,11 +38,10 @@ func (t *NopTransactionFetcher) TransactionIDForEvents(userID, deviceID string, 
 }
 
 func newRoomMetadata(roomID string, lastMsgTimestamp gomatrixserverlib.Timestamp) internal.RoomMetadata {
-	return internal.RoomMetadata{
-		RoomID:               roomID,
-		NameEvent:            "Room " + roomID,
-		LastMessageTimestamp: uint64(lastMsgTimestamp),
-	}
+	m := internal.NewRoomMetadata(roomID)
+	m.NameEvent = "Room " + roomID
+	m.LastMessageTimestamp = uint64(lastMsgTimestamp)
+	return *m
 }
 
 func mockLazyRoomOverride(loadPos int64, roomIDs []string, maxTimelineEvents int) map[string]caches.UserRoomData {
