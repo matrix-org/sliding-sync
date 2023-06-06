@@ -3,6 +3,7 @@ package extensions
 import (
 	"context"
 	"encoding/json"
+
 	"github.com/matrix-org/sliding-sync/internal"
 	"github.com/matrix-org/sliding-sync/state"
 	"github.com/matrix-org/sliding-sync/sync3/caches"
@@ -85,6 +86,8 @@ func (r *ReceiptsRequest) AppendLive(ctx context.Context, res *Response, extCtx 
 func (r *ReceiptsRequest) ProcessInitial(ctx context.Context, res *Response, extCtx Context) {
 	// grab receipts for all timelines for all the rooms we're going to return
 	rooms := make(map[string]json.RawMessage)
+	interestedRoomIDs := make([]string, 0, len(extCtx.RoomIDToTimeline))
+	otherReceipts := make(map[string][]internal.Receipt)
 	for roomID, timeline := range extCtx.RoomIDToTimeline {
 		if !r.RoomInScope(roomID, extCtx) {
 			continue
@@ -95,18 +98,29 @@ func (r *ReceiptsRequest) ProcessInitial(ctx context.Context, res *Response, ext
 			internal.GetSentryHubFromContextOrDefault(ctx).CaptureException(err)
 			continue
 		}
-		// always include your own receipts
-		ownReceipts, err := extCtx.Store.ReceiptTable.SelectReceiptsForUser(roomID, extCtx.UserID)
-		if err != nil {
-			logger.Err(err).Str("user", extCtx.UserID).Str("room", roomID).Msg("failed to SelectReceiptsForUser")
-			internal.GetSentryHubFromContextOrDefault(ctx).CaptureException(err)
-			continue
-		}
-		if len(receipts) == 0 && len(ownReceipts) == 0 {
-			continue
-		}
-		rooms[roomID], _ = state.PackReceiptsIntoEDU(append(receipts, ownReceipts...))
+		otherReceipts[roomID] = receipts
+		interestedRoomIDs = append(interestedRoomIDs, roomID)
 	}
+	// single shot query to pull out our own receipts for these rooms to always include our own receipts
+	ownReceipts, err := extCtx.Store.ReceiptTable.SelectReceiptsForUser(interestedRoomIDs, extCtx.UserID)
+	if err != nil {
+		logger.Err(err).Str("user", extCtx.UserID).Strs("rooms", interestedRoomIDs).Msg("failed to SelectReceiptsForUser")
+		internal.GetSentryHubFromContextOrDefault(ctx).CaptureException(err)
+		return
+	}
+
+	// move all own receipts into other receipts so we don't need to handle cases where receipts are in one map but not the other
+	for roomID, ownRecs := range ownReceipts {
+		otherReceipts[roomID] = append(otherReceipts[roomID], ownRecs...)
+	}
+
+	for roomID, receipts := range otherReceipts {
+		if len(receipts) == 0 {
+			continue
+		}
+		rooms[roomID], _ = state.PackReceiptsIntoEDU(receipts)
+	}
+
 	if len(rooms) > 0 {
 		res.Receipts = &ReceiptsResponse{
 			Rooms: rooms,

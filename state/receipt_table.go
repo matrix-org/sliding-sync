@@ -96,21 +96,31 @@ func (t *ReceiptTable) SelectReceiptsForEvents(roomID string, eventIDs []string)
 	return
 }
 
-// Select all (including private) receipts for this user in this room.
-func (t *ReceiptTable) SelectReceiptsForUser(roomID, userID string) (receipts []internal.Receipt, err error) {
+// Select all (including private) receipts for this user in these rooms.
+func (t *ReceiptTable) SelectReceiptsForUser(roomIDs []string, userID string) (receiptsByRoom map[string][]internal.Receipt, err error) {
+	var receipts []internal.Receipt
 	err = t.db.Select(&receipts, `SELECT room_id, event_id, user_id, ts, thread_id FROM syncv3_receipts
-	WHERE room_id=$1 AND user_id = $2`, roomID, userID)
+	WHERE room_id=ANY($1) AND user_id = $2`, pq.StringArray(roomIDs), userID)
 	if err != nil {
 		return nil, err
 	}
 	var privReceipts []internal.Receipt
 	err = t.db.Select(&privReceipts, `SELECT room_id, event_id, user_id, ts, thread_id FROM syncv3_receipts_private
-	WHERE room_id=$1 AND user_id = $2`, roomID, userID)
+	WHERE room_id=ANY($1) AND user_id = $2`, pq.StringArray(roomIDs), userID)
+	if err != nil {
+		return nil, err
+	}
 	for i := range privReceipts {
 		privReceipts[i].IsPrivate = true
 	}
 	receipts = append(receipts, privReceipts...)
-	return
+	receiptsByRoom = make(map[string][]internal.Receipt)
+	// bucket by room
+	for _, r := range receipts {
+		receiptsByRoom[r.RoomID] = append(receiptsByRoom[r.RoomID], r)
+	}
+
+	return receiptsByRoom, nil
 }
 
 func (t *ReceiptTable) bulkInsert(tableName string, txn *sqlx.Tx, receipts []internal.Receipt) (newReceipts []internal.Receipt, err error) {
