@@ -182,7 +182,10 @@ func (s *Storage) MetadataForAllRooms(txn *sqlx.Tx, tempTableName string, result
 		if err := rows.Scan(&roomID, &inviteCount); err != nil {
 			return err
 		}
-		metadata := result[roomID]
+		metadata, ok := result[roomID]
+		if !ok {
+			metadata = *internal.NewRoomMetadata(roomID)
+		}
 		metadata.InviteCount = inviteCount
 		result[roomID] = metadata
 	}
