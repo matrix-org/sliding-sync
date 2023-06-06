@@ -143,15 +143,21 @@ func (s *Storage) GlobalSnapshot() (ss StartupSnapshot, err error) {
 	err = sqlutil.WithTransaction(s.accumulator.db, func(txn *sqlx.Tx) error {
 		tempTableName, err := s.PrepareSnapshot(txn)
 		if err != nil {
+			err = fmt.Errorf("GlobalSnapshot: failed to call PrepareSnapshot: %w", err)
+			sentry.CaptureException(err)
 			return err
 		}
 		var metadata map[string]internal.RoomMetadata
 		ss.AllJoinedMembers, metadata, err = s.AllJoinedMembers(txn, tempTableName)
 		if err != nil {
+			err = fmt.Errorf("GlobalSnapshot: failed to call AllJoinedMembers: %w", err)
+			sentry.CaptureException(err)
 			return err
 		}
 		err = s.MetadataForAllRooms(txn, tempTableName, metadata)
 		if err != nil {
+			err = fmt.Errorf("GlobalSnapshot: failed to call MetadataForAllRooms: %w", err)
+			sentry.CaptureException(err)
 			return err
 		}
 		ss.GlobalMetadata = metadata
