@@ -341,7 +341,12 @@ func (c *GlobalCache) OnNewEvent(
 			}
 		}
 	}
-	// Note: this means the LastMessageTimestamp can _decrease_; it is not monotonic.
+	// Note: this means the LastMessageTimestamp and values in LatestEventsByType can
+	// _decrease_; these timestamps are not monotonic.
 	metadata.LastMessageTimestamp = ed.Timestamp
+	metadata.LatestEventsByType[ed.EventType] = internal.EventMetadata{
+		NID:       ed.NID,
+		Timestamp: ed.Timestamp,
+	}
 	c.roomIDToMetadata[ed.RoomID] = metadata
 }
