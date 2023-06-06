@@ -1,10 +1,20 @@
 package sqlutil
 
 import (
+	"context"
 	"fmt"
+	"github.com/matrix-org/sliding-sync/internal"
+	"github.com/rs/zerolog"
+	"os"
+	"runtime/debug"
 
 	"github.com/jmoiron/sqlx"
 )
+
+var logger = zerolog.New(os.Stdout).With().Timestamp().Logger().Output(zerolog.ConsoleWriter{
+	Out:        os.Stderr,
+	TimeFormat: "15:04:05",
+})
 
 // WithTransaction runs a block of code passing in an SQL transaction
 // If the code returns an error or panics then the transactions is rolled back
@@ -18,6 +28,10 @@ func WithTransaction(db *sqlx.DB, fn func(txn *sqlx.Tx) error) (err error) {
 	defer func() {
 		panicErr := recover()
 		if err == nil && panicErr != nil {
+			// TODO: thread a context through to here?
+			ctx := context.Background()
+			logger.Error().Msg(string(debug.Stack()))
+			internal.GetSentryHubFromContextOrDefault(ctx).RecoverWithContext(ctx, panicErr)
 			err = fmt.Errorf("panic: %v", panicErr)
 		}
 		var txnErr error
