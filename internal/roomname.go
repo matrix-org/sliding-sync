@@ -28,7 +28,10 @@ type RoomMetadata struct {
 	CanonicalAlias string
 	JoinCount      int
 	InviteCount    int
-	// TODO removeme
+	// LastMessageTimestamp is the origin_server_ts of the event most recently seen in
+	// this room. Because events arrive at the upstream homeserver out-of-order (and
+	// because origin_server_ts is an untrusted event field), this timestamp can
+	// _decrease_ as new events come in.
 	LastMessageTimestamp uint64
 	// LatestEventsByType tracks timing information for the latest event in the room,
 	// grouped by event type.

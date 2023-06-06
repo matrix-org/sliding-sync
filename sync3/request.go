@@ -260,6 +260,11 @@ func (rl *RequestList) WriteSwapOp(
 	}
 }
 
+// HasBumpEventTypes returns true iff this request has specified bump_event_types.
+func (rl *RequestList) HasBumpEventTypes() bool {
+	return rl.BumpEventTypes != nil && len(rl.BumpEventTypes) > 0
+}
+
 func (r *Request) SetPos(pos int64) {
 	r.pos = pos
 }

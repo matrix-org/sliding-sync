@@ -263,14 +263,14 @@ func (s *connStateLive) processGlobalUpdates(ctx context.Context, builder *Rooms
 	if isRoomUpdate {
 		updateTimestamp := rup.GlobalRoomMetadata().LastMessageTimestamp
 		for listKey, list := range s.muxedReq.Lists {
-			specifiedBumpEventTypes := list.BumpEventTypes != nil && len(list.BumpEventTypes) > 0
-			if !specifiedBumpEventTypes {
-				// If this list hasn't provided BumpEventTypes (nil) or has provided an
-				// empty BumpEventTypes list, bump the room list for all room updates.
+			if !list.HasBumpEventTypes() {
+				// If this list hasn't provided BumpEventTypes, bump the room list for all room updates.
 				bumpTimestampInList[listKey] = updateTimestamp
 			} else if isRoomEventUpdate {
 				// If BumpEventTypes are provided, only bump the room if we see an event
-				// matching one of the bump types.
+				// matching one of the bump types. We don't consult rup.JoinTiming here,
+				// because we should only be processing events that the user is
+				// permitted to see.
 				for _, eventType := range list.BumpEventTypes {
 					if eventType == roomEventUpdate.EventData.EventType {
 						bumpTimestampInList[listKey] = updateTimestamp
