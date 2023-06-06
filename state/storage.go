@@ -188,9 +188,14 @@ func (s *Storage) MetadataForAllRooms(txn *sqlx.Tx, tempTableName string, result
 	}
 	for _, ev := range events {
 		metadata, ok := result[ev.RoomID]
-		metadata.LastMessageTimestamp = gjson.ParseBytes(ev.JSON).Get("origin_server_ts").Uint()
 		if !ok {
 			metadata = *internal.NewRoomMetadata(ev.RoomID)
+		}
+		// For a given room, we'll see many events (one for each event type in the
+		// room's state). We need to pick the largest of these events' timestamps here.
+		ts := gjson.ParseBytes(ev.JSON).Get("origin_server_ts").Uint()
+		if ts > metadata.LastMessageTimestamp {
+			metadata.LastMessageTimestamp = ts
 		}
 		parsed := gjson.ParseBytes(ev.JSON)
 		eventMetadata := internal.EventMetadata{
