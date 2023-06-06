@@ -1116,6 +1116,129 @@ func TestBumpEventTypesInOverlappingLists(t *testing.T) {
 
 }
 
+func TestBumpEventTypesDoesntLeakOnNewConnAfterJoin(t *testing.T) {
+	alice := registerNamedUser(t, "alice")
+	bob := registerNamedUser(t, "bob")
+
+	t.Log("Alice creates a room and sends a secret state event.")
+	room1 := alice.CreateRoom(
+		t,
+		map[string]interface{}{
+			"preset": "public_chat",
+			"name":   "room1",
+		},
+	)
+	alice.SetState(t, room1, "secret", "", map[string]interface{}{})
+
+	t.Log("Bob creates a room and sends a secret state event.")
+	time.Sleep(1 * time.Millisecond)
+	room2 := bob.CreateRoom(
+		t,
+		map[string]interface{}{
+			"preset": "public_chat",
+			"name":   "room1",
+		},
+	)
+	bob.SetState(t, room2, "secret", "", map[string]interface{}{})
+
+	t.Log("Alice invites Bob, who accepts.")
+	alice.InviteRoom(t, room1, bob.UserID)
+	bob.JoinRoom(t, room1, nil)
+
+	t.Log("Bob sliding syncs, requesting that rooms are bumped on the secret event type.")
+	res := bob.SlidingSync(t, sync3.Request{
+		Lists: map[string]sync3.RequestList{
+			"a": {
+				RoomSubscription: sync3.RoomSubscription{},
+				Ranges:           sync3.SliceRanges{{0, 1}},
+				Sort:             []string{sync3.SortByRecency},
+				BumpEventTypes:   []string{"secret"},
+			},
+		},
+	})
+
+	t.Log("Bob should see room1 ahead of room2.")
+	// The order in which things happen:
+	// 1. alice: room1 secret event
+	// 2. bob:   room2 secret event
+	// 3. alice: invite bob to room 1
+	// 4. bob:   join room 1
+	// Bob can only see (2), (3) and (4), which means that room 1 has had most recent activity.
+	// (If we use the secret events' timestamps alone, without considering what Bob has
+	// permission to see, we will only consider (1) and (2), which would mean room 2
+	// has had the most recent activity.)
+	m.MatchResponse(
+		t,
+		res,
+		m.MatchList(
+			"a",
+			m.MatchV3Count(2),
+			m.MatchV3Ops(m.MatchV3SyncOp(0, 1, []string{room1, room2})),
+		),
+	)
+}
+
+// Like TestBumpEventTypesDoesntLeakOnNewConnAfterJoin, but Bob never accepts the invite.
+func TestBumpEventTypesDoesntLeakOnNewConnAfterInvite(t *testing.T) {
+	alice := registerNamedUser(t, "alice")
+	bob := registerNamedUser(t, "bob")
+
+	t.Log("Alice creates a room and sends a secret state event.")
+	room1 := alice.CreateRoom(
+		t,
+		map[string]interface{}{
+			"preset": "public_chat",
+			"name":   "room1",
+		},
+	)
+	alice.SetState(t, room1, "secret", "", map[string]interface{}{})
+
+	t.Log("Bob creates a room and sends a secret state event.")
+	time.Sleep(1 * time.Millisecond)
+	room2 := bob.CreateRoom(
+		t,
+		map[string]interface{}{
+			"preset": "public_chat",
+			"name":   "room1",
+		},
+	)
+	bob.SetState(t, room2, "secret", "", map[string]interface{}{})
+
+	t.Log("Alice invites Bob, who does not respond.")
+	alice.InviteRoom(t, room1, bob.UserID)
+
+	t.Log("Bob sliding syncs, requesting that rooms are bumped on the secret event type.")
+	res := bob.SlidingSync(t, sync3.Request{
+		Lists: map[string]sync3.RequestList{
+			"a": {
+				RoomSubscription: sync3.RoomSubscription{},
+				Ranges:           sync3.SliceRanges{{0, 1}},
+				Sort:             []string{sync3.SortByRecency},
+				BumpEventTypes:   []string{"secret"},
+			},
+		},
+	})
+
+	t.Log("Bob should see room1 ahead of room2.")
+	// The order in which things happen:
+	// 1. alice: room1 secret event
+	// 2. bob:   room2 secret event
+	// 3. alice: invite bob to room 1
+	// Bob can only see (2) and (3), which means that room 1 has had most recent activity.
+	// (If we use the secret events' timestamps alone, without considering what Bob has
+	// permission to see, we will only consider (1) and (2), which would mean room 2
+	// has had the most recent activity.)
+	m.MatchResponse(
+		t,
+		res,
+		m.MatchList(
+			"a",
+			m.MatchV3Count(2),
+			m.MatchV3Ops(m.MatchV3SyncOp(0, 1, []string{room1, room2})),
+		),
+	)
+}
+
 // Tests the scenario described at
 // https://github.com/matrix-org/sliding-sync/pull/58#discussion_r1159850458
 func TestRangeOutsideTotalRooms(t *testing.T) {
