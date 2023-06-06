@@ -65,14 +65,17 @@ func (t *JoinedRoomsTracker) IsUserJoined(userID, roomID string) bool {
 	return false
 }
 
-// returns true if the state changed
+// UserJoinedRoom marks the given user as having joined the given room. Returns true
+// if the user was not joined to the room prior to this call, and false otherwise.
 func (t *JoinedRoomsTracker) UserJoinedRoom(userID, roomID string) bool {
 	u := make([]string, 1, 1)
 	u[0] = userID
 	return t.UsersJoinedRoom(u, roomID)
 }
 
-// returns true if the state changed for any user in userIDs
+// UsersJoinedRoom marks the given slice of users as having joined the given room.
+// Returns true if at least one of the users was not joined to the room prior to the
+// call, and false otherwise.
 func (t *JoinedRoomsTracker) UsersJoinedRoom(userIDs []string, roomID string) bool {
 	t.mu.Lock()
 	defer t.mu.Unlock()
@@ -111,6 +114,7 @@ func (t *JoinedRoomsTracker) UsersJoinedRoom(userIDs []string, roomID string) bo
 	return !wasJoined
 }
 
+// UserLeftRoom marks the given user as having left the given room.
 func (t *JoinedRoomsTracker) UserLeftRoom(userID, roomID string) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
