@@ -93,7 +93,9 @@ func (s *ConnState) load(ctx context.Context, req *sync3.Request) error {
 	for _, metadata := range joinedRooms {
 		metadata.RemoveHero(s.userID)
 		urd := s.userCache.LoadRoomData(metadata.RoomID)
-		urd.JoinTiming = joinTimings[metadata.RoomID]
+		timing, ok := joinTimings[metadata.RoomID]
+		internal.AssertWithContext(ctx, "LoadJoinedRooms returned room with timing info", ok)
+		urd.JoinTiming = timing
 
 		interestedEventTimestampsByList := make(map[string]uint64, len(req.Lists))
 		for listKey, listReq := range req.Lists {

@@ -92,8 +92,9 @@ func (c *GlobalCache) LoadRooms(ctx context.Context, roomIDs ...string) map[stri
 	return result
 }
 
-// LoadRoomsFromMap is like LoadRooms, except it is given a map with room IDs as keys.
-// The values in that map are completely ignored.
+// LoadRoomsFromMap is like LoadRooms, except it is given a map with room IDs as keys
+// and returns rooms in a map. The output map is non-nil and contains exactly the same
+// set of keys as the input map. The values in the input map are completely ignored.
 func (c *GlobalCache) LoadRoomsFromMap(ctx context.Context, joinTimingsByRoomID map[string]internal.EventMetadata) map[string]*internal.RoomMetadata {
 	c.roomIDToMetadataMu.RLock()
 	defer c.roomIDToMetadataMu.RUnlock()
@@ -124,9 +125,12 @@ func (c *GlobalCache) copyRoom(roomID string) *internal.RoomMetadata {
 }
 
 // LoadJoinedRooms loads all current joined room metadata for the user given, together
-// with the NID of the user's latest join (excluding profile changes) to the room.
+// with timing info for the user's latest join (excluding profile changes) to the room.
 // Returns the absolute database position (the latest event NID across the whole DB),
 // along with the results.
+//
+// The two maps returned by this function have exactly the same set of keys. Each is nil
+// iff a non-nil error is returned.
 // TODO: remove with LoadRoomState?
 func (c *GlobalCache) LoadJoinedRooms(ctx context.Context, userID string) (
 	pos int64, joinedRooms map[string]*internal.RoomMetadata, joinTimingByRoomID map[string]internal.EventMetadata, err error,

@@ -799,6 +799,8 @@ func (s *Storage) AllJoinedMembers(txn *sqlx.Tx, tempTableName string) (result m
 	return result, metadata, nil
 }
 
+// Returns a map from joined room IDs to EventMetadata, which is nil iff a non-nil error
+// is returned.
 func (s *Storage) JoinedRoomsAfterPosition(userID string, pos int64) (
 	joinTimingByRoomID map[string]internal.EventMetadata, err error,
 ) {
@@ -816,8 +818,8 @@ func (s *Storage) JoinedRoomsAfterPosition(userID string, pos int64) (
 // - only memberships for the given user;
 // neither of these preconditions are checked by this function.
 //
-// Returns a slice of joined room IDs and a slice of joined event NIDs, whose entries
-// correspond to one another. Rooms appear in these slices in no particular order.
+// Returns a map from joined room IDs to EventMetadata, which is nil iff a non-nil error
+// is returned.
 func (s *Storage) determineJoinedRoomsFromMemberships(membershipEvents []Event) (
 	joinTimingByRoomID map[string]internal.EventMetadata, err error,
 ) {
