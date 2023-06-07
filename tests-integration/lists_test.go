@@ -193,85 +193,75 @@ func TestUnreadCountMisordering(t *testing.T) {
 }
 
 func TestBumpEventTypesOnStartup(t *testing.T) {
+	const room1ID = "!room1:localhost"
+	const room2ID = "!room2:localhost"
+	const room3ID = "!room3:localhost"
+
+	// Create three rooms, with a one-second pause between each creation.
 	ts := time.Now()
-	t.Log("Alice makes three rooms.")
-	r1CreateState := createRoomState(t, alice, ts)
+	state := createRoomState(t, alice, ts)
+	r2State := createRoomState(t, alice, ts.Add(time.Second))
+	r3State := createRoomState(t, alice, ts.Add(2*time.Second))
+	ts = ts.Add(2 * time.Second)
+
 	r1Timeline := []json.RawMessage{}
-
-	// Add at least a second between significant events, to ensure there aren't any
-	// timestamp clashes.
-	ts = ts.Add(time.Second)
-	r2CreateState := createRoomState(t, alice, ts)
 	r2Timeline := []json.RawMessage{}
-
-	ts = ts.Add(time.Second)
-	r3CreateState := createRoomState(t, alice, ts)
 	r3Timeline := []json.RawMessage{}
 
-	t.Log("A series of events take place in all three rooms.")
-	// The following sequence of events take place:
-	// (1) r1: topic set
-	// (2) r1: message
-	// (3) r2: message
-	// (4) r3: message
-	// (5) r2: topic
-	// (6) r1: profile change
+	steps := []struct {
+		timeline *[]json.RawMessage
+		event    json.RawMessage
+	}{
+		{
+			timeline: &r1Timeline,
+			event:    testutils.NewStateEvent(t, "m.room.topic", "", alice, map[string]interface{}{"topic": "potato"}, testutils.WithTimestamp(ts)),
+		},
+		{
+			timeline: &r1Timeline,
+			event:    testutils.NewMessageEvent(t, alice, "message in room 1", testutils.WithTimestamp(ts)),
+		},
+		{
+			timeline: &r2Timeline,
+			event:    testutils.NewMessageEvent(t, alice, "message in room 2", testutils.WithTimestamp(ts)),
+		},
+		{
+			timeline: &r3Timeline,
+			event:    testutils.NewMessageEvent(t, alice, "message in room 3", testutils.WithTimestamp(ts)),
+		},
+		{
+			timeline: &r2Timeline,
+			event:    testutils.NewStateEvent(t, "m.room.topic", "", alice, map[string]interface{}{"topic": "bananas"}, testutils.WithTimestamp(ts)),
+		},
+		{
+			timeline: &r1Timeline,
+			event:    testutils.NewStateEvent(t, "m.room.member", alice, alice, map[string]interface{}{"membership": "join", "displayname": "all ice"}, testutils.WithTimestamp(ts)),
+		},
+	}
 
-	ts = ts.Add(time.Second)
-	r1Timeline = append(r1Timeline,
-		testutils.NewStateEvent(
-			t, "m.room.topic", "", alice, map[string]interface{}{"topic": "potato"}, testutils.WithTimestamp(ts),
-		),
-	)
+	// Append events to the correct timeline. Add at least a second between
+	// significant events, to ensure there aren't any timestamp clashes.
+	for _, step := range steps {
+		ts = ts.Add(time.Second)
+		step.event = testutils.SetTimestamp(t, step.event, ts)
+		*step.timeline = append(*step.timeline, step.event)
+	}
 
-	ts = ts.Add(time.Second)
-	r1Timeline = append(r1Timeline,
-		testutils.NewMessageEvent(t, alice, "message in room 1", testutils.WithTimestamp(ts)),
-	)
-
-	ts = ts.Add(time.Second)
-	r2Timeline = append(r2Timeline,
-		testutils.NewMessageEvent(t, alice, "message in room 2", testutils.WithTimestamp(ts)),
-	)
-
-	ts = ts.Add(time.Second)
-	r3Timeline = append(r3Timeline,
-		testutils.NewMessageEvent(t, alice, "message in room 3", testutils.WithTimestamp(ts)),
-	)
-
-	ts = ts.Add(time.Second)
-	r2Timeline = append(r2Timeline,
-		testutils.NewStateEvent(
-			t, "m.room.topic", "", alice, map[string]interface{}{"topic": "bananas"}, testutils.WithTimestamp(ts),
-		),
-	)
-
-	ts = ts.Add(time.Second)
-	r1Timeline = append(r1Timeline,
-		testutils.NewStateEvent(
-			t, "m.room.member", alice, alice, map[string]interface{}{"membership": "join", "displayname": "all ice"}, testutils.WithTimestamp(ts),
-		),
-	)
-
-	const room1ID = "!room1:localhost"
 	r1 := roomEvents{
 		roomID: room1ID,
 		name:   "room 1",
-		state:  r1CreateState,
+		state:  state,
 		events: r1Timeline,
 	}
-	const room2ID = "!room2:localhost"
 	r2 := roomEvents{
 		roomID: room2ID,
 		name:   "room 2",
-		state:  r2CreateState,
+		state:  r2State,
 		events: r2Timeline,
 	}
-	const room3ID = "!room3:localhost"
 	r3 := roomEvents{
 		roomID: room3ID,
 		name:   "room 3",
-		state:  r3CreateState,
+		state:  r3State,
 		events: r3Timeline,
 	}
 
@@ -281,7 +271,7 @@ func TestBumpEventTypesOnStartup(t *testing.T) {
 	defer v2.close()
 	defer v3.close()
 
-	t.Log("We prepare to tell the proxy about these events.")
+	t.Log("Prepare to tell the proxy about three rooms and events in them.")
 	v2.addAccount(t, alice, aliceToken)
 	v2.queueResponse(aliceToken, sync2.SyncResponse{
 		Rooms: sync2.SyncRoomsResponse{
@@ -301,40 +291,56 @@ func TestBumpEventTypesOnStartup(t *testing.T) {
 		},
 	})
 
-	// Confirm that the poller was polled from.
+	// Confirm that the poller polled.
 	v2.waitUntilEmpty(t, aliceToken)
 
 	t.Log("The proxy restarts.")
 	v3.restart(t, v2, pqString)
 
-	// Vary the bump event types, and compare the room order we get to what we expect
+	// Vary the bump event types, and compare the room order we get to what we expect.
+	// The pertinent events are:
+	// (1) create and join r1
+	// (2) create and join r2
+	// (3) create and join r3
+	// (4) r1: topic set
+	// (5) r1: message
+	// (6) r2: message
+	// (7) r3: message
+	// (8) r2: topic
+	// (9) r1: profile change
+
 	cases := []struct {
 		BumpEventTypes []string
 		RoomIDs        []string
 	}{
 		{
 			BumpEventTypes: []string{"m.room.message"},
-			RoomIDs:        []string{room3ID, room2ID, room1ID},
+			// r3 message (7), r2 message (6), r1 message (5).
+			RoomIDs: []string{room3ID, room2ID, room1ID},
 		},
 		{
 			BumpEventTypes: []string{"m.room.topic"},
-			RoomIDs:        []string{room2ID, room1ID, room3ID},
+			// r2 topic (8), r1 topic (4), r3 join (3).
+			RoomIDs: []string{room2ID, room1ID, room3ID},
 		},
 		{
 			BumpEventTypes: []string{},
-			RoomIDs:        []string{room1ID, room2ID, room3ID},
+			// r1 profile (9), r2 topic (8), r3 message (7)
+			RoomIDs: []string{room1ID, room2ID, room3ID},
 		},
 		{
 			BumpEventTypes: []string{"m.room.topic", "m.room.message"},
-			RoomIDs:        []string{room2ID, room3ID, room1ID},
+			// r2 topic (8), r3 message (7), r1 message (5)
+			RoomIDs: []string{room2ID, room3ID, room1ID},
 		},
 		{
+			// r2 profile (8), r3 join (3), r1 join (1)
 			BumpEventTypes: []string{"m.room.member"},
 			RoomIDs:        []string{room1ID, room3ID, room2ID},
 		},
 		{
 			BumpEventTypes: []string{"com.example.doesnotexist"},
-			// Fallback to join order
+			// r3 join (3), r2 join (2), r1 join (1)
 			RoomIDs: []string{room3ID, room2ID, room1ID},
 		},
 	}

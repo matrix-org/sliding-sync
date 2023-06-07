@@ -124,3 +124,19 @@ func NewAccountData(t *testing.T, evType string, content interface{}) json.RawMe
 	}
 	return j
 }
+
+func SetTimestamp(t *testing.T, event json.RawMessage, ts time.Time) json.RawMessage {
+	parsed := eventMock{}
+	err := json.Unmarshal(event, &parsed)
+	if err != nil {
+		t.Errorf("Failed to parse eventMock: %s", err)
+		return nil
+	}
+	parsed.OriginServerTS = int64(gomatrixserverlib.AsTimestamp(ts))
+	edited, err := json.Marshal(parsed)
+	if err != nil {
+		t.Errorf("Failed to serialise eventMock: %s", err)
+		return nil
+	}
+	return edited
+}
