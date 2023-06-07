@@ -64,11 +64,11 @@ func NewJoinEvent(t TestBenchInterface, userID string, modifiers ...eventMockMod
 	}, modifiers...)
 }
 
-func NewMessageEvent(t TestBenchInterface, userID, text string) json.RawMessage {
+func NewMessageEvent(t TestBenchInterface, userID, text string, modifiers ...eventMockModifier) json.RawMessage {
 	return NewEvent(t, "m.room.message", userID, map[string]interface{}{
 		"msgtype": "m.text",
 		"body":    text,
-	})
+	}, modifiers...)
 }
 
 func NewStateEvent(t TestBenchInterface, evType, stateKey, sender string, content interface{}, modifiers ...eventMockModifier) json.RawMessage {
@@ -123,4 +123,20 @@ func NewAccountData(t *testing.T, evType string, content interface{}) json.RawMe
 		t.Fatalf("NewAccountData: failed to make event JSON: %s", err)
 	}
 	return j
+}
+
+func SetTimestamp(t *testing.T, event json.RawMessage, ts time.Time) json.RawMessage {
+	parsed := eventMock{}
+	err := json.Unmarshal(event, &parsed)
+	if err != nil {
+		t.Errorf("Failed to parse eventMock: %s", err)
+		return nil
+	}
+	parsed.OriginServerTS = int64(gomatrixserverlib.AsTimestamp(ts))
+	edited, err := json.Marshal(parsed)
+	if err != nil {
+		t.Errorf("Failed to serialise eventMock: %s", err)
+		return nil
+	}
+	return edited
 }

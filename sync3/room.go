@@ -33,8 +33,10 @@ type RoomConnMetadata struct {
 	caches.UserRoomData
 	// plus any per-conn data.
 
-	// LastInterestedEventTimestamps is a map from list names to the origin_server_ts of
-	// the most recent event seen in the room that the list is interested in.
+	// LastInterestedEventTimestamps is a map from list name to the origin_server_ts of
+	// the most recent event seen in the room since the user's join that the list is
+	// interested in.
+	//
 	// Connections can specify that a list is only interested in certain event types by
 	// providing "bump_event_types" in their sliding sync request. This happens on a
 	// list-by-list basis. Because the same room can appear in different lists with
@@ -56,9 +58,11 @@ func (r *RoomConnMetadata) GetLastInterestedEventTimestamp(listKey string) uint6
 		return ts
 	}
 	// SetRoom is responsible for maintaining LastInterestedEventTimestamps.
-	// However, if a brand-new list appears and we don't call SetRoom, we need to
-	// ensure we hand back a sensible timestamp. So: use the (current)
-	// LastMessageTimestamp as a fallback.
+	// However, if a brand-new list appears we don't call SetRoom until we have
+	// some RoomEventUpdates to process. We need to ensure we hand back a sensible
+	// timestamp. So: use the (current) LastMessageTimestamp as a fallback.
+	// TODO: if we had access to the request's bump event types, we could lookup the
+	//       a timestamp by event type from the global metadata (c.f. ConnState.load).
 	ts = r.LastMessageTimestamp
 	// Write this value into the map. If we don't and only uninteresting events
 	// arrive after, the fallback value will have jumped ahead despite nothing of

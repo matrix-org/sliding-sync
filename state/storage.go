@@ -197,9 +197,14 @@ func (s *Storage) MetadataForAllRooms(txn *sqlx.Tx, tempTableName string, result
 	}
 	for _, ev := range events {
 		metadata, ok := result[ev.RoomID]
-		metadata.LastMessageTimestamp = gjson.ParseBytes(ev.JSON).Get("origin_server_ts").Uint()
 		if !ok {
 			metadata = *internal.NewRoomMetadata(ev.RoomID)
+		}
+		// For a given room, we'll see many events (one for each event type in the
+		// room's state). We need to pick the largest of these events' timestamps here.
+		ts := gjson.ParseBytes(ev.JSON).Get("origin_server_ts").Uint()
+		if ts > metadata.LastMessageTimestamp {
+			metadata.LastMessageTimestamp = ts
 		}
 		parsed := gjson.ParseBytes(ev.JSON)
 		eventMetadata := internal.EventMetadata{
@@ -621,7 +626,7 @@ func (s *Storage) visibleEventNIDsBetweenForRooms(userID string, roomIDs []strin
 			return nil, fmt.Errorf("VisibleEventNIDsBetweenForRooms.SelectEventsWithTypeStateKeyInRooms: %s", err)
 		}
 	}
-	joinNIDsByRoomID, err := s.determineJoinedRoomsFromMemberships(membershipEvents)
+	joinTimingsByRoomID, err := s.determineJoinedRoomsFromMemberships(membershipEvents)
 	if err != nil {
 		return nil, fmt.Errorf("failed to work out joined rooms for %s at pos %d: %s", userID, from, err)
 	}
@@ -632,7 +637,7 @@ func (s *Storage) visibleEventNIDsBetweenForRooms(userID string, roomIDs []strin
 		return nil, fmt.Errorf("failed to load membership events: %s", err)
 	}
 
-	return s.visibleEventNIDsWithData(joinNIDsByRoomID, membershipEvents, userID, from, to)
+	return s.visibleEventNIDsWithData(joinTimingsByRoomID, membershipEvents, userID, from, to)
 }
 
 // Work out the NID ranges to pull events from for this user. Given a from and to event nid stream position,
@@ -662,7 +667,7 @@ func (s *Storage) visibleEventNIDsBetweenForRooms(userID string, roomIDs []strin
 //	- For Room E: from=1, to=15 returns { RoomE: [ [3,3], [13,15] ] } (tests invites)
 func (s *Storage) VisibleEventNIDsBetween(userID string, from, to int64) (map[string][][2]int64, error) {
 	// load *ALL* joined rooms for this user at from (inclusive)
-	joinNIDsByRoomID, err := s.JoinedRoomsAfterPosition(userID, from)
+	joinTimingsByRoomID, err := s.JoinedRoomsAfterPosition(userID, from)
 	if err != nil {
 		return nil, fmt.Errorf("failed to work out joined rooms for %s at pos %d: %s", userID, from, err)
 	}
@@ -673,10 +678,10 @@ func (s *Storage) VisibleEventNIDsBetween(userID string, from, to int64) (map[st
 		return nil, fmt.Errorf("failed to load membership events: %s", err)
 	}
 
-	return s.visibleEventNIDsWithData(joinNIDsByRoomID, membershipEvents, userID, from, to)
+	return s.visibleEventNIDsWithData(joinTimingsByRoomID, membershipEvents, userID, from, to)
 }
 
-func (s *Storage) visibleEventNIDsWithData(joinNIDsByRoomID map[string]int64, membershipEvents []Event, userID string, from, to int64) (map[string][][2]int64, error) {
+func (s *Storage) visibleEventNIDsWithData(joinTimingsByRoomID map[string]internal.EventMetadata, membershipEvents []Event, userID string, from, to int64) (map[string][][2]int64, error) {
 	// load membership events in order and bucket based on room ID
 	roomIDToLogs := make(map[string][]membershipEvent)
 	for _, ev := range membershipEvents {
@@ -738,7 +743,7 @@ func (s *Storage) visibleEventNIDsWithData(joinNIDsByRoomID map[string]int64, me
 
 	// For each joined room, perform the algorithm and delete the logs afterwards
 	result := make(map[string][][2]int64)
-	for joinedRoomID, _ := range joinNIDsByRoomID {
+	for joinedRoomID, _ := range joinTimingsByRoomID {
 		roomResult := calculateVisibleEventNIDs(true, from, to, roomIDToLogs[joinedRoomID])
 		result[joinedRoomID] = roomResult
 		delete(roomIDToLogs, joinedRoomID)
@@ -805,8 +810,10 @@ func (s *Storage) AllJoinedMembers(txn *sqlx.Tx, tempTableName string) (result m
 	return result, metadata, nil
 }
 
+// Returns a map from joined room IDs to EventMetadata, which is nil iff a non-nil error
+// is returned.
 func (s *Storage) JoinedRoomsAfterPosition(userID string, pos int64) (
-	joinedRoomsWithJoinNIDs map[string]int64, err error,
+	joinTimingByRoomID map[string]internal.EventMetadata, err error,
 ) {
 	// fetch all the membership events up to and including pos
 	membershipEvents, err := s.accumulator.eventsTable.SelectEventsWithTypeStateKey("m.room.member", userID, 0, pos)
@@ -822,14 +829,15 @@ func (s *Storage) JoinedRoomsAfterPosition(userID string, pos int64) (
 // - only memberships for the given user;
 // neither of these preconditions are checked by this function.
 //
-// Returns a slice of joined room IDs and a slice of joined event NIDs, whose entries
-// correspond to one another. Rooms appear in these slices in no particular order.
+// Returns a map from joined room IDs to EventMetadata, which is nil iff a non-nil error
+// is returned.
 func (s *Storage) determineJoinedRoomsFromMemberships(membershipEvents []Event) (
-	joinNIDsByRoomID map[string]int64, err error,
+	joinTimingByRoomID map[string]internal.EventMetadata, err error,
 ) {
-	joinNIDsByRoomID = make(map[string]int64, len(membershipEvents))
+	joinTimingByRoomID = make(map[string]internal.EventMetadata, len(membershipEvents))
 	for _, ev := range membershipEvents {
-		membership := gjson.GetBytes(ev.JSON, "content.membership").Str
+		parsed := gjson.ParseBytes(ev.JSON)
+		membership := parsed.Get("content.membership").Str
 		switch membership {
 		// These are "join" and the only memberships that you can transition to after
 		// a join: see e.g. the transition diagram in
@@ -837,17 +845,20 @@ func (s *Storage) determineJoinedRoomsFromMemberships(membershipEvents []Event) 
 		case "join":
 			// Only remember a join NID if we are not joined to this room according to
 			// the state before ev.
-			if _, currentlyJoined := joinNIDsByRoomID[ev.RoomID]; !currentlyJoined {
-				joinNIDsByRoomID[ev.RoomID] = ev.NID
+			if _, currentlyJoined := joinTimingByRoomID[ev.RoomID]; !currentlyJoined {
+				joinTimingByRoomID[ev.RoomID] = internal.EventMetadata{
+					NID:       ev.NID,
+					Timestamp: parsed.Get("origin_server_ts").Uint(),
+				}
 			}
 		case "ban":
 			fallthrough
 		case "leave":
-			delete(joinNIDsByRoomID, ev.RoomID)
+			delete(joinTimingByRoomID, ev.RoomID)
 		}
 	}
 
-	return joinNIDsByRoomID, nil
+	return joinTimingByRoomID, nil
 }
 
 func (s *Storage) Teardown() {

@@ -166,24 +166,24 @@ func TestStorageJoinedRoomsAfterPosition(t *testing.T) {
 		}
 		latestPos = latestNIDs[len(latestNIDs)-1]
 	}
-	aliceJoinNIDsByRoomID, err := store.JoinedRoomsAfterPosition(alice, latestPos)
+	aliceJoinTimingsByRoomID, err := store.JoinedRoomsAfterPosition(alice, latestPos)
 	if err != nil {
 		t.Fatalf("failed to JoinedRoomsAfterPosition: %s", err)
 	}
-	if len(aliceJoinNIDsByRoomID) != 1 {
-		t.Fatalf("JoinedRoomsAfterPosition at %v for %s got %v, want room %s only", latestPos, alice, aliceJoinNIDsByRoomID, joinedRoomID)
+	if len(aliceJoinTimingsByRoomID) != 1 {
+		t.Fatalf("JoinedRoomsAfterPosition at %v for %s got %v, want room %s only", latestPos, alice, aliceJoinTimingsByRoomID, joinedRoomID)
 	}
-	for gotRoomID, _ := range aliceJoinNIDsByRoomID {
+	for gotRoomID, _ := range aliceJoinTimingsByRoomID {
 		if gotRoomID != joinedRoomID {
 			t.Fatalf("JoinedRoomsAfterPosition at %v for %s got %v want %v", latestPos, alice, gotRoomID, joinedRoomID)
 		}
 	}
-	bobJoinNIDsByRoomID, err := store.JoinedRoomsAfterPosition(bob, latestPos)
+	bobJoinTimingsByRoomID, err := store.JoinedRoomsAfterPosition(bob, latestPos)
 	if err != nil {
 		t.Fatalf("failed to JoinedRoomsAfterPosition: %s", err)
 	}
-	if len(bobJoinNIDsByRoomID) != 3 {
-		t.Fatalf("JoinedRoomsAfterPosition for %s got %v rooms want %v", bob, len(bobJoinNIDsByRoomID), 3)
+	if len(bobJoinTimingsByRoomID) != 3 {
+		t.Fatalf("JoinedRoomsAfterPosition for %s got %v rooms want %v", bob, len(bobJoinTimingsByRoomID), 3)
 	}
 
 	// also test currentNotMembershipStateEventsInAllRooms

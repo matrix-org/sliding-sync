@@ -31,10 +31,12 @@ type EventData struct {
 	JoinCount   int
 	InviteCount int
 
-	// the absolute latest position for this event data. The NID for this event is guaranteed to
-	// be <= this value. See PosAlwaysProcess and PosDoNotProcess for things outside the event timeline
-	// e.g invites
-	LatestPos int64
+	// NID is the nid for this event; or a non-nid sentinel value. Current sentinels are
+	//  - PosAlwaysProcess and PosDoNotProcess, for things outside the event timeline
+	//    e.g invites; and
+	//  - `0` used by UserCache.OnRegistered to inject space children events at startup.
+	//    It's referenced in ConnState.OnRoomUpdateand UserCache.OnSpaceUpdate
+	NID int64
 
 	// Flag set when this event should force the room contents to be resent e.g
 	// state res, initial join, etc
@@ -53,7 +55,7 @@ var logger = zerolog.New(os.Stdout).With().Timestamp().Logger().Output(zerolog.C
 // Dispatcher for new events.
 type GlobalCache struct {
 	// LoadJoinedRoomsOverride allows tests to mock out the behaviour of LoadJoinedRooms.
-	LoadJoinedRoomsOverride func(userID string) (pos int64, joinedRooms map[string]*internal.RoomMetadata, joinNIDs map[string]int64, err error)
+	LoadJoinedRoomsOverride func(userID string) (pos int64, joinedRooms map[string]*internal.RoomMetadata, joinTimings map[string]internal.EventMetadata, err error)
 
 	// inserts are done by v2 poll loops, selects are done by v3 request threads
 	// there are lots of overlapping keys as many users (threads) can be joined to the same room (key)
@@ -90,13 +92,14 @@ func (c *GlobalCache) LoadRooms(ctx context.Context, roomIDs ...string) map[stri
 	return result
 }
 
-// LoadRoomsFromMap is like LoadRooms, except it is given a map with room IDs as keys.
-// The values in that map are completely ignored.
-func (c *GlobalCache) LoadRoomsFromMap(ctx context.Context, joinNIDsByRoomID map[string]int64) map[string]*internal.RoomMetadata {
+// LoadRoomsFromMap is like LoadRooms, except it is given a map with room IDs as keys
+// and returns rooms in a map. The output map is non-nil and contains exactly the same
+// set of keys as the input map. The values in the input map are completely ignored.
+func (c *GlobalCache) LoadRoomsFromMap(ctx context.Context, joinTimingsByRoomID map[string]internal.EventMetadata) map[string]*internal.RoomMetadata {
 	c.roomIDToMetadataMu.RLock()
 	defer c.roomIDToMetadataMu.RUnlock()
-	result := make(map[string]*internal.RoomMetadata, len(joinNIDsByRoomID))
-	for roomID, _ := range joinNIDsByRoomID {
+	result := make(map[string]*internal.RoomMetadata, len(joinTimingsByRoomID))
+	for roomID, _ := range joinTimingsByRoomID {
 		result[roomID] = c.copyRoom(roomID)
 	}
 	return result
@@ -122,12 +125,15 @@ func (c *GlobalCache) copyRoom(roomID string) *internal.RoomMetadata {
 }
 
 // LoadJoinedRooms loads all current joined room metadata for the user given, together
-// with the NID of the user's latest join (excluding profile changes) to the room.
+// with timing info for the user's latest join (excluding profile changes) to the room.
 // Returns the absolute database position (the latest event NID across the whole DB),
 // along with the results.
+//
+// The two maps returned by this function have exactly the same set of keys. Each is nil
+// iff a non-nil error is returned.
 // TODO: remove with LoadRoomState?
 func (c *GlobalCache) LoadJoinedRooms(ctx context.Context, userID string) (
-	pos int64, joinedRooms map[string]*internal.RoomMetadata, joinNIDsByRoomID map[string]int64, err error,
+	pos int64, joinedRooms map[string]*internal.RoomMetadata, joinTimingByRoomID map[string]internal.EventMetadata, err error,
 ) {
 	if c.LoadJoinedRoomsOverride != nil {
 		return c.LoadJoinedRoomsOverride(userID)
@@ -136,13 +142,13 @@ func (c *GlobalCache) LoadJoinedRooms(ctx context.Context, userID string) (
 	if err != nil {
 		return 0, nil, nil, err
 	}
-	joinNIDsByRoomID, err = c.store.JoinedRoomsAfterPosition(userID, initialLoadPosition)
+	joinTimingByRoomID, err = c.store.JoinedRoomsAfterPosition(userID, initialLoadPosition)
 	if err != nil {
 		return 0, nil, nil, err
 	}
 	// TODO: no guarantee that this state is the same as latest unless called in a dispatcher loop
-	rooms := c.LoadRoomsFromMap(ctx, joinNIDsByRoomID)
-	return initialLoadPosition, rooms, joinNIDsByRoomID, nil
+	rooms := c.LoadRoomsFromMap(ctx, joinTimingByRoomID)
+	return initialLoadPosition, rooms, joinTimingByRoomID, nil
 }
 
 func (c *GlobalCache) LoadStateEvent(ctx context.Context, roomID string, loadPosition int64, evType, stateKey string) json.RawMessage {
@@ -339,7 +345,12 @@ func (c *GlobalCache) OnNewEvent(
 			}
 		}
 	}
-	// Note: this means the LastMessageTimestamp can _decrease_; it is not monotonic.
+	// Note: this means the LastMessageTimestamp and values in LatestEventsByType can
+	// _decrease_; these timestamps are not monotonic.
 	metadata.LastMessageTimestamp = ed.Timestamp
+	metadata.LatestEventsByType[ed.EventType] = internal.EventMetadata{
+		NID:       ed.NID,
+		Timestamp: ed.Timestamp,
+	}
 	c.roomIDToMetadata[ed.RoomID] = metadata
 }

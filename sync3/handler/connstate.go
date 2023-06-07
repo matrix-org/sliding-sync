@@ -84,7 +84,7 @@ func NewConnState(
 //   - load() bases its current state based on the latest position, which includes processing of these N events.
 //   - post load() we read N events, processing them a 2nd time.
 func (s *ConnState) load(ctx context.Context, req *sync3.Request) error {
-	initialLoadPosition, joinedRooms, joinNIDs, err := s.globalCache.LoadJoinedRooms(ctx, s.userID)
+	initialLoadPosition, joinedRooms, joinTimings, err := s.globalCache.LoadJoinedRooms(ctx, s.userID)
 	if err != nil {
 		return err
 	}
@@ -93,18 +93,32 @@ func (s *ConnState) load(ctx context.Context, req *sync3.Request) error {
 	for _, metadata := range joinedRooms {
 		metadata.RemoveHero(s.userID)
 		urd := s.userCache.LoadRoomData(metadata.RoomID)
-		urd.JoinNID = joinNIDs[metadata.RoomID]
+		timing, ok := joinTimings[metadata.RoomID]
+		internal.AssertWithContext(ctx, "LoadJoinedRooms returned room with timing info", ok)
+		urd.JoinTiming = timing
 
 		interestedEventTimestampsByList := make(map[string]uint64, len(req.Lists))
-		for listKey, _ := range req.Lists {
-			// Best-effort only: we're not going to scan the database for all events in
-			// the entire room's history to give you a fully accurate timestamp
-			// according to your bump_event_types.
-			interestedEventTimestampsByList[listKey] = metadata.LastMessageTimestamp
+		for listKey, listReq := range req.Lists {
+			interestingActivityTs := metadata.LastMessageTimestamp
+			if len(listReq.BumpEventTypes) > 0 {
+				// Use the global cache to find the timestamp of the latest interesting
+				// event we can see. If there is no such event, fall back to the
+				// LastMessageTimestamp.
+				joinEvent := joinTimings[metadata.RoomID]
+				interestingActivityTs = joinEvent.Timestamp
+				for _, eventType := range listReq.BumpEventTypes {
+					timing := metadata.LatestEventsByType[eventType]
+					// we found a later event which we are authorised to see, use it instead
+					if joinEvent.NID < timing.NID && interestingActivityTs < timing.Timestamp {
+						interestingActivityTs = timing.Timestamp
+					}
+				}
+			}
+			interestedEventTimestampsByList[listKey] = interestingActivityTs
 		}
 		rooms[i] = sync3.RoomConnMetadata{
-			RoomMetadata: *metadata,
-			UserRoomData: urd,
+			RoomMetadata:                  *metadata,
+			UserRoomData:                  urd,
 			LastInterestedEventTimestamps: interestedEventTimestampsByList,
 		}
 		i++
@@ -114,10 +128,6 @@ func (s *ConnState) load(ctx context.Context, req *sync3.Request) error {
 		metadata := urd.Invite.RoomMetadata()
 		inviteTimestampsByList := make(map[string]uint64, len(req.Lists))
 		for listKey, _ := range req.Lists {
-			// NB: If you've set bump_event_types to exclude membership events and
-			// there are no interesting messages after your invite event, when you join
-			// this timestamp is going to roll back to the last interesting event before
-			// your invite.
 			inviteTimestampsByList[listKey] = metadata.LastMessageTimestamp
 		}
 		rooms = append(rooms, sync3.RoomConnMetadata{
@@ -596,12 +606,12 @@ func (s *ConnState) OnUpdate(ctx context.Context, up caches.Update) {
 func (s *ConnState) OnRoomUpdate(ctx context.Context, up caches.RoomUpdate) {
 	switch update := up.(type) {
 	case *caches.RoomEventUpdate:
-		if update.EventData.LatestPos != caches.PosAlwaysProcess && update.EventData.LatestPos == 0 {
+		if update.EventData.NID != caches.PosAlwaysProcess && update.EventData.NID == 0 {
 			// 0 -> this event was from a 'state' block, do not poke active connections
 			return
 		}
 		internal.AssertWithContext(ctx, "missing global room metadata", update.GlobalRoomMetadata() != nil)
-		internal.Logf(ctx, "connstate", "queued update %d", update.EventData.LatestPos)
+		internal.Logf(ctx, "connstate", "queued update %d", update.EventData.NID)
 		s.live.onUpdate(update)
 	case caches.RoomUpdate:
 		internal.AssertWithContext(ctx, "missing global room metadata", update.GlobalRoomMetadata() != nil)

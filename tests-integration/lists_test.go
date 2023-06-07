@@ -191,3 +191,173 @@ func TestUnreadCountMisordering(t *testing.T) {
 		m.MatchV3DeleteOp(0), m.MatchV3InsertOp(1, roomC), // the unread count decrease coming through
 	)))
 }
+
+func TestBumpEventTypesOnStartup(t *testing.T) {
+	const room1ID = "!room1:localhost"
+	const room2ID = "!room2:localhost"
+	const room3ID = "!room3:localhost"
+
+	// Create three rooms, with a one-second pause between each creation.
+	ts := time.Now()
+	state := createRoomState(t, alice, ts)
+	r2State := createRoomState(t, alice, ts.Add(time.Second))
+	r3State := createRoomState(t, alice, ts.Add(2*time.Second))
+	ts = ts.Add(2 * time.Second)
+
+	r1Timeline := []json.RawMessage{}
+	r2Timeline := []json.RawMessage{}
+	r3Timeline := []json.RawMessage{}
+
+	steps := []struct {
+		timeline *[]json.RawMessage
+		event    json.RawMessage
+	}{
+		{
+			timeline: &r1Timeline,
+			event:    testutils.NewStateEvent(t, "m.room.topic", "", alice, map[string]interface{}{"topic": "potato"}, testutils.WithTimestamp(ts)),
+		},
+		{
+			timeline: &r1Timeline,
+			event:    testutils.NewMessageEvent(t, alice, "message in room 1", testutils.WithTimestamp(ts)),
+		},
+		{
+			timeline: &r2Timeline,
+			event:    testutils.NewMessageEvent(t, alice, "message in room 2", testutils.WithTimestamp(ts)),
+		},
+		{
+			timeline: &r3Timeline,
+			event:    testutils.NewMessageEvent(t, alice, "message in room 3", testutils.WithTimestamp(ts)),
+		},
+		{
+			timeline: &r2Timeline,
+			event:    testutils.NewStateEvent(t, "m.room.topic", "", alice, map[string]interface{}{"topic": "bananas"}, testutils.WithTimestamp(ts)),
+		},
+		{
+			timeline: &r1Timeline,
+			event:    testutils.NewStateEvent(t, "m.room.member", alice, alice, map[string]interface{}{"membership": "join", "displayname": "all ice"}, testutils.WithTimestamp(ts)),
+		},
+	}
+
+	// Append events to the correct timeline. Add at least a second between
+	// significant events, to ensure there aren't any timestamp clashes.
+	for _, step := range steps {
+		ts = ts.Add(time.Second)
+		step.event = testutils.SetTimestamp(t, step.event, ts)
+		*step.timeline = append(*step.timeline, step.event)
+	}
+
+	r1 := roomEvents{
+		roomID: room1ID,
+		name:   "room 1",
+		state:  state,
+		events: r1Timeline,
+	}
+	r2 := roomEvents{
+		roomID: room2ID,
+		name:   "room 2",
+		state:  r2State,
+		events: r2Timeline,
+	}
+	r3 := roomEvents{
+		roomID: room3ID,
+		name:   "room 3",
+		state:  r3State,
+		events: r3Timeline,
+	}
+
+	pqString := testutils.PrepareDBConnectionString()
+	v2 := runTestV2Server(t)
+	v3 := runTestServer(t, v2, pqString)
+	defer v2.close()
+	defer v3.close()
+
+	t.Log("Prepare to tell the proxy about three rooms and events in them.")
+	v2.addAccount(t, alice, aliceToken)
+	v2.queueResponse(aliceToken, sync2.SyncResponse{
+		Rooms: sync2.SyncRoomsResponse{
+			Join: v2JoinTimeline(r1, r2, r3),
+		},
+	})
+
+	t.Log("Alice requests a new sliding sync connection.")
+	v3.mustDoV3Request(t, aliceToken, sync3.Request{
+		Lists: map[string]sync3.RequestList{
+			"a": {
+				RoomSubscription: sync3.RoomSubscription{
+					TimelineLimit: 20,
+				},
+				Ranges: sync3.SliceRanges{{0, 2}},
+			},
+		},
+	})
+
+	// Confirm that the poller polled.
+	v2.waitUntilEmpty(t, aliceToken)
+
+	t.Log("The proxy restarts.")
+	v3.restart(t, v2, pqString)
+
+	// Vary the bump event types, and compare the room order we get to what we expect.
+	// The pertinent events are:
+	// (1) create and join r1
+	// (2) create and join r2
+	// (3) create and join r3
+	// (4) r1: topic set
+	// (5) r1: message
+	// (6) r2: message
+	// (7) r3: message
+	// (8) r2: topic
+	// (9) r1: profile change
+
+	cases := []struct {
+		BumpEventTypes []string
+		RoomIDs        []string
+	}{
+		{
+			BumpEventTypes: []string{"m.room.message"},
+			// r3 message (7), r2 message (6), r1 message (5).
+			RoomIDs: []string{room3ID, room2ID, room1ID},
+		},
+		{
+			BumpEventTypes: []string{"m.room.topic"},
+			// r2 topic (8), r1 topic (4), r3 join (3).
+			RoomIDs: []string{room2ID, room1ID, room3ID},
+		},
+		{
+			BumpEventTypes: []string{},
+			// r1 profile (9), r2 topic (8), r3 message (7)
+			RoomIDs: []string{room1ID, room2ID, room3ID},
+		},
+		{
+			BumpEventTypes: []string{"m.room.topic", "m.room.message"},
+			// r2 topic (8), r3 message (7), r1 message (5)
+			RoomIDs: []string{room2ID, room3ID, room1ID},
+		},
+		{
+			// r2 profile (8), r3 join (3), r1 join (1)
+			BumpEventTypes: []string{"m.room.member"},
+			RoomIDs:        []string{room1ID, room3ID, room2ID},
+		},
+		{
+			BumpEventTypes: []string{"com.example.doesnotexist"},
+			// r3 join (3), r2 join (2), r1 join (1)
+			RoomIDs: []string{room3ID, room2ID, room1ID},
+		},
+	}
+	for _, testCase := range cases {
+		t.Logf("Alice makes a new sync connection with bump events %v", testCase.BumpEventTypes)
+		res := v3.mustDoV3Request(t, aliceToken, sync3.Request{
+			Lists: map[string]sync3.RequestList{
+				"list": {
+					Ranges:         sync3.SliceRanges{{0, 2}},
+					BumpEventTypes: testCase.BumpEventTypes,
+				},
+			},
+		})
+		t.Logf("Alice should see the three rooms in the order %v", testCase.RoomIDs)
+		m.MatchResponse(t, res, m.MatchList("list",
+			m.MatchV3Ops(m.MatchV3SyncOp(0, 2, testCase.RoomIDs)),
+			m.MatchV3Count(3),
+		))
+	}
+}
