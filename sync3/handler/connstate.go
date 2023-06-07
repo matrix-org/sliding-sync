@@ -98,7 +98,7 @@ func (s *ConnState) load(ctx context.Context, req *sync3.Request) error {
 		interestedEventTimestampsByList := make(map[string]uint64, len(req.Lists))
 		for listKey, listReq := range req.Lists {
 			interestingActivityTs := metadata.LastMessageTimestamp
-			if listReq.HasBumpEventTypes() {
+			if len(listReq.BumpEventTypes) > 0 {
 				// Use the global cache to find the timestamp of the latest interesting
 				// event we can see. If there is no such event, fall back to the
 				// LastMessageTimestamp.
