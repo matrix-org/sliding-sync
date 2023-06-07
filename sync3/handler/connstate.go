@@ -108,6 +108,7 @@ func (s *ConnState) load(ctx context.Context, req *sync3.Request) error {
 				interestingActivityTs = joinEvent.Timestamp
 				for _, eventType := range listReq.BumpEventTypes {
 					timing := metadata.LatestEventsByType[eventType]
+					// we found a later event which we are authorised to see, use it instead
 					if joinEvent.NID < timing.NID && interestingActivityTs < timing.Timestamp {
 						interestingActivityTs = timing.Timestamp
 					}
