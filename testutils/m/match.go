@@ -283,6 +283,15 @@ func MatchRoomSubscriptions(wantSubs map[string][]RoomMatcher) RespMatcher {
 	}
 }
 
+func MatchNoLists() RespMatcher {
+	return func(res *sync3.Response) error {
+		if len(res.Lists) != 0 {
+			return fmt.Errorf("expected no lists in response, got %d lists: %v", len(res.Lists), res.Lists)
+		}
+		return nil
+	}
+}
+
 func MatchNoE2EEExtension() RespMatcher {
 	return func(res *sync3.Response) error {
 		if res.Extensions.E2EE != nil {
