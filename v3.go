@@ -3,11 +3,12 @@ package slidingsync
 import (
 	"encoding/json"
 	"fmt"
-	"github.com/getsentry/sentry-go"
 	"net/http"
 	"os"
 	"strings"
 	"time"
+
+	"github.com/getsentry/sentry-go"
 
 	"github.com/gorilla/mux"
 	"github.com/matrix-org/sliding-sync/internal"
@@ -83,11 +84,13 @@ func Setup(destHomeserver, postgresURI, secret string, opts Opts) (*handler2.Han
 	}
 	pubSub := pubsub.NewPubSub(bufferSize)
 
+	pMap := sync2.NewPollerMap(v2Client, opts.AddPrometheusMetrics)
 	// create v2 handler
-	h2, err := handler2.NewHandler(postgresURI, sync2.NewPollerMap(v2Client, opts.AddPrometheusMetrics), storev2, store, v2Client, pubSub, pubSub, opts.AddPrometheusMetrics)
+	h2, err := handler2.NewHandler(postgresURI, pMap, storev2, store, v2Client, pubSub, pubSub, opts.AddPrometheusMetrics)
 	if err != nil {
 		panic(err)
 	}
+	pMap.SetCallbacks(h2)
 
 	// create v3 handler
 	h3, err := handler.NewSync3Handler(store, storev2, v2Client, postgresURI, secret, pubSub, pubSub, opts.AddPrometheusMetrics, opts.MaxPendingEventUpdates)
