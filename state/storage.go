@@ -339,7 +339,14 @@ func (s *Storage) currentNotMembershipStateEventsInAllRooms(txn *sqlx.Tx, eventT
 }
 
 func (s *Storage) Accumulate(roomID, prevBatch string, timeline []json.RawMessage) (numNew int, timelineNIDs []int64, err error) {
-	return s.accumulator.Accumulate(roomID, prevBatch, timeline)
+	if len(timeline) == 0 {
+		return 0, nil, nil
+	}
+	err = sqlutil.WithTransaction(s.accumulator.db, func(txn *sqlx.Tx) error {
+		numNew, timelineNIDs, err = s.accumulator.Accumulate(txn, roomID, prevBatch, timeline)
+		return err
+	})
+	return
 }
 
 func (s *Storage) Initialise(roomID string, state []json.RawMessage) (InitialiseResult, error) {
