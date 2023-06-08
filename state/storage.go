@@ -32,7 +32,7 @@ type StartupSnapshot struct {
 }
 
 type Storage struct {
-	accumulator       *Accumulator
+	Accumulator       *Accumulator
 	EventsTable       *EventTable
 	ToDeviceTable     *ToDeviceTable
 	UnreadTable       *UnreadTable
@@ -60,7 +60,7 @@ func NewStorage(postgresURI string) *Storage {
 		entityName:    "server",
 	}
 	return &Storage{
-		accumulator:       acc,
+		Accumulator:       acc,
 		ToDeviceTable:     NewToDeviceTable(db),
 		UnreadTable:       NewUnreadTable(db),
 		EventsTable:       acc.eventsTable,
@@ -74,11 +74,11 @@ func NewStorage(postgresURI string) *Storage {
 }
 
 func (s *Storage) LatestEventNID() (int64, error) {
-	return s.accumulator.eventsTable.SelectHighestNID()
+	return s.Accumulator.eventsTable.SelectHighestNID()
 }
 
 func (s *Storage) AccountData(userID, roomID string, eventTypes []string) (data []AccountData, err error) {
-	err = sqlutil.WithTransaction(s.accumulator.db, func(txn *sqlx.Tx) error {
+	err = sqlutil.WithTransaction(s.Accumulator.db, func(txn *sqlx.Tx) error {
 		data, err = s.AccountDataTable.Select(txn, userID, eventTypes, roomID)
 		return err
 	})
@@ -86,7 +86,7 @@ func (s *Storage) AccountData(userID, roomID string, eventTypes []string) (data 
 }
 
 func (s *Storage) RoomAccountDatasWithType(userID, eventType string) (data []AccountData, err error) {
-	err = sqlutil.WithTransaction(s.accumulator.db, func(txn *sqlx.Tx) error {
+	err = sqlutil.WithTransaction(s.Accumulator.db, func(txn *sqlx.Tx) error {
 		data, err = s.AccountDataTable.SelectWithType(txn, userID, eventType)
 		return err
 	})
@@ -96,7 +96,7 @@ func (s *Storage) RoomAccountDatasWithType(userID, eventType string) (data []Acc
 // Pull out all account data for this user. If roomIDs is empty, global account data is returned.
 // If roomIDs is non-empty, all account data for these rooms are extracted.
 func (s *Storage) AccountDatas(userID string, roomIDs ...string) (datas []AccountData, err error) {
-	err = sqlutil.WithTransaction(s.accumulator.db, func(txn *sqlx.Tx) error {
+	err = sqlutil.WithTransaction(s.Accumulator.db, func(txn *sqlx.Tx) error {
 		datas, err = s.AccountDataTable.SelectMany(txn, userID, roomIDs...)
 		return err
 	})
@@ -113,7 +113,7 @@ func (s *Storage) InsertAccountData(userID, roomID string, events []json.RawMess
 			Type:   gjson.ParseBytes(events[i]).Get("type").Str,
 		}
 	}
-	err = sqlutil.WithTransaction(s.accumulator.db, func(txn *sqlx.Tx) error {
+	err = sqlutil.WithTransaction(s.Accumulator.db, func(txn *sqlx.Tx) error {
 		data, err = s.AccountDataTable.Insert(txn, data)
 		return err
 	})
@@ -140,7 +140,7 @@ func (s *Storage) PrepareSnapshot(txn *sqlx.Tx) (tableName string, err error) {
 // a sliding sync instance. It will atomically grab metadata for all rooms and all joined members
 // in a single transaction.
 func (s *Storage) GlobalSnapshot() (ss StartupSnapshot, err error) {
-	err = sqlutil.WithTransaction(s.accumulator.db, func(txn *sqlx.Tx) error {
+	err = sqlutil.WithTransaction(s.Accumulator.db, func(txn *sqlx.Tx) error {
 		tempTableName, err := s.PrepareSnapshot(txn)
 		if err != nil {
 			err = fmt.Errorf("GlobalSnapshot: failed to call PrepareSnapshot: %w", err)
@@ -191,7 +191,7 @@ func (s *Storage) MetadataForAllRooms(txn *sqlx.Tx, tempTableName string, result
 	}
 
 	// work out latest timestamps
-	events, err := s.accumulator.eventsTable.selectLatestEventByTypeInAllRooms(txn)
+	events, err := s.Accumulator.eventsTable.selectLatestEventByTypeInAllRooms(txn)
 	if err != nil {
 		return err
 	}
@@ -272,7 +272,7 @@ func (s *Storage) MetadataForAllRooms(txn *sqlx.Tx, tempTableName string, result
 		})
 		result[roomID] = metadata
 	}
-	roomInfos, err := s.accumulator.roomsTable.SelectRoomInfos(txn)
+	roomInfos, err := s.Accumulator.roomsTable.SelectRoomInfos(txn)
 	if err != nil {
 		return fmt.Errorf("failed to select room infos: %s", err)
 	}
@@ -290,7 +290,7 @@ func (s *Storage) MetadataForAllRooms(txn *sqlx.Tx, tempTableName string, result
 	}
 
 	// select space children
-	spaceRoomToRelations, err := s.accumulator.spacesTable.SelectChildren(txn, spaceRoomIDs)
+	spaceRoomToRelations, err := s.Accumulator.spacesTable.SelectChildren(txn, spaceRoomIDs)
 	if err != nil {
 		return fmt.Errorf("failed to select space children: %s", err)
 	}
@@ -342,15 +342,15 @@ func (s *Storage) Accumulate(roomID, prevBatch string, timeline []json.RawMessag
 	if len(timeline) == 0 {
 		return 0, nil, nil
 	}
-	err = sqlutil.WithTransaction(s.accumulator.db, func(txn *sqlx.Tx) error {
-		numNew, timelineNIDs, err = s.accumulator.Accumulate(txn, roomID, prevBatch, timeline)
+	err = sqlutil.WithTransaction(s.Accumulator.db, func(txn *sqlx.Tx) error {
+		numNew, timelineNIDs, err = s.Accumulator.Accumulate(txn, roomID, prevBatch, timeline)
 		return err
 	})
 	return
 }
 
 func (s *Storage) Initialise(roomID string, state []json.RawMessage) (InitialiseResult, error) {
-	return s.accumulator.Initialise(roomID, state)
+	return s.Accumulator.Initialise(roomID, state)
 }
 
 func (s *Storage) EventNIDs(eventNIDs []int64) ([]json.RawMessage, error) {
@@ -366,12 +366,12 @@ func (s *Storage) EventNIDs(eventNIDs []int64) ([]json.RawMessage, error) {
 }
 
 func (s *Storage) StateSnapshot(snapID int64) (state []json.RawMessage, err error) {
-	err = sqlutil.WithTransaction(s.accumulator.db, func(txn *sqlx.Tx) error {
-		snapshotRow, err := s.accumulator.snapshotTable.Select(txn, snapID)
+	err = sqlutil.WithTransaction(s.Accumulator.db, func(txn *sqlx.Tx) error {
+		snapshotRow, err := s.Accumulator.snapshotTable.Select(txn, snapID)
 		if err != nil {
 			return err
 		}
-		events, err := s.accumulator.eventsTable.SelectByNIDs(txn, true, append(snapshotRow.MembershipEvents, snapshotRow.OtherEvents...))
+		events, err := s.Accumulator.eventsTable.SelectByNIDs(txn, true, append(snapshotRow.MembershipEvents, snapshotRow.OtherEvents...))
 		if err != nil {
 			return fmt.Errorf("failed to select state snapshot %v: %s", snapID, err)
 		}
@@ -392,7 +392,7 @@ func (s *Storage) RoomStateAfterEventPosition(ctx context.Context, roomIDs []str
 	defer span.End()
 	roomToEvents = make(map[string][]Event, len(roomIDs))
 	roomIndex := make(map[string]int, len(roomIDs))
-	err = sqlutil.WithTransaction(s.accumulator.db, func(txn *sqlx.Tx) error {
+	err = sqlutil.WithTransaction(s.Accumulator.db, func(txn *sqlx.Tx) error {
 		// we have 2 ways to pull the latest events:
 		//  - superfast rooms table (which races as it can be updated before the new state hits the dispatcher)
 		//  - slower events table query
@@ -400,7 +400,7 @@ func (s *Storage) RoomStateAfterEventPosition(ctx context.Context, roomIDs []str
 		// query if we can prove we have races. We can prove this because the latest NIDs will be > pos, meaning the
 		// database state is ahead of the in-memory state (which is normal as we update the DB first). This should
 		// happen infrequently though, so we will warn about this behaviour.
-		roomToLatestNIDs, err := s.accumulator.roomsTable.LatestNIDs(txn, roomIDs)
+		roomToLatestNIDs, err := s.Accumulator.roomsTable.LatestNIDs(txn, roomIDs)
 		if err != nil {
 			return err
 		}
@@ -413,13 +413,13 @@ func (s *Storage) RoomStateAfterEventPosition(ctx context.Context, roomIDs []str
 				fastNIDs = append(fastNIDs, latestNID)
 			}
 		}
-		latestEvents, err := s.accumulator.eventsTable.SelectByNIDs(txn, true, fastNIDs)
+		latestEvents, err := s.Accumulator.eventsTable.SelectByNIDs(txn, true, fastNIDs)
 		if err != nil {
 			return fmt.Errorf("failed to select latest nids in rooms %v: %s", roomIDs, err)
 		}
 		if len(slowRooms) > 0 {
 			logger.Warn().Int("slow_rooms", len(slowRooms)).Msg("RoomStateAfterEventPosition: pos value provided is far behind the database copy, performance degraded")
-			latestSlowEvents, err := s.accumulator.eventsTable.LatestEventInRooms(txn, slowRooms, pos)
+			latestSlowEvents, err := s.Accumulator.eventsTable.LatestEventInRooms(txn, slowRooms, pos)
 			if err != nil {
 				return err
 			}
@@ -431,7 +431,7 @@ func (s *Storage) RoomStateAfterEventPosition(ctx context.Context, roomIDs []str
 				// if there is no before snapshot then this last event NID is _part of_ the initial state,
 				// ergo the state after this == the current state and we can safely ignore the lastEventNID
 				ev.BeforeStateSnapshotID = 0
-				ev.BeforeStateSnapshotID, err = s.accumulator.roomsTable.CurrentAfterSnapshotID(txn, ev.RoomID)
+				ev.BeforeStateSnapshotID, err = s.Accumulator.roomsTable.CurrentAfterSnapshotID(txn, ev.RoomID)
 				if err != nil {
 					return err
 				}
@@ -441,7 +441,7 @@ func (s *Storage) RoomStateAfterEventPosition(ctx context.Context, roomIDs []str
 
 		if len(eventTypesToStateKeys) == 0 {
 			for _, ev := range latestEvents {
-				snapshotRow, err := s.accumulator.snapshotTable.Select(txn, ev.BeforeStateSnapshotID)
+				snapshotRow, err := s.Accumulator.snapshotTable.Select(txn, ev.BeforeStateSnapshotID)
 				if err != nil {
 					return err
 				}
@@ -472,7 +472,7 @@ func (s *Storage) RoomStateAfterEventPosition(ctx context.Context, roomIDs []str
 						}
 					}
 				}
-				events, err := s.accumulator.eventsTable.SelectByNIDs(txn, true, allStateEventNIDs)
+				events, err := s.Accumulator.eventsTable.SelectByNIDs(txn, true, allStateEventNIDs)
 				if err != nil {
 					return fmt.Errorf("failed to select state snapshot %v for room %v: %s", ev.BeforeStateSnapshotID, ev.RoomID, err)
 				}
@@ -526,7 +526,7 @@ func (s *Storage) RoomStateAfterEventPosition(ctx context.Context, roomIDs []str
 			if err != nil {
 				return fmt.Errorf("failed to form sql query: %s", err)
 			}
-			rows, err := s.accumulator.db.Query(s.accumulator.db.Rebind(query), args...)
+			rows, err := s.Accumulator.db.Query(s.Accumulator.db.Rebind(query), args...)
 			if err != nil {
 				return fmt.Errorf("failed to execute query: %s", err)
 			}
@@ -578,7 +578,7 @@ func (s *Storage) LatestEventsInRooms(userID string, roomIDs []string, to int64,
 	}
 	result := make(map[string][]json.RawMessage, len(roomIDs))
 	prevBatches := make(map[string]string, len(roomIDs))
-	err = sqlutil.WithTransaction(s.accumulator.db, func(txn *sqlx.Tx) error {
+	err = sqlutil.WithTransaction(s.Accumulator.db, func(txn *sqlx.Tx) error {
 		for roomID, ranges := range roomIDToRanges {
 			var earliestEventNID int64
 			var roomEvents []json.RawMessage
@@ -623,7 +623,7 @@ func (s *Storage) visibleEventNIDsBetweenForRooms(userID string, roomIDs []strin
 	var err error
 	if from != 0 {
 		// if from==0 then this query will return nothing, so optimise it out
-		membershipEvents, err = s.accumulator.eventsTable.SelectEventsWithTypeStateKeyInRooms(roomIDs, "m.room.member", userID, 0, from)
+		membershipEvents, err = s.Accumulator.eventsTable.SelectEventsWithTypeStateKeyInRooms(roomIDs, "m.room.member", userID, 0, from)
 		if err != nil {
 			return nil, fmt.Errorf("VisibleEventNIDsBetweenForRooms.SelectEventsWithTypeStateKeyInRooms: %s", err)
 		}
@@ -634,7 +634,7 @@ func (s *Storage) visibleEventNIDsBetweenForRooms(userID string, roomIDs []strin
 	}
 
 	// load membership deltas for *THESE* rooms for this user
-	membershipEvents, err = s.accumulator.eventsTable.SelectEventsWithTypeStateKeyInRooms(roomIDs, "m.room.member", userID, from, to)
+	membershipEvents, err = s.Accumulator.eventsTable.SelectEventsWithTypeStateKeyInRooms(roomIDs, "m.room.member", userID, from, to)
 	if err != nil {
 		return nil, fmt.Errorf("failed to load membership events: %s", err)
 	}
@@ -675,7 +675,7 @@ func (s *Storage) VisibleEventNIDsBetween(userID string, from, to int64) (map[st
 	}
 
 	// load *ALL* membership deltas for all rooms for this user
-	membershipEvents, err := s.accumulator.eventsTable.SelectEventsWithTypeStateKey("m.room.member", userID, from, to)
+	membershipEvents, err := s.Accumulator.eventsTable.SelectEventsWithTypeStateKey("m.room.member", userID, from, to)
 	if err != nil {
 		return nil, fmt.Errorf("failed to load membership events: %s", err)
 	}
@@ -761,8 +761,8 @@ func (s *Storage) visibleEventNIDsWithData(joinNIDsByRoomID map[string]int64, me
 }
 
 func (s *Storage) RoomMembershipDelta(roomID string, from, to int64, limit int) (eventJSON []json.RawMessage, upTo int64, err error) {
-	err = sqlutil.WithTransaction(s.accumulator.db, func(txn *sqlx.Tx) error {
-		nids, err := s.accumulator.eventsTable.SelectEventNIDsWithTypeInRoom(txn, "m.room.member", limit, roomID, from, to)
+	err = sqlutil.WithTransaction(s.Accumulator.db, func(txn *sqlx.Tx) error {
+		nids, err := s.Accumulator.eventsTable.SelectEventNIDsWithTypeInRoom(txn, "m.room.member", limit, roomID, from, to)
 		if err != nil {
 			return err
 		}
@@ -770,7 +770,7 @@ func (s *Storage) RoomMembershipDelta(roomID string, from, to int64, limit int) 
 			return nil
 		}
 		upTo = nids[len(nids)-1]
-		events, err := s.accumulator.eventsTable.SelectByNIDs(txn, true, nids)
+		events, err := s.Accumulator.eventsTable.SelectByNIDs(txn, true, nids)
 		if err != nil {
 			return err
 		}
@@ -816,7 +816,7 @@ func (s *Storage) JoinedRoomsAfterPosition(userID string, pos int64) (
 	joinedRoomsWithJoinNIDs map[string]int64, err error,
 ) {
 	// fetch all the membership events up to and including pos
-	membershipEvents, err := s.accumulator.eventsTable.SelectEventsWithTypeStateKey("m.room.member", userID, 0, pos)
+	membershipEvents, err := s.Accumulator.eventsTable.SelectEventsWithTypeStateKey("m.room.member", userID, 0, pos)
 	if err != nil {
 		return nil, fmt.Errorf("JoinedRoomsAfterPosition.SelectEventsWithTypeStateKey: %s", err)
 	}
@@ -858,7 +858,7 @@ func (s *Storage) determineJoinedRoomsFromMemberships(membershipEvents []Event) 
 }
 
 func (s *Storage) Teardown() {
-	err := s.accumulator.db.Close()
+	err := s.Accumulator.db.Close()
 	if err != nil {
 		panic("Storage.Teardown: " + err.Error())
 	}
