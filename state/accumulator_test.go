@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"reflect"
 	"sort"
+	"sync"
 	"testing"
 
 	"github.com/jmoiron/sqlx"
@@ -657,7 +658,68 @@ func TestCalculateNewSnapshotDupe(t *testing.T) {
 // Test that you can accumulate the same room with the same partial sequence of timeline events and
 // state is updated correctly. This relies on postgres blocking subsequent transactions sensibly.
 func TestAccumulatorConcurrency(t *testing.T) {
+	roomID := "!TestAccumulatorConcurrency:localhost"
+	roomEvents := []json.RawMessage{
+		[]byte(`{"event_id":"AA", "type":"m.room.create", "state_key":"", "content":{"creator":"@me:localhost"}}`),
+		[]byte(`{"event_id":"BB", "type":"m.room.member", "state_key":"@me:localhost", "content":{"membership":"join"}}`),
+		[]byte(`{"event_id":"CC", "type":"m.room.join_rules", "state_key":"", "content":{"join_rule":"public"}}`),
+	}
+	db, close := connectToDB(t)
+	defer close()
+	accumulator := NewAccumulator(db)
+	_, err := accumulator.Initialise(roomID, roomEvents)
+	if err != nil {
+		t.Fatalf("failed to Initialise accumulator: %s", err)
+	}
 
+	// spin off N goroutines to insert 1,2,3,4,5 in varying batches which can appear in the wild e.g [1,2] [1,2,3,4]
+	// we update the room name in all events so we should end up with Name: 5.
+	newEvents := []json.RawMessage{
+		[]byte(`{"event_id":"con_1", "type":"m.room.name", "state_key":"", "content":{"name":"1"}}`),
+		[]byte(`{"event_id":"con_2", "type":"m.room.name", "state_key":"", "content":{"name":"2"}}`),
+		[]byte(`{"event_id":"con_3", "type":"m.room.name", "state_key":"", "content":{"name":"3"}}`),
+		[]byte(`{"event_id":"con_4", "type":"m.room.name", "state_key":"", "content":{"name":"4"}}`),
+		[]byte(`{"event_id":"con_5", "type":"m.room.name", "state_key":"", "content":{"name":"5"}}`),
+	}
+	totalNumNew := 0
+	var wg sync.WaitGroup
+	wg.Add(len(newEvents))
+	for i := 0; i < len(newEvents); i++ {
+		go func(i int) {
+			defer wg.Done()
+			subset := newEvents[:(i + 1)] // i=0 => [1], i=1 => [1,2], etc
+			err := sqlutil.WithTransaction(accumulator.db, func(txn *sqlx.Tx) error {
+				numNew, _, err := accumulator.Accumulate(txn, roomID, "", subset)
+				totalNumNew += numNew
+				return err
+			})
+			if err != nil {
+				t.Errorf("goroutine failed to accumulate: %s", err)
+			}
+		}(i)
+	}
+	wg.Wait() // wait for all goroutines to finish
+	if totalNumNew != len(newEvents) {
+		t.Errorf("got %d total new events, want %d", totalNumNew, len(newEvents))
+	}
+	// check that the name of the room is "5"
+	snapshot := currentSnapshotNIDs(t, accumulator.snapshotTable, roomID)
+	t.Logf("snapshot nids: %v", snapshot)
+	var events []Event
+	err = sqlutil.WithTransaction(accumulator.db, func(txn *sqlx.Tx) error {
+		events, err = accumulator.eventsTable.SelectByNIDs(txn, true, snapshot)
+		return err
+	})
+	// find the room name and check it is 5
+	roomName := ""
+	for _, ev := range events {
+		if ev.Type == "m.room.name" {
+			roomName = gjson.GetBytes(ev.JSON, "content.name").Str
+		}
+	}
+	if roomName != "5" {
+		t.Fatalf("got room name %s want '5'", roomName)
+	}
 }
 
 func currentSnapshotNIDs(t *testing.T, snapshotTable *SnapshotTable, roomID string) []int64 {
