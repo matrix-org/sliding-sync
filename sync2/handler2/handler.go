@@ -3,10 +3,11 @@ package handler2
 import (
 	"context"
 	"encoding/json"
-	"github.com/getsentry/sentry-go"
 	"hash/fnv"
 	"os"
 	"sync"
+
+	"github.com/getsentry/sentry-go"
 
 	"github.com/matrix-org/sliding-sync/internal"
 	"github.com/matrix-org/sliding-sync/pubsub"
@@ -58,7 +59,6 @@ func NewHandler(
 		}),
 		typingMap: make(map[string]uint64),
 	}
-	pMap.SetCallbacks(h)
 
 	if enablePrometheus {
 		h.addPrometheusMetrics()
