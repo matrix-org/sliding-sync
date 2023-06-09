@@ -307,13 +307,11 @@ func (h *PollerMap) OnReceipt(ctx context.Context, userID, roomID, ephEventType 
 }
 
 func (h *PollerMap) OnE2EEData(ctx context.Context, userID, deviceID string, otkCounts map[string]int, fallbackKeyTypes []string, deviceListChanges map[string]int) {
-	var wg sync.WaitGroup
-	wg.Add(1)
-	h.executor <- func() {
-		h.callbacks.OnE2EEData(ctx, userID, deviceID, otkCounts, fallbackKeyTypes, deviceListChanges)
-		wg.Done()
-	}
-	wg.Wait()
+	// This is device-scoped data and will never race with another poller. Therefore we
+	// do not need to queue this up in the executor. However: the poller does need to
+	// wait for this to complete before advancing the since token, or else we risk
+	// losing device list changes.
+	h.callbacks.OnE2EEData(ctx, userID, deviceID, otkCounts, fallbackKeyTypes, deviceListChanges)
 }
 
 // Poller can automatically poll the sync v2 endpoint and accumulate the responses in storage
