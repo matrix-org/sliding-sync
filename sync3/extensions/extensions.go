@@ -100,22 +100,28 @@ func (r *Core) ApplyDelta(gnext GenericRequest) {
 // according to the "core" extension scoping logic. Extensions are free to suppress
 // updates for a room based on additional criteria.
 func (r *Core) RoomInScope(roomID string, extCtx Context) bool {
-	// If the extension hasn't had its scope configured, process everything.
-	if r.Lists == nil && r.Rooms == nil {
-		return true
+	// First determine which rooms the extension is monitoring outside of any sliding windows.
+	roomsToMonitor := r.Rooms
+	if roomsToMonitor == nil {
+		roomsToMonitor = extCtx.AllSubscribedRooms
 	}
-
-	// If this extension has been explicitly subscribed to this room, process the update.
-	for _, roomInScope := range r.Rooms {
+	// Process the update if this room is one of those monitored rooms.
+	for _, roomInScope := range roomsToMonitor {
 		if roomInScope == roomID {
 			return true
 		}
 	}
 
-	// If the room belongs to one of the lists that this extension should process, process the update.
+	// Next determine which lists the extension is monitoring.
+	listsToMonitor := r.Lists
+	if listsToMonitor == nil {
+		listsToMonitor = extCtx.AllLists
+	}
+
+	// Process the update if the room is visible in one of those lists.
 	visibleInLists := extCtx.RoomIDsToLists[roomID]
 	for _, visibleInList := range visibleInLists {
-		for _, shouldProcessList := range r.Lists {
+		for _, shouldProcessList := range listsToMonitor {
 			if visibleInList == shouldProcessList {
 				return true
 			}
@@ -233,6 +239,8 @@ func (r Response) HasData(isInitial bool) bool {
 	return false
 }
 
+// Context is a summary of useful information about the sync3.Request and the state of
+// the requester's connection.
 type Context struct {
 	*Handler
 	// RoomIDToTimeline is a map from room IDs to slices of event IDs. The keys are the
@@ -253,6 +261,10 @@ type Context struct {
 	// enclose those sliding windows. Values should be nonnil and nonempty, and may
 	// contain multiple list names.
 	RoomIDsToLists map[string][]string
+	// AllLists is the slice of list names provided to the Sliding Window API.
+	AllLists []string
+	// AllSubscribedRooms is the slice of room IDs provided to the Room Subscription API.
+	AllSubscribedRooms []string
 }
 
 type HandlerInterface interface {

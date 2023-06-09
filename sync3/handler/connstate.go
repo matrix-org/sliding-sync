@@ -211,10 +211,12 @@ func (s *ConnState) onIncomingRequest(ctx context.Context, req *sync3.Request, i
 	// is being notified about (e.g. for room account data)
 	ctx, region := internal.StartSpan(ctx, "extensions")
 	response.Extensions = s.extensionsHandler.Handle(ctx, s.muxedReq.Extensions, extensions.Context{
-		UserID:           s.userID,
-		DeviceID:         s.deviceID,
-		RoomIDToTimeline: response.RoomIDsToTimelineEventIDs(),
-		IsInitial:        isInitial,
+		UserID:             s.userID,
+		DeviceID:           s.deviceID,
+		RoomIDToTimeline:   response.RoomIDsToTimelineEventIDs(),
+		IsInitial:          isInitial,
+		AllSubscribedRooms: s.muxedReq.SubscribedRoomIDs(),
+		AllLists:           s.muxedReq.ListKeys(),
 	})
 	region.End()
 

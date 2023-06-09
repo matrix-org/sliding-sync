@@ -470,6 +470,25 @@ func (r *Request) ApplyDelta(nextReq *Request) (result *Request, delta *RequestD
 	return
 }
 
+// ListKeys builds a slice containing the names of the lists this request has defined.
+func (r *Request) ListKeys() []string {
+	listKeys := make([]string, 0, len(r.Lists))
+	for listKey, _ := range r.Lists {
+		listKeys = append(listKeys, listKey)
+	}
+	return listKeys
+}
+
+// SubscribedRoomIDs builds a slice containing the room IDs this request has explicitly
+// subscribed to.
+func (r *Request) SubscribedRoomIDs() []string {
+	roomIDs := make([]string, 0, len(r.RoomSubscriptions))
+	for roomID, _ := range r.RoomSubscriptions {
+		roomIDs = append(roomIDs, roomID)
+	}
+	return roomIDs
+}
+
 type RequestFilters struct {
 	Spaces         []string  `json:"spaces"`
 	IsDM           *bool     `json:"is_dm"`

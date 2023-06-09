@@ -84,25 +84,21 @@ func (s *connStateLive) liveUpdate(
 
 			s.processLiveUpdate(ctx, update, response)
 			// pass event to extensions AFTER processing
-			roomIDsToLists := s.lists.ListsByVisibleRoomIDs(s.muxedReq.Lists)
-			s.extensionsHandler.HandleLiveUpdate(ctx, update, ex, &response.Extensions, extensions.Context{
-				IsInitial:        false,
-				RoomIDToTimeline: response.RoomIDsToTimelineEventIDs(),
-				UserID:           s.userID,
-				DeviceID:         s.deviceID,
-				RoomIDsToLists:   roomIDsToLists,
-			})
+			extCtx := extensions.Context{
+				IsInitial:          false,
+				RoomIDToTimeline:   response.RoomIDsToTimelineEventIDs(),
+				UserID:             s.userID,
+				DeviceID:           s.deviceID,
+				RoomIDsToLists:     s.lists.ListsByVisibleRoomIDs(s.muxedReq.Lists),
+				AllSubscribedRooms: s.muxedReq.SubscribedRoomIDs(),
+				AllLists:           s.muxedReq.ListKeys(),
+			}
+			s.extensionsHandler.HandleLiveUpdate(ctx, update, ex, &response.Extensions, extCtx)
 			// if there's more updates and we don't have lots stacked up already, go ahead and process another
 			for len(s.updates) > 0 && response.ListOps() < 50 {
 				update = <-s.updates
 				s.processLiveUpdate(ctx, update, response)
-				s.extensionsHandler.HandleLiveUpdate(ctx, update, ex, &response.Extensions, extensions.Context{
-					IsInitial:        false,
-					RoomIDToTimeline: response.RoomIDsToTimelineEventIDs(),
-					UserID:           s.userID,
-					DeviceID:         s.deviceID,
-					RoomIDsToLists:   roomIDsToLists,
-				})
+				s.extensionsHandler.HandleLiveUpdate(ctx, update, ex, &response.Extensions, extCtx)
 			}
 		}
 	}
