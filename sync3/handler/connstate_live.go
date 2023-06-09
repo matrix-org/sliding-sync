@@ -120,7 +120,7 @@ func (s *connStateLive) processLiveUpdate(ctx context.Context, up caches.Update,
 	roomEventUpdate, _ := up.(*caches.RoomEventUpdate)
 	// if this is a room event update we may not want to process this if the event nid is < loadPos,
 	// as that means we have already taken it into account
-	if roomEventUpdate != nil && roomEventUpdate.EventData.NID != caches.PosAlwaysProcess && roomEventUpdate.EventData.NID < s.loadPosition {
+	if roomEventUpdate != nil && !roomEventUpdate.EventData.AlwaysProcess && roomEventUpdate.EventData.NID < s.loadPosition {
 		return false
 	}
 

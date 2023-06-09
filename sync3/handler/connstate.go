@@ -606,8 +606,11 @@ func (s *ConnState) OnUpdate(ctx context.Context, up caches.Update) {
 func (s *ConnState) OnRoomUpdate(ctx context.Context, up caches.RoomUpdate) {
 	switch update := up.(type) {
 	case *caches.RoomEventUpdate:
-		if update.EventData.NID != caches.PosAlwaysProcess && update.EventData.NID == 0 {
-			// 0 -> this event was from a 'state' block, do not poke active connections
+		if !update.EventData.AlwaysProcess && update.EventData.NID == 0 {
+			// 0 -> this event was from a 'state' block, do not poke active connections.
+			// This is not the same as checking if we have already processed this event: NID=0 means
+			// it's part of initial room state. If we sent these events, we'd send them to clients in
+			// the timeline section which is wrong.
 			return
 		}
 		internal.AssertWithContext(ctx, "missing global room metadata", update.GlobalRoomMetadata() != nil)

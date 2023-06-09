@@ -97,13 +97,13 @@ func NewInviteData(ctx context.Context, userID, roomID string, inviteState []jso
 				ts := j.Get("origin_server_ts").Int()
 				id.LastMessageTimestamp = uint64(ts)
 				id.InviteEvent = &EventData{
-					Event:     ev,
-					RoomID:    roomID,
-					EventType: "m.room.member",
-					StateKey:  &target,
-					Content:   j.Get("content"),
-					Timestamp: uint64(ts),
-					NID:       PosAlwaysProcess,
+					Event:         ev,
+					RoomID:        roomID,
+					EventType:     "m.room.member",
+					StateKey:      &target,
+					Content:       j.Get("content"),
+					Timestamp:     uint64(ts),
+					AlwaysProcess: true,
 				}
 				id.IsDM = j.Get("is_direct").Bool()
 			} else if target == j.Get("sender").Str {
