@@ -493,7 +493,7 @@ func (s *ConnState) lazyLoadTypingMembers(ctx context.Context, response *sync3.R
 				continue
 			}
 			// load the state event
-			memberEvent := s.globalCache.LoadStateEvent(ctx, roomID, s.loadPosition, "m.room.member", typingUserID.Str)
+			memberEvent := s.globalCache.LoadStateEvent(ctx, roomID, s.loadPositions[roomID], "m.room.member", typingUserID.Str)
 			if memberEvent != nil {
 				room.RequiredState = append(room.RequiredState, memberEvent)
 				s.lazyCache.AddUser(roomID, typingUserID.Str)

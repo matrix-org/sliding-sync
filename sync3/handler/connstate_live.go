@@ -117,8 +117,13 @@ func (s *connStateLive) processLiveUpdate(ctx context.Context, up caches.Update,
 	roomEventUpdate, _ := up.(*caches.RoomEventUpdate)
 	// if this is a room event update we may not want to process this if the event nid is < loadPos,
 	// as that means we have already taken it into account
-	if roomEventUpdate != nil && !roomEventUpdate.EventData.AlwaysProcess && roomEventUpdate.EventData.NID < s.loadPosition {
-		return false
+	if roomEventUpdate != nil && !roomEventUpdate.EventData.AlwaysProcess {
+		// check if we should skip this update. Do we know of this room (lp > 0) and if so, is this event
+		// behind what we've processed before?
+		lp := s.loadPositions[roomEventUpdate.RoomID()]
+		if lp > 0 && roomEventUpdate.EventData.NID < lp {
+			return false
+		}
 	}
 
 	// for initial rooms e.g a room comes into the window or a subscription now exists
@@ -184,7 +189,7 @@ func (s *connStateLive) processLiveUpdate(ctx context.Context, up caches.Update,
 				sender := roomEventUpdate.EventData.Sender
 				if s.lazyCache.IsLazyLoading(roomID) && !s.lazyCache.IsSet(roomID, sender) {
 					// load the state event
-					memberEvent := s.globalCache.LoadStateEvent(context.Background(), roomID, s.loadPosition, "m.room.member", sender)
+					memberEvent := s.globalCache.LoadStateEvent(context.Background(), roomID, s.loadPositions[roomID], "m.room.member", sender)
 					if memberEvent != nil {
 						r.RequiredState = append(r.RequiredState, memberEvent)
 						s.lazyCache.AddUser(roomID, sender)
