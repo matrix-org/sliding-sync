@@ -102,7 +102,7 @@ func (r *Core) ApplyDelta(gnext GenericRequest) {
 func (r *Core) RoomInScope(roomID string, extCtx Context) bool {
 	// First determine which rooms the extension is monitoring outside of any sliding windows.
 	roomsToMonitor := r.Rooms
-	if roomsToMonitor == nil {
+	if len(roomsToMonitor) > 0 && roomsToMonitor[0] == "*" {
 		roomsToMonitor = extCtx.AllSubscribedRooms
 	}
 	// Process the update if this room is one of those monitored rooms.
@@ -114,7 +114,7 @@ func (r *Core) RoomInScope(roomID string, extCtx Context) bool {
 
 	// Next determine which lists the extension is monitoring.
 	listsToMonitor := r.Lists
-	if listsToMonitor == nil {
+	if len(listsToMonitor) > 0 && listsToMonitor[0] == "*" {
 		listsToMonitor = extCtx.AllLists
 	}
 
