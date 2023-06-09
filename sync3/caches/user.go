@@ -54,9 +54,6 @@ type UserRoomData struct {
 	// Map of tag to order float.
 	// See https://spec.matrix.org/latest/client-server-api/#room-tagging
 	Tags map[string]float64
-	// LoadPos is an event NID, or a sentinal value (see EventData.NID).
-	// UserRoomData instances represent the status of this room after the corresponding event, as seen by this user.
-	LoadPos int64
 	// JoinTiming tracks our latest join to the room, excluding profile changes.
 	JoinTiming internal.EventMetadata
 }
@@ -309,7 +306,6 @@ func (c *UserCache) LazyLoadTimelines(ctx context.Context, loadPos int64, roomID
 			urd = NewUserRoomData()
 		}
 		urd.RequestedTimeline = events
-		urd.LoadPos = loadPos
 		if len(events) > 0 {
 			urd.RequestedPrevBatch = roomIDToPrevBatch[requestedRoomID]
 		}
@@ -531,7 +527,6 @@ func (c *UserCache) OnSpaceUpdate(ctx context.Context, parentRoomID, childRoomID
 func (c *UserCache) OnNewEvent(ctx context.Context, eventData *EventData) {
 	// add this to our tracked timelines if we have one
 	urd := c.LoadRoomData(eventData.RoomID)
-	urd.LoadPos = eventData.NID
 	// reset the IsInvite field when the user actually joins/rejects the invite
 	if urd.IsInvite && eventData.EventType == "m.room.member" && eventData.StateKey != nil && *eventData.StateKey == c.UserID {
 		urd.IsInvite = eventData.Content.Get("membership").Str == "invite"
