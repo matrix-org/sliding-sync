@@ -2,6 +2,7 @@ package syncv3_test
 
 import (
 	"encoding/json"
+	"fmt"
 	"reflect"
 	"sort"
 	"testing"
@@ -286,6 +287,159 @@ func TestTypingRespectsExtensionScope(t *testing.T) {
 			},
 		)
 	})
+}
+
+// Similar to TestTypingRespectsExtensionScope, but here we check what happens if
+// the extension is configured with only one of the `lists` and `rooms` fields.
+func TestTypingRespectsExtensionScopeWithOmittedFields(t *testing.T) {
+	alice := registerNewUser(t)
+	bob := registerNewUser(t)
+
+	var res *sync3.Response
+
+	t.Log("Alice creates four rooms. Bob joins each one.")
+	rooms := make([]string, 4)
+	for i := 0; i < cap(rooms); i++ {
+		rooms[i] = alice.CreateRoom(t, map[string]interface{}{"preset": "public_chat", "name": fmt.Sprintf("room %d", i)})
+		bob.JoinRoom(t, rooms[i], nil)
+	}
+	t.Logf("rooms = %v", rooms)
+
+	t.Log("Bob types in all rooms.")
+	for _, room := range rooms {
+		bob.SendTyping(t, room, true, 5000)
+	}
+
+	t.Log("Alice will make sync requests with a window covering room 0; a window covering room 1, and an explicit subscription to room 2.")
+	req := sync3.Request{
+		Lists: map[string]sync3.RequestList{
+			"r0": {
+				Ranges: sync3.SliceRanges{{0, 0}},
+				Sort:   []string{sync3.SortByName},
+			},
+			"r1": {
+				Ranges: sync3.SliceRanges{{1, 1}},
+				Sort:   []string{sync3.SortByName},
+			},
+		},
+		RoomSubscriptions: map[string]sync3.RoomSubscription{
+			rooms[2]: {TimelineLimit: 10},
+		},
+	}
+
+	t.Log("Alice syncs, requesting typing notifications, limiting lists to r0 only")
+	req.Extensions = extensions.Request{
+		Typing: &extensions.TypingRequest{
+			Core: extensions.Core{
+				Enabled: &boolTrue,
+				Lists:   []string{"r0"},
+			},
+		},
+	}
+	res = alice.SlidingSync(t, req)
+	t.Log("Alice should see Bob typing in room 0 and room 2.")
+	// r0 from the extension's Lists; r2 from the main room subscriptions
+	m.MatchResponse(
+		t,
+		res,
+		m.MatchList("r0", m.MatchV3Ops(m.MatchV3SyncOp(0, 0, []string{rooms[0]}))),
+		m.MatchList("r1", m.MatchV3Ops(m.MatchV3SyncOp(1, 1, []string{rooms[1]}))),
+		m.MatchTyping(rooms[0], []string{bob.UserID}),
+		m.MatchNotTyping(rooms[1], []string{bob.UserID}),
+		m.MatchTyping(rooms[2], []string{bob.UserID}),
+		m.MatchNotTyping(rooms[3], []string{bob.UserID}),
+	)
+
+	t.Log("Bob stops typing in all rooms.")
+	for _, room := range rooms {
+		bob.SendTyping(t, room, false, 5000)
+	}
+	t.Log("Bob sends a sentinel message.")
+	// Use room 2 because Alice explicitly subscribes to it
+	bobMsg := bob.SendEventSynced(t, rooms[2], Event{
+		Type: "m.room.message",
+		Content: map[string]interface{}{
+			"msgtype": "m.text",
+			"body":    "Hello, world!",
+		},
+	})
+
+	t.Log("Alice incremental syncs until she sees Bob's sentinel. She shouldn't see any typing, nor any ops.")
+	res = alice.SlidingSyncUntil(t, res.Pos, sync3.Request{}, func(response *sync3.Response) error {
+		err := m.MatchNoV3Ops()(response)
+		if err != nil {
+			t.Fatalf("Got unexpected ops: %s", err)
+		}
+		for i, roomID := range rooms {
+			err := m.MatchNotTyping(roomID, []string{bob.UserID})(response)
+			if err != nil {
+				t.Fatalf("Bob was typing in room %d: %s", i, err)
+			}
+		}
+		timeline := response.Rooms[rooms[2]].Timeline
+		if len(timeline) > 0 && gjson.GetBytes(timeline[len(timeline)-1], "event_id").Str == bobMsg {
+			return nil
+		}
+		return fmt.Errorf("no sentinel yet")
+	})
+
+	t.Log("Bob types in all rooms and sends a second sentinel.")
+	for _, room := range rooms {
+		bob.SendTyping(t, room, true, 5000)
+	}
+	t.Log("Bob sends a sentinel message.")
+	bobMsg = bob.SendEventSynced(t, rooms[2], Event{
+		Type: "m.room.message",
+		Content: map[string]interface{}{
+			"msgtype": "m.text",
+			"body":    "Hello, world again!",
+		},
+	})
+
+
+	t.Log("Alice now requests typing notifications in all windows, and explicitly in rooms 0 and 3.")
+	t.Log("Alice incremental syncs until she sees Bob's latest sentinel. She should see no ops.")
+	seenTyping := map[int]int{}
+	res = alice.SlidingSyncUntil(t, res.Pos, sync3.Request{
+		Extensions: extensions.Request{
+			Typing: &extensions.TypingRequest{
+				Core: extensions.Core{
+					Lists: []string{"*"},
+					// Slightly unusual: room 3 is not in the "main" list of room subscriptions.
+					// But that doesn't stop us from giving typing data in this room.
+					Rooms: []string{rooms[0], rooms[3]},
+				},
+			},
+		},
+	}, func(response *sync3.Response) error {
+		err := m.MatchNoV3Ops()(response)
+		if err != nil {
+			return fmt.Errorf("got unexpected ops: %s", err)
+		}
+
+		for i, roomID := range rooms {
+			bobTyping := m.MatchTyping(roomID, []string{bob.UserID})(response) == nil
+			if bobTyping {
+				seenTyping[i] += 1
+			}
+		}
+
+		timeline := response.Rooms[rooms[2]].Timeline
+		if len(timeline) > 0 && gjson.GetBytes(timeline[len(timeline)-1], "event_id").Str == bobMsg {
+			return nil
+		}
+		return fmt.Errorf("no sentinel yet")
+	})
+	t.Log("Alice should have seen Bob typing in rooms 0, 1 and 3, but not 2.")
+	expectedTyping := map[int]int{
+		0: 1,
+		1: 1,
+		3: 1,
+	}
+	if !reflect.DeepEqual(seenTyping, expectedTyping) {
+		t.Errorf("seenTyping %v, expectedTyping %v", seenTyping, expectedTyping)
+	}
+
 }
 
 func waitUntilTypingData(t *testing.T, client *CSAPI, roomID string, wantUserIDs []string) *sync3.Response {
