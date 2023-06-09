@@ -4,8 +4,10 @@ import (
 	"bytes"
 	"database/sql"
 	"fmt"
+	"reflect"
 	"testing"
 
+	"github.com/jmoiron/sqlx"
 	"github.com/tidwall/gjson"
 
 	"github.com/matrix-org/sliding-sync/sqlutil"
@@ -869,6 +871,93 @@ func TestRemoveUnsignedTXNID(t *testing.T) {
 			t.Fatalf("expected unsigned.txn_id to be removed, got '%s'", jsonTXNId.String())
 		}
 	}
+}
+
+func TestLatestEventNIDInRooms(t *testing.T) {
+	db, close := connectToDB(t)
+	defer close()
+	table := NewEventTable(db)
+
+	var result map[string]int
+	var err error
+	// Insert the following:
+	// - Room FIRST: [N]
+	// - Room SECOND: [N+1, N+2, N+3] (replace)
+	// - Room THIRD: [N+4] (max)
+	first := "!FIRST"
+	second := "!SECOND"
+	third := "!THIRD"
+	err = sqlutil.WithTransaction(db, func(txn *sqlx.Tx) error {
+		result, err = table.Insert(txn, []Event{
+			{
+				ID:     "$N",
+				Type:   "message",
+				RoomID: first,
+				JSON:   []byte(`{}`),
+			},
+			{
+				ID:     "$N+1",
+				Type:   "message",
+				RoomID: second,
+				JSON:   []byte(`{}`),
+			},
+			{
+				ID:     "$N+2",
+				Type:   "message",
+				RoomID: second,
+				JSON:   []byte(`{}`),
+			},
+			{
+				ID:     "$N+3",
+				Type:   "message",
+				RoomID: second,
+				JSON:   []byte(`{}`),
+			},
+			{
+				ID:     "$N+4",
+				Type:   "message",
+				RoomID: third,
+				JSON:   []byte(`{}`),
+			},
+		}, false)
+		return err
+	})
+	assertNoError(t, err)
+
+	testCases := []struct {
+		roomIDs    []string
+		highestNID int
+		wantMap    map[string]string
+	}{
+		// We should see FIRST=N, SECOND=N+3, THIRD=N+4 when querying LatestEventNIDInRooms with N+4
+		{
+			roomIDs:    []string{first, second, third},
+			highestNID: result["$N+4"],
+			wantMap: map[string]string{
+				first: "$N", second: "$N+3", third: "$N+4",
+			},
+		},
+		// We should see FIRST=N, SECOND=N+2 when querying LatestEventNIDInRooms with N+2
+		{
+			roomIDs:    []string{first, second, third},
+			highestNID: result["$N+2"],
+			wantMap: map[string]string{
+				first: "$N", second: "$N+2",
+			},
+		},
+	}
+	for _, tc := range testCases {
+		gotRoomToNID, err := table.LatestEventNIDInRooms(tc.roomIDs, int64(tc.highestNID))
+		assertNoError(t, err)
+		want := make(map[string]int64) // map event IDs to nids
+		for roomID, eventID := range tc.wantMap {
+			want[roomID] = int64(result[eventID])
+		}
+		if !reflect.DeepEqual(gotRoomToNID, want) {
+			t.Errorf("%+v: got %v want %v", tc, gotRoomToNID, want)
+		}
+	}
+
 }
 
 func TestEventTableSelectUnknownEventIDs(t *testing.T) {

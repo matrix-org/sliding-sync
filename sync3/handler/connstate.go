@@ -71,6 +71,8 @@ func NewConnState(
 		ConnState: cs,
 		updates:   make(chan caches.Update, maxPendingEventUpdates),
 	}
+	// subscribe for updates before loading. We risk seeing dupes but that's fine as load positions
+	// will stop us double-processing.
 	cs.userCacheID = cs.userCache.Subsribe(cs)
 	return cs
 }
@@ -87,9 +89,12 @@ func NewConnState(
 //   - load() bases its current state based on the latest position, which includes processing of these N events.
 //   - post load() we read N events, processing them a 2nd time.
 func (s *ConnState) load(ctx context.Context, req *sync3.Request) error {
-	initialLoadPosition, joinedRooms, joinTimings, err := s.globalCache.LoadJoinedRooms(ctx, s.userID)
+	initialLoadPosition, joinedRooms, joinTimings, loadPositions, err := s.globalCache.LoadJoinedRooms(ctx, s.userID)
 	if err != nil {
 		return err
+	}
+	for roomID, nid := range loadPositions {
+		s.loadPositions[roomID] = nid
 	}
 	rooms := make([]sync3.RoomConnMetadata, len(joinedRooms))
 	i := 0

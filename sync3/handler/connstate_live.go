@@ -151,6 +151,7 @@ func (s *connStateLive) processLiveUpdate(ctx context.Context, up caches.Update,
 		response.Rooms[roomID] = room
 		// remember what point we snapshotted this room, incase we see live events which we have
 		// already snapshotted here.
+		// TODO: remove this when we no longer use s.loadPosition to load room data
 		s.loadPositions[roomID] = s.loadPosition
 	}
 

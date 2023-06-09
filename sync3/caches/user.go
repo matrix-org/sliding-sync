@@ -218,7 +218,7 @@ func (c *UserCache) Unsubscribe(id int) {
 func (c *UserCache) OnRegistered(ctx context.Context) error {
 	// select all spaces the user is a part of to seed the cache correctly. This has to be done in
 	// the OnRegistered callback which has locking guarantees. This is why...
-	_, joinedRooms, joinTimings, err := c.globalCache.LoadJoinedRooms(ctx, c.UserID)
+	_, joinedRooms, joinTimings, _, err := c.globalCache.LoadJoinedRooms(ctx, c.UserID)
 	if err != nil {
 		return fmt.Errorf("failed to load joined rooms: %s", err)
 	}
