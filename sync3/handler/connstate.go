@@ -215,6 +215,7 @@ func (s *ConnState) onIncomingRequest(ctx context.Context, req *sync3.Request, i
 		DeviceID:           s.deviceID,
 		RoomIDToTimeline:   response.RoomIDsToTimelineEventIDs(),
 		IsInitial:          isInitial,
+		RoomIDsToLists:     s.lists.ListsByVisibleRoomIDs(s.muxedReq.Lists),
 		AllSubscribedRooms: s.muxedReq.SubscribedRoomIDs(),
 		AllLists:           s.muxedReq.ListKeys(),
 	})
