@@ -178,7 +178,6 @@ type UserCache struct {
 	store                *state.Storage
 	globalCache          *GlobalCache
 	txnIDs               TransactionIDFetcher
-	latestPos            int64
 }
 
 func NewUserCache(userID string, globalCache *GlobalCache, store *state.Storage, txnIDs TransactionIDFetcher) *UserCache {
@@ -219,7 +218,7 @@ func (c *UserCache) Unsubscribe(id int) {
 func (c *UserCache) OnRegistered(ctx context.Context) error {
 	// select all spaces the user is a part of to seed the cache correctly. This has to be done in
 	// the OnRegistered callback which has locking guarantees. This is why...
-	latestPos, joinedRooms, joinTimings, err := c.globalCache.LoadJoinedRooms(ctx, c.UserID)
+	_, joinedRooms, joinTimings, err := c.globalCache.LoadJoinedRooms(ctx, c.UserID)
 	if err != nil {
 		return fmt.Errorf("failed to load joined rooms: %s", err)
 	}
@@ -256,8 +255,12 @@ func (c *UserCache) OnRegistered(ctx context.Context) error {
 	//
 
 	// the db pos is _always_ equal to or ahead of the dispatcher, so we will discard
-	// any updates from the dispatcher with position less than this.
-	c.latestPos = latestPos
+	// any updates from the dispatcher with position less than this. This can happen even with the
+	// OnRegistered lock because DB inserts are independent to LoadJoinedRooms, so it is possible
+	// to load a newer version of rooms, and then see duplicate On... calls - it is the same problem
+	// that ConnState has which is why it has loadPositions. However, unlike ConnState, these dupe updates
+	// don't have any negative effect as we are just updating UserRoomData, not sending timeline events,
+	// so we consciously let this race happen.
 	for _, room := range joinedRooms {
 		// inject space children events
 		if room.IsSpace() {
@@ -501,10 +504,6 @@ func (c *UserCache) OnUnreadCounts(ctx context.Context, roomID string, highlight
 }
 
 func (c *UserCache) OnSpaceUpdate(ctx context.Context, parentRoomID, childRoomID string, isDeleted bool, eventData *EventData) {
-	if eventData.NID > 0 && eventData.NID < c.latestPos {
-		// this is possible when we race when seeding spaces on init with live data
-		return
-	}
 	childURD := c.LoadRoomData(childRoomID)
 	if isDeleted {
 		delete(childURD.Spaces, parentRoomID)
