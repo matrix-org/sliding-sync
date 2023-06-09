@@ -426,7 +426,8 @@ func MatchTyping(roomID string, wantUserIDs []string) RespMatcher {
 			return fmt.Errorf("MatchTyping: no typing extension")
 		}
 		if len(res.Extensions.Typing.Rooms) == 0 || res.Extensions.Typing.Rooms[roomID] == nil {
-			return fmt.Errorf("MatchTyping: missing room %s: got %+v", roomID, res.Extensions.Typing)
+			serialised, _ := json.Marshal(res.Extensions.Typing)
+			return fmt.Errorf("MatchTyping: missing room %s: got %s", roomID, serialised)
 		}
 		sort.Strings(wantUserIDs)
 		ev := res.Extensions.Typing.Rooms[roomID]
