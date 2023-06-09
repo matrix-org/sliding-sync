@@ -30,7 +30,10 @@ type ConnState struct {
 	// "is the user joined to this room?" whereas subscriptions in muxedReq are untrusted.
 	roomSubscriptions map[string]sync3.RoomSubscription // room_id -> subscription
 
+	// TODO: remove this as it is unreliable when you have concurrent updates
 	loadPosition int64
+	// roomID -> latest load pos
+	loadPositions map[string]int64
 
 	live *connStateLive
 
@@ -56,6 +59,7 @@ func NewConnState(
 		userID:              userID,
 		deviceID:            deviceID,
 		loadPosition:        -1,
+		loadPositions:       make(map[string]int64),
 		roomSubscriptions:   make(map[string]sync3.RoomSubscription),
 		lists:               sync3.NewInternalRequestLists(),
 		extensionsHandler:   ex,
@@ -64,9 +68,8 @@ func NewConnState(
 		processHistogramVec: histVec,
 	}
 	cs.live = &connStateLive{
-		ConnState:     cs,
-		loadPositions: make(map[string]int64),
-		updates:       make(chan caches.Update, maxPendingEventUpdates),
+		ConnState: cs,
+		updates:   make(chan caches.Update, maxPendingEventUpdates),
 	}
 	cs.userCacheID = cs.userCache.Subsribe(cs)
 	return cs

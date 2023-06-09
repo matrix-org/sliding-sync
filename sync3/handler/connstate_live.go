@@ -20,9 +20,6 @@ var BufferWaitTime = time.Second * 5
 type connStateLive struct {
 	*ConnState
 
-	// roomID -> latest load pos
-	loadPositions map[string]int64
-
 	// A channel which the dispatcher uses to send updates to the conn goroutine
 	// Consumed when the conn is read. There is a limit to how many updates we will store before
 	// saying the client is dead and clean up the conn.
