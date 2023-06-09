@@ -75,7 +75,7 @@ func NewGlobalCache(store *state.Storage) *GlobalCache {
 	}
 }
 
-func (c *GlobalCache) OnRegistered(_ context.Context, _ int64) error {
+func (c *GlobalCache) OnRegistered(_ context.Context) error {
 	return nil
 }
 

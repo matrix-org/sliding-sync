@@ -219,7 +219,7 @@ func (c *UserCache) Unsubscribe(id int) {
 // externally by sync3.SyncLiveHandler.userCache. It's importatn that we don't spend too
 // long inside this function, because it is called within a global lock on the
 // sync3.Dispatcher (see sync3.Dispatcher.Register).
-func (c *UserCache) OnRegistered(ctx context.Context, _ int64) error {
+func (c *UserCache) OnRegistered(ctx context.Context) error {
 	// select all spaces the user is a part of to seed the cache correctly. This has to be done in
 	// the OnRegistered callback which has locking guarantees. This is why...
 	latestPos, joinedRooms, joinTimings, err := c.globalCache.LoadJoinedRooms(ctx, c.UserID)
