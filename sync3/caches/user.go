@@ -54,9 +54,6 @@ type UserRoomData struct {
 	// Map of tag to order float.
 	// See https://spec.matrix.org/latest/client-server-api/#room-tagging
 	Tags map[string]float64
-	// LoadPos is an event NID, or a sentinal value (see EventData.NID).
-	// UserRoomData instances represent the status of this room after the corresponding event, as seen by this user.
-	LoadPos int64
 	// JoinTiming tracks our latest join to the room, excluding profile changes.
 	JoinTiming internal.EventMetadata
 }
@@ -100,13 +97,13 @@ func NewInviteData(ctx context.Context, userID, roomID string, inviteState []jso
 				ts := j.Get("origin_server_ts").Int()
 				id.LastMessageTimestamp = uint64(ts)
 				id.InviteEvent = &EventData{
-					Event:     ev,
-					RoomID:    roomID,
-					EventType: "m.room.member",
-					StateKey:  &target,
-					Content:   j.Get("content"),
-					Timestamp: uint64(ts),
-					NID:       PosAlwaysProcess,
+					Event:         ev,
+					RoomID:        roomID,
+					EventType:     "m.room.member",
+					StateKey:      &target,
+					Content:       j.Get("content"),
+					Timestamp:     uint64(ts),
+					AlwaysProcess: true,
 				}
 				id.IsDM = j.Get("is_direct").Bool()
 			} else if target == j.Get("sender").Str {
@@ -181,7 +178,6 @@ type UserCache struct {
 	store                *state.Storage
 	globalCache          *GlobalCache
 	txnIDs               TransactionIDFetcher
-	latestPos            int64
 }
 
 func NewUserCache(userID string, globalCache *GlobalCache, store *state.Storage, txnIDs TransactionIDFetcher) *UserCache {
@@ -219,10 +215,10 @@ func (c *UserCache) Unsubscribe(id int) {
 // externally by sync3.SyncLiveHandler.userCache. It's importatn that we don't spend too
 // long inside this function, because it is called within a global lock on the
 // sync3.Dispatcher (see sync3.Dispatcher.Register).
-func (c *UserCache) OnRegistered(ctx context.Context, _ int64) error {
+func (c *UserCache) OnRegistered(ctx context.Context) error {
 	// select all spaces the user is a part of to seed the cache correctly. This has to be done in
 	// the OnRegistered callback which has locking guarantees. This is why...
-	latestPos, joinedRooms, joinTimings, err := c.globalCache.LoadJoinedRooms(ctx, c.UserID)
+	_, joinedRooms, joinTimings, err := c.globalCache.LoadJoinedRooms(ctx, c.UserID)
 	if err != nil {
 		return fmt.Errorf("failed to load joined rooms: %s", err)
 	}
@@ -259,8 +255,12 @@ func (c *UserCache) OnRegistered(ctx context.Context, _ int64) error {
 	//
 
 	// the db pos is _always_ equal to or ahead of the dispatcher, so we will discard
-	// any updates from the dispatcher with position less than this.
-	c.latestPos = latestPos
+	// any updates from the dispatcher with position less than this. This can happen even with the
+	// OnRegistered lock because DB inserts are independent to LoadJoinedRooms, so it is possible
+	// to load a newer version of rooms, and then see duplicate On... calls - it is the same problem
+	// that ConnState has which is why it has loadPositions. However, unlike ConnState, these dupe updates
+	// don't have any negative effect as we are just updating UserRoomData, not sending timeline events,
+	// so we consciously let this race happen.
 	for _, room := range joinedRooms {
 		// inject space children events
 		if room.IsSpace() {
@@ -309,7 +309,6 @@ func (c *UserCache) LazyLoadTimelines(ctx context.Context, loadPos int64, roomID
 			urd = NewUserRoomData()
 		}
 		urd.RequestedTimeline = events
-		urd.LoadPos = loadPos
 		if len(events) > 0 {
 			urd.RequestedPrevBatch = roomIDToPrevBatch[requestedRoomID]
 		}
@@ -505,10 +504,6 @@ func (c *UserCache) OnUnreadCounts(ctx context.Context, roomID string, highlight
 }
 
 func (c *UserCache) OnSpaceUpdate(ctx context.Context, parentRoomID, childRoomID string, isDeleted bool, eventData *EventData) {
-	if eventData.NID > 0 && eventData.NID < c.latestPos {
-		// this is possible when we race when seeding spaces on init with live data
-		return
-	}
 	childURD := c.LoadRoomData(childRoomID)
 	if isDeleted {
 		delete(childURD.Spaces, parentRoomID)
@@ -531,7 +526,6 @@ func (c *UserCache) OnSpaceUpdate(ctx context.Context, parentRoomID, childRoomID
 func (c *UserCache) OnNewEvent(ctx context.Context, eventData *EventData) {
 	// add this to our tracked timelines if we have one
 	urd := c.LoadRoomData(eventData.RoomID)
-	urd.LoadPos = eventData.NID
 	// reset the IsInvite field when the user actually joins/rejects the invite
 	if urd.IsInvite && eventData.EventType == "m.room.member" && eventData.StateKey != nil && *eventData.StateKey == c.UserID {
 		urd.IsInvite = eventData.Content.Get("membership").Str == "invite"

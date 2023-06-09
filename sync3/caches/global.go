@@ -13,9 +13,6 @@ import (
 	"github.com/tidwall/gjson"
 )
 
-const PosAlwaysProcess = -2
-const PosDoNotProcess = -1
-
 type EventData struct {
 	Event     json.RawMessage
 	RoomID    string
@@ -37,6 +34,12 @@ type EventData struct {
 	//  - `0` used by UserCache.OnRegistered to inject space children events at startup.
 	//    It's referenced in ConnState.OnRoomUpdateand UserCache.OnSpaceUpdate
 	NID int64
+
+	// Update consumers will usually ignore updates with a NID < what they have seen before for this room.
+	// However, in some cases, we want to force the consumer to process this event even though the NID
+	// may be < what they have seen before. Currently, we use this to force consumers to process invites
+	// for a connected client, as the invite itself has no event NID due to the proxy not being in the room yet.
+	AlwaysProcess bool
 
 	// Flag set when this event should force the room contents to be resent e.g
 	// state res, initial join, etc
@@ -75,7 +78,7 @@ func NewGlobalCache(store *state.Storage) *GlobalCache {
 	}
 }
 
-func (c *GlobalCache) OnRegistered(_ context.Context, _ int64) error {
+func (c *GlobalCache) OnRegistered(_ context.Context) error {
 	return nil
 }
 

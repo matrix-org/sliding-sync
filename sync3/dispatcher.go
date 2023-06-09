@@ -24,10 +24,8 @@ type Receiver interface {
 	OnNewEvent(ctx context.Context, event *caches.EventData)
 	OnReceipt(ctx context.Context, receipt internal.Receipt)
 	OnEphemeralEvent(ctx context.Context, roomID string, ephEvent json.RawMessage)
-	// OnRegistered is called after a successful call to Dispatcher.Register. After
-	// this call, the receiver will be told about events whose NID is greater than
-	// latestPos.
-	OnRegistered(ctx context.Context, latestPos int64) error
+	// OnRegistered is called after a successful call to Dispatcher.Register
+	OnRegistered(ctx context.Context) error
 }
 
 // Dispatches live events to caches
@@ -35,8 +33,6 @@ type Dispatcher struct {
 	jrt              *JoinedRoomsTracker
 	userToReceiver   map[string]Receiver
 	userToReceiverMu *sync.RWMutex
-	// latestPos is an eventNID, the largest that this dispatcher has seen.
-	latestPos int64
 }
 
 func NewDispatcher() *Dispatcher {
@@ -44,7 +40,6 @@ func NewDispatcher() *Dispatcher {
 		jrt:              NewJoinedRoomsTracker(),
 		userToReceiver:   make(map[string]Receiver),
 		userToReceiverMu: &sync.RWMutex{},
-		latestPos:        0,
 	}
 }
 
@@ -73,7 +68,7 @@ func (d *Dispatcher) Register(ctx context.Context, userID string, r Receiver) er
 		logger.Warn().Str("user", userID).Msg("Dispatcher.Register: receiver already registered")
 	}
 	d.userToReceiver[userID] = r
-	return r.OnRegistered(ctx, d.latestPos)
+	return r.OnRegistered(ctx)
 }
 
 func (d *Dispatcher) ReceiverForUser(userID string) Receiver {
@@ -154,14 +149,9 @@ func (d *Dispatcher) OnNewInitialRoomState(ctx context.Context, roomID string, s
 }
 
 func (d *Dispatcher) OnNewEvent(
-	ctx context.Context, roomID string, event json.RawMessage, pos int64,
+	ctx context.Context, roomID string, event json.RawMessage, nid int64,
 ) {
-	// keep track of the latest position. We don't care about it, but Receivers do if they want
-	// to atomically load from the global cache and receive updates.
-	if pos > d.latestPos {
-		d.latestPos = pos
-	}
-	ed := d.newEventData(event, roomID, pos)
+	ed := d.newEventData(event, roomID, nid)
 
 	// update the tracker
 	targetUser := ""

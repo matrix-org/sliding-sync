@@ -20,9 +20,6 @@ var BufferWaitTime = time.Second * 5
 type connStateLive struct {
 	*ConnState
 
-	// roomID -> latest load pos
-	loadPositions map[string]int64
-
 	// A channel which the dispatcher uses to send updates to the conn goroutine
 	// Consumed when the conn is read. There is a limit to how many updates we will store before
 	// saying the client is dead and clean up the conn.
@@ -120,7 +117,7 @@ func (s *connStateLive) processLiveUpdate(ctx context.Context, up caches.Update,
 	roomEventUpdate, _ := up.(*caches.RoomEventUpdate)
 	// if this is a room event update we may not want to process this if the event nid is < loadPos,
 	// as that means we have already taken it into account
-	if roomEventUpdate != nil && roomEventUpdate.EventData.NID != caches.PosAlwaysProcess && roomEventUpdate.EventData.NID < s.loadPosition {
+	if roomEventUpdate != nil && !roomEventUpdate.EventData.AlwaysProcess && roomEventUpdate.EventData.NID < s.loadPosition {
 		return false
 	}
 

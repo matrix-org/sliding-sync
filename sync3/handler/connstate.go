@@ -30,7 +30,10 @@ type ConnState struct {
 	// "is the user joined to this room?" whereas subscriptions in muxedReq are untrusted.
 	roomSubscriptions map[string]sync3.RoomSubscription // room_id -> subscription
 
+	// TODO: remove this as it is unreliable when you have concurrent updates
 	loadPosition int64
+	// roomID -> latest load pos
+	loadPositions map[string]int64
 
 	live *connStateLive
 
@@ -56,6 +59,7 @@ func NewConnState(
 		userID:              userID,
 		deviceID:            deviceID,
 		loadPosition:        -1,
+		loadPositions:       make(map[string]int64),
 		roomSubscriptions:   make(map[string]sync3.RoomSubscription),
 		lists:               sync3.NewInternalRequestLists(),
 		extensionsHandler:   ex,
@@ -64,9 +68,8 @@ func NewConnState(
 		processHistogramVec: histVec,
 	}
 	cs.live = &connStateLive{
-		ConnState:     cs,
-		loadPositions: make(map[string]int64),
-		updates:       make(chan caches.Update, maxPendingEventUpdates),
+		ConnState: cs,
+		updates:   make(chan caches.Update, maxPendingEventUpdates),
 	}
 	cs.userCacheID = cs.userCache.Subsribe(cs)
 	return cs
@@ -606,8 +609,11 @@ func (s *ConnState) OnUpdate(ctx context.Context, up caches.Update) {
 func (s *ConnState) OnRoomUpdate(ctx context.Context, up caches.RoomUpdate) {
 	switch update := up.(type) {
 	case *caches.RoomEventUpdate:
-		if update.EventData.NID != caches.PosAlwaysProcess && update.EventData.NID == 0 {
-			// 0 -> this event was from a 'state' block, do not poke active connections
+		if !update.EventData.AlwaysProcess && update.EventData.NID == 0 {
+			// 0 -> this event was from a 'state' block, do not poke active connections.
+			// This is not the same as checking if we have already processed this event: NID=0 means
+			// it's part of initial room state. If we sent these events, we'd send them to clients in
+			// the timeline section which is wrong.
 			return
 		}
 		internal.AssertWithContext(ctx, "missing global room metadata", update.GlobalRoomMetadata() != nil)
