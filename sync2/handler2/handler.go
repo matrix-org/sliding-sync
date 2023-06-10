@@ -23,8 +23,9 @@ var logger = zerolog.New(os.Stdout).With().Timestamp().Logger().Output(zerolog.C
 	TimeFormat: "15:04:05",
 })
 
-// Handler is responsible for starting v2 pollers at startup,
-// processing v2 data and publishing updates, and receiving and processing EnsurePolling events.
+// Handler is responsible for starting v2 pollers at startup;
+// processing v2 data (as a sync2.V2DataReceiver) and publishing updates (pubsub.Payload to V2Listeners);
+// and receiving and processing EnsurePolling events.
 type Handler struct {
 	pMap      *sync2.PollerMap
 	v2Store   *sync2.Storage

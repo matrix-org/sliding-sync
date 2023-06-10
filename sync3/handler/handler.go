@@ -453,10 +453,10 @@ func (h *SyncLiveHandler) CacheForUser(userID string) *caches.UserCache {
 
 // userCache fetches an existing caches.UserCache for this user if one exists. If not,
 // it
-//  - creates a blank caches.UserCache struct,
-//  - fires callbacks on that struct as necessary to populate it with initial state,
-//  - stores the struct so it will not be recreated in the future, and
-//  - registers the cache with the Dispatcher.
+//   - creates a blank caches.UserCache struct,
+//   - fires callbacks on that struct as necessary to populate it with initial state,
+//   - stores the struct so it will not be recreated in the future, and
+//   - registers the cache with the Dispatcher.
 //
 // Some extra initialisation takes place in caches.UserCache.OnRegister.
 // TODO: the calls to uc.OnBlahBlah etc can be moved into NewUserCache, now that the
@@ -581,6 +581,7 @@ func (h *SyncLiveHandler) OnInitialSyncComplete(p *pubsub.V2InitialSyncComplete)
 func (h *SyncLiveHandler) Accumulate(p *pubsub.V2Accumulate) {
 	ctx, task := internal.StartTask(context.Background(), "Accumulate")
 	defer task.End()
+	// note: events is sorted in ascending NID order, event if p.EventNIDs isn't.
 	events, err := h.Storage.EventNIDs(p.EventNIDs)
 	if err != nil {
 		logger.Err(err).Str("room", p.RoomID).Msg("Accumulate: failed to EventNIDs")

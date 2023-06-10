@@ -203,6 +203,10 @@ func (t *EventTable) selectAny(txn *sqlx.Tx, numWanted int, queryStr string, pqA
 	return
 }
 
+// SelectByNIDs fetches events from the events table by their nids. The returned events
+// are ordered by ascending nid; the order of the input nids is ignored. If verifyAll
+// is true, we return an error if the number of events returned doesn't match the number
+// of given nids.
 func (t *EventTable) SelectByNIDs(txn *sqlx.Tx, verifyAll bool, nids []int64) (events []Event, err error) {
 	wanted := 0
 	if verifyAll {
@@ -227,6 +231,8 @@ func (t *EventTable) SelectByIDs(txn *sqlx.Tx, verifyAll bool, ids []string) (ev
 	WHERE event_id = ANY ($1) ORDER BY event_nid ASC;`, pq.StringArray(ids))
 }
 
+// SelectNIDsByIDs does just that. Returns a map from event ID to nid, with a key-value
+// pair for every event_id that was found in the database.
 func (t *EventTable) SelectNIDsByIDs(txn *sqlx.Tx, ids []string) (nids map[string]int64, err error) {
 	// Select NIDs using a single parameter which is a string array
 	// https://stackoverflow.com/questions/52712022/what-is-the-most-performant-way-to-rewrite-a-large-in-clause
