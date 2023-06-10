@@ -13,6 +13,7 @@ const ChanV2 = "v2ch"
 type V2Listener interface {
 	Initialise(p *V2Initialise)
 	Accumulate(p *V2Accumulate)
+	OnTransactionID(p *V2TransactionID)
 	OnAccountData(p *V2AccountData)
 	OnInvite(p *V2InviteRoom)
 	OnLeftRoom(p *V2LeaveRoom)
@@ -39,6 +40,15 @@ type V2Accumulate struct {
 }
 
 func (*V2Accumulate) Type() string { return "V2Accumulate" }
+
+// V2TransactionID is emitted by a poller when it sees an event with a transaction ID.
+type V2TransactionID struct {
+	EventID       string
+	TransactionID string
+	NID           int64
+}
+
+func (*V2TransactionID) Type() string { return "V2TransactionID" }
 
 type V2UnreadCounts struct {
 	UserID            string
@@ -138,6 +148,8 @@ func (v *V2Sub) onMessage(p Payload) {
 		v.receiver.Initialise(pl)
 	case *V2Accumulate:
 		v.receiver.Accumulate(pl)
+	case *V2TransactionID:
+		v.receiver.OnTransactionID(pl)
 	case *V2AccountData:
 		v.receiver.OnAccountData(pl)
 	case *V2InviteRoom:

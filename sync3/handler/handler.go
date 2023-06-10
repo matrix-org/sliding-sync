@@ -597,6 +597,13 @@ func (h *SyncLiveHandler) Accumulate(p *pubsub.V2Accumulate) {
 	}
 }
 
+// OnTransactionID is called from the v2 poller, implements V2DataReceiver.
+func (h *SyncLiveHandler) OnTransactionID(p *pubsub.V2TransactionID) {
+	_, task := internal.StartTask(context.Background(), "TransactionID")
+	defer task.End()
+	// TODO implement me
+}
+
 // Called from the v2 poller, implements V2DataReceiver
 func (h *SyncLiveHandler) Initialise(p *pubsub.V2Initialise) {
 	ctx, task := internal.StartTask(context.Background(), "Initialise")
