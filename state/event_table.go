@@ -151,11 +151,11 @@ func (t *EventTable) SelectHighestNID() (highest int64, err error) {
 // Insert events into the event table. Returns a map of event ID to NID for new events only.
 // The NIDs assigned to new events will respect the order of the given events, e.g. if
 // we insert new events A and B in that order, then NID(A) < NID(B).
-func (t *EventTable) Insert(txn *sqlx.Tx, events []Event, checkFields bool) (map[string]int, error) {
+func (t *EventTable) Insert(txn *sqlx.Tx, events []Event, checkFields bool) (map[string]int64, error) {
 	if checkFields {
 		ensureFieldsSet(events)
 	}
-	result := make(map[string]int)
+	result := make(map[string]int64)
 	for i := range events {
 		if !gjson.GetBytes(events[i].JSON, "unsigned.txn_id").Exists() {
 			continue
@@ -168,7 +168,7 @@ func (t *EventTable) Insert(txn *sqlx.Tx, events []Event, checkFields bool) (map
 	}
 	chunks := sqlutil.Chunkify(8, MaxPostgresParameters, EventChunker(events))
 	var eventID string
-	var eventNID int
+	var eventNID int64
 	for _, chunk := range chunks {
 		rows, err := txn.NamedQuery(`
 		INSERT INTO syncv3_events (event_id, event, event_type, state_key, room_id, membership, prev_batch, is_state)
