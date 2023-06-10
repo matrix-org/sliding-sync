@@ -3,6 +3,9 @@ package handler2
 import (
 	"context"
 	"encoding/json"
+	"fmt"
+	"github.com/jmoiron/sqlx"
+	"github.com/matrix-org/sliding-sync/sqlutil"
 	"hash/fnv"
 	"os"
 	"sync"
@@ -215,6 +218,7 @@ func (h *Handler) OnE2EEData(ctx context.Context, userID, deviceID string, otkCo
 
 func (h *Handler) Accumulate(ctx context.Context, userID, deviceID, roomID, prevBatch string, timeline []json.RawMessage) {
 	// Remember any transaction IDs that may be unique to this user
+	eventIDsWithTxns := make([]string, 0, len(timeline))     // in timeline order
 	eventIDToTxnID := make(map[string]string, len(timeline)) // event_id -> txn_id
 	for _, e := range timeline {
 		txnID := gjson.GetBytes(e, "unsigned.transaction_id")
@@ -222,6 +226,7 @@ func (h *Handler) Accumulate(ctx context.Context, userID, deviceID, roomID, prev
 			continue
 		}
 		eventID := gjson.GetBytes(e, "event_id").Str
+		eventIDsWithTxns = append(eventIDsWithTxns, eventID)
 		eventIDToTxnID[eventID] = txnID.Str
 	}
 	if len(eventIDToTxnID) > 0 {
@@ -249,6 +254,47 @@ func (h *Handler) Accumulate(ctx context.Context, userID, deviceID, roomID, prev
 		PrevBatch: prevBatch,
 		EventNIDs: latestNIDs,
 	})
+
+	if len(eventIDToTxnID) > 0 {
+		// The call to h.Store.Accumulate above only tells us about new events' NIDS;
+		// for existing events we need to requery the database to fetch them.
+		// Rather than try to reuse work, keep things simple and just fetch NIDs for
+		// all events with txnIDs.
+		var nidsByIDs map[string]int64
+		err = sqlutil.WithTransaction(h.Store.DB, func(txn *sqlx.Tx) error {
+			nidsByIDs, err = h.Store.EventsTable.SelectNIDsByIDs(txn, eventIDsWithTxns)
+			return err
+		})
+		if err != nil {
+			logger.Err(err).
+				Int("timeline", len(timeline)).
+				Int("num_transaction_ids", len(eventIDsWithTxns)).
+				Str("room", roomID).
+				Msg("V2: failed to fetch nids for events with transaction_ids")
+			internal.GetSentryHubFromContextOrDefault(ctx).CaptureException(err)
+			return
+		}
+
+		for _, eventID := range eventIDsWithTxns {
+			txnID, ok := eventIDToTxnID[eventID]
+			if !ok {
+				continue
+			}
+			nid, ok := nidsByIDs[eventID]
+			if !ok {
+				errMsg := "V2: failed to fetch NID for txnID"
+				logger.Error().Str("user", userID).Str("device", deviceID).Msg(errMsg)
+				internal.GetSentryHubFromContextOrDefault(ctx).CaptureException(fmt.Errorf("errMsg"))
+				continue
+			}
+
+			h.v2Pub.Notify(pubsub.ChanV2, &pubsub.V2TransactionID{
+				EventID:       eventID,
+				TransactionID: txnID,
+				NID:           nid,
+			})
+		}
+	}
 }
 
 func (h *Handler) Initialise(ctx context.Context, roomID string, state []json.RawMessage) []json.RawMessage {
