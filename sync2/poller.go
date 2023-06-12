@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"github.com/getsentry/sentry-go"
+	"runtime/debug"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -382,6 +383,11 @@ func (p *poller) Poll(since string) {
 
 	p.logger.Info().Str("since", since).Msg("Poller: v2 poll loop started")
 	defer func() {
+		panicErr := recover()
+		if panicErr != nil {
+			logger.Error().Str("user", p.userID).Str("device", p.deviceID).Msg(string(debug.Stack()))
+			internal.GetSentryHubFromContextOrDefault(ctx).RecoverWithContext(ctx, panicErr)
+		}
 		p.receiver.OnTerminated(ctx, p.userID, p.deviceID)
 	}()
 	failCount := 0
