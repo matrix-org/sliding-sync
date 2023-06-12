@@ -434,7 +434,9 @@ func (p *poller) poll(ctx context.Context, s *pollLoopState) error {
 		return fmt.Errorf("poller terminated")
 	}
 	start := time.Now()
-	resp, statusCode, err := p.client.DoSyncV2(ctx, p.accessToken, s.since, s.firstTime, p.initialToDeviceOnly)
+	spanCtx, region := internal.StartSpan(ctx, "DoSyncV2")
+	resp, statusCode, err := p.client.DoSyncV2(spanCtx, p.accessToken, s.since, s.firstTime, p.initialToDeviceOnly)
+	region.End()
 	p.trackRequestDuration(time.Since(start), s.since == "", s.firstTime)
 	if p.terminated.Load() {
 		return fmt.Errorf("poller terminated")
