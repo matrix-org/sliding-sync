@@ -429,10 +429,12 @@ func (p *poller) Poll(since string) {
 		p.initialToDeviceOnly = false
 		start = time.Now()
 		failCount = 0
+		// Do the most latency-sensitive parsing first.
+		// This only helps if the executor isn't already busy.
+		p.parseToDeviceMessages(ctx, resp)
 		p.parseE2EEData(ctx, resp)
 		p.parseGlobalAccountData(ctx, resp)
 		p.parseRoomsResponse(ctx, resp)
-		p.parseToDeviceMessages(ctx, resp)
 
 		wasInitial := since == ""
 		wasFirst := firstTime
