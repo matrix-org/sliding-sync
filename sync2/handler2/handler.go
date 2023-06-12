@@ -307,7 +307,11 @@ func (h *Handler) Accumulate(ctx context.Context, userID, deviceID, roomID, prev
 				internal.GetSentryHubFromContextOrDefault(ctx).CaptureException(fmt.Errorf("errMsg"))
 				continue
 			}
-
+			// TODO: if all pollers for this user's devices have seen this event, then
+			// we can send an "all clear" message. Maybe this is just a V2TransactionID
+			// with an empty string for the TransactionID. In order to do this we will
+			// need to keep track of which events have been seen by which devices. Maybe
+			// NIDs suffice?
 			h.v2Pub.Notify(pubsub.ChanV2, &pubsub.V2TransactionID{
 				EventID:       eventID,
 				UserID:        userID,
