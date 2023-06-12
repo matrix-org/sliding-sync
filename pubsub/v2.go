@@ -44,6 +44,8 @@ func (*V2Accumulate) Type() string { return "V2Accumulate" }
 // V2TransactionID is emitted by a poller when it sees an event with a transaction ID.
 type V2TransactionID struct {
 	EventID       string
+	UserID        string
+	DeviceID      string
 	TransactionID string
 	NID           int64
 }

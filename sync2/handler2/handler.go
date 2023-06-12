@@ -290,6 +290,8 @@ func (h *Handler) Accumulate(ctx context.Context, userID, deviceID, roomID, prev
 
 			h.v2Pub.Notify(pubsub.ChanV2, &pubsub.V2TransactionID{
 				EventID:       eventID,
+				UserID:        userID,
+				DeviceID:      deviceID,
 				TransactionID: txnID,
 				NID:           nid,
 			})
