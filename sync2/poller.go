@@ -511,6 +511,8 @@ func labels(isInitial, isFirst bool) []string {
 }
 
 func (p *poller) parseToDeviceMessages(ctx context.Context, res *SyncResponse) {
+	ctx, task := internal.StartTask(ctx, "parseToDeviceMessages")
+	defer task.End()
 	if len(res.ToDevice.Events) == 0 {
 		return
 	}
@@ -518,6 +520,8 @@ func (p *poller) parseToDeviceMessages(ctx context.Context, res *SyncResponse) {
 }
 
 func (p *poller) parseE2EEData(ctx context.Context, res *SyncResponse) {
+	ctx, task := internal.StartTask(ctx, "parseE2EEData")
+	defer task.End()
 	var changedOTKCounts map[string]int
 	if res.DeviceListsOTKCount != nil && len(res.DeviceListsOTKCount) > 0 {
 		if len(p.otkCounts) != len(res.DeviceListsOTKCount) {
@@ -555,6 +559,8 @@ func (p *poller) parseE2EEData(ctx context.Context, res *SyncResponse) {
 }
 
 func (p *poller) parseGlobalAccountData(ctx context.Context, res *SyncResponse) {
+	ctx, task := internal.StartTask(ctx, "parseGlobalAccountData")
+	defer task.End()
 	if len(res.AccountData.Events) == 0 {
 		return
 	}
@@ -562,6 +568,8 @@ func (p *poller) parseGlobalAccountData(ctx context.Context, res *SyncResponse) 
 }
 
 func (p *poller) parseRoomsResponse(ctx context.Context, res *SyncResponse) {
+	ctx, task := internal.StartTask(ctx, "parseRoomsResponse")
+	defer task.End()
 	stateCalls := 0
 	timelineCalls := 0
 	typingCalls := 0
