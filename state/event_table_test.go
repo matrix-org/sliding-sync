@@ -290,7 +290,7 @@ func TestEventTableDupeInsert(t *testing.T) {
 	}
 	txn.Commit()
 
-	if nid != int(idToNID3["dupeevent"]) {
+	if nid != idToNID3["dupeevent"] {
 		t.Fatalf("nid mismatch, got %v want %v", int(idToNID3["dupeevent"]), nid)
 	}
 }

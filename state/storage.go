@@ -358,7 +358,11 @@ func (s *Storage) Initialise(roomID string, state []json.RawMessage) (Initialise
 	return s.Accumulator.Initialise(roomID, state)
 }
 
+// EventNIDs fetches the raw JSON form of events given a slice of eventNIDs. The events
+// are returned in ascending NID order; the order of eventNIDs is ignored.
 func (s *Storage) EventNIDs(eventNIDs []int64) ([]json.RawMessage, error) {
+	// TODO: this selects a bunch of rows from the DB, but we only use the raw JSON
+	// itself.
 	events, err := s.EventsTable.SelectByNIDs(nil, true, eventNIDs)
 	if err != nil {
 		return nil, err

@@ -151,11 +151,11 @@ func (t *EventTable) SelectHighestNID() (highest int64, err error) {
 // Insert events into the event table. Returns a map of event ID to NID for new events only.
 // The NIDs assigned to new events will respect the order of the given events, e.g. if
 // we insert new events A and B in that order, then NID(A) < NID(B).
-func (t *EventTable) Insert(txn *sqlx.Tx, events []Event, checkFields bool) (map[string]int, error) {
+func (t *EventTable) Insert(txn *sqlx.Tx, events []Event, checkFields bool) (map[string]int64, error) {
 	if checkFields {
 		ensureFieldsSet(events)
 	}
-	result := make(map[string]int)
+	result := make(map[string]int64)
 	for i := range events {
 		if !gjson.GetBytes(events[i].JSON, "unsigned.txn_id").Exists() {
 			continue
@@ -168,7 +168,7 @@ func (t *EventTable) Insert(txn *sqlx.Tx, events []Event, checkFields bool) (map
 	}
 	chunks := sqlutil.Chunkify(8, MaxPostgresParameters, EventChunker(events))
 	var eventID string
-	var eventNID int
+	var eventNID int64
 	for _, chunk := range chunks {
 		rows, err := txn.NamedQuery(`
 		INSERT INTO syncv3_events (event_id, event, event_type, state_key, room_id, membership, prev_batch, is_state)
@@ -203,6 +203,10 @@ func (t *EventTable) selectAny(txn *sqlx.Tx, numWanted int, queryStr string, pqA
 	return
 }
 
+// SelectByNIDs fetches events from the events table by their nids. The returned events
+// are ordered by ascending nid; the order of the input nids is ignored. If verifyAll
+// is true, we return an error if the number of events returned doesn't match the number
+// of given nids.
 func (t *EventTable) SelectByNIDs(txn *sqlx.Tx, verifyAll bool, nids []int64) (events []Event, err error) {
 	wanted := 0
 	if verifyAll {
@@ -227,6 +231,8 @@ func (t *EventTable) SelectByIDs(txn *sqlx.Tx, verifyAll bool, ids []string) (ev
 	WHERE event_id = ANY ($1) ORDER BY event_nid ASC;`, pq.StringArray(ids))
 }
 
+// SelectNIDsByIDs does just that. Returns a map from event ID to nid, with a key-value
+// pair for every event_id that was found in the database.
 func (t *EventTable) SelectNIDsByIDs(txn *sqlx.Tx, ids []string) (nids map[string]int64, err error) {
 	// Select NIDs using a single parameter which is a string array
 	// https://stackoverflow.com/questions/52712022/what-is-the-most-performant-way-to-rewrite-a-large-in-clause
