@@ -31,6 +31,12 @@ type StartupSnapshot struct {
 	AllJoinedMembers map[string][]string              // room_id -> [user_id]
 }
 
+type LatestEvents struct {
+	Timeline  []json.RawMessage
+	PrevBatch string
+	LatestNID int64
+}
+
 type Storage struct {
 	Accumulator       *Accumulator
 	EventsTable       *EventTable
@@ -580,16 +586,16 @@ func (s *Storage) RoomStateAfterEventPosition(ctx context.Context, roomIDs []str
 	return
 }
 
-func (s *Storage) LatestEventsInRooms(userID string, roomIDs []string, to int64, limit int) (map[string][]json.RawMessage, map[string]string, error) {
+func (s *Storage) LatestEventsInRooms(userID string, roomIDs []string, to int64, limit int) (map[string]*LatestEvents, error) {
 	roomIDToRanges, err := s.visibleEventNIDsBetweenForRooms(userID, roomIDs, 0, to)
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
-	result := make(map[string][]json.RawMessage, len(roomIDs))
-	prevBatches := make(map[string]string, len(roomIDs))
+	result := make(map[string]*LatestEvents, len(roomIDs))
 	err = sqlutil.WithTransaction(s.Accumulator.db, func(txn *sqlx.Tx) error {
 		for roomID, ranges := range roomIDToRanges {
 			var earliestEventNID int64
+			var latestEventNID int64
 			var roomEvents []json.RawMessage
 			// start at the most recent range as we want to return the most recent `limit` events
 			for i := len(ranges) - 1; i >= 0; i-- {
@@ -604,6 +610,9 @@ func (s *Storage) LatestEventsInRooms(userID string, roomIDs []string, to int64,
 				}
 				// keep pushing to the front so we end up with A,B,C
 				for _, ev := range events {
+					if latestEventNID == 0 { // set first time and never again
+						latestEventNID = ev.NID
+					}
 					roomEvents = append([]json.RawMessage{ev.JSON}, roomEvents...)
 					earliestEventNID = ev.NID
 					if len(roomEvents) >= limit {
@@ -611,19 +620,23 @@ func (s *Storage) LatestEventsInRooms(userID string, roomIDs []string, to int64,
 					}
 				}
 			}
+			latestEvents := LatestEvents{
+				LatestNID: latestEventNID,
+				Timeline:  roomEvents,
+			}
 			if earliestEventNID != 0 {
 				// the oldest event needs a prev batch token, so find one now
 				prevBatch, err := s.EventsTable.SelectClosestPrevBatch(roomID, earliestEventNID)
 				if err != nil {
 					return fmt.Errorf("failed to select prev_batch for room %s : %s", roomID, err)
 				}
-				prevBatches[roomID] = prevBatch
+				latestEvents.PrevBatch = prevBatch
 			}
-			result[roomID] = roomEvents
+			result[roomID] = &latestEvents
 		}
 		return nil
 	})
-	return result, prevBatches, err
+	return result, err
 }
 
 func (s *Storage) visibleEventNIDsBetweenForRooms(userID string, roomIDs []string, from, to int64) (map[string][][2]int64, error) {

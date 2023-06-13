@@ -878,7 +878,7 @@ func TestLatestEventNIDInRooms(t *testing.T) {
 	defer close()
 	table := NewEventTable(db)
 
-	var result map[string]int
+	var result map[string]int64
 	var err error
 	// Insert the following:
 	// - Room FIRST: [N]
@@ -926,7 +926,7 @@ func TestLatestEventNIDInRooms(t *testing.T) {
 
 	testCases := []struct {
 		roomIDs    []string
-		highestNID int
+		highestNID int64
 		wantMap    map[string]string
 	}{
 		// We should see FIRST=N, SECOND=N+3, THIRD=N+4 when querying LatestEventNIDInRooms with N+4

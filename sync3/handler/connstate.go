@@ -512,7 +512,12 @@ func (s *ConnState) getInitialRoomData(ctx context.Context, roomSub sync3.RoomSu
 	ctx, span := internal.StartSpan(ctx, "getInitialRoomData")
 	defer span.End()
 	rooms := make(map[string]sync3.Room, len(roomIDs))
-	// We want to grab the user room data and the room metadata for each room ID.
+	// We want to grab the user room data and the room metadata for each room ID. We use the globally
+	// highest NID we've seen to act as an anchor for the request. This anchor does not guarantee that
+	// events returned here have already been seen - the position is not globally ordered - so because
+	// room A has a position of 6 and B has 7 (so the highest is 7) does not mean that this connection
+	// has seen 6, as concurrent room updates cause A and B to race. This is why we then go through the
+	// response to this call to assign new load positions for each room.
 	roomIDToUserRoomData := s.userCache.LazyLoadTimelines(ctx, s.loadPosition, roomIDs, int(roomSub.TimelineLimit))
 	roomMetadatas := s.globalCache.LoadRooms(ctx, roomIDs...)
 	// prepare lazy loading data structures, txn IDs
@@ -520,7 +525,7 @@ func (s *ConnState) getInitialRoomData(ctx context.Context, roomSub sync3.RoomSu
 	roomToTimeline := make(map[string][]json.RawMessage)
 	for roomID, urd := range roomIDToUserRoomData {
 		set := make(map[string]struct{})
-		for _, ev := range urd.RequestedTimeline {
+		for _, ev := range urd.RequestedLatestEvents.Timeline {
 			set[gjson.GetBytes(ev, "sender").Str] = struct{}{}
 		}
 		userIDs := make([]string, len(set))
@@ -530,10 +535,21 @@ func (s *ConnState) getInitialRoomData(ctx context.Context, roomSub sync3.RoomSu
 			i++
 		}
 		roomToUsersInTimeline[roomID] = userIDs
-		roomToTimeline[roomID] = urd.RequestedTimeline
+		roomToTimeline[roomID] = urd.RequestedLatestEvents.Timeline
+		// remember what we just loaded so if we see these events down the live stream we know to ignore them.
+		// This means that requesting a direct room subscription causes the connection to jump ahead to whatever
+		// is in the database at the time of the call, rather than gradually converging by consuming live data.
+		// This is fine, so long as we jump ahead on a per-room basis. We need to make sure (ideally) that the
+		// room state is also pinned to the load position here, else you could see weird things in individual
+		// responses such as an updated room.name without the associated m.room.name event (though this will
+		// come through on the next request -> it converges to the right state so it isn't critical).
+		s.loadPositions[roomID] = urd.RequestedLatestEvents.LatestNID
 	}
 	roomToTimeline = s.userCache.AnnotateWithTransactionIDs(ctx, s.userID, s.deviceID, roomToTimeline)
 	rsm := roomSub.RequiredStateMap(s.userID)
+	// by reusing the same global load position anchor here, we can be sure that the state returned here
+	// matches the timeline we loaded earlier - the race conditions happen around pubsub updates and not
+	// the events table itself, so whatever position is picked based on this anchor is immutable.
 	roomIDToState := s.globalCache.LoadRoomState(ctx, roomIDs, s.loadPosition, rsm, roomToUsersInTimeline)
 	if roomIDToState == nil { // e.g no required_state
 		roomIDToState = make(map[string][]json.RawMessage)
@@ -572,7 +588,7 @@ func (s *ConnState) getInitialRoomData(ctx context.Context, roomSub sync3.RoomSu
 			IsDM:              userRoomData.IsDM,
 			JoinedCount:       metadata.JoinCount,
 			InvitedCount:      metadata.InviteCount,
-			PrevBatch:         userRoomData.RequestedPrevBatch,
+			PrevBatch:         userRoomData.RequestedLatestEvents.PrevBatch,
 		}
 	}
 
