@@ -3,7 +3,9 @@ package sync2
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"github.com/getsentry/sentry-go"
+	"runtime/debug"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -307,13 +309,11 @@ func (h *PollerMap) OnReceipt(ctx context.Context, userID, roomID, ephEventType 
 }
 
 func (h *PollerMap) OnE2EEData(ctx context.Context, userID, deviceID string, otkCounts map[string]int, fallbackKeyTypes []string, deviceListChanges map[string]int) {
-	var wg sync.WaitGroup
-	wg.Add(1)
-	h.executor <- func() {
-		h.callbacks.OnE2EEData(ctx, userID, deviceID, otkCounts, fallbackKeyTypes, deviceListChanges)
-		wg.Done()
-	}
-	wg.Wait()
+	// This is device-scoped data and will never race with another poller. Therefore we
+	// do not need to queue this up in the executor. However: the poller does need to
+	// wait for this to complete before advancing the since token, or else we risk
+	// losing device list changes.
+	h.callbacks.OnE2EEData(ctx, userID, deviceID, otkCounts, fallbackKeyTypes, deviceListChanges)
 }
 
 // Poller can automatically poll the sync v2 endpoint and accumulate the responses in storage
@@ -365,6 +365,12 @@ func (p *poller) Terminate() {
 	p.terminated.CompareAndSwap(false, true)
 }
 
+type pollLoopState struct {
+	firstTime bool
+	failCount int
+	since     string
+}
+
 // Poll will block forever, repeatedly calling v2 sync. Do this in a goroutine.
 // Returns if the access token gets invalidated or if there was a fatal error processing v2 responses.
 // Use WaitUntilInitialSync() to wait until the first poll has been processed.
@@ -384,70 +390,97 @@ func (p *poller) Poll(since string) {
 
 	p.logger.Info().Str("since", since).Msg("Poller: v2 poll loop started")
 	defer func() {
+		panicErr := recover()
+		if panicErr != nil {
+			logger.Error().Str("user", p.userID).Str("device", p.deviceID).Msg(string(debug.Stack()))
+			internal.GetSentryHubFromContextOrDefault(ctx).RecoverWithContext(ctx, panicErr)
+		}
 		p.receiver.OnTerminated(ctx, p.userID, p.deviceID)
 	}()
-	failCount := 0
-	firstTime := true
+
+	state := pollLoopState{
+		firstTime: true,
+		failCount: 0,
+		since:     since,
+	}
 	for !p.terminated.Load() {
-		if failCount > 0 {
-			// don't backoff when doing v2 syncs because the response is only in the cache for a short
-			// period of time (on massive accounts on matrix.org) such that if you wait 2,4,8min between
-			// requests it might force the server to do the work all over again :(
-			waitTime := 3 * time.Second
-			p.logger.Warn().Str("duration", waitTime.String()).Int("fail-count", failCount).Msg("Poller: waiting before next poll")
-			timeSleep(waitTime)
-		}
-		if p.terminated.Load() {
-			break
-		}
-		start := time.Now()
-		resp, statusCode, err := p.client.DoSyncV2(ctx, p.accessToken, since, firstTime, p.initialToDeviceOnly)
-		p.trackRequestDuration(time.Since(start), since == "", firstTime)
-		if p.terminated.Load() {
-			break
-		}
+		ctx, task := internal.StartTask(ctx, "Poll")
+		err := p.poll(ctx, &state)
+		task.End()
 		if err != nil {
-			// check if temporary
-			if statusCode != 401 {
-				p.logger.Warn().Int("code", statusCode).Err(err).Msg("Poller: sync v2 poll returned temporary error")
-				failCount += 1
-				continue
-			} else {
-				p.logger.Warn().Msg("Poller: access token has been invalidated, terminating loop")
-				p.receiver.OnExpiredToken(ctx, hashToken(p.accessToken), p.userID, p.deviceID)
-				p.Terminate()
-				break
-			}
+			break
 		}
-		if since == "" {
-			p.logger.Info().Msg("Poller: valid initial sync response received")
-		}
-		p.initialToDeviceOnly = false
-		start = time.Now()
-		failCount = 0
-		p.parseE2EEData(ctx, resp)
-		p.parseGlobalAccountData(ctx, resp)
-		p.parseRoomsResponse(ctx, resp)
-		p.parseToDeviceMessages(ctx, resp)
-
-		wasInitial := since == ""
-		wasFirst := firstTime
-
-		since = resp.NextBatch
-		// persist the since token (TODO: this could get slow if we hammer the DB too much)
-		p.receiver.UpdateDeviceSince(ctx, p.userID, p.deviceID, since)
-
-		if firstTime {
-			firstTime = false
-			p.wg.Done()
-		}
-		p.trackProcessDuration(time.Since(start), wasInitial, wasFirst)
 	}
 	// always unblock EnsurePolling else we can end up head-of-line blocking other pollers!
-	if firstTime {
-		firstTime = false
+	if state.firstTime {
+		state.firstTime = false
 		p.wg.Done()
 	}
+}
+
+// poll is the body of the poller loop. It reads and updates a small amount of state in
+// s (which is assumed to be non-nil). Returns a non-nil error iff the poller loop
+// should halt.
+func (p *poller) poll(ctx context.Context, s *pollLoopState) error {
+	if s.failCount > 0 {
+		// don't backoff when doing v2 syncs because the response is only in the cache for a short
+		// period of time (on massive accounts on matrix.org) such that if you wait 2,4,8min between
+		// requests it might force the server to do the work all over again :(
+		waitTime := 3 * time.Second
+		p.logger.Warn().Str("duration", waitTime.String()).Int("fail-count", s.failCount).Msg("Poller: waiting before next poll")
+		timeSleep(waitTime)
+	}
+	if p.terminated.Load() {
+		return fmt.Errorf("poller terminated")
+	}
+	start := time.Now()
+	spanCtx, region := internal.StartSpan(ctx, "DoSyncV2")
+	resp, statusCode, err := p.client.DoSyncV2(spanCtx, p.accessToken, s.since, s.firstTime, p.initialToDeviceOnly)
+	region.End()
+	p.trackRequestDuration(time.Since(start), s.since == "", s.firstTime)
+	if p.terminated.Load() {
+		return fmt.Errorf("poller terminated")
+	}
+	if err != nil {
+		// check if temporary
+		if statusCode != 401 {
+			p.logger.Warn().Int("code", statusCode).Err(err).Msg("Poller: sync v2 poll returned temporary error")
+			s.failCount += 1
+			return nil
+		} else {
+			errMsg := "poller: access token has been invalidated, terminating loop"
+			p.logger.Warn().Msg(errMsg)
+			p.receiver.OnExpiredToken(ctx, hashToken(p.accessToken), p.userID, p.deviceID)
+			p.Terminate()
+			return fmt.Errorf(errMsg)
+		}
+	}
+	if s.since == "" {
+		p.logger.Info().Msg("Poller: valid initial sync response received")
+	}
+	p.initialToDeviceOnly = false
+	start = time.Now()
+	s.failCount = 0
+	// Do the most latency-sensitive parsing first.
+	// This only helps if the executor isn't already busy.
+	p.parseToDeviceMessages(ctx, resp)
+	p.parseE2EEData(ctx, resp)
+	p.parseGlobalAccountData(ctx, resp)
+	p.parseRoomsResponse(ctx, resp)
+
+	wasInitial := s.since == ""
+	wasFirst := s.firstTime
+
+	s.since = resp.NextBatch
+	// persist the since token (TODO: this could get slow if we hammer the DB too much)
+	p.receiver.UpdateDeviceSince(ctx, p.userID, p.deviceID, s.since)
+
+	if s.firstTime {
+		s.firstTime = false
+		p.wg.Done()
+	}
+	p.trackProcessDuration(time.Since(start), wasInitial, wasFirst)
+	return nil
 }
 
 func (p *poller) trackRequestDuration(dur time.Duration, isInitial, isFirst bool) {
@@ -480,6 +513,8 @@ func labels(isInitial, isFirst bool) []string {
 }
 
 func (p *poller) parseToDeviceMessages(ctx context.Context, res *SyncResponse) {
+	ctx, task := internal.StartTask(ctx, "parseToDeviceMessages")
+	defer task.End()
 	if len(res.ToDevice.Events) == 0 {
 		return
 	}
@@ -487,6 +522,8 @@ func (p *poller) parseToDeviceMessages(ctx context.Context, res *SyncResponse) {
 }
 
 func (p *poller) parseE2EEData(ctx context.Context, res *SyncResponse) {
+	ctx, task := internal.StartTask(ctx, "parseE2EEData")
+	defer task.End()
 	var changedOTKCounts map[string]int
 	if res.DeviceListsOTKCount != nil && len(res.DeviceListsOTKCount) > 0 {
 		if len(p.otkCounts) != len(res.DeviceListsOTKCount) {
@@ -524,6 +561,8 @@ func (p *poller) parseE2EEData(ctx context.Context, res *SyncResponse) {
 }
 
 func (p *poller) parseGlobalAccountData(ctx context.Context, res *SyncResponse) {
+	ctx, task := internal.StartTask(ctx, "parseGlobalAccountData")
+	defer task.End()
 	if len(res.AccountData.Events) == 0 {
 		return
 	}
@@ -531,6 +570,8 @@ func (p *poller) parseGlobalAccountData(ctx context.Context, res *SyncResponse) 
 }
 
 func (p *poller) parseRoomsResponse(ctx context.Context, res *SyncResponse) {
+	ctx, task := internal.StartTask(ctx, "parseRoomsResponse")
+	defer task.End()
 	stateCalls := 0
 	timelineCalls := 0
 	typingCalls := 0
