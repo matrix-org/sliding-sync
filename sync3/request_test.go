@@ -1008,11 +1008,13 @@ func TestSame(t *testing.T) {
 		b          Request
 		expectSame bool
 	}{
+		// Two zero structs are the Same.
 		{
 			a:          Request{},
 			b:          Request{},
 			expectSame: true,
 		},
+		// Requests only differing in txn ID are the same.
 		{
 			a: Request{
 				TxnID:        "txn1",
@@ -1028,6 +1030,9 @@ func TestSame(t *testing.T) {
 			},
 			expectSame: true,
 		},
+		// Requests only differing in some other field ConnID are NOT the same.
+		// TODO: would be better to change a more important field like lists rather than
+		// ConnID.
 		{
 			a: Request{
 				TxnID:        "txn1",
