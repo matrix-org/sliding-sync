@@ -270,12 +270,20 @@ func (r *Request) SetTimeoutMSecs(timeout int) {
 	r.timeoutMSecs = timeout
 }
 
+// Same determines if the given request would produce the same output as the other
+// if given the same input data.
 func (r *Request) Same(other *Request) bool {
-	serialised, err := json.Marshal(r)
+	// If a client changes nothing but the txn_id field, we need to consider the
+	// requests the same. Therefore we blank out the txn_id before marshaling.
+	rCopy := *r
+	otherCopy := *other
+	rCopy.TxnID = ""
+	otherCopy.TxnID = ""
+	serialised, err := json.Marshal(rCopy)
 	if err != nil {
 		return false
 	}
-	otherSer, err := json.Marshal(other)
+	otherSer, err := json.Marshal(otherCopy)
 	if err != nil {
 		return false
 	}
