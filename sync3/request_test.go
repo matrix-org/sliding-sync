@@ -1002,6 +1002,57 @@ func TestRequestList_CalculateMoveIndexes(t *testing.T) {
 	}
 }
 
+func TestSame(t *testing.T) {
+	cases := []struct {
+		a          Request
+		b          Request
+		expectSame bool
+	}{
+		{
+			a:          Request{},
+			b:          Request{},
+			expectSame: true,
+		},
+		{
+			a: Request{
+				TxnID:        "txn1",
+				ConnID:       "conn",
+				pos:          10,
+				timeoutMSecs: 30000,
+			},
+			b: Request{
+				TxnID:        "txn2",
+				ConnID:       "conn",
+				pos:          10,
+				timeoutMSecs: 30000,
+			},
+			expectSame: true,
+		},
+		{
+			a: Request{
+				TxnID:        "txn1",
+				ConnID:       "conn1",
+				pos:          10,
+				timeoutMSecs: 30000,
+			},
+			b: Request{
+				TxnID:        "txn2",
+				ConnID:       "conn2",
+				pos:          10,
+				timeoutMSecs: 30000,
+			},
+			expectSame: false,
+		},
+	}
+
+	for i, testcase := range cases {
+		isSame := testcase.a.Same(&testcase.b)
+		if isSame != testcase.expectSame {
+			t.Errorf("case %d: expected same %t but got %t", i, testcase.expectSame, isSame)
+		}
+	}
+}
+
 func TestRequestList_WriteDeleteOp(t *testing.T) {
 	noIndex := -1
 	testCases := []struct {
