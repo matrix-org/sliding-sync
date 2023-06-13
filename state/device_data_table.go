@@ -41,7 +41,7 @@ func NewDeviceDataTable(db *sqlx.DB) *DeviceDataTable {
 
 // Atomically select the device data for this user|device and then swap DeviceLists around if set.
 // This should only be called by the v3 HTTP APIs when servicing an E2EE extension request.
-func (t *DeviceDataTable) Select(userID, deviceID string, swap bool) (dd *internal.DeviceData, err error) {
+func (t *DeviceDataTable) Select(userID, deviceID string, swap bool) (result *internal.DeviceData, err error) {
 	err = sqlutil.WithTransaction(t.db, func(txn *sqlx.Tx) error {
 		var row DeviceDataRow
 		err = t.db.Get(&row, `SELECT data FROM syncv3_device_data WHERE user_id=$1 AND device_id=$2`, userID, deviceID)
@@ -53,37 +53,30 @@ func (t *DeviceDataTable) Select(userID, deviceID string, swap bool) (dd *intern
 			return err
 		}
 		// unmarshal to swap
-		var tempDD internal.DeviceData
-		if err = json.Unmarshal(row.Data, &tempDD); err != nil {
+		if err = json.Unmarshal(row.Data, &result); err != nil {
 			return err
 		}
-		tempDD.UserID = userID
-		tempDD.DeviceID = deviceID
+		result.UserID = userID
+		result.DeviceID = deviceID
 		if !swap {
-			dd = &tempDD
 			return nil // don't swap
 		}
 		// swap over the fields
-		n := tempDD.DeviceLists.New
-		tempDD.DeviceLists.Sent = n
-		tempDD.DeviceLists.New = make(map[string]int)
-		// reset changed bits
-		changedBits := tempDD.ChangedBits
-		tempDD.ChangedBits = 0
-
-		dd = &tempDD
-		dd.ChangedBits = changedBits
+		writeBack := *result
+		writeBack.DeviceLists.Sent = result.DeviceLists.New
+		writeBack.DeviceLists.New = make(map[string]int)
+		writeBack.ChangedBits = 0
 
 		// re-marshal and write
-		data, err := json.Marshal(tempDD)
+		data, err := json.Marshal(writeBack)
+		if err != nil {
+			return err
+		}
 		if bytes.Equal(data, row.Data) {
 			// The update to the DB would be a no-op; don't bother with it.
 			// This helps reduce write usage and the contention on the unique index for
 			// the device_data table.
 			return nil
-		}
-		if err != nil {
-			return err
 		}
 		_, err = t.db.Exec(`UPDATE syncv3_device_data SET data=$1 WHERE user_id=$2 AND device_id=$3`, data, userID, deviceID)
 		return err
