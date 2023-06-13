@@ -30,6 +30,13 @@ type ConnState struct {
 	// "is the user joined to this room?" whereas subscriptions in muxedReq are untrusted.
 	roomSubscriptions map[string]sync3.RoomSubscription // room_id -> subscription
 
+	// This is some event NID which is used to anchor any requests for room data from the database
+	// to their per-room latest NIDs. It does this by selecting the latest NID for each requested room
+	// where the NID is <= this anchor value. Note that there are no ordering guarantees here: it's
+	// possible for the anchor to be higher than room X's latest NID and for this connection to have
+	// not yet seen room X's latest NID (it'll be sitting in the live buffer). This is why it's important
+	// that ConnState DOES NOT ignore events based on this value - it must ignore events based on the real
+	// load position for the room.
 	anchorLoadPosition int64
 	// roomID -> latest load pos
 	loadPositions map[string]int64
