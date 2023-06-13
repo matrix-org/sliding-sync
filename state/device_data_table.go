@@ -71,6 +71,9 @@ func (t *DeviceDataTable) Select(userID, deviceID string, swap bool) (dd *intern
 		changedBits := tempDD.ChangedBits
 		tempDD.ChangedBits = 0
 
+		dd = &tempDD
+		dd.ChangedBits = changedBits
+
 		// re-marshal and write
 		data, err := json.Marshal(tempDD)
 		if bytes.Equal(data, row.Data) {
@@ -83,8 +86,6 @@ func (t *DeviceDataTable) Select(userID, deviceID string, swap bool) (dd *intern
 			return err
 		}
 		_, err = t.db.Exec(`UPDATE syncv3_device_data SET data=$1 WHERE user_id=$2 AND device_id=$3`, data, userID, deviceID)
-		dd = &tempDD
-		dd.ChangedBits = changedBits
 		return err
 	})
 	return
