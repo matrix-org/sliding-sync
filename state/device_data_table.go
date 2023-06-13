@@ -1,6 +1,7 @@
 package state
 
 import (
+	"bytes"
 	"database/sql"
 	"encoding/json"
 
@@ -72,6 +73,12 @@ func (t *DeviceDataTable) Select(userID, deviceID string, swap bool) (dd *intern
 
 		// re-marshal and write
 		data, err := json.Marshal(tempDD)
+		if bytes.Equal(data, row.Data) {
+			// The update to the DB would be a no-op; don't bother with it.
+			// This helps reduce write usage and the contention on the unique index for
+			// the device_data table.
+			return nil
+		}
 		if err != nil {
 			return err
 		}
