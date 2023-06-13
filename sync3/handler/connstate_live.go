@@ -154,11 +154,6 @@ func (s *connStateLive) processLiveUpdate(ctx context.Context, up caches.Update,
 	rooms := s.buildRooms(ctx, builder.BuildSubscriptions())
 	for roomID, room := range rooms {
 		response.Rooms[roomID] = room
-		// remember what point we snapshotted this room, incase we see live events which we have
-		// already snapshotted here.
-		// TODO: remove this when we no longer use s.loadPosition to load room data, as we have already
-		// got this data from load() but cannot use it because initial room data doesn't use it yet.
-		s.loadPositions[roomID] = s.loadPosition
 	}
 
 	// TODO: find a better way to determine if the triggering event should be included e.g ask the lists?
@@ -291,13 +286,9 @@ func (s *connStateLive) processGlobalUpdates(ctx context.Context, builder *Rooms
 		})
 	}
 
-	// TODO: BURN WITH FIRE
-	if isRoomEventUpdate {
-		// TODO: we should do this check before lists.SetRoom
-		if roomEventUpdate.EventData.NID <= s.loadPosition {
-			return // if this update is in the past then ignore it
-		}
-		s.loadPosition = roomEventUpdate.EventData.NID
+	// update the anchor for this new event
+	if isRoomEventUpdate && roomEventUpdate.EventData.NID > s.anchorLoadPosition {
+		s.anchorLoadPosition = roomEventUpdate.EventData.NID
 	}
 	return
 }

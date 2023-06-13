@@ -30,11 +30,9 @@ type ConnState struct {
 	// "is the user joined to this room?" whereas subscriptions in muxedReq are untrusted.
 	roomSubscriptions map[string]sync3.RoomSubscription // room_id -> subscription
 
-	// TODO: remove this as it is unreliable when you have concurrent updates
-	loadPosition int64
+	anchorLoadPosition int64
 	// roomID -> latest load pos
 	loadPositions map[string]int64
-	hasLoaded     bool
 
 	live *connStateLive
 
@@ -59,7 +57,7 @@ func NewConnState(
 		userCache:           userCache,
 		userID:              userID,
 		deviceID:            deviceID,
-		loadPosition:        -1,
+		anchorLoadPosition:  -1,
 		loadPositions:       make(map[string]int64),
 		roomSubscriptions:   make(map[string]sync3.RoomSubscription),
 		lists:               sync3.NewInternalRequestLists(),
@@ -149,18 +147,22 @@ func (s *ConnState) load(ctx context.Context, req *sync3.Request) error {
 	for _, r := range rooms {
 		s.lists.SetRoom(r)
 	}
-	s.loadPosition = initialLoadPosition
+	s.anchorLoadPosition = initialLoadPosition
 	return nil
 }
 
 // OnIncomingRequest is guaranteed to be called sequentially (it's protected by a mutex in conn.go)
 func (s *ConnState) OnIncomingRequest(ctx context.Context, cid sync3.ConnID, req *sync3.Request, isInitial bool) (*sync3.Response, error) {
-	if !s.hasLoaded {
+	if s.anchorLoadPosition <= 0 {
 		// load() needs no ctx so drop it
 		_, region := internal.StartSpan(ctx, "load")
-		s.load(ctx, req)
+		err := s.load(ctx, req)
+		if err != nil {
+			// in practice this means DB hit failures. If we try again later maybe it'll work, and we will because
+			// anchorLoadPosition is unset.
+			logger.Err(err).Str("conn", cid.String()).Msg("failed to load initial data")
+		}
 		region.End()
-		s.hasLoaded = true
 	}
 	return s.onIncomingRequest(ctx, req, isInitial)
 }
@@ -518,7 +520,7 @@ func (s *ConnState) getInitialRoomData(ctx context.Context, roomSub sync3.RoomSu
 	// room A has a position of 6 and B has 7 (so the highest is 7) does not mean that this connection
 	// has seen 6, as concurrent room updates cause A and B to race. This is why we then go through the
 	// response to this call to assign new load positions for each room.
-	roomIDToUserRoomData := s.userCache.LazyLoadTimelines(ctx, s.loadPosition, roomIDs, int(roomSub.TimelineLimit))
+	roomIDToUserRoomData := s.userCache.LazyLoadTimelines(ctx, s.anchorLoadPosition, roomIDs, int(roomSub.TimelineLimit))
 	roomMetadatas := s.globalCache.LoadRooms(ctx, roomIDs...)
 	// prepare lazy loading data structures, txn IDs
 	roomToUsersInTimeline := make(map[string][]string, len(roomIDToUserRoomData))
@@ -550,7 +552,7 @@ func (s *ConnState) getInitialRoomData(ctx context.Context, roomSub sync3.RoomSu
 	// by reusing the same global load position anchor here, we can be sure that the state returned here
 	// matches the timeline we loaded earlier - the race conditions happen around pubsub updates and not
 	// the events table itself, so whatever position is picked based on this anchor is immutable.
-	roomIDToState := s.globalCache.LoadRoomState(ctx, roomIDs, s.loadPosition, rsm, roomToUsersInTimeline)
+	roomIDToState := s.globalCache.LoadRoomState(ctx, roomIDs, s.anchorLoadPosition, rsm, roomToUsersInTimeline)
 	if roomIDToState == nil { // e.g no required_state
 		roomIDToState = make(map[string][]json.RawMessage)
 	}
