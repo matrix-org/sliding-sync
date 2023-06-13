@@ -201,14 +201,15 @@ func TestConnBufferRes(t *testing.T) {
 	assertPos(t, resp.Pos, 2)
 	assertInt(t, resp.Lists["a"].Count, 2)
 	assertInt(t, callCount, 2)
-	// retry with modified request data, should invoke handler again!
-	resp, err = c.OnIncomingRequest(ctx, &Request{pos: 1, TxnID: "a"})
+	// retry with modified request data that shouldn't prompt data to be returned.
+	// should invoke handler again!
+	resp, err = c.OnIncomingRequest(ctx, &Request{pos: 1, UnsubscribeRooms: []string{"a"}})
 	assertNoError(t, err)
 	assertPos(t, resp.Pos, 2)
 	assertInt(t, resp.Lists["a"].Count, 2)
 	assertInt(t, callCount, 3) // this DOES increment, the response is buffered and not returned yet.
 	// retry with same request body, so should NOT invoke handler again and return buffered response
-	resp, err = c.OnIncomingRequest(ctx, &Request{pos: 2, TxnID: "a"})
+	resp, err = c.OnIncomingRequest(ctx, &Request{pos: 2, UnsubscribeRooms: []string{"a"}})
 	assertNoError(t, err)
 	assertPos(t, resp.Pos, 3)
 	assertInt(t, resp.Lists["a"].Count, 3)
@@ -314,43 +315,43 @@ func TestConnBufferRememberInflight(t *testing.T) {
 			wantCallCount: 2,
 		},
 		{ // lost HTTP response, cancelled request, new params, returns buffered response but does execute handler
-			req:           &Request{pos: 1, TxnID: "a"},
+			req:           &Request{pos: 1, UnsubscribeRooms: []string{"a"}},
 			wantResPos:    2,
 			wantResCount:  2,
 			wantCallCount: 3,
 		},
 		{ // lost HTTP response, cancelled request, new params, returns same buffered response but does execute handler again
-			req:           &Request{pos: 1, TxnID: "b"},
+			req:           &Request{pos: 1, UnsubscribeRooms: []string{"b"}},
 			wantResPos:    2,
 			wantResCount:  2,
 			wantCallCount: 4,
 		},
 		{ // lost HTTP response, cancelled request, new params, returns same buffered response but does execute handler again
-			req:           &Request{pos: 1, TxnID: "c"},
+			req:           &Request{pos: 1, UnsubscribeRooms: []string{"c"}},
 			wantResPos:    2,
 			wantResCount:  2,
 			wantCallCount: 5,
 		},
 		{ // response returned, params same now, begin consuming buffer..
-			req:           &Request{pos: 2, TxnID: "c"},
+			req:           &Request{pos: 2, UnsubscribeRooms: []string{"c"}},
 			wantResPos:    3,
 			wantResCount:  3,
 			wantCallCount: 5,
 		},
 		{ // response returned, params same now, begin consuming buffer..
-			req:           &Request{pos: 3, TxnID: "c"},
+			req:           &Request{pos: 3, UnsubscribeRooms: []string{"c"}},
 			wantResPos:    4,
 			wantResCount:  4,
 			wantCallCount: 5,
 		},
 		{ // response returned, params same now, begin consuming buffer..
-			req:           &Request{pos: 4, TxnID: "c"},
+			req:           &Request{pos: 4, UnsubscribeRooms: []string{"c"}},
 			wantResPos:    5,
 			wantResCount:  5,
 			wantCallCount: 5,
 		},
 		{ // response lost, should send buffered response if it isn't just doing the latest one (which is pos=5)
-			req:           &Request{pos: 4, TxnID: "c"},
+			req:           &Request{pos: 4, UnsubscribeRooms: []string{"c"}},
 			wantResPos:    5,
 			wantResCount:  5,
 			wantCallCount: 5,
