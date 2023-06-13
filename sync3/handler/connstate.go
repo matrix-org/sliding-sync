@@ -34,6 +34,7 @@ type ConnState struct {
 	loadPosition int64
 	// roomID -> latest load pos
 	loadPositions map[string]int64
+	hasLoaded     bool
 
 	live *connStateLive
 
@@ -154,11 +155,12 @@ func (s *ConnState) load(ctx context.Context, req *sync3.Request) error {
 
 // OnIncomingRequest is guaranteed to be called sequentially (it's protected by a mutex in conn.go)
 func (s *ConnState) OnIncomingRequest(ctx context.Context, cid sync3.ConnID, req *sync3.Request, isInitial bool) (*sync3.Response, error) {
-	if s.loadPosition == -1 {
+	if !s.hasLoaded {
 		// load() needs no ctx so drop it
 		_, region := internal.StartSpan(ctx, "load")
 		s.load(ctx, req)
 		region.End()
+		s.hasLoaded = true
 	}
 	return s.onIncomingRequest(ctx, req, isInitial)
 }

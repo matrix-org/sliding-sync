@@ -633,7 +633,7 @@ func (s *Storage) visibleEventNIDsBetweenForRooms(userID string, roomIDs []strin
 			return nil, fmt.Errorf("VisibleEventNIDsBetweenForRooms.SelectEventsWithTypeStateKeyInRooms: %s", err)
 		}
 	}
-	joinTimingsByRoomID, err := s.determineJoinedRoomsFromMemberships(membershipEvents)
+	joinTimingsAtFromByRoomID, err := s.determineJoinedRoomsFromMemberships(membershipEvents)
 	if err != nil {
 		return nil, fmt.Errorf("failed to work out joined rooms for %s at pos %d: %s", userID, from, err)
 	}
@@ -644,7 +644,7 @@ func (s *Storage) visibleEventNIDsBetweenForRooms(userID string, roomIDs []strin
 		return nil, fmt.Errorf("failed to load membership events: %s", err)
 	}
 
-	return s.visibleEventNIDsWithData(joinTimingsByRoomID, membershipEvents, userID, from, to)
+	return s.visibleEventNIDsWithData(joinTimingsAtFromByRoomID, membershipEvents, userID, from, to)
 }
 
 // Work out the NID ranges to pull events from for this user. Given a from and to event nid stream position,
@@ -674,7 +674,7 @@ func (s *Storage) visibleEventNIDsBetweenForRooms(userID string, roomIDs []strin
 //	- For Room E: from=1, to=15 returns { RoomE: [ [3,3], [13,15] ] } (tests invites)
 func (s *Storage) VisibleEventNIDsBetween(userID string, from, to int64) (map[string][][2]int64, error) {
 	// load *ALL* joined rooms for this user at from (inclusive)
-	joinTimingsByRoomID, err := s.JoinedRoomsAfterPosition(userID, from)
+	joinTimingsAtFromByRoomID, err := s.JoinedRoomsAfterPosition(userID, from)
 	if err != nil {
 		return nil, fmt.Errorf("failed to work out joined rooms for %s at pos %d: %s", userID, from, err)
 	}
@@ -685,10 +685,10 @@ func (s *Storage) VisibleEventNIDsBetween(userID string, from, to int64) (map[st
 		return nil, fmt.Errorf("failed to load membership events: %s", err)
 	}
 
-	return s.visibleEventNIDsWithData(joinTimingsByRoomID, membershipEvents, userID, from, to)
+	return s.visibleEventNIDsWithData(joinTimingsAtFromByRoomID, membershipEvents, userID, from, to)
 }
 
-func (s *Storage) visibleEventNIDsWithData(joinTimingsByRoomID map[string]internal.EventMetadata, membershipEvents []Event, userID string, from, to int64) (map[string][][2]int64, error) {
+func (s *Storage) visibleEventNIDsWithData(joinTimingsAtFromByRoomID map[string]internal.EventMetadata, membershipEvents []Event, userID string, from, to int64) (map[string][][2]int64, error) {
 	// load membership events in order and bucket based on room ID
 	roomIDToLogs := make(map[string][]membershipEvent)
 	for _, ev := range membershipEvents {
@@ -750,7 +750,7 @@ func (s *Storage) visibleEventNIDsWithData(joinTimingsByRoomID map[string]intern
 
 	// For each joined room, perform the algorithm and delete the logs afterwards
 	result := make(map[string][][2]int64)
-	for joinedRoomID, _ := range joinTimingsByRoomID {
+	for joinedRoomID, _ := range joinTimingsAtFromByRoomID {
 		roomResult := calculateVisibleEventNIDs(true, from, to, roomIDToLogs[joinedRoomID])
 		result[joinedRoomID] = roomResult
 		delete(roomIDToLogs, joinedRoomID)
