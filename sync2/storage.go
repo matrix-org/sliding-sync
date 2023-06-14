@@ -1,10 +1,12 @@
 package sync2
 
 import (
+	"os"
+	"time"
+
 	"github.com/getsentry/sentry-go"
 	"github.com/jmoiron/sqlx"
 	"github.com/rs/zerolog"
-	"os"
 )
 
 var logger = zerolog.New(os.Stdout).With().Timestamp().Logger().Output(zerolog.ConsoleWriter{
@@ -25,6 +27,9 @@ func NewStore(postgresURI, secret string) *Storage {
 		// TODO: if we panic(), will sentry have a chance to flush the event?
 		logger.Panic().Err(err).Str("uri", postgresURI).Msg("failed to open SQL DB")
 	}
+	db.SetMaxOpenConns(100)
+	db.SetMaxIdleConns(80)
+	db.SetConnMaxLifetime(time.Hour)
 	return &Storage{
 		DevicesTable: NewDevicesTable(db),
 		TokensTable:  NewTokensTable(db, secret),
