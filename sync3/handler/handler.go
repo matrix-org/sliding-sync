@@ -188,8 +188,7 @@ func (h *SyncLiveHandler) serve(w http.ResponseWriter, req *http.Request) error 
 	if req.ContentLength != 0 {
 		defer req.Body.Close()
 		if err := json.NewDecoder(req.Body).Decode(&requestBody); err != nil {
-			log.Err(err).Msg("failed to read/decode request body")
-			internal.GetSentryHubFromContextOrDefault(req.Context()).CaptureException(err)
+			log.Warn().Err(err).Msg("failed to read/decode request body")
 			return &internal.HandlerError{
 				StatusCode: 400,
 				Err:        err,
