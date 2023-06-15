@@ -86,7 +86,7 @@ func Setup(destHomeserver, postgresURI, secret string, opts Opts) (*handler2.Han
 
 	pMap := sync2.NewPollerMap(v2Client, opts.AddPrometheusMetrics)
 	// create v2 handler
-	h2, err := handler2.NewHandler(postgresURI, pMap, storev2, store, v2Client, pubSub, pubSub, opts.AddPrometheusMetrics)
+	h2, err := handler2.NewHandler(pMap, storev2, store, pubSub, pubSub, opts.AddPrometheusMetrics)
 	if err != nil {
 		panic(err)
 	}
