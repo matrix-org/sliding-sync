@@ -317,6 +317,25 @@ func (t *EventTable) LatestEventInRooms(txn *sqlx.Tx, roomIDs []string, highestN
 	return
 }
 
+func (t *EventTable) LatestEventNIDInRooms(roomIDs []string, highestNID int64) (roomToNID map[string]int64, err error) {
+	// the position (event nid) may be for a random different room, so we need to find the highest nid <= this position for this room
+	var events []Event
+	err = t.db.Select(
+		&events,
+		`SELECT event_nid, room_id FROM syncv3_events
+		WHERE event_nid IN (SELECT max(event_nid) FROM syncv3_events WHERE event_nid <= $1 AND room_id = ANY($2) GROUP BY room_id)`,
+		highestNID, pq.StringArray(roomIDs),
+	)
+	if err == sql.ErrNoRows {
+		err = nil
+	}
+	roomToNID = make(map[string]int64)
+	for _, ev := range events {
+		roomToNID[ev.RoomID] = ev.NID
+	}
+	return
+}
+
 func (t *EventTable) SelectEventsBetween(txn *sqlx.Tx, roomID string, lowerExclusive, upperInclusive int64, limit int) ([]Event, error) {
 	var events []Event
 	err := txn.Select(&events, `SELECT event_nid, event FROM syncv3_events WHERE event_nid > $1 AND event_nid <= $2 AND room_id = $3 ORDER BY event_nid ASC LIMIT $4`,

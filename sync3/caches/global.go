@@ -58,7 +58,7 @@ var logger = zerolog.New(os.Stdout).With().Timestamp().Logger().Output(zerolog.C
 // Dispatcher for new events.
 type GlobalCache struct {
 	// LoadJoinedRoomsOverride allows tests to mock out the behaviour of LoadJoinedRooms.
-	LoadJoinedRoomsOverride func(userID string) (pos int64, joinedRooms map[string]*internal.RoomMetadata, joinTimings map[string]internal.EventMetadata, err error)
+	LoadJoinedRoomsOverride func(userID string) (pos int64, joinedRooms map[string]*internal.RoomMetadata, joinTimings map[string]internal.EventMetadata, latestNIDs map[string]int64, err error)
 
 	// inserts are done by v2 poll loops, selects are done by v3 request threads
 	// there are lots of overlapping keys as many users (threads) can be joined to the same room (key)
@@ -135,23 +135,37 @@ func (c *GlobalCache) copyRoom(roomID string) *internal.RoomMetadata {
 // The two maps returned by this function have exactly the same set of keys. Each is nil
 // iff a non-nil error is returned.
 // TODO: remove with LoadRoomState?
+// FIXME: return args are a mess
 func (c *GlobalCache) LoadJoinedRooms(ctx context.Context, userID string) (
-	pos int64, joinedRooms map[string]*internal.RoomMetadata, joinTimingByRoomID map[string]internal.EventMetadata, err error,
+	pos int64, joinedRooms map[string]*internal.RoomMetadata, joinTimingByRoomID map[string]internal.EventMetadata,
+	latestNIDs map[string]int64, err error,
 ) {
 	if c.LoadJoinedRoomsOverride != nil {
 		return c.LoadJoinedRoomsOverride(userID)
 	}
 	initialLoadPosition, err := c.store.LatestEventNID()
 	if err != nil {
-		return 0, nil, nil, err
+		return 0, nil, nil, nil, err
 	}
 	joinTimingByRoomID, err = c.store.JoinedRoomsAfterPosition(userID, initialLoadPosition)
 	if err != nil {
-		return 0, nil, nil, err
+		return 0, nil, nil, nil, err
 	}
+	roomIDs := make([]string, len(joinTimingByRoomID))
+	i := 0
+	for roomID := range joinTimingByRoomID {
+		roomIDs[i] = roomID
+		i++
+	}
+
+	latestNIDs, err = c.store.EventsTable.LatestEventNIDInRooms(roomIDs, initialLoadPosition)
+	if err != nil {
+		return 0, nil, nil, nil, err
+	}
+
 	// TODO: no guarantee that this state is the same as latest unless called in a dispatcher loop
 	rooms := c.LoadRoomsFromMap(ctx, joinTimingByRoomID)
-	return initialLoadPosition, rooms, joinTimingByRoomID, nil
+	return initialLoadPosition, rooms, joinTimingByRoomID, latestNIDs, nil
 }
 
 func (c *GlobalCache) LoadStateEvent(ctx context.Context, roomID string, loadPosition int64, evType, stateKey string) json.RawMessage {
