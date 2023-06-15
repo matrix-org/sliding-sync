@@ -4,11 +4,12 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"github.com/getsentry/sentry-go"
 	"runtime/debug"
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"github.com/getsentry/sentry-go"
 
 	"github.com/matrix-org/sliding-sync/internal"
 	"github.com/prometheus/client_golang/prometheus"
@@ -53,6 +54,12 @@ type V2DataReceiver interface {
 	OnTerminated(ctx context.Context, userID, deviceID string)
 	// Sent when the token gets a 401 response
 	OnExpiredToken(ctx context.Context, accessTokenHash, userID, deviceID string)
+}
+
+type IPollerMap interface {
+	EnsurePolling(pid PollerID, accessToken, v2since string, isStartup bool, logger zerolog.Logger)
+	NumPollers() int
+	Terminate()
 }
 
 // PollerMap is a map of device ID to Poller

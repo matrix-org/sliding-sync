@@ -4,11 +4,12 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"github.com/jmoiron/sqlx"
-	"github.com/matrix-org/sliding-sync/sqlutil"
 	"hash/fnv"
 	"os"
 	"sync"
+
+	"github.com/jmoiron/sqlx"
+	"github.com/matrix-org/sliding-sync/sqlutil"
 
 	"github.com/getsentry/sentry-go"
 
@@ -30,12 +31,11 @@ var logger = zerolog.New(os.Stdout).With().Timestamp().Logger().Output(zerolog.C
 // processing v2 data (as a sync2.V2DataReceiver) and publishing updates (pubsub.Payload to V2Listeners);
 // and receiving and processing EnsurePolling events.
 type Handler struct {
-	pMap      *sync2.PollerMap
+	pMap      sync2.IPollerMap
 	v2Store   *sync2.Storage
 	Store     *state.Storage
 	v2Pub     pubsub.Notifier
 	v3Sub     *pubsub.V3Sub
-	client    sync2.Client
 	unreadMap map[string]struct {
 		Highlight int
 		Notif     int
@@ -48,13 +48,12 @@ type Handler struct {
 }
 
 func NewHandler(
-	connStr string, pMap *sync2.PollerMap, v2Store *sync2.Storage, store *state.Storage, client sync2.Client,
+	pMap sync2.IPollerMap, v2Store *sync2.Storage, store *state.Storage,
 	pub pubsub.Notifier, sub pubsub.Listener, enablePrometheus bool,
 ) (*Handler, error) {
 	h := &Handler{
 		pMap:      pMap,
 		v2Store:   v2Store,
-		client:    client,
 		Store:     store,
 		subSystem: "poller",
 		unreadMap: make(map[string]struct {
