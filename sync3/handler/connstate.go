@@ -100,7 +100,9 @@ func (s *ConnState) load(ctx context.Context, req *sync3.Request) error {
 	if err != nil {
 		return err
 	}
-	s.loadPositions = loadPositions
+	for roomID, pos := range loadPositions {
+		s.loadPositions[roomID] = pos
+	}
 	rooms := make([]sync3.RoomConnMetadata, len(joinedRooms))
 	i := 0
 	for _, metadata := range joinedRooms {
