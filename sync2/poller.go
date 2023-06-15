@@ -63,6 +63,7 @@ type PollerMap struct {
 	Pollers                  map[PollerID]*poller
 	executor                 chan func()
 	executorRunning          bool
+	pollHistogramVec         *prometheus.HistogramVec
 	processHistogramVec      *prometheus.HistogramVec
 	timelineSizeHistogramVec *prometheus.HistogramVec
 }
@@ -99,6 +100,14 @@ func NewPollerMap(v2Client Client, enablePrometheus bool) *PollerMap {
 		executor: make(chan func(), 0),
 	}
 	if enablePrometheus {
+		pm.pollHistogramVec = prometheus.NewHistogramVec(prometheus.HistogramOpts{
+			Namespace: "sliding_sync",
+			Subsystem: "poller",
+			Name:      "request_duration_secs",
+			Help:      "Time taken in seconds for the sync v2 response to be received",
+			Buckets:   []float64{0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10},
+		}, []string{"initial", "first"})
+		prometheus.MustRegister(pm.pollHistogramVec)
 		pm.processHistogramVec = prometheus.NewHistogramVec(prometheus.HistogramOpts{
 			Namespace: "sliding_sync",
 			Subsystem: "poller",
@@ -130,6 +139,9 @@ func (h *PollerMap) Terminate() {
 	defer h.pollerMu.Unlock()
 	for _, p := range h.Pollers {
 		p.Terminate()
+	}
+	if h.pollHistogramVec != nil {
+		prometheus.Unregister(h.pollHistogramVec)
 	}
 	if h.processHistogramVec != nil {
 		prometheus.Unregister(h.processHistogramVec)
@@ -194,6 +206,7 @@ func (h *PollerMap) EnsurePolling(pid PollerID, accessToken, v2since string, isS
 	// replace the poller. If we don't need to wait, then we just want to nab to-device events initially.
 	// We don't do that on startup though as we cannot be sure that other pollers will not be using expired tokens.
 	poller = newPoller(pid, accessToken, h.v2Client, h, logger, !needToWait && !isStartup)
+	poller.pollHistogramVec = h.pollHistogramVec
 	poller.processHistogramVec = h.processHistogramVec
 	poller.timelineSizeVec = h.timelineSizeHistogramVec
 	go poller.Poll(v2since)
@@ -487,7 +500,7 @@ func (p *poller) trackRequestDuration(dur time.Duration, isInitial, isFirst bool
 	if p.pollHistogramVec == nil {
 		return
 	}
-	p.pollHistogramVec.WithLabelValues(labels(isInitial, isFirst)...).Observe(float64(dur.Milliseconds()))
+	p.pollHistogramVec.WithLabelValues(labels(isInitial, isFirst)...).Observe(float64(dur.Seconds()))
 }
 
 func (p *poller) trackProcessDuration(dur time.Duration, isInitial, isFirst bool) {
