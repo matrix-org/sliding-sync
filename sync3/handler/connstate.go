@@ -37,6 +37,7 @@ type ConnState struct {
 	// not yet seen room X's latest NID (it'll be sitting in the live buffer). This is why it's important
 	// that ConnState DOES NOT ignore events based on this value - it must ignore events based on the real
 	// load position for the room.
+	// If this value is negative or 0, it means that this connection has not been loaded yet.
 	anchorLoadPosition int64
 	// roomID -> latest load pos
 	loadPositions map[string]int64
@@ -99,9 +100,7 @@ func (s *ConnState) load(ctx context.Context, req *sync3.Request) error {
 	if err != nil {
 		return err
 	}
-	for roomID, nid := range loadPositions {
-		s.loadPositions[roomID] = nid
-	}
+	s.loadPositions = loadPositions
 	rooms := make([]sync3.RoomConnMetadata, len(joinedRooms))
 	i := 0
 	for _, metadata := range joinedRooms {
