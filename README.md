@@ -36,9 +36,13 @@ $ echo -n "$(openssl rand -hex 32)" > .secret # this MUST remain the same throug
 ```
 
 Compiling from source and running:
-```
+```bash
 $ go build ./cmd/syncv3
 $ SYNCV3_SECRET=$(cat .secret) SYNCV3_SERVER="https://matrix-client.matrix.org" SYNCV3_DB="user=$(whoami) dbname=syncv3 sslmode=disable" SYNCV3_BINDADDR=0.0.0.0:8008 ./syncv3
+
+# China-based users first need to run:
+$ go env -w GO111MODULE=on
+$ go env -w GOPROXY=https://goproxy.cn,direct
 ```
 Using a Docker image:
 ```
