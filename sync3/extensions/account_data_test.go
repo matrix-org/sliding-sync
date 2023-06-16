@@ -16,6 +16,8 @@ func TestLiveAccountDataAggregation(t *testing.T) {
 	ext := &AccountDataRequest{
 		Core: Core{
 			Enabled: &boolTrue,
+			Lists:   []string{"*"},
+			Rooms:   []string{"*"},
 		},
 	}
 	var res Response
