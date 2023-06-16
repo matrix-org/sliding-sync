@@ -72,6 +72,8 @@ func (s *InternalRequestLists) SetRoom(r RoomConnMetadata) (delta RoomDelta) {
 			r.CanonicalisedName = strings.ToLower(
 				strings.Trim(internal.CalculateRoomName(&r.RoomMetadata, 5), "#!():_@"),
 			)
+		} else {
+			r.CanonicalisedName = existing.CanonicalisedName
 		}
 
 		// Interpret the timestamp map on r as the changes we should apply atop the
