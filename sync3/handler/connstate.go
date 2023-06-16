@@ -178,39 +178,39 @@ func (s *ConnState) OnIncomingRequest(ctx context.Context, cid sync3.ConnID, req
 // onIncomingRequest is a callback which fires when the client makes a request to the server. Whilst each request may
 // be on their own goroutine, the requests are linearised for us by Conn so it is safe to modify ConnState without
 // additional locking mechanisms.
-func (s *ConnState) onIncomingRequest(ctx context.Context, req *sync3.Request, isInitial bool) (*sync3.Response, error) {
+func (s *ConnState) onIncomingRequest(reqCtx context.Context, req *sync3.Request, isInitial bool) (*sync3.Response, error) {
 	start := time.Now()
 	// ApplyDelta works fine if s.muxedReq is nil
 	var delta *sync3.RequestDelta
 	s.muxedReq, delta = s.muxedReq.ApplyDelta(req)
-	internal.Logf(ctx, "connstate", "new subs=%v unsubs=%v num_lists=%v", len(delta.Subs), len(delta.Unsubs), len(delta.Lists))
+	internal.Logf(reqCtx, "connstate", "new subs=%v unsubs=%v num_lists=%v", len(delta.Subs), len(delta.Unsubs), len(delta.Lists))
 	for key, l := range delta.Lists {
 		listData := ""
 		if l.Curr != nil {
 			listDataBytes, _ := json.Marshal(l.Curr)
 			listData = string(listDataBytes)
 		}
-		internal.Logf(ctx, "connstate", "list[%v] prev_empty=%v curr=%v", key, l.Prev == nil, listData)
+		internal.Logf(reqCtx, "connstate", "list[%v] prev_empty=%v curr=%v", key, l.Prev == nil, listData)
 	}
 
 	// work out which rooms we'll return data for and add their relevant subscriptions to the builder
 	// for it to mix together
 	builder := NewRoomsBuilder()
 	// works out which rooms are subscribed to but doesn't pull room data
-	s.buildRoomSubscriptions(ctx, builder, delta.Subs, delta.Unsubs)
+	s.buildRoomSubscriptions(reqCtx, builder, delta.Subs, delta.Unsubs)
 	// works out how rooms get moved about but doesn't pull room data
-	respLists := s.buildListSubscriptions(ctx, builder, delta.Lists)
+	respLists := s.buildListSubscriptions(reqCtx, builder, delta.Lists)
 
 	// pull room data and set changes on the response
 	response := &sync3.Response{
-		Rooms: s.buildRooms(ctx, builder.BuildSubscriptions()), // pull room data
+		Rooms: s.buildRooms(reqCtx, builder.BuildSubscriptions()), // pull room data
 		Lists: respLists,
 	}
 
 	// Handle extensions AFTER processing lists as extensions may need to know which rooms the client
 	// is being notified about (e.g. for room account data)
-	ctx, region := internal.StartSpan(ctx, "extensions")
-	response.Extensions = s.extensionsHandler.Handle(ctx, s.muxedReq.Extensions, extensions.Context{
+	extCtx, region := internal.StartSpan(reqCtx, "extensions")
+	response.Extensions = s.extensionsHandler.Handle(extCtx, s.muxedReq.Extensions, extensions.Context{
 		UserID:           s.userID,
 		DeviceID:         s.deviceID,
 		RoomIDToTimeline: response.RoomIDsToTimelineEventIDs(),
@@ -228,8 +228,8 @@ func (s *ConnState) onIncomingRequest(ctx context.Context, req *sync3.Request, i
 	}
 
 	// do live tracking if we have nothing to tell the client yet
-	ctx, region = internal.StartSpan(ctx, "liveUpdate")
-	s.live.liveUpdate(ctx, req, s.muxedReq.Extensions, isInitial, response)
+	updateCtx, region := internal.StartSpan(reqCtx, "liveUpdate")
+	s.live.liveUpdate(updateCtx, req, s.muxedReq.Extensions, isInitial, response)
 	region.End()
 
 	// counts are AFTER events are applied, hence after liveUpdate
@@ -242,7 +242,7 @@ func (s *ConnState) onIncomingRequest(ctx context.Context, req *sync3.Request, i
 	// Add membership events for users sending typing notifications. We do this after live update
 	// and initial room loading code so we LL room members in all cases.
 	if response.Extensions.Typing != nil && response.Extensions.Typing.HasData(isInitial) {
-		s.lazyLoadTypingMembers(ctx, response)
+		s.lazyLoadTypingMembers(reqCtx, response)
 	}
 	return response, nil
 }
