@@ -313,6 +313,7 @@ type RequestListDelta struct {
 // request.
 func (r *Request) ApplyDelta(nextReq *Request) (result *Request, delta *RequestDelta) {
 	if r == nil {
+		nextReq.Extensions.InterpretAsInitial()
 		result = &Request{
 			Extensions: nextReq.Extensions,
 		}

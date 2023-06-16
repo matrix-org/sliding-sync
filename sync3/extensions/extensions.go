@@ -27,6 +27,10 @@ type GenericRequest interface {
 	OnlyLists() []string
 	// Returns the value of the `rooms` JSON key. nil for "not specified".
 	OnlyRooms() []string
+	// InterpretAsInitial interprets this as an initial request rather than a delta, and
+	// overwrites fields accordingly. This can be useful when fields have default
+	// values, but is a little ugly. Use sparingly.
+	InterpretAsInitial()
 	// Overwrite fields in the request by side-effecting on this struct.
 	ApplyDelta(next GenericRequest)
 	// ProcessInitial provides a means for extensions to return data to clients immediately.
@@ -75,6 +79,17 @@ func (r *Core) OnlyLists() []string {
 
 func (r *Core) OnlyRooms() []string {
 	return r.Rooms
+}
+
+func (r *Core) InterpretAsInitial() {
+	// An omitted/nil value for lists and rooms normally means "no change".
+	// If this extension has never been specified before, nil means "all lists/rooms".
+	if r.Lists == nil {
+		r.Lists = []string{"*"}
+	}
+	if r.Rooms == nil {
+		r.Rooms = []string{"*"}
+	}
 }
 
 func (r *Core) ApplyDelta(gnext GenericRequest) {
@@ -181,6 +196,8 @@ func (r Request) EnabledExtensions() (exts []GenericRequest) {
 	return
 }
 
+// ApplyDelta applies the `next` request as a delta atop the previous Request r, and
+// returns the result as a new Request.
 func (r Request) ApplyDelta(next *Request) Request {
 	currFields := r.fields()
 	nextFields := next.fields()
@@ -193,6 +210,7 @@ func (r Request) ApplyDelta(next *Request) Request {
 		}
 		if isNil(curr) {
 			// the next field is what we want to apply
+			next.InterpretAsInitial()
 			currFields[i] = next
 			hasChanges = true
 		} else {
@@ -206,6 +224,24 @@ func (r Request) ApplyDelta(next *Request) Request {
 	}
 
 	return r
+}
+
+func (r *Request) InterpretAsInitial() {
+	if r.ToDevice != nil {
+		r.ToDevice.InterpretAsInitial()
+	}
+	if r.E2EE != nil {
+		r.E2EE.InterpretAsInitial()
+	}
+	if r.AccountData != nil {
+		r.AccountData.InterpretAsInitial()
+	}
+	if r.Typing != nil {
+		r.Typing.InterpretAsInitial()
+	}
+	if r.Receipts != nil {
+		r.Receipts.InterpretAsInitial()
+	}
 }
 
 // Response represents the top-level `extensions` key in the JSON response.
