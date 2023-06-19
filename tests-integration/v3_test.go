@@ -291,11 +291,11 @@ func (s *testV3Server) close() {
 	s.h2.Teardown()
 }
 
-func (s *testV3Server) restart(t *testing.T, v2 *testV2Server, pq string) {
+func (s *testV3Server) restart(t *testing.T, v2 *testV2Server, pq string, opts ...syncv3.Opts) {
 	t.Helper()
 	log.Printf("restarting server")
 	s.close()
-	ss := runTestServer(t, v2, pq)
+	ss := runTestServer(t, v2, pq, opts...)
 	// replace all the fields which will be close()d to ensure we don't leak
 	s.srv = ss.srv
 	s.h2 = ss.h2
