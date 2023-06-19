@@ -366,20 +366,22 @@ func runTestServer(t testutils.TestBenchInterface, v2Server *testV2Server, postg
 	//tests often repeat requests. To ensure tests remain fast, reduce the spam protection limits.
 	sync3.SpamProtectionInterval = time.Millisecond
 
-	metricsEnabled := false
-	maxPendingEventUpdates := 200
+	combinedOpts := syncv3.Opts{
+		TestingSynchronousPubsub: true, // critical to avoid flakey tests
+		AddPrometheusMetrics:     false,
+		MaxPendingEventUpdates:   200,
+	}
 	if len(opts) > 0 {
-		metricsEnabled = opts[0].AddPrometheusMetrics
-		if opts[0].MaxPendingEventUpdates > 0 {
-			maxPendingEventUpdates = opts[0].MaxPendingEventUpdates
+		opt := opts[0]
+		combinedOpts.AddPrometheusMetrics = opt.AddPrometheusMetrics
+		combinedOpts.DBConnMaxIdleTime = opt.DBConnMaxIdleTime
+		combinedOpts.DBMaxConns = opt.DBMaxConns
+		if opt.MaxPendingEventUpdates > 0 {
+			combinedOpts.MaxPendingEventUpdates = opt.MaxPendingEventUpdates
 			handler.BufferWaitTime = 5 * time.Millisecond
 		}
 	}
-	h2, h3 := syncv3.Setup(v2Server.url(), postgresConnectionString, os.Getenv("SYNCV3_SECRET"), syncv3.Opts{
-		TestingSynchronousPubsub: true, // critical to avoid flakey tests
-		MaxPendingEventUpdates:   maxPendingEventUpdates,
-		AddPrometheusMetrics:     metricsEnabled,
-	})
+	h2, h3 := syncv3.Setup(v2Server.url(), postgresConnectionString, os.Getenv("SYNCV3_SECRET"), combinedOpts)
 	// for ease of use we don't start v2 pollers at startup in tests
 	r := mux.NewRouter()
 	r.Use(hlog.NewHandler(logger))

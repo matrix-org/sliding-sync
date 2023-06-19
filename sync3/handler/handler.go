@@ -65,7 +65,7 @@ type SyncLiveHandler struct {
 }
 
 func NewSync3Handler(
-	store *state.Storage, storev2 *sync2.Storage, v2Client sync2.Client, postgresDBURI, secret string,
+	store *state.Storage, storev2 *sync2.Storage, v2Client sync2.Client, secret string,
 	pub pubsub.Notifier, sub pubsub.Listener, enablePrometheus bool, maxPendingEventUpdates int,
 ) (*SyncLiveHandler, error) {
 	logger.Info().Msg("creating handler")
