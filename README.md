@@ -29,7 +29,8 @@ changes in the proxy itself.
     -   Experimental support for `bump_event_types` when ordering rooms by recency.
     -   Support for opting in to extensions on a per-list and per-room basis.
 -   Version 0.99.3 [2023/05/23](https://github.com/matrix-org/matrix-spec-proposals/blob/4103ee768a4a3e1decee80c2987f50f4c6b3d539/proposals/3575-sync.md)
-    -   Support for per-list `bump_event_types`, including support on new sliding sync connections.
+    -   Support for per-list `bump_event_types`.
+    -   Support for [`conn_id`](https://github.com/matrix-org/matrix-spec-proposals/blob/4103ee768a4a3e1decee80c2987f50f4c6b3d539/proposals/3575-sync.md#concurrent-connections) for distinguishing multiple concurrent connections.
 
 ## Usage
 
