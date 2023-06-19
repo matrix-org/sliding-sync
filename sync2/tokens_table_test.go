@@ -29,10 +29,10 @@ func TestTokensTable(t *testing.T) {
 	aliceToken1FirstSeen := time.Now()
 
 	var aliceToken, reinsertedToken *Token
-	_ = sqlutil.WithTransaction(db, func(txn *sqlx.Tx) error {
+	_ = sqlutil.WithTransaction(db, func(txn *sqlx.Tx) (err error) {
 		// Test a single token
 		t.Log("Insert a new token from Alice.")
-		aliceToken, err := tokens.Insert(txn, aliceSecret1, alice, aliceDevice, aliceToken1FirstSeen)
+		aliceToken, err = tokens.Insert(txn, aliceSecret1, alice, aliceDevice, aliceToken1FirstSeen)
 		if err != nil {
 			t.Fatalf("Failed to Insert token: %s", err)
 		}
