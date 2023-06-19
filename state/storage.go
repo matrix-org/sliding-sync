@@ -626,7 +626,7 @@ func (s *Storage) LatestEventsInRooms(userID string, roomIDs []string, to int64,
 			}
 			if earliestEventNID != 0 {
 				// the oldest event needs a prev batch token, so find one now
-				prevBatch, err := s.EventsTable.SelectClosestPrevBatch(roomID, earliestEventNID)
+				prevBatch, err := s.EventsTable.SelectClosestPrevBatch(txn, roomID, earliestEventNID)
 				if err != nil {
 					return fmt.Errorf("failed to select prev_batch for room %s : %s", roomID, err)
 				}

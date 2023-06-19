@@ -22,7 +22,7 @@ func TestMaxDBConns(t *testing.T) {
 	// setup code
 	v2 := runTestV2Server(t)
 	opts := syncv3.Opts{
-		DBMaxConns: 3,
+		DBMaxConns: 1,
 	}
 	v3 := runTestServer(t, v2, pqString, opts)
 	defer v2.close()
