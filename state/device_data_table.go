@@ -44,7 +44,7 @@ func NewDeviceDataTable(db *sqlx.DB) *DeviceDataTable {
 func (t *DeviceDataTable) Select(userID, deviceID string, swap bool) (result *internal.DeviceData, err error) {
 	err = sqlutil.WithTransaction(t.db, func(txn *sqlx.Tx) error {
 		var row DeviceDataRow
-		err = t.db.Get(&row, `SELECT data FROM syncv3_device_data WHERE user_id=$1 AND device_id=$2`, userID, deviceID)
+		err = txn.Get(&row, `SELECT data FROM syncv3_device_data WHERE user_id=$1 AND device_id=$2`, userID, deviceID)
 		if err != nil {
 			if err == sql.ErrNoRows {
 				// if there is no device data for this user, it's not an error.
@@ -78,7 +78,7 @@ func (t *DeviceDataTable) Select(userID, deviceID string, swap bool) (result *in
 			// the device_data table.
 			return nil
 		}
-		_, err = t.db.Exec(`UPDATE syncv3_device_data SET data=$1 WHERE user_id=$2 AND device_id=$3`, data, userID, deviceID)
+		_, err = txn.Exec(`UPDATE syncv3_device_data SET data=$1 WHERE user_id=$2 AND device_id=$3`, data, userID, deviceID)
 		return err
 	})
 	return
