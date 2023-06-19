@@ -32,8 +32,8 @@ func NewDevicesTable(db *sqlx.DB) *DevicesTable {
 
 // InsertDevice creates a new devices row with a blank since token if no such row
 // exists. Otherwise, it does nothing.
-func (t *DevicesTable) InsertDevice(userID, deviceID string) error {
-	_, err := t.db.Exec(
+func (t *DevicesTable) InsertDevice(txn *sqlx.Tx, userID, deviceID string) error {
+	_, err := txn.Exec(
 		` INSERT INTO syncv3_sync2_devices(user_id, device_id, since) VALUES($1,$2,$3)
 		ON CONFLICT (user_id, device_id) DO NOTHING`,
 		userID, deviceID, "",

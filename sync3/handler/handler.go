@@ -420,14 +420,14 @@ func (h *SyncLiveHandler) identifyUnknownAccessToken(accessToken string, logger 
 	var token *sync2.Token
 	err = sqlutil.WithTransaction(h.V2Store.DB, func(txn *sqlx.Tx) error {
 		// Create a brand-new row for this token.
-		token, err = h.V2Store.TokensTable.Insert(accessToken, userID, deviceID, time.Now())
+		token, err = h.V2Store.TokensTable.Insert(txn, accessToken, userID, deviceID, time.Now())
 		if err != nil {
 			logger.Warn().Err(err).Str("user", userID).Str("device", deviceID).Msg("failed to insert v2 token")
 			return err
 		}
 
 		// Ensure we have a device row for this token.
-		err = h.V2Store.DevicesTable.InsertDevice(userID, deviceID)
+		err = h.V2Store.DevicesTable.InsertDevice(txn, userID, deviceID)
 		if err != nil {
 			log.Warn().Err(err).Str("user", userID).Str("device", deviceID).Msg("failed to insert v2 device")
 			return err
