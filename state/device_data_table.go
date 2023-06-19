@@ -94,7 +94,7 @@ func (t *DeviceDataTable) Upsert(dd *internal.DeviceData) (pos int64, err error)
 	err = sqlutil.WithTransaction(t.db, func(txn *sqlx.Tx) error {
 		// select what already exists
 		var row DeviceDataRow
-		err = t.db.Get(&row, `SELECT data FROM syncv3_device_data WHERE user_id=$1 AND device_id=$2`, dd.UserID, dd.DeviceID)
+		err = txn.Get(&row, `SELECT data FROM syncv3_device_data WHERE user_id=$1 AND device_id=$2`, dd.UserID, dd.DeviceID)
 		if err != nil && err != sql.ErrNoRows {
 			return err
 		}
@@ -119,7 +119,7 @@ func (t *DeviceDataTable) Upsert(dd *internal.DeviceData) (pos int64, err error)
 		if err != nil {
 			return err
 		}
-		err = t.db.QueryRow(
+		err = txn.QueryRow(
 			`INSERT INTO syncv3_device_data(user_id, device_id, data) VALUES($1,$2,$3)
 			ON CONFLICT (user_id, device_id) DO UPDATE SET data=$3, id=nextval('syncv3_device_data_seq') RETURNING id`,
 			dd.UserID, dd.DeviceID, data,
