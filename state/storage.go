@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"os"
 	"strings"
-	"time"
 
 	"github.com/getsentry/sentry-go"
 
@@ -58,9 +57,6 @@ func NewStorage(postgresURI string) *Storage {
 		// TODO: if we panic(), will sentry have a chance to flush the event?
 		logger.Panic().Err(err).Str("uri", postgresURI).Msg("failed to open SQL DB")
 	}
-	db.SetMaxOpenConns(100)
-	db.SetMaxIdleConns(80)
-	db.SetConnMaxLifetime(time.Hour)
 	acc := &Accumulator{
 		db:            db,
 		roomsTable:    NewRoomsTable(db),
