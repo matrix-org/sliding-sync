@@ -567,13 +567,14 @@ func TestStorageLatestEventsInRoomsPrevBatch(t *testing.T) {
 		eventNID := idsToNIDs[eventIDs[i]]
 		// closest batch to the last event in the chunk (latest nid) is always the next prev batch token
 		var pb string
-		err = sqlutil.WithTransaction(store.DB, func(txn *sqlx.Tx) error {
+		_ = sqlutil.WithTransaction(store.DB, func(txn *sqlx.Tx) (err error) {
 			pb, err = store.EventsTable.SelectClosestPrevBatch(txn, roomID, eventNID)
-			return err
+			if err != nil {
+				t.Fatalf("failed to SelectClosestPrevBatch: %s", err)
+			}
+			return nil
 		})
-		if err != nil {
-			t.Fatalf("failed to SelectClosestPrevBatch: %s", err)
-		}
+
 		if pb != wantPrevBatch {
 			t.Fatalf("SelectClosestPrevBatch: got %v want %v", pb, wantPrevBatch)
 		}

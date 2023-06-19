@@ -779,13 +779,13 @@ func TestEventTablePrevBatch(t *testing.T) {
 
 	assertPrevBatch := func(roomID string, index int, wantPrevBatch string) {
 		var gotPrevBatch string
-		err := sqlutil.WithTransaction(table.db, func(txn *sqlx.Tx) error {
+		_ = sqlutil.WithTransaction(db, func(txn *sqlx.Tx) error {
 			gotPrevBatch, err = table.SelectClosestPrevBatch(txn, roomID, int64(idToNID[events[index].ID]))
-			return err
+			if err != nil {
+				t.Fatalf("failed to SelectClosestPrevBatch: %s", err)
+			}
+			return nil
 		})
-		if err != nil {
-			t.Fatalf("failed to SelectClosestPrevBatch: %s", err)
-		}
 		if wantPrevBatch != "" {
 			if gotPrevBatch == "" || gotPrevBatch != wantPrevBatch {
 				t.Fatalf("SelectClosestPrevBatch: got %v want %v", gotPrevBatch, wantPrevBatch)
