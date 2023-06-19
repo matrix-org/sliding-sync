@@ -81,6 +81,9 @@ func Setup(destHomeserver, postgresURI, secret string, opts Opts) (*handler2.Han
 	storev2 := sync2.NewStore(postgresURI, secret)
 	for _, db := range []*sqlx.DB{store.DB, storev2.DB} {
 		if opts.DBMaxConns > 0 {
+			// https://github.com/go-sql-driver/mysql#important-settings
+			// "db.SetMaxIdleConns() is recommended to be set same to db.SetMaxOpenConns(). When it is smaller
+			// than SetMaxOpenConns(), connections can be opened and closed much more frequently than you expect."
 			db.SetMaxOpenConns(opts.DBMaxConns)
 			db.SetMaxIdleConns(opts.DBMaxConns)
 		}
