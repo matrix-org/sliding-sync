@@ -438,8 +438,8 @@ func (t *EventTable) SelectClosestPrevBatchByID(roomID string, eventID string) (
 
 // Select the closest prev batch token for the provided event NID. Returns the empty string if there
 // is no closest.
-func (t *EventTable) SelectClosestPrevBatch(roomID string, eventNID int64) (prevBatch string, err error) {
-	err = t.db.QueryRow(
+func (t *EventTable) SelectClosestPrevBatch(txn *sqlx.Tx, roomID string, eventNID int64) (prevBatch string, err error) {
+	err = txn.QueryRow(
 		`SELECT prev_batch FROM syncv3_events WHERE prev_batch IS NOT NULL AND room_id=$1 AND event_nid >= $2 LIMIT 1`, roomID, eventNID,
 	).Scan(&prevBatch)
 	if err == sql.ErrNoRows {
