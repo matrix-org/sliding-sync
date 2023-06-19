@@ -2,6 +2,7 @@ package sync2
 
 import (
 	"github.com/jmoiron/sqlx"
+	"github.com/matrix-org/sliding-sync/sqlutil"
 	"os"
 	"sort"
 	"testing"
@@ -41,18 +42,25 @@ func TestDevicesTableSinceColumn(t *testing.T) {
 	aliceSecret1 := "mysecret1"
 	aliceSecret2 := "mysecret2"
 
-	t.Log("Insert two tokens for Alice.")
-	aliceToken, err := tokens.Insert(aliceSecret1, alice, aliceDevice, time.Now())
-	if err != nil {
-		t.Fatalf("Failed to Insert token: %s", err)
-	}
-	aliceToken2, err := tokens.Insert(aliceSecret2, alice, aliceDevice, time.Now())
-	if err != nil {
-		t.Fatalf("Failed to Insert token: %s", err)
-	}
+	var aliceToken, aliceToken2 *Token
+	_ = sqlutil.WithTransaction(db, func(txn *sqlx.Tx) (err error) {
+		t.Log("Insert two tokens for Alice.")
+		aliceToken, err = tokens.Insert(txn, aliceSecret1, alice, aliceDevice, time.Now())
+		if err != nil {
+			t.Fatalf("Failed to Insert token: %s", err)
+		}
+		aliceToken2, err = tokens.Insert(txn, aliceSecret2, alice, aliceDevice, time.Now())
+		if err != nil {
+			t.Fatalf("Failed to Insert token: %s", err)
+		}
 
-	t.Log("Add a devices row for Alice")
-	err = devices.InsertDevice(alice, aliceDevice)
+		t.Log("Add a devices row for Alice")
+		err = devices.InsertDevice(txn, alice, aliceDevice)
+		if err != nil {
+			t.Fatalf("Failed to Insert device: %s", err)
+		}
+		return nil
+	})
 
 	t.Log("Pretend we're about to start a poller. Fetch Alice's token along with the since value tracked by the devices table.")
 	accessToken, since, err := tokens.GetTokenAndSince(alice, aliceDevice, aliceToken.AccessTokenHash)
@@ -104,39 +112,49 @@ func TestTokenForEachDevice(t *testing.T) {
 	chris := "chris"
 	chrisDevice := "chris_desktop"
 
-	t.Log("Add a device for Alice, Bob and Chris.")
-	err := devices.InsertDevice(alice, aliceDevice)
-	if err != nil {
-		t.Fatalf("InsertDevice returned error: %s", err)
-	}
-	err = devices.InsertDevice(bob, bobDevice)
-	if err != nil {
-		t.Fatalf("InsertDevice returned error: %s", err)
-	}
-	err = devices.InsertDevice(chris, chrisDevice)
-	if err != nil {
-		t.Fatalf("InsertDevice returned error: %s", err)
-	}
+	_ = sqlutil.WithTransaction(db, func(txn *sqlx.Tx) error {
+		t.Log("Add a device for Alice, Bob and Chris.")
+		err := devices.InsertDevice(txn, alice, aliceDevice)
+		if err != nil {
+			t.Fatalf("InsertDevice returned error: %s", err)
+		}
+		err = devices.InsertDevice(txn, bob, bobDevice)
+		if err != nil {
+			t.Fatalf("InsertDevice returned error: %s", err)
+		}
+		err = devices.InsertDevice(txn, chris, chrisDevice)
+		if err != nil {
+			t.Fatalf("InsertDevice returned error: %s", err)
+		}
+		return nil
+	})
 
 	t.Log("Mark Alice's device with a since token.")
 	sinceValue := "s-1-2-3-4"
-	devices.UpdateDeviceSince(alice, aliceDevice, sinceValue)
+	err := devices.UpdateDeviceSince(alice, aliceDevice, sinceValue)
+	if err != nil {
+		t.Fatalf("UpdateDeviceSince returned error: %s", err)
+	}
 
-	t.Log("Insert 2 tokens for Alice, one for Bob and none for Chris.")
-	aliceLastSeen1 := time.Now()
-	_, err = tokens.Insert("alice_secret", alice, aliceDevice, aliceLastSeen1)
-	if err != nil {
-		t.Fatalf("Failed to Insert token: %s", err)
-	}
-	aliceLastSeen2 := aliceLastSeen1.Add(1 * time.Minute)
-	aliceToken2, err := tokens.Insert("alice_secret2", alice, aliceDevice, aliceLastSeen2)
-	if err != nil {
-		t.Fatalf("Failed to Insert token: %s", err)
-	}
-	bobToken, err := tokens.Insert("bob_secret", bob, bobDevice, time.Time{})
-	if err != nil {
-		t.Fatalf("Failed to Insert token: %s", err)
-	}
+	var aliceToken2, bobToken *Token
+	_ = sqlutil.WithTransaction(db, func(txn *sqlx.Tx) error {
+		t.Log("Insert 2 tokens for Alice, one for Bob and none for Chris.")
+		aliceLastSeen1 := time.Now()
+		_, err = tokens.Insert(txn, "alice_secret", alice, aliceDevice, aliceLastSeen1)
+		if err != nil {
+			t.Fatalf("Failed to Insert token: %s", err)
+		}
+		aliceLastSeen2 := aliceLastSeen1.Add(1 * time.Minute)
+		aliceToken2, err = tokens.Insert(txn, "alice_secret2", alice, aliceDevice, aliceLastSeen2)
+		if err != nil {
+			t.Fatalf("Failed to Insert token: %s", err)
+		}
+		bobToken, err = tokens.Insert(txn, "bob_secret", bob, bobDevice, time.Time{})
+		if err != nil {
+			t.Fatalf("Failed to Insert token: %s", err)
+		}
+		return nil
+	})
 
 	t.Log("Fetch a token for every device")
 	gotTokens, err := tokens.TokenForEachDevice(nil)

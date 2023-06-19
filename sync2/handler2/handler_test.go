@@ -1,6 +1,8 @@
 package handler2_test
 
 import (
+	"github.com/jmoiron/sqlx"
+	"github.com/matrix-org/sliding-sync/sqlutil"
 	"os"
 	"reflect"
 	"sync"
@@ -131,11 +133,15 @@ func TestHandlerFreshEnsurePolling(t *testing.T) {
 	deviceID := "ALICE"
 	token := "aliceToken"
 
-	// the device and token needs to already exist prior to EnsurePolling
-	err = v2Store.DevicesTable.InsertDevice(alice, deviceID)
-	assertNoError(t, err)
-	tok, err := v2Store.TokensTable.Insert(token, alice, deviceID, time.Now())
-	assertNoError(t, err)
+	var tok *sync2.Token
+	sqlutil.WithTransaction(v2Store.DB, func(txn *sqlx.Tx) error {
+		// the device and token needs to already exist prior to EnsurePolling
+		err = v2Store.DevicesTable.InsertDevice(txn, alice, deviceID)
+		assertNoError(t, err)
+		tok, err = v2Store.TokensTable.Insert(txn, token, alice, deviceID, time.Now())
+		assertNoError(t, err)
+		return nil
+	})
 
 	payloadInitialSyncComplete := pubsub.V2InitialSyncComplete{
 		UserID:   alice,
