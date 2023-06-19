@@ -545,7 +545,7 @@ func (s *Storage) RoomStateAfterEventPosition(ctx context.Context, roomIDs []str
 			if err != nil {
 				return fmt.Errorf("failed to form sql query: %s", err)
 			}
-			rows, err := s.Accumulator.db.Query(s.Accumulator.db.Rebind(query), args...)
+			rows, err := txn.Query(txn.Rebind(query), args...)
 			if err != nil {
 				return fmt.Errorf("failed to execute query: %s", err)
 			}
