@@ -450,7 +450,8 @@ func (p *poller) poll(ctx context.Context, s *pollLoopState) error {
 	}
 	if err != nil {
 		// check if temporary
-		if statusCode != 401 {
+		isFatal := statusCode == 401 || statusCode == 403
+		if !isFatal {
 			p.logger.Warn().Int("code", statusCode).Err(err).Msg("Poller: sync v2 poll returned temporary error")
 			s.failCount += 1
 			return nil
