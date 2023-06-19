@@ -21,7 +21,7 @@ import (
 
 var GitCommit string
 
-const version = "0.99.2"
+const version = "0.99.3"
 
 const (
 	// Required fields
