@@ -1,0 +1,34 @@
+[Unit]
+Description=sliding sync
+
+[Service]
+Type=exec
+User=syncv3
+WorkingDirectory=/usr/local/sliding-sync
+StandardError=append:/var/log/syncv3 # append: requires systemd v240 or backports
+Environment=SYNCV3_SECRET=  SYNCV3_SERVER="https://matrix-client.matrix.org" SYNCV3_DB="user=$(whoami) dbname=syncv3 sslmode=disable" SYNCV3_BINDADDR=0.0.0.0:8008 # Environment doesn't allow $() subshell syntax
+ExecStart=/usr/local/bin/syncv3 # selinux doesn't allow running system service from user's home directory
+Restart=on-failure
+RestartSec=30s
+
+# Optional hardening to improve security
+ReadWritePaths=/usr/local/sliding-sync
+NoNewPrivileges=yes
+MemoryDenyWriteExecute=true
+PrivateDevices=yes
+PrivateTmp=yes
+ProtectHome=yes
+ProtectSystem=strict
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+RestrictRealtime=true
+LockPersonality=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+PrivateUsers=true
+SystemCallArchitectures=native
+SystemCallErrorNumber=EPERM
+SystemCallFilter=@system-service
+
+[Install]
+WantedBy=multi-user.target
