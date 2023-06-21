@@ -1,6 +1,5 @@
 package handler
 
-import "C"
 import (
 	"context"
 	"database/sql"
@@ -361,8 +360,8 @@ func (h *SyncLiveHandler) setupConnection(req *http.Request, syncReq *sync3.Requ
 		return nil, internal.ExpiredSessionError()
 	}
 
-	log.Trace().Msg("checking poller exists and is running")
 	pid := sync2.PollerID{UserID: token.UserID, DeviceID: token.DeviceID}
+	log.Trace().Any("pid", pid).Msg("checking poller exists and is running")
 	h.EnsurePoller.EnsurePolling(taskCtx, pid, token.AccessTokenHash)
 	log.Trace().Msg("poller exists and is running")
 	// this may take a while so if the client has given up (e.g timed out) by this point, just stop.
