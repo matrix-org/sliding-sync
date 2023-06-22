@@ -47,7 +47,7 @@ func TestConn(t *testing.T) {
 	// initial request
 	resp, err := c.OnIncomingRequest(ctx, &Request{
 		pos: 0,
-	})
+	}, time.Now())
 	assertNoError(t, err)
 	assertPos(t, resp.Pos, 1)
 	assertInt(t, resp.Lists["a"].Count, 101)
@@ -55,14 +55,14 @@ func TestConn(t *testing.T) {
 	// happy case, pos=1
 	resp, err = c.OnIncomingRequest(ctx, &Request{
 		pos: 1,
-	})
+	}, time.Now())
 	assertPos(t, resp.Pos, 2)
 	assertInt(t, resp.Lists["a"].Count, 102)
 	assertNoError(t, err)
 	// bogus position returns a 400
 	_, err = c.OnIncomingRequest(ctx, &Request{
 		pos: 31415,
-	})
+	}, time.Now())
 	if err == nil {
 		t.Fatalf("expected error, got none")
 	}
@@ -106,7 +106,7 @@ func TestConnBlocking(t *testing.T) {
 					Sort: []string{"hi"},
 				},
 			},
-		})
+		}, time.Now())
 	}()
 	go func() {
 		defer wg.Done()
@@ -118,7 +118,7 @@ func TestConnBlocking(t *testing.T) {
 					Sort: []string{"hi2"},
 				},
 			},
-		})
+		}, time.Now())
 	}()
 	go func() {
 		wg.Wait()
@@ -148,18 +148,18 @@ func TestConnRetries(t *testing.T) {
 			},
 		}}, nil
 	}})
-	resp, err := c.OnIncomingRequest(ctx, &Request{})
+	resp, err := c.OnIncomingRequest(ctx, &Request{}, time.Now())
 	assertPos(t, resp.Pos, 1)
 	assertInt(t, resp.Lists["a"].Count, 20)
 	assertInt(t, callCount, 1)
 	assertNoError(t, err)
-	resp, err = c.OnIncomingRequest(ctx, &Request{pos: 1})
+	resp, err = c.OnIncomingRequest(ctx, &Request{pos: 1}, time.Now())
 	assertPos(t, resp.Pos, 2)
 	assertInt(t, resp.Lists["a"].Count, 20)
 	assertInt(t, callCount, 2)
 	assertNoError(t, err)
 	// retry! Shouldn't invoke handler again
-	resp, err = c.OnIncomingRequest(ctx, &Request{pos: 1})
+	resp, err = c.OnIncomingRequest(ctx, &Request{pos: 1}, time.Now())
 	assertPos(t, resp.Pos, 2)
 	assertInt(t, resp.Lists["a"].Count, 20)
 	assertInt(t, callCount, 2) // this doesn't increment
@@ -170,7 +170,7 @@ func TestConnRetries(t *testing.T) {
 			"a": {
 				Sort: []string{SortByName},
 			},
-		}})
+		}}, time.Now())
 	assertPos(t, resp.Pos, 2)
 	assertInt(t, resp.Lists["a"].Count, 20)
 	assertInt(t, callCount, 3) // this doesn't increment
@@ -191,25 +191,25 @@ func TestConnBufferRes(t *testing.T) {
 			},
 		}}, nil
 	}})
-	resp, err := c.OnIncomingRequest(ctx, &Request{})
+	resp, err := c.OnIncomingRequest(ctx, &Request{}, time.Now())
 	assertNoError(t, err)
 	assertPos(t, resp.Pos, 1)
 	assertInt(t, resp.Lists["a"].Count, 1)
 	assertInt(t, callCount, 1)
-	resp, err = c.OnIncomingRequest(ctx, &Request{pos: 1})
+	resp, err = c.OnIncomingRequest(ctx, &Request{pos: 1}, time.Now())
 	assertNoError(t, err)
 	assertPos(t, resp.Pos, 2)
 	assertInt(t, resp.Lists["a"].Count, 2)
 	assertInt(t, callCount, 2)
 	// retry with modified request data that shouldn't prompt data to be returned.
 	// should invoke handler again!
-	resp, err = c.OnIncomingRequest(ctx, &Request{pos: 1, UnsubscribeRooms: []string{"a"}})
+	resp, err = c.OnIncomingRequest(ctx, &Request{pos: 1, UnsubscribeRooms: []string{"a"}}, time.Now())
 	assertNoError(t, err)
 	assertPos(t, resp.Pos, 2)
 	assertInt(t, resp.Lists["a"].Count, 2)
 	assertInt(t, callCount, 3) // this DOES increment, the response is buffered and not returned yet.
 	// retry with same request body, so should NOT invoke handler again and return buffered response
-	resp, err = c.OnIncomingRequest(ctx, &Request{pos: 2, UnsubscribeRooms: []string{"a"}})
+	resp, err = c.OnIncomingRequest(ctx, &Request{pos: 2, UnsubscribeRooms: []string{"a"}}, time.Now())
 	assertNoError(t, err)
 	assertPos(t, resp.Pos, 3)
 	assertInt(t, resp.Lists["a"].Count, 3)
@@ -228,7 +228,7 @@ func TestConnErrors(t *testing.T) {
 
 	// random errors = 500
 	errCh <- errors.New("oops")
-	_, herr := c.OnIncomingRequest(ctx, &Request{})
+	_, herr := c.OnIncomingRequest(ctx, &Request{}, time.Now())
 	if herr.StatusCode != 500 {
 		t.Fatalf("random errors should be status 500, got %d", herr.StatusCode)
 	}
@@ -237,7 +237,7 @@ func TestConnErrors(t *testing.T) {
 		StatusCode: 400,
 		Err:        errors.New("no way!"),
 	}
-	_, herr = c.OnIncomingRequest(ctx, &Request{})
+	_, herr = c.OnIncomingRequest(ctx, &Request{}, time.Now())
 	if herr.StatusCode != 400 {
 		t.Fatalf("expected status 400, got %d", herr.StatusCode)
 	}
@@ -258,7 +258,7 @@ func TestConnErrorsNoCache(t *testing.T) {
 		}
 	}})
 	// errors should not be cached
-	resp, herr := c.OnIncomingRequest(ctx, &Request{})
+	resp, herr := c.OnIncomingRequest(ctx, &Request{}, time.Now())
 	if herr != nil {
 		t.Fatalf("expected no error, got %+v", herr)
 	}
@@ -267,12 +267,12 @@ func TestConnErrorsNoCache(t *testing.T) {
 		StatusCode: 400,
 		Err:        errors.New("no way!"),
 	}
-	_, herr = c.OnIncomingRequest(ctx, &Request{pos: resp.PosInt()})
+	_, herr = c.OnIncomingRequest(ctx, &Request{pos: resp.PosInt()}, time.Now())
 	if herr.StatusCode != 400 {
 		t.Fatalf("expected status 400, got %d", herr.StatusCode)
 	}
 	// but doing the exact same request should now work
-	_, herr = c.OnIncomingRequest(ctx, &Request{pos: resp.PosInt()})
+	_, herr = c.OnIncomingRequest(ctx, &Request{pos: resp.PosInt()}, time.Now())
 	if herr != nil {
 		t.Fatalf("expected no error, got %+v", herr)
 	}
@@ -361,7 +361,7 @@ func TestConnBufferRememberInflight(t *testing.T) {
 	var err *internal.HandlerError
 	for i, step := range steps {
 		t.Logf("Executing step %d", i)
-		resp, err = c.OnIncomingRequest(ctx, step.req)
+		resp, err = c.OnIncomingRequest(ctx, step.req, time.Now())
 		if !step.wantErr {
 			assertNoError(t, err)
 		}
