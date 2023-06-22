@@ -60,8 +60,10 @@ type SyncLiveHandler struct {
 	GlobalCache            *caches.GlobalCache
 	maxPendingEventUpdates int
 
-	numConns prometheus.Gauge
-	histVec  *prometheus.HistogramVec
+	numConns     prometheus.Gauge
+	setupHistVec *prometheus.HistogramVec
+	histVec      *prometheus.HistogramVec
+	slowReqs     prometheus.Counter
 }
 
 func NewSync3Handler(
@@ -130,8 +132,14 @@ func (h *SyncLiveHandler) Teardown() {
 	if h.numConns != nil {
 		prometheus.Unregister(h.numConns)
 	}
+	if h.setupHistVec != nil {
+		prometheus.Unregister(h.setupHistVec)
+	}
 	if h.histVec != nil {
 		prometheus.Unregister(h.histVec)
+	}
+	if h.slowReqs != nil {
+		prometheus.Unregister(h.slowReqs)
 	}
 }
 
@@ -149,15 +157,30 @@ func (h *SyncLiveHandler) addPrometheusMetrics() {
 		Name:      "num_active_conns",
 		Help:      "Number of active sliding sync connections.",
 	})
+	h.setupHistVec = prometheus.NewHistogramVec(prometheus.HistogramOpts{
+		Namespace: "sliding_sync",
+		Subsystem: "api",
+		Name:      "setup_duration_secs",
+		Help:      "Time taken in seconds after receiving a request before we start calculating a sliding sync response.",
+		Buckets:   []float64{0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10},
+	}, []string{"initial"})
 	h.histVec = prometheus.NewHistogramVec(prometheus.HistogramOpts{
 		Namespace: "sliding_sync",
 		Subsystem: "api",
 		Name:      "process_duration_secs",
-		Help:      "Time taken in seconds for the sliding sync response to calculated, excludes long polling",
+		Help:      "Time taken in seconds for the sliding sync response to be calculated, excludes long polling",
 		Buckets:   []float64{0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10},
 	}, []string{"initial"})
+	h.slowReqs = prometheus.NewCounter(prometheus.CounterOpts{
+		Namespace: "sliding_sync",
+		Subsystem: "api",
+		Name:      "slow_requests",
+		Help:      "Counter of slow (>=50s) requests, initial or otherwise.",
+	})
 	prometheus.MustRegister(h.numConns)
+	prometheus.MustRegister(h.setupHistVec)
 	prometheus.MustRegister(h.histVec)
+	prometheus.MustRegister(h.slowReqs)
 }
 
 func (h *SyncLiveHandler) ServeHTTP(w http.ResponseWriter, req *http.Request) {
@@ -184,6 +207,12 @@ func (h *SyncLiveHandler) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 
 // Entry point for sync v3
 func (h *SyncLiveHandler) serve(w http.ResponseWriter, req *http.Request) error {
+	start := time.Now()
+	defer func() {
+		if time.Since(start) > 50*time.Second {
+			h.slowReqs.Add(1.0)
+		}
+	}()
 	var requestBody sync3.Request
 	if req.ContentLength != 0 {
 		defer req.Body.Close()
@@ -251,7 +280,7 @@ func (h *SyncLiveHandler) serve(w http.ResponseWriter, req *http.Request) error 
 	requestBody.SetTimeoutMSecs(timeout)
 	log.Trace().Int("timeout", timeout).Msg("recv")
 
-	resp, herr := conn.OnIncomingRequest(req.Context(), &requestBody)
+	resp, herr := conn.OnIncomingRequest(req.Context(), &requestBody, start)
 	if herr != nil {
 		logErrorOrWarning("failed to OnIncomingRequest", herr)
 		return herr
@@ -391,7 +420,7 @@ func (h *SyncLiveHandler) setupConnection(req *http.Request, syncReq *sync3.Requ
 	// to check for an existing connection though, as it's possible for the client to call /sync
 	// twice for a new connection.
 	conn, created := h.ConnMap.CreateConn(connID, func() sync3.ConnHandler {
-		return NewConnState(token.UserID, token.DeviceID, userCache, h.GlobalCache, h.Extensions, h.Dispatcher, h.histVec, h.maxPendingEventUpdates)
+		return NewConnState(token.UserID, token.DeviceID, userCache, h.GlobalCache, h.Extensions, h.Dispatcher, h.setupHistVec, h.histVec, h.maxPendingEventUpdates)
 	})
 	if created {
 		log.Info().Msg("created new connection")
