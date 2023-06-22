@@ -16,7 +16,7 @@ type connHandlerMock struct {
 	fn func(ctx context.Context, cid ConnID, req *Request, isInitial bool) (*Response, error)
 }
 
-func (c *connHandlerMock) OnIncomingRequest(ctx context.Context, cid ConnID, req *Request, init bool) (*Response, error) {
+func (c *connHandlerMock) OnIncomingRequest(ctx context.Context, cid ConnID, req *Request, init bool, start time.Time) (*Response, error) {
 	return c.fn(ctx, cid, req, init)
 }
 func (c *connHandlerMock) UserID() string {

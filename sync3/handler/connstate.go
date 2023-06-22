@@ -45,12 +45,13 @@ type ConnState struct {
 	joinChecker JoinChecker
 
 	extensionsHandler   extensions.HandlerInterface
+	setupHistogramVec   *prometheus.HistogramVec
 	processHistogramVec *prometheus.HistogramVec
 }
 
 func NewConnState(
 	userID, deviceID string, userCache *caches.UserCache, globalCache *caches.GlobalCache,
-	ex extensions.HandlerInterface, joinChecker JoinChecker, histVec *prometheus.HistogramVec,
+	ex extensions.HandlerInterface, joinChecker JoinChecker, setupHistVec *prometheus.HistogramVec, histVec *prometheus.HistogramVec,
 	maxPendingEventUpdates int,
 ) *ConnState {
 	cs := &ConnState{
@@ -65,6 +66,7 @@ func NewConnState(
 		extensionsHandler:   ex,
 		joinChecker:         joinChecker,
 		lazyCache:           NewLazyCache(),
+		setupHistogramVec:   setupHistVec,
 		processHistogramVec: histVec,
 	}
 	cs.live = &connStateLive{
@@ -148,13 +150,15 @@ func (s *ConnState) load(ctx context.Context, req *sync3.Request) error {
 }
 
 // OnIncomingRequest is guaranteed to be called sequentially (it's protected by a mutex in conn.go)
-func (s *ConnState) OnIncomingRequest(ctx context.Context, cid sync3.ConnID, req *sync3.Request, isInitial bool) (*sync3.Response, error) {
+func (s *ConnState) OnIncomingRequest(ctx context.Context, cid sync3.ConnID, req *sync3.Request, isInitial bool, start time.Time) (*sync3.Response, error) {
 	if s.loadPosition == -1 {
 		// load() needs no ctx so drop it
 		_, region := internal.StartSpan(ctx, "load")
 		s.load(ctx, req)
 		region.End()
 	}
+	setupTime := time.Since(start)
+	s.trackSetupDuration(setupTime, isInitial)
 	return s.onIncomingRequest(ctx, req, isInitial)
 }
 
@@ -575,6 +579,17 @@ func (s *ConnState) getInitialRoomData(ctx context.Context, roomSub sync3.RoomSu
 		}
 	}
 	return rooms
+}
+
+func (s *ConnState) trackSetupDuration(dur time.Duration, isInitial bool) {
+	if s.setupHistogramVec == nil {
+		return
+	}
+	val := "0"
+	if isInitial {
+		val = "1"
+	}
+	s.setupHistogramVec.WithLabelValues(val).Observe(float64(dur.Seconds()))
 }
 
 func (s *ConnState) trackProcessDuration(dur time.Duration, isInitial bool) {
