@@ -8,8 +8,10 @@ import (
 	"strings"
 	"time"
 
+	"github.com/dlmiddlecote/sqlstats"
 	"github.com/getsentry/sentry-go"
 	"github.com/jmoiron/sqlx"
+	"github.com/prometheus/client_golang/prometheus"
 
 	"github.com/gorilla/mux"
 	"github.com/matrix-org/sliding-sync/internal"
@@ -79,6 +81,12 @@ func Setup(destHomeserver, postgresURI, secret string, opts Opts) (*handler2.Han
 	}
 	store := state.NewStorage(postgresURI)
 	storev2 := sync2.NewStore(postgresURI, secret)
+	if opts.AddPrometheusMetrics {
+		collector := sqlstats.NewStatsCollector("store", store.DB)
+		prometheus.MustRegister(collector)
+		collector2 := sqlstats.NewStatsCollector("store_v2", storev2.DB)
+		prometheus.MustRegister(collector2)
+	}
 	for _, db := range []*sqlx.DB{store.DB, storev2.DB} {
 		if opts.DBMaxConns > 0 {
 			// https://github.com/go-sql-driver/mysql#important-settings
