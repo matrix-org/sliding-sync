@@ -209,8 +209,10 @@ func (h *SyncLiveHandler) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 func (h *SyncLiveHandler) serve(w http.ResponseWriter, req *http.Request) error {
 	start := time.Now()
 	defer func() {
-		if time.Since(start) > 50*time.Second {
+		dur := time.Since(start)
+		if dur > 50*time.Second {
 			h.slowReqs.Add(1.0)
+			internal.DecorateLogger(req.Context(), log.Warn()).Dur("duration", dur).Msg("slow request")
 		}
 	}()
 	var requestBody sync3.Request
@@ -263,7 +265,6 @@ func (h *SyncLiveHandler) serve(w http.ResponseWriter, req *http.Request) error 
 		return herr
 	}
 	requestBody.SetPos(cpos)
-	internal.SetRequestContextUserID(req.Context(), conn.UserID)
 	log := hlog.FromRequest(req).With().Str("user", conn.UserID).Int64("pos", cpos).Logger()
 
 	var timeout int
@@ -363,6 +364,7 @@ func (h *SyncLiveHandler) setupConnection(req *http.Request, syncReq *sync3.Requ
 		}
 	}
 	log := hlog.FromRequest(req).With().Str("user", token.UserID).Str("device", token.DeviceID).Logger()
+	internal.SetRequestContextUserID(req.Context(), token.UserID, token.DeviceID)
 
 	// Record the fact that we've recieved a request from this token
 	err = h.V2Store.TokensTable.MaybeUpdateLastSeen(token, time.Now())
