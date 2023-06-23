@@ -392,7 +392,7 @@ func (h *SyncLiveHandler) setupConnection(req *http.Request, syncReq *sync3.Requ
 
 	log.Trace().Msg("checking poller exists and is running")
 	pid := sync2.PollerID{UserID: token.UserID, DeviceID: token.DeviceID}
-	h.EnsurePoller.EnsurePolling(taskCtx, pid, token.AccessTokenHash)
+	h.EnsurePoller.EnsurePolling(req.Context(), pid, token.AccessTokenHash)
 	log.Trace().Msg("poller exists and is running")
 	// this may take a while so if the client has given up (e.g timed out) by this point, just stop.
 	// We'll be quicker next time as the poller will already exist.
