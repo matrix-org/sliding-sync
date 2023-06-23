@@ -209,8 +209,10 @@ func (h *SyncLiveHandler) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 func (h *SyncLiveHandler) serve(w http.ResponseWriter, req *http.Request) error {
 	start := time.Now()
 	defer func() {
-		if time.Since(start) > 50*time.Second {
+		dur := time.Since(start)
+		if dur > 50*time.Second {
 			h.slowReqs.Add(1.0)
+			internal.DecorateLogger(req.Context(), log.Warn()).Dur("duration", dur).Msg("slow request")
 		}
 	}()
 	var requestBody sync3.Request
