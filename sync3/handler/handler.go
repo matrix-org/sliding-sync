@@ -263,7 +263,7 @@ func (h *SyncLiveHandler) serve(w http.ResponseWriter, req *http.Request) error 
 		return herr
 	}
 	requestBody.SetPos(cpos)
-	internal.SetRequestContextUserID(req.Context(), conn.UserID)
+	internal.SetRequestContextUserID(req.Context(), conn.UserID, conn.DeviceID)
 	log := hlog.FromRequest(req).With().Str("user", conn.UserID).Int64("pos", cpos).Logger()
 
 	var timeout int

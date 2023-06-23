@@ -16,6 +16,7 @@ var (
 // logging metadata for a single request
 type data struct {
 	userID               string
+	deviceID             string
 	since                int64
 	next                 int64
 	numRooms             int
@@ -37,13 +38,14 @@ func RequestContext(ctx context.Context) context.Context {
 }
 
 // add the user ID to this request context. Need to have called RequestContext first.
-func SetRequestContextUserID(ctx context.Context, userID string) {
+func SetRequestContextUserID(ctx context.Context, userID, deviceID string) {
 	d := ctx.Value(ctxData)
 	if d == nil {
 		return
 	}
 	da := d.(*data)
 	da.userID = userID
+	da.deviceID = deviceID
 	if hub := sentry.GetHubFromContext(ctx); hub != nil {
 		sentry.ConfigureScope(func(scope *sentry.Scope) {
 			scope.SetUser(sentry.User{Username: userID})
@@ -78,6 +80,9 @@ func DecorateLogger(ctx context.Context, l *zerolog.Event) *zerolog.Event {
 	da := d.(*data)
 	if da.userID != "" {
 		l = l.Str("u", da.userID)
+	}
+	if da.deviceID != "" {
+		l = l.Str("dev", da.deviceID)
 	}
 	if da.since >= 0 {
 		l = l.Int64("p", da.since)
