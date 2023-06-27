@@ -88,6 +88,7 @@ func TestDeviceTickerForgetsAfterEmitting(t *testing.T) {
 	duration := time.Millisecond
 	ticker := NewDeviceDataTicker(duration)
 	var payloads []*pubsub.V2DeviceData
+
 	ticker.SetCallback(func(payload *pubsub.V2DeviceData) {
 		payloads = append(payloads, payload)
 	})
