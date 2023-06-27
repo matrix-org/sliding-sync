@@ -76,8 +76,10 @@ func Setup(destHomeserver, postgresURI, secret string, opts Opts) (*handler2.Han
 	store := state.NewStorage(postgresURI)
 	storev2 := sync2.NewStore(postgresURI, secret)
 	bufferSize := 50
+	deviceDataUpdateFrequency := time.Second
 	if opts.TestingSynchronousPubsub {
 		bufferSize = 0
+		deviceDataUpdateFrequency = 0 // don't batch
 	}
 	if opts.MaxPendingEventUpdates == 0 {
 		opts.MaxPendingEventUpdates = 2000
@@ -86,7 +88,7 @@ func Setup(destHomeserver, postgresURI, secret string, opts Opts) (*handler2.Han
 
 	pMap := sync2.NewPollerMap(v2Client, opts.AddPrometheusMetrics)
 	// create v2 handler
-	h2, err := handler2.NewHandler(postgresURI, pMap, storev2, store, v2Client, pubSub, pubSub, opts.AddPrometheusMetrics)
+	h2, err := handler2.NewHandler(postgresURI, pMap, storev2, store, v2Client, pubSub, pubSub, opts.AddPrometheusMetrics, deviceDataUpdateFrequency)
 	if err != nil {
 		panic(err)
 	}

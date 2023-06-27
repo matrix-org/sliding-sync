@@ -4,11 +4,13 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"github.com/jmoiron/sqlx"
-	"github.com/matrix-org/sliding-sync/sqlutil"
 	"hash/fnv"
 	"os"
 	"sync"
+	"time"
+
+	"github.com/jmoiron/sqlx"
+	"github.com/matrix-org/sliding-sync/sqlutil"
 
 	"github.com/getsentry/sentry-go"
 
@@ -43,13 +45,15 @@ type Handler struct {
 	// room_id => fnv_hash([typing user ids])
 	typingMap map[string]uint64
 
+	deviceDataTicker *sync2.DeviceDataTicker
+
 	numPollers prometheus.Gauge
 	subSystem  string
 }
 
 func NewHandler(
 	connStr string, pMap *sync2.PollerMap, v2Store *sync2.Storage, store *state.Storage, client sync2.Client,
-	pub pubsub.Notifier, sub pubsub.Listener, enablePrometheus bool,
+	pub pubsub.Notifier, sub pubsub.Listener, enablePrometheus bool, deviceDataUpdateDuration time.Duration,
 ) (*Handler, error) {
 	h := &Handler{
 		pMap:      pMap,
@@ -61,7 +65,8 @@ func NewHandler(
 			Highlight int
 			Notif     int
 		}),
-		typingMap: make(map[string]uint64),
+		typingMap:        make(map[string]uint64),
+		deviceDataTicker: sync2.NewDeviceDataTicker(deviceDataUpdateDuration),
 	}
 
 	if enablePrometheus {
@@ -86,6 +91,8 @@ func (h *Handler) Listen() {
 			sentry.CaptureException(err)
 		}
 	}()
+	h.deviceDataTicker.SetCallback(h.OnBulkDeviceDataUpdate)
+	go h.deviceDataTicker.Run()
 }
 
 func (h *Handler) Teardown() {
@@ -95,6 +102,7 @@ func (h *Handler) Teardown() {
 	h.Store.Teardown()
 	h.v2Store.Teardown()
 	h.pMap.Terminate()
+	h.deviceDataTicker.Stop()
 	if h.numPollers != nil {
 		prometheus.Unregister(h.numPollers)
 	}
@@ -203,17 +211,22 @@ func (h *Handler) OnE2EEData(ctx context.Context, userID, deviceID string, otkCo
 			New: deviceListChanges,
 		},
 	}
-	nextPos, err := h.Store.DeviceDataTable.Upsert(&partialDD)
+	_, err := h.Store.DeviceDataTable.Upsert(&partialDD)
 	if err != nil {
 		logger.Err(err).Str("user", userID).Msg("failed to upsert device data")
 		internal.GetSentryHubFromContextOrDefault(ctx).CaptureException(err)
 		return
 	}
-	h.v2Pub.Notify(pubsub.ChanV2, &pubsub.V2DeviceData{
+	// remember this to notify on pubsub later
+	h.deviceDataTicker.Remember(sync2.PollerID{
 		UserID:   userID,
 		DeviceID: deviceID,
-		Pos:      nextPos,
 	})
+}
+
+// Called periodically by deviceDataTicker, contains many updates
+func (h *Handler) OnBulkDeviceDataUpdate(payload *pubsub.V2DeviceData) {
+	h.v2Pub.Notify(pubsub.ChanV2, payload)
 }
 
 func (h *Handler) Accumulate(ctx context.Context, userID, deviceID, roomID, prevBatch string, timeline []json.RawMessage) {

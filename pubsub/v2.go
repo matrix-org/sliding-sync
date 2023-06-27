@@ -91,9 +91,7 @@ type V2InitialSyncComplete struct {
 func (*V2InitialSyncComplete) Type() string { return "V2InitialSyncComplete" }
 
 type V2DeviceData struct {
-	UserID   string
-	DeviceID string
-	Pos      int64
+	UserIDToDeviceIDs map[string][]string
 }
 
 func (*V2DeviceData) Type() string { return "V2DeviceData" }

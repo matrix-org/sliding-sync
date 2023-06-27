@@ -664,9 +664,14 @@ func (h *SyncLiveHandler) OnUnreadCounts(p *pubsub.V2UnreadCounts) {
 func (h *SyncLiveHandler) OnDeviceData(p *pubsub.V2DeviceData) {
 	ctx, task := internal.StartTask(context.Background(), "OnDeviceData")
 	defer task.End()
-	conns := h.ConnMap.Conns(p.UserID, p.DeviceID)
-	for _, conn := range conns {
-		conn.OnUpdate(ctx, caches.DeviceDataUpdate{})
+	internal.Logf(ctx, "device_data", fmt.Sprintf("%v users to notify", len(p.UserIDToDeviceIDs)))
+	for userID, deviceIDs := range p.UserIDToDeviceIDs {
+		for _, deviceID := range deviceIDs {
+			conns := h.ConnMap.Conns(userID, deviceID)
+			for _, conn := range conns {
+				conn.OnUpdate(ctx, caches.DeviceDataUpdate{})
+			}
+		}
 	}
 }
 
