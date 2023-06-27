@@ -7,6 +7,7 @@ import (
 	"io/ioutil"
 	"net/http"
 	"net/url"
+	"time"
 
 	"github.com/matrix-org/gomatrixserverlib"
 	"github.com/tidwall/gjson"
@@ -69,7 +70,15 @@ func (v *HTTPClient) DoSyncV2(ctx context.Context, accessToken, since string, is
 	if err != nil {
 		return nil, 0, fmt.Errorf("DoSyncV2: NewRequest failed: %w", err)
 	}
-	res, err := v.Client.Do(req)
+	var res *http.Response
+	if isFirst {
+		longTimeoutClient := &http.Client{
+			Timeout: 30 * time.Minute,
+		}
+		res, err = longTimeoutClient.Do(req)
+	} else {
+		res, err = v.Client.Do(req)
+	}
 	if err != nil {
 		return nil, 0, fmt.Errorf("DoSyncV2: request failed: %w", err)
 	}
