@@ -46,6 +46,7 @@ type Handler struct {
 	typingMap map[string]uint64
 
 	deviceDataTicker *sync2.DeviceDataTicker
+	e2eeWorkerPool   *internal.WorkerPool
 
 	numPollers prometheus.Gauge
 	subSystem  string
@@ -67,6 +68,7 @@ func NewHandler(
 		}),
 		typingMap:        make(map[string]uint64),
 		deviceDataTicker: sync2.NewDeviceDataTicker(deviceDataUpdateDuration),
+		e2eeWorkerPool:   internal.NewWorkerPool(500), // TODO: assign as fraction of db max conns, not hardcoded
 	}
 
 	if enablePrometheus {
@@ -91,6 +93,7 @@ func (h *Handler) Listen() {
 			sentry.CaptureException(err)
 		}
 	}()
+	h.e2eeWorkerPool.Start()
 	h.deviceDataTicker.SetCallback(h.OnBulkDeviceDataUpdate)
 	go h.deviceDataTicker.Run()
 }
@@ -201,27 +204,33 @@ func (h *Handler) UpdateDeviceSince(ctx context.Context, userID, deviceID, since
 }
 
 func (h *Handler) OnE2EEData(ctx context.Context, userID, deviceID string, otkCounts map[string]int, fallbackKeyTypes []string, deviceListChanges map[string]int) {
-	// some of these fields may be set
-	partialDD := internal.DeviceData{
-		UserID:           userID,
-		DeviceID:         deviceID,
-		OTKCounts:        otkCounts,
-		FallbackKeyTypes: fallbackKeyTypes,
-		DeviceLists: internal.DeviceLists{
-			New: deviceListChanges,
-		},
-	}
-	_, err := h.Store.DeviceDataTable.Upsert(&partialDD)
-	if err != nil {
-		logger.Err(err).Str("user", userID).Msg("failed to upsert device data")
-		internal.GetSentryHubFromContextOrDefault(ctx).CaptureException(err)
-		return
-	}
-	// remember this to notify on pubsub later
-	h.deviceDataTicker.Remember(sync2.PollerID{
-		UserID:   userID,
-		DeviceID: deviceID,
+	var wg sync.WaitGroup
+	wg.Add(1)
+	h.e2eeWorkerPool.Queue(func() {
+		defer wg.Done()
+		// some of these fields may be set
+		partialDD := internal.DeviceData{
+			UserID:           userID,
+			DeviceID:         deviceID,
+			OTKCounts:        otkCounts,
+			FallbackKeyTypes: fallbackKeyTypes,
+			DeviceLists: internal.DeviceLists{
+				New: deviceListChanges,
+			},
+		}
+		_, err := h.Store.DeviceDataTable.Upsert(&partialDD)
+		if err != nil {
+			logger.Err(err).Str("user", userID).Msg("failed to upsert device data")
+			internal.GetSentryHubFromContextOrDefault(ctx).CaptureException(err)
+			return
+		}
+		// remember this to notify on pubsub later
+		h.deviceDataTicker.Remember(sync2.PollerID{
+			UserID:   userID,
+			DeviceID: deviceID,
+		})
 	})
+	wg.Wait()
 }
 
 // Called periodically by deviceDataTicker, contains many updates
