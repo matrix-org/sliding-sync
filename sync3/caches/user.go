@@ -395,8 +395,16 @@ func (c *UserCache) AnnotateWithTransactionIDs(ctx context.Context, userID strin
 		i      int
 	})
 	for roomID, events := range roomIDToEvents {
-		for i, ev := range events {
-			evID := gjson.GetBytes(ev, "event_id").Str
+		for i, evJSON := range events {
+			ev := gjson.ParseBytes(evJSON)
+			evID := ev.Get("event_id").Str
+			sender := ev.Get("sender").Str
+			if sender != userID {
+				// don't ask for txn IDs for events which weren't sent by us.
+				// If we do, we'll needlessly hit the database, increasing latencies when
+				// catching up from the live buffer.
+				continue
+			}
 			eventIDs = append(eventIDs, evID)
 			eventIDToEvent[evID] = struct {
 				roomID string
@@ -406,6 +414,10 @@ func (c *UserCache) AnnotateWithTransactionIDs(ctx context.Context, userID strin
 				i:      i,
 			}
 		}
+	}
+	if len(eventIDs) == 0 {
+		// don't do any work if we have no events
+		return roomIDToEvents
 	}
 	eventIDToTxnID := c.txnIDs.TransactionIDForEvents(userID, deviceID, eventIDs)
 	for eventID, txnID := range eventIDToTxnID {
