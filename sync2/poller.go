@@ -4,11 +4,12 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"github.com/getsentry/sentry-go"
 	"runtime/debug"
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"github.com/getsentry/sentry-go"
 
 	"github.com/matrix-org/sliding-sync/internal"
 	"github.com/prometheus/client_golang/prometheus"
@@ -23,6 +24,9 @@ type PollerID struct {
 
 // alias time.Sleep so tests can monkey patch it out
 var timeSleep = time.Sleep
+
+// log at most once every duration. Always logs before terminating.
+var logInterval = 30 * time.Second
 
 // V2DataReceiver is the receiver for all the v2 sync data the poller gets
 type V2DataReceiver interface {
@@ -335,6 +339,18 @@ type poller struct {
 	terminated *atomic.Bool
 	wg         *sync.WaitGroup
 
+	// stats about poll response data, for logging purposes
+	lastLogged              time.Time
+	totalStateCalls         int
+	totalTimelineCalls      int
+	totalReceipts           int
+	totalTyping             int
+	totalInvites            int
+	totalDeviceEvents       int
+	totalAccountData        int
+	totalChangedDeviceLists int
+	totalLeftDeviceLists    int
+
 	pollHistogramVec    *prometheus.HistogramVec
 	processHistogramVec *prometheus.HistogramVec
 	timelineSizeVec     *prometheus.HistogramVec
@@ -411,6 +427,7 @@ func (p *poller) Poll(since string) {
 			break
 		}
 	}
+	p.maybeLogStats(true)
 	// always unblock EnsurePolling else we can end up head-of-line blocking other pollers!
 	if state.firstTime {
 		state.firstTime = false
@@ -480,6 +497,7 @@ func (p *poller) poll(ctx context.Context, s *pollLoopState) error {
 		p.wg.Done()
 	}
 	p.trackProcessDuration(time.Since(start), wasInitial, wasFirst)
+	p.maybeLogStats(false)
 	return nil
 }
 
@@ -518,6 +536,7 @@ func (p *poller) parseToDeviceMessages(ctx context.Context, res *SyncResponse) {
 	if len(res.ToDevice.Events) == 0 {
 		return
 	}
+	p.totalDeviceEvents += len(res.ToDevice.Events)
 	p.receiver.AddToDeviceMessages(ctx, p.userID, p.deviceID, res.ToDevice.Events)
 }
 
@@ -556,6 +575,8 @@ func (p *poller) parseE2EEData(ctx context.Context, res *SyncResponse) {
 	deviceListChanges := internal.ToDeviceListChangesMap(res.DeviceLists.Changed, res.DeviceLists.Left)
 
 	if deviceListChanges != nil || changedFallbackTypes != nil || changedOTKCounts != nil {
+		p.totalChangedDeviceLists += len(res.DeviceLists.Changed)
+		p.totalLeftDeviceLists += len(res.DeviceLists.Left)
 		p.receiver.OnE2EEData(ctx, p.userID, p.deviceID, changedOTKCounts, changedFallbackTypes, deviceListChanges)
 	}
 }
@@ -566,6 +587,7 @@ func (p *poller) parseGlobalAccountData(ctx context.Context, res *SyncResponse) 
 	if len(res.AccountData.Events) == 0 {
 		return
 	}
+	p.totalAccountData += len(res.AccountData.Events)
 	p.receiver.OnAccountData(ctx, p.userID, AccountDataGlobalRoom, res.AccountData.Events)
 }
 
@@ -640,17 +662,39 @@ func (p *poller) parseRoomsResponse(ctx context.Context, res *SyncResponse) {
 	for roomID, roomData := range res.Rooms.Invite {
 		p.receiver.OnInvite(ctx, p.userID, roomID, roomData.InviteState.Events)
 	}
-	var l *zerolog.Event
-	if len(res.Rooms.Invite) > 0 || len(res.Rooms.Join) > 0 {
-		l = p.logger.Info()
-	} else {
-		l = p.logger.Debug()
+
+	p.totalReceipts += receiptCalls
+	p.totalStateCalls += stateCalls
+	p.totalTimelineCalls += timelineCalls
+	p.totalTyping += typingCalls
+	p.totalInvites += len(res.Rooms.Invite)
+}
+
+func (p *poller) maybeLogStats(force bool) {
+	if !force && time.Since(p.lastLogged) < logInterval {
+		// only log at most once every logInterval
+		return
 	}
-	l.Ints(
-		"rooms [invite,join,leave]", []int{len(res.Rooms.Invite), len(res.Rooms.Join), len(res.Rooms.Leave)},
+	p.lastLogged = time.Now()
+	p.logger.Info().Ints(
+		"rooms [timeline,state,typing,receipts,invites]", []int{
+			p.totalTimelineCalls, p.totalStateCalls, p.totalTyping, p.totalReceipts, p.totalInvites,
+		},
 	).Ints(
-		"storage [states,timelines,typing,receipts]", []int{stateCalls, timelineCalls, typingCalls, receiptCalls},
-	).Int("to_device", len(res.ToDevice.Events)).Msg("Poller: accumulated data")
+		"device [events,changed,left,account]", []int{
+			p.totalDeviceEvents, p.totalChangedDeviceLists, p.totalLeftDeviceLists, p.totalAccountData,
+		},
+	).Msg("Poller: accumulated data")
+
+	p.totalAccountData = 0
+	p.totalChangedDeviceLists = 0
+	p.totalDeviceEvents = 0
+	p.totalInvites = 0
+	p.totalLeftDeviceLists = 0
+	p.totalReceipts = 0
+	p.totalStateCalls = 0
+	p.totalTimelineCalls = 0
+	p.totalTyping = 0
 }
 
 func (p *poller) trackTimelineSize(size int, limited bool) {

@@ -37,7 +37,7 @@ func (s *connStateLive) onUpdate(up caches.Update) {
 	select {
 	case s.updates <- up:
 	case <-time.After(BufferWaitTime):
-		logger.Warn().Interface("update", up).Str("user", s.userID).Msg(
+		logger.Warn().Interface("update", up).Str("user", s.userID).Str("device", s.deviceID).Msg(
 			"cannot send update to connection, buffer exceeded. Destroying connection.",
 		)
 		s.bufferFull = true

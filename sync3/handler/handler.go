@@ -215,7 +215,9 @@ func (h *SyncLiveHandler) serve(w http.ResponseWriter, req *http.Request) error 
 	defer func() {
 		dur := time.Since(start)
 		if dur > 50*time.Second {
-			h.slowReqs.Add(1.0)
+			if h.slowReqs != nil {
+				h.slowReqs.Add(1.0)
+			}
 			internal.DecorateLogger(req.Context(), log.Warn()).Dur("duration", dur).Msg("slow request")
 		}
 	}()
