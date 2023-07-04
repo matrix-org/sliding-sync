@@ -197,9 +197,13 @@ func (h *SyncLiveHandler) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 				Err:        err,
 			}
 		}
-		// artificially wait a bit before sending back the error
-		// this guards against tightlooping when the client hammers the server with invalid requests
-		time.Sleep(time.Second)
+		if herr.ErrCode != "M_UNKNOWN_POS" {
+			// artificially wait a bit before sending back the error
+			// this guards against tightlooping when the client hammers the server with invalid requests,
+			// but not for M_UNKNOWN_POS which we expect to send back after expiring a client's connection.
+			// We want to recover rapidly in that scenario, hence not sleeping.
+			time.Sleep(time.Second)
+		}
 		w.WriteHeader(herr.StatusCode)
 		w.Write(herr.JSON())
 	}
