@@ -60,10 +60,11 @@ type SyncLiveHandler struct {
 	GlobalCache            *caches.GlobalCache
 	maxPendingEventUpdates int
 
-	numConns     prometheus.Gauge
-	setupHistVec *prometheus.HistogramVec
-	histVec      *prometheus.HistogramVec
-	slowReqs     prometheus.Counter
+	numConns                prometheus.Gauge
+	setupHistVec            *prometheus.HistogramVec
+	histVec                 *prometheus.HistogramVec
+	slowReqs                prometheus.Counter
+	numPendingEnsurePolling prometheus.Gauge
 }
 
 func NewSync3Handler(
@@ -132,6 +133,9 @@ func (h *SyncLiveHandler) Teardown() {
 	if h.numConns != nil {
 		prometheus.Unregister(h.numConns)
 	}
+	if h.numPendingEnsurePolling != nil {
+		prometheus.Unregister(h.numPendingEnsurePolling)
+	}
 	if h.setupHistVec != nil {
 		prometheus.Unregister(h.setupHistVec)
 	}
@@ -157,6 +161,12 @@ func (h *SyncLiveHandler) addPrometheusMetrics() {
 		Name:      "num_active_conns",
 		Help:      "Number of active sliding sync connections.",
 	})
+	h.numPendingEnsurePolling = prometheus.NewGauge(prometheus.GaugeOpts{
+		Namespace: "sliding_sync",
+		Subsystem: "api",
+		Name:      "num_pending_ensure_polling",
+		Help:      "Number of HTTP requests blocked on EnsurePolling returning.",
+	})
 	h.setupHistVec = prometheus.NewHistogramVec(prometheus.HistogramOpts{
 		Namespace: "sliding_sync",
 		Subsystem: "api",
@@ -178,6 +188,7 @@ func (h *SyncLiveHandler) addPrometheusMetrics() {
 		Help:      "Counter of slow (>=50s) requests, initial or otherwise.",
 	})
 	prometheus.MustRegister(h.numConns)
+	prometheus.MustRegister(h.numPendingEnsurePolling)
 	prometheus.MustRegister(h.setupHistVec)
 	prometheus.MustRegister(h.histVec)
 	prometheus.MustRegister(h.slowReqs)
@@ -398,7 +409,9 @@ func (h *SyncLiveHandler) setupConnection(req *http.Request, syncReq *sync3.Requ
 
 	log.Trace().Msg("checking poller exists and is running")
 	pid := sync2.PollerID{UserID: token.UserID, DeviceID: token.DeviceID}
+	h.numPendingEnsurePolling.Inc()
 	h.EnsurePoller.EnsurePolling(req.Context(), pid, token.AccessTokenHash)
+	h.numPendingEnsurePolling.Dec()
 	log.Trace().Msg("poller exists and is running")
 	// this may take a while so if the client has given up (e.g timed out) by this point, just stop.
 	// We'll be quicker next time as the poller will already exist.
