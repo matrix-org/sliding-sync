@@ -179,6 +179,9 @@ func (s *ConnState) onIncomingRequest(ctx context.Context, req *sync3.Request, i
 		}
 		internal.Logf(ctx, "connstate", "list[%v] prev_empty=%v curr=%v", key, l.Prev == nil, listData)
 	}
+	for roomID, sub := range s.muxedReq.RoomSubscriptions {
+		internal.Logf(ctx, "connstate", "room sub[%v] %v", roomID, sub)
+	}
 
 	// work out which rooms we'll return data for and add their relevant subscriptions to the builder
 	// for it to mix together

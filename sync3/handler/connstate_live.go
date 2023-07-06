@@ -80,7 +80,6 @@ func (s *connStateLive) liveUpdate(
 			internal.Logf(ctx, "liveUpdate", "timed out after %v", timeLeftToWait)
 			return
 		case update := <-s.updates:
-			internal.Logf(ctx, "liveUpdate", "process live update")
 			s.processUpdate(ctx, update, response, ex)
 			// if there's more updates and we don't have lots stacked up already, go ahead and process another
 			for len(s.updates) > 0 && response.ListOps() < 50 {
@@ -101,6 +100,7 @@ func (s *connStateLive) liveUpdate(
 			s.processUpdate(ctx, update, response, ex)
 		}
 		log.Debug().Int("num_queued", numQueuedUpdates).Msg("liveUpdate: caught up")
+		internal.Logf(ctx, "connstate", "liveUpdate caught up %d updates", numQueuedUpdates)
 	}
 
 	log.Trace().Bool("live_streamed", hasLiveStreamed).Msg("liveUpdate: returning")
@@ -108,6 +108,7 @@ func (s *connStateLive) liveUpdate(
 }
 
 func (s *connStateLive) processUpdate(ctx context.Context, update caches.Update, response *sync3.Response, ex extensions.Request) {
+	internal.Logf(ctx, "liveUpdate", "process live update %s", update.Type())
 	s.processLiveUpdate(ctx, update, response)
 	// pass event to extensions AFTER processing
 	roomIDsToLists := s.lists.ListsByVisibleRoomIDs(s.muxedReq.Lists)
@@ -128,6 +129,7 @@ func (s *connStateLive) processLiveUpdate(ctx context.Context, up caches.Update,
 	// if this is a room event update we may not want to process this if the event nid is < loadPos,
 	// as that means we have already taken it into account
 	if roomEventUpdate != nil && !roomEventUpdate.EventData.AlwaysProcess && roomEventUpdate.EventData.NID < s.loadPosition {
+		internal.Logf(ctx, "liveUpdate", "not process update %v < %v", roomEventUpdate.EventData.NID, s.loadPosition)
 		return false
 	}
 
