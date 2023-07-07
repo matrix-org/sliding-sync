@@ -571,7 +571,7 @@ func (s *ConnState) getInitialRoomData(ctx context.Context, roomSub sync3.RoomSu
 			Initial:           true,
 			IsDM:              userRoomData.IsDM,
 			JoinedCount:       metadata.JoinCount,
-			InvitedCount:      metadata.InviteCount,
+			InvitedCount:      &metadata.InviteCount,
 			PrevBatch:         userRoomData.RequestedPrevBatch,
 		}
 	}

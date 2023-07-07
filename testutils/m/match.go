@@ -48,10 +48,22 @@ func MatchJoinCount(count int) RoomMatcher {
 	}
 }
 
+func MatchNoInviteCount() RoomMatcher {
+	return func(r sync3.Room) error {
+		if r.InvitedCount != nil {
+			return fmt.Errorf("MatchInviteCount: invited_count is present when it should be missing: val=%v", *r.InvitedCount)
+		}
+		return nil
+	}
+}
+
 func MatchInviteCount(count int) RoomMatcher {
 	return func(r sync3.Room) error {
-		if r.InvitedCount != count {
-			return fmt.Errorf("MatchInviteCount: got %v want %v", r.InvitedCount, count)
+		if r.InvitedCount == nil {
+			return fmt.Errorf("MatchInviteCount: invited_count is missing")
+		}
+		if *r.InvitedCount != count {
+			return fmt.Errorf("MatchInviteCount: got %v want %v", *r.InvitedCount, count)
 		}
 		return nil
 	}

@@ -218,7 +218,7 @@ func (s *connStateLive) processLiveUpdate(ctx context.Context, up caches.Update,
 				thisRoom.Name = internal.CalculateRoomName(metadata, 5) // TODO: customisable?
 			}
 			if delta.InviteCountChanged {
-				thisRoom.InvitedCount = roomUpdate.GlobalRoomMetadata().InviteCount
+				thisRoom.InvitedCount = &roomUpdate.GlobalRoomMetadata().InviteCount
 			}
 			if delta.JoinCountChanged {
 				thisRoom.JoinedCount = roomUpdate.GlobalRoomMetadata().JoinCount

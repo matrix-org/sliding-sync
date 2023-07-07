@@ -159,7 +159,7 @@ func MatchRoomInviteState(events []Event, partial bool) m.RoomMatcher {
 				}
 			}
 			if !found {
-				return fmt.Errorf("MatchRoomInviteState: want event %+v but it does not exist", want)
+				return fmt.Errorf("MatchRoomInviteState: want event %+v but it does not exist or failed to pass equality checks", want)
 			}
 		}
 		return nil
