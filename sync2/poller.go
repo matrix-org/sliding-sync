@@ -156,6 +156,12 @@ func (h *PollerMap) Terminate() {
 	if h.timelineSizeHistogramVec != nil {
 		prometheus.Unregister(h.timelineSizeHistogramVec)
 	}
+	if h.totalNumPollsCounter != nil {
+		prometheus.Unregister(h.totalNumPollsCounter)
+	}
+	if h.numOutstandingSyncReqsGauge != nil {
+		prometheus.Unregister(h.numOutstandingSyncReqsGauge)
+	}
 	close(h.executor)
 }
 
