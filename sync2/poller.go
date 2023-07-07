@@ -410,9 +410,6 @@ type pollLoopState struct {
 // Returns if the access token gets invalidated or if there was a fatal error processing v2 responses.
 // Use WaitUntilInitialSync() to wait until the first poll has been processed.
 func (p *poller) Poll(since string) {
-	if p.totalNumPolls != nil {
-		p.totalNumPolls.Inc()
-	}
 	// Basing the sentry-wrangling on the sentry-go net/http integration, see e.g.
 	// https://github.com/getsentry/sentry-go/blob/02e712a638c40cd9701ad52d5d1309d65d556ef9/http/sentryhttp.go#L84
 	// TODO is this the correct way to create hub? Should the cloning be done by the
@@ -461,6 +458,9 @@ func (p *poller) Poll(since string) {
 // s (which is assumed to be non-nil). Returns a non-nil error iff the poller loop
 // should halt.
 func (p *poller) poll(ctx context.Context, s *pollLoopState) error {
+	if p.totalNumPolls != nil {
+		p.totalNumPolls.Inc()
+	}
 	if s.failCount > 0 {
 		// don't backoff when doing v2 syncs because the response is only in the cache for a short
 		// period of time (on massive accounts on matrix.org) such that if you wait 2,4,8min between
