@@ -302,6 +302,51 @@ func (t *EventTable) UpdateBeforeSnapshotID(txn *sqlx.Tx, eventNID, snapID, repl
 	return err
 }
 
+type beforeSnapshotUpdate struct {
+	NID                   int64 `db:"event_nid"`
+	BeforeStateSnapshotID int64 `db:"before_state_snapshot_id"`
+	ReplacesNID           int64 `db:"event_replaces_nid"`
+}
+
+// UpdateBeforeSnapshotIDs sets the before_state_snapshot_id and event_replaces_nid fields for the given NIDs.
+func (t *EventTable) UpdateBeforeSnapshotIDs(txn *sqlx.Tx, updates []beforeSnapshotUpdate) error {
+	chunks := sqlutil.Chunkify2[beforeSnapshotUpdate](3, MaxPostgresParameters, updates)
+
+	for _, chunk := range chunks {
+		// There's quite a lot of clunkiness in the query below.
+		//
+		// 1) We seem to have to explicitly cast types here. According to
+		//        https://github.com/jmoiron/sqlx/issues/796#issuecomment-1026102022,
+		//    "postgres doesn't automatically coerce type" in VALUE expressions.
+		//    We use an explicit CAST expression because the alternative would be a
+		//    quad-colon (https://github.com/jmoiron/sqlx/issues/91#issuecomment-498896062)
+		//    which is a) IMO uglier, and more importantly b) not understood by my IDE.
+		//
+		// 2) The "--)" is a workaround from
+		//        https://github.com/jmoiron/sqlx/issues/828#issuecomment-1214682276
+		//    Without it, passing in 4 updates causes an error
+		//         pq: got 12 parameters but the statement requires 3
+		//    which suggests something silly is happening within sqlx.
+		_, err := txn.NamedExec(`
+		UPDATE syncv3_events AS e
+		SET before_state_snapshot_id = u.before_state_snapshot_id,
+		    event_replaces_nid = u.event_replaces_nid
+		FROM (
+			--)
+			VALUES (
+				CAST(:before_state_snapshot_id AS bigint),
+			    CAST(:event_replaces_nid AS bigint),
+				CAST(:event_nid AS bigint)
+			)
+		) AS u(before_state_snapshot_id, event_replaces_nid, event_nid)
+		WHERE e.event_nid = u.event_nid`, chunk)
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // query the latest events in each of the room IDs given, using highestNID as the highest event.
 func (t *EventTable) LatestEventInRooms(txn *sqlx.Tx, roomIDs []string, highestNID int64) (events []Event, err error) {
 	// the position (event nid) may be for a random different room, so we need to find the highest nid <= this position for this room

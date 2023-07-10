@@ -1072,3 +1072,110 @@ func TestEventTableSelectUnknownEventIDs(t *testing.T) {
 		}
 	}
 }
+
+func TestEventTableUpdateBeforeSnapshotIDs(t *testing.T) {
+	db, close := connectToDB(t)
+	defer close()
+	txn, err := db.Beginx()
+	if err != nil {
+		t.Fatalf("failed to start txn: %s", err)
+	}
+	defer txn.Commit()
+	const roomID = "!1:localhost"
+
+	// Note: there shouldn't be any other events with these IDs inserted before this
+	// transaction. $A and $B seem to be inserted and commit in TestEventTablePrevBatch.
+	const eventID1 = "$A-UpdateBeforeSnapshotIDs"
+	const eventID2 = "$B-UpdateBeforeSnapshotIDs"
+	const eventID3 = "$C-UpdateBeforeSnapshotIDs"
+	const eventID4 = "$D-UpdateBeforeSnapshotIDs"
+
+	knownEvents := []Event{
+		{
+			Type:     "m.room.create",
+			StateKey: "",
+			IsState:  true,
+			ID:       eventID1,
+			RoomID:   roomID,
+		},
+		{
+			Type:     "m.room.name",
+			StateKey: "",
+			IsState:  true,
+			ID:       eventID2,
+			RoomID:   roomID,
+		},
+		// Update the room name
+		{
+			Type:     "m.room.name",
+			StateKey: "",
+			IsState:  true,
+			ID:       eventID3,
+			RoomID:   roomID,
+		},
+		// Set topic
+		{
+			Type:     "m.room.topic",
+			StateKey: "",
+			IsState:  true,
+			ID:       eventID4,
+			RoomID:   roomID,
+		},
+	}
+	table := NewEventTable(db)
+
+	// Insert the events
+	nidMap, err := table.Insert(txn, knownEvents, false)
+	if err != nil {
+		t.Fatalf("failed to insert event: %s", err)
+	}
+
+	updates := []beforeSnapshotUpdate{
+		// m.room.create
+		{
+			NID:                   nidMap[eventID1],
+			BeforeStateSnapshotID: 0,
+			ReplacesNID:           0,
+		},
+		// m.room.name
+		{
+			NID:                   nidMap[eventID2],
+			BeforeStateSnapshotID: 1,
+			ReplacesNID:           0,
+		},
+		// m.room.name update
+		{
+			NID:                   nidMap[eventID3],
+			BeforeStateSnapshotID: 2,
+			ReplacesNID:           nidMap[eventID2],
+		},
+		// topic set
+		{
+			NID:                   nidMap[eventID4],
+			BeforeStateSnapshotID: 3,
+			ReplacesNID:           0,
+		},
+	}
+	err = table.UpdateBeforeSnapshotIDs(txn, updates)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Reselect the events and check the updates have applied
+	updatedEvents, err := table.SelectByNIDs(txn, true, []int64{nidMap[eventID1], nidMap[eventID2], nidMap[eventID3], nidMap[eventID4]})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i, update := range updates {
+		event := updatedEvents[i]
+		if event.NID != update.NID {
+			t.Errorf("NID mismatch (%s): got %d, expected %d", event.ID, event.NID, update.NID)
+		}
+		if event.BeforeStateSnapshotID != update.BeforeStateSnapshotID {
+			t.Errorf("BeforeStateSnapshotID mismatch (%s): got %d, expected %d", event.ID, event.BeforeStateSnapshotID, update.BeforeStateSnapshotID)
+		}
+		if event.ReplacesNID != update.ReplacesNID {
+			t.Errorf("ReplacesNID mismatch (%s): got %d, expected %d", event.ID, event.ReplacesNID, update.ReplacesNID)
+		}
+	}
+}
