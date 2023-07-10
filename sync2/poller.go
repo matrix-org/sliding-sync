@@ -666,6 +666,7 @@ func (p *poller) parseRoomsResponse(ctx context.Context, res *SyncResponse) {
 					})
 					hub.CaptureMessage(warnMsg)
 				})
+				p.trackGappyStateSize(len(prependStateEvents))
 				roomData.Timeline.Events = append(prependStateEvents, roomData.Timeline.Events...)
 			}
 		}
