@@ -447,7 +447,7 @@ func (p *poller) Poll(since string) {
 	defer func() {
 		panicErr := recover()
 		if panicErr != nil {
-			logger.Error().Str("user", p.userID).Str("device", p.deviceID).Msg(string(debug.Stack()))
+			logger.Error().Str("user", p.userID).Str("device", p.deviceID).Msgf("%s. Traceback:\n%s", panicErr, debug.Stack())
 			internal.GetSentryHubFromContextOrDefault(ctx).RecoverWithContext(ctx, panicErr)
 		}
 		p.receiver.OnTerminated(ctx, p.userID, p.deviceID)
