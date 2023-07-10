@@ -34,22 +34,85 @@ changes in the proxy itself.
 
 ## Usage
 
+### Setup
 Requires Postgres 13+.
 
+First, you must create a Postgres database and secret:
 ```bash
 $ createdb syncv3
 $ echo -n "$(openssl rand -hex 32)" > .secret # this MUST remain the same throughout the lifetime of the database created above.
 ```
 
-Compiling from source and running:
+The Sliding Sync proxy requires some environment variables set to function. They are described when the proxy is run with the `--help` switch.
+
+Here is a short description of each, as of writing:
+```
+SYNCV3_SERVER     Required. The destination homeserver to talk to (CS API HTTPS URL) e.g 'https://matrix-client.matrix.org'
+SYNCV3_DB         Required. The postgres connection string: https://www.postgresql.org/docs/current/libpq-connect.html#LIBPQ-CONNSTRING
+SYNCV3_SECRET     Required. A secret to use to encrypt access tokens. Must remain the same for the lifetime of the database.
+SYNCV3_BINDADDR   Default: 0.0.0.0:8008.  The interface and port to listen on.
+SYNCV3_TLS_CERT   Default: unset. Path to a certificate file to serve to HTTPS clients. Specifying this enables TLS on the bound address.
+SYNCV3_TLS_KEY    Default: unset. Path to a key file for the certificate. Must be provided along with the certificate file.
+SYNCV3_PPROF      Default: unset. The bind addr for pprof debugging e.g ':6060'. If not set, does not listen.
+SYNCV3_PROM       Default: unset. The bind addr for Prometheus metrics, which will be accessible at /metrics at this address.
+SYNCV3_JAEGER_URL Default: unset. The Jaeger URL to send spans to e.g http://localhost:14268/api/traces - if unset does not send OTLP traces.
+SYNCV3_SENTRY_DSN Default: unset. The Sentry DSN to report events to e.g https://sliding-sync@sentry.example.com/123 - if unset does not send sentry events.
+SYNCV3_LOG_LEVEL  Default: info. The level of verbosity for messages logged. Available values are trace, debug, info, warn, error and fatal
+```
+
+It is easiest to host the proxy on a separate hostname than the Matrix server, though it is possible to use the same hostname by forwarding the used endpoints.
+
+In both cases, the path `https://example.com/.well-known/matrix/client` must return a JSON with at least the following contents:
+```json
+{
+    "m.server": {
+        "base_url": "https://example.com"
+    },
+    "m.homeserver": {
+        "base_url": "https://example.com"
+    },
+    "org.matrix.msc3575.proxy": {
+        "url": "https://syncv3.example.com"
+    }
+}
+```
+
+#### Same hostname
+The following nginx configuration can be used to pass the required endpoints to the sync proxy, running on local port 8009 (so as to not conflict with Synapse):
+```nginx
+location ~* ^/(client/|_matrix/client/unstable/org.matrix.msc3575/sync) {
+    proxy_pass http://localhost:8009;
+    proxy_set_header X-Forwarded-For $remote_addr;
+    proxy_set_header X-Forwarded-Proto $scheme;
+    proxy_set_header Host $host;
+}
+
+location ~* ^(\/_matrix|\/_synapse\/client) {
+    proxy_pass http://localhost:8008;
+    proxy_set_header X-Forwarded-For $remote_addr;
+    proxy_set_header X-Forwarded-Proto $scheme;
+    proxy_set_header Host $host;
+}
+
+location /.well-known/matrix/client {
+    add_header Access-Control-Allow-Origin *;
+}
+```
+
+### Running
+There are two ways to run the proxy:
+- Compiling from source:
 ```
 $ go build ./cmd/syncv3
-$ SYNCV3_SECRET=$(cat .secret) SYNCV3_SERVER="https://matrix-client.matrix.org" SYNCV3_DB="user=$(whoami) dbname=syncv3 sslmode=disable" SYNCV3_BINDADDR=0.0.0.0:8008 ./syncv3
+$ SYNCV3_SECRET=$(cat .secret) SYNCV3_SERVER="https://matrix-client.matrix.org" SYNCV3_DB="user=$(whoami) dbname=syncv3 sslmode=disable password='DATABASE_PASSWORD_HERE'" SYNCV3_BINDADDR=0.0.0.0:8008 ./syncv3
 ```
-Using a Docker image:
+
+- Using a Docker image:
 ```
-docker run --rm -e "SYNCV3_SERVER=https://matrix-client.matrix.org" -e "SYNCV3_SECRET=$(cat .secret)" -e "SYNCV3_BINDADDR=:8008" -e "SYNCV3_DB=user=$(whoami) dbname=syncv3 sslmode=disable host=host.docker.internal" -p 8008:8008 ghcr.io/matrix-org/sliding-sync:latest
+docker run --rm -e "SYNCV3_SERVER=https://matrix-client.matrix.org" -e "SYNCV3_SECRET=$(cat .secret)" -e "SYNCV3_BINDADDR=:8008" -e "SYNCV3_DB=user=$(whoami) dbname=syncv3 sslmode=disable host=host.docker.internal password='DATABASE_PASSWORD_HERE'" -p 8008:8008 ghcr.io/matrix-org/sliding-sync:latest
 ```
+
+
 Optionally also set `SYNCV3_TLS_CERT=path/to/cert.pem` and `SYNCV3_TLS_KEY=path/to/key.pem` to listen on HTTPS instead of HTTP.
 Make sure to tweak the `SYNCV3_DB` environment variable if the Postgres database isn't running on the host.
 
