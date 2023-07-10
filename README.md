@@ -43,7 +43,7 @@ $ createdb syncv3
 $ echo -n "$(openssl rand -hex 32)" > .secret # this MUST remain the same throughout the lifetime of the database created above.
 ```
 
-The Sliding Sync proxy requires some environment variables set to function. They are described when the proxy is run with the `--help` switch.
+The Sliding Sync proxy requires some environment variables set to function. They are described when the proxy is run with missing variables.
 
 Here is a short description of each, as of writing:
 ```
