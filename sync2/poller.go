@@ -69,6 +69,7 @@ type PollerMap struct {
 	executorRunning             bool
 	processHistogramVec         *prometheus.HistogramVec
 	timelineSizeHistogramVec    *prometheus.HistogramVec
+	gappyStateSizeVec           *prometheus.HistogramVec
 	numOutstandingSyncReqsGauge prometheus.Gauge
 	totalNumPollsCounter        prometheus.Counter
 }
@@ -121,6 +122,14 @@ func NewPollerMap(v2Client Client, enablePrometheus bool) *PollerMap {
 			Buckets:   []float64{0.0, 1.0, 2.0, 5.0, 10.0, 20.0, 50.0},
 		}, []string{"limited"})
 		prometheus.MustRegister(pm.timelineSizeHistogramVec)
+		pm.gappyStateSizeVec = prometheus.NewHistogramVec(prometheus.HistogramOpts{
+			Namespace: "sliding_sync",
+			Subsystem: "poller",
+			Name:      "gappy_state_size",
+			Help:      "Number of events in a state block during a sync v2 gappy sync",
+			Buckets:   []float64{1.0, 10.0, 100.0, 1000.0, 10000.0},
+		}, nil)
+		prometheus.MustRegister(pm.gappyStateSizeVec)
 		pm.totalNumPollsCounter = prometheus.NewCounter(prometheus.CounterOpts{
 			Namespace: "sliding_sync",
 			Subsystem: "poller",
@@ -155,6 +164,9 @@ func (h *PollerMap) Terminate() {
 	}
 	if h.timelineSizeHistogramVec != nil {
 		prometheus.Unregister(h.timelineSizeHistogramVec)
+	}
+	if h.gappyStateSizeVec != nil {
+		prometheus.Unregister(h.gappyStateSizeVec)
 	}
 	if h.totalNumPollsCounter != nil {
 		prometheus.Unregister(h.totalNumPollsCounter)
@@ -221,6 +233,7 @@ func (h *PollerMap) EnsurePolling(pid PollerID, accessToken, v2since string, isS
 	poller = newPoller(pid, accessToken, h.v2Client, h, logger, !needToWait && !isStartup)
 	poller.processHistogramVec = h.processHistogramVec
 	poller.timelineSizeVec = h.timelineSizeHistogramVec
+	poller.gappyStateSizeVec = h.gappyStateSizeVec
 	poller.numOutstandingSyncReqs = h.numOutstandingSyncReqsGauge
 	poller.totalNumPolls = h.totalNumPollsCounter
 	go poller.Poll(v2since)
@@ -377,6 +390,7 @@ type poller struct {
 	pollHistogramVec       *prometheus.HistogramVec
 	processHistogramVec    *prometheus.HistogramVec
 	timelineSizeVec        *prometheus.HistogramVec
+	gappyStateSizeVec      *prometheus.HistogramVec
 	numOutstandingSyncReqs prometheus.Gauge
 	totalNumPolls          prometheus.Counter
 }
@@ -433,7 +447,7 @@ func (p *poller) Poll(since string) {
 	defer func() {
 		panicErr := recover()
 		if panicErr != nil {
-			logger.Error().Str("user", p.userID).Str("device", p.deviceID).Msg(string(debug.Stack()))
+			logger.Error().Str("user", p.userID).Str("device", p.deviceID).Msgf("%s. Traceback:\n%s", panicErr, debug.Stack())
 			internal.GetSentryHubFromContextOrDefault(ctx).RecoverWithContext(ctx, panicErr)
 		}
 		p.receiver.OnTerminated(ctx, p.userID, p.deviceID)
@@ -652,6 +666,7 @@ func (p *poller) parseRoomsResponse(ctx context.Context, res *SyncResponse) {
 					})
 					hub.CaptureMessage(warnMsg)
 				})
+				p.trackGappyStateSize(len(prependStateEvents))
 				roomData.Timeline.Events = append(prependStateEvents, roomData.Timeline.Events...)
 			}
 		}
@@ -740,4 +755,11 @@ func (p *poller) trackTimelineSize(size int, limited bool) {
 		label = "limited"
 	}
 	p.timelineSizeVec.WithLabelValues(label).Observe(float64(size))
+}
+
+func (p *poller) trackGappyStateSize(size int) {
+	if p.gappyStateSizeVec == nil {
+		return
+	}
+	p.gappyStateSizeVec.WithLabelValues().Observe(float64(size))
 }
