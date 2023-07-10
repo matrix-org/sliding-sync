@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strconv"
 	"testing"
 	"time"
 
@@ -309,5 +310,95 @@ func TestPollerUpdatesRoomMemberTrackerOnGappySyncStateBlock(t *testing.T) {
 		bobRes,
 		m.MatchList("a", m.MatchV3Count(1)),
 		m.MatchRoomSubscription(roomID, m.MatchRoomTimelineMostRecent(1, []json.RawMessage{bobLeave})),
+	)
+}
+
+// NB: slow, takes ~7sec at the time of writing.
+func TestLargeGappyStateBlock(t *testing.T) {
+	pqString := testutils.PrepareDBConnectionString()
+	v2 := runTestV2Server(t)
+	v3 := runTestServer(t, v2, pqString)
+	defer v2.close()
+	defer v3.close()
+	v2.addAccount(t, alice, aliceToken)
+	v2.addAccount(t, bob, bobToken)
+	const roomID = "!unimportant"
+
+	t.Log("Alice's poller initial syncs.")
+	initialTimeline := createRoomState(t, alice, time.Now())
+	initialJoinBlock := v2JoinTimeline(roomEvents{
+		roomID: roomID,
+		events: initialTimeline,
+	})
+	v2.queueResponse(aliceToken, sync2.SyncResponse{
+		Rooms: sync2.SyncRoomsResponse{Join: initialJoinBlock},
+	})
+
+	t.Log("Alice makes an initial sliding sync request.")
+	syncRequest := sync3.Request{
+		Lists: map[string]sync3.RequestList{
+			"a": {
+				Ranges: [][2]int64{{0, 20}},
+				RoomSubscription: sync3.RoomSubscription{
+					TimelineLimit: 10,
+				},
+			},
+		},
+	}
+	aliceRes := v3.mustDoV3Request(t, aliceToken, syncRequest)
+
+	t.Log("Alice sees herself joined to the room.")
+	m.MatchResponse(
+		t,
+		aliceRes,
+		m.MatchList(
+			"a",
+			m.MatchV3Count(1),
+			m.MatchV3Ops(m.MatchV3SyncOp(0, 0, []string{roomID})),
+		),
+	)
+
+	t.Log("Alice's poller receives a gappy incremental sync response. Alice has changed her name thousands of times.")
+	const N = 5000
+	stateEvents := make([]json.RawMessage, N)
+	for i := 0; i < N; i++ {
+		stateEvents[i] = testutils.NewStateEvent(
+			t,
+			"m.room.member",
+			alice,
+			alice,
+			map[string]interface{}{"membership": "join", "displayname": "Alice " + strconv.Itoa(i)},
+		)
+	}
+
+	aliceMessage := testutils.NewMessageEvent(t, alice, "hello")
+	v2.queueResponse(aliceToken, sync2.SyncResponse{
+		Rooms: sync2.SyncRoomsResponse{
+			Join: map[string]sync2.SyncV2JoinResponse{
+				roomID: {
+					State: sync2.EventsResponse{
+						Events: stateEvents,
+					},
+					Timeline: sync2.TimelineResponse{
+						Events:    []json.RawMessage{aliceMessage},
+						Limited:   true,
+						PrevBatch: "batchymcbatchface",
+					},
+				},
+			},
+		},
+	})
+	v2.waitUntilEmpty(t, aliceToken)
+
+	// Sending this many events will exceed the connection's buffer of updates. We
+	// destroy the connection. Alice will need to make a new connection.
+	t.Log("Alice sliding syncs.")
+	aliceRes = v3.mustDoV3Request(t, aliceToken, syncRequest)
+	t.Log("She should see her latest message.")
+	m.MatchResponse(
+		t,
+		aliceRes,
+		m.MatchList("a", m.MatchV3Count(1)),
+		m.MatchRoomSubscription(roomID, m.MatchRoomTimelineMostRecent(1, []json.RawMessage{aliceMessage})),
 	)
 }

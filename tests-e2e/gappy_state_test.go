@@ -8,7 +8,7 @@ import (
 )
 
 // Test that state changes "missed" by a poller are injected back into the room when a
-// future poller recieves a v2 incremental sync with a state block.
+// future poller receives a v2 incremental sync with a state block.
 func TestGappyState(t *testing.T) {
 	t.Log("Alice registers on the homeserver.")
 	alice := registerNewUser(t)
