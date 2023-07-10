@@ -468,6 +468,44 @@ func TestEventTableMembershipDetection(t *testing.T) {
 	}
 }
 
+var chunkifyTestCases = []struct {
+	name             string
+	numParamsPerStmt int
+	maxParamsPerCall int
+	chunkSizes       []int // length = number of chunks wanted, ints = events in that chunk
+}{
+	{
+		name:             "below chunk limit returns 1 chunk",
+		numParamsPerStmt: 3,
+		maxParamsPerCall: 400,
+		chunkSizes:       []int{100},
+	},
+	{
+		name:             "just above chunk limit returns 2 chunks",
+		numParamsPerStmt: 3,
+		maxParamsPerCall: 297,
+		chunkSizes:       []int{99, 1},
+	},
+	{
+		name:             "way above chunk limit returns many chunks",
+		numParamsPerStmt: 3,
+		maxParamsPerCall: 30,
+		chunkSizes:       []int{10, 10, 10, 10, 10, 10, 10, 10, 10, 10},
+	},
+	{
+		name:             "fractional division rounds down",
+		numParamsPerStmt: 3,
+		maxParamsPerCall: 298,
+		chunkSizes:       []int{99, 1},
+	},
+	{
+		name:             "fractional division rounds down",
+		numParamsPerStmt: 3,
+		maxParamsPerCall: 299,
+		chunkSizes:       []int{99, 1},
+	},
+}
+
 func TestChunkify(t *testing.T) {
 	// Make 100 dummy events
 	events := make([]Event, 100)
@@ -477,44 +515,7 @@ func TestChunkify(t *testing.T) {
 		}
 	}
 	eventChunker := EventChunker(events)
-	testCases := []struct {
-		name             string
-		numParamsPerStmt int
-		maxParamsPerCall int
-		chunkSizes       []int // length = number of chunks wanted, ints = events in that chunk
-	}{
-		{
-			name:             "below chunk limit returns 1 chunk",
-			numParamsPerStmt: 3,
-			maxParamsPerCall: 400,
-			chunkSizes:       []int{100},
-		},
-		{
-			name:             "just above chunk limit returns 2 chunks",
-			numParamsPerStmt: 3,
-			maxParamsPerCall: 297,
-			chunkSizes:       []int{99, 1},
-		},
-		{
-			name:             "way above chunk limit returns many chunks",
-			numParamsPerStmt: 3,
-			maxParamsPerCall: 30,
-			chunkSizes:       []int{10, 10, 10, 10, 10, 10, 10, 10, 10, 10},
-		},
-		{
-			name:             "fractional division rounds down",
-			numParamsPerStmt: 3,
-			maxParamsPerCall: 298,
-			chunkSizes:       []int{99, 1},
-		},
-		{
-			name:             "fractional division rounds down",
-			numParamsPerStmt: 3,
-			maxParamsPerCall: 299,
-			chunkSizes:       []int{99, 1},
-		},
-	}
-	for _, tc := range testCases {
+	for _, tc := range chunkifyTestCases {
 		testCase := tc
 		t.Run(testCase.name, func(t *testing.T) {
 			chunks := sqlutil.Chunkify(testCase.numParamsPerStmt, testCase.maxParamsPerCall, eventChunker)
@@ -528,6 +529,38 @@ func TestChunkify(t *testing.T) {
 				}
 				eventChunk := chunks[i].(EventChunker)
 				for j, ev := range eventChunk {
+					if ev.NID != eventNID {
+						t.Errorf("chunk %d got wrong event in position %d: got NID %d want NID %d", i, j, ev.NID, eventNID)
+					}
+					eventNID += 1
+				}
+			}
+		})
+	}
+}
+
+func TestChunkify2(t *testing.T) {
+	// Make 100 dummy events
+	events := make([]Event, 100)
+	for i := 0; i < len(events); i++ {
+		events[i] = Event{
+			NID: int64(i),
+		}
+	}
+
+	for _, tc := range chunkifyTestCases {
+		testCase := tc
+		t.Run(testCase.name, func(t *testing.T) {
+			chunks := sqlutil.Chunkify2[Event](testCase.numParamsPerStmt, testCase.maxParamsPerCall, events)
+			if len(chunks) != len(testCase.chunkSizes) {
+				t.Fatalf("got %d chunks, want %d", len(chunks), len(testCase.chunkSizes))
+			}
+			eventNID := int64(0)
+			for i := 0; i < len(chunks); i++ {
+				if len(chunks[i]) != testCase.chunkSizes[i] {
+					t.Errorf("chunk %d got %d elements, want %d", i, len(chunks[i]), testCase.chunkSizes[i])
+				}
+				for j, ev := range chunks[i] {
 					if ev.NID != eventNID {
 						t.Errorf("chunk %d got wrong event in position %d: got NID %d want NID %d", i, j, ev.NID, eventNID)
 					}

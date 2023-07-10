@@ -80,3 +80,26 @@ func Chunkify(numParamsPerStmt, maxParamsPerCall int, entries Chunker) []Chunker
 
 	return chunks
 }
+
+// Chunkify2 is a generic version of Chunkify where you don't have to implement the Chunkifier interface.
+// TODO: replace Chunkify with this, then drop the `2` suffix.
+func Chunkify2[T any](numParamsPerStmt, maxParamsPerCall int, entries []T) [][]T {
+	// common case, most things are small
+	if (len(entries) * numParamsPerStmt) <= maxParamsPerCall {
+		return [][]T{
+			entries,
+		}
+	}
+	var chunks [][]T
+	// work out how many events can fit in a chunk
+	numEntriesPerChunk := (maxParamsPerCall / numParamsPerStmt)
+	for i := 0; i < len(entries); i += numEntriesPerChunk {
+		endIndex := i + numEntriesPerChunk
+		if endIndex > len(entries) {
+			endIndex = len(entries)
+		}
+		chunks = append(chunks, entries[i:endIndex])
+	}
+
+	return chunks
+}
