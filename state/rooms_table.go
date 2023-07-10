@@ -108,7 +108,8 @@ func (t *RoomsTable) LatestNIDs(txn *sqlx.Tx, roomIDs []string) (nids map[string
 	return
 }
 
-// Return the snapshot for this room AFTER the latest event has been applied.
+// CurrentAfterSnapshotID returns the snapshotID for this room AFTER the latest event has been applied.
+// In particular, if we have no snapshot for this room then we return a snapshot ID of 0.
 func (t *RoomsTable) CurrentAfterSnapshotID(txn *sqlx.Tx, roomID string) (snapshotID int64, err error) {
 	err = txn.QueryRow(`SELECT current_snapshot_id FROM syncv3_rooms WHERE room_id=$1`, roomID).Scan(&snapshotID)
 	if err == sql.ErrNoRows {
