@@ -463,7 +463,8 @@ func TestCalculateNewSnapshotDupe(t *testing.T) {
 				Type:     "a",
 				StateKey: "b",
 			},
-			wantOtherNIDs: []int64{2},
+			wantOtherNIDs:  []int64{2},
+			wantMemberNIDs: []int64{},
 		},
 		// basic addition
 		{
@@ -479,7 +480,8 @@ func TestCalculateNewSnapshotDupe(t *testing.T) {
 				Type:     "c",
 				StateKey: "d",
 			},
-			wantOtherNIDs: []int64{1, 2},
+			wantOtherNIDs:  []int64{1, 2},
+			wantMemberNIDs: []int64{},
 		},
 		// dupe nid
 		{

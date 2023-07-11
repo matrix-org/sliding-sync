@@ -84,7 +84,12 @@ func (ev *Event) ensureFieldsSetOnEvent() error {
 
 type StrippedEvents []Event
 
+// NIDs partitions the nids in this set of stripped events into the nids of membership
+// events and all others. The returned lists inherit their order from the given slice of
+// StrippedEvents, and are never nil.
 func (se StrippedEvents) NIDs() (membershipNIDs, otherNIDs []int64) {
+	membershipNIDs = make([]int64, 0, len(se))
+	otherNIDs = make([]int64, 0, len(se))
 	for _, s := range se {
 		if s.Type == "m.room.member" {
 			membershipNIDs = append(membershipNIDs, s.NID)
