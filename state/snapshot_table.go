@@ -2,6 +2,7 @@ package state
 
 import (
 	"fmt"
+	"github.com/matrix-org/sliding-sync/sqlutil"
 
 	"github.com/jmoiron/sqlx"
 	"github.com/lib/pq"
@@ -81,6 +82,21 @@ func (s *SnapshotTable) Insert(txn *sqlx.Tx, row *SnapshotRow) error {
 	).Scan(&id)
 	row.SnapshotID = id
 	return err
+}
+
+// BulkInsert multiple rows. The caller MUST provide SnapshotIDs for these rows that
+// have been reserved from the DB using ReserveSnapshotIDs.
+func (s *SnapshotTable) BulkInsert(txn *sqlx.Tx, rows []SnapshotRow) error {
+	chunks := sqlutil.Chunkify2[SnapshotRow](4, MaxPostgresParameters, rows)
+	for _, chunk := range chunks {
+		_, err := txn.NamedExec(`
+		INSERT INTO syncv3_snapshots (snapshot_id, room_id, events, membership_events)
+        VALUES (:snapshot_id, :room_id, :events, :membership_events)`, chunk)
+		if err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // Delete the snapshot IDs given
