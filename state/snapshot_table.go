@@ -93,3 +93,24 @@ func (s *SnapshotTable) Delete(txn *sqlx.Tx, snapshotIDs []int64) error {
 	_, err = txn.Exec(query, args...)
 	return err
 }
+
+// ReserveSnapshotIDs asks the database to reserve N snapshot IDs that will never be
+// used by the database elsewhere. The application is then free to create and insert
+// snapshots with these IDs. The returned IDs are guaranteed to be increasing (and
+// therefore distinct).
+func (s *SnapshotTable) ReserveSnapshotIDs(txn *sqlx.Tx, N int64) ([]int64, error) {
+	ids := make([]int64, 0, N)
+	// We use the same trick that Synapse does, see e.g.
+	// https://github.com/matrix-org/synapse/blob/92014fbf7286afa9099d162b22feda868af820f8/synapse/storage/util/sequence.py#L114
+	// For paranoia's sake I've put in an explicit ORDER BY clause here.
+	err := txn.Select(&ids, `
+		SELECT nextval('syncv3_snapshots_seq') AS ids
+		FROM generate_series(1, $1)
+		ORDER BY ids ASC;
+		`, N,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to reserve snapshot IDs: %w", err)
+	}
+	return ids, nil
+}
