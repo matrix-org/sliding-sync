@@ -77,20 +77,24 @@ func Setup(destHomeserver, postgresURI, secret string, opts Opts) (*handler2.Han
 		},
 		DestinationServer: destHomeserver,
 	}
-	store := state.NewStorage(postgresURI)
-	storev2 := sync2.NewStore(postgresURI, secret)
-	for _, db := range []*sqlx.DB{store.DB, storev2.DB} {
-		if opts.DBMaxConns > 0 {
-			// https://github.com/go-sql-driver/mysql#important-settings
-			// "db.SetMaxIdleConns() is recommended to be set same to db.SetMaxOpenConns(). When it is smaller
-			// than SetMaxOpenConns(), connections can be opened and closed much more frequently than you expect."
-			db.SetMaxOpenConns(opts.DBMaxConns)
-			db.SetMaxIdleConns(opts.DBMaxConns)
-		}
-		if opts.DBConnMaxIdleTime > 0 {
-			db.SetConnMaxIdleTime(opts.DBConnMaxIdleTime)
-		}
+	db, err := sqlx.Open("postgres", postgresURI)
+	if err != nil {
+		sentry.CaptureException(err)
+		// TODO: if we panic(), will sentry have a chance to flush the event?
+		logger.Panic().Err(err).Str("uri", postgresURI).Msg("failed to open SQL DB")
 	}
+	if opts.DBMaxConns > 0 {
+		// https://github.com/go-sql-driver/mysql#important-settings
+		// "db.SetMaxIdleConns() is recommended to be set same to db.SetMaxOpenConns(). When it is smaller
+		// than SetMaxOpenConns(), connections can be opened and closed much more frequently than you expect."
+		db.SetMaxOpenConns(opts.DBMaxConns)
+		db.SetMaxIdleConns(opts.DBMaxConns)
+	}
+	if opts.DBConnMaxIdleTime > 0 {
+		db.SetConnMaxIdleTime(opts.DBConnMaxIdleTime)
+	}
+	store := state.NewStorageWithDB(db)
+	storev2 := sync2.NewStoreWithDB(db, secret)
 	bufferSize := 50
 	deviceDataUpdateFrequency := time.Second
 	if opts.TestingSynchronousPubsub {

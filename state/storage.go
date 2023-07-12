@@ -57,6 +57,10 @@ func NewStorage(postgresURI string) *Storage {
 		// TODO: if we panic(), will sentry have a chance to flush the event?
 		logger.Panic().Err(err).Str("uri", postgresURI).Msg("failed to open SQL DB")
 	}
+	return NewStorageWithDB(db)
+}
+
+func NewStorageWithDB(db *sqlx.DB) *Storage {
 	acc := &Accumulator{
 		db:            db,
 		roomsTable:    NewRoomsTable(db),

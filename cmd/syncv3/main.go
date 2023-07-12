@@ -6,6 +6,7 @@ import (
 	_ "net/http/pprof"
 	"os"
 	"os/signal"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -40,6 +41,7 @@ const (
 	EnvJaeger     = "SYNCV3_JAEGER_URL"
 	EnvSentryDsn  = "SYNCV3_SENTRY_DSN"
 	EnvLogLevel   = "SYNCV3_LOG_LEVEL"
+	EnvMaxConns   = "SYNCV3_MAX_DB_CONN"
 )
 
 var helpMsg = fmt.Sprintf(`
@@ -55,7 +57,8 @@ Environment var
 %s Default: unset. The Jaeger URL to send spans to e.g http://localhost:14268/api/traces - if unset does not send OTLP traces.
 %s Default: unset. The Sentry DSN to report events to e.g https://sliding-sync@sentry.example.com/123 - if unset does not send sentry events.
 %s  Default: info. The level of verbosity for messages logged. Available values are trace, debug, info, warn, error and fatal
-`, EnvServer, EnvDB, EnvSecret, EnvBindAddr, EnvTLSCert, EnvTLSKey, EnvPPROF, EnvPrometheus, EnvJaeger, EnvSentryDsn, EnvLogLevel)
+%s Default: unset. Max database connections to use when communicating with postgres. Unset or 0 means no limit.
+`, EnvServer, EnvDB, EnvSecret, EnvBindAddr, EnvTLSCert, EnvTLSKey, EnvPPROF, EnvPrometheus, EnvJaeger, EnvSentryDsn, EnvLogLevel, EnvMaxConns)
 
 func defaulting(in, dft string) string {
 	if in == "" {
@@ -81,6 +84,7 @@ func main() {
 		EnvJaeger:     os.Getenv(EnvJaeger),
 		EnvSentryDsn:  os.Getenv(EnvSentryDsn),
 		EnvLogLevel:   os.Getenv(EnvLogLevel),
+		EnvMaxConns:   defaulting(os.Getenv(EnvMaxConns), "0"),
 	}
 	requiredEnvVars := []string{EnvServer, EnvDB, EnvSecret, EnvBindAddr}
 	for _, requiredEnvVar := range requiredEnvVars {
@@ -136,6 +140,8 @@ func main() {
 		}
 	}
 
+	fmt.Printf("Debug=%v LogLevel=%v MaxConns=%v\n", args[EnvDebug] == "1", args[EnvLogLevel], args[EnvMaxConns])
+
 	if args[EnvDebug] == "1" {
 		zerolog.SetGlobalLevel(zerolog.TraceLevel)
 	} else {
@@ -162,9 +168,13 @@ func main() {
 		panic(err)
 	}
 
+	maxConnsInt, err := strconv.Atoi(args[EnvMaxConns])
+	if err != nil {
+		panic("invalid value for " + EnvMaxConns + ": " + args[EnvMaxConns])
+	}
 	h2, h3 := syncv3.Setup(args[EnvServer], args[EnvDB], args[EnvSecret], syncv3.Opts{
 		AddPrometheusMetrics: args[EnvPrometheus] != "",
-		DBMaxConns:           100,
+		DBMaxConns:           maxConnsInt,
 		DBConnMaxIdleTime:    time.Hour,
 	})
 
