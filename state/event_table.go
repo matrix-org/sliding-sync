@@ -313,7 +313,12 @@ type beforeSnapshotUpdate struct {
 	ReplacesNID           int64 `db:"event_replaces_nid"`
 }
 
-// UpdateBeforeSnapshotIDs sets the before_state_snapshot_id and event_replaces_nid fields for the given NIDs.
+// UpdateBeforeSnapshotIDs sets the before_state_snapshot_id and event_replaces_nid fields for the given NIDs/
+// The caller MUST ensure that
+//   - the slice of updates is nonnil and nonempty (or else sqlx will error), and
+//   - no NID appears twice in the list of updates (or else postgres' doesn't define
+//     which update "wins", see e.g.
+//     https://www.postgresql.org/docs/14/sql-update.html#id-1.9.3.182.8).
 func (t *EventTable) UpdateBeforeSnapshotIDs(txn *sqlx.Tx, updates []beforeSnapshotUpdate) error {
 	chunks := sqlutil.Chunkify2[beforeSnapshotUpdate](3, MaxPostgresParameters, updates)
 

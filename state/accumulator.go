@@ -407,8 +407,10 @@ func (a *Accumulator) Accumulate(txn *sqlx.Tx, roomID string, prevBatch string, 
 			return 0, nil, fmt.Errorf("failed to insert new snapshot: %w", err)
 		}
 	}
-	if err = a.eventsTable.UpdateBeforeSnapshotIDs(txn, eventsTableUpdates); err != nil {
-		return 0, nil, fmt.Errorf("failed to update beforeSnapshotIDs: %w", err)
+	if len(eventsTableUpdates) > 0 {
+		if err = a.eventsTable.UpdateBeforeSnapshotIDs(txn, eventsTableUpdates); err != nil {
+			return 0, nil, fmt.Errorf("failed to update beforeSnapshotIDs: %w", err)
+		}
 	}
 	if err = a.spacesTable.HandleSpaceUpdates(txn, newEvents); err != nil {
 		return 0, nil, fmt.Errorf("HandleSpaceUpdates: %s", err)
