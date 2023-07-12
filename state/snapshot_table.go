@@ -75,8 +75,7 @@ func (s *SnapshotTable) Insert(txn *sqlx.Tx, row *SnapshotRow) error {
 	if row.OtherEvents == nil {
 		row.OtherEvents = []int64{}
 	}
-	// OH NO, NOT USING THE TXN!
-	err := s.db.QueryRow(
+	err := txn.QueryRow(
 		`INSERT INTO syncv3_snapshots(room_id, events, membership_events) VALUES($1, $2, $3) RETURNING snapshot_id`,
 		row.RoomID, row.OtherEvents, row.MembershipEvents,
 	).Scan(&id)
