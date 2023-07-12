@@ -12,9 +12,6 @@ import (
 	"github.com/jmoiron/sqlx"
 	"github.com/matrix-org/sliding-sync/sqlutil"
 
-	"github.com/jmoiron/sqlx"
-	"github.com/matrix-org/sliding-sync/sqlutil"
-
 	"github.com/getsentry/sentry-go"
 
 	"github.com/matrix-org/sliding-sync/internal"
@@ -55,7 +52,7 @@ type Handler struct {
 }
 
 func NewHandler(
-	pMap *sync2.PollerMap, v2Store *sync2.Storage, store *state.Storage,
+	pMap sync2.IPollerMap, v2Store *sync2.Storage, store *state.Storage,
 	pub pubsub.Notifier, sub pubsub.Listener, enablePrometheus bool, deviceDataUpdateDuration time.Duration,
 ) (*Handler, error) {
 	h := &Handler{

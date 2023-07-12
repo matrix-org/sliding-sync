@@ -1,13 +1,14 @@
 package handler2_test
 
 import (
-	"github.com/jmoiron/sqlx"
-	"github.com/matrix-org/sliding-sync/sqlutil"
 	"os"
 	"reflect"
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/jmoiron/sqlx"
+	"github.com/matrix-org/sliding-sync/sqlutil"
 
 	"github.com/matrix-org/sliding-sync/pubsub"
 	"github.com/matrix-org/sliding-sync/state"
@@ -127,7 +128,7 @@ func TestHandlerFreshEnsurePolling(t *testing.T) {
 	pMap := &mockPollerMap{}
 	pub := newMockPub()
 	sub := &mockSub{}
-	h, err := handler2.NewHandler(pMap, v2Store, store, pub, sub, false)
+	h, err := handler2.NewHandler(pMap, v2Store, store, pub, sub, false, time.Minute)
 	assertNoError(t, err)
 	alice := "@alice:localhost"
 	deviceID := "ALICE"
