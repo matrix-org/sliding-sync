@@ -320,8 +320,14 @@ type beforeSnapshotUpdate struct {
 //     which update "wins", see e.g.
 //     https://www.postgresql.org/docs/14/sql-update.html#id-1.9.3.182.8).
 func (t *EventTable) UpdateBeforeSnapshotIDs(txn *sqlx.Tx, updates []beforeSnapshotUpdate) error {
-	chunks := sqlutil.Chunkify2[beforeSnapshotUpdate](3, MaxPostgresParameters, updates)
+	return t.updateBeforeSnapshotIDs(txn, updates, MaxPostgresParameters)
+}
 
+// updateBeforeSnapshotIDs is the core of UpdateBeforeSnapshotIDs. It's pulled out so
+// we can test the updates work correctly when there is more than one chunk, without
+// having to generate an absurdly large number of updates.
+func (t *EventTable) updateBeforeSnapshotIDs(txn *sqlx.Tx, updates []beforeSnapshotUpdate, maxParams int) error {
+	chunks := sqlutil.Chunkify2[beforeSnapshotUpdate](3, maxParams, updates)
 	for _, chunk := range chunks {
 		// There's quite a lot of clunkiness in the query below.
 		//
@@ -351,7 +357,7 @@ func (t *EventTable) UpdateBeforeSnapshotIDs(txn *sqlx.Tx, updates []beforeSnaps
 		) AS u(before_state_snapshot_id, event_replaces_nid, event_nid)
 		WHERE e.event_nid = u.event_nid`, chunk)
 		if err != nil {
-			return err
+			return fmt.Errorf("failed to UpdateBeforeSnapshotIDs: %w", err)
 		}
 	}
 	return nil
