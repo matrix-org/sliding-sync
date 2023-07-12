@@ -140,6 +140,8 @@ func main() {
 		}
 	}
 
+	fmt.Printf("Debug=%v LogLevel=%v MaxConns=%v\n", args[EnvDebug] == "1", args[EnvLogLevel], args[EnvMaxConns])
+
 	if args[EnvDebug] == "1" {
 		zerolog.SetGlobalLevel(zerolog.TraceLevel)
 	} else {
