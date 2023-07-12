@@ -12,9 +12,6 @@ import (
 	"github.com/jmoiron/sqlx"
 	"github.com/matrix-org/sliding-sync/sqlutil"
 
-	"github.com/jmoiron/sqlx"
-	"github.com/matrix-org/sliding-sync/sqlutil"
-
 	"github.com/getsentry/sentry-go"
 
 	"github.com/matrix-org/sliding-sync/internal"
