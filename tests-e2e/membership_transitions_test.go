@@ -64,7 +64,22 @@ func TestRoomStateTransitions(t *testing.T) {
 			m.MatchRoomHighlightCount(1),
 			m.MatchRoomInitial(true),
 			m.MatchRoomRequiredState(nil),
-			// TODO m.MatchRoomInviteState(inviteStrippedState.InviteState.Events),
+			m.MatchInviteCount(1),
+			m.MatchJoinCount(1),
+			MatchRoomInviteState([]Event{
+				{
+					Type:     "m.room.create",
+					StateKey: ptr(""),
+					// no content as it includes the room version which we don't want to guess/hardcode
+				},
+				{
+					Type:     "m.room.join_rules",
+					StateKey: ptr(""),
+					Content: map[string]interface{}{
+						"join_rule": "public",
+					},
+				},
+			}, true),
 		},
 		joinRoomID: {},
 	}),
@@ -105,6 +120,8 @@ func TestRoomStateTransitions(t *testing.T) {
 			},
 		}),
 		m.MatchRoomInitial(true),
+		m.MatchJoinCount(2),
+		m.MatchInviteCount(0),
 		m.MatchRoomHighlightCount(0),
 	))
 }
@@ -467,7 +484,7 @@ func TestMemberCounts(t *testing.T) {
 	m.MatchResponse(t, res, m.MatchRoomSubscriptionsStrict(map[string][]m.RoomMatcher{
 		secondRoomID: {
 			m.MatchRoomInitial(false),
-			m.MatchInviteCount(0),
+			m.MatchNoInviteCount(),
 			m.MatchJoinCount(0), // omitempty
 		},
 	}))
@@ -486,7 +503,7 @@ func TestMemberCounts(t *testing.T) {
 	m.MatchResponse(t, res, m.MatchRoomSubscriptionsStrict(map[string][]m.RoomMatcher{
 		secondRoomID: {
 			m.MatchRoomInitial(false),
-			m.MatchInviteCount(0),
+			m.MatchNoInviteCount(),
 			m.MatchJoinCount(2),
 		},
 	}))

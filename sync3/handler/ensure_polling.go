@@ -2,9 +2,11 @@ package handler
 
 import (
 	"context"
+	"sync"
+
 	"github.com/matrix-org/sliding-sync/internal"
 	"github.com/matrix-org/sliding-sync/sync2"
-	"sync"
+	"github.com/prometheus/client_golang/prometheus"
 
 	"github.com/matrix-org/sliding-sync/pubsub"
 )
@@ -30,15 +32,27 @@ type EnsurePoller struct {
 	// pendingPolls tracks the status of pollers that we are waiting to start.
 	pendingPolls map[sync2.PollerID]pendingInfo
 	notifier     pubsub.Notifier
+	// the total number of outstanding ensurepolling requests.
+	numPendingEnsurePolling prometheus.Gauge
 }
 
-func NewEnsurePoller(notifier pubsub.Notifier) *EnsurePoller {
-	return &EnsurePoller{
+func NewEnsurePoller(notifier pubsub.Notifier, enablePrometheus bool) *EnsurePoller {
+	p := &EnsurePoller{
 		chanName:     pubsub.ChanV3,
 		mu:           &sync.Mutex{},
 		pendingPolls: make(map[sync2.PollerID]pendingInfo),
 		notifier:     notifier,
 	}
+	if enablePrometheus {
+		p.numPendingEnsurePolling = prometheus.NewGauge(prometheus.GaugeOpts{
+			Namespace: "sliding_sync",
+			Subsystem: "api",
+			Name:      "num_devices_pending_ensure_polling",
+			Help:      "Number of devices blocked on EnsurePolling returning.",
+		})
+		prometheus.MustRegister(p.numPendingEnsurePolling)
+	}
+	return p
 }
 
 // EnsurePolling blocks until the V2InitialSyncComplete response is received for this device. It is
@@ -73,6 +87,7 @@ func (p *EnsurePoller) EnsurePolling(ctx context.Context, pid sync2.PollerID, to
 		done: false,
 		ch:   ch,
 	}
+	p.calculateNumOutstanding() // increment total
 	p.mu.Unlock()
 	// ask the pollers to poll for this device
 	p.notifier.Notify(p.chanName, &pubsub.V3EnsurePolling{
@@ -116,6 +131,7 @@ func (p *EnsurePoller) OnInitialSyncComplete(payload *pubsub.V2InitialSyncComple
 	pending.done = true
 	pending.ch = nil
 	p.pendingPolls[pid] = pending
+	p.calculateNumOutstanding() // decrement total
 	log.Trace().Msg("OnInitialSyncComplete: closing channel")
 	close(ch)
 }
@@ -137,4 +153,21 @@ func (p *EnsurePoller) OnExpiredToken(payload *pubsub.V2ExpiredToken) {
 
 func (p *EnsurePoller) Teardown() {
 	p.notifier.Close()
+	if p.numPendingEnsurePolling != nil {
+		prometheus.Unregister(p.numPendingEnsurePolling)
+	}
+}
+
+// must hold p.mu
+func (p *EnsurePoller) calculateNumOutstanding() {
+	if p.numPendingEnsurePolling == nil {
+		return
+	}
+	var total int
+	for _, pi := range p.pendingPolls {
+		if !pi.done {
+			total++
+		}
+	}
+	p.numPendingEnsurePolling.Set(float64(total))
 }

@@ -25,6 +25,9 @@ type PollerID struct {
 // alias time.Sleep so tests can monkey patch it out
 var timeSleep = time.Sleep
 
+// log at most once every duration. Always logs before terminating.
+var logInterval = 30 * time.Second
+
 // V2DataReceiver is the receiver for all the v2 sync data the poller gets
 type V2DataReceiver interface {
 	// Update the since token for this device. Called AFTER all other data in this sync response has been processed.
@@ -64,14 +67,17 @@ type IPollerMap interface {
 
 // PollerMap is a map of device ID to Poller
 type PollerMap struct {
-	v2Client                 Client
-	callbacks                V2DataReceiver
-	pollerMu                 *sync.Mutex
-	Pollers                  map[PollerID]*poller
-	executor                 chan func()
-	executorRunning          bool
-	processHistogramVec      *prometheus.HistogramVec
-	timelineSizeHistogramVec *prometheus.HistogramVec
+	v2Client                    Client
+	callbacks                   V2DataReceiver
+	pollerMu                    *sync.Mutex
+	Pollers                     map[PollerID]*poller
+	executor                    chan func()
+	executorRunning             bool
+	processHistogramVec         *prometheus.HistogramVec
+	timelineSizeHistogramVec    *prometheus.HistogramVec
+	gappyStateSizeVec           *prometheus.HistogramVec
+	numOutstandingSyncReqsGauge prometheus.Gauge
+	totalNumPollsCounter        prometheus.Counter
 }
 
 // NewPollerMap makes a new PollerMap. Guarantees that the V2DataReceiver will be called on the same
@@ -122,7 +128,28 @@ func NewPollerMap(v2Client Client, enablePrometheus bool) *PollerMap {
 			Buckets:   []float64{0.0, 1.0, 2.0, 5.0, 10.0, 20.0, 50.0},
 		}, []string{"limited"})
 		prometheus.MustRegister(pm.timelineSizeHistogramVec)
-
+		pm.gappyStateSizeVec = prometheus.NewHistogramVec(prometheus.HistogramOpts{
+			Namespace: "sliding_sync",
+			Subsystem: "poller",
+			Name:      "gappy_state_size",
+			Help:      "Number of events in a state block during a sync v2 gappy sync",
+			Buckets:   []float64{1.0, 10.0, 100.0, 1000.0, 10000.0},
+		}, nil)
+		prometheus.MustRegister(pm.gappyStateSizeVec)
+		pm.totalNumPollsCounter = prometheus.NewCounter(prometheus.CounterOpts{
+			Namespace: "sliding_sync",
+			Subsystem: "poller",
+			Name:      "total_num_polls",
+			Help:      "Total number of poll loops iterated.",
+		})
+		prometheus.MustRegister(pm.totalNumPollsCounter)
+		pm.numOutstandingSyncReqsGauge = prometheus.NewGauge(prometheus.GaugeOpts{
+			Namespace: "sliding_sync",
+			Subsystem: "poller",
+			Name:      "num_outstanding_sync_v2_reqs",
+			Help:      "Number of sync v2 requests that have yet to return a response.",
+		})
+		prometheus.MustRegister(pm.numOutstandingSyncReqsGauge)
 	}
 	return pm
 }
@@ -143,6 +170,15 @@ func (h *PollerMap) Terminate() {
 	}
 	if h.timelineSizeHistogramVec != nil {
 		prometheus.Unregister(h.timelineSizeHistogramVec)
+	}
+	if h.gappyStateSizeVec != nil {
+		prometheus.Unregister(h.gappyStateSizeVec)
+	}
+	if h.totalNumPollsCounter != nil {
+		prometheus.Unregister(h.totalNumPollsCounter)
+	}
+	if h.numOutstandingSyncReqsGauge != nil {
+		prometheus.Unregister(h.numOutstandingSyncReqsGauge)
 	}
 	close(h.executor)
 }
@@ -203,6 +239,9 @@ func (h *PollerMap) EnsurePolling(pid PollerID, accessToken, v2since string, isS
 	poller = newPoller(pid, accessToken, h.v2Client, h, logger, !needToWait && !isStartup)
 	poller.processHistogramVec = h.processHistogramVec
 	poller.timelineSizeVec = h.timelineSizeHistogramVec
+	poller.gappyStateSizeVec = h.gappyStateSizeVec
+	poller.numOutstandingSyncReqs = h.numOutstandingSyncReqsGauge
+	poller.totalNumPolls = h.totalNumPollsCounter
 	go poller.Poll(v2since)
 	h.Pollers[pid] = poller
 
@@ -342,9 +381,24 @@ type poller struct {
 	terminated *atomic.Bool
 	wg         *sync.WaitGroup
 
-	pollHistogramVec    *prometheus.HistogramVec
-	processHistogramVec *prometheus.HistogramVec
-	timelineSizeVec     *prometheus.HistogramVec
+	// stats about poll response data, for logging purposes
+	lastLogged              time.Time
+	totalStateCalls         int
+	totalTimelineCalls      int
+	totalReceipts           int
+	totalTyping             int
+	totalInvites            int
+	totalDeviceEvents       int
+	totalAccountData        int
+	totalChangedDeviceLists int
+	totalLeftDeviceLists    int
+
+	pollHistogramVec       *prometheus.HistogramVec
+	processHistogramVec    *prometheus.HistogramVec
+	timelineSizeVec        *prometheus.HistogramVec
+	gappyStateSizeVec      *prometheus.HistogramVec
+	numOutstandingSyncReqs prometheus.Gauge
+	totalNumPolls          prometheus.Counter
 }
 
 func newPoller(pid PollerID, accessToken string, client Client, receiver V2DataReceiver, logger zerolog.Logger, initialToDeviceOnly bool) *poller {
@@ -399,7 +453,7 @@ func (p *poller) Poll(since string) {
 	defer func() {
 		panicErr := recover()
 		if panicErr != nil {
-			logger.Error().Str("user", p.userID).Str("device", p.deviceID).Msg(string(debug.Stack()))
+			logger.Error().Str("user", p.userID).Str("device", p.deviceID).Msgf("%s. Traceback:\n%s", panicErr, debug.Stack())
 			internal.GetSentryHubFromContextOrDefault(ctx).RecoverWithContext(ctx, panicErr)
 		}
 		p.receiver.OnTerminated(ctx, p.userID, p.deviceID)
@@ -418,6 +472,7 @@ func (p *poller) Poll(since string) {
 			break
 		}
 	}
+	p.maybeLogStats(true)
 	// always unblock EnsurePolling else we can end up head-of-line blocking other pollers!
 	if state.firstTime {
 		state.firstTime = false
@@ -429,6 +484,9 @@ func (p *poller) Poll(since string) {
 // s (which is assumed to be non-nil). Returns a non-nil error iff the poller loop
 // should halt.
 func (p *poller) poll(ctx context.Context, s *pollLoopState) error {
+	if p.totalNumPolls != nil {
+		p.totalNumPolls.Inc()
+	}
 	if s.failCount > 0 {
 		// don't backoff when doing v2 syncs because the response is only in the cache for a short
 		// period of time (on massive accounts on matrix.org) such that if you wait 2,4,8min between
@@ -442,7 +500,13 @@ func (p *poller) poll(ctx context.Context, s *pollLoopState) error {
 	}
 	start := time.Now()
 	spanCtx, region := internal.StartSpan(ctx, "DoSyncV2")
+	if p.numOutstandingSyncReqs != nil {
+		p.numOutstandingSyncReqs.Inc()
+	}
 	resp, statusCode, err := p.client.DoSyncV2(spanCtx, p.accessToken, s.since, s.firstTime, p.initialToDeviceOnly)
+	if p.numOutstandingSyncReqs != nil {
+		p.numOutstandingSyncReqs.Dec()
+	}
 	region.End()
 	p.trackRequestDuration(time.Since(start), s.since == "", s.firstTime)
 	if p.terminated.Load() {
@@ -488,6 +552,7 @@ func (p *poller) poll(ctx context.Context, s *pollLoopState) error {
 		p.wg.Done()
 	}
 	p.trackProcessDuration(time.Since(start), wasInitial, wasFirst)
+	p.maybeLogStats(false)
 	return nil
 }
 
@@ -526,6 +591,7 @@ func (p *poller) parseToDeviceMessages(ctx context.Context, res *SyncResponse) {
 	if len(res.ToDevice.Events) == 0 {
 		return
 	}
+	p.totalDeviceEvents += len(res.ToDevice.Events)
 	p.receiver.AddToDeviceMessages(ctx, p.userID, p.deviceID, res.ToDevice.Events)
 }
 
@@ -564,6 +630,8 @@ func (p *poller) parseE2EEData(ctx context.Context, res *SyncResponse) {
 	deviceListChanges := internal.ToDeviceListChangesMap(res.DeviceLists.Changed, res.DeviceLists.Left)
 
 	if deviceListChanges != nil || changedFallbackTypes != nil || changedOTKCounts != nil {
+		p.totalChangedDeviceLists += len(res.DeviceLists.Changed)
+		p.totalLeftDeviceLists += len(res.DeviceLists.Left)
 		p.receiver.OnE2EEData(ctx, p.userID, p.deviceID, changedOTKCounts, changedFallbackTypes, deviceListChanges)
 	}
 }
@@ -574,6 +642,7 @@ func (p *poller) parseGlobalAccountData(ctx context.Context, res *SyncResponse) 
 	if len(res.AccountData.Events) == 0 {
 		return
 	}
+	p.totalAccountData += len(res.AccountData.Events)
 	p.receiver.OnAccountData(ctx, p.userID, AccountDataGlobalRoom, res.AccountData.Events)
 }
 
@@ -604,6 +673,7 @@ func (p *poller) parseRoomsResponse(ctx context.Context, res *SyncResponse) {
 					})
 					hub.CaptureMessage(warnMsg)
 				})
+				p.trackGappyStateSize(len(prependStateEvents))
 				roomData.Timeline.Events = append(prependStateEvents, roomData.Timeline.Events...)
 			}
 		}
@@ -648,17 +718,39 @@ func (p *poller) parseRoomsResponse(ctx context.Context, res *SyncResponse) {
 	for roomID, roomData := range res.Rooms.Invite {
 		p.receiver.OnInvite(ctx, p.userID, roomID, roomData.InviteState.Events)
 	}
-	var l *zerolog.Event
-	if len(res.Rooms.Invite) > 0 || len(res.Rooms.Join) > 0 {
-		l = p.logger.Info()
-	} else {
-		l = p.logger.Debug()
+
+	p.totalReceipts += receiptCalls
+	p.totalStateCalls += stateCalls
+	p.totalTimelineCalls += timelineCalls
+	p.totalTyping += typingCalls
+	p.totalInvites += len(res.Rooms.Invite)
+}
+
+func (p *poller) maybeLogStats(force bool) {
+	if !force && time.Since(p.lastLogged) < logInterval {
+		// only log at most once every logInterval
+		return
 	}
-	l.Ints(
-		"rooms [invite,join,leave]", []int{len(res.Rooms.Invite), len(res.Rooms.Join), len(res.Rooms.Leave)},
+	p.lastLogged = time.Now()
+	p.logger.Info().Ints(
+		"rooms [timeline,state,typing,receipts,invites]", []int{
+			p.totalTimelineCalls, p.totalStateCalls, p.totalTyping, p.totalReceipts, p.totalInvites,
+		},
 	).Ints(
-		"storage [states,timelines,typing,receipts]", []int{stateCalls, timelineCalls, typingCalls, receiptCalls},
-	).Int("to_device", len(res.ToDevice.Events)).Msg("Poller: accumulated data")
+		"device [events,changed,left,account]", []int{
+			p.totalDeviceEvents, p.totalChangedDeviceLists, p.totalLeftDeviceLists, p.totalAccountData,
+		},
+	).Msg("Poller: accumulated data")
+
+	p.totalAccountData = 0
+	p.totalChangedDeviceLists = 0
+	p.totalDeviceEvents = 0
+	p.totalInvites = 0
+	p.totalLeftDeviceLists = 0
+	p.totalReceipts = 0
+	p.totalStateCalls = 0
+	p.totalTimelineCalls = 0
+	p.totalTyping = 0
 }
 
 func (p *poller) trackTimelineSize(size int, limited bool) {
@@ -670,4 +762,11 @@ func (p *poller) trackTimelineSize(size int, limited bool) {
 		label = "limited"
 	}
 	p.timelineSizeVec.WithLabelValues(label).Observe(float64(size))
+}
+
+func (p *poller) trackGappyStateSize(size int) {
+	if p.gappyStateSizeVec == nil {
+		return
+	}
+	p.gappyStateSizeVec.WithLabelValues().Observe(float64(size))
 }

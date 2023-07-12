@@ -11,7 +11,6 @@ import (
 	"github.com/jmoiron/sqlx"
 	"github.com/matrix-org/sliding-sync/sqlutil"
 	"github.com/matrix-org/sliding-sync/sync2"
-	"github.com/matrix-org/sliding-sync/testutils"
 	"github.com/tidwall/gjson"
 )
 
@@ -414,86 +413,6 @@ func TestAccumulatorDupeEvents(t *testing.T) {
 	})
 	if err != nil {
 		t.Fatalf("failed to Accumulate: %s", err)
-	}
-}
-
-// Regression test for corrupt state snapshots.
-// This seems to have happened in the wild, whereby the snapshot exhibited 2 things:
-//   - A message event having a event_replaces_nid. This should be impossible as messages are not state.
-//   - Duplicate events in the state snapshot.
-//
-// We can reproduce a message event having a event_replaces_nid by doing the following:
-//   - Create a room with initial state A,C
-//   - Accumulate events D, A, B(msg). This should be impossible because we already got A initially but whatever, roll with it, blame state resets or something.
-//   - This leads to A,B being processed and D ignored if you just take the newest results.
-//
-// This can then be tested by:
-//   - Query the current room snapshot. This will include B(msg) when it shouldn't.
-func TestAccumulatorMisorderedGraceful(t *testing.T) {
-	alice := "@alice:localhost"
-	bob := "@bob:localhost"
-
-	eventA := testutils.NewStateEvent(t, "m.room.member", alice, alice, map[string]interface{}{"membership": "join"})
-	eventC := testutils.NewStateEvent(t, "m.room.create", "", alice, map[string]interface{}{})
-	eventD := testutils.NewStateEvent(
-		t, "m.room.member", bob, "join", map[string]interface{}{"membership": "join"},
-	)
-	eventBMsg := testutils.NewEvent(
-		t, "m.room.message", bob, map[string]interface{}{"body": "hello"},
-	)
-	t.Logf("A=member-alice, B=msg, C=create, D=member-bob")
-
-	db, close := connectToDB(t)
-	defer close()
-	accumulator := NewAccumulator(db)
-	roomID := "!TestAccumulatorStateReset:localhost"
-	// Create a room with initial state A,C
-	_, err := accumulator.Initialise(roomID, []json.RawMessage{
-		eventA, eventC,
-	})
-	if err != nil {
-		t.Fatalf("failed to Initialise accumulator: %s", err)
-	}
-
-	// Accumulate events D, A, B(msg).
-	err = sqlutil.WithTransaction(accumulator.db, func(txn *sqlx.Tx) error {
-		_, _, err = accumulator.Accumulate(txn, roomID, "", []json.RawMessage{eventD, eventA, eventBMsg})
-		return err
-	})
-	if err != nil {
-		t.Fatalf("failed to Accumulate: %s", err)
-	}
-
-	eventIDs := []string{
-		gjson.GetBytes(eventA, "event_id").Str,
-		gjson.GetBytes(eventBMsg, "event_id").Str,
-		gjson.GetBytes(eventC, "event_id").Str,
-		gjson.GetBytes(eventD, "event_id").Str,
-	}
-	t.Logf("Events A,B,C,D: %v", eventIDs)
-	txn := accumulator.db.MustBeginTx(context.Background(), nil)
-	idsToNIDs, err := accumulator.eventsTable.SelectNIDsByIDs(txn, eventIDs)
-	if err != nil {
-		t.Fatalf("Failed to SelectNIDsByIDs: %s", err)
-	}
-	if len(idsToNIDs) != len(eventIDs) {
-		t.Errorf("SelectNIDsByIDs: asked for %v got %v", eventIDs, idsToNIDs)
-	}
-	t.Logf("Events: %v", idsToNIDs)
-
-	wantEventNIDs := []int64{
-		idsToNIDs[eventIDs[0]], idsToNIDs[eventIDs[2]], idsToNIDs[eventIDs[3]],
-	}
-	sort.Slice(wantEventNIDs, func(i, j int) bool {
-		return wantEventNIDs[i] < wantEventNIDs[j]
-	})
-	// Query the current room snapshot
-	gotSnapshotEvents := currentSnapshotNIDs(t, accumulator.snapshotTable, roomID)
-	if len(gotSnapshotEvents) != len(wantEventNIDs) { // events A,C,D
-		t.Errorf("corrupt snapshot, got %v want %v", gotSnapshotEvents, wantEventNIDs)
-	}
-	if !reflect.DeepEqual(wantEventNIDs, gotSnapshotEvents) {
-		t.Errorf("got %v want %v", gotSnapshotEvents, wantEventNIDs)
 	}
 }
 

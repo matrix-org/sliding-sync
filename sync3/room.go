@@ -2,6 +2,7 @@ package sync3
 
 import (
 	"encoding/json"
+
 	"github.com/matrix-org/sliding-sync/internal"
 
 	"github.com/matrix-org/sliding-sync/sync3/caches"
@@ -17,7 +18,7 @@ type Room struct {
 	Initial           bool              `json:"initial,omitempty"`
 	IsDM              bool              `json:"is_dm,omitempty"`
 	JoinedCount       int               `json:"joined_count,omitempty"`
-	InvitedCount      int               `json:"invited_count,omitempty"`
+	InvitedCount      *int              `json:"invited_count,omitempty"`
 	PrevBatch         string            `json:"prev_batch,omitempty"`
 	NumLive           int               `json:"num_live,omitempty"`
 }

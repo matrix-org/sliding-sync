@@ -7,6 +7,7 @@ import (
 	"hash/fnv"
 	"os"
 	"sync"
+	"time"
 
 	"github.com/jmoiron/sqlx"
 	"github.com/matrix-org/sliding-sync/sqlutil"
@@ -43,13 +44,16 @@ type Handler struct {
 	// room_id => fnv_hash([typing user ids])
 	typingMap map[string]uint64
 
+	deviceDataTicker *sync2.DeviceDataTicker
+	e2eeWorkerPool   *internal.WorkerPool
+
 	numPollers prometheus.Gauge
 	subSystem  string
 }
 
 func NewHandler(
 	pMap sync2.IPollerMap, v2Store *sync2.Storage, store *state.Storage,
-	pub pubsub.Notifier, sub pubsub.Listener, enablePrometheus bool,
+	pub pubsub.Notifier, sub pubsub.Listener, enablePrometheus bool, deviceDataUpdateDuration time.Duration,
 ) (*Handler, error) {
 	h := &Handler{
 		pMap:      pMap,
@@ -60,7 +64,9 @@ func NewHandler(
 			Highlight int
 			Notif     int
 		}),
-		typingMap: make(map[string]uint64),
+		typingMap:        make(map[string]uint64),
+		deviceDataTicker: sync2.NewDeviceDataTicker(deviceDataUpdateDuration),
+		e2eeWorkerPool:   internal.NewWorkerPool(500), // TODO: assign as fraction of db max conns, not hardcoded
 	}
 
 	if enablePrometheus {
@@ -85,6 +91,9 @@ func (h *Handler) Listen() {
 			sentry.CaptureException(err)
 		}
 	}()
+	h.e2eeWorkerPool.Start()
+	h.deviceDataTicker.SetCallback(h.OnBulkDeviceDataUpdate)
+	go h.deviceDataTicker.Run()
 }
 
 func (h *Handler) Teardown() {
@@ -94,6 +103,7 @@ func (h *Handler) Teardown() {
 	h.Store.Teardown()
 	h.v2Store.Teardown()
 	h.pMap.Terminate()
+	h.deviceDataTicker.Stop()
 	if h.numPollers != nil {
 		prometheus.Unregister(h.numPollers)
 	}
@@ -192,27 +202,38 @@ func (h *Handler) UpdateDeviceSince(ctx context.Context, userID, deviceID, since
 }
 
 func (h *Handler) OnE2EEData(ctx context.Context, userID, deviceID string, otkCounts map[string]int, fallbackKeyTypes []string, deviceListChanges map[string]int) {
-	// some of these fields may be set
-	partialDD := internal.DeviceData{
-		UserID:           userID,
-		DeviceID:         deviceID,
-		OTKCounts:        otkCounts,
-		FallbackKeyTypes: fallbackKeyTypes,
-		DeviceLists: internal.DeviceLists{
-			New: deviceListChanges,
-		},
-	}
-	nextPos, err := h.Store.DeviceDataTable.Upsert(&partialDD)
-	if err != nil {
-		logger.Err(err).Str("user", userID).Msg("failed to upsert device data")
-		internal.GetSentryHubFromContextOrDefault(ctx).CaptureException(err)
-		return
-	}
-	h.v2Pub.Notify(pubsub.ChanV2, &pubsub.V2DeviceData{
-		UserID:   userID,
-		DeviceID: deviceID,
-		Pos:      nextPos,
+	var wg sync.WaitGroup
+	wg.Add(1)
+	h.e2eeWorkerPool.Queue(func() {
+		defer wg.Done()
+		// some of these fields may be set
+		partialDD := internal.DeviceData{
+			UserID:           userID,
+			DeviceID:         deviceID,
+			OTKCounts:        otkCounts,
+			FallbackKeyTypes: fallbackKeyTypes,
+			DeviceLists: internal.DeviceLists{
+				New: deviceListChanges,
+			},
+		}
+		_, err := h.Store.DeviceDataTable.Upsert(&partialDD)
+		if err != nil {
+			logger.Err(err).Str("user", userID).Msg("failed to upsert device data")
+			internal.GetSentryHubFromContextOrDefault(ctx).CaptureException(err)
+			return
+		}
+		// remember this to notify on pubsub later
+		h.deviceDataTicker.Remember(sync2.PollerID{
+			UserID:   userID,
+			DeviceID: deviceID,
+		})
 	})
+	wg.Wait()
+}
+
+// Called periodically by deviceDataTicker, contains many updates
+func (h *Handler) OnBulkDeviceDataUpdate(payload *pubsub.V2DeviceData) {
+	h.v2Pub.Notify(pubsub.ChanV2, payload)
 }
 
 func (h *Handler) Accumulate(ctx context.Context, userID, deviceID, roomID, prevBatch string, timeline []json.RawMessage) {
