@@ -101,6 +101,11 @@ jobs:
                     SERVER_NAME: synapse
                 ports:
                     - 8008:8008
+                # Set health checks to wait until synapse has started
+                options: >-
+                    --health-interval 10s
+                    --health-timeout 5s
+                    --health-retries 5
             # Label used to access the service container
             postgres:
                 # Docker Hub image
