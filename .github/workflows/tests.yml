@@ -88,6 +88,10 @@ jobs:
                 if-no-files-found: error
     end_to_end:
         runs-on: ubuntu-latest
+        strategy:
+          matrix:
+            # test with unlimited + 1 + 2 max db conns. If we end up double transacting in the tests anywhere, conn=1 tests will fail.
+            max_db_conns: [0,1,2]
         services:
             synapse:
                 # Custom image built from https://github.com/matrix-org/synapse/tree/v1.72.0/docker/complement with a dummy /complement/ca set
@@ -142,6 +146,7 @@ jobs:
                   SYNCV3_DB: user=postgres dbname=syncv3 sslmode=disable password=postgres host=localhost
                   SYNCV3_SERVER: http://localhost:8008
                   SYNCV3_SECRET: itsasecret
+                  SYNCV3_MAX_DB_CONN: ${{ matrix.max_db_conns }}
                   E2E_TEST_SERVER_STDOUT: test-e2e-server.log
 
             - name: Upload test log
