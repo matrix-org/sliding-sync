@@ -1,6 +1,8 @@
 package sync2
 
 import (
+	"github.com/jmoiron/sqlx"
+	"github.com/matrix-org/sliding-sync/sqlutil"
 	"testing"
 	"time"
 )
@@ -26,27 +28,31 @@ func TestTokensTable(t *testing.T) {
 	aliceSecret1 := "mysecret1"
 	aliceToken1FirstSeen := time.Now()
 
-	// Test a single token
-	t.Log("Insert a new token from Alice.")
-	aliceToken, err := tokens.Insert(aliceSecret1, alice, aliceDevice, aliceToken1FirstSeen)
-	if err != nil {
-		t.Fatalf("Failed to Insert token: %s", err)
-	}
+	var aliceToken, reinsertedToken *Token
+	_ = sqlutil.WithTransaction(db, func(txn *sqlx.Tx) (err error) {
+		// Test a single token
+		t.Log("Insert a new token from Alice.")
+		aliceToken, err = tokens.Insert(txn, aliceSecret1, alice, aliceDevice, aliceToken1FirstSeen)
+		if err != nil {
+			t.Fatalf("Failed to Insert token: %s", err)
+		}
 
-	t.Log("The returned Token struct should have been populated correctly.")
-	assertEqualTokens(t, tokens, aliceToken, aliceSecret1, alice, aliceDevice, aliceToken1FirstSeen)
+		t.Log("The returned Token struct should have been populated correctly.")
+		assertEqualTokens(t, tokens, aliceToken, aliceSecret1, alice, aliceDevice, aliceToken1FirstSeen)
 
-	t.Log("Reinsert the same token.")
-	reinsertedToken, err := tokens.Insert(aliceSecret1, alice, aliceDevice, aliceToken1FirstSeen)
-	if err != nil {
-		t.Fatalf("Failed to Insert token: %s", err)
-	}
+		t.Log("Reinsert the same token.")
+		reinsertedToken, err = tokens.Insert(txn, aliceSecret1, alice, aliceDevice, aliceToken1FirstSeen)
+		if err != nil {
+			t.Fatalf("Failed to Insert token: %s", err)
+		}
+		return nil
+	})
 
 	t.Log("This should yield an equal Token struct.")
 	assertEqualTokens(t, tokens, reinsertedToken, aliceSecret1, alice, aliceDevice, aliceToken1FirstSeen)
 
 	t.Log("Try to mark Alice's token as being used after an hour.")
-	err = tokens.MaybeUpdateLastSeen(aliceToken, aliceToken1FirstSeen.Add(time.Hour))
+	err := tokens.MaybeUpdateLastSeen(aliceToken, aliceToken1FirstSeen.Add(time.Hour))
 	if err != nil {
 		t.Fatalf("Failed to update last seen: %s", err)
 	}
@@ -74,17 +80,20 @@ func TestTokensTable(t *testing.T) {
 	}
 	assertEqualTokens(t, tokens, fetchedToken, aliceSecret1, alice, aliceDevice, aliceToken1LastSeen)
 
-	// Test a second token for Alice
-	t.Log("Insert a second token for Alice.")
-	aliceSecret2 := "mysecret2"
-	aliceToken2FirstSeen := aliceToken1LastSeen.Add(time.Minute)
-	aliceToken2, err := tokens.Insert(aliceSecret2, alice, aliceDevice, aliceToken2FirstSeen)
-	if err != nil {
-		t.Fatalf("Failed to Insert token: %s", err)
-	}
+	_ = sqlutil.WithTransaction(db, func(txn *sqlx.Tx) error {
+		// Test a second token for Alice
+		t.Log("Insert a second token for Alice.")
+		aliceSecret2 := "mysecret2"
+		aliceToken2FirstSeen := aliceToken1LastSeen.Add(time.Minute)
+		aliceToken2, err := tokens.Insert(txn, aliceSecret2, alice, aliceDevice, aliceToken2FirstSeen)
+		if err != nil {
+			t.Fatalf("Failed to Insert token: %s", err)
+		}
 
-	t.Log("The returned Token struct should have been populated correctly.")
-	assertEqualTokens(t, tokens, aliceToken2, aliceSecret2, alice, aliceDevice, aliceToken2FirstSeen)
+		t.Log("The returned Token struct should have been populated correctly.")
+		assertEqualTokens(t, tokens, aliceToken2, aliceSecret2, alice, aliceDevice, aliceToken2FirstSeen)
+		return nil
+	})
 }
 
 func TestDeletingTokens(t *testing.T) {
@@ -94,11 +103,15 @@ func TestDeletingTokens(t *testing.T) {
 
 	t.Log("Insert a new token from Alice.")
 	accessToken := "mytoken"
-	token, err := tokens.Insert(accessToken, "@bob:builders.com", "device", time.Time{})
-	if err != nil {
-		t.Fatalf("Failed to Insert token: %s", err)
-	}
 
+	var token *Token
+	err := sqlutil.WithTransaction(db, func(txn *sqlx.Tx) (err error) {
+		token, err = tokens.Insert(txn, accessToken, "@bob:builders.com", "device", time.Time{})
+		if err != nil {
+			t.Fatalf("Failed to Insert token: %s", err)
+		}
+		return nil
+	})
 	t.Log("We should be able to fetch this token without error.")
 	_, err = tokens.Token(accessToken)
 	if err != nil {

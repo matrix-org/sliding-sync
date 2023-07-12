@@ -42,9 +42,9 @@ type UserRoomData struct {
 	HighlightCount    int
 	Invite            *InviteData
 
-	// these fields are set by LazyLoadTimelines and are per-function call, and are not persisted in-memory.
-	RequestedPrevBatch string
-	RequestedTimeline  []json.RawMessage
+	// this field is set by LazyLoadTimelines and is per-function call, and is not persisted in-memory.
+	// The zero value of this safe to use (0 latest nid, no prev batch, no timeline).
+	RequestedLatestEvents state.LatestEvents
 
 	// TODO: should Canonicalised really be in RoomConMetadata? It's only set in SetRoom AFAICS
 	CanonicalisedName string // stripped leading symbols like #, all in lower case
@@ -218,7 +218,7 @@ func (c *UserCache) Unsubscribe(id int) {
 func (c *UserCache) OnRegistered(ctx context.Context) error {
 	// select all spaces the user is a part of to seed the cache correctly. This has to be done in
 	// the OnRegistered callback which has locking guarantees. This is why...
-	_, joinedRooms, joinTimings, err := c.globalCache.LoadJoinedRooms(ctx, c.UserID)
+	_, joinedRooms, joinTimings, _, err := c.globalCache.LoadJoinedRooms(ctx, c.UserID)
 	if err != nil {
 		return fmt.Errorf("failed to load joined rooms: %s", err)
 	}
@@ -295,7 +295,7 @@ func (c *UserCache) LazyLoadTimelines(ctx context.Context, loadPos int64, roomID
 		return c.LazyRoomDataOverride(loadPos, roomIDs, maxTimelineEvents)
 	}
 	result := make(map[string]UserRoomData)
-	roomIDToEvents, roomIDToPrevBatch, err := c.store.LatestEventsInRooms(c.UserID, roomIDs, loadPos, maxTimelineEvents)
+	roomIDToLatestEvents, err := c.store.LatestEventsInRooms(c.UserID, roomIDs, loadPos, maxTimelineEvents)
 	if err != nil {
 		logger.Err(err).Strs("rooms", roomIDs).Msg("failed to get LatestEventsInRooms")
 		internal.GetSentryHubFromContextOrDefault(ctx).CaptureException(err)
@@ -303,16 +303,14 @@ func (c *UserCache) LazyLoadTimelines(ctx context.Context, loadPos int64, roomID
 	}
 	c.roomToDataMu.Lock()
 	for _, requestedRoomID := range roomIDs {
-		events := roomIDToEvents[requestedRoomID]
+		latestEvents := roomIDToLatestEvents[requestedRoomID]
 		urd, ok := c.roomToData[requestedRoomID]
 		if !ok {
 			urd = NewUserRoomData()
 		}
-		urd.RequestedTimeline = events
-		if len(events) > 0 {
-			urd.RequestedPrevBatch = roomIDToPrevBatch[requestedRoomID]
+		if latestEvents != nil {
+			urd.RequestedLatestEvents = *latestEvents
 		}
-
 		result[requestedRoomID] = urd
 	}
 	c.roomToDataMu.Unlock()

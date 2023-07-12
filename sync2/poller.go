@@ -59,6 +59,12 @@ type V2DataReceiver interface {
 	OnExpiredToken(ctx context.Context, accessTokenHash, userID, deviceID string)
 }
 
+type IPollerMap interface {
+	EnsurePolling(pid PollerID, accessToken, v2since string, isStartup bool, logger zerolog.Logger)
+	NumPollers() int
+	Terminate()
+}
+
 // PollerMap is a map of device ID to Poller
 type PollerMap struct {
 	v2Client                    Client
@@ -508,7 +514,8 @@ func (p *poller) poll(ctx context.Context, s *pollLoopState) error {
 	}
 	if err != nil {
 		// check if temporary
-		if statusCode != 401 {
+		isFatal := statusCode == 401 || statusCode == 403
+		if !isFatal {
 			p.logger.Warn().Int("code", statusCode).Err(err).Msg("Poller: sync v2 poll returned temporary error")
 			s.failCount += 1
 			return nil

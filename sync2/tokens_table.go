@@ -171,10 +171,10 @@ func (t *TokensTable) TokenForEachDevice(txn *sqlx.Tx) (tokens []TokenForPoller,
 }
 
 // Insert a new token into the table.
-func (t *TokensTable) Insert(plaintextToken, userID, deviceID string, lastSeen time.Time) (*Token, error) {
+func (t *TokensTable) Insert(txn *sqlx.Tx, plaintextToken, userID, deviceID string, lastSeen time.Time) (*Token, error) {
 	hashedToken := hashToken(plaintextToken)
 	encToken := t.encrypt(plaintextToken)
-	_, err := t.db.Exec(
+	_, err := txn.Exec(
 		`INSERT INTO syncv3_sync2_tokens(token_hash, token_encrypted, user_id, device_id, last_seen)
 		VALUES ($1, $2, $3, $4, $5)
 		ON CONFLICT (token_hash) DO NOTHING;`,

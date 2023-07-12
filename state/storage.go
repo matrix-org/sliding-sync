@@ -31,6 +31,12 @@ type StartupSnapshot struct {
 	AllJoinedMembers map[string][]string              // room_id -> [user_id]
 }
 
+type LatestEvents struct {
+	Timeline  []json.RawMessage
+	PrevBatch string
+	LatestNID int64
+}
+
 type Storage struct {
 	Accumulator       *Accumulator
 	EventsTable       *EventTable
@@ -535,7 +541,7 @@ func (s *Storage) RoomStateAfterEventPosition(ctx context.Context, roomIDs []str
 			if err != nil {
 				return fmt.Errorf("failed to form sql query: %s", err)
 			}
-			rows, err := s.Accumulator.db.Query(s.Accumulator.db.Rebind(query), args...)
+			rows, err := txn.Query(txn.Rebind(query), args...)
 			if err != nil {
 				return fmt.Errorf("failed to execute query: %s", err)
 			}
@@ -580,16 +586,16 @@ func (s *Storage) RoomStateAfterEventPosition(ctx context.Context, roomIDs []str
 	return
 }
 
-func (s *Storage) LatestEventsInRooms(userID string, roomIDs []string, to int64, limit int) (map[string][]json.RawMessage, map[string]string, error) {
+func (s *Storage) LatestEventsInRooms(userID string, roomIDs []string, to int64, limit int) (map[string]*LatestEvents, error) {
 	roomIDToRanges, err := s.visibleEventNIDsBetweenForRooms(userID, roomIDs, 0, to)
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
-	result := make(map[string][]json.RawMessage, len(roomIDs))
-	prevBatches := make(map[string]string, len(roomIDs))
+	result := make(map[string]*LatestEvents, len(roomIDs))
 	err = sqlutil.WithTransaction(s.Accumulator.db, func(txn *sqlx.Tx) error {
 		for roomID, ranges := range roomIDToRanges {
 			var earliestEventNID int64
+			var latestEventNID int64
 			var roomEvents []json.RawMessage
 			// start at the most recent range as we want to return the most recent `limit` events
 			for i := len(ranges) - 1; i >= 0; i-- {
@@ -604,6 +610,9 @@ func (s *Storage) LatestEventsInRooms(userID string, roomIDs []string, to int64,
 				}
 				// keep pushing to the front so we end up with A,B,C
 				for _, ev := range events {
+					if latestEventNID == 0 { // set first time and never again
+						latestEventNID = ev.NID
+					}
 					roomEvents = append([]json.RawMessage{ev.JSON}, roomEvents...)
 					earliestEventNID = ev.NID
 					if len(roomEvents) >= limit {
@@ -611,19 +620,23 @@ func (s *Storage) LatestEventsInRooms(userID string, roomIDs []string, to int64,
 					}
 				}
 			}
+			latestEvents := LatestEvents{
+				LatestNID: latestEventNID,
+				Timeline:  roomEvents,
+			}
 			if earliestEventNID != 0 {
 				// the oldest event needs a prev batch token, so find one now
-				prevBatch, err := s.EventsTable.SelectClosestPrevBatch(roomID, earliestEventNID)
+				prevBatch, err := s.EventsTable.SelectClosestPrevBatch(txn, roomID, earliestEventNID)
 				if err != nil {
 					return fmt.Errorf("failed to select prev_batch for room %s : %s", roomID, err)
 				}
-				prevBatches[roomID] = prevBatch
+				latestEvents.PrevBatch = prevBatch
 			}
-			result[roomID] = roomEvents
+			result[roomID] = &latestEvents
 		}
 		return nil
 	})
-	return result, prevBatches, err
+	return result, err
 }
 
 func (s *Storage) visibleEventNIDsBetweenForRooms(userID string, roomIDs []string, from, to int64) (map[string][][2]int64, error) {
@@ -637,7 +650,7 @@ func (s *Storage) visibleEventNIDsBetweenForRooms(userID string, roomIDs []strin
 			return nil, fmt.Errorf("VisibleEventNIDsBetweenForRooms.SelectEventsWithTypeStateKeyInRooms: %s", err)
 		}
 	}
-	joinTimingsByRoomID, err := s.determineJoinedRoomsFromMemberships(membershipEvents)
+	joinTimingsAtFromByRoomID, err := s.determineJoinedRoomsFromMemberships(membershipEvents)
 	if err != nil {
 		return nil, fmt.Errorf("failed to work out joined rooms for %s at pos %d: %s", userID, from, err)
 	}
@@ -648,7 +661,7 @@ func (s *Storage) visibleEventNIDsBetweenForRooms(userID string, roomIDs []strin
 		return nil, fmt.Errorf("failed to load membership events: %s", err)
 	}
 
-	return s.visibleEventNIDsWithData(joinTimingsByRoomID, membershipEvents, userID, from, to)
+	return s.visibleEventNIDsWithData(joinTimingsAtFromByRoomID, membershipEvents, userID, from, to)
 }
 
 // Work out the NID ranges to pull events from for this user. Given a from and to event nid stream position,
@@ -678,7 +691,7 @@ func (s *Storage) visibleEventNIDsBetweenForRooms(userID string, roomIDs []strin
 //	- For Room E: from=1, to=15 returns { RoomE: [ [3,3], [13,15] ] } (tests invites)
 func (s *Storage) VisibleEventNIDsBetween(userID string, from, to int64) (map[string][][2]int64, error) {
 	// load *ALL* joined rooms for this user at from (inclusive)
-	joinTimingsByRoomID, err := s.JoinedRoomsAfterPosition(userID, from)
+	joinTimingsAtFromByRoomID, err := s.JoinedRoomsAfterPosition(userID, from)
 	if err != nil {
 		return nil, fmt.Errorf("failed to work out joined rooms for %s at pos %d: %s", userID, from, err)
 	}
@@ -689,10 +702,10 @@ func (s *Storage) VisibleEventNIDsBetween(userID string, from, to int64) (map[st
 		return nil, fmt.Errorf("failed to load membership events: %s", err)
 	}
 
-	return s.visibleEventNIDsWithData(joinTimingsByRoomID, membershipEvents, userID, from, to)
+	return s.visibleEventNIDsWithData(joinTimingsAtFromByRoomID, membershipEvents, userID, from, to)
 }
 
-func (s *Storage) visibleEventNIDsWithData(joinTimingsByRoomID map[string]internal.EventMetadata, membershipEvents []Event, userID string, from, to int64) (map[string][][2]int64, error) {
+func (s *Storage) visibleEventNIDsWithData(joinTimingsAtFromByRoomID map[string]internal.EventMetadata, membershipEvents []Event, userID string, from, to int64) (map[string][][2]int64, error) {
 	// load membership events in order and bucket based on room ID
 	roomIDToLogs := make(map[string][]membershipEvent)
 	for _, ev := range membershipEvents {
@@ -754,7 +767,7 @@ func (s *Storage) visibleEventNIDsWithData(joinTimingsByRoomID map[string]intern
 
 	// For each joined room, perform the algorithm and delete the logs afterwards
 	result := make(map[string][][2]int64)
-	for joinedRoomID, _ := range joinTimingsByRoomID {
+	for joinedRoomID, _ := range joinTimingsAtFromByRoomID {
 		roomResult := calculateVisibleEventNIDs(true, from, to, roomIDToLogs[joinedRoomID])
 		result[joinedRoomID] = roomResult
 		delete(roomIDToLogs, joinedRoomID)

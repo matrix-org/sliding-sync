@@ -1,6 +1,5 @@
 package handler
 
-import "C"
 import (
 	"context"
 	"database/sql"
@@ -67,7 +66,7 @@ type SyncLiveHandler struct {
 }
 
 func NewSync3Handler(
-	store *state.Storage, storev2 *sync2.Storage, v2Client sync2.Client, postgresDBURI, secret string,
+	store *state.Storage, storev2 *sync2.Storage, v2Client sync2.Client, secret string,
 	pub pubsub.Notifier, sub pubsub.Listener, enablePrometheus bool, maxPendingEventUpdates int,
 ) (*SyncLiveHandler, error) {
 	logger.Info().Msg("creating handler")
@@ -225,8 +224,7 @@ func (h *SyncLiveHandler) serve(w http.ResponseWriter, req *http.Request) error 
 	if req.ContentLength != 0 {
 		defer req.Body.Close()
 		if err := json.NewDecoder(req.Body).Decode(&requestBody); err != nil {
-			log.Err(err).Msg("failed to read/decode request body")
-			internal.GetSentryHubFromContextOrDefault(req.Context()).CaptureException(err)
+			log.Warn().Err(err).Msg("failed to read/decode request body")
 			return &internal.HandlerError{
 				StatusCode: 400,
 				Err:        err,
@@ -339,6 +337,8 @@ func (h *SyncLiveHandler) serve(w http.ResponseWriter, req *http.Request) error 
 // When this function returns, the connection is alive and active.
 
 func (h *SyncLiveHandler) setupConnection(req *http.Request, syncReq *sync3.Request, containsPos bool) (*sync3.Conn, *internal.HandlerError) {
+	taskCtx, task := internal.StartTask(req.Context(), "setupConnection")
+	defer task.End()
 	var conn *sync3.Conn
 	// Extract an access token
 	accessToken, err := internal.ExtractAccessToken(req)
@@ -371,6 +371,7 @@ func (h *SyncLiveHandler) setupConnection(req *http.Request, syncReq *sync3.Requ
 	}
 	log := hlog.FromRequest(req).With().Str("user", token.UserID).Str("device", token.DeviceID).Logger()
 	internal.SetRequestContextUserID(req.Context(), token.UserID, token.DeviceID)
+	internal.Logf(taskCtx, "setupConnection", "identified access token as user=%s device=%s", token.UserID, token.DeviceID)
 
 	// Record the fact that we've recieved a request from this token
 	err = h.V2Store.TokensTable.MaybeUpdateLastSeen(token, time.Now())
@@ -396,8 +397,8 @@ func (h *SyncLiveHandler) setupConnection(req *http.Request, syncReq *sync3.Requ
 		return nil, internal.ExpiredSessionError()
 	}
 
-	log.Trace().Msg("checking poller exists and is running")
 	pid := sync2.PollerID{UserID: token.UserID, DeviceID: token.DeviceID}
+  log.Trace().Any("pid", pid).Msg("checking poller exists and is running")
 	h.EnsurePoller.EnsurePolling(req.Context(), pid, token.AccessTokenHash)
 	log.Trace().Msg("poller exists and is running")
 	// this may take a while so if the client has given up (e.g timed out) by this point, just stop.
@@ -458,14 +459,14 @@ func (h *SyncLiveHandler) identifyUnknownAccessToken(accessToken string, logger 
 	var token *sync2.Token
 	err = sqlutil.WithTransaction(h.V2Store.DB, func(txn *sqlx.Tx) error {
 		// Create a brand-new row for this token.
-		token, err = h.V2Store.TokensTable.Insert(accessToken, userID, deviceID, time.Now())
+		token, err = h.V2Store.TokensTable.Insert(txn, accessToken, userID, deviceID, time.Now())
 		if err != nil {
 			logger.Warn().Err(err).Str("user", userID).Str("device", deviceID).Msg("failed to insert v2 token")
 			return err
 		}
 
 		// Ensure we have a device row for this token.
-		err = h.V2Store.DevicesTable.InsertDevice(userID, deviceID)
+		err = h.V2Store.DevicesTable.InsertDevice(txn, userID, deviceID)
 		if err != nil {
 			log.Warn().Err(err).Str("user", userID).Str("device", deviceID).Msg("failed to insert v2 device")
 			return err

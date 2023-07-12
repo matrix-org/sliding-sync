@@ -2,6 +2,14 @@ package main
 
 import (
 	"fmt"
+	"net/http"
+	_ "net/http/pprof"
+	"os"
+	"os/signal"
+	"strings"
+	"syscall"
+	"time"
+
 	"github.com/getsentry/sentry-go"
 	sentryhttp "github.com/getsentry/sentry-go/http"
 	syncv3 "github.com/matrix-org/sliding-sync"
@@ -10,18 +18,11 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/rs/zerolog"
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
-	"net/http"
-	_ "net/http/pprof"
-	"os"
-	"os/signal"
-	"strings"
-	"syscall"
-	"time"
 )
 
 var GitCommit string
 
-const version = "0.99.2"
+const version = "0.99.3"
 
 const (
 	// Required fields
@@ -163,6 +164,8 @@ func main() {
 
 	h2, h3 := syncv3.Setup(args[EnvServer], args[EnvDB], args[EnvSecret], syncv3.Opts{
 		AddPrometheusMetrics: args[EnvPrometheus] != "",
+		DBMaxConns:           100,
+		DBConnMaxIdleTime:    time.Hour,
 	})
 
 	go h2.StartV2Pollers()

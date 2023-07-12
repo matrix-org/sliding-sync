@@ -2,7 +2,11 @@
 
 Run a sliding sync proxy. An implementation of [MSC3575](https://github.com/matrix-org/matrix-doc/blob/kegan/sync-v3/proposals/3575-sync.md).
 
-Proxy version to MSC API specification:
+## Proxy version to MSC API specification
+
+This describes which proxy versions implement which version of the API drafted
+in MSC3575. See https://github.com/matrix-org/sliding-sync/releases for the
+changes in the proxy itself.
 
 -   Version 0.1.x: [2022/04/01](https://github.com/matrix-org/matrix-spec-proposals/blob/615e8f5a7bfe4da813bc2db661ed0bd00bccac20/proposals/3575-sync.md)
     -   First release
@@ -21,10 +25,12 @@ Proxy version to MSC API specification:
     -   Support for `errcode` when sessions expire.
 -   Version 0.99.1 [2023/01/20](https://github.com/matrix-org/matrix-spec-proposals/blob/b4b4e7ff306920d2c862c6ff4d245110f6fa5bc7/proposals/3575-sync.md)
     -   Preparing for major v1.x release: lists-as-keys support.
--   Version 0.99.2 [2024/07/27](https://github.com/matrix-org/matrix-spec-proposals/blob/eab643cb3ca63b03537a260fa343e1fb2d1ee284/proposals/3575-sync.md)
+-   Version 0.99.2 [2023/03/31](https://github.com/matrix-org/matrix-spec-proposals/blob/eab643cb3ca63b03537a260fa343e1fb2d1ee284/proposals/3575-sync.md)
     -   Experimental support for `bump_event_types` when ordering rooms by recency.
     -   Support for opting in to extensions on a per-list and per-room basis.
-    -   Sentry support.
+-   Version 0.99.3 [2023/05/23](https://github.com/matrix-org/matrix-spec-proposals/blob/4103ee768a4a3e1decee80c2987f50f4c6b3d539/proposals/3575-sync.md)
+    -   Support for per-list `bump_event_types`.
+    -   Support for [`conn_id`](https://github.com/matrix-org/matrix-spec-proposals/blob/4103ee768a4a3e1decee80c2987f50f4c6b3d539/proposals/3575-sync.md#concurrent-connections) for distinguishing multiple concurrent connections.
 
 ## Usage
 

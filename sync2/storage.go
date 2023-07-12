@@ -1,10 +1,11 @@
 package sync2
 
 import (
+	"os"
+
 	"github.com/getsentry/sentry-go"
 	"github.com/jmoiron/sqlx"
 	"github.com/rs/zerolog"
-	"os"
 )
 
 var logger = zerolog.New(os.Stdout).With().Timestamp().Logger().Output(zerolog.ConsoleWriter{
