@@ -31,6 +31,13 @@ changes in the proxy itself.
 -   Version 0.99.3 [2023/05/23](https://github.com/matrix-org/matrix-spec-proposals/blob/4103ee768a4a3e1decee80c2987f50f4c6b3d539/proposals/3575-sync.md)
     -   Support for per-list `bump_event_types`.
     -   Support for [`conn_id`](https://github.com/matrix-org/matrix-spec-proposals/blob/4103ee768a4a3e1decee80c2987f50f4c6b3d539/proposals/3575-sync.md#concurrent-connections) for distinguishing multiple concurrent connections.
+-   Version 0.99.4 [2023/07/12](https://github.com/matrix-org/matrix-spec-proposals/blob/4103ee768a4a3e1decee80c2987f50f4c6b3d539/proposals/3575-sync.md)
+    -   Support for `SYNCV3_MAX_DB_CONN`, and reduce the amount of concurrent connections required during normal operation.
+    -   Add more metrics and logs. Reduce log spam.
+    -   Improve performance when handling changed device lists.
+    -   Responses will consume from the live buffer even when clients change their request parameters to more speedily send new events down.
+    -   Bugfix: return `invited_count` correctly when it transitions to 0.
+    -   Bugfix: fix a data corruption bug when 2 users join a federated room where the first user was invited to said room.
 
 ## Usage
 
@@ -58,6 +65,7 @@ SYNCV3_PROM       Default: unset. The bind addr for Prometheus metrics, which wi
 SYNCV3_JAEGER_URL Default: unset. The Jaeger URL to send spans to e.g http://localhost:14268/api/traces - if unset does not send OTLP traces.
 SYNCV3_SENTRY_DSN Default: unset. The Sentry DSN to report events to e.g https://sliding-sync@sentry.example.com/123 - if unset does not send sentry events.
 SYNCV3_LOG_LEVEL  Default: info. The level of verbosity for messages logged. Available values are trace, debug, info, warn, error and fatal
+SYNCV3_MAX_DB_CONN Default: unset. Max database connections to use when communicating with postgres. Unset or 0 means no limit.
 ```
 
 It is easiest to host the proxy on a separate hostname than the Matrix server, though it is possible to use the same hostname by forwarding the used endpoints.
