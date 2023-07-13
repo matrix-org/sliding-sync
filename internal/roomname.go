@@ -66,6 +66,12 @@ func (m *RoomMetadata) SameRoomName(other *RoomMetadata) bool {
 		sameHeroes(m.Heroes, other.Heroes))
 }
 
+// SameRoomAvatar checks if the fields relevant for room names have changed between the two metadatas.
+// Returns true if there are no changes.
+func (m *RoomMetadata) SameRoomAvatar(other *RoomMetadata) bool {
+	return m.AvatarURL == other.AvatarURL
+}
+
 func (m *RoomMetadata) SameJoinCount(other *RoomMetadata) bool {
 	return m.JoinCount == other.JoinCount
 }

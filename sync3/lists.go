@@ -33,6 +33,7 @@ type RoomListDelta struct {
 
 type RoomDelta struct {
 	RoomNameChanged          bool
+	RoomAvatarChanged        bool
 	JoinCountChanged         bool
 	InviteCountChanged       bool
 	NotificationCountChanged bool
@@ -73,6 +74,7 @@ func (s *InternalRequestLists) SetRoom(r RoomConnMetadata) (delta RoomDelta) {
 				strings.Trim(internal.CalculateRoomName(&r.RoomMetadata, 5), "#!():_@"),
 			)
 		}
+		delta.RoomAvatarChanged = !existing.SameRoomName(&r.RoomMetadata)
 
 		// Interpret the timestamp map on r as the changes we should apply atop the
 		// existing timestamps.
