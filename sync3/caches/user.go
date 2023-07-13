@@ -50,6 +50,13 @@ type UserRoomData struct {
 	CanonicalisedName string // stripped leading symbols like #, all in lower case
 	// Set of spaces this room is a part of, from the perspective of this user. This is NOT global room data
 	// as the set of spaces may be different for different users.
+
+	// ResolvedAvatarURL is the avatar that should be displayed to this user to
+	// represent this room. Avatars set in m.room.avatar take precedence; if this is
+	// missing and the room is a DM with one other user, we fall back to that user's
+	// avatar (if any) as specified in their membership event in that room.
+	ResolvedAvatarURL string
+
 	Spaces map[string]struct{}
 	// Map of tag to order float.
 	// See https://spec.matrix.org/latest/client-server-api/#room-tagging
@@ -577,6 +584,10 @@ func (c *UserCache) OnInvite(ctx context.Context, roomID string, inviteStateEven
 	urd.HasLeft = false
 	urd.HighlightCount = InvitesAreHighlightsValue
 	urd.IsDM = inviteData.IsDM
+	urd.ResolvedAvatarURL = inviteData.AvatarURL
+	if urd.ResolvedAvatarURL == "" && urd.IsDM && len(inviteData.Heroes) == 1 {
+		urd.ResolvedAvatarURL = inviteData.Heroes[0].Avatar
+	}
 	urd.Invite = inviteData
 	c.roomToDataMu.Lock()
 	c.roomToData[roomID] = urd
