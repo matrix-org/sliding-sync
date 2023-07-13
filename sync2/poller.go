@@ -533,15 +533,15 @@ func (p *poller) poll(ctx context.Context, s *pollLoopState) error {
 	p.initialToDeviceOnly = false
 	start = time.Now()
 	s.failCount = 0
+
+	wasInitial := s.since == ""
+	wasFirst := s.firstTime
 	// Do the most latency-sensitive parsing first.
 	// This only helps if the executor isn't already busy.
 	p.parseToDeviceMessages(ctx, resp)
 	p.parseE2EEData(ctx, resp)
 	p.parseGlobalAccountData(ctx, resp)
-	p.parseRoomsResponse(ctx, resp)
-
-	wasInitial := s.since == ""
-	wasFirst := s.firstTime
+	p.parseRoomsResponse(ctx, resp, wasInitial)
 
 	s.since = resp.NextBatch
 	// persist the since token (TODO: this could get slow if we hammer the DB too much)
@@ -646,7 +646,7 @@ func (p *poller) parseGlobalAccountData(ctx context.Context, res *SyncResponse) 
 	p.receiver.OnAccountData(ctx, p.userID, AccountDataGlobalRoom, res.AccountData.Events)
 }
 
-func (p *poller) parseRoomsResponse(ctx context.Context, res *SyncResponse) {
+func (p *poller) parseRoomsResponse(ctx context.Context, res *SyncResponse, wasInitial bool) {
 	ctx, task := internal.StartTask(ctx, "parseRoomsResponse")
 	defer task.End()
 	stateCalls := 0
@@ -664,12 +664,21 @@ func (p *poller) parseRoomsResponse(ctx context.Context, res *SyncResponse) {
 				// the timeline now so that future events are received under the
 				// correct room state.
 				const warnMsg = "parseRoomsResponse: prepending state events to timeline after gappy poll"
-				logger.Warn().Str("room_id", roomID).Int("prependStateEvents", len(prependStateEvents)).Msg(warnMsg)
+				logger.Warn().
+					Str("room_id", roomID).
+					Str("user_id", p.userID).
+					Str("device_id", p.deviceID).
+					Int("prependStateEvents", len(prependStateEvents)).
+					Bool("initial", wasInitial).
+					Msg(warnMsg)
 				hub := internal.GetSentryHubFromContextOrDefault(ctx)
 				hub.WithScope(func(scope *sentry.Scope) {
 					scope.SetContext(internal.SentryCtxKey, map[string]interface{}{
 						"room_id":                  roomID,
+						"user_id":                  p.userID,
+						"device_id":                p.deviceID,
 						"num_prepend_state_events": len(prependStateEvents),
+						"initial":                  wasInitial,
 					})
 					hub.CaptureMessage(warnMsg)
 				})
