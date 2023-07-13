@@ -838,6 +838,38 @@ func (s *Storage) AllJoinedMembers(txn *sqlx.Tx, tempTableName string) (result m
 	return result, metadata, nil
 }
 
+func (s *Storage) LatestEventNIDInRooms(roomIDs []string, highestNID int64) (roomToNID map[string]int64, err error) {
+	roomToNID = make(map[string]int64)
+	err = sqlutil.WithTransaction(s.Accumulator.db, func(txn *sqlx.Tx) error {
+		// Pull out the latest nids for all the rooms. If they are < highestNID then use them, else we need to query the
+		// events table (slow) for the latest nid in this room which is < highestNID.
+		fastRoomToLatestNIDs, err := s.Accumulator.roomsTable.LatestNIDs(txn, roomIDs)
+		if err != nil {
+			return err
+		}
+		var slowRooms []string
+		for _, roomID := range roomIDs {
+			nid := fastRoomToLatestNIDs[roomID]
+			if nid > 0 && nid <= highestNID {
+				roomToNID[roomID] = nid
+			} else {
+				// we need to do a slow query for this
+				slowRooms = append(slowRooms, roomID)
+			}
+		}
+
+		slowRoomToLatestNIDs, err := s.EventsTable.LatestEventNIDInRooms(txn, slowRooms, highestNID)
+		if err != nil {
+			return err
+		}
+		for roomID, nid := range slowRoomToLatestNIDs {
+			roomToNID[roomID] = nid
+		}
+		return nil
+	})
+	return roomToNID, err
+}
+
 // Returns a map from joined room IDs to EventMetadata, which is nil iff a non-nil error
 // is returned.
 func (s *Storage) JoinedRoomsAfterPosition(userID string, pos int64) (
