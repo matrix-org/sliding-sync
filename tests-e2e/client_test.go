@@ -159,6 +159,15 @@ func (c *CSAPI) UploadContent(t *testing.T, fileBody []byte, fileName string, co
 	return GetJSONFieldStr(t, body, "content_uri")
 }
 
+func (c *CSAPI) SetAvatar(t *testing.T, avatarURL string) {
+	t.Helper()
+	reqBody := map[string]interface{}{}
+	if avatarURL != "" {
+		reqBody["avatar_url"] = avatarURL
+	}
+	c.MustDoFunc(t, "PUT", []string{"_matrix", "client", "v3", "profile", c.UserID, "avatar_url"}, WithJSONBody(t, reqBody))
+}
+
 // DownloadContent downloads media from the server, returning the raw bytes and the Content-Type. Fails the test on error.
 func (c *CSAPI) DownloadContent(t *testing.T, mxcUri string) ([]byte, string) {
 	t.Helper()

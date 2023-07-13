@@ -39,6 +39,18 @@ func MatchRoomName(name string) RoomMatcher {
 	}
 }
 
+func MatchRoomAvatar(avatar string) RoomMatcher {
+	return func(r sync3.Room) error {
+		if avatar == "" {
+			return nil
+		}
+		if r.Avatar != avatar {
+			return fmt.Errorf("avatar mismatch, got %s want %s", r.Avatar, avatar)
+		}
+		return nil
+	}
+}
+
 func MatchJoinCount(count int) RoomMatcher {
 	return func(r sync3.Room) error {
 		if r.JoinedCount != count {
@@ -134,6 +146,20 @@ func MatchRoomTimelineMostRecent(n int, events []json.RawMessage) RoomMatcher {
 			if !bytes.Equal(gotSubset[i], subset[i]) {
 				return fmt.Errorf("timeline[%d]\ngot  %v \nwant %v", i, string(gotSubset[i]), string(subset[i]))
 			}
+		}
+		return nil
+	}
+}
+
+func MatchRoomTimelineEndsWithID(wantID string) RoomMatcher {
+	return func(r sync3.Room) error {
+		if len(r.Timeline) == 0 {
+			return fmt.Errorf("MatchRoomTimelineMostRecent: empty timeline")
+		}
+		event := gjson.ParseBytes(r.Timeline[len(r.Timeline)-1])
+		gotID := event.Get("event_id").Str
+		if gotID != wantID {
+			return fmt.Errorf("MatchRoomTimelineEndsWithID: got %s, want %s", gotID, wantID)
 		}
 		return nil
 	}
