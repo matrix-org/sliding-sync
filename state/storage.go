@@ -858,6 +858,10 @@ func (s *Storage) LatestEventNIDInRooms(roomIDs []string, highestNID int64) (roo
 			}
 		}
 
+		if len(slowRooms) == 0 {
+			return nil // no work to do
+		}
+
 		slowRoomToLatestNIDs, err := s.EventsTable.LatestEventNIDInRooms(txn, slowRooms, highestNID)
 		if err != nil {
 			return err
