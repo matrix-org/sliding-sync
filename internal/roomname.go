@@ -109,8 +109,9 @@ func (m *RoomMetadata) IsSpace() bool {
 }
 
 type Hero struct {
-	ID   string
-	Name string
+	ID     string
+	Name   string
+	Avatar string
 }
 
 func CalculateRoomName(heroInfo *RoomMetadata, maxNumNamesPerRoom int) string {

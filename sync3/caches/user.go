@@ -110,6 +110,7 @@ func NewInviteData(ctx context.Context, userID, roomID string, inviteState []jso
 				id.Heroes = append(id.Heroes, internal.Hero{
 					ID:   target,
 					Name: j.Get("content.displayname").Str,
+					Avatar: j.Get("content.avatar_url").Str,
 				})
 			}
 		case "m.room.name":

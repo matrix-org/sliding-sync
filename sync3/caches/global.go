@@ -359,8 +359,9 @@ func (c *GlobalCache) OnNewEvent(
 				}
 				if !found {
 					metadata.Heroes = append(metadata.Heroes, internal.Hero{
-						ID:   *ed.StateKey,
-						Name: ed.Content.Get("displayname").Str,
+						ID:     *ed.StateKey,
+						Name:   ed.Content.Get("displayname").Str,
+						Avatar: ed.Content.Get("avatar_url").Str,
 					})
 				}
 			}

@@ -284,8 +284,9 @@ func (s *Storage) MetadataForAllRooms(txn *sqlx.Tx, tempTableName string, result
 		seen[key] = true
 		metadata := result[roomID]
 		metadata.Heroes = append(metadata.Heroes, internal.Hero{
-			ID:   targetUser,
-			Name: ev.Get("content.displayname").Str,
+			ID:     targetUser,
+			Name:   ev.Get("content.displayname").Str,
+			Avatar: ev.Get("content.avatar_url").Str,
 		})
 		result[roomID] = metadata
 	}
