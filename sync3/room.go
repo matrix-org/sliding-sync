@@ -9,7 +9,10 @@ import (
 )
 
 type Room struct {
-	Name              string            `json:"name,omitempty"`
+	Name string `json:"name,omitempty"`
+	// Avatar is set to the MXC url of the room if it has changed, or to "none" if
+	// it has been removed. An empty string represents no change to the avatar.
+	Avatar            string            `json:"avatar,omitempty"`
 	RequiredState     []json.RawMessage `json:"required_state,omitempty"`
 	Timeline          []json.RawMessage `json:"timeline,omitempty"`
 	InviteState       []json.RawMessage `json:"invite_state,omitempty"`
