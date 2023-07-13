@@ -73,6 +73,7 @@ type InviteData struct {
 	Heroes               []internal.Hero
 	InviteEvent          *EventData
 	NameEvent            string // the content of m.room.name, NOT the calculated name
+	AvatarURL            string // the content of m.room.avatar, NOT the calculated avatar
 	CanonicalAlias       string
 	LastMessageTimestamp uint64
 	Encrypted            bool
@@ -108,13 +109,15 @@ func NewInviteData(ctx context.Context, userID, roomID string, inviteState []jso
 				id.IsDM = j.Get("is_direct").Bool()
 			} else if target == j.Get("sender").Str {
 				id.Heroes = append(id.Heroes, internal.Hero{
-					ID:   target,
-					Name: j.Get("content.displayname").Str,
+					ID:     target,
+					Name:   j.Get("content.displayname").Str,
 					Avatar: j.Get("content.avatar_url").Str,
 				})
 			}
 		case "m.room.name":
 			id.NameEvent = j.Get("content.name").Str
+		case "m.room.avatar":
+			id.AvatarURL = j.Get("content.avatar_url").Str
 		case "m.room.canonical_alias":
 			id.CanonicalAlias = j.Get("content.alias").Str
 		case "m.room.encryption":
@@ -148,6 +151,7 @@ func (i *InviteData) RoomMetadata() *internal.RoomMetadata {
 	metadata := internal.NewRoomMetadata(i.roomID)
 	metadata.Heroes = i.Heroes
 	metadata.NameEvent = i.NameEvent
+	metadata.AvatarURL = i.AvatarURL
 	metadata.CanonicalAlias = i.CanonicalAlias
 	metadata.InviteCount = 1
 	metadata.JoinCount = 1
