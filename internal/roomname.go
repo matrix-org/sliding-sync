@@ -13,7 +13,12 @@ type EventMetadata struct {
 	Timestamp uint64
 }
 
-// RoomMetadata holds room-scoped data. It is primarily used in two places:
+// RoomMetadata holds room-scoped data.
+// TODO: This is a lie: we sometimes remove a user U from the list of heroes
+// when calculating the sync response for that user U. Grep for `RemoveHero`.
+//
+// It is primarily used in two places:
+//
 //   - in the caches.GlobalCache, to hold the latest version of data that is consistent
 //     between all users in the room; and
 //   - in the sync3.RoomConnMetadata struct, to hold the version of data last seen by
@@ -63,13 +68,13 @@ func (m *RoomMetadata) SameRoomName(other *RoomMetadata) bool {
 		m.CanonicalAlias == other.CanonicalAlias &&
 		m.JoinCount == other.JoinCount &&
 		m.InviteCount == other.InviteCount &&
-		sameHeroes(m.Heroes, other.Heroes))
+		sameHeroNames(m.Heroes, other.Heroes))
 }
 
-// SameRoomAvatar checks if the fields relevant for room names have changed between the two metadatas.
+// SameRoomAvatar checks if the fields relevant for room avatars have changed between the two metadatas.
 // Returns true if there are no changes.
 func (m *RoomMetadata) SameRoomAvatar(other *RoomMetadata) bool {
-	return m.AvatarEvent == other.AvatarEvent
+	return m.AvatarEvent == other.AvatarEvent && sameHeroAvatars(m.Heroes, other.Heroes)
 }
 
 func (m *RoomMetadata) SameJoinCount(other *RoomMetadata) bool {
@@ -80,7 +85,7 @@ func (m *RoomMetadata) SameInviteCount(other *RoomMetadata) bool {
 	return m.InviteCount == other.InviteCount
 }
 
-func sameHeroes(a, b []Hero) bool {
+func sameHeroNames(a, b []Hero) bool {
 	if len(a) != len(b) {
 		return false
 	}
@@ -89,6 +94,21 @@ func sameHeroes(a, b []Hero) bool {
 			return false
 		}
 		if a[i].Name != b[i].Name {
+			return false
+		}
+	}
+	return true
+}
+
+func sameHeroAvatars(a, b []Hero) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i].ID != b[i].ID {
+			return false
+		}
+		if a[i].Avatar != b[i].Avatar {
 			return false
 		}
 	}
@@ -197,4 +217,16 @@ func disambiguate(heroes []Hero) []string {
 		}
 	}
 	return disambiguatedNames
+}
+
+func CalculateAvatar(metadata *RoomMetadata) AvatarChange {
+	if metadata.AvatarEvent != "" {
+		return AvatarChange(metadata.AvatarEvent)
+	}
+	// Assumption: metadata.RemoveHero has been called to remove the user who is syncing
+	// from the list of heroes.
+	if len(metadata.Heroes) == 1 {
+		return AvatarChange(metadata.Heroes[0].Avatar)
+	}
+	return DeletedAvatar
 }

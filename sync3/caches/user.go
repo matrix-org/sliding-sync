@@ -55,7 +55,7 @@ type UserRoomData struct {
 	// represent this room. Avatars set in m.room.avatar take precedence; if this is
 	// missing and the room is a DM with one other user, we fall back to that user's
 	// avatar (if any) as specified in their membership event in that room.
-	ResolvedAvatarURL string
+	ResolvedAvatarURL internal.AvatarChange
 
 	Spaces map[string]struct{}
 	// Map of tag to order float.
@@ -224,7 +224,7 @@ func (c *UserCache) Unsubscribe(id int) {
 // OnRegistered is called after the sync3.Dispatcher has successfully registered this
 // cache to receive updates. We use this to run some final initialisation logic that
 // is sensitive to race conditions; confusingly, most of the initialisation is driven
-// externally by sync3.SyncLiveHandler.userCache. It's importatn that we don't spend too
+// externally by sync3.SyncLiveHandler.userCaches. It's important that we don't spend too
 // long inside this function, because it is called within a global lock on the
 // sync3.Dispatcher (see sync3.Dispatcher.Register).
 func (c *UserCache) OnRegistered(ctx context.Context) error {
@@ -317,6 +317,7 @@ func (c *UserCache) LazyLoadTimelines(ctx context.Context, loadPos int64, roomID
 	for _, requestedRoomID := range roomIDs {
 		latestEvents := roomIDToLatestEvents[requestedRoomID]
 		urd, ok := c.roomToData[requestedRoomID]
+
 		if !ok {
 			urd = NewUserRoomData()
 		}
@@ -584,10 +585,11 @@ func (c *UserCache) OnInvite(ctx context.Context, roomID string, inviteStateEven
 	urd.HasLeft = false
 	urd.HighlightCount = InvitesAreHighlightsValue
 	urd.IsDM = inviteData.IsDM
-	urd.ResolvedAvatarURL = inviteData.AvatarEvent
-	if urd.ResolvedAvatarURL == "" && urd.IsDM && len(inviteData.Heroes) == 1 {
-		urd.ResolvedAvatarURL = inviteData.Heroes[0].Avatar
-	}
+	logger.Warn().Msgf("TODO set avatar on invite")
+	//urd.ResolvedAvatarURL = inviteData.AvatarEvent
+	//if urd.ResolvedAvatarURL == "" && urd.IsDM && len(inviteData.Heroes) == 1 {
+	//	urd.ResolvedAvatarURL = inviteData.Heroes[0].Avatar
+	//}
 	urd.Invite = inviteData
 	c.roomToDataMu.Lock()
 	c.roomToData[roomID] = urd

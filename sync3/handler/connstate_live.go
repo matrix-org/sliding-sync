@@ -218,6 +218,11 @@ func (s *connStateLive) processLiveUpdate(ctx context.Context, up caches.Update,
 				metadata.RemoveHero(s.userID)
 				thisRoom.Name = internal.CalculateRoomName(metadata, 5) // TODO: customisable?
 			}
+			if delta.RoomAvatarChanged {
+				metadata := roomUpdate.GlobalRoomMetadata()
+				metadata.RemoveHero(s.userID)
+				thisRoom.AvatarChange = internal.CalculateAvatar(metadata)
+			}
 			if delta.InviteCountChanged {
 				thisRoom.InvitedCount = &roomUpdate.GlobalRoomMetadata().InviteCount
 			}
@@ -290,8 +295,10 @@ func (s *connStateLive) processGlobalUpdates(ctx context.Context, builder *Rooms
 			}
 		}
 
+		metadata := *rup.GlobalRoomMetadata()
+		metadata.RemoveHero(s.userID)
 		delta = s.lists.SetRoom(sync3.RoomConnMetadata{
-			RoomMetadata:                  *rup.GlobalRoomMetadata(),
+			RoomMetadata:                  metadata,
 			UserRoomData:                  *rup.UserRoomMetadata(),
 			LastInterestedEventTimestamps: bumpTimestampInList,
 		})
