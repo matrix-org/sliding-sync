@@ -295,10 +295,8 @@ func (s *connStateLive) processGlobalUpdates(ctx context.Context, builder *Rooms
 			}
 		}
 
-		metadata := *rup.GlobalRoomMetadata()
-		metadata.RemoveHero(s.userID)
 		delta = s.lists.SetRoom(sync3.RoomConnMetadata{
-			RoomMetadata:                  metadata,
+			RoomMetadata:                  *rup.GlobalRoomMetadata(),
 			UserRoomData:                  *rup.UserRoomMetadata(),
 			LastInterestedEventTimestamps: bumpTimestampInList,
 		})
