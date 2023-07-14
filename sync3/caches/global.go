@@ -287,7 +287,7 @@ func (c *GlobalCache) OnNewEvent(
 		}
 	case "m.room.avatar":
 		if ed.StateKey != nil && *ed.StateKey == "" {
-			metadata.AvatarURL = ed.Content.Get("avatar_url").Str
+			metadata.AvatarEvent = ed.Content.Get("url").Str
 		}
 	case "m.room.encryption":
 		if ed.StateKey != nil && *ed.StateKey == "" {

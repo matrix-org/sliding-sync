@@ -245,7 +245,7 @@ func (s *Storage) MetadataForAllRooms(txn *sqlx.Tx, tempTableName string, result
 			} else if ev.Type == "m.room.canonical_alias" && ev.StateKey == "" {
 				metadata.CanonicalAlias = gjson.ParseBytes(ev.JSON).Get("content.alias").Str
 			} else if ev.Type == "m.room.avatar" && ev.StateKey == "" {
-				metadata.AvatarURL = gjson.ParseBytes(ev.JSON).Get("content.avatar_url").Str
+				metadata.AvatarEvent = gjson.ParseBytes(ev.JSON).Get("content.url").Str
 			}
 		}
 		result[roomID] = metadata

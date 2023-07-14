@@ -103,8 +103,8 @@ func (s *InternalRequestLists) SetRoom(r RoomConnMetadata) (delta RoomDelta) {
 		r.CanonicalisedName = strings.ToLower(
 			strings.Trim(internal.CalculateRoomName(&r.RoomMetadata, 5), "#!():_@"),
 		)
-		if r.AvatarURL != "" {
-			r.ResolvedAvatarURL = r.AvatarURL
+		if r.AvatarEvent != "" {
+			r.ResolvedAvatarURL = r.AvatarEvent
 		} else if r.IsDM && len(r.Heroes) == 1 {
 			r.ResolvedAvatarURL = r.Heroes[0].Avatar
 		}

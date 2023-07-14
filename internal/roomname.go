@@ -25,7 +25,7 @@ type RoomMetadata struct {
 	RoomID         string
 	Heroes         []Hero
 	NameEvent      string // the content of m.room.name, NOT the calculated name
-	AvatarURL      string // the content of m.room.avatar, NOT the resolved avatar
+	AvatarEvent    string // the content of m.room.avatar, NOT the resolved avatar
 	CanonicalAlias string
 	JoinCount      int
 	InviteCount    int
@@ -69,7 +69,7 @@ func (m *RoomMetadata) SameRoomName(other *RoomMetadata) bool {
 // SameRoomAvatar checks if the fields relevant for room names have changed between the two metadatas.
 // Returns true if there are no changes.
 func (m *RoomMetadata) SameRoomAvatar(other *RoomMetadata) bool {
-	return m.AvatarURL == other.AvatarURL
+	return m.AvatarEvent == other.AvatarEvent
 }
 
 func (m *RoomMetadata) SameJoinCount(other *RoomMetadata) bool {

@@ -158,7 +158,7 @@ func (i *InviteData) RoomMetadata() *internal.RoomMetadata {
 	metadata := internal.NewRoomMetadata(i.roomID)
 	metadata.Heroes = i.Heroes
 	metadata.NameEvent = i.NameEvent
-	metadata.AvatarURL = i.AvatarURL
+	metadata.AvatarEvent = i.AvatarURL
 	metadata.CanonicalAlias = i.CanonicalAlias
 	metadata.InviteCount = 1
 	metadata.JoinCount = 1
