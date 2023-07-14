@@ -1372,11 +1372,11 @@ func TestAvatarFieldInRoomResponse(t *testing.T) {
 			t,
 			res,
 			m.MatchRoomSubscriptions(map[string][]m.RoomMatcher{
-				public:     {m.MatchRoomAvatar("none")},
+				public:     {m.MatchRoomUnsetAvatar()},
 				dmAlice:    {m.MatchRoomAvatar(aliceAvatar)},
 				dmBob:      {m.MatchRoomAvatar(bobAvatar)},
 				dmChris:    {m.MatchRoomAvatar(chrisAvatar)},
-				dmBobChris: {m.MatchRoomAvatar("none")},
+				dmBobChris: {m.MatchRoomUnsetAvatar()},
 			}),
 		)
 	})
@@ -1427,7 +1427,7 @@ func TestAvatarFieldInRoomResponse(t *testing.T) {
 			res.Pos,
 			sync3.Request{},
 			m.MatchRoomSubscriptions(map[string][]m.RoomMatcher{
-				dmAlice: {m.MatchRoomAvatar("none")},
+				dmAlice: {m.MatchRoomUnsetAvatar()},
 			}),
 		)
 	})
@@ -1457,8 +1457,8 @@ func TestAvatarFieldInRoomResponse(t *testing.T) {
 			res.Pos,
 			sync3.Request{},
 			m.MatchRoomSubscriptions(map[string][]m.RoomMatcher{
-				dmBob:      {m.MatchRoomAvatar("none")},
-				dmBobChris: {m.MatchRoomAvatar("none")},
+				dmBob:      {m.MatchRoomUnsetAvatar()},
+				dmBobChris: {m.MatchRoomUnsetAvatar()},
 			}),
 		)
 	})
@@ -1502,7 +1502,7 @@ func TestAvatarFieldInRoomResponse(t *testing.T) {
 			res.Pos,
 			sync3.Request{},
 			m.MatchRoomSubscriptions(map[string][]m.RoomMatcher{
-				public: {m.MatchRoomAvatar("none")},
+				public: {m.MatchRoomUnsetAvatar()},
 			}),
 		)
 	})

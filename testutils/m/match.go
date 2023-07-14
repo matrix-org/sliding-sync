@@ -39,13 +39,23 @@ func MatchRoomName(name string) RoomMatcher {
 	}
 }
 
-func MatchRoomAvatar(avatar string) RoomMatcher {
+// MatchRoomAvatar builds a RoomMatcher which checks that the given room response has
+// set the room's avatar to the given value.
+func MatchRoomAvatar(wantAvatar string) RoomMatcher {
 	return func(r sync3.Room) error {
-		if avatar == "" {
-			return nil
+		if string(r.AvatarChange) != wantAvatar {
+			return fmt.Errorf("MatchRoomAvatar: got %s want %s", r.AvatarChange, wantAvatar)
 		}
-		if r.Avatar != avatar {
-			return fmt.Errorf("avatar mismatch, got %s want %s", r.Avatar, avatar)
+		return nil
+	}
+}
+
+// MatchRoomUnsetAvatar builds a RoomMatcher which checks that the given room has no
+// avatar, or has had its avatar deleted.
+func MatchRoomUnsetAvatar() RoomMatcher {
+	return func(r sync3.Room) error {
+		if r.AvatarChange != sync3.DeletedAvatar {
+			return fmt.Errorf("MatchRoomAvatar: got %s want %s", r.AvatarChange, sync3.DeletedAvatar)
 		}
 		return nil
 	}
