@@ -151,20 +151,6 @@ func MatchRoomTimelineMostRecent(n int, events []json.RawMessage) RoomMatcher {
 	}
 }
 
-func MatchRoomTimelineEndsWithID(wantID string) RoomMatcher {
-	return func(r sync3.Room) error {
-		if len(r.Timeline) == 0 {
-			return fmt.Errorf("MatchRoomTimelineMostRecent: empty timeline")
-		}
-		event := gjson.ParseBytes(r.Timeline[len(r.Timeline)-1])
-		gotID := event.Get("event_id").Str
-		if gotID != wantID {
-			return fmt.Errorf("MatchRoomTimelineEndsWithID: got %s, want %s", gotID, wantID)
-		}
-		return nil
-	}
-}
-
 func MatchRoomPrevBatch(prevBatch string) RoomMatcher {
 	return func(r sync3.Room) error {
 		if prevBatch != r.PrevBatch {

@@ -1546,7 +1546,7 @@ func TestAvatarFieldInRoomResponse(t *testing.T) {
 			if err := matchNoAvatarChange(response); err != nil {
 				t.Errorf("Saw DM avatar change: %s", err)
 			}
-			matchSentinel := m.MatchRoomSubscription(dmChris, m.MatchRoomTimelineEndsWithID(sentinel))
+			matchSentinel := m.MatchRoomSubscription(dmChris, MatchRoomTimelineMostRecent(1, []Event{{ID: sentinel}}))
 			return matchSentinel(response)
 		})
 
