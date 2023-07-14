@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"github.com/matrix-org/sliding-sync/internal"
 	"reflect"
 	"sort"
 	"testing"
@@ -44,7 +45,7 @@ func MatchRoomName(name string) RoomMatcher {
 func MatchRoomAvatar(wantAvatar string) RoomMatcher {
 	return func(r sync3.Room) error {
 		if string(r.AvatarChange) != wantAvatar {
-			return fmt.Errorf("MatchRoomAvatar: got %s want %s", r.AvatarChange, wantAvatar)
+			return fmt.Errorf("MatchRoomAvatar: got \"%s\" want \"%s\"", r.AvatarChange, wantAvatar)
 		}
 		return nil
 	}
@@ -54,8 +55,19 @@ func MatchRoomAvatar(wantAvatar string) RoomMatcher {
 // avatar, or has had its avatar deleted.
 func MatchRoomUnsetAvatar() RoomMatcher {
 	return func(r sync3.Room) error {
-		if r.AvatarChange != sync3.DeletedAvatar {
-			return fmt.Errorf("MatchRoomAvatar: got %s want %s", r.AvatarChange, sync3.DeletedAvatar)
+		if r.AvatarChange != internal.DeletedAvatar {
+			return fmt.Errorf("MatchRoomAvatar: got \"%s\" want \"%s\"", r.AvatarChange, internal.DeletedAvatar)
+		}
+		return nil
+	}
+}
+
+// MatchRoomUnchangedAvatar builds a RoomMatcher which checks that the given room has no
+// change to its avatar, or has had its avatar deleted.
+func MatchRoomUnchangedAvatar() RoomMatcher {
+	return func(r sync3.Room) error {
+		if r.AvatarChange != internal.UnchangedAvatar {
+			return fmt.Errorf("MatchRoomAvatar: got \"%s\" want \"%s\"", r.AvatarChange, internal.UnchangedAvatar)
 		}
 		return nil
 	}
@@ -244,11 +256,11 @@ func MatchRoomSubscription(roomID string, matchers ...RoomMatcher) RespMatcher {
 	return func(res *sync3.Response) error {
 		room, ok := res.Rooms[roomID]
 		if !ok {
-			return fmt.Errorf("MatchRoomSubscription: want sub for %s but it was missing", roomID)
+			return fmt.Errorf("MatchRoomSubscription[%s]: want sub but it was missing", roomID)
 		}
 		for _, m := range matchers {
 			if err := m(room); err != nil {
-				return fmt.Errorf("MatchRoomSubscription: %s", err)
+				return fmt.Errorf("MatchRoomSubscription[%s]: %s", roomID, err)
 			}
 		}
 		return nil
@@ -666,6 +678,15 @@ func LogResponse(t *testing.T) RespMatcher {
 	}
 }
 
+// LogRooms is like LogResponse, but only logs the rooms section of the response.
+func LogRooms(t *testing.T) RespMatcher {
+	return func(res *sync3.Response) error {
+		dump, _ := json.MarshalIndent(res.Rooms, "", "    ")
+		t.Logf("Response rooms were: %s", dump)
+		return nil
+	}
+}
+
 func CheckList(listKey string, res sync3.ResponseList, matchers ...ListMatcher) error {
 	for _, m := range matchers {
 		if err := m(res); err != nil {
@@ -708,13 +729,15 @@ func MatchLists(matchers map[string][]ListMatcher) RespMatcher {
 	}
 }
 
+const AnsiRedForeground = "\x1b[31m"
+const AnsiResetForeground = "\x1b[39m "
+
 func MatchResponse(t *testing.T, res *sync3.Response, matchers ...RespMatcher) {
 	t.Helper()
 	for _, m := range matchers {
 		err := m(res)
 		if err != nil {
-			b, _ := json.Marshal(res)
-			t.Errorf("MatchResponse: %s\n%+v", err, string(b))
+			t.Errorf("%vMatchResponse: %s%v", AnsiRedForeground, err, AnsiResetForeground)
 		}
 	}
 }
