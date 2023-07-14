@@ -353,6 +353,7 @@ func (c *GlobalCache) OnNewEvent(
 				for i := range metadata.Heroes {
 					if metadata.Heroes[i].ID == *ed.StateKey {
 						metadata.Heroes[i].Name = ed.Content.Get("displayname").Str
+						metadata.Heroes[i].Avatar = ed.Content.Get("avatar_url").Str
 						found = true
 						break
 					}
