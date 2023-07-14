@@ -1310,10 +1310,20 @@ func TestAvatarFieldInRoomResponse(t *testing.T) {
 	bob := registerNewUser(t)
 	chris := registerNewUser(t)
 
-	t.Log("Alice, Bob and Chris upload an avatar.")
-	aliceAvatar := alice.UploadContent(t, smallPNG, "alice.png", "image/png")
-	bobAvatar := bob.UploadContent(t, smallPNG, "bob.png", "image/png")
-	chrisAvatar := chris.UploadContent(t, smallPNG, "chris.png", "image/png")
+	avatarURLs := map[string]struct{}{}
+	uploadAvatar := func(client *CSAPI, filename string) string {
+		avatar := alice.UploadContent(t, smallPNG, "alice.png", "image/png")
+		if _, exists := avatarURLs[avatar]; exists {
+			t.Fatalf("New avatar %s has already been uploaded", avatar)
+		}
+		avatarURLs[avatar] = struct{}{}
+		return avatar
+	}
+
+	t.Log("Alice, Bob and Chris upload and set an avatar.")
+	aliceAvatar := uploadAvatar(alice, "alice.png")
+	bobAvatar := uploadAvatar(bob, "bob.png")
+	chrisAvatar := uploadAvatar(chris, "chris.png")
 
 	alice.SetAvatar(t, aliceAvatar)
 	bob.SetAvatar(t, bobAvatar)
@@ -1341,7 +1351,7 @@ func TestAvatarFieldInRoomResponse(t *testing.T) {
 		"invite":    []string{bob.UserID, chris.UserID},
 	})
 
-	t.Logf("Rooms: public=%s dmAlice=%s dmBob=%s dmChris=%s dmBobChris=%s", public, dmAlice, dmBob, dmChris, dmBobChris)
+	t.Logf("Rooms:\npublic=%s\ndmAlice=%s\ndmBob=%s\ndmChris=%s\ndmBobChris=%s", public, dmAlice, dmBob, dmChris, dmBobChris)
 	t.Log("Bob accepts his invites. Chris accepts none.")
 	bob.JoinRoom(t, dmBob, nil)
 	bob.JoinRoom(t, dmBobChris, nil)
@@ -1395,10 +1405,7 @@ func TestAvatarFieldInRoomResponse(t *testing.T) {
 
 	t.Run("Alice's avatar change propagates", func(t *testing.T) {
 		t.Log("Alice changes her avatar.")
-		aliceAvatar2 := alice.UploadContent(t, smallPNG, "alice2.png", "image/png")
-		if aliceAvatar == aliceAvatar2 {
-			t.Fatalf("Alice's new avatar had the same MXC URL %s", aliceAvatar)
-		}
+		aliceAvatar2 := uploadAvatar(alice, "alice2.png")
 		alice.SetAvatar(t, aliceAvatar2)
 
 		t.Log("Alice syncs until she sees her new avatar.")
@@ -1427,10 +1434,7 @@ func TestAvatarFieldInRoomResponse(t *testing.T) {
 
 	t.Run("Bob's avatar change propagates", func(t *testing.T) {
 		t.Log("Bob changes his avatar.")
-		bobAvatar2 := bob.UploadContent(t, smallPNG, "bob2.png", "image/png")
-		if bobAvatar == bobAvatar2 {
-			t.Fatalf("Bob's new avatar had the same MXC URL %s", bobAvatar)
-		}
+		bobAvatar2 := uploadAvatar(bob, "bob2.png")
 		bob.SetAvatar(t, bobAvatar2)
 
 		t.Log("Alice syncs until she sees Bob's new avatar.")
@@ -1461,7 +1465,7 @@ func TestAvatarFieldInRoomResponse(t *testing.T) {
 
 	t.Run("Explicit avatar propagates in non-DM room", func(t *testing.T) {
 		t.Log("Alice sets an avatar for the public room.")
-		publicAvatar := alice.UploadContent(t, smallPNG, "public.png", "image/png")
+		publicAvatar := uploadAvatar(alice, "public.png")
 		alice.SetState(t, public, "m.room.avatar", "", map[string]interface{}{
 			"url": publicAvatar,
 		})
@@ -1476,7 +1480,7 @@ func TestAvatarFieldInRoomResponse(t *testing.T) {
 		)
 
 		t.Log("Alice changes the avatar for the public room.")
-		publicAvatar2 := alice.UploadContent(t, smallPNG, "public2.png", "image/png")
+		publicAvatar2 := uploadAvatar(alice, "public2.png")
 		alice.SetState(t, public, "m.room.avatar", "", map[string]interface{}{
 			"url": publicAvatar2,
 		})
@@ -1515,7 +1519,7 @@ func TestAvatarFieldInRoomResponse(t *testing.T) {
 		m.MatchResponse(t, res, m.MatchRoomSubscription(dmChris, m.MatchRoomAvatar(chrisAvatar)))
 
 		t.Log("Chris gives their DM a bespoke avatar.")
-		dmAvatar := chris.UploadContent(t, smallPNG, "dm.png", "image/png")
+		dmAvatar := uploadAvatar(chris, "dm.png")
 		chris.SetState(t, dmChris, "m.room.avatar", "", map[string]interface{}{
 			"url": dmAvatar,
 		})
@@ -1524,11 +1528,7 @@ func TestAvatarFieldInRoomResponse(t *testing.T) {
 		alice.SlidingSyncUntil(t, res.Pos, sync3.Request{}, m.MatchRoomSubscription(dmChris, m.MatchRoomAvatar(dmAvatar)))
 
 		t.Log("Chris changes his global avatar.")
-		chrisAvatar2 := chris.UploadContent(t, smallPNG, "chris2.png", "image/png")
-		chris.SetAvatar(t, chrisAvatar2)
-		if chrisAvatar == chrisAvatar2 {
-			t.Fatalf("Chris's new avatar had the same MXC URL %s", chrisAvatar)
-		}
+		chrisAvatar2 := uploadAvatar(chris, "chris2.png")
 		chris.SetAvatar(t, chrisAvatar2)
 
 		t.Log("Chris sends a sentinel message.")
@@ -1551,7 +1551,7 @@ func TestAvatarFieldInRoomResponse(t *testing.T) {
 		})
 
 		t.Log("Chris updates the DM's avatar.")
-		dmAvatar2 := chris.UploadContent(t, smallPNG, "dm2.png", "image/png")
+		dmAvatar2 := uploadAvatar(chris, "dm2.png")
 		chris.SetState(t, dmChris, "m.room.avatar", "", map[string]interface{}{
 			"url": dmAvatar2,
 		})
