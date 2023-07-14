@@ -80,7 +80,7 @@ type InviteData struct {
 	Heroes               []internal.Hero
 	InviteEvent          *EventData
 	NameEvent            string // the content of m.room.name, NOT the calculated name
-	AvatarURL            string // the content of m.room.avatar, NOT the calculated avatar
+	AvatarEvent          string // the content of m.room.avatar, NOT the calculated avatar
 	CanonicalAlias       string
 	LastMessageTimestamp uint64
 	Encrypted            bool
@@ -124,7 +124,7 @@ func NewInviteData(ctx context.Context, userID, roomID string, inviteState []jso
 		case "m.room.name":
 			id.NameEvent = j.Get("content.name").Str
 		case "m.room.avatar":
-			id.AvatarURL = j.Get("content.avatar_url").Str
+			id.AvatarEvent = j.Get("content.avatar_url").Str
 		case "m.room.canonical_alias":
 			id.CanonicalAlias = j.Get("content.alias").Str
 		case "m.room.encryption":
@@ -158,7 +158,7 @@ func (i *InviteData) RoomMetadata() *internal.RoomMetadata {
 	metadata := internal.NewRoomMetadata(i.roomID)
 	metadata.Heroes = i.Heroes
 	metadata.NameEvent = i.NameEvent
-	metadata.AvatarEvent = i.AvatarURL
+	metadata.AvatarEvent = i.AvatarEvent
 	metadata.CanonicalAlias = i.CanonicalAlias
 	metadata.InviteCount = 1
 	metadata.JoinCount = 1
@@ -584,7 +584,7 @@ func (c *UserCache) OnInvite(ctx context.Context, roomID string, inviteStateEven
 	urd.HasLeft = false
 	urd.HighlightCount = InvitesAreHighlightsValue
 	urd.IsDM = inviteData.IsDM
-	urd.ResolvedAvatarURL = inviteData.AvatarURL
+	urd.ResolvedAvatarURL = inviteData.AvatarEvent
 	if urd.ResolvedAvatarURL == "" && urd.IsDM && len(inviteData.Heroes) == 1 {
 		urd.ResolvedAvatarURL = inviteData.Heroes[0].Avatar
 	}
