@@ -317,10 +317,10 @@ func (t *EventTable) LatestEventInRooms(txn *sqlx.Tx, roomIDs []string, highestN
 	return
 }
 
-func (t *EventTable) LatestEventNIDInRooms(roomIDs []string, highestNID int64) (roomToNID map[string]int64, err error) {
+func (t *EventTable) LatestEventNIDInRooms(txn *sqlx.Tx, roomIDs []string, highestNID int64) (roomToNID map[string]int64, err error) {
 	// the position (event nid) may be for a random different room, so we need to find the highest nid <= this position for this room
 	var events []Event
-	err = t.db.Select(
+	err = txn.Select(
 		&events,
 		`SELECT event_nid, room_id FROM syncv3_events
 		WHERE event_nid IN (SELECT max(event_nid) FROM syncv3_events WHERE event_nid <= $1 AND room_id = ANY($2) GROUP BY room_id)`,

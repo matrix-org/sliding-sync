@@ -158,7 +158,7 @@ func (c *GlobalCache) LoadJoinedRooms(ctx context.Context, userID string) (
 		i++
 	}
 
-	latestNIDs, err = c.store.EventsTable.LatestEventNIDInRooms(roomIDs, initialLoadPosition)
+	latestNIDs, err = c.store.LatestEventNIDInRooms(roomIDs, initialLoadPosition)
 	if err != nil {
 		return 0, nil, nil, nil, err
 	}

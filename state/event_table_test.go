@@ -951,7 +951,11 @@ func TestLatestEventNIDInRooms(t *testing.T) {
 		},
 	}
 	for _, tc := range testCases {
-		gotRoomToNID, err := table.LatestEventNIDInRooms(tc.roomIDs, int64(tc.highestNID))
+		var gotRoomToNID map[string]int64
+		err = sqlutil.WithTransaction(table.db, func(txn *sqlx.Tx) error {
+			gotRoomToNID, err = table.LatestEventNIDInRooms(txn, tc.roomIDs, int64(tc.highestNID))
+			return err
+		})
 		assertNoError(t, err)
 		want := make(map[string]int64) // map event IDs to nids
 		for roomID, eventID := range tc.wantMap {
