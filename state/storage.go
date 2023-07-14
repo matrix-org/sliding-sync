@@ -313,6 +313,12 @@ func (s *Storage) MetadataForAllRooms(txn *sqlx.Tx, tempTableName string, result
 		return fmt.Errorf("failed to select space children: %s", err)
 	}
 	for roomID, relations := range spaceRoomToRelations {
+		if _, exists := result[roomID]; !exists {
+			// this can happen when you join a space (so it populates the spaces table) then leave the space,
+			// so there are no joined members in the space so result doesn't include the room. In this case,
+			// we don't want to have a stub metadata with just the space children, so skip it.
+			continue
+		}
 		metadata := loadMetadata(roomID)
 		metadata.ChildSpaceRooms = make(map[string]struct{}, len(relations))
 		for _, r := range relations {
