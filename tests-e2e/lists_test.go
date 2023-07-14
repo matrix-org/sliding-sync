@@ -1401,56 +1401,75 @@ func TestAvatarFieldInRoomResponse(t *testing.T) {
 		m.MatchResponse(t, res, m.MatchRoomSubscription(dmBobChris, m.MatchRoomAvatar(bobAvatar)))
 	})
 
+	t.Run("Bob's avatar change propagates", func(t *testing.T) {
+		t.Log("Bob changes his avatar.")
+		bobAvatar2 := uploadAvatar(bob, "bob2.png")
+		bob.SetAvatar(t, bobAvatar2)
+
+		avatarChangeInDM := false
+		avatarChangeInGroupDM := false
+		t.Log("Alice syncs until she sees Bob's new avatar.")
+		res = alice.SlidingSyncUntil(
+			t,
+			res.Pos,
+			sync3.Request{},
+			func(response *sync3.Response) error {
+				if !avatarChangeInDM {
+					err := m.MatchRoomSubscription(dmBob, m.MatchRoomAvatar(bobAvatar2))(response)
+					if err == nil {
+						avatarChangeInDM = true
+					}
+				}
+
+				if !avatarChangeInGroupDM {
+					err := m.MatchRoomSubscription(dmBobChris, m.MatchRoomAvatar(bobAvatar2))(response)
+					if err == nil {
+						avatarChangeInGroupDM = true
+					}
+				}
+
+				if avatarChangeInDM && avatarChangeInGroupDM {
+					return nil
+				}
+				return fmt.Errorf("Still waiting: avatarChangeInDM=%t avatarChangeInGroupDM=%t", avatarChangeInDM, avatarChangeInGroupDM)
+			},
+		)
+
+		t.Log("Bob removes his avatar.")
+		bob.SetAvatar(t, "")
+
+		avatarChangeInDM = false
+		avatarChangeInGroupDM = false
+		t.Log("Alice syncs until she sees Bob's avatars vanish.")
+		res = alice.SlidingSyncUntil(
+			t,
+			res.Pos,
+			sync3.Request{},
+			func(response *sync3.Response) error {
+				if !avatarChangeInDM {
+					err := m.MatchRoomSubscription(dmBob, m.MatchRoomUnsetAvatar())(response)
+					if err == nil {
+						avatarChangeInDM = true
+					}
+				}
+
+				if !avatarChangeInGroupDM {
+					err := m.MatchRoomSubscription(dmBobChris, m.MatchRoomUnsetAvatar())(response)
+					if err == nil {
+						avatarChangeInGroupDM = true
+					}
+				}
+
+				if avatarChangeInDM && avatarChangeInGroupDM {
+					return nil
+				}
+				m.LogRooms(t)(response)
+				return fmt.Errorf("Still waiting: avatarChangeInDM=%t avatarChangeInGroupDM=%t", avatarChangeInDM, avatarChangeInGroupDM)
+			},
+		)
+
+	})
 	/*
-		t.Run("Bob's avatar change propagates", func(t *testing.T) {
-			t.Log("Bob changes his avatar.")
-			bobAvatar2 := uploadAvatar(bob, "bob2.png")
-			bob.SetAvatar(t, bobAvatar2)
-
-			avatarChangeInDM := false
-			avatarChangeInGroupDM := false
-			t.Log("Alice syncs until she sees Bob's new avatar.")
-			res = alice.SlidingSyncUntil(
-				t,
-				res.Pos,
-				sync3.Request{},
-				func(response *sync3.Response) error {
-					if !avatarChangeInDM {
-						err := m.MatchRoomSubscription(dmBob, m.MatchRoomAvatar(bobAvatar2))(response)
-						if err == nil {
-							avatarChangeInDM = true
-						}
-					}
-
-					if !avatarChangeInGroupDM {
-						err := m.MatchRoomSubscription(dmBobChris, m.MatchRoomAvatar(bobAvatar2))(response)
-						if err == nil {
-							avatarChangeInGroupDM = true
-						}
-					}
-
-					if avatarChangeInDM && avatarChangeInGroupDM {
-						return nil
-					}
-					m.LogRooms(t)(response)
-					return fmt.Errorf("Still waiting: avatarChangeInDM=%t avatarChangeInGroupDM=%t", avatarChangeInDM, avatarChangeInGroupDM)
-				},
-			)
-
-			t.Log("Bob removes his avatar.")
-			bob.SetAvatar(t, "")
-
-			t.Log("Alice syncs until she sees Bob's avatar vanish.")
-			res = alice.SlidingSyncUntil(
-				t,
-				res.Pos,
-				sync3.Request{},
-				m.MatchRoomSubscriptions(map[string][]m.RoomMatcher{
-					dmBob:      {m.MatchRoomUnsetAvatar()},
-					dmBobChris: {m.MatchRoomUnsetAvatar()},
-				}),
-			)
-		})
 
 		t.Run("Explicit avatar propagates in non-DM room", func(t *testing.T) {
 			t.Log("Alice sets an avatar for the public room.")
