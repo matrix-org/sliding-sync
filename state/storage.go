@@ -861,6 +861,7 @@ func (s *Storage) LatestEventNIDInRooms(roomIDs []string, highestNID int64) (roo
 		if len(slowRooms) == 0 {
 			return nil // no work to do
 		}
+		logger.Warn().Int("slow_rooms", len(slowRooms)).Msg("LatestEventNIDInRooms: pos value provided is far behind the database copy, performance degraded")
 
 		slowRoomToLatestNIDs, err := s.EventsTable.LatestEventNIDInRooms(txn, slowRooms, highestNID)
 		if err != nil {
