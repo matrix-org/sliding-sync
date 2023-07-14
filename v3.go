@@ -73,7 +73,7 @@ func Setup(destHomeserver, postgresURI, secret string, opts Opts) (*handler2.Han
 	// Setup shared DB and HTTP client
 	v2Client := &sync2.HTTPClient{
 		Client: &http.Client{
-			Timeout: 45 * time.Second,
+			Timeout: 5 * time.Minute,
 		},
 		DestinationServer: destHomeserver,
 	}
