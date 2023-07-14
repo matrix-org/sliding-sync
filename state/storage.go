@@ -178,6 +178,14 @@ func (s *Storage) GlobalSnapshot() (ss StartupSnapshot, err error) {
 
 // Extract hero info for all rooms. Requires a prepared snapshot in order to be called.
 func (s *Storage) MetadataForAllRooms(txn *sqlx.Tx, tempTableName string, result map[string]internal.RoomMetadata) error {
+	loadMetadata := func(roomID string) internal.RoomMetadata {
+		metadata, ok := result[roomID]
+		if !ok {
+			metadata = *internal.NewRoomMetadata(roomID)
+		}
+		return metadata
+	}
+
 	// Select the invited member counts
 	rows, err := txn.Query(`
 	SELECT room_id, count(state_key) FROM syncv3_events INNER JOIN ` + tempTableName + ` ON membership_nid=event_nid
@@ -192,10 +200,7 @@ func (s *Storage) MetadataForAllRooms(txn *sqlx.Tx, tempTableName string, result
 		if err := rows.Scan(&roomID, &inviteCount); err != nil {
 			return err
 		}
-		metadata, ok := result[roomID]
-		if !ok {
-			metadata = *internal.NewRoomMetadata(roomID)
-		}
+		metadata := loadMetadata(roomID)
 		metadata.InviteCount = inviteCount
 		result[roomID] = metadata
 	}
@@ -206,10 +211,8 @@ func (s *Storage) MetadataForAllRooms(txn *sqlx.Tx, tempTableName string, result
 		return err
 	}
 	for _, ev := range events {
-		metadata, ok := result[ev.RoomID]
-		if !ok {
-			metadata = *internal.NewRoomMetadata(ev.RoomID)
-		}
+		metadata := loadMetadata(ev.RoomID)
+
 		// For a given room, we'll see many events (one for each event type in the
 		// room's state). We need to pick the largest of these events' timestamps here.
 		ts := gjson.ParseBytes(ev.JSON).Get("origin_server_ts").Uint()
@@ -238,7 +241,7 @@ func (s *Storage) MetadataForAllRooms(txn *sqlx.Tx, tempTableName string, result
 		return fmt.Errorf("failed to load state events for all rooms: %s", err)
 	}
 	for roomID, stateEvents := range roomIDToStateEvents {
-		metadata := result[roomID]
+		metadata := loadMetadata(roomID)
 		for _, ev := range stateEvents {
 			if ev.Type == "m.room.name" && ev.StateKey == "" {
 				metadata.NameEvent = gjson.ParseBytes(ev.JSON).Get("content.name").Str
@@ -280,7 +283,7 @@ func (s *Storage) MetadataForAllRooms(txn *sqlx.Tx, tempTableName string, result
 			continue
 		}
 		seen[key] = true
-		metadata := result[roomID]
+		metadata := loadMetadata(roomID)
 		metadata.Heroes = append(metadata.Heroes, internal.Hero{
 			ID:   targetUser,
 			Name: ev.Get("content.displayname").Str,
@@ -293,7 +296,7 @@ func (s *Storage) MetadataForAllRooms(txn *sqlx.Tx, tempTableName string, result
 	}
 	var spaceRoomIDs []string
 	for _, info := range roomInfos {
-		metadata := result[info.ID]
+		metadata := loadMetadata(info.ID)
 		metadata.Encrypted = info.IsEncrypted
 		metadata.UpgradedRoomID = info.UpgradedRoomID
 		metadata.PredecessorRoomID = info.PredecessorRoomID
@@ -310,7 +313,13 @@ func (s *Storage) MetadataForAllRooms(txn *sqlx.Tx, tempTableName string, result
 		return fmt.Errorf("failed to select space children: %s", err)
 	}
 	for roomID, relations := range spaceRoomToRelations {
-		metadata := result[roomID]
+		if _, exists := result[roomID]; !exists {
+			// this can happen when you join a space (so it populates the spaces table) then leave the space,
+			// so there are no joined members in the space so result doesn't include the room. In this case,
+			// we don't want to have a stub metadata with just the space children, so skip it.
+			continue
+		}
+		metadata := loadMetadata(roomID)
 		metadata.ChildSpaceRooms = make(map[string]struct{}, len(relations))
 		for _, r := range relations {
 			// For now we only honour child state events, but we store all the mappings just in case.
