@@ -1467,7 +1467,6 @@ func TestAvatarFieldInRoomResponse(t *testing.T) {
 				if avatarChangeInDM && avatarChangeInGroupDM {
 					return nil
 				}
-				m.LogRooms(t)(response)
 				return fmt.Errorf("Still waiting: avatarChangeInDM=%t avatarChangeInGroupDM=%t", avatarChangeInDM, avatarChangeInGroupDM)
 			},
 		)

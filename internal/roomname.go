@@ -252,7 +252,11 @@ func CalculateAvatar(metadata *RoomMetadata) AvatarChange {
 	// Assumption: metadata.RemoveHero has been called to remove the user who is syncing
 	// from the list of heroes.
 	if len(metadata.Heroes) == 1 {
-		return AvatarChange(metadata.Heroes[0].Avatar)
+		avatar := metadata.Heroes[0].Avatar
+		if avatar == "" {
+			return DeletedAvatar
+		}
+		return AvatarChange(avatar)
 	}
 	return DeletedAvatar
 }
