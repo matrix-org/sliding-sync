@@ -481,11 +481,20 @@ func (s *ConnState) buildRooms(ctx context.Context, builtSubs []BuiltSubscriptio
 					}
 				}
 			}
-			// old rooms use a different subscription
-			oldRooms := s.getInitialRoomData(ctx, *bs.RoomSubscription.IncludeOldRooms, oldRoomIDs...)
-			for oldRoomID, oldRoom := range oldRooms {
-				result[oldRoomID] = oldRoom
+
+			// If we have old rooms to fetch, do so.
+			if len(oldRoomIDs) > 0 {
+				// old rooms use a different subscription
+				oldRooms := s.getInitialRoomData(ctx, *bs.RoomSubscription.IncludeOldRooms, oldRoomIDs...)
+				for oldRoomID, oldRoom := range oldRooms {
+					result[oldRoomID] = oldRoom
+				}
 			}
+		}
+
+		// There won't be anything to fetch, try the next subscription.
+		if len(roomIDs) == 0 {
+			continue
 		}
 
 		rooms := s.getInitialRoomData(ctx, bs.RoomSubscription, roomIDs...)
