@@ -60,6 +60,32 @@ func NewRoomMetadata(roomID string) *RoomMetadata {
 	}
 }
 
+// CopyHeroes returns a version of the current RoomMetadata whose Heroes field is
+// a brand-new copy of the original Heroes. The return value's Heroes field can be
+// safely modified by the caller, but it is NOT safe for the caller to modify any other
+// fields.
+func (m *RoomMetadata) CopyHeroes() *RoomMetadata {
+	newMetadata := *m
+
+	// XXX: We're doing this because we end up calling RemoveHero() to omit the
+	// currently-sycning user in various places. But this seems smelly. The set of
+	// heroes in the room is a global, room-scoped fact: it is a property of the room
+	// state and nothing else, and all users see the same set of heroes.
+	//
+	// I think the data model would be cleaner if we made the hero-reading functions
+	// aware of the currently syncing user, in order to ignore them without having to
+	// change the underlying data.
+	//
+	// copy the heroes or else we may modify the same slice which would be bad :(
+	newMetadata.Heroes = make([]Hero, len(m.Heroes))
+	copy(newMetadata.Heroes, m.Heroes)
+
+	// ⚠️ NB: there are other pointer fields (e.g. PredecessorRoomID *string) or
+	// and pointer-backed fields (e.g. LatestEventsByType map[string]EventMetadata)
+	// which are not deepcopied here.
+	return &newMetadata
+}
+
 // SameRoomName checks if the fields relevant for room names have changed between the two metadatas.
 // Returns true if there are no changes.
 func (m *RoomMetadata) SameRoomName(other *RoomMetadata) bool {
