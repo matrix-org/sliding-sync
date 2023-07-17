@@ -1378,6 +1378,27 @@ func TestAvatarFieldInRoomResponse(t *testing.T) {
 		m.MatchRoomSubscription(dmBobChris, m.MatchRoomUnsetAvatar()),
 	)
 
+	t.Run("Avatar not resent on message", func(t *testing.T) {
+		t.Log("Bob sends a sentinel message.")
+		sentinel := bob.SendEventSynced(t, dmBob, Event{
+			Type: "m.room.message",
+			Content: map[string]interface{}{
+				"body":    "Hello world",
+				"msgtype": "m.text",
+			},
+		})
+
+		t.Log("Alice syncs until she sees the sentinel. She should not see the DM avatar change.")
+		res = alice.SlidingSyncUntil(t, res.Pos, sync3.Request{}, func(response *sync3.Response) error {
+			matchNoAvatarChange := m.MatchRoomSubscription(dmBob, m.MatchRoomUnchangedAvatar())
+			if err := matchNoAvatarChange(response); err != nil {
+				t.Fatalf("Saw DM avatar change: %s", err)
+			}
+			matchSentinel := m.MatchRoomSubscription(dmBob, MatchRoomTimelineMostRecent(1, []Event{{ID: sentinel}}))
+			return matchSentinel(response)
+		})
+	})
+
 	t.Run("DM declined", func(t *testing.T) {
 		t.Log("Chris leaves his DM with Alice.")
 		chris.LeaveRoom(t, dmChris)
