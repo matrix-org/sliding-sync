@@ -1435,40 +1435,42 @@ func TestAvatarFieldInRoomResponse(t *testing.T) {
 			},
 		)
 
-		/*
-			t.Log("Bob removes his avatar.")
-			bob.SetAvatar(t, "")
+		t.Log("Bob removes his avatar.")
+		bob.SetAvatar(t, "")
 
-			avatarChangeInDM = false
-			avatarChangeInGroupDM = false
-			t.Log("Alice syncs until she sees Bob's avatars vanish.")
-			res = alice.SlidingSyncUntil(
-				t,
-				res.Pos,
-				sync3.Request{},
-				func(response *sync3.Response) error {
-					if !avatarChangeInDM {
-						err := m.MatchRoomSubscription(dmBob, m.MatchRoomUnsetAvatar())(response)
-						if err == nil {
-							avatarChangeInDM = true
-						}
+		avatarChangeInDM = false
+		avatarChangeInGroupDM = false
+		t.Log("Alice syncs until she sees Bob's avatars vanish.")
+		res = alice.SlidingSyncUntil(
+			t,
+			res.Pos,
+			sync3.Request{},
+			func(response *sync3.Response) error {
+				if !avatarChangeInDM {
+					err := m.MatchRoomSubscription(dmBob, m.MatchRoomUnsetAvatar())(response)
+					if err == nil {
+						avatarChangeInDM = true
+					} else {
+						t.Log(err)
 					}
+				}
 
-					if !avatarChangeInGroupDM {
-						err := m.MatchRoomSubscription(dmBobChris, m.MatchRoomUnsetAvatar())(response)
-						if err == nil {
-							avatarChangeInGroupDM = true
-						}
+				if !avatarChangeInGroupDM {
+					err := m.MatchRoomSubscription(dmBobChris, m.MatchRoomUnsetAvatar())(response)
+					if err == nil {
+						avatarChangeInGroupDM = true
+					} else {
+						t.Log(err)
 					}
+				}
 
-					if avatarChangeInDM && avatarChangeInGroupDM {
-						return nil
-					}
-					m.LogRooms(t)(response)
-					return fmt.Errorf("Still waiting: avatarChangeInDM=%t avatarChangeInGroupDM=%t", avatarChangeInDM, avatarChangeInGroupDM)
-				},
-			)
-		*/
+				if avatarChangeInDM && avatarChangeInGroupDM {
+					return nil
+				}
+				m.LogRooms(t)(response)
+				return fmt.Errorf("Still waiting: avatarChangeInDM=%t avatarChangeInGroupDM=%t", avatarChangeInDM, avatarChangeInGroupDM)
+			},
+		)
 
 	})
 	/*
