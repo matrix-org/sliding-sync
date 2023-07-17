@@ -687,16 +687,32 @@ func (c *CSAPI) SlidingSyncUntilMembership(t *testing.T, pos string, roomID stri
 		})
 	}
 
-	return c.SlidingSyncUntilEvent(t, pos, sync3.Request{
+	return c.SlidingSyncUntil(t, pos, sync3.Request{
 		RoomSubscriptions: map[string]sync3.RoomSubscription{
 			roomID: {
 				TimelineLimit: 10,
 			},
 		},
-	}, roomID, Event{
-		Type:     "m.room.member",
-		StateKey: &target.UserID,
-		Content:  content,
+	}, func(r *sync3.Response) error {
+		room, ok := r.Rooms[roomID]
+		if !ok {
+			return fmt.Errorf("missing room %s", roomID)
+		}
+		for _, got := range room.Timeline {
+			wantEvent := Event{
+				Type:     "m.room.member",
+				StateKey: &target.UserID,
+			}
+			if err := eventsEqual([]Event{wantEvent}, []json.RawMessage{got}); err == nil {
+				gotMembership := gjson.GetBytes(got, "content.membership")
+				if gotMembership.Exists() && gotMembership.Type == gjson.String && gotMembership.Str == membership {
+					return nil
+				}
+			} else {
+				t.Log(err)
+			}
+		}
+		return fmt.Errorf("found room %s but missing event", roomID)
 	})
 }
 
