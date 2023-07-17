@@ -297,6 +297,13 @@ func (s *connStateLive) processGlobalUpdates(ctx context.Context, builder *Rooms
 
 		metadata := rup.GlobalRoomMetadata().CopyHeroes()
 		metadata.RemoveHero(s.userID)
+		// TODO: if we change a room from being a DM to not being a DM, we should call
+		// SetRoom and recalculate avatars. To do that we'd need to
+		//  - listen to m.direct global account data events
+		//   - compute the symmetric difference between old and new
+		//   - call SetRooms for each room in the difference.
+		// I'm assuming this happens so rarely that we can ignore this for now. PRs
+		// welcome if you a strong opinion to the contrary.
 		delta = s.lists.SetRoom(sync3.RoomConnMetadata{
 			RoomMetadata:                  *metadata,
 			UserRoomData:                  *rup.UserRoomMetadata(),
