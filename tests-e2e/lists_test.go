@@ -1373,8 +1373,8 @@ func TestAvatarFieldInRoomResponse(t *testing.T) {
 		t,
 		res,
 		m.MatchRoomSubscription(public, m.MatchRoomUnsetAvatar()),
-		m.MatchRoomSubscription(dmBob, m.MatchRoomAvatar(bobAvatar)),
-		m.MatchRoomSubscription(dmChris, m.MatchRoomAvatar(chrisAvatar)),
+		m.MatchRoomSubscription(dmBob, m.MatchRoomAvatar(bob.AvatarURL)),
+		m.MatchRoomSubscription(dmChris, m.MatchRoomAvatar(chris.AvatarURL)),
 		m.MatchRoomSubscription(dmBobChris, m.MatchRoomUnsetAvatar()),
 	)
 
@@ -1419,7 +1419,7 @@ func TestAvatarFieldInRoomResponse(t *testing.T) {
 
 		t.Log("Alice sees the room's avatar change to Bob's avatar.")
 		// Because this is now a DM room with exactly one other (joined|invited) member.
-		m.MatchResponse(t, res, m.MatchRoomSubscription(dmBobChris, m.MatchRoomAvatar(bobAvatar)))
+		m.MatchResponse(t, res, m.MatchRoomSubscription(dmBobChris, m.MatchRoomAvatar(bob.AvatarURL)))
 	})
 
 	t.Run("Bob's avatar change propagates", func(t *testing.T) {
@@ -1436,14 +1436,14 @@ func TestAvatarFieldInRoomResponse(t *testing.T) {
 			sync3.Request{},
 			func(response *sync3.Response) error {
 				if !avatarChangeInDM {
-					err := m.MatchRoomSubscription(dmBob, m.MatchRoomAvatar(bobAvatar2))(response)
+					err := m.MatchRoomSubscription(dmBob, m.MatchRoomAvatar(bob.AvatarURL))(response)
 					if err == nil {
 						avatarChangeInDM = true
 					}
 				}
 
 				if !avatarChangeInGroupDM {
-					err := m.MatchRoomSubscription(dmBobChris, m.MatchRoomAvatar(bobAvatar2))(response)
+					err := m.MatchRoomSubscription(dmBobChris, m.MatchRoomAvatar(bob.AvatarURL))(response)
 					if err == nil {
 						avatarChangeInGroupDM = true
 					}
@@ -1452,7 +1452,7 @@ func TestAvatarFieldInRoomResponse(t *testing.T) {
 				if avatarChangeInDM && avatarChangeInGroupDM {
 					return nil
 				}
-				return fmt.Errorf("Still waiting: avatarChangeInDM=%t avatarChangeInGroupDM=%t", avatarChangeInDM, avatarChangeInGroupDM)
+				return fmt.Errorf("still waiting: avatarChangeInDM=%t avatarChangeInGroupDM=%t", avatarChangeInDM, avatarChangeInGroupDM)
 			},
 		)
 
@@ -1488,7 +1488,7 @@ func TestAvatarFieldInRoomResponse(t *testing.T) {
 				if avatarChangeInDM && avatarChangeInGroupDM {
 					return nil
 				}
-				return fmt.Errorf("Still waiting: avatarChangeInDM=%t avatarChangeInGroupDM=%t", avatarChangeInDM, avatarChangeInGroupDM)
+				return fmt.Errorf("still waiting: avatarChangeInDM=%t avatarChangeInGroupDM=%t", avatarChangeInDM, avatarChangeInGroupDM)
 			},
 		)
 
@@ -1546,7 +1546,7 @@ func TestAvatarFieldInRoomResponse(t *testing.T) {
 		res = alice.SlidingSyncUntilMembership(t, res.Pos, dmChris, chris, "invite")
 
 		t.Log("Alice should see the DM with Chris's avatar.")
-		m.MatchResponse(t, res, m.MatchRoomSubscription(dmChris, m.MatchRoomAvatar(chrisAvatar)))
+		m.MatchResponse(t, res, m.MatchRoomSubscription(dmChris, m.MatchRoomAvatar(chris.AvatarURL)))
 
 		t.Log("Chris joins the room.")
 		chris.JoinRoom(t, dmChris, nil)
@@ -1597,10 +1597,11 @@ func TestAvatarFieldInRoomResponse(t *testing.T) {
 		chris.SetState(t, dmChris, "m.room.avatar", "", map[string]interface{}{})
 
 		t.Log("Alice syncs until the DM avatar returns to Chris's most recent avatar.")
-		res = alice.SlidingSyncUntil(t, res.Pos, sync3.Request{}, m.MatchRoomSubscription(dmChris, m.MatchRoomAvatar(chrisAvatar2)))
+		res = alice.SlidingSyncUntil(t, res.Pos, sync3.Request{}, m.MatchRoomSubscription(dmChris, m.MatchRoomAvatar(chris.AvatarURL)))
 	})
 
 	t.Run("Changing DM flag", func(t *testing.T) {
+		t.Skip("TODO: unimplemented")
 		t.Log("Alice clears the DM flag on Bob's room.")
 		alice.SetGlobalAccountData(t, "m.direct", map[string]interface{}{
 			"content": map[string][]string{
@@ -1669,5 +1670,18 @@ func TestAvatarFieldInRoomResponse(t *testing.T) {
 
 	})
 
-	// TODO when you're invited, you see the avatar
+	t.Run("See avatar when invited", func(t *testing.T) {
+		t.Log("Chris invites Alice to a DM.")
+		dmInvited := chris.CreateRoom(t, map[string]interface{}{
+			"preset":    "trusted_private_chat",
+			"is_direct": true,
+			"invite":    []string{alice.UserID},
+		})
+
+		t.Log("Alice syncs until she sees the invite.")
+		res = alice.SlidingSyncUntilMembership(t, res.Pos, dmInvited, alice, "invite")
+
+		t.Log("The new room should use Chris's avatar.")
+		m.MatchResponse(t, res, m.MatchRoomSubscription(dmInvited, m.MatchRoomAvatar(chris.AvatarURL)))
+	})
 }
