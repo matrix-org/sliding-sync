@@ -688,11 +688,105 @@ func TestGlobalSnapshot(t *testing.T) {
 	}
 }
 
-/*
 func TestAllJoinedMembers(t *testing.T) {
 	assertNoError(t, cleanDB(t))
-	roomIDToEventMap := map[string][]json.RawMessage{}
-} */
+	store := NewStorage(postgresConnectionString)
+	defer store.Teardown()
+
+	alice := "@alice:localhost"
+	bob := "@bob:localhost"
+	charlie := "@charlie:localhost"
+	doris := "@doris:localhost"
+	eve := "@eve:localhost"
+	frank := "@frank:localhost"
+
+	testCases := []struct {
+		Name                  string
+		InitMemberships       [][2]string
+		AccumulateMemberships [][2]string
+		WantJoined            []string
+		WantInvited           []string
+	}{
+		{
+			Name:                  "basic joined users",
+			InitMemberships:       [][2]string{{alice, "join"}},
+			AccumulateMemberships: [][2]string{{bob, "join"}},
+			WantJoined:            []string{alice, bob},
+		},
+		{
+			Name:                  "basic invited users",
+			InitMemberships:       [][2]string{{alice, "join"}},
+			AccumulateMemberships: [][2]string{{bob, "invite"}},
+			WantJoined:            []string{alice},
+			WantInvited:           []string{bob},
+		},
+		{
+			Name:                  "many join/leaves, use latest",
+			InitMemberships:       [][2]string{{alice, "join"}, {charlie, "join"}, {frank, "join"}},
+			AccumulateMemberships: [][2]string{{bob, "join"}, {charlie, "leave"}, {frank, "leave"}, {charlie, "join"}, {eve, "join"}},
+			WantJoined:            []string{alice, bob, charlie, eve},
+		},
+		{
+			Name:                  "many invites, use latest",
+			InitMemberships:       [][2]string{{alice, "join"}, {doris, "join"}},
+			AccumulateMemberships: [][2]string{{doris, "leave"}, {charlie, "invite"}, {doris, "invite"}},
+			WantJoined:            []string{alice},
+			WantInvited:           []string{charlie, doris},
+		},
+		{
+			Name:                  "invite and rejection in accumulate",
+			InitMemberships:       [][2]string{{alice, "join"}},
+			AccumulateMemberships: [][2]string{{frank, "invite"}, {frank, "leave"}},
+			WantJoined:            []string{alice},
+		},
+		{
+			Name:                  "invite in initial, rejection in accumulate",
+			InitMemberships:       [][2]string{{alice, "join"}, {frank, "invite"}},
+			AccumulateMemberships: [][2]string{{frank, "leave"}},
+			WantJoined:            []string{alice},
+		},
+	}
+
+	initialStates := map[string][]json.RawMessage{
+		roomJoined: append(createRoomState(t, alice)),
+	}
+
+	for roomID, init := range initialStates {
+		_, err := store.Initialise(roomID, init)
+		assertNoError(t, err)
+	}
+
+	// should get all joined members correctly
+	var joinedMembers map[string][]string
+	// should set join/invite counts correctly
+	var roomMetadatas map[string]internal.RoomMetadata
+	err := sqlutil.WithTransaction(store.DB, func(txn *sqlx.Tx) error {
+		tableName, err := store.PrepareSnapshot(txn)
+		if err != nil {
+			return err
+		}
+		joinedMembers, roomMetadatas, err = store.AllJoinedMembers(txn, tableName)
+		return err
+	})
+	assertNoError(t, err)
+
+}
+
+func newMembershipEvent(t *testing.T, sender, target, membership string) json.RawMessage {
+	return testutils.NewStateEvent(t, "m.room.member", target, sender, map[string]interface{}{
+		"membership": membership,
+	})
+}
+
+func createRoomState(t *testing.T, sender string) []json.RawMessage {
+	return []json.RawMessage{
+		testutils.NewStateEvent(t, "m.room.create", "", sender, map[string]interface{}{
+			"creator":      sender,
+			"room_version": "10",
+		}),
+		newMembershipEvent(t, sender, sender, "join"),
+	}
+}
 
 func cleanDB(t *testing.T) error {
 	// make a fresh DB which is unpolluted from other tests
