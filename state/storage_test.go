@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"reflect"
 	"sort"
 	"testing"
@@ -700,10 +701,12 @@ func TestAllJoinedMembers(t *testing.T) {
 	eve := "@eve:localhost"
 	frank := "@frank:localhost"
 
+	// Alice is always the creator and the inviter for simplicity's sake
 	testCases := []struct {
 		Name                  string
 		InitMemberships       [][2]string
 		AccumulateMemberships [][2]string
+		RoomID                string // tests set this dynamically
 		WantJoined            []string
 		WantInvited           []string
 	}{
@@ -715,10 +718,10 @@ func TestAllJoinedMembers(t *testing.T) {
 		},
 		{
 			Name:                  "basic invited users",
-			InitMemberships:       [][2]string{{alice, "join"}},
+			InitMemberships:       [][2]string{{alice, "join"}, {charlie, "invite"}},
 			AccumulateMemberships: [][2]string{{bob, "invite"}},
 			WantJoined:            []string{alice},
-			WantInvited:           []string{bob},
+			WantInvited:           []string{bob, charlie},
 		},
 		{
 			Name:                  "many join/leaves, use latest",
@@ -747,13 +750,35 @@ func TestAllJoinedMembers(t *testing.T) {
 		},
 	}
 
-	initialStates := map[string][]json.RawMessage{
-		roomJoined: append(createRoomState(t, alice)),
+	serialise := func(memberships [][2]string) []json.RawMessage {
+		var result []json.RawMessage
+		for _, userWithMembership := range memberships {
+			target := userWithMembership[0]
+			sender := userWithMembership[0]
+			membership := userWithMembership[1]
+			if membership == "invite" {
+				// Alice is always the inviter
+				sender = alice
+			}
+			result = append(result, testutils.NewStateEvent(t, "m.room.member", target, sender, map[string]interface{}{
+				"membership": membership,
+			}))
+		}
+		return result
 	}
 
-	for roomID, init := range initialStates {
-		_, err := store.Initialise(roomID, init)
+	for i, tc := range testCases {
+		roomID := fmt.Sprintf("!TestAllJoinedMembers_%d:localhost", i)
+		_, err := store.Initialise(roomID, append([]json.RawMessage{
+			testutils.NewStateEvent(t, "m.room.create", "", alice, map[string]interface{}{
+				"creator": alice, // alice is always the creator
+			}),
+		}, serialise(tc.InitMemberships)...))
 		assertNoError(t, err)
+
+		_, _, err = store.Accumulate(roomID, "foo", serialise(tc.AccumulateMemberships))
+		assertNoError(t, err)
+		testCases[i].RoomID = roomID // remember this for later
 	}
 
 	// should get all joined members correctly
@@ -769,6 +794,32 @@ func TestAllJoinedMembers(t *testing.T) {
 		return err
 	})
 	assertNoError(t, err)
+
+	for _, tc := range testCases {
+		roomID := tc.RoomID
+		if roomID == "" {
+			t.Fatalf("test case has no room id set: %+v", tc)
+		}
+		// make sure joined members match
+		sort.Strings(joinedMembers[roomID])
+		sort.Strings(tc.WantJoined)
+		if !reflect.DeepEqual(joinedMembers[roomID], tc.WantJoined) {
+			t.Errorf("%v: got joined members %v want %v", tc.Name, joinedMembers[roomID], tc.WantJoined)
+		}
+		// make sure join/invite counts match
+		wantJoined := len(tc.WantJoined)
+		wantInvited := len(tc.WantInvited)
+		metadata, ok := roomMetadatas[roomID]
+		if !ok {
+			t.Fatalf("no room metadata for room %v", roomID)
+		}
+		if metadata.InviteCount != wantInvited {
+			t.Errorf("%v: got invite count %d want %d", tc.Name, metadata.InviteCount, wantInvited)
+		}
+		if metadata.JoinCount != wantJoined {
+			t.Errorf("%v: got join count %d want %d", tc.Name, metadata.JoinCount, wantJoined)
+		}
+	}
 
 }
 
