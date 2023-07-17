@@ -820,23 +820,6 @@ func TestAllJoinedMembers(t *testing.T) {
 			t.Errorf("%v: got join count %d want %d", tc.Name, metadata.JoinCount, wantJoined)
 		}
 	}
-
-}
-
-func newMembershipEvent(t *testing.T, sender, target, membership string) json.RawMessage {
-	return testutils.NewStateEvent(t, "m.room.member", target, sender, map[string]interface{}{
-		"membership": membership,
-	})
-}
-
-func createRoomState(t *testing.T, sender string) []json.RawMessage {
-	return []json.RawMessage{
-		testutils.NewStateEvent(t, "m.room.create", "", sender, map[string]interface{}{
-			"creator":      sender,
-			"room_version": "10",
-		}),
-		newMembershipEvent(t, sender, sender, "join"),
-	}
 }
 
 func cleanDB(t *testing.T) error {
