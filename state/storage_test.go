@@ -210,18 +210,19 @@ func TestStorageJoinedRoomsAfterPosition(t *testing.T) {
 		}
 	}
 
-	newMetadata := func(roomID string, joinCount int) internal.RoomMetadata {
+	newMetadata := func(roomID string, joinCount, inviteCount int) internal.RoomMetadata {
 		m := internal.NewRoomMetadata(roomID)
 		m.JoinCount = joinCount
+		m.InviteCount = inviteCount
 		return *m
 	}
 
 	// also test MetadataForAllRooms
 	roomIDToMetadata := map[string]internal.RoomMetadata{
-		joinedRoomID:    newMetadata(joinedRoomID, 1),
-		invitedRoomID:   newMetadata(invitedRoomID, 1),
-		banRoomID:       newMetadata(banRoomID, 1),
-		bobJoinedRoomID: newMetadata(bobJoinedRoomID, 2),
+		joinedRoomID:    newMetadata(joinedRoomID, 1, 0),
+		invitedRoomID:   newMetadata(invitedRoomID, 1, 1),
+		banRoomID:       newMetadata(banRoomID, 1, 0),
+		bobJoinedRoomID: newMetadata(bobJoinedRoomID, 2, 0),
 	}
 
 	tempTableName, err := store.PrepareSnapshot(txn)
@@ -686,6 +687,12 @@ func TestGlobalSnapshot(t *testing.T) {
 		assertRoomMetadata(t, snapshot.GlobalMetadata[roomID], want)
 	}
 }
+
+/*
+func TestAllJoinedMembers(t *testing.T) {
+	assertNoError(t, cleanDB(t))
+	roomIDToEventMap := map[string][]json.RawMessage{}
+} */
 
 func cleanDB(t *testing.T) error {
 	// make a fresh DB which is unpolluted from other tests
