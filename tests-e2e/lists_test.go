@@ -1600,7 +1600,74 @@ func TestAvatarFieldInRoomResponse(t *testing.T) {
 		res = alice.SlidingSyncUntil(t, res.Pos, sync3.Request{}, m.MatchRoomSubscription(dmChris, m.MatchRoomAvatar(chrisAvatar2)))
 	})
 
-	// TODO unset DM's avatar, then set a custom one in that room.
+	t.Run("Changing DM flag", func(t *testing.T) {
+		t.Log("Alice clears the DM flag on Bob's room.")
+		alice.SetGlobalAccountData(t, "m.direct", map[string]interface{}{
+			"content": map[string][]string{
+				bob.UserID:   {}, // no dmBob here
+				chris.UserID: {dmChris, dmBobChris},
+			},
+		})
+
+		t.Log("Alice syncs until she sees a new set of account data.")
+		res = alice.SlidingSyncUntil(t, res.Pos, sync3.Request{
+			Extensions: extensions.Request{
+				AccountData: &extensions.AccountDataRequest{
+					extensions.Core{Enabled: &boolTrue},
+				},
+			},
+		}, func(response *sync3.Response) error {
+			if response.Extensions.AccountData == nil {
+				return fmt.Errorf("no account data yet")
+			}
+			if len(response.Extensions.AccountData.Global) == 0 {
+				return fmt.Errorf("no global account data yet")
+			}
+			return nil
+		})
+
+		t.Log("The DM with Bob should no longer be a DM and should no longer have an avatar.")
+		m.MatchResponse(t, res, m.MatchRoomSubscription(dmBob, func(r sync3.Room) error {
+			if r.IsDM {
+				return fmt.Errorf("dmBob is still a DM")
+			}
+			return m.MatchRoomUnsetAvatar()(r)
+		}))
+
+		t.Log("Alice sets the DM flag on Bob's room.")
+		alice.SetGlobalAccountData(t, "m.direct", map[string]interface{}{
+			"content": map[string][]string{
+				bob.UserID:   {dmBob}, // dmBob reinstated
+				chris.UserID: {dmChris, dmBobChris},
+			},
+		})
+
+		t.Log("Alice syncs until she sees a new set of account data.")
+		res = alice.SlidingSyncUntil(t, res.Pos, sync3.Request{
+			Extensions: extensions.Request{
+				AccountData: &extensions.AccountDataRequest{
+					extensions.Core{Enabled: &boolTrue},
+				},
+			},
+		}, func(response *sync3.Response) error {
+			if response.Extensions.AccountData == nil {
+				return fmt.Errorf("no account data yet")
+			}
+			if len(response.Extensions.AccountData.Global) == 0 {
+				return fmt.Errorf("no global account data yet")
+			}
+			return nil
+		})
+
+		t.Log("The room should have Bob's avatar again.")
+		m.MatchResponse(t, res, m.MatchRoomSubscription(dmBob, func(r sync3.Room) error {
+			if !r.IsDM {
+				return fmt.Errorf("dmBob is still not a DM")
+			}
+			return m.MatchRoomAvatar(bob.AvatarURL)(r)
+		}))
+
+	})
+
 	// TODO when you're invited, you see the avatar
-	// TODO make a DM not a DM, loses its avatar; remake it a DM and it gains one.
 }

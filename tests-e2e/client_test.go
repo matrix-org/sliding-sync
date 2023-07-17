@@ -134,6 +134,7 @@ type CSAPI struct {
 	Localpart   string
 	AccessToken string
 	DeviceID    string
+	AvatarURL   string
 	BaseURL     string
 	Client      *http.Client
 	// how long are we willing to wait for MustSyncUntil.... calls
@@ -166,6 +167,7 @@ func (c *CSAPI) SetAvatar(t *testing.T, avatarURL string) {
 		"avatar_url": avatarURL,
 	}
 	c.MustDoFunc(t, "PUT", []string{"_matrix", "client", "v3", "profile", c.UserID, "avatar_url"}, WithJSONBody(t, reqBody))
+	c.AvatarURL = avatarURL
 }
 
 // DownloadContent downloads media from the server, returning the raw bytes and the Content-Type. Fails the test on error.
