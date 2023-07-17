@@ -596,7 +596,7 @@ func (s *ConnState) getInitialRoomData(ctx context.Context, roomSub sync3.RoomSu
 		}
 		rooms[roomID] = sync3.Room{
 			Name:              internal.CalculateRoomName(metadata, 5), // TODO: customisable?
-			AvatarChange:      internal.CalculateAvatar(metadata),
+			AvatarChange:      sync3.NewAvatarChange(internal.CalculateAvatar(metadata)),
 			NotificationCount: int64(userRoomData.NotificationCount),
 			HighlightCount:    int64(userRoomData.HighlightCount),
 			Timeline:          roomToTimeline[roomID],

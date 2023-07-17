@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
-	"github.com/matrix-org/sliding-sync/internal"
 	"reflect"
 	"sort"
 	"testing"
@@ -55,8 +54,8 @@ func MatchRoomAvatar(wantAvatar string) RoomMatcher {
 // avatar, or has had its avatar deleted.
 func MatchRoomUnsetAvatar() RoomMatcher {
 	return func(r sync3.Room) error {
-		if r.AvatarChange != internal.DeletedAvatar {
-			return fmt.Errorf("MatchRoomAvatar: got \"%s\" want \"%s\"", r.AvatarChange, internal.DeletedAvatar)
+		if r.AvatarChange != sync3.DeletedAvatar {
+			return fmt.Errorf("MatchRoomAvatar: got \"%s\" want \"%s\"", r.AvatarChange, sync3.DeletedAvatar)
 		}
 		return nil
 	}
@@ -66,8 +65,8 @@ func MatchRoomUnsetAvatar() RoomMatcher {
 // change to its avatar, or has had its avatar deleted.
 func MatchRoomUnchangedAvatar() RoomMatcher {
 	return func(r sync3.Room) error {
-		if r.AvatarChange != internal.UnchangedAvatar {
-			return fmt.Errorf("MatchRoomAvatar: got \"%s\" want \"%s\"", r.AvatarChange, internal.UnchangedAvatar)
+		if r.AvatarChange != sync3.UnchangedAvatar {
+			return fmt.Errorf("MatchRoomAvatar: got \"%s\" want \"%s\"", r.AvatarChange, sync3.UnchangedAvatar)
 		}
 		return nil
 	}

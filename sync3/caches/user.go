@@ -52,10 +52,11 @@ type UserRoomData struct {
 	// as the set of spaces may be different for different users.
 
 	// ResolvedAvatarURL is the avatar that should be displayed to this user to
-	// represent this room. Avatars set in m.room.avatar take precedence; if this is
-	// missing and the room is a DM with one other user, we fall back to that user's
+	// represent this room. The empty string means that this room has no avatar.
+	// Avatars set in m.room.avatar take precedence; if this is missing and the room is
+	// a DM with one other user joined or invited, we fall back to that user's
 	// avatar (if any) as specified in their membership event in that room.
-	ResolvedAvatarURL internal.AvatarChange
+	ResolvedAvatarURL string
 
 	Spaces map[string]struct{}
 	// Map of tag to order float.

@@ -245,18 +245,17 @@ func disambiguate(heroes []Hero) []string {
 	return disambiguatedNames
 }
 
-func CalculateAvatar(metadata *RoomMetadata) AvatarChange {
+const noAvatar = ""
+
+// CalculateAvatar computes the avatar for the room, based on the global room metadata.
+// Assumption: metadata.RemoveHero has been called to remove the user who is syncing
+// from the list of heroes.
+func CalculateAvatar(metadata *RoomMetadata) string {
 	if metadata.AvatarEvent != "" {
-		return AvatarChange(metadata.AvatarEvent)
+		return metadata.AvatarEvent
 	}
-	// Assumption: metadata.RemoveHero has been called to remove the user who is syncing
-	// from the list of heroes.
 	if len(metadata.Heroes) == 1 {
-		avatar := metadata.Heroes[0].Avatar
-		if avatar == "" {
-			return DeletedAvatar
-		}
-		return AvatarChange(avatar)
+		return metadata.Heroes[0].Avatar
 	}
-	return DeletedAvatar
+	return noAvatar
 }
