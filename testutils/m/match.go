@@ -686,13 +686,16 @@ func MatchLists(matchers map[string][]ListMatcher) RespMatcher {
 	}
 }
 
+const AnsiRedForeground = "\x1b[31m"
+const AnsiResetForeground = "\x1b[39m"
+
 func MatchResponse(t *testing.T, res *sync3.Response, matchers ...RespMatcher) {
 	t.Helper()
 	for _, m := range matchers {
 		err := m(res)
 		if err != nil {
-			b, _ := json.Marshal(res)
-			t.Errorf("MatchResponse: %s\n%+v", err, string(b))
+			b, _ := json.MarshalIndent(res, "", "    ")
+			t.Errorf("%vMatchResponse: %s\n%s%v", AnsiRedForeground, err, string(b), AnsiResetForeground)
 		}
 	}
 }
