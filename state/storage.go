@@ -186,25 +186,6 @@ func (s *Storage) MetadataForAllRooms(txn *sqlx.Tx, tempTableName string, result
 		return metadata
 	}
 
-	// Select the invited member counts
-	rows, err := txn.Query(`
-	SELECT room_id, count(state_key) FROM syncv3_events INNER JOIN ` + tempTableName + ` ON membership_nid=event_nid
-		WHERE (membership='_invite' OR membership = 'invite') AND event_type='m.room.member' GROUP BY room_id`)
-	if err != nil {
-		return err
-	}
-	defer rows.Close()
-	for rows.Next() {
-		var roomID string
-		var inviteCount int
-		if err := rows.Scan(&roomID, &inviteCount); err != nil {
-			return err
-		}
-		metadata := loadMetadata(roomID)
-		metadata.InviteCount = inviteCount
-		result[roomID] = metadata
-	}
-
 	// work out latest timestamps
 	events, err := s.Accumulator.eventsTable.selectLatestEventByTypeInAllRooms(txn)
 	if err != nil {
@@ -256,7 +237,7 @@ func (s *Storage) MetadataForAllRooms(txn *sqlx.Tx, tempTableName string, result
 	// "This should be the first 5 members of the room, ordered by stream ordering, which are joined or invited."
 	// Unclear if this is the first 5 *most recent* (backwards) or forwards. For now we'll use the most recent
 	// ones, and select 6 of them so we can always use 5 no matter who is requesting the room name.
-	rows, err = txn.Query(`
+	rows, err := txn.Query(`
 	SELECT rf.* FROM (
 		SELECT room_id, event, rank() OVER (
 			PARTITION BY room_id ORDER BY event_nid DESC
@@ -819,32 +800,45 @@ func (s *Storage) RoomMembershipDelta(roomID string, from, to int64, limit int) 
 }
 
 // Extract all rooms with joined members, and include the joined user list. Requires a prepared snapshot in order to be called.
-func (s *Storage) AllJoinedMembers(txn *sqlx.Tx, tempTableName string) (result map[string][]string, metadata map[string]internal.RoomMetadata, err error) {
+func (s *Storage) AllJoinedMembers(txn *sqlx.Tx, tempTableName string) (joinedMembers map[string][]string, metadata map[string]internal.RoomMetadata, err error) {
 	rows, err := txn.Query(
-		`SELECT room_id, state_key from ` + tempTableName + ` INNER JOIN syncv3_events on membership_nid = event_nid WHERE membership='join' OR membership='_join' ORDER BY event_nid ASC`,
+		`SELECT room_id, state_key, membership from ` + tempTableName + ` INNER JOIN syncv3_events
+		on membership_nid = event_nid WHERE membership='join' OR membership='_join' OR membership='invite' OR membership='_invite' ORDER BY event_nid ASC`,
 	)
 	if err != nil {
 		return nil, nil, err
 	}
 	defer rows.Close()
-	result = make(map[string][]string)
+	joinedMembers = make(map[string][]string)
 	var roomID string
-	var joinedUserID string
+	inviteCounts := make(map[string]int)
+	var stateKey string
+	var membership string
 	for rows.Next() {
-		if err := rows.Scan(&roomID, &joinedUserID); err != nil {
+		if err := rows.Scan(&roomID, &stateKey, &membership); err != nil {
 			return nil, nil, err
 		}
-		users := result[roomID]
-		users = append(users, joinedUserID)
-		result[roomID] = users
+		switch membership {
+		case "join":
+			fallthrough
+		case "_join":
+			users := joinedMembers[roomID]
+			users = append(users, stateKey)
+			joinedMembers[roomID] = users
+		case "invite":
+			fallthrough
+		case "_invite":
+			inviteCounts[roomID] = inviteCounts[roomID] + 1
+		}
 	}
 	metadata = make(map[string]internal.RoomMetadata)
-	for roomID, joinedMembers := range result {
+	for roomID, members := range joinedMembers {
 		m := internal.NewRoomMetadata(roomID)
-		m.JoinCount = len(joinedMembers)
+		m.JoinCount = len(members)
+		m.InviteCount = inviteCounts[roomID]
 		metadata[roomID] = *m
 	}
-	return result, metadata, nil
+	return joinedMembers, metadata, nil
 }
 
 func (s *Storage) LatestEventNIDInRooms(roomIDs []string, highestNID int64) (roomToNID map[string]int64, err error) {
