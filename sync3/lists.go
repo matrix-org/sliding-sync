@@ -33,6 +33,7 @@ type RoomListDelta struct {
 
 type RoomDelta struct {
 	RoomNameChanged          bool
+	RoomAvatarChanged        bool
 	JoinCountChanged         bool
 	InviteCountChanged       bool
 	NotificationCountChanged bool
@@ -73,6 +74,10 @@ func (s *InternalRequestLists) SetRoom(r RoomConnMetadata) (delta RoomDelta) {
 				strings.Trim(internal.CalculateRoomName(&r.RoomMetadata, 5), "#!():_@"),
 			)
 		}
+		delta.RoomAvatarChanged = !existing.SameRoomAvatar(&r.RoomMetadata)
+		if delta.RoomAvatarChanged {
+			r.ResolvedAvatarURL = internal.CalculateAvatar(&r.RoomMetadata)
+		}
 
 		// Interpret the timestamp map on r as the changes we should apply atop the
 		// existing timestamps.
@@ -97,6 +102,7 @@ func (s *InternalRequestLists) SetRoom(r RoomConnMetadata) (delta RoomDelta) {
 		r.CanonicalisedName = strings.ToLower(
 			strings.Trim(internal.CalculateRoomName(&r.RoomMetadata, 5), "#!():_@"),
 		)
+		r.ResolvedAvatarURL = internal.CalculateAvatar(&r.RoomMetadata)
 		// We'll automatically use the LastInterestedEventTimestamps provided by the
 		// caller, so that recency sorts work.
 	}
