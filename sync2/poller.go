@@ -427,9 +427,10 @@ func (p *poller) Terminate() {
 }
 
 type pollLoopState struct {
-	firstTime bool
-	failCount int
-	since     string
+	firstTime       bool
+	failCount       int
+	since           string
+	lastStoredSince time.Time // The time we last stored the since token in the database
 }
 
 // Poll will block forever, repeatedly calling v2 sync. Do this in a goroutine.
@@ -463,6 +464,8 @@ func (p *poller) Poll(since string) {
 		firstTime: true,
 		failCount: 0,
 		since:     since,
+		// Setting time.Time{} results in the first poll loop to immediately store the since token.
+		lastStoredSince: time.Time{},
 	}
 	for !p.terminated.Load() {
 		ctx, task := internal.StartTask(ctx, "Poll")
@@ -544,8 +547,12 @@ func (p *poller) poll(ctx context.Context, s *pollLoopState) error {
 	wasFirst := s.firstTime
 
 	s.since = resp.NextBatch
-	// persist the since token (TODO: this could get slow if we hammer the DB too much)
-	p.receiver.UpdateDeviceSince(ctx, p.userID, p.deviceID, s.since)
+	// Persist the since token if it either was more than one minute ago since we
+	// last stored it OR the response contains to-device messages
+	if time.Since(s.lastStoredSince) > time.Minute || len(resp.ToDevice.Events) > 0 {
+		p.receiver.UpdateDeviceSince(ctx, p.userID, p.deviceID, s.since)
+		s.lastStoredSince = time.Now()
+	}
 
 	if s.firstTime {
 		s.firstTime = false
