@@ -644,6 +644,15 @@ func LogResponse(t *testing.T) RespMatcher {
 	}
 }
 
+// LogRooms is like LogResponse, but only logs the rooms section of the response.
+func LogRooms(t *testing.T) RespMatcher {
+	return func(res *sync3.Response) error {
+		dump, _ := json.MarshalIndent(res.Rooms, "", "    ")
+		t.Logf("Response rooms were: %s", dump)
+		return nil
+	}
+}
+
 func CheckList(listKey string, res sync3.ResponseList, matchers ...ListMatcher) error {
 	for _, m := range matchers {
 		if err := m(res); err != nil {
