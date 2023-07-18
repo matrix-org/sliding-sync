@@ -118,13 +118,7 @@ func (c *GlobalCache) copyRoom(roomID string) *internal.RoomMetadata {
 		logger.Warn().Str("room", roomID).Msg("GlobalCache.LoadRoom: no metadata for this room, returning stub")
 		return internal.NewRoomMetadata(roomID)
 	}
-	srCopy := *sr
-	// copy the heroes or else we may modify the same slice which would be bad :(
-	srCopy.Heroes = make([]internal.Hero, len(sr.Heroes))
-	for i := range sr.Heroes {
-		srCopy.Heroes[i] = sr.Heroes[i]
-	}
-	return &srCopy
+	return sr.CopyHeroes()
 }
 
 // LoadJoinedRooms loads all current joined room metadata for the user given, together

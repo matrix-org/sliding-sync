@@ -328,7 +328,10 @@ func (c *UserCache) LoadRoomData(roomID string) UserRoomData {
 }
 
 type roomUpdateCache struct {
-	roomID         string
+	roomID string
+	// globalRoomData is a snapshot of the global metadata for this room immediately
+	// after this update. It is a copy, specific to the given user whose Heroes
+	// field can be freely modified.
 	globalRoomData *internal.RoomMetadata
 	userRoomData   *UserRoomData
 }
