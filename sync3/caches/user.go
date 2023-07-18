@@ -125,7 +125,7 @@ func NewInviteData(ctx context.Context, userID, roomID string, inviteState []jso
 		case "m.room.name":
 			id.NameEvent = j.Get("content.name").Str
 		case "m.room.avatar":
-			id.AvatarEvent = j.Get("content.avatar_url").Str
+			id.AvatarEvent = j.Get("content.url").Str
 		case "m.room.canonical_alias":
 			id.CanonicalAlias = j.Get("content.alias").Str
 		case "m.room.encryption":
