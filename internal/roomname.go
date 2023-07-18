@@ -94,7 +94,13 @@ func (m *RoomMetadata) SameRoomName(other *RoomMetadata) bool {
 		m.CanonicalAlias == other.CanonicalAlias &&
 		m.JoinCount == other.JoinCount &&
 		m.InviteCount == other.InviteCount &&
-		sameHeroes(m.Heroes, other.Heroes))
+		sameHeroNames(m.Heroes, other.Heroes))
+}
+
+// SameRoomAvatar checks if the fields relevant for room avatars have changed between the two metadatas.
+// Returns true if there are no changes.
+func (m *RoomMetadata) SameRoomAvatar(other *RoomMetadata) bool {
+	return m.AvatarEvent == other.AvatarEvent && sameHeroAvatars(m.Heroes, other.Heroes)
 }
 
 func (m *RoomMetadata) SameJoinCount(other *RoomMetadata) bool {
@@ -105,7 +111,7 @@ func (m *RoomMetadata) SameInviteCount(other *RoomMetadata) bool {
 	return m.InviteCount == other.InviteCount
 }
 
-func sameHeroes(a, b []Hero) bool {
+func sameHeroNames(a, b []Hero) bool {
 	if len(a) != len(b) {
 		return false
 	}
@@ -114,6 +120,21 @@ func sameHeroes(a, b []Hero) bool {
 			return false
 		}
 		if a[i].Name != b[i].Name {
+			return false
+		}
+	}
+	return true
+}
+
+func sameHeroAvatars(a, b []Hero) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i].ID != b[i].ID {
+			return false
+		}
+		if a[i].Avatar != b[i].Avatar {
 			return false
 		}
 	}
@@ -134,8 +155,9 @@ func (m *RoomMetadata) IsSpace() bool {
 }
 
 type Hero struct {
-	ID   string
-	Name string
+	ID     string
+	Name   string
+	Avatar string
 }
 
 func CalculateRoomName(heroInfo *RoomMetadata, maxNumNamesPerRoom int) string {

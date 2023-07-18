@@ -109,8 +109,9 @@ func NewInviteData(ctx context.Context, userID, roomID string, inviteState []jso
 				id.IsDM = j.Get("is_direct").Bool()
 			} else if target == j.Get("sender").Str {
 				id.Heroes = append(id.Heroes, internal.Hero{
-					ID:   target,
-					Name: j.Get("content.displayname").Str,
+					ID:     target,
+					Name:   j.Get("content.displayname").Str,
+					Avatar: j.Get("content.avatar_url").Str,
 				})
 			}
 		case "m.room.name":
