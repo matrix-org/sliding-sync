@@ -73,6 +73,16 @@ func (s *InternalRequestLists) SetRoom(r RoomConnMetadata) (delta RoomDelta) {
 			r.CanonicalisedName = strings.ToLower(
 				strings.Trim(internal.CalculateRoomName(&r.RoomMetadata, 5), "#!():_@"),
 			)
+		} else {
+			// XXX: during TestConnectionTimeoutNotReset there is some situation where
+			//      r.CanonicalisedName is the empty string. Looking at the SetRoom
+			//      call in connstate_live.go, this is because the UserRoomMetadata on
+			//      the RoomUpdate has an empty CanonicalisedName. Either
+			//        a) that is expected, in which case we should _always_ write to
+			//           r.CanonicalisedName here; or
+			//        b) that is not expected, in which case... erm, I don't know what
+			//           to conclude.
+			r.CanonicalisedName = existing.CanonicalisedName
 		}
 		delta.RoomAvatarChanged = !existing.SameRoomAvatar(&r.RoomMetadata)
 		if delta.RoomAvatarChanged {
