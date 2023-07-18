@@ -39,6 +39,39 @@ func MatchRoomName(name string) RoomMatcher {
 	}
 }
 
+// MatchRoomAvatar builds a RoomMatcher which checks that the given room response has
+// set the room's avatar to the given value.
+func MatchRoomAvatar(wantAvatar string) RoomMatcher {
+	return func(r sync3.Room) error {
+		if string(r.AvatarChange) != wantAvatar {
+			return fmt.Errorf("MatchRoomAvatar: got \"%s\" want \"%s\"", r.AvatarChange, wantAvatar)
+		}
+		return nil
+	}
+}
+
+// MatchRoomUnsetAvatar builds a RoomMatcher which checks that the given room has no
+// avatar, or has had its avatar deleted.
+func MatchRoomUnsetAvatar() RoomMatcher {
+	return func(r sync3.Room) error {
+		if r.AvatarChange != sync3.DeletedAvatar {
+			return fmt.Errorf("MatchRoomAvatar: got \"%s\" want \"%s\"", r.AvatarChange, sync3.DeletedAvatar)
+		}
+		return nil
+	}
+}
+
+// MatchRoomUnchangedAvatar builds a RoomMatcher which checks that the given room has no
+// change to its avatar, or has had its avatar deleted.
+func MatchRoomUnchangedAvatar() RoomMatcher {
+	return func(r sync3.Room) error {
+		if r.AvatarChange != sync3.UnchangedAvatar {
+			return fmt.Errorf("MatchRoomAvatar: got \"%s\" want \"%s\"", r.AvatarChange, sync3.UnchangedAvatar)
+		}
+		return nil
+	}
+}
+
 func MatchJoinCount(count int) RoomMatcher {
 	return func(r sync3.Room) error {
 		if r.JoinedCount != count {
