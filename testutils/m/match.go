@@ -222,11 +222,11 @@ func MatchRoomSubscription(roomID string, matchers ...RoomMatcher) RespMatcher {
 	return func(res *sync3.Response) error {
 		room, ok := res.Rooms[roomID]
 		if !ok {
-			return fmt.Errorf("MatchRoomSubscription: want sub for %s but it was missing", roomID)
+			return fmt.Errorf("MatchRoomSubscription[%s]: want sub but it was missing", roomID)
 		}
 		for _, m := range matchers {
 			if err := m(room); err != nil {
-				return fmt.Errorf("MatchRoomSubscription: %s", err)
+				return fmt.Errorf("MatchRoomSubscription[%s]: %s", roomID, err)
 			}
 		}
 		return nil
