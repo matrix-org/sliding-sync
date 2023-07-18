@@ -239,8 +239,13 @@ func (c *GlobalCache) Startup(roomIDToMetadata map[string]internal.RoomMetadata)
 	sort.Strings(roomIDs)
 	for _, roomID := range roomIDs {
 		metadata := roomIDToMetadata[roomID]
-		internal.Assert("room ID is set", metadata.RoomID != "")
-		internal.Assert("last message timestamp exists", metadata.LastMessageTimestamp > 1)
+		debugContext := map[string]interface{}{
+			"room_id":                       roomID,
+			"metadata.RoomID":               metadata.RoomID,
+			"metadata.LastMessageTimeStamp": metadata.LastMessageTimestamp,
+		}
+		internal.Assert("room ID is set", metadata.RoomID != "", debugContext)
+		internal.Assert("last message timestamp exists", metadata.LastMessageTimestamp > 1, debugContext)
 		c.roomIDToMetadata[roomID] = &metadata
 	}
 	return nil
