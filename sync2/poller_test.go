@@ -277,6 +277,9 @@ func TestPollerPollFromExisting(t *testing.T) {
 			json.RawMessage(`{"event":10}`),
 		},
 	}
+	toDeviceResponses := [][]json.RawMessage{
+		{}, {}, {}, {json.RawMessage(`{}`)},
+	}
 	hasPolledSuccessfully := make(chan struct{})
 	accumulator, client := newMocks(func(authHeader, since string) (*SyncResponse, int, error) {
 		if since == "" {
@@ -295,6 +298,10 @@ func TestPollerPollFromExisting(t *testing.T) {
 		var joinResp SyncV2JoinResponse
 		joinResp.Timeline.Events = roomTimelineResponses[sinceInt]
 		return &SyncResponse{
+			// Add in dummy toDevice messages, so the poller actually persists the since token. (Which
+			// it only does for the first poll, after 1min (this test doesn't run that long) OR there are
+			// ToDevice messages in the response)
+			ToDevice:  EventsResponse{Events: toDeviceResponses[sinceInt]},
 			NextBatch: fmt.Sprintf("%d", sinceInt+1),
 			Rooms: struct {
 				Join   map[string]SyncV2JoinResponse   `json:"join"`
