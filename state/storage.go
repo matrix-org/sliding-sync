@@ -232,7 +232,7 @@ func (s *Storage) MetadataForAllRooms(txn *sqlx.Tx, tempTableName string, result
 
 	// Select the name / canonical alias for all rooms
 	roomIDToStateEvents, err := s.currentNotMembershipStateEventsInAllRooms(txn, []string{
-		"m.room.name", "m.room.canonical_alias",
+		"m.room.name", "m.room.canonical_alias", "m.room.avatar",
 	})
 	if err != nil {
 		return fmt.Errorf("failed to load state events for all rooms: %s", err)
@@ -244,6 +244,8 @@ func (s *Storage) MetadataForAllRooms(txn *sqlx.Tx, tempTableName string, result
 				metadata.NameEvent = gjson.ParseBytes(ev.JSON).Get("content.name").Str
 			} else if ev.Type == "m.room.canonical_alias" && ev.StateKey == "" {
 				metadata.CanonicalAlias = gjson.ParseBytes(ev.JSON).Get("content.alias").Str
+			} else if ev.Type == "m.room.avatar" && ev.StateKey == "" {
+				metadata.AvatarEvent = gjson.ParseBytes(ev.JSON).Get("content.url").Str
 			}
 		}
 		result[roomID] = metadata

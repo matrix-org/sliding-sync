@@ -30,6 +30,7 @@ type RoomMetadata struct {
 	RoomID         string
 	Heroes         []Hero
 	NameEvent      string // the content of m.room.name, NOT the calculated name
+	AvatarEvent    string // the content of m.room.avatar, NOT the resolved avatar
 	CanonicalAlias string
 	JoinCount      int
 	InviteCount    int
