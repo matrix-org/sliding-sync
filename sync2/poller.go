@@ -22,8 +22,9 @@ type PollerID struct {
 	DeviceID string
 }
 
-// alias time.Sleep so tests can monkey patch it out
+// alias time.Sleep/time.Since so tests can monkey patch it out
 var timeSleep = time.Sleep
+var timeSince = time.Since
 
 // log at most once every duration. Always logs before terminating.
 var logInterval = 30 * time.Second
@@ -427,9 +428,10 @@ func (p *poller) Terminate() {
 }
 
 type pollLoopState struct {
-	firstTime bool
-	failCount int
-	since     string
+	firstTime       bool
+	failCount       int
+	since           string
+	lastStoredSince time.Time // The time we last stored the since token in the database
 }
 
 // Poll will block forever, repeatedly calling v2 sync. Do this in a goroutine.
@@ -463,6 +465,8 @@ func (p *poller) Poll(since string) {
 		firstTime: true,
 		failCount: 0,
 		since:     since,
+		// Setting time.Time{} results in the first poll loop to immediately store the since token.
+		lastStoredSince: time.Time{},
 	}
 	for !p.terminated.Load() {
 		ctx, task := internal.StartTask(ctx, "Poll")
@@ -508,7 +512,7 @@ func (p *poller) poll(ctx context.Context, s *pollLoopState) error {
 		p.numOutstandingSyncReqs.Dec()
 	}
 	region.End()
-	p.trackRequestDuration(time.Since(start), s.since == "", s.firstTime)
+	p.trackRequestDuration(timeSince(start), s.since == "", s.firstTime)
 	if p.terminated.Load() {
 		return fmt.Errorf("poller terminated")
 	}
@@ -544,14 +548,18 @@ func (p *poller) poll(ctx context.Context, s *pollLoopState) error {
 	wasFirst := s.firstTime
 
 	s.since = resp.NextBatch
-	// persist the since token (TODO: this could get slow if we hammer the DB too much)
-	p.receiver.UpdateDeviceSince(ctx, p.userID, p.deviceID, s.since)
+	// Persist the since token if it either was more than one minute ago since we
+	// last stored it OR the response contains to-device messages
+	if timeSince(s.lastStoredSince) > time.Minute || len(resp.ToDevice.Events) > 0 {
+		p.receiver.UpdateDeviceSince(ctx, p.userID, p.deviceID, s.since)
+		s.lastStoredSince = time.Now()
+	}
 
 	if s.firstTime {
 		s.firstTime = false
 		p.wg.Done()
 	}
-	p.trackProcessDuration(time.Since(start), wasInitial, wasFirst)
+	p.trackProcessDuration(timeSince(start), wasInitial, wasFirst)
 	p.maybeLogStats(false)
 	return nil
 }
@@ -727,7 +735,7 @@ func (p *poller) parseRoomsResponse(ctx context.Context, res *SyncResponse) {
 }
 
 func (p *poller) maybeLogStats(force bool) {
-	if !force && time.Since(p.lastLogged) < logInterval {
+	if !force && timeSince(p.lastLogged) < logInterval {
 		// only log at most once every logInterval
 		return
 	}
