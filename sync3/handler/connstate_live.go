@@ -218,6 +218,11 @@ func (s *connStateLive) processLiveUpdate(ctx context.Context, up caches.Update,
 				metadata.RemoveHero(s.userID)
 				thisRoom.Name = internal.CalculateRoomName(metadata, 5) // TODO: customisable?
 			}
+			if delta.RoomAvatarChanged {
+				metadata := roomUpdate.GlobalRoomMetadata()
+				metadata.RemoveHero(s.userID)
+				thisRoom.AvatarChange = sync3.NewAvatarChange(internal.CalculateAvatar(metadata))
+			}
 			if delta.InviteCountChanged {
 				thisRoom.InvitedCount = &roomUpdate.GlobalRoomMetadata().InviteCount
 			}
@@ -290,8 +295,17 @@ func (s *connStateLive) processGlobalUpdates(ctx context.Context, builder *Rooms
 			}
 		}
 
+		metadata := rup.GlobalRoomMetadata().CopyHeroes()
+		metadata.RemoveHero(s.userID)
+		// TODO: if we change a room from being a DM to not being a DM, we should call
+		// SetRoom and recalculate avatars. To do that we'd need to
+		//  - listen to m.direct global account data events
+		//   - compute the symmetric difference between old and new
+		//   - call SetRooms for each room in the difference.
+		// I'm assuming this happens so rarely that we can ignore this for now. PRs
+		// welcome if you a strong opinion to the contrary.
 		delta = s.lists.SetRoom(sync3.RoomConnMetadata{
-			RoomMetadata:                  *rup.GlobalRoomMetadata(),
+			RoomMetadata:                  *metadata,
 			UserRoomData:                  *rup.UserRoomMetadata(),
 			LastInterestedEventTimestamps: bumpTimestampInList,
 		})

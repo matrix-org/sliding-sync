@@ -118,13 +118,7 @@ func (c *GlobalCache) copyRoom(roomID string) *internal.RoomMetadata {
 		logger.Warn().Str("room", roomID).Msg("GlobalCache.LoadRoom: no metadata for this room, returning stub")
 		return internal.NewRoomMetadata(roomID)
 	}
-	srCopy := *sr
-	// copy the heroes or else we may modify the same slice which would be bad :(
-	srCopy.Heroes = make([]internal.Hero, len(sr.Heroes))
-	for i := range sr.Heroes {
-		srCopy.Heroes[i] = sr.Heroes[i]
-	}
-	return &srCopy
+	return sr.CopyHeroes()
 }
 
 // LoadJoinedRooms loads all current joined room metadata for the user given, together
@@ -290,6 +284,10 @@ func (c *GlobalCache) OnNewEvent(
 		if ed.StateKey != nil && *ed.StateKey == "" {
 			metadata.NameEvent = ed.Content.Get("name").Str
 		}
+	case "m.room.avatar":
+		if ed.StateKey != nil && *ed.StateKey == "" {
+			metadata.AvatarEvent = ed.Content.Get("url").Str
+		}
 	case "m.room.encryption":
 		if ed.StateKey != nil && *ed.StateKey == "" {
 			metadata.Encrypted = true
@@ -354,14 +352,16 @@ func (c *GlobalCache) OnNewEvent(
 				for i := range metadata.Heroes {
 					if metadata.Heroes[i].ID == *ed.StateKey {
 						metadata.Heroes[i].Name = ed.Content.Get("displayname").Str
+						metadata.Heroes[i].Avatar = ed.Content.Get("avatar_url").Str
 						found = true
 						break
 					}
 				}
 				if !found {
 					metadata.Heroes = append(metadata.Heroes, internal.Hero{
-						ID:   *ed.StateKey,
-						Name: ed.Content.Get("displayname").Str,
+						ID:     *ed.StateKey,
+						Name:   ed.Content.Get("displayname").Str,
+						Avatar: ed.Content.Get("avatar_url").Str,
 					})
 				}
 			}

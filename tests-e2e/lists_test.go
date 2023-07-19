@@ -1297,3 +1297,391 @@ func TestRangeOutsideTotalRooms(t *testing.T) {
 		),
 	)
 }
+
+// Nicked from Synapse's tests, see
+// https://github.com/matrix-org/synapse/blob/2cacd0849a02d43f88b6c15ee862398159ab827c/tests/test_utils/__init__.py#L154-L161
+// Resolution: 1×1, MIME type: image/png, Extension: png, Size: 67 B
+var smallPNG = []byte(
+	"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x01\x00\x00\x00\x01\x08\x06\x00\x00\x00\x1f\x15\xc4\x89\x00\x00\x00\nIDATx\x9cc\x00\x01\x00\x00\x05\x00\x01\r\n-\xb4\x00\x00\x00\x00IEND\xaeB`\x82",
+)
+
+func TestAvatarFieldInRoomResponse(t *testing.T) {
+	alice := registerNamedUser(t, "alice")
+	bob := registerNamedUser(t, "bob")
+	chris := registerNamedUser(t, "chris")
+
+	avatarURLs := map[string]struct{}{}
+	uploadAvatar := func(client *CSAPI, filename string) string {
+		avatar := alice.UploadContent(t, smallPNG, filename, "image/png")
+		if _, exists := avatarURLs[avatar]; exists {
+			t.Fatalf("New avatar %s has already been uploaded", avatar)
+		}
+		t.Logf("%s is uploaded as %s", filename, avatar)
+		avatarURLs[avatar] = struct{}{}
+		return avatar
+	}
+
+	t.Log("Alice, Bob and Chris upload and set an avatar.")
+	aliceAvatar := uploadAvatar(alice, "alice.png")
+	bobAvatar := uploadAvatar(bob, "bob.png")
+	chrisAvatar := uploadAvatar(chris, "chris.png")
+
+	alice.SetAvatar(t, aliceAvatar)
+	bob.SetAvatar(t, bobAvatar)
+	chris.SetAvatar(t, chrisAvatar)
+
+	t.Log("Alice makes a public room, a DM with herself, a DM with Bob, a DM with Chris, and a group-DM with Bob and Chris.")
+	public := alice.CreateRoom(t, map[string]interface{}{"preset": "public_chat"})
+	// TODO: you can create a DM with yourself e.g. as below. It probably ought to have
+	//       your own face as an avatar.
+	// dmAlice := alice.CreateRoom(t, map[string]interface{}{
+	//  "preset":    "trusted_private_chat",
+	// 	"is_direct": true,
+	//  })
+	dmBob := alice.CreateRoom(t, map[string]interface{}{
+		"preset":    "trusted_private_chat",
+		"is_direct": true,
+		"invite":    []string{bob.UserID},
+	})
+	dmChris := alice.CreateRoom(t, map[string]interface{}{
+		"preset":    "trusted_private_chat",
+		"is_direct": true,
+		"invite":    []string{chris.UserID},
+	})
+	dmBobChris := alice.CreateRoom(t, map[string]interface{}{
+		"preset":    "trusted_private_chat",
+		"is_direct": true,
+		"invite":    []string{bob.UserID, chris.UserID},
+	})
+
+	t.Logf("Rooms:\npublic=%s\ndmBob=%s\ndmChris=%s\ndmBobChris=%s", public, dmBob, dmChris, dmBobChris)
+	t.Log("Bob accepts his invites. Chris accepts none.")
+	bob.JoinRoom(t, dmBob, nil)
+	bob.JoinRoom(t, dmBobChris, nil)
+
+	t.Log("Alice makes an initial sliding sync.")
+	res := alice.SlidingSync(t, sync3.Request{
+		Lists: map[string]sync3.RequestList{
+			"rooms": {
+				Ranges: sync3.SliceRanges{{0, 4}},
+			},
+		},
+	})
+
+	t.Log("Alice should see each room in the sync response with an appropriate avatar")
+	m.MatchResponse(
+		t,
+		res,
+		m.MatchRoomSubscription(public, m.MatchRoomUnsetAvatar()),
+		m.MatchRoomSubscription(dmBob, m.MatchRoomAvatar(bob.AvatarURL)),
+		m.MatchRoomSubscription(dmChris, m.MatchRoomAvatar(chris.AvatarURL)),
+		m.MatchRoomSubscription(dmBobChris, m.MatchRoomUnsetAvatar()),
+	)
+
+	t.Run("Avatar not resent on message", func(t *testing.T) {
+		t.Log("Bob sends a sentinel message.")
+		sentinel := bob.SendEventSynced(t, dmBob, Event{
+			Type: "m.room.message",
+			Content: map[string]interface{}{
+				"body":    "Hello world",
+				"msgtype": "m.text",
+			},
+		})
+
+		t.Log("Alice syncs until she sees the sentinel. She should not see the DM avatar change.")
+		res = alice.SlidingSyncUntil(t, res.Pos, sync3.Request{}, func(response *sync3.Response) error {
+			matchNoAvatarChange := m.MatchRoomSubscription(dmBob, m.MatchRoomUnchangedAvatar())
+			if err := matchNoAvatarChange(response); err != nil {
+				t.Fatalf("Saw DM avatar change: %s", err)
+			}
+			matchSentinel := m.MatchRoomSubscription(dmBob, MatchRoomTimelineMostRecent(1, []Event{{ID: sentinel}}))
+			return matchSentinel(response)
+		})
+	})
+
+	t.Run("DM declined", func(t *testing.T) {
+		t.Log("Chris leaves his DM with Alice.")
+		chris.LeaveRoom(t, dmChris)
+
+		t.Log("Alice syncs until she sees Chris's leave.")
+		res = alice.SlidingSyncUntilMembership(t, res.Pos, dmChris, chris, "leave")
+
+		t.Log("Alice sees Chris's avatar vanish.")
+		m.MatchResponse(t, res, m.MatchRoomSubscription(dmChris, m.MatchRoomUnsetAvatar()))
+	})
+
+	t.Run("Group DM declined", func(t *testing.T) {
+		t.Log("Chris leaves his group DM with Alice and Bob.")
+		chris.LeaveRoom(t, dmBobChris)
+
+		t.Log("Alice syncs until she sees Chris's leave.")
+		res = alice.SlidingSyncUntilMembership(t, res.Pos, dmBobChris, chris, "leave")
+
+		t.Log("Alice sees the room's avatar change to Bob's avatar.")
+		// Because this is now a DM room with exactly one other (joined|invited) member.
+		m.MatchResponse(t, res, m.MatchRoomSubscription(dmBobChris, m.MatchRoomAvatar(bob.AvatarURL)))
+	})
+
+	t.Run("Bob's avatar change propagates", func(t *testing.T) {
+		t.Log("Bob changes his avatar.")
+		bobAvatar2 := uploadAvatar(bob, "bob2.png")
+		bob.SetAvatar(t, bobAvatar2)
+
+		avatarChangeInDM := false
+		avatarChangeInGroupDM := false
+		t.Log("Alice syncs until she sees Bob's new avatar.")
+		res = alice.SlidingSyncUntil(
+			t,
+			res.Pos,
+			sync3.Request{},
+			func(response *sync3.Response) error {
+				if !avatarChangeInDM {
+					err := m.MatchRoomSubscription(dmBob, m.MatchRoomAvatar(bob.AvatarURL))(response)
+					if err == nil {
+						avatarChangeInDM = true
+					}
+				}
+
+				if !avatarChangeInGroupDM {
+					err := m.MatchRoomSubscription(dmBobChris, m.MatchRoomAvatar(bob.AvatarURL))(response)
+					if err == nil {
+						avatarChangeInGroupDM = true
+					}
+				}
+
+				if avatarChangeInDM && avatarChangeInGroupDM {
+					return nil
+				}
+				return fmt.Errorf("still waiting: avatarChangeInDM=%t avatarChangeInGroupDM=%t", avatarChangeInDM, avatarChangeInGroupDM)
+			},
+		)
+
+		t.Log("Bob removes his avatar.")
+		bob.SetAvatar(t, "")
+
+		avatarChangeInDM = false
+		avatarChangeInGroupDM = false
+		t.Log("Alice syncs until she sees Bob's avatars vanish.")
+		res = alice.SlidingSyncUntil(
+			t,
+			res.Pos,
+			sync3.Request{},
+			func(response *sync3.Response) error {
+				if !avatarChangeInDM {
+					err := m.MatchRoomSubscription(dmBob, m.MatchRoomUnsetAvatar())(response)
+					if err == nil {
+						avatarChangeInDM = true
+					} else {
+						t.Log(err)
+					}
+				}
+
+				if !avatarChangeInGroupDM {
+					err := m.MatchRoomSubscription(dmBobChris, m.MatchRoomUnsetAvatar())(response)
+					if err == nil {
+						avatarChangeInGroupDM = true
+					} else {
+						t.Log(err)
+					}
+				}
+
+				if avatarChangeInDM && avatarChangeInGroupDM {
+					return nil
+				}
+				return fmt.Errorf("still waiting: avatarChangeInDM=%t avatarChangeInGroupDM=%t", avatarChangeInDM, avatarChangeInGroupDM)
+			},
+		)
+
+	})
+
+	t.Run("Explicit avatar propagates in non-DM room", func(t *testing.T) {
+		t.Log("Alice sets an avatar for the public room.")
+		publicAvatar := uploadAvatar(alice, "public.png")
+		alice.SetState(t, public, "m.room.avatar", "", map[string]interface{}{
+			"url": publicAvatar,
+		})
+		t.Log("Alice syncs until she sees that avatar.")
+		res = alice.SlidingSyncUntil(
+			t,
+			res.Pos,
+			sync3.Request{},
+			m.MatchRoomSubscriptions(map[string][]m.RoomMatcher{
+				public: {m.MatchRoomAvatar(publicAvatar)},
+			}),
+		)
+
+		t.Log("Alice changes the avatar for the public room.")
+		publicAvatar2 := uploadAvatar(alice, "public2.png")
+		alice.SetState(t, public, "m.room.avatar", "", map[string]interface{}{
+			"url": publicAvatar2,
+		})
+		t.Log("Alice syncs until she sees that avatar.")
+		res = alice.SlidingSyncUntil(
+			t,
+			res.Pos,
+			sync3.Request{},
+			m.MatchRoomSubscriptions(map[string][]m.RoomMatcher{
+				public: {m.MatchRoomAvatar(publicAvatar2)},
+			}),
+		)
+
+		t.Log("Alice removes the avatar for the public room.")
+		alice.SetState(t, public, "m.room.avatar", "", map[string]interface{}{})
+		t.Log("Alice syncs until she sees that avatar vanish.")
+		res = alice.SlidingSyncUntil(
+			t,
+			res.Pos,
+			sync3.Request{},
+			m.MatchRoomSubscriptions(map[string][]m.RoomMatcher{
+				public: {m.MatchRoomUnsetAvatar()},
+			}),
+		)
+	})
+
+	t.Run("Explicit avatar propagates in DM room", func(t *testing.T) {
+		t.Log("Alice re-invites Chris to their DM.")
+		alice.InviteRoom(t, dmChris, chris.UserID)
+
+		t.Log("Alice syncs until she sees her invitation to Chris.")
+		res = alice.SlidingSyncUntilMembership(t, res.Pos, dmChris, chris, "invite")
+
+		t.Log("Alice should see the DM with Chris's avatar.")
+		m.MatchResponse(t, res, m.MatchRoomSubscription(dmChris, m.MatchRoomAvatar(chris.AvatarURL)))
+
+		t.Log("Chris joins the room.")
+		chris.JoinRoom(t, dmChris, nil)
+
+		t.Log("Alice syncs until she sees Chris's join.")
+		res = alice.SlidingSyncUntilMembership(t, res.Pos, dmChris, chris, "join")
+
+		t.Log("Alice shouldn't see the DM's avatar change..")
+		m.MatchResponse(t, res, m.MatchRoomSubscription(dmChris, m.MatchRoomUnchangedAvatar()))
+
+		t.Log("Chris gives their DM a bespoke avatar.")
+		dmAvatar := uploadAvatar(chris, "dm.png")
+		chris.SetState(t, dmChris, "m.room.avatar", "", map[string]interface{}{
+			"url": dmAvatar,
+		})
+
+		t.Log("Alice syncs until she sees that avatar.")
+		alice.SlidingSyncUntil(t, res.Pos, sync3.Request{}, m.MatchRoomSubscription(dmChris, m.MatchRoomAvatar(dmAvatar)))
+
+		t.Log("Chris changes his global avatar, which adds a join event to the room.")
+		chrisAvatar2 := uploadAvatar(chris, "chris2.png")
+		chris.SetAvatar(t, chrisAvatar2)
+
+		t.Log("Alice syncs until she sees that join event.")
+		res = alice.SlidingSyncUntilMembership(t, res.Pos, dmChris, chris, "join")
+
+		t.Log("Her response should have either no avatar change, or the same bespoke avatar.")
+		// No change, ideally, but repeating the same avatar isn't _wrong_
+		m.MatchResponse(t, res, m.MatchRoomSubscription(dmChris, func(r sync3.Room) error {
+			noChangeErr := m.MatchRoomUnchangedAvatar()(r)
+			sameBespokeAvatarErr := m.MatchRoomAvatar(dmAvatar)(r)
+			if noChangeErr == nil || sameBespokeAvatarErr == nil {
+				return nil
+			}
+			return fmt.Errorf("expected no change or the same bespoke avatar (%s), got '%s'", dmAvatar, r.AvatarChange)
+		}))
+
+		t.Log("Chris updates the DM's avatar.")
+		dmAvatar2 := uploadAvatar(chris, "dm2.png")
+		chris.SetState(t, dmChris, "m.room.avatar", "", map[string]interface{}{
+			"url": dmAvatar2,
+		})
+
+		t.Log("Alice syncs until she sees that avatar.")
+		res = alice.SlidingSyncUntil(t, res.Pos, sync3.Request{}, m.MatchRoomSubscription(dmChris, m.MatchRoomAvatar(dmAvatar2)))
+
+		t.Log("Chris removes the DM's avatar.")
+		chris.SetState(t, dmChris, "m.room.avatar", "", map[string]interface{}{})
+
+		t.Log("Alice syncs until the DM avatar returns to Chris's most recent avatar.")
+		res = alice.SlidingSyncUntil(t, res.Pos, sync3.Request{}, m.MatchRoomSubscription(dmChris, m.MatchRoomAvatar(chris.AvatarURL)))
+	})
+
+	t.Run("Changing DM flag", func(t *testing.T) {
+		t.Skip("TODO: unimplemented")
+		t.Log("Alice clears the DM flag on Bob's room.")
+		alice.SetGlobalAccountData(t, "m.direct", map[string]interface{}{
+			"content": map[string][]string{
+				bob.UserID:   {}, // no dmBob here
+				chris.UserID: {dmChris, dmBobChris},
+			},
+		})
+
+		t.Log("Alice syncs until she sees a new set of account data.")
+		res = alice.SlidingSyncUntil(t, res.Pos, sync3.Request{
+			Extensions: extensions.Request{
+				AccountData: &extensions.AccountDataRequest{
+					extensions.Core{Enabled: &boolTrue},
+				},
+			},
+		}, func(response *sync3.Response) error {
+			if response.Extensions.AccountData == nil {
+				return fmt.Errorf("no account data yet")
+			}
+			if len(response.Extensions.AccountData.Global) == 0 {
+				return fmt.Errorf("no global account data yet")
+			}
+			return nil
+		})
+
+		t.Log("The DM with Bob should no longer be a DM and should no longer have an avatar.")
+		m.MatchResponse(t, res, m.MatchRoomSubscription(dmBob, func(r sync3.Room) error {
+			if r.IsDM {
+				return fmt.Errorf("dmBob is still a DM")
+			}
+			return m.MatchRoomUnsetAvatar()(r)
+		}))
+
+		t.Log("Alice sets the DM flag on Bob's room.")
+		alice.SetGlobalAccountData(t, "m.direct", map[string]interface{}{
+			"content": map[string][]string{
+				bob.UserID:   {dmBob}, // dmBob reinstated
+				chris.UserID: {dmChris, dmBobChris},
+			},
+		})
+
+		t.Log("Alice syncs until she sees a new set of account data.")
+		res = alice.SlidingSyncUntil(t, res.Pos, sync3.Request{
+			Extensions: extensions.Request{
+				AccountData: &extensions.AccountDataRequest{
+					extensions.Core{Enabled: &boolTrue},
+				},
+			},
+		}, func(response *sync3.Response) error {
+			if response.Extensions.AccountData == nil {
+				return fmt.Errorf("no account data yet")
+			}
+			if len(response.Extensions.AccountData.Global) == 0 {
+				return fmt.Errorf("no global account data yet")
+			}
+			return nil
+		})
+
+		t.Log("The room should have Bob's avatar again.")
+		m.MatchResponse(t, res, m.MatchRoomSubscription(dmBob, func(r sync3.Room) error {
+			if !r.IsDM {
+				return fmt.Errorf("dmBob is still not a DM")
+			}
+			return m.MatchRoomAvatar(bob.AvatarURL)(r)
+		}))
+
+	})
+
+	t.Run("See avatar when invited", func(t *testing.T) {
+		t.Log("Chris invites Alice to a DM.")
+		dmInvited := chris.CreateRoom(t, map[string]interface{}{
+			"preset":    "trusted_private_chat",
+			"is_direct": true,
+			"invite":    []string{alice.UserID},
+		})
+
+		t.Log("Alice syncs until she sees the invite.")
+		res = alice.SlidingSyncUntilMembership(t, res.Pos, dmInvited, alice, "invite")
+
+		t.Log("The new room should use Chris's avatar.")
+		m.MatchResponse(t, res, m.MatchRoomSubscription(dmInvited, m.MatchRoomAvatar(chris.AvatarURL)))
+	})
+}
