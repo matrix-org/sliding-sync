@@ -343,6 +343,101 @@ func TestPollerPollFromExisting(t *testing.T) {
 	}
 }
 
+// Check that the since token in the database
+// 1. is updated if it is the first iteration of poll
+// 2. is NOT updated for random events
+// 3. is updated if the syncV2 response contains ToDevice messages
+// 4. is updated if at least 1min has passed since we last stored a token
+func TestPollerPollUpdateDeviceSincePeriodically(t *testing.T) {
+	pid := PollerID{UserID: "@alice:localhost", DeviceID: "FOOBAR"}
+
+	syncResponses := make(chan *SyncResponse, 1)
+	accumulator, client := newMocks(func(authHeader, since string) (*SyncResponse, int, error) {
+		return <-syncResponses, 200, nil
+	})
+	accumulator.updateSinceCalled = make(chan struct{}, 1)
+	poller := newPoller(pid, "Authorization: hello world", client, accumulator, zerolog.New(os.Stderr), false)
+	defer poller.Terminate()
+	go func() {
+		poller.Poll("")
+	}()
+
+	hasPolledSuccessfully := make(chan struct{})
+
+	go func() {
+		poller.WaitUntilInitialSync()
+		close(hasPolledSuccessfully)
+	}()
+
+	// 1. Initial poll updates the database
+	wantSince := "1"
+	syncResponses <- &SyncResponse{NextBatch: wantSince}
+
+	select {
+	case <-hasPolledSuccessfully:
+		break
+	case <-time.After(time.Second):
+		t.Errorf("WaitUntilInitialSync failed to fire")
+	}
+	// Also check that UpdateDeviceSince was called
+	select {
+	case <-accumulator.updateSinceCalled:
+	case <-time.After(time.Millisecond * 100): // give the Poller some time to process the response
+		t.Fatalf("did not receive call to UpdateDeviceSince in time")
+	}
+
+	if got := accumulator.pollerIDToSince[pid]; got != wantSince {
+		t.Fatalf("expected since to be updated to %s, but got %s", wantSince, got)
+	}
+
+	// 2. Second request updates the state but NOT the database
+	next := "2"
+	syncResponses <- &SyncResponse{NextBatch: next}
+	if got := accumulator.pollerIDToSince[pid]; got != wantSince {
+		t.Fatalf("expected since to be updated to %s, but got %s", wantSince, got)
+	}
+
+	select {
+	case <-accumulator.updateSinceCalled:
+		t.Fatalf("unexpected call to UpdateDeviceSince")
+	case <-time.After(time.Millisecond * 100):
+	}
+
+	// 3. Sync response contains a toDevice message and should be stored in the database
+	next = "3"
+	wantSince = "3"
+	syncResponses <- &SyncResponse{
+		NextBatch: next,
+		ToDevice:  EventsResponse{Events: []json.RawMessage{{}}},
+	}
+	select {
+	case <-accumulator.updateSinceCalled:
+	case <-time.After(time.Millisecond * 100):
+		t.Fatalf("did not receive call to UpdateDeviceSince in time")
+	}
+
+	if got := accumulator.pollerIDToSince[pid]; got != wantSince {
+		t.Fatalf("expected since to be updated to %s, but got %s", wantSince, got)
+	}
+
+	// 4. ... some time has passed, this triggers the 1min limit
+	timeSince = func(d time.Time) time.Duration {
+		return time.Minute * 2
+	}
+	next = "10"
+	wantSince = "10"
+	syncResponses <- &SyncResponse{NextBatch: next}
+	select {
+	case <-accumulator.updateSinceCalled:
+	case <-time.After(time.Millisecond * 100):
+		t.Fatalf("did not receive call to UpdateDeviceSince in time")
+	}
+
+	if got := accumulator.pollerIDToSince[pid]; got != wantSince {
+		t.Fatalf("expected since to be updated to %s, but got %s", wantSince, got)
+	}
+}
+
 // Tests that the poller backs off in 2,4,8,etc second increments to a variety of errors
 func TestPollerBackoff(t *testing.T) {
 	deviceID := "FOOBAR"
@@ -460,11 +555,12 @@ func (c *mockClient) WhoAmI(authHeader string) (string, string, error) {
 }
 
 type mockDataReceiver struct {
-	states          map[string][]json.RawMessage
-	timelines       map[string][]json.RawMessage
-	pollerIDToSince map[PollerID]string
-	incomingProcess chan struct{}
-	unblockProcess  chan struct{}
+	states            map[string][]json.RawMessage
+	timelines         map[string][]json.RawMessage
+	pollerIDToSince   map[PollerID]string
+	incomingProcess   chan struct{}
+	unblockProcess    chan struct{}
+	updateSinceCalled chan struct{}
 }
 
 func (a *mockDataReceiver) Accumulate(ctx context.Context, userID, deviceID, roomID, prevBatch string, timeline []json.RawMessage) {
@@ -486,6 +582,9 @@ func (a *mockDataReceiver) SetTyping(ctx context.Context, roomID string, ephEven
 }
 func (s *mockDataReceiver) UpdateDeviceSince(ctx context.Context, userID, deviceID, since string) {
 	s.pollerIDToSince[PollerID{UserID: userID, DeviceID: deviceID}] = since
+	if s.updateSinceCalled != nil {
+		s.updateSinceCalled <- struct{}{}
+	}
 }
 func (s *mockDataReceiver) AddToDeviceMessages(ctx context.Context, userID, deviceID string, msgs []json.RawMessage) {
 }

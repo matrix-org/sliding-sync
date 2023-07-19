@@ -22,8 +22,9 @@ type PollerID struct {
 	DeviceID string
 }
 
-// alias time.Sleep so tests can monkey patch it out
+// alias time.Sleep/time.Since so tests can monkey patch it out
 var timeSleep = time.Sleep
+var timeSince = time.Since
 
 // log at most once every duration. Always logs before terminating.
 var logInterval = 30 * time.Second
@@ -511,7 +512,7 @@ func (p *poller) poll(ctx context.Context, s *pollLoopState) error {
 		p.numOutstandingSyncReqs.Dec()
 	}
 	region.End()
-	p.trackRequestDuration(time.Since(start), s.since == "", s.firstTime)
+	p.trackRequestDuration(timeSince(start), s.since == "", s.firstTime)
 	if p.terminated.Load() {
 		return fmt.Errorf("poller terminated")
 	}
@@ -549,7 +550,7 @@ func (p *poller) poll(ctx context.Context, s *pollLoopState) error {
 	s.since = resp.NextBatch
 	// Persist the since token if it either was more than one minute ago since we
 	// last stored it OR the response contains to-device messages
-	if time.Since(s.lastStoredSince) > time.Minute || len(resp.ToDevice.Events) > 0 {
+	if timeSince(s.lastStoredSince) > time.Minute || len(resp.ToDevice.Events) > 0 {
 		p.receiver.UpdateDeviceSince(ctx, p.userID, p.deviceID, s.since)
 		s.lastStoredSince = time.Now()
 	}
@@ -558,7 +559,7 @@ func (p *poller) poll(ctx context.Context, s *pollLoopState) error {
 		s.firstTime = false
 		p.wg.Done()
 	}
-	p.trackProcessDuration(time.Since(start), wasInitial, wasFirst)
+	p.trackProcessDuration(timeSince(start), wasInitial, wasFirst)
 	p.maybeLogStats(false)
 	return nil
 }
@@ -734,7 +735,7 @@ func (p *poller) parseRoomsResponse(ctx context.Context, res *SyncResponse) {
 }
 
 func (p *poller) maybeLogStats(force bool) {
-	if !force && time.Since(p.lastLogged) < logInterval {
+	if !force && timeSince(p.lastLogged) < logInterval {
 		// only log at most once every logInterval
 		return
 	}
