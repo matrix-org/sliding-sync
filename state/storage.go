@@ -791,7 +791,7 @@ func (s *Storage) AllJoinedMembers(txn *sqlx.Tx, tempTableName string) (joinedMe
 		}
 		heroes := heroNIDs[roomID]
 		if heroes == nil {
-			heroes = &circularSlice{max: 5}
+			heroes = &circularSlice{max: 6}
 			heroNIDs[roomID] = heroes
 		}
 		switch membership {
@@ -820,7 +820,9 @@ func (s *Storage) AllJoinedMembers(txn *sqlx.Tx, tempTableName string) (joinedMe
 		return nil, nil, err
 	}
 	heroes := make(map[string][]internal.Hero)
-	for _, ev := range heroEvents {
+	// loop backwards so the most recent hero is first in the hero list
+	for i := len(heroEvents) - 1; i >= 0; i-- {
+		ev := heroEvents[i]
 		evJSON := gjson.ParseBytes(ev.JSON)
 		roomHeroes := heroes[ev.RoomID]
 		roomHeroes = append(roomHeroes, internal.Hero{
