@@ -352,14 +352,18 @@ func TestPollerPollUpdateDeviceSincePeriodically(t *testing.T) {
 	pid := PollerID{UserID: "@alice:localhost", DeviceID: "FOOBAR"}
 
 	syncResponses := make(chan *SyncResponse, 1)
+	syncCalledWithSince := make(chan string)
 	accumulator, client := newMocks(func(authHeader, since string) (*SyncResponse, int, error) {
+		if since != "" {
+			syncCalledWithSince <- since
+		}
 		return <-syncResponses, 200, nil
 	})
 	accumulator.updateSinceCalled = make(chan struct{}, 1)
 	poller := newPoller(pid, "Authorization: hello world", client, accumulator, zerolog.New(os.Stderr), false)
 	defer poller.Terminate()
 	go func() {
-		poller.Poll("")
+		poller.Poll("0")
 	}()
 
 	hasPolledSuccessfully := make(chan struct{})
@@ -370,8 +374,9 @@ func TestPollerPollUpdateDeviceSincePeriodically(t *testing.T) {
 	}()
 
 	// 1. Initial poll updates the database
-	wantSince := "1"
-	syncResponses <- &SyncResponse{NextBatch: wantSince}
+	next := "1"
+	syncResponses <- &SyncResponse{NextBatch: next}
+	mustEqualSince(t, <-syncCalledWithSince, "0")
 
 	select {
 	case <-hasPolledSuccessfully:
@@ -386,16 +391,16 @@ func TestPollerPollUpdateDeviceSincePeriodically(t *testing.T) {
 		t.Fatalf("did not receive call to UpdateDeviceSince in time")
 	}
 
-	if got := accumulator.pollerIDToSince[pid]; got != wantSince {
-		t.Fatalf("expected since to be updated to %s, but got %s", wantSince, got)
+	if got := accumulator.pollerIDToSince[pid]; got != next {
+		t.Fatalf("expected since to be updated to %s, but got %s", next, got)
 	}
 
+	// The since token used by calls to doSyncV2
+	wantSinceFromSync := next
+
 	// 2. Second request updates the state but NOT the database
-	next := "2"
-	syncResponses <- &SyncResponse{NextBatch: next}
-	if got := accumulator.pollerIDToSince[pid]; got != wantSince {
-		t.Fatalf("expected since to be updated to %s, but got %s", wantSince, got)
-	}
+	syncResponses <- &SyncResponse{NextBatch: "2"}
+	mustEqualSince(t, <-syncCalledWithSince, wantSinceFromSync)
 
 	select {
 	case <-accumulator.updateSinceCalled:
@@ -403,38 +408,53 @@ func TestPollerPollUpdateDeviceSincePeriodically(t *testing.T) {
 	case <-time.After(time.Millisecond * 100):
 	}
 
+	if got := accumulator.pollerIDToSince[pid]; got != next {
+		t.Fatalf("expected since to be updated to %s, but got %s", next, got)
+	}
+
 	// 3. Sync response contains a toDevice message and should be stored in the database
+	wantSinceFromSync = "2"
 	next = "3"
-	wantSince = "3"
 	syncResponses <- &SyncResponse{
 		NextBatch: next,
 		ToDevice:  EventsResponse{Events: []json.RawMessage{{}}},
 	}
+	mustEqualSince(t, <-syncCalledWithSince, wantSinceFromSync)
+
 	select {
 	case <-accumulator.updateSinceCalled:
 	case <-time.After(time.Millisecond * 100):
 		t.Fatalf("did not receive call to UpdateDeviceSince in time")
 	}
 
-	if got := accumulator.pollerIDToSince[pid]; got != wantSince {
-		t.Fatalf("expected since to be updated to %s, but got %s", wantSince, got)
+	if got := accumulator.pollerIDToSince[pid]; got != next {
+		t.Fatalf("expected since to be updated to %s, but got %s", wantSinceFromSync, got)
 	}
+	wantSinceFromSync = next
 
 	// 4. ... some time has passed, this triggers the 1min limit
 	timeSince = func(d time.Time) time.Duration {
 		return time.Minute * 2
 	}
 	next = "10"
-	wantSince = "10"
 	syncResponses <- &SyncResponse{NextBatch: next}
+	mustEqualSince(t, <-syncCalledWithSince, wantSinceFromSync)
+
 	select {
 	case <-accumulator.updateSinceCalled:
 	case <-time.After(time.Millisecond * 100):
 		t.Fatalf("did not receive call to UpdateDeviceSince in time")
 	}
 
-	if got := accumulator.pollerIDToSince[pid]; got != wantSince {
-		t.Fatalf("expected since to be updated to %s, but got %s", wantSince, got)
+	if got := accumulator.pollerIDToSince[pid]; got != next {
+		t.Fatalf("expected since to be updated to %s, but got %s", wantSinceFromSync, got)
+	}
+}
+
+func mustEqualSince(t *testing.T, gotSince, expectedSince string) {
+	t.Helper()
+	if gotSince != expectedSince {
+		t.Fatalf("client.DoSyncV2 using unexpected since token: %s, want %s", gotSince, expectedSince)
 	}
 }
 
