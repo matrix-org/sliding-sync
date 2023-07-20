@@ -483,25 +483,3 @@ func (a *Accumulator) filterAndParseTimelineEvents(txn *sqlx.Tx, roomID string, 
 	// A is seen event s[A,B,C] => s[0+1:] => [B,C]
 	return dedupedEvents[seenIndex+1:], nil
 }
-
-// Delta returns a list of events of at most `limit` for the room not including `lastEventNID`.
-// Returns the latest NID of the last event (most recent)
-func (a *Accumulator) Delta(roomID string, lastEventNID int64, limit int) (eventsJSON []json.RawMessage, latest int64, err error) {
-	txn, err := a.db.Beginx()
-	if err != nil {
-		return nil, 0, err
-	}
-	defer txn.Commit()
-	events, err := a.eventsTable.SelectEventsBetween(txn, roomID, lastEventNID, EventsEnd, limit)
-	if err != nil {
-		return nil, 0, err
-	}
-	if len(events) == 0 {
-		return nil, lastEventNID, nil
-	}
-	eventsJSON = make([]json.RawMessage, len(events))
-	for i := range events {
-		eventsJSON[i] = events[i].JSON
-	}
-	return eventsJSON, int64(events[len(events)-1].NID), nil
-}

@@ -822,6 +822,56 @@ func TestAllJoinedMembers(t *testing.T) {
 	}
 }
 
+func TestCircularSlice(t *testing.T) {
+	testCases := []struct {
+		name    string
+		max     int
+		appends []int64
+		want    []int64 // these get sorted in the test
+	}{
+		{
+			name:    "wraparound",
+			max:     5,
+			appends: []int64{9, 8, 7, 6, 5, 4, 3, 2},
+			want:    []int64{2, 3, 4, 5, 6},
+		},
+		{
+			name:    "exact",
+			max:     5,
+			appends: []int64{9, 8, 7, 6, 5},
+			want:    []int64{5, 6, 7, 8, 9},
+		},
+		{
+			name:    "unfilled",
+			max:     5,
+			appends: []int64{9, 8, 7},
+			want:    []int64{7, 8, 9},
+		},
+		{
+			name:    "wraparound x2",
+			max:     5,
+			appends: []int64{9, 8, 7, 6, 5, 4, 3, 2, 1, 0, 10},
+			want:    []int64{0, 1, 2, 3, 10},
+		},
+	}
+	for _, tc := range testCases {
+		cs := &circularSlice{
+			max: tc.max,
+		}
+		for _, val := range tc.appends {
+			cs.append(val)
+		}
+		sort.Slice(cs.vals, func(i, j int) bool {
+			return cs.vals[i] < cs.vals[j]
+		})
+		if !reflect.DeepEqual(cs.vals, tc.want) {
+			t.Errorf("%s: got %v want %v", tc.name, cs.vals, tc.want)
+		}
+
+	}
+
+}
+
 func cleanDB(t *testing.T) error {
 	// make a fresh DB which is unpolluted from other tests
 	db, close := connectToDB(t)
