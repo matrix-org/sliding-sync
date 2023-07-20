@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"hash/fnv"
 	"os"
+	"sort"
 	"sync"
 	"time"
 
@@ -43,6 +44,7 @@ type Handler struct {
 	}
 	// room_id => fnv_hash([typing user ids])
 	typingMap map[string]uint64
+	typingMu  *sync.Mutex
 
 	deviceDataTicker *sync2.DeviceDataTicker
 	e2eeWorkerPool   *internal.WorkerPool
@@ -65,6 +67,7 @@ func NewHandler(
 			Notif     int
 		}),
 		typingMap:        make(map[string]uint64),
+		typingMu:         &sync.Mutex{},
 		deviceDataTicker: sync2.NewDeviceDataTicker(deviceDataUpdateDuration),
 		e2eeWorkerPool:   internal.NewWorkerPool(500), // TODO: assign as fraction of db max conns, not hardcoded
 	}
@@ -337,6 +340,10 @@ func (h *Handler) Initialise(ctx context.Context, roomID string, state []json.Ra
 
 func (h *Handler) SetTyping(ctx context.Context, roomID string, ephEvent json.RawMessage) {
 	next := typingHash(ephEvent)
+	// protect typingMap with a lock, so concurrent calls to SetTyping see the correct map
+	h.typingMu.Lock()
+	defer h.typingMu.Unlock()
+
 	existing := h.typingMap[roomID]
 	if existing == next {
 		return
@@ -493,8 +500,14 @@ func (h *Handler) EnsurePolling(p *pubsub.V3EnsurePolling) {
 
 func typingHash(ephEvent json.RawMessage) uint64 {
 	h := fnv.New64a()
-	for _, userID := range gjson.ParseBytes(ephEvent).Get("content.user_ids").Array() {
-		h.Write([]byte(userID.Str))
+	parsedUserIDs := gjson.ParseBytes(ephEvent).Get("content.user_ids").Array()
+	userIDs := make([]string, len(parsedUserIDs))
+	for i := range parsedUserIDs {
+		userIDs[i] = parsedUserIDs[i].Str
+	}
+	sort.Strings(userIDs)
+	for _, userID := range userIDs {
+		_, _ = h.Write([]byte(userID))
 	}
 	return h.Sum64()
 }
