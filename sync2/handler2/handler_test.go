@@ -1,6 +1,8 @@
 package handler2_test
 
 import (
+	"context"
+	"encoding/json"
 	"os"
 	"reflect"
 	"sync"
@@ -92,12 +94,14 @@ func (p *mockPub) WaitForPayloadType(t string) chan struct{} {
 	return ch
 }
 
-func (p *mockPub) DoWait(t *testing.T, errMsg string, ch chan struct{}) {
+func (p *mockPub) DoWait(t *testing.T, errMsg string, ch chan struct{}, wantTimeOut bool) {
 	select {
 	case <-ch:
 		return
 	case <-time.After(time.Second):
-		t.Fatalf("DoWait: timed out waiting: %s", errMsg)
+		if !wantTimeOut {
+			t.Fatalf("DoWait: timed out waiting: %s", errMsg)
+		}
 	}
 }
 
@@ -155,7 +159,7 @@ func TestHandlerFreshEnsurePolling(t *testing.T) {
 		DeviceID:        deviceID,
 		AccessTokenHash: tok.AccessTokenHash,
 	})
-	pub.DoWait(t, "didn't see V2InitialSyncComplete", ch)
+	pub.DoWait(t, "didn't see V2InitialSyncComplete", ch, false)
 
 	// make sure we polled with the token i.e it did a db hit
 	pMap.assertCallExists(t, pollInfo{
@@ -168,4 +172,35 @@ func TestHandlerFreshEnsurePolling(t *testing.T) {
 		isStartup:   false,
 	})
 
+}
+
+func TestSetTypingConcurrently(t *testing.T) {
+	store := state.NewStorage(postgresURI)
+	v2Store := sync2.NewStore(postgresURI, "secret")
+	pMap := &mockPollerMap{}
+	pub := newMockPub()
+	sub := &mockSub{}
+	h, err := handler2.NewHandler(pMap, v2Store, store, pub, sub, false, time.Minute)
+	assertNoError(t, err)
+	ctx := context.Background()
+
+	roomID := "!typing:localhost"
+
+	typingType := pubsub.V2Typing{}
+
+	// Call SetTyping twice, this may happen with pollers for the same user
+	go h.SetTyping(ctx, roomID, json.RawMessage(`{"content":"user_ids":["@alice:localhost"]}`))
+	go h.SetTyping(ctx, roomID, json.RawMessage(`{"content":"user_ids":["@alice:localhost"]}`))
+
+	// Wait for the event to be published
+	ch := pub.WaitForPayloadType(typingType.Type())
+	pub.DoWait(t, "didn't see V2Typing", ch, false)
+	ch = pub.WaitForPayloadType(typingType.Type())
+	// Wait again, but this time we expect to timeout.
+	pub.DoWait(t, "saw unexpected V2Typing", ch, true)
+
+	// We expect only one call to Notify, as the hashes should match
+	if gotCalls := len(pub.calls); gotCalls != 1 {
+		t.Fatalf("expected only one call to notify, got %d", gotCalls)
+	}
 }
