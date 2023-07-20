@@ -97,6 +97,9 @@ func (p *mockPub) WaitForPayloadType(t string) chan struct{} {
 func (p *mockPub) DoWait(t *testing.T, errMsg string, ch chan struct{}, wantTimeOut bool) {
 	select {
 	case <-ch:
+		if wantTimeOut {
+			t.Fatalf("expected to timeout, but received on channel")
+		}
 		return
 	case <-time.After(time.Second):
 		if !wantTimeOut {
@@ -188,9 +191,19 @@ func TestSetTypingConcurrently(t *testing.T) {
 
 	typingType := pubsub.V2Typing{}
 
+	// startSignal is used to synchronize calling SetTyping
+	startSignal := make(chan struct{})
 	// Call SetTyping twice, this may happen with pollers for the same user
-	go h.SetTyping(ctx, roomID, json.RawMessage(`{"content":"user_ids":["@alice:localhost"]}`))
-	go h.SetTyping(ctx, roomID, json.RawMessage(`{"content":"user_ids":["@alice:localhost"]}`))
+	go func() {
+		<-startSignal
+		h.SetTyping(ctx, roomID, json.RawMessage(`{"content":{"user_ids":["@alice:localhost"]}}`))
+	}()
+	go func() {
+		<-startSignal
+		h.SetTyping(ctx, roomID, json.RawMessage(`{"content":{"user_ids":["@alice:localhost"]}}`))
+	}()
+
+	close(startSignal)
 
 	// Wait for the event to be published
 	ch := pub.WaitForPayloadType(typingType.Type())
