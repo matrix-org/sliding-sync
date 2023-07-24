@@ -14,7 +14,7 @@ import (
 // The amount of time to artificially wait if the server detects spamming clients. This time will
 // be added to responses when the server detects the same request being sent over and over e.g
 // /sync?pos=5 then /sync?pos=5 over and over. Likewise /sync without a ?pos=.
-var SpamProtectionInterval = time.Second
+var SpamProtectionInterval = 10 * time.Millisecond
 
 type ConnID struct {
 	UserID   string
