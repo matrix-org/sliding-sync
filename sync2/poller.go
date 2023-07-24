@@ -39,7 +39,7 @@ type V2DataReceiver interface {
 	// If given a state delta from an incremental sync, returns the slice of all state events unknown to the DB.
 	Initialise(ctx context.Context, roomID string, state []json.RawMessage) []json.RawMessage // snapshot ID?
 	// SetTyping indicates which users are typing.
-	SetTyping(ctx context.Context, roomID string, ephEvent json.RawMessage)
+	SetTyping(ctx context.Context, deviceID string, roomID string, ephEvent json.RawMessage)
 	// Sent when there is a new receipt
 	OnReceipt(ctx context.Context, userID, roomID, ephEventType string, ephEvent json.RawMessage)
 	// AddToDeviceMessages adds this chunk of to_device messages. Preserve the ordering.
@@ -282,11 +282,11 @@ func (h *PollerMap) Initialise(ctx context.Context, roomID string, state []json.
 	wg.Wait()
 	return
 }
-func (h *PollerMap) SetTyping(ctx context.Context, roomID string, ephEvent json.RawMessage) {
+func (h *PollerMap) SetTyping(ctx context.Context, deviceID string, roomID string, ephEvent json.RawMessage) {
 	var wg sync.WaitGroup
 	wg.Add(1)
 	h.executor <- func() {
-		h.callbacks.SetTyping(ctx, roomID, ephEvent)
+		h.callbacks.SetTyping(ctx, deviceID, roomID, ephEvent)
 		wg.Done()
 	}
 	wg.Wait()
@@ -691,7 +691,7 @@ func (p *poller) parseRoomsResponse(ctx context.Context, res *SyncResponse) {
 			switch ephEventType {
 			case "m.typing":
 				typingCalls++
-				p.receiver.SetTyping(ctx, roomID, ephEvent)
+				p.receiver.SetTyping(ctx, p.deviceID, roomID, ephEvent)
 			case "m.receipt":
 				receiptCalls++
 				p.receiver.OnReceipt(ctx, p.userID, roomID, ephEventType, ephEvent)

@@ -598,7 +598,7 @@ func (a *mockDataReceiver) Initialise(ctx context.Context, roomID string, state 
 	// timeline. Untested here---return nil for now.
 	return nil
 }
-func (a *mockDataReceiver) SetTyping(ctx context.Context, roomID string, ephEvent json.RawMessage) {
+func (a *mockDataReceiver) SetTyping(ctx context.Context, deviceID string, roomID string, ephEvent json.RawMessage) {
 }
 func (s *mockDataReceiver) UpdateDeviceSince(ctx context.Context, userID, deviceID, since string) {
 	s.pollerIDToSince[PollerID{UserID: userID, DeviceID: deviceID}] = since

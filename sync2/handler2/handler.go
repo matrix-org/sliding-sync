@@ -46,6 +46,9 @@ type Handler struct {
 	typingMap map[string]uint64
 	typingMu  *sync.Mutex
 
+	// room_id -> device_id, stores which device is allowed to update typing notifications
+	typingDeviceHandler map[string]string
+
 	deviceDataTicker *sync2.DeviceDataTicker
 	e2eeWorkerPool   *internal.WorkerPool
 
@@ -66,10 +69,11 @@ func NewHandler(
 			Highlight int
 			Notif     int
 		}),
-		typingMap:        make(map[string]uint64),
-		typingMu:         &sync.Mutex{},
-		deviceDataTicker: sync2.NewDeviceDataTicker(deviceDataUpdateDuration),
-		e2eeWorkerPool:   internal.NewWorkerPool(500), // TODO: assign as fraction of db max conns, not hardcoded
+		typingMap:           make(map[string]uint64),
+		typingMu:            &sync.Mutex{},
+		typingDeviceHandler: make(map[string]string),
+		deviceDataTicker:    sync2.NewDeviceDataTicker(deviceDataUpdateDuration),
+		e2eeWorkerPool:      internal.NewWorkerPool(500), // TODO: assign as fraction of db max conns, not hardcoded
 	}
 
 	if enablePrometheus {
@@ -169,6 +173,12 @@ func (h *Handler) updateMetrics() {
 }
 
 func (h *Handler) OnTerminated(ctx context.Context, userID, deviceID string) {
+	// Check if this device is handling any typing notifications, of so, remove it
+	for roomID, devID := range h.typingDeviceHandler {
+		if devID == deviceID {
+			delete(h.typingDeviceHandler, roomID)
+		}
+	}
 	h.updateMetrics()
 }
 
@@ -338,7 +348,16 @@ func (h *Handler) Initialise(ctx context.Context, roomID string, state []json.Ra
 	return res.PrependTimelineEvents
 }
 
-func (h *Handler) SetTyping(ctx context.Context, roomID string, ephEvent json.RawMessage) {
+func (h *Handler) SetTyping(ctx context.Context, deviceID string, roomID string, ephEvent json.RawMessage) {
+	existingDevice := h.typingDeviceHandler[roomID]
+	if existingDevice != "" && existingDevice != deviceID {
+		// A different device is already handling typing notifications for this room
+		return
+	} else if existingDevice == "" {
+		// We're the first to call SetTyping, assign our deviceID
+		h.typingDeviceHandler[roomID] = deviceID
+	}
+
 	next := typingHash(ephEvent)
 	// protect typingMap with a lock, so concurrent calls to SetTyping see the correct map
 	h.typingMu.Lock()
@@ -462,6 +481,11 @@ func (h *Handler) OnLeftRoom(ctx context.Context, userID, roomID string) {
 		logger.Err(err).Str("user", userID).Str("room", roomID).Msg("failed to retire invite")
 		internal.GetSentryHubFromContextOrDefault(ctx).CaptureException(err)
 	}
+
+	// Remove room from the typing deviceHandler map, this ensures we always
+	// have a device handling typing notifications for a given room.
+	delete(h.typingDeviceHandler, roomID)
+
 	h.v2Pub.Notify(pubsub.ChanV2, &pubsub.V2LeaveRoom{
 		UserID: userID,
 		RoomID: roomID,
