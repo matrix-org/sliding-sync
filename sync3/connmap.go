@@ -81,7 +81,7 @@ func (m *ConnMap) UpdateMetrics() {
 	m.updateMetrics(len(m.connIDToConn))
 }
 
-// updateMetrics is like UpdateMetrics but doesn't touch connIDToConn and hence need a lock. We use this internally
+// updateMetrics is like UpdateMetrics but doesn't touch connIDToConn and hence doesn't need to lock. We use this internally
 // when we need to update the metric and already have the lock held, as calling UpdateMetrics would deadlock.
 func (m *ConnMap) updateMetrics(numConns int) {
 	if m.numConns == nil {
