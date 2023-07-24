@@ -59,7 +59,6 @@ type SyncLiveHandler struct {
 	GlobalCache            *caches.GlobalCache
 	maxPendingEventUpdates int
 
-	numConns     prometheus.Gauge
 	setupHistVec *prometheus.HistogramVec
 	histVec      *prometheus.HistogramVec
 	slowReqs     prometheus.Counter
@@ -74,7 +73,7 @@ func NewSync3Handler(
 		V2:                     v2Client,
 		Storage:                store,
 		V2Store:                storev2,
-		ConnMap:                sync3.NewConnMap(),
+		ConnMap:                sync3.NewConnMap(enablePrometheus),
 		userCaches:             &sync.Map{},
 		Dispatcher:             sync3.NewDispatcher(),
 		GlobalCache:            caches.NewGlobalCache(store),
@@ -128,9 +127,6 @@ func (h *SyncLiveHandler) Teardown() {
 	h.V2Sub.Teardown()
 	h.EnsurePoller.Teardown()
 	h.ConnMap.Teardown()
-	if h.numConns != nil {
-		prometheus.Unregister(h.numConns)
-	}
 	if h.setupHistVec != nil {
 		prometheus.Unregister(h.setupHistVec)
 	}
@@ -142,20 +138,7 @@ func (h *SyncLiveHandler) Teardown() {
 	}
 }
 
-func (h *SyncLiveHandler) updateMetrics() {
-	if h.numConns == nil {
-		return
-	}
-	h.numConns.Set(float64(h.ConnMap.Len()))
-}
-
 func (h *SyncLiveHandler) addPrometheusMetrics() {
-	h.numConns = prometheus.NewGauge(prometheus.GaugeOpts{
-		Namespace: "sliding_sync",
-		Subsystem: "api",
-		Name:      "num_active_conns",
-		Help:      "Number of active sliding sync connections.",
-	})
 	h.setupHistVec = prometheus.NewHistogramVec(prometheus.HistogramOpts{
 		Namespace: "sliding_sync",
 		Subsystem: "api",
@@ -176,7 +159,6 @@ func (h *SyncLiveHandler) addPrometheusMetrics() {
 		Name:      "slow_requests",
 		Help:      "Counter of slow (>=50s) requests, initial or otherwise.",
 	})
-	prometheus.MustRegister(h.numConns)
 	prometheus.MustRegister(h.setupHistVec)
 	prometheus.MustRegister(h.histVec)
 	prometheus.MustRegister(h.slowReqs)
@@ -398,7 +380,7 @@ func (h *SyncLiveHandler) setupConnection(req *http.Request, syncReq *sync3.Requ
 	}
 
 	pid := sync2.PollerID{UserID: token.UserID, DeviceID: token.DeviceID}
-  log.Trace().Any("pid", pid).Msg("checking poller exists and is running")
+	log.Trace().Any("pid", pid).Msg("checking poller exists and is running")
 	h.EnsurePoller.EnsurePolling(req.Context(), pid, token.AccessTokenHash)
 	log.Trace().Msg("poller exists and is running")
 	// this may take a while so if the client has given up (e.g timed out) by this point, just stop.
@@ -421,7 +403,7 @@ func (h *SyncLiveHandler) setupConnection(req *http.Request, syncReq *sync3.Requ
 	}
 
 	// once we have the conn, make sure our metrics are correct
-	defer h.updateMetrics()
+	defer h.ConnMap.UpdateMetrics()
 
 	// Now the v2 side of things are running, we can make a v3 live sync conn
 	// NB: this isn't inherently racey (we did the check for an existing conn before EnsurePolling)

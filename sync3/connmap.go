@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/ReneKroon/ttlcache/v2"
+	"github.com/prometheus/client_golang/prometheus"
 )
 
 // ConnMap stores a collection of Conns.
@@ -15,10 +16,15 @@ type ConnMap struct {
 	userIDToConn map[string][]*Conn
 	connIDToConn map[string]*Conn
 
+	numConns prometheus.Gauge
+	// counters for reasons why connections have expired
+	expiryTimedOutCounter   prometheus.Counter
+	expiryBufferFullCounter prometheus.Counter
+
 	mu *sync.Mutex
 }
 
-func NewConnMap() *ConnMap {
+func NewConnMap(enablePrometheus bool) *ConnMap {
 	cm := &ConnMap{
 		userIDToConn: make(map[string][]*Conn),
 		connIDToConn: make(map[string]*Conn),
@@ -27,17 +33,61 @@ func NewConnMap() *ConnMap {
 	}
 	cm.cache.SetTTL(30 * time.Minute) // TODO: customisable
 	cm.cache.SetExpirationCallback(cm.closeConnExpires)
+
+	if enablePrometheus {
+		cm.expiryTimedOutCounter = prometheus.NewCounter(prometheus.CounterOpts{
+			Namespace: "sliding_sync",
+			Subsystem: "api",
+			Name:      "expiry_conn_timed_out",
+			Help:      "Counter of expired API connections due to reaching TTL limit",
+		})
+		prometheus.MustRegister(cm.expiryTimedOutCounter)
+		cm.expiryBufferFullCounter = prometheus.NewCounter(prometheus.CounterOpts{
+			Namespace: "sliding_sync",
+			Subsystem: "api",
+			Name:      "expiry_conn_buffer_full",
+			Help:      "Counter of expired API connections due to reaching buffer update limit",
+		})
+		prometheus.MustRegister(cm.expiryBufferFullCounter)
+		cm.numConns = prometheus.NewGauge(prometheus.GaugeOpts{
+			Namespace: "sliding_sync",
+			Subsystem: "api",
+			Name:      "num_active_conns",
+			Help:      "Number of active sliding sync connections.",
+		})
+		prometheus.MustRegister(cm.numConns)
+	}
 	return cm
 }
 
 func (m *ConnMap) Teardown() {
 	m.cache.Close()
+
+	if m.numConns != nil {
+		prometheus.Unregister(m.numConns)
+	}
+	if m.expiryBufferFullCounter != nil {
+		prometheus.Unregister(m.expiryBufferFullCounter)
+	}
+	if m.expiryTimedOutCounter != nil {
+		prometheus.Unregister(m.expiryTimedOutCounter)
+	}
 }
 
-func (m *ConnMap) Len() int {
+// UpdateMetrics recalculates the number of active connections. Do this when you think there is a change.
+func (m *ConnMap) UpdateMetrics() {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	return len(m.connIDToConn)
+	m.updateMetrics(len(m.connIDToConn))
+}
+
+// updateMetrics is like UpdateMetrics but doesn't touch connIDToConn and hence need a lock. We use this internally
+// when we need to update the metric and already have the lock held, as calling UpdateMetrics would deadlock.
+func (m *ConnMap) updateMetrics(numConns int) {
+	if m.numConns == nil {
+		return
+	}
+	m.numConns.Set(float64(numConns))
 }
 
 // Conns return all connections for this user|device
@@ -64,8 +114,9 @@ func (m *ConnMap) Conn(cid ConnID) *Conn {
 		return conn
 	}
 	// e.g buffer exceeded, close it and remove it from the cache
-	logger.Trace().Str("conn", cid.String()).Msg("closing connection due to dead connection (buffer full)")
+	logger.Info().Str("conn", cid.String()).Msg("closing connection due to dead connection (buffer full)")
 	m.closeConn(conn)
+	m.expiryBufferFullCounter.Inc()
 	return nil
 }
 
@@ -92,6 +143,7 @@ func (m *ConnMap) CreateConn(cid ConnID, newConnHandler func() ConnHandler) (*Co
 	m.cache.Set(cid.String(), conn)
 	m.connIDToConn[cid.String()] = conn
 	m.userIDToConn[cid.UserID] = append(m.userIDToConn[cid.UserID], conn)
+	m.updateMetrics(len(m.connIDToConn))
 	return conn, true
 }
 
@@ -121,7 +173,8 @@ func (m *ConnMap) closeConnExpires(connID string, value interface{}) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	conn := value.(*Conn)
-	logger.Trace().Str("conn", connID).Msg("closing connection due to expired TTL in cache")
+	logger.Info().Str("conn", connID).Msg("closing connection due to expired TTL in cache")
+	m.expiryTimedOutCounter.Inc()
 	m.closeConn(conn)
 }
 
@@ -147,4 +200,5 @@ func (m *ConnMap) closeConn(conn *Conn) {
 	m.userIDToConn[conn.UserID] = conns
 	// remove user cache listeners etc
 	h.Destroy()
+	m.updateMetrics(len(m.connIDToConn))
 }
