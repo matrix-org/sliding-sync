@@ -2,6 +2,8 @@ package internal
 
 import (
 	"context"
+	"fmt"
+
 	"github.com/getsentry/sentry-go"
 
 	"github.com/rs/zerolog"
@@ -17,6 +19,7 @@ var (
 type data struct {
 	userID               string
 	deviceID             string
+	bufferSummary        string
 	since                int64
 	next                 int64
 	numRooms             int
@@ -51,6 +54,15 @@ func SetRequestContextUserID(ctx context.Context, userID, deviceID string) {
 			scope.SetUser(sentry.User{Username: userID})
 		})
 	}
+}
+
+func SetConnBufferInfo(ctx context.Context, bufferLen, nextLen, bufferCap int) {
+	d := ctx.Value(ctxData)
+	if d == nil {
+		return
+	}
+	da := d.(*data)
+	da.bufferSummary = fmt.Sprintf("%d/%d/%d", bufferLen, nextLen, bufferCap)
 }
 
 func SetRequestContextResponseInfo(
@@ -107,6 +119,9 @@ func DecorateLogger(ctx context.Context, l *zerolog.Event) *zerolog.Event {
 	}
 	if da.numLeftDevices > 0 {
 		l = l.Int("dl-l", da.numLeftDevices)
+	}
+	if da.bufferSummary != "" {
+		l = l.Str("b", da.bufferSummary)
 	}
 	return l
 }
