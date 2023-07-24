@@ -115,7 +115,9 @@ func (m *ConnMap) Conn(cid ConnID) *Conn {
 	}
 	// e.g buffer exceeded, close it and remove it from the cache
 	logger.Info().Str("conn", cid.String()).Msg("closing connection due to dead connection (buffer full)")
+	m.mu.Lock()
 	m.closeConn(conn)
+	m.mu.Unlock()
 	if m.expiryBufferFullCounter != nil {
 		m.expiryBufferFullCounter.Inc()
 	}
