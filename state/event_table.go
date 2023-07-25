@@ -57,7 +57,7 @@ func (ev *Event) ensureFieldsSetOnEvent() error {
 	}
 	if ev.Type == "" {
 		typeResult := evJSON.Get("type")
-		if !typeResult.Exists() { // empty strings for 'type' are valid apparently
+		if !typeResult.Exists() || typeResult.Type != gjson.String { // empty strings for 'type' are valid apparently
 			return fmt.Errorf("event JSON missing type key")
 		}
 		ev.Type = typeResult.Str
@@ -153,7 +153,7 @@ func (t *EventTable) SelectHighestNID() (highest int64, err error) {
 // we insert new events A and B in that order, then NID(A) < NID(B).
 func (t *EventTable) Insert(txn *sqlx.Tx, events []Event, checkFields bool) (map[string]int64, error) {
 	if checkFields {
-		ensureFieldsSet(events)
+		events = filterAndEnsureFieldsSet(events)
 	}
 	result := make(map[string]int64)
 	for i := range events {
@@ -449,14 +449,18 @@ func (c EventChunker) Subslice(i, j int) sqlutil.Chunker {
 	return c[i:j]
 }
 
-func ensureFieldsSet(events []Event) error {
+func filterAndEnsureFieldsSet(events []Event) []Event {
+	result := make([]Event, 0, len(events))
 	// ensure fields are set
 	for i := range events {
 		ev := events[i]
 		if err := ev.ensureFieldsSetOnEvent(); err != nil {
-			return err
+			logger.Warn().Str("event_id", ev.ID).Err(err).Msg(
+				"filterAndEnsureFieldsSet: failed to parse event, ignoring",
+			)
+			continue
 		}
-		events[i] = ev
+		result = append(result, ev)
 	}
-	return nil
+	return result
 }
