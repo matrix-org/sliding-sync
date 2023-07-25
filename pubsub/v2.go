@@ -41,12 +41,14 @@ type V2Accumulate struct {
 
 func (*V2Accumulate) Type() string { return "V2Accumulate" }
 
-// V2TransactionID is emitted by a poller when it sees an event with a transaction ID.
+// V2TransactionID is emitted by a poller when it sees an event with a transaction ID,
+// or when it is certain that no other poller will see a transaction ID for this event
+// (the "all-clear").
 type V2TransactionID struct {
 	EventID       string
 	UserID        string
 	DeviceID      string
-	TransactionID string
+	TransactionID string // Note: an empty transaction ID represents the all-clear.
 	NID           int64
 }
 

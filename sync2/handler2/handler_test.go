@@ -42,6 +42,10 @@ func (p *mockPollerMap) NumPollers() int {
 }
 func (p *mockPollerMap) Terminate() {}
 
+func (p *mockPollerMap) MissingTxnID(eventID, userID, deviceID string) (bool, error) {
+	return false, nil
+}
+
 func (p *mockPollerMap) SeenTxnID(eventID string) error {
 	return nil
 }

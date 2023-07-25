@@ -64,6 +64,7 @@ type IPollerMap interface {
 	EnsurePolling(pid PollerID, accessToken, v2since string, isStartup bool, logger zerolog.Logger)
 	NumPollers() int
 	Terminate()
+	MissingTxnID(eventID, userID, deviceID string) (bool, error)
 	SeenTxnID(eventID string) error
 }
 
@@ -210,6 +211,10 @@ func (h *PollerMap) deviceIDs(userID string) []string {
 		}
 	}
 	return devices
+}
+
+func (h *PollerMap) MissingTxnID(eventID, userID, deviceID string) (bool, error) {
+	return h.pendingTxnIDs.MissingTxnID(eventID, userID, deviceID)
 }
 
 func (h *PollerMap) SeenTxnID(eventID string) error {
