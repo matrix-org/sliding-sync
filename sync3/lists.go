@@ -222,6 +222,34 @@ func (s *InternalRequestLists) ListsByVisibleRoomIDs(muxedReqLists map[string]Re
 	return listsByRoomIDs
 }
 
+// Visible determines if a single room is currently visible in the given set of lists.
+func (s *InternalRequestLists) Visible(roomID string, muxedReqLists map[string]RequestList) bool {
+	for listKey, reqList := range muxedReqLists {
+		sortedRooms := s.lists[listKey].SortableRooms
+		if sortedRooms == nil {
+			continue
+		}
+
+		var ranges SliceRanges
+		if reqList.SlowGetAllRooms != nil && *reqList.SlowGetAllRooms {
+			ranges = SliceRanges{{0, sortedRooms.Len() - 1}}
+		} else {
+			ranges = reqList.Ranges
+		}
+
+		subslices := ranges.SliceInto(sortedRooms)
+		for _, subslice := range subslices {
+			sortedSubslice := subslice.(*SortableRooms)
+			for _, otherRoomID := range sortedSubslice.RoomIDs() {
+				if roomID == otherRoomID {
+					return true
+				}
+			}
+		}
+	}
+	return false
+}
+
 // Assign a new list at the given key. If Overwrite, any existing list is replaced. If DoNotOverwrite, the existing
 // list is returned if one exists, else a new list is created. Returns the list and true if the list was overwritten.
 func (s *InternalRequestLists) AssignList(ctx context.Context, listKey string, filters *RequestFilters, sort []string, shouldOverwrite OverwriteVal) (*FilteredSortableRooms, bool) {

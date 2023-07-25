@@ -691,6 +691,15 @@ func (s *ConnState) OnRoomUpdate(ctx context.Context, up caches.RoomUpdate) {
 	}
 }
 
+func (s *ConnState) subscribedOrVisible(roomID string) bool {
+	_, subscribed := s.roomSubscriptions[roomID]
+	if subscribed {
+		return true
+	}
+
+	return s.lists.Visible(roomID, s.muxedReq.Lists)
+}
+
 // clampSliceRangeToListSize helps us to send client-friendly SYNC and INVALIDATE ranges.
 //
 // Suppose the client asks for a window on positions [10, 19]. If the list
