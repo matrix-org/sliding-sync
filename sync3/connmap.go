@@ -105,6 +105,14 @@ func (m *ConnMap) Conns(userID, deviceID string) []*Conn {
 
 // Conn returns a connection with this ConnID. Returns nil if no connection exists.
 func (m *ConnMap) Conn(cid ConnID) *Conn {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.getConn(cid)
+}
+
+// getConn returns a connection with this ConnID. Returns nil if no connection exists. Expires connections if the buffer is full.
+// Must hold mu.
+func (m *ConnMap) getConn(cid ConnID) *Conn {
 	cint, _ := m.cache.Get(cid.String())
 	if cint == nil {
 		return nil
@@ -115,9 +123,7 @@ func (m *ConnMap) Conn(cid ConnID) *Conn {
 	}
 	// e.g buffer exceeded, close it and remove it from the cache
 	logger.Info().Str("conn", cid.String()).Msg("closing connection due to dead connection (buffer full)")
-	m.mu.Lock()
 	m.closeConn(conn)
-	m.mu.Unlock()
 	if m.expiryBufferFullCounter != nil {
 		m.expiryBufferFullCounter.Inc()
 	}
@@ -129,7 +135,7 @@ func (m *ConnMap) CreateConn(cid ConnID, newConnHandler func() ConnHandler) (*Co
 	// atomically check if a conn exists already and nuke it if it exists
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	conn := m.Conn(cid)
+	conn := m.getConn(cid)
 	if conn != nil {
 		// tear down this connection and fallthrough
 		isSpamming := conn.lastPos <= 1
