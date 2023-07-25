@@ -42,6 +42,10 @@ func (p *mockPollerMap) NumPollers() int {
 }
 func (p *mockPollerMap) Terminate() {}
 
+func (p *mockPollerMap) SeenTxnID(eventID string) error {
+	return nil
+}
+
 func (p *mockPollerMap) EnsurePolling(pid sync2.PollerID, accessToken, v2since string, isStartup bool, logger zerolog.Logger) {
 	p.calls = append(p.calls, pollInfo{
 		pid:         pid,

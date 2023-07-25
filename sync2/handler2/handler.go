@@ -312,6 +312,7 @@ func (h *Handler) Accumulate(ctx context.Context, userID, deviceID, roomID, prev
 			// with an empty string for the TransactionID. In order to do this we will
 			// need to keep track of which events have been seen by which devices. Maybe
 			// NIDs suffice?
+			h.pMap.SeenTxnID(eventID)
 			h.v2Pub.Notify(pubsub.ChanV2, &pubsub.V2TransactionID{
 				EventID:       eventID,
 				UserID:        userID,
