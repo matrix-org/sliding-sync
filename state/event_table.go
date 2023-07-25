@@ -57,7 +57,7 @@ func (ev *Event) ensureFieldsSetOnEvent() error {
 	}
 	if ev.Type == "" {
 		typeResult := evJSON.Get("type")
-		if !typeResult.Exists() || typeResult.Str == "" {
+		if !typeResult.Exists() { // empty strings for 'type' are valid apparently
 			return fmt.Errorf("event JSON missing type key")
 		}
 		ev.Type = typeResult.Str

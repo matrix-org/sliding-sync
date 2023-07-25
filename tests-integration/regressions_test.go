@@ -127,12 +127,17 @@ func TestMalformedEvents(t *testing.T) {
 	}
 	// malformed events are INVALID and should be ignored by the proxy.
 	malformedEvents := []json.RawMessage{
-		testutils.NewStateEvent(t, "", "", alice, []string{"content", "as", "an", "array"}),
+		json.RawMessage(`{}`),                                        // empty object
+		json.RawMessage(`{"type":5}`),                                // type is an integer
+		json.RawMessage(`{"type":"foo","content":{},"event_id":""}`), // 0-length string as event ID
+		json.RawMessage(`{"type":"foo","content":{}}`),               // missing event ID
 	}
 
 	room := roomEvents{
 		roomID: "!TestMalformedEvents:localhost",
-		events: append(malformedEvents, unusualEvents...),
+		// append malformed after unusual. All malformed events should be dropped,
+		// leaving only unusualEvents.
+		events: append(unusualEvents, malformedEvents...),
 		state:  createRoomState(t, alice, time.Now()),
 	}
 	v2.addAccount(t, alice, aliceToken)

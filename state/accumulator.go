@@ -415,7 +415,10 @@ func (a *Accumulator) filterAndParseTimelineEvents(txn *sqlx.Tx, roomID string, 
 			RoomID: roomID,
 		}
 		if err := e.ensureFieldsSetOnEvent(); err != nil {
-			return nil, fmt.Errorf("event malformed: %s", err)
+			logger.Warn().Str("event_id", e.ID).Str("room_id", roomID).Err(err).Msg(
+				"Accumulator.filterAndParseTimelineEvents: failed to parse event, ignoring",
+			)
+			continue
 		}
 		if _, ok := seenEvents[e.ID]; ok {
 			logger.Warn().Str("event_id", e.ID).Str("room_id", roomID).Msg(
