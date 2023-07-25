@@ -46,7 +46,8 @@ func (*V2Accumulate) Type() string { return "V2Accumulate" }
 // (the "all-clear").
 type V2TransactionID struct {
 	EventID       string
-	UserID        string
+	RoomID        string
+	UserID        string // of the sender
 	DeviceID      string
 	TransactionID string // Note: an empty transaction ID represents the all-clear.
 	NID           int64
