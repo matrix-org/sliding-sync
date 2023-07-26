@@ -453,14 +453,14 @@ func filterAndEnsureFieldsSet(events []Event) []Event {
 	result := make([]Event, 0, len(events))
 	// ensure fields are set
 	for i := range events {
-		ev := events[i]
+		ev := &events[i]
 		if err := ev.ensureFieldsSetOnEvent(); err != nil {
 			logger.Warn().Str("event_id", ev.ID).Err(err).Msg(
 				"filterAndEnsureFieldsSet: failed to parse event, ignoring",
 			)
 			continue
 		}
-		result = append(result, ev)
+		result = append(result, *ev)
 	}
 	return result
 }
