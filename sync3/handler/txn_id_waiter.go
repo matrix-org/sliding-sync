@@ -5,22 +5,22 @@ import (
 	"time"
 )
 
-var maxDelay = 1 * time.Second
-
 type TxnIDWaiter struct {
 	userID              string
 	publish             func(update caches.Update)
 	subscribedOrVisible func(roomID string) bool
 	// TODO: probably need a mutex around t.queues so the expiry won't race with enqueuing
-	queues map[string][]*caches.RoomEventUpdate
+	queues   map[string][]*caches.RoomEventUpdate
+	maxDelay time.Duration
 }
 
-func NewTxnIDWaiter(userID string, publish func(caches.Update), subscribedOrVisible func(string) bool) *TxnIDWaiter {
+func NewTxnIDWaiter(userID string, maxDelay time.Duration, publish func(caches.Update), subscribedOrVisible func(string) bool) *TxnIDWaiter {
 	return &TxnIDWaiter{
 		userID:              userID,
 		publish:             publish,
 		subscribedOrVisible: subscribedOrVisible,
 		queues:              make(map[string][]*caches.RoomEventUpdate),
+		maxDelay:            maxDelay,
 		// TODO: metric that tracks how long events were queued for.
 	}
 }
@@ -58,7 +58,7 @@ func (t *TxnIDWaiter) Ingest(up caches.Update) {
 	// TODO: bound the queue size?
 	t.queues[roomID] = append(queue, eventUpdate)
 
-	time.AfterFunc(maxDelay, func() { t.publishUpToNID(roomID, eventUpdate.EventData.NID) })
+	time.AfterFunc(t.maxDelay, func() { t.publishUpToNID(roomID, eventUpdate.EventData.NID) })
 }
 
 func (t *TxnIDWaiter) publishUpToNID(roomID string, publishNID int64) {

@@ -58,6 +58,7 @@ type SyncLiveHandler struct {
 
 	GlobalCache            *caches.GlobalCache
 	maxPendingEventUpdates int
+	maxTransactionIDDelay  time.Duration
 
 	setupHistVec *prometheus.HistogramVec
 	histVec      *prometheus.HistogramVec
@@ -67,6 +68,7 @@ type SyncLiveHandler struct {
 func NewSync3Handler(
 	store *state.Storage, storev2 *sync2.Storage, v2Client sync2.Client, secret string,
 	pub pubsub.Notifier, sub pubsub.Listener, enablePrometheus bool, maxPendingEventUpdates int,
+	maxTransactionIDDelay time.Duration,
 ) (*SyncLiveHandler, error) {
 	logger.Info().Msg("creating handler")
 	sh := &SyncLiveHandler{
@@ -78,6 +80,7 @@ func NewSync3Handler(
 		Dispatcher:             sync3.NewDispatcher(),
 		GlobalCache:            caches.NewGlobalCache(store),
 		maxPendingEventUpdates: maxPendingEventUpdates,
+		maxTransactionIDDelay:  maxTransactionIDDelay,
 	}
 	sh.Extensions = &extensions.Handler{
 		Store:       store,
@@ -411,7 +414,7 @@ func (h *SyncLiveHandler) setupConnection(req *http.Request, syncReq *sync3.Requ
 	// to check for an existing connection though, as it's possible for the client to call /sync
 	// twice for a new connection.
 	conn, created := h.ConnMap.CreateConn(connID, func() sync3.ConnHandler {
-		return NewConnState(token.UserID, token.DeviceID, userCache, h.GlobalCache, h.Extensions, h.Dispatcher, h.setupHistVec, h.histVec, h.maxPendingEventUpdates)
+		return NewConnState(token.UserID, token.DeviceID, userCache, h.GlobalCache, h.Extensions, h.Dispatcher, h.setupHistVec, h.histVec, h.maxPendingEventUpdates, h.maxTransactionIDDelay)
 	})
 	if created {
 		log.Info().Msg("created new connection")

@@ -60,7 +60,7 @@ type ConnState struct {
 func NewConnState(
 	userID, deviceID string, userCache *caches.UserCache, globalCache *caches.GlobalCache,
 	ex extensions.HandlerInterface, joinChecker JoinChecker, setupHistVec *prometheus.HistogramVec, histVec *prometheus.HistogramVec,
-	maxPendingEventUpdates int,
+	maxPendingEventUpdates int, maxTransactionIDDelay time.Duration,
 ) *ConnState {
 	cs := &ConnState{
 		globalCache:         globalCache,
@@ -81,7 +81,7 @@ func NewConnState(
 		ConnState: cs,
 		updates:   make(chan caches.Update, maxPendingEventUpdates),
 	}
-	cs.txnIDWaiter = NewTxnIDWaiter(userID, cs.live.onUpdate, cs.subscribedOrVisible)
+	cs.txnIDWaiter = NewTxnIDWaiter(userID, maxTransactionIDDelay, cs.live.onUpdate, cs.subscribedOrVisible)
 	// subscribe for updates before loading. We risk seeing dupes but that's fine as load positions
 	// will stop us double-processing.
 	cs.userCacheID = cs.userCache.Subsribe(cs)

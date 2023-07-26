@@ -37,6 +37,9 @@ type Opts struct {
 	// if true, publishing messages will block until the consumer has consumed it.
 	// Assumes a single producer and a single consumer.
 	TestingSynchronousPubsub bool
+	// MaxTransactionIDDelay is the longest amount of time that we will wait for
+	// confirmation of an event's transaction_id before sending it to its sender.
+	MaxTransactionIDDelay time.Duration
 
 	DBMaxConns        int
 	DBConnMaxIdleTime time.Duration
@@ -115,7 +118,7 @@ func Setup(destHomeserver, postgresURI, secret string, opts Opts) (*handler2.Han
 	pMap.SetCallbacks(h2)
 
 	// create v3 handler
-	h3, err := handler.NewSync3Handler(store, storev2, v2Client, secret, pubSub, pubSub, opts.AddPrometheusMetrics, opts.MaxPendingEventUpdates)
+	h3, err := handler.NewSync3Handler(store, storev2, v2Client, secret, pubSub, pubSub, opts.AddPrometheusMetrics, opts.MaxPendingEventUpdates, opts.MaxTransactionIDDelay)
 	if err != nil {
 		panic(err)
 	}
