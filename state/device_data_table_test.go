@@ -1,6 +1,8 @@
 package state
 
 import (
+	"bytes"
+	"encoding/json"
 	"reflect"
 	"testing"
 
@@ -21,6 +23,54 @@ func assertDeviceData(t *testing.T, g, w internal.DeviceData) {
 	assertVal(t, "FallbackKeyTypes", g.FallbackKeyTypes, w.FallbackKeyTypes)
 	assertVal(t, "OTKCounts", g.OTKCounts, w.OTKCounts)
 	assertVal(t, "ChangedBits", g.ChangedBits, w.ChangedBits)
+}
+
+func BenchmarkReflectDeepEqual(b *testing.B) {
+	newList := map[string]int{"abc": 1, "cde": 1, "fgh": 1, "ijk": 1, "lmn": 1}
+	d1 := internal.DeviceData{}
+	d2 := internal.DeviceData{
+		DeviceLists: internal.DeviceLists{New: newList},
+		DeviceID:    "abc",
+		UserID:      "abc",
+		ChangedBits: 0,
+		OTKCounts:   map[string]int{"ed25519": 50},
+	}
+
+	for i := 0; i < b.N; i++ {
+		if reflect.DeepEqual(d1, d2) {
+			b.Fatal("structs are equal")
+		}
+	}
+}
+
+func BenchmarkJSONMarhsalBytesEqual(b *testing.B) {
+	newList := map[string]int{"abc": 1, "cde": 1, "fgh": 1, "ijk": 1, "lmn": 1}
+	d1 := internal.DeviceData{}
+	d2 := internal.DeviceData{
+		DeviceLists: internal.DeviceLists{New: newList},
+		DeviceID:    "abc",
+		UserID:      "abc",
+		ChangedBits: 0,
+		OTKCounts:   map[string]int{"ed25519": 50},
+	}
+
+	data1, err := json.Marshal(d1)
+	if err != nil {
+		b.Fatal(err)
+	}
+
+	// Reset the timer, so we actually just test what is
+	// executed after we fetched the data from the database.
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		data2, err := json.Marshal(d2)
+		if err != nil {
+			b.Fatal(err)
+		}
+		if bytes.Equal(data1, data2) {
+			b.Fatal("bytes are equal")
+		}
+	}
 }
 
 func TestDeviceDataTableSwaps(t *testing.T) {
@@ -64,7 +114,7 @@ func TestDeviceDataTableSwaps(t *testing.T) {
 		},
 	}
 	for _, dd := range deltas {
-		_, err := table.Upsert(&dd)
+		err := table.Upsert(&dd)
 		assertNoError(t, err)
 	}
 
@@ -118,7 +168,7 @@ func TestDeviceDataTableSwaps(t *testing.T) {
 
 	// get back the original state
 	for _, dd := range deltas {
-		_, err = table.Upsert(&dd)
+		err = table.Upsert(&dd)
 		assertNoError(t, err)
 	}
 	want.SetFallbackKeysChanged()
@@ -130,7 +180,7 @@ func TestDeviceDataTableSwaps(t *testing.T) {
 	// swap once then add once so both sent and new are populated
 	_, err = table.Select(userID, deviceID, true)
 	assertNoError(t, err)
-	_, err = table.Upsert(&internal.DeviceData{
+	err = table.Upsert(&internal.DeviceData{
 		UserID:   userID,
 		DeviceID: deviceID,
 		DeviceLists: internal.DeviceLists{
@@ -151,7 +201,7 @@ func TestDeviceDataTableSwaps(t *testing.T) {
 	assertDeviceData(t, *got, want4)
 
 	// another append then consume
-	_, err = table.Upsert(&internal.DeviceData{
+	err = table.Upsert(&internal.DeviceData{
 		UserID:   userID,
 		DeviceID: deviceID,
 		DeviceLists: internal.DeviceLists{
@@ -205,7 +255,7 @@ func TestDeviceDataTableBitset(t *testing.T) {
 		},
 	}
 
-	_, err := table.Upsert(&otkUpdate)
+	err := table.Upsert(&otkUpdate)
 	assertNoError(t, err)
 	got, err := table.Select(userID, deviceID, true)
 	assertNoError(t, err)
@@ -217,7 +267,7 @@ func TestDeviceDataTableBitset(t *testing.T) {
 	otkUpdate.ChangedBits = 0
 	assertDeviceData(t, *got, otkUpdate)
 	// now same for fallback keys, but we won't swap them so it should return those diffs
-	_, err = table.Upsert(&fallbakKeyUpdate)
+	err = table.Upsert(&fallbakKeyUpdate)
 	assertNoError(t, err)
 	fallbakKeyUpdate.OTKCounts = otkUpdate.OTKCounts
 	got, err = table.Select(userID, deviceID, false)
@@ -229,7 +279,7 @@ func TestDeviceDataTableBitset(t *testing.T) {
 	fallbakKeyUpdate.SetFallbackKeysChanged()
 	assertDeviceData(t, *got, fallbakKeyUpdate)
 	// updating both works
-	_, err = table.Upsert(&bothUpdate)
+	err = table.Upsert(&bothUpdate)
 	assertNoError(t, err)
 	got, err = table.Select(userID, deviceID, true)
 	assertNoError(t, err)

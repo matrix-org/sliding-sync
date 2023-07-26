@@ -216,7 +216,7 @@ func (h *Handler) OnE2EEData(ctx context.Context, userID, deviceID string, otkCo
 				New: deviceListChanges,
 			},
 		}
-		_, err := h.Store.DeviceDataTable.Upsert(&partialDD)
+		err := h.Store.DeviceDataTable.Upsert(&partialDD)
 		if err != nil {
 			logger.Err(err).Str("user", userID).Msg("failed to upsert device data")
 			internal.GetSentryHubFromContextOrDefault(ctx).CaptureException(err)
