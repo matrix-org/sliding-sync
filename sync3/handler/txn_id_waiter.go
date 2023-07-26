@@ -63,10 +63,10 @@ func (t *TxnIDWaiter) Ingest(up caches.Update) {
 	// TODO: bound the queue size?
 	t.queues[roomID] = append(queue, eventUpdate)
 
-	time.AfterFunc(t.maxDelay, func() { t.publishUpToNID(roomID, eventUpdate.EventData.NID) })
+	time.AfterFunc(t.maxDelay, func() { t.PublishUpToNID(roomID, eventUpdate.EventData.NID) })
 }
 
-func (t *TxnIDWaiter) publishUpToNID(roomID string, publishNID int64) {
+func (t *TxnIDWaiter) PublishUpToNID(roomID string, publishNID int64) {
 	queue, exists := t.queues[roomID]
 	if !exists {
 		return
