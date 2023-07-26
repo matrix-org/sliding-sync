@@ -11,13 +11,15 @@ import (
 type loaderFunc func(userID string) (deviceIDs []string)
 
 // PendingTransactionIDs is (conceptually) a map from event IDs to a list of device IDs.
-// Its keys the IDs of event we've seen which a) lack a transaction ID, and b) were sent
-// by one of the users we are polling for. The values are the list of the sender's
+// Its keys are the IDs of event we've seen which a) lack a transaction ID, and b) were
+// sent by one of the users we are polling for. The values are the list of the sender's
 // devices whose pollers are yet to see a transaction ID.
 //
 // If another poller sees the same event
+//
 //   - with a transaction ID, it emits a V2TransactionID payload with that ID and
 //     removes the event ID from this map.
+//
 //   - without a transaction ID, it removes the polling device ID from the values
 //     list. If the device ID list is now empty, the poller emits an "all clear"
 //     V2TransactionID payload.
@@ -88,6 +90,9 @@ func (c *PendingTransactionIDs) SeenTxnID(eventID string) error {
 	return c.pending.Set(eventID, []string{})
 }
 
+// removeDevice takes a device ID slice and returns a device ID slice with one
+// particular string removed. Assumes that the given slice has no duplicates.
+// Does not modify the given slice in situ.
 func removeDevice(device string, devices []string) ([]string, bool) {
 	for i, otherDevice := range devices {
 		if otherDevice == device {
