@@ -77,6 +77,7 @@ func (t *TxnIDWaiter) publishUpToNID(roomID string, publishNID int64) {
 	// Now queue[:i] has events with nid <= publishNID, and queue[i:] has nids > publishNID.
 	// strip off the first i events from the slice and publish them.
 	toPublish, queue := queue[:i], queue[i:]
+	t.queues[roomID] = queue
 	for _, eventUpdate := range toPublish {
 		t.publish(eventUpdate)
 	}
