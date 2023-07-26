@@ -7,14 +7,14 @@ import (
 
 type TxnIDWaiter struct {
 	userID              string
-	publish             func(update caches.Update)
+	publish             func(delayed bool, update caches.Update)
 	subscribedOrVisible func(roomID string) bool
 	// TODO: probably need a mutex around t.queues so the expiry won't race with enqueuing
 	queues   map[string][]*caches.RoomEventUpdate
 	maxDelay time.Duration
 }
 
-func NewTxnIDWaiter(userID string, maxDelay time.Duration, publish func(caches.Update), subscribedOrVisible func(string) bool) *TxnIDWaiter {
+func NewTxnIDWaiter(userID string, maxDelay time.Duration, publish func(bool, caches.Update), subscribedOrVisible func(string) bool) *TxnIDWaiter {
 	return &TxnIDWaiter{
 		userID:              userID,
 		publish:             publish,
@@ -27,43 +27,44 @@ func NewTxnIDWaiter(userID string, maxDelay time.Duration, publish func(caches.U
 
 func (t *TxnIDWaiter) Ingest(up caches.Update) {
 	if t.maxDelay <= 0 {
-		t.publish(up)
+		t.publish(false, up)
 		return
 	}
 
 	eventUpdate, isEventUpdate := up.(*caches.RoomEventUpdate)
 	if !isEventUpdate {
-		t.publish(up)
+		t.publish(false, up)
 		return
 	}
 
-	roomID := eventUpdate.EventData.RoomID
-
+	ed := eventUpdate.EventData
 	// We only want to queue this event if
 	//  - our user sent it AND it lacks a txn_id; OR
 	//  - the room already has queued events.
-	_, roomQueued := t.queues[roomID]
-	missingTxnID := eventUpdate.EventData.Sender == t.userID && eventUpdate.EventData.TransactionID == ""
+	_, roomQueued := t.queues[ed.RoomID]
+	missingTxnID := ed.Sender == t.userID && ed.TransactionID == ""
 	if !(missingTxnID || roomQueued) {
-		t.publish(up)
+		t.publish(false, up)
 		return
 	}
 
 	// Don't bother queuing the event if the room isn't visible to the user.
-	if !t.subscribedOrVisible(roomID) {
-		t.publish(up)
+	if !t.subscribedOrVisible(ed.RoomID) {
+		t.publish(false, up)
 		return
 	}
 
 	// We've decided to queue the event.
-	queue, exists := t.queues[roomID]
+	queue, exists := t.queues[ed.RoomID]
 	if !exists {
 		queue = make([]*caches.RoomEventUpdate, 0, 10)
 	}
 	// TODO: bound the queue size?
-	t.queues[roomID] = append(queue, eventUpdate)
+	t.queues[ed.RoomID] = append(queue, eventUpdate)
+	logger.Trace().Str("room_id", ed.RoomID).Ints64("q", nids(t.queues[ed.RoomID])).Msgf("enqueue event NID %d", ed.NID)
 
-	time.AfterFunc(t.maxDelay, func() { t.PublishUpToNID(roomID, eventUpdate.EventData.NID) })
+	// TODO: if t gets gced, will this function still run? If so, will things explode?
+	time.AfterFunc(t.maxDelay, func() { t.PublishUpToNID(ed.RoomID, ed.NID) })
 }
 
 func (t *TxnIDWaiter) PublishUpToNID(roomID string, publishNID int64) {
@@ -82,8 +83,22 @@ func (t *TxnIDWaiter) PublishUpToNID(roomID string, publishNID int64) {
 	// Now queue[:i] has events with nid <= publishNID, and queue[i:] has nids > publishNID.
 	// strip off the first i events from the slice and publish them.
 	toPublish, queue := queue[:i], queue[i:]
-	t.queues[roomID] = queue
-	for _, eventUpdate := range toPublish {
-		t.publish(eventUpdate)
+	if len(queue) == 0 {
+		delete(t.queues, roomID)
+	} else {
+		t.queues[roomID] = queue
 	}
+
+	logger.Trace().Str("room_id", roomID).Ints64("q", nids(queue)).Msgf("publish event up to NID %d", publishNID)
+	for _, eventUpdate := range toPublish {
+		t.publish(true, eventUpdate)
+	}
+}
+
+func nids(updates []*caches.RoomEventUpdate) []int64 {
+	rv := make([]int64, len(updates))
+	for i, up := range updates {
+		rv[i] = up.EventData.NID
+	}
+	return rv
 }

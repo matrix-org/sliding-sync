@@ -81,7 +81,14 @@ func NewConnState(
 		ConnState: cs,
 		updates:   make(chan caches.Update, maxPendingEventUpdates),
 	}
-	cs.txnIDWaiter = NewTxnIDWaiter(userID, maxTransactionIDDelay, cs.live.onUpdate, cs.subscribedOrVisible)
+	cs.txnIDWaiter = NewTxnIDWaiter(
+		userID,
+		maxTransactionIDDelay,
+		func(delayed bool, update caches.Update) {
+			cs.live.onUpdate(update)
+		},
+		cs.subscribedOrVisible,
+	)
 	// subscribe for updates before loading. We risk seeing dupes but that's fine as load positions
 	// will stop us double-processing.
 	cs.userCacheID = cs.userCache.Subsribe(cs)
