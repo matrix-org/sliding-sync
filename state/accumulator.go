@@ -207,8 +207,9 @@ func (a *Accumulator) Initialise(roomID string, state []json.RawMessage) (Initia
 				IsState: true,
 			}
 		}
-		if err := ensureFieldsSet(events); err != nil {
-			return fmt.Errorf("events malformed: %s", err)
+		events = filterAndEnsureFieldsSet(events)
+		if len(events) == 0 {
+			return fmt.Errorf("failed to insert events, all events were filtered out: %w", err)
 		}
 		eventIDToNID, err := a.eventsTable.Insert(txn, events, false)
 		if err != nil {
@@ -415,7 +416,10 @@ func (a *Accumulator) filterAndParseTimelineEvents(txn *sqlx.Tx, roomID string, 
 			RoomID: roomID,
 		}
 		if err := e.ensureFieldsSetOnEvent(); err != nil {
-			return nil, fmt.Errorf("event malformed: %s", err)
+			logger.Warn().Str("event_id", e.ID).Str("room_id", roomID).Err(err).Msg(
+				"Accumulator.filterAndParseTimelineEvents: failed to parse event, ignoring",
+			)
+			continue
 		}
 		if _, ok := seenEvents[e.ID]; ok {
 			logger.Warn().Str("event_id", e.ID).Str("room_id", roomID).Msg(
