@@ -33,9 +33,13 @@ func (t *TxnIDWaiter) Ingest(up caches.Update) {
 	}
 
 	roomID := eventUpdate.EventData.RoomID
+
+	// We only want to queue this event if
+	//  - our user sent it AND it lacks a txn_id; OR
+	//  - the room already has queued events.
 	_, roomQueued := t.queues[roomID]
-	// We only want to queue this event if our user sent it, or if the room already has queued events.
-	if eventUpdate.EventData.Sender != t.userID && roomQueued {
+	missingTxnID := eventUpdate.EventData.Sender == t.userID && eventUpdate.EventData.TransactionID == ""
+	if !(missingTxnID || roomQueued) {
 		t.publish(up)
 		return
 	}
