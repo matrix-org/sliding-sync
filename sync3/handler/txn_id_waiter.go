@@ -26,6 +26,11 @@ func NewTxnIDWaiter(userID string, maxDelay time.Duration, publish func(caches.U
 }
 
 func (t *TxnIDWaiter) Ingest(up caches.Update) {
+	if t.maxDelay <= 0 {
+		t.publish(up)
+		return
+	}
+
 	eventUpdate, isEventUpdate := up.(*caches.RoomEventUpdate)
 	if !isEventUpdate {
 		t.publish(up)
