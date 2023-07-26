@@ -377,12 +377,10 @@ func runTestServer(t testutils.TestBenchInterface, v2Server *testV2Server, postg
 		combinedOpts.AddPrometheusMetrics = opt.AddPrometheusMetrics
 		combinedOpts.DBConnMaxIdleTime = opt.DBConnMaxIdleTime
 		combinedOpts.DBMaxConns = opt.DBMaxConns
+		combinedOpts.MaxTransactionIDDelay = opt.MaxTransactionIDDelay
 		if opt.MaxPendingEventUpdates > 0 {
 			combinedOpts.MaxPendingEventUpdates = opt.MaxPendingEventUpdates
 			handler.BufferWaitTime = 5 * time.Millisecond
-		}
-		if opt.MaxTransactionIDDelay > 0 {
-			combinedOpts.MaxTransactionIDDelay = opt.MaxTransactionIDDelay
 		}
 	}
 	h2, h3 := syncv3.Setup(v2Server.url(), postgresConnectionString, os.Getenv("SYNCV3_SECRET"), combinedOpts)
