@@ -700,6 +700,10 @@ func (s *ConnState) subscribedOrVisible(roomID string) bool {
 	return s.lists.Visible(roomID, s.muxedReq.Lists)
 }
 
+func (s *ConnState) PublishEventsUpTo(roomID string, nid int64) {
+	s.txnIDWaiter.PublishUpToNID(roomID, nid)
+}
+
 // clampSliceRangeToListSize helps us to send client-friendly SYNC and INVALIDATE ranges.
 //
 // Suppose the client asks for a window on positions [10, 19]. If the list

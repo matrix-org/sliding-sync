@@ -629,9 +629,7 @@ func (h *SyncLiveHandler) OnTransactionID(p *pubsub.V2TransactionID) {
 	// There is some event E for which we now have a transaction ID, or else now know
 	// that we will never get a transaction ID. In either case, tell the sender's
 	// connections to unblock that event in the transaction ID waiter.
-
-	// TODO implement me. Something like
-	// h.ConnMap.ClearUpdateQueues(p.UserID, p.RoomID, p.NID)
+	h.ConnMap.ClearUpdateQueues(p.UserID, p.RoomID, p.NID)
 }
 
 // Called from the v2 poller, implements V2DataReceiver
