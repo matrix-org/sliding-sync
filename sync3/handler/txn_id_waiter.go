@@ -53,7 +53,6 @@ func (t *TxnIDWaiter) Ingest(up caches.Update) {
 	}
 	// TODO: bound the queue size?
 	t.queues[ed.RoomID] = append(queue, eventUpdate)
-	logger.Trace().Str("room_id", ed.RoomID).Ints64("q", nids(t.queues[ed.RoomID])).Msgf("enqueue event NID %d", ed.NID)
 
 	// TODO: if t gets gced, will this function still run? If so, will things explode?
 	time.AfterFunc(t.maxDelay, func() { t.PublishUpToNID(ed.RoomID, ed.NID) })
@@ -81,7 +80,6 @@ func (t *TxnIDWaiter) PublishUpToNID(roomID string, publishNID int64) {
 		t.queues[roomID] = queue
 	}
 
-	logger.Trace().Str("room_id", roomID).Ints64("q", nids(queue)).Msgf("publish event up to NID %d", publishNID)
 	for _, eventUpdate := range toPublish {
 		t.publish(true, eventUpdate)
 	}
