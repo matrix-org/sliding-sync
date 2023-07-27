@@ -2,6 +2,7 @@ package handler
 
 import (
 	"github.com/matrix-org/sliding-sync/sync3/caches"
+	"github.com/tidwall/gjson"
 	"testing"
 	"time"
 )
@@ -86,6 +87,51 @@ func TestTxnIDWaiter_QueuingLogic(t *testing.T) {
 			WaitForUpdate: 1,
 			ExpectDelayed: false, // not a room event, no need to queued behind alice's event
 		},
+		{
+			Name: "empty queue, join event for sender",
+			Ingest: []caches.Update{
+				&caches.RoomEventUpdate{
+					EventData: &caches.EventData{
+						RoomID:        room1,
+						Sender:        alice,
+						TransactionID: "",
+						NID:           1,
+						EventType:     "m.room.member",
+						StateKey:      ptr(alice),
+						Content:       gjson.Parse(`{"membership": "join"}`),
+					},
+				},
+			},
+			WaitForUpdate: 0,
+			ExpectDelayed: false,
+		},
+		{
+			Name: "nonempty queue, join event for sender",
+			Ingest: []caches.Update{
+				&caches.RoomEventUpdate{
+					EventData: &caches.EventData{
+						RoomID:        room1,
+						Sender:        alice,
+						TransactionID: "",
+						NID:           1,
+					},
+				},
+				&caches.RoomEventUpdate{
+					EventData: &caches.EventData{
+						RoomID:        room1,
+						Sender:        alice,
+						TransactionID: "",
+						NID:           2,
+						EventType:     "m.room.member",
+						StateKey:      ptr(alice),
+						Content:       gjson.Parse(`{"membership": "join"}`),
+					},
+				},
+			},
+			WaitForUpdate: 1,
+			ExpectDelayed: true,
+		},
+
 		{
 			Name: "nonempty queue, event update, different sender",
 			Ingest: []caches.Update{
@@ -335,4 +381,8 @@ func assertNIDs(t *testing.T, published []publishArg, expectedNIDs []int64) {
 			t.Errorf("Update %d (%v) got nid %d, expected %d", i, *rup, rup.EventData.NID, expectedNIDs[i])
 		}
 	}
+}
+
+func ptr(s string) *string {
+	return &s
 }

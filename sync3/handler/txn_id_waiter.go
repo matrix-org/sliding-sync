@@ -39,15 +39,14 @@ func (t *TxnIDWaiter) Ingest(up caches.Update) {
 	}
 
 	ed := eventUpdate.EventData
-	// We only want to queue this event if
-	//  - our user sent it AND it lacks a txn_id; OR
-	//  - the room already has queued events.
 
+	// An event should be queued if
+	//  - it's a state event that our user sent, lacking a txn_id; OR
+	//  - the room already has queued events.
 	t.mu.Lock()
 	defer t.mu.Unlock()
-
 	_, roomQueued := t.queues[ed.RoomID]
-	missingTxnID := ed.Sender == t.userID && ed.TransactionID == ""
+	missingTxnID := ed.StateKey == nil && ed.Sender == t.userID && ed.TransactionID == ""
 	if !(missingTxnID || roomQueued) {
 		t.publish(false, up)
 		return
