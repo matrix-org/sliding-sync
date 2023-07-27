@@ -87,7 +87,6 @@ func NewConnState(
 		func(delayed bool, update caches.Update) {
 			cs.live.onUpdate(update)
 		},
-		cs.subscribedOrVisible,
 	)
 	// subscribe for updates before loading. We risk seeing dupes but that's fine as load positions
 	// will stop us double-processing.
@@ -696,15 +695,6 @@ func (s *ConnState) OnRoomUpdate(ctx context.Context, up caches.RoomUpdate) {
 	default:
 		logger.Warn().Str("room_id", up.RoomID()).Msg("OnRoomUpdate unknown update type")
 	}
-}
-
-func (s *ConnState) subscribedOrVisible(roomID string) bool {
-	_, subscribed := s.roomSubscriptions[roomID]
-	if subscribed {
-		return true
-	}
-
-	return s.lists.Visible(roomID, s.muxedReq.Lists)
 }
 
 func (s *ConnState) PublishEventsUpTo(roomID string, nid int64) {

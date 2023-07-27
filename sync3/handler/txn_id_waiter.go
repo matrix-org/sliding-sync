@@ -6,21 +6,19 @@ import (
 )
 
 type TxnIDWaiter struct {
-	userID              string
-	publish             func(delayed bool, update caches.Update)
-	subscribedOrVisible func(roomID string) bool
+	userID  string
+	publish func(delayed bool, update caches.Update)
 	// TODO: probably need a mutex around t.queues so the expiry won't race with enqueuing
 	queues   map[string][]*caches.RoomEventUpdate
 	maxDelay time.Duration
 }
 
-func NewTxnIDWaiter(userID string, maxDelay time.Duration, publish func(bool, caches.Update), subscribedOrVisible func(string) bool) *TxnIDWaiter {
+func NewTxnIDWaiter(userID string, maxDelay time.Duration, publish func(bool, caches.Update)) *TxnIDWaiter {
 	return &TxnIDWaiter{
-		userID:              userID,
-		publish:             publish,
-		subscribedOrVisible: subscribedOrVisible,
-		queues:              make(map[string][]*caches.RoomEventUpdate),
-		maxDelay:            maxDelay,
+		userID:   userID,
+		publish:  publish,
+		queues:   make(map[string][]*caches.RoomEventUpdate),
+		maxDelay: maxDelay,
 		// TODO: metric that tracks how long events were queued for.
 	}
 }
@@ -44,12 +42,6 @@ func (t *TxnIDWaiter) Ingest(up caches.Update) {
 	_, roomQueued := t.queues[ed.RoomID]
 	missingTxnID := ed.Sender == t.userID && ed.TransactionID == ""
 	if !(missingTxnID || roomQueued) {
-		t.publish(false, up)
-		return
-	}
-
-	// Don't bother queuing the event if the room isn't visible to the user.
-	if !t.subscribedOrVisible(ed.RoomID) {
 		t.publish(false, up)
 		return
 	}
