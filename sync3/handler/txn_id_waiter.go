@@ -2,13 +2,15 @@ package handler
 
 import (
 	"github.com/matrix-org/sliding-sync/sync3/caches"
+	"sync"
 	"time"
 )
 
 type TxnIDWaiter struct {
 	userID  string
 	publish func(delayed bool, update caches.Update)
-	// TODO: probably need a mutex around t.queues so the expiry won't race with enqueuing
+	// mu guards the queues map.
+	mu       sync.Mutex
 	queues   map[string][]*caches.RoomEventUpdate
 	maxDelay time.Duration
 }
@@ -17,6 +19,7 @@ func NewTxnIDWaiter(userID string, maxDelay time.Duration, publish func(bool, ca
 	return &TxnIDWaiter{
 		userID:   userID,
 		publish:  publish,
+		mu:       sync.Mutex{},
 		queues:   make(map[string][]*caches.RoomEventUpdate),
 		maxDelay: maxDelay,
 		// TODO: metric that tracks how long events were queued for.
@@ -39,6 +42,10 @@ func (t *TxnIDWaiter) Ingest(up caches.Update) {
 	// We only want to queue this event if
 	//  - our user sent it AND it lacks a txn_id; OR
 	//  - the room already has queued events.
+
+	t.mu.Lock()
+	defer t.mu.Unlock()
+
 	_, roomQueued := t.queues[ed.RoomID]
 	missingTxnID := ed.Sender == t.userID && ed.TransactionID == ""
 	if !(missingTxnID || roomQueued) {
@@ -59,6 +66,9 @@ func (t *TxnIDWaiter) Ingest(up caches.Update) {
 }
 
 func (t *TxnIDWaiter) PublishUpToNID(roomID string, publishNID int64) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+
 	queue, exists := t.queues[roomID]
 	if !exists {
 		return
