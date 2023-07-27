@@ -4,9 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"hash/fnv"
 	"os"
-	"sort"
 	"sync"
 	"time"
 
@@ -42,12 +40,9 @@ type Handler struct {
 		Highlight int
 		Notif     int
 	}
-	// room_id => fnv_hash([typing user ids])
-	typingMap map[string]uint64
-	typingMu  *sync.Mutex
-
-	// room_id -> device_id, stores which device is allowed to update typing notifications
-	typingDeviceHandler map[string]string
+	// room_id -> PollerID, stores which Poller is allowed to update typing notifications
+	typingHandler map[string]sync2.PollerID
+	typingMu      *sync.Mutex
 
 	deviceDataTicker *sync2.DeviceDataTicker
 	e2eeWorkerPool   *internal.WorkerPool
@@ -69,11 +64,10 @@ func NewHandler(
 			Highlight int
 			Notif     int
 		}),
-		typingMap:           make(map[string]uint64),
-		typingMu:            &sync.Mutex{},
-		typingDeviceHandler: make(map[string]string),
-		deviceDataTicker:    sync2.NewDeviceDataTicker(deviceDataUpdateDuration),
-		e2eeWorkerPool:      internal.NewWorkerPool(500), // TODO: assign as fraction of db max conns, not hardcoded
+		typingMu:         &sync.Mutex{},
+		typingHandler:    make(map[string]sync2.PollerID),
+		deviceDataTicker: sync2.NewDeviceDataTicker(deviceDataUpdateDuration),
+		e2eeWorkerPool:   internal.NewWorkerPool(500), // TODO: assign as fraction of db max conns, not hardcoded
 	}
 
 	if enablePrometheus {
@@ -172,11 +166,13 @@ func (h *Handler) updateMetrics() {
 	h.numPollers.Set(float64(h.pMap.NumPollers()))
 }
 
-func (h *Handler) OnTerminated(ctx context.Context, userID, deviceID string) {
+func (h *Handler) OnTerminated(ctx context.Context, pollerID sync2.PollerID) {
 	// Check if this device is handling any typing notifications, of so, remove it
-	for roomID, devID := range h.typingDeviceHandler {
-		if devID == deviceID {
-			delete(h.typingDeviceHandler, roomID)
+	h.typingMu.Lock()
+	defer h.typingMu.Unlock()
+	for roomID, devID := range h.typingHandler {
+		if devID == pollerID {
+			delete(h.typingHandler, roomID)
 		}
 	}
 	h.updateMetrics()
@@ -348,26 +344,20 @@ func (h *Handler) Initialise(ctx context.Context, roomID string, state []json.Ra
 	return res.PrependTimelineEvents
 }
 
-func (h *Handler) SetTyping(ctx context.Context, deviceID string, roomID string, ephEvent json.RawMessage) {
-	existingDevice := h.typingDeviceHandler[roomID]
-	if existingDevice != "" && existingDevice != deviceID {
-		// A different device is already handling typing notifications for this room
-		return
-	} else if existingDevice == "" {
-		// We're the first to call SetTyping, assign our deviceID
-		h.typingDeviceHandler[roomID] = deviceID
-	}
-
-	next := typingHash(ephEvent)
-	// protect typingMap with a lock, so concurrent calls to SetTyping see the correct map
+func (h *Handler) SetTyping(ctx context.Context, pollerID sync2.PollerID, roomID string, ephEvent json.RawMessage) {
 	h.typingMu.Lock()
 	defer h.typingMu.Unlock()
 
-	existing := h.typingMap[roomID]
-	if existing == next {
+	existingDevice := h.typingHandler[roomID]
+	isPollerAssigned := existingDevice.DeviceID != "" && existingDevice.UserID != ""
+	if isPollerAssigned && existingDevice != pollerID {
+		// A different device is already handling typing notifications for this room
 		return
+	} else if !isPollerAssigned {
+		// We're the first to call SetTyping, assign our pollerID
+		h.typingHandler[roomID] = pollerID
 	}
-	h.typingMap[roomID] = next
+
 	// we don't persist this for long term storage as typing notifs are inherently ephemeral.
 	// So rather than maintaining them forever, they will naturally expire when we terminate.
 	h.v2Pub.Notify(pubsub.ChanV2, &pubsub.V2Typing{
@@ -484,7 +474,9 @@ func (h *Handler) OnLeftRoom(ctx context.Context, userID, roomID string) {
 
 	// Remove room from the typing deviceHandler map, this ensures we always
 	// have a device handling typing notifications for a given room.
-	delete(h.typingDeviceHandler, roomID)
+	h.typingMu.Lock()
+	defer h.typingMu.Unlock()
+	delete(h.typingHandler, roomID)
 
 	h.v2Pub.Notify(pubsub.ChanV2, &pubsub.V2LeaveRoom{
 		UserID: userID,
@@ -520,18 +512,4 @@ func (h *Handler) EnsurePolling(p *pubsub.V3EnsurePolling) {
 			DeviceID: p.DeviceID,
 		})
 	}()
-}
-
-func typingHash(ephEvent json.RawMessage) uint64 {
-	h := fnv.New64a()
-	parsedUserIDs := gjson.ParseBytes(ephEvent).Get("content.user_ids").Array()
-	userIDs := make([]string, len(parsedUserIDs))
-	for i := range parsedUserIDs {
-		userIDs[i] = parsedUserIDs[i].Str
-	}
-	sort.Strings(userIDs)
-	for _, userID := range userIDs {
-		_, _ = h.Write([]byte(userID))
-	}
-	return h.Sum64()
 }

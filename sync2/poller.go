@@ -39,7 +39,7 @@ type V2DataReceiver interface {
 	// If given a state delta from an incremental sync, returns the slice of all state events unknown to the DB.
 	Initialise(ctx context.Context, roomID string, state []json.RawMessage) []json.RawMessage // snapshot ID?
 	// SetTyping indicates which users are typing.
-	SetTyping(ctx context.Context, deviceID string, roomID string, ephEvent json.RawMessage)
+	SetTyping(ctx context.Context, pollerID PollerID, roomID string, ephEvent json.RawMessage)
 	// Sent when there is a new receipt
 	OnReceipt(ctx context.Context, userID, roomID, ephEventType string, ephEvent json.RawMessage)
 	// AddToDeviceMessages adds this chunk of to_device messages. Preserve the ordering.
@@ -55,7 +55,7 @@ type V2DataReceiver interface {
 	// Sent when there is a _change_ in E2EE data, not all the time
 	OnE2EEData(ctx context.Context, userID, deviceID string, otkCounts map[string]int, fallbackKeyTypes []string, deviceListChanges map[string]int)
 	// Sent when the poll loop terminates
-	OnTerminated(ctx context.Context, userID, deviceID string)
+	OnTerminated(ctx context.Context, pollerID PollerID)
 	// Sent when the token gets a 401 response
 	OnExpiredToken(ctx context.Context, accessTokenHash, userID, deviceID string)
 }
@@ -282,11 +282,11 @@ func (h *PollerMap) Initialise(ctx context.Context, roomID string, state []json.
 	wg.Wait()
 	return
 }
-func (h *PollerMap) SetTyping(ctx context.Context, deviceID string, roomID string, ephEvent json.RawMessage) {
+func (h *PollerMap) SetTyping(ctx context.Context, pollerID PollerID, roomID string, ephEvent json.RawMessage) {
 	var wg sync.WaitGroup
 	wg.Add(1)
 	h.executor <- func() {
-		h.callbacks.SetTyping(ctx, deviceID, roomID, ephEvent)
+		h.callbacks.SetTyping(ctx, pollerID, roomID, ephEvent)
 		wg.Done()
 	}
 	wg.Wait()
@@ -317,8 +317,8 @@ func (h *PollerMap) AddToDeviceMessages(ctx context.Context, userID, deviceID st
 	h.callbacks.AddToDeviceMessages(ctx, userID, deviceID, msgs)
 }
 
-func (h *PollerMap) OnTerminated(ctx context.Context, userID, deviceID string) {
-	h.callbacks.OnTerminated(ctx, userID, deviceID)
+func (h *PollerMap) OnTerminated(ctx context.Context, pollerID PollerID) {
+	h.callbacks.OnTerminated(ctx, pollerID)
 }
 
 func (h *PollerMap) OnExpiredToken(ctx context.Context, accessTokenHash, userID, deviceID string) {
@@ -458,7 +458,10 @@ func (p *poller) Poll(since string) {
 			logger.Error().Str("user", p.userID).Str("device", p.deviceID).Msgf("%s. Traceback:\n%s", panicErr, debug.Stack())
 			internal.GetSentryHubFromContextOrDefault(ctx).RecoverWithContext(ctx, panicErr)
 		}
-		p.receiver.OnTerminated(ctx, p.userID, p.deviceID)
+		p.receiver.OnTerminated(ctx, PollerID{
+			UserID:   p.userID,
+			DeviceID: p.deviceID,
+		})
 	}()
 
 	state := pollLoopState{
@@ -691,7 +694,7 @@ func (p *poller) parseRoomsResponse(ctx context.Context, res *SyncResponse) {
 			switch ephEventType {
 			case "m.typing":
 				typingCalls++
-				p.receiver.SetTyping(ctx, p.deviceID, roomID, ephEvent)
+				p.receiver.SetTyping(ctx, PollerID{UserID: p.userID, DeviceID: p.deviceID}, roomID, ephEvent)
 			case "m.receipt":
 				receiptCalls++
 				p.receiver.OnReceipt(ctx, p.userID, roomID, ephEventType, ephEvent)

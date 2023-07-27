@@ -196,11 +196,11 @@ func TestSetTypingConcurrently(t *testing.T) {
 	// Call SetTyping twice, this may happen with pollers for the same user
 	go func() {
 		<-startSignal
-		h.SetTyping(ctx, "aliceDevice", roomID, json.RawMessage(`{"content":{"user_ids":["@alice:localhost"]}}`))
+		h.SetTyping(ctx, sync2.PollerID{UserID: "@alice", DeviceID: "aliceDevice"}, roomID, json.RawMessage(`{"content":{"user_ids":["@alice:localhost"]}}`))
 	}()
 	go func() {
 		<-startSignal
-		h.SetTyping(ctx, "bobDevice", roomID, json.RawMessage(`{"content":{"user_ids":["@alice:localhost"]}}`))
+		h.SetTyping(ctx, sync2.PollerID{UserID: "@bob", DeviceID: "bobDevice"}, roomID, json.RawMessage(`{"content":{"user_ids":["@alice:localhost"]}}`))
 	}()
 
 	close(startSignal)
