@@ -370,7 +370,7 @@ func runTestServer(t testutils.TestBenchInterface, v2Server *testV2Server, postg
 		TestingSynchronousPubsub: true, // critical to avoid flakey tests
 		AddPrometheusMetrics:     false,
 		MaxPendingEventUpdates:   200,
-		MaxTransactionIDDelay:    1 * time.Millisecond,
+		MaxTransactionIDDelay:    0, // disable the txnID buffering to avoid flakey tests
 	}
 	if len(opts) > 0 {
 		opt := opts[0]
