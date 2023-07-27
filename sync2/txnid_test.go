@@ -67,9 +67,9 @@ func TestPendingTransactionIDs(t *testing.T) {
 	// Delia is tracking four devices.
 	allClear, err = pending.MissingTxnID("event4", "delia", "D1")
 	assertNoError(t, err)
-	assertAllClear(t, allClear, false) // waiting on E2, E3 and E4
+	assertAllClear(t, allClear, false) // waiting on D2, D3 and D4
 
-	// One of Delia's devices, say D2, sees a txn ID for E4.
+	// One of Delia's devices, say D2, sees a txn ID for event 4.
 	err = pending.SeenTxnID("event4")
 	assertNoError(t, err)
 
@@ -94,6 +94,7 @@ func TestPendingTransactionIDs(t *testing.T) {
 }
 
 func assertAllClear(t *testing.T, got bool, want bool) {
+	t.Helper()
 	if got != want {
 		t.Errorf("Expected allClear=%t, got %t", want, got)
 	}
