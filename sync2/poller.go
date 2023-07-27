@@ -204,7 +204,7 @@ func (h *PollerMap) NumPollers() (count int) {
 func (h *PollerMap) deviceIDs(userID string) []string {
 	h.pollerMu.Lock()
 	defer h.pollerMu.Unlock()
-	devices := make([]string, 0)
+	var devices []string
 	for _, p := range h.Pollers {
 		if !p.terminated.Load() && p.userID == userID {
 			devices = append(devices, p.deviceID)
