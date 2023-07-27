@@ -94,11 +94,3 @@ func (t *TxnIDWaiter) PublishUpToNID(roomID string, publishNID int64) {
 		t.publish(true, eventUpdate)
 	}
 }
-
-func nids(updates []*caches.RoomEventUpdate) []int64 {
-	rv := make([]int64, len(updates))
-	for i, up := range updates {
-		rv[i] = up.EventData.NID
-	}
-	return rv
-}
