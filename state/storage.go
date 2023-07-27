@@ -235,45 +235,6 @@ func (s *Storage) MetadataForAllRooms(txn *sqlx.Tx, tempTableName string, result
 		result[roomID] = metadata
 	}
 
-	// Select the most recent members for each room to serve as Heroes. The spec is ambiguous here:
-	// "This should be the first 5 members of the room, ordered by stream ordering, which are joined or invited."
-	// Unclear if this is the first 5 *most recent* (backwards) or forwards. For now we'll use the most recent
-	// ones, and select 6 of them so we can always use 5 no matter who is requesting the room name.
-	rows, err := txn.Query(`
-	SELECT rf.* FROM (
-		SELECT room_id, event, rank() OVER (
-			PARTITION BY room_id ORDER BY event_nid DESC
-		) FROM syncv3_events INNER JOIN ` + tempTableName + ` ON membership_nid=event_nid WHERE (
-			membership='join' OR membership='invite' OR membership='_join'
-		) AND event_type='m.room.member'
-	) rf WHERE rank <= 6;`)
-	if err != nil {
-		return fmt.Errorf("failed to query heroes: %s", err)
-	}
-	defer rows.Close()
-	seen := map[string]bool{}
-	for rows.Next() {
-		var roomID string
-		var event json.RawMessage
-		var rank int
-		if err := rows.Scan(&roomID, &event, &rank); err != nil {
-			return err
-		}
-		ev := gjson.ParseBytes(event)
-		targetUser := ev.Get("state_key").Str
-		key := roomID + " " + targetUser
-		if seen[key] {
-			continue
-		}
-		seen[key] = true
-		metadata := loadMetadata(roomID)
-		metadata.Heroes = append(metadata.Heroes, internal.Hero{
-			ID:     targetUser,
-			Name:   ev.Get("content.displayname").Str,
-			Avatar: ev.Get("content.avatar_url").Str,
-		})
-		result[roomID] = metadata
-	}
 	roomInfos, err := s.Accumulator.roomsTable.SelectRoomInfos(txn)
 	if err != nil {
 		return fmt.Errorf("failed to select room infos: %s", err)
@@ -803,9 +764,14 @@ func (s *Storage) RoomMembershipDelta(roomID string, from, to int64, limit int) 
 }
 
 // Extract all rooms with joined members, and include the joined user list. Requires a prepared snapshot in order to be called.
+// Populates the join/invite count and heroes for the returned metadata.
 func (s *Storage) AllJoinedMembers(txn *sqlx.Tx, tempTableName string) (joinedMembers map[string][]string, metadata map[string]internal.RoomMetadata, err error) {
+	// Select the most recent members for each room to serve as Heroes. The spec is ambiguous here:
+	// "This should be the first 5 members of the room, ordered by stream ordering, which are joined or invited."
+	// Unclear if this is the first 5 *most recent* (backwards) or forwards. For now we'll use the most recent
+	// ones, and select 6 of them so we can always use 5 no matter who is requesting the room name.
 	rows, err := txn.Query(
-		`SELECT room_id, state_key, membership from ` + tempTableName + ` INNER JOIN syncv3_events
+		`SELECT membership_nid, room_id, state_key, membership from ` + tempTableName + ` INNER JOIN syncv3_events
 		on membership_nid = event_nid WHERE membership='join' OR membership='_join' OR membership='invite' OR membership='_invite' ORDER BY event_nid ASC`,
 	)
 	if err != nil {
@@ -813,13 +779,20 @@ func (s *Storage) AllJoinedMembers(txn *sqlx.Tx, tempTableName string) (joinedMe
 	}
 	defer rows.Close()
 	joinedMembers = make(map[string][]string)
-	var roomID string
 	inviteCounts := make(map[string]int)
+	heroNIDs := make(map[string]*circularSlice)
 	var stateKey string
 	var membership string
+	var roomID string
+	var nid int64
 	for rows.Next() {
-		if err := rows.Scan(&roomID, &stateKey, &membership); err != nil {
+		if err := rows.Scan(&nid, &roomID, &stateKey, &membership); err != nil {
 			return nil, nil, err
+		}
+		heroes := heroNIDs[roomID]
+		if heroes == nil {
+			heroes = &circularSlice{max: 6}
+			heroNIDs[roomID] = heroes
 		}
 		switch membership {
 		case "join":
@@ -828,17 +801,44 @@ func (s *Storage) AllJoinedMembers(txn *sqlx.Tx, tempTableName string) (joinedMe
 			users := joinedMembers[roomID]
 			users = append(users, stateKey)
 			joinedMembers[roomID] = users
+			heroes.append(nid)
 		case "invite":
 			fallthrough
 		case "_invite":
 			inviteCounts[roomID] = inviteCounts[roomID] + 1
+			heroes.append(nid)
 		}
 	}
+
+	// now select the membership events for the heroes
+	var allHeroNIDs []int64
+	for _, nids := range heroNIDs {
+		allHeroNIDs = append(allHeroNIDs, nids.vals...)
+	}
+	heroEvents, err := s.EventsTable.SelectByNIDs(txn, true, allHeroNIDs)
+	if err != nil {
+		return nil, nil, err
+	}
+	heroes := make(map[string][]internal.Hero)
+	// loop backwards so the most recent hero is first in the hero list
+	for i := len(heroEvents) - 1; i >= 0; i-- {
+		ev := heroEvents[i]
+		evJSON := gjson.ParseBytes(ev.JSON)
+		roomHeroes := heroes[ev.RoomID]
+		roomHeroes = append(roomHeroes, internal.Hero{
+			ID:     ev.StateKey,
+			Name:   evJSON.Get("content.displayname").Str,
+			Avatar: evJSON.Get("content.avatar_url").Str,
+		})
+		heroes[ev.RoomID] = roomHeroes
+	}
+
 	metadata = make(map[string]internal.RoomMetadata)
 	for roomID, members := range joinedMembers {
 		m := internal.NewRoomMetadata(roomID)
 		m.JoinCount = len(members)
 		m.InviteCount = inviteCounts[roomID]
+		m.Heroes = heroes[roomID]
 		metadata[roomID] = *m
 	}
 	return joinedMembers, metadata, nil
@@ -937,4 +937,28 @@ func (s *Storage) Teardown() {
 	if err != nil {
 		panic("Storage.Teardown: " + err.Error())
 	}
+}
+
+// circularSlice is a slice which can be appended to which will wraparound at `max`.
+// Mostly useful for lazily calculating heroes. The values returned aren't sorted.
+type circularSlice struct {
+	i    int
+	vals []int64
+	max  int
+}
+
+func (s *circularSlice) append(val int64) {
+	if len(s.vals) < s.max {
+		// populate up to max
+		s.vals = append(s.vals, val)
+		s.i++
+		return
+	}
+	// wraparound
+	if s.i == s.max {
+		s.i = 0
+	}
+	// replace this entry
+	s.vals[s.i] = val
+	s.i++
 }

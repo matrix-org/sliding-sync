@@ -207,8 +207,9 @@ func (a *Accumulator) Initialise(roomID string, state []json.RawMessage) (Initia
 				IsState: true,
 			}
 		}
-		if err := ensureFieldsSet(events); err != nil {
-			return fmt.Errorf("events malformed: %s", err)
+		events = filterAndEnsureFieldsSet(events)
+		if len(events) == 0 {
+			return fmt.Errorf("failed to insert events, all events were filtered out: %w", err)
 		}
 		eventIDToNID, err := a.eventsTable.Insert(txn, events, false)
 		if err != nil {
@@ -415,7 +416,10 @@ func (a *Accumulator) filterAndParseTimelineEvents(txn *sqlx.Tx, roomID string, 
 			RoomID: roomID,
 		}
 		if err := e.ensureFieldsSetOnEvent(); err != nil {
-			return nil, fmt.Errorf("event malformed: %s", err)
+			logger.Warn().Str("event_id", e.ID).Str("room_id", roomID).Err(err).Msg(
+				"Accumulator.filterAndParseTimelineEvents: failed to parse event, ignoring",
+			)
+			continue
 		}
 		if _, ok := seenEvents[e.ID]; ok {
 			logger.Warn().Str("event_id", e.ID).Str("room_id", roomID).Msg(
@@ -482,26 +486,4 @@ func (a *Accumulator) filterAndParseTimelineEvents(txn *sqlx.Tx, roomID string, 
 	// B is seen event s[A,B,C] => s[1+1:] => [C]
 	// A is seen event s[A,B,C] => s[0+1:] => [B,C]
 	return dedupedEvents[seenIndex+1:], nil
-}
-
-// Delta returns a list of events of at most `limit` for the room not including `lastEventNID`.
-// Returns the latest NID of the last event (most recent)
-func (a *Accumulator) Delta(roomID string, lastEventNID int64, limit int) (eventsJSON []json.RawMessage, latest int64, err error) {
-	txn, err := a.db.Beginx()
-	if err != nil {
-		return nil, 0, err
-	}
-	defer txn.Commit()
-	events, err := a.eventsTable.SelectEventsBetween(txn, roomID, lastEventNID, EventsEnd, limit)
-	if err != nil {
-		return nil, 0, err
-	}
-	if len(events) == 0 {
-		return nil, lastEventNID, nil
-	}
-	eventsJSON = make([]json.RawMessage, len(events))
-	for i := range events {
-		eventsJSON[i] = events[i].JSON
-	}
-	return eventsJSON, int64(events[len(events)-1].NID), nil
 }

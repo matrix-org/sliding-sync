@@ -57,6 +57,7 @@ func (s *connStateLive) liveUpdate(
 	if req.TimeoutMSecs() < 100 {
 		req.SetTimeoutMSecs(100)
 	}
+	startBufferSize := len(s.updates)
 	// block until we get a new event, with appropriate timeout
 	startTime := time.Now()
 	hasLiveStreamed := false
@@ -104,6 +105,9 @@ func (s *connStateLive) liveUpdate(
 	}
 
 	log.Trace().Bool("live_streamed", hasLiveStreamed).Msg("liveUpdate: returning")
+
+	internal.SetConnBufferInfo(ctx, startBufferSize, len(s.updates), cap(s.updates))
+
 	// TODO: op consolidation
 }
 
