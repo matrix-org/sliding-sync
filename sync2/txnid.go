@@ -35,7 +35,7 @@ type loaderFunc func(userID string) (deviceIDs []string)
 // To avoid the map growing without bound, we use a ttlcache and drop entries
 // after a short period of time.
 type PendingTransactionIDs struct {
-	// mu guards the pending field.
+	// mu guards the pending field. See MissingTxnID for rationale.
 	mu      sync.Mutex
 	pending *ttlcache.Cache
 	// loader should provide the list of device IDs
@@ -57,6 +57,24 @@ func NewPendingTransactionIDs(loader loaderFunc) *PendingTransactionIDs {
 // transaction ID for this event ID. Returns true if this is the first time we know
 // for sure that we'll never see a txn ID for this event.
 func (c *PendingTransactionIDs) MissingTxnID(eventID, userID, myDeviceID string) (bool, error) {
+	// While ttlcache is threadsafe, it does not provide a way to atomically update
+	// (get+set) a value, which means we are still open to races. For example:
+	//
+	//  - We have three pollers A, B, C.
+	//  - Poller A sees an event without txn id and calls MissingTxnID.
+	//  - `c.pending.Get()` fails, so we load up all device IDs: [A, B, C].
+	//  - Then `c.pending.Set()` with [B, C].
+	//  - Poller B sees the same event, also missing txn ID and calls MissingTxnID.
+	//  - Poller C does the same concurrently.
+	//
+	// If the Get+Set isn't atomic, then we might do e.g.
+	//  - B gets [B, C] and prepares to write [C].
+	//  - C gets [B, C] and prepares to write [B].
+	//  - Last writer wins. Either way, we never write [] and so never return true
+	//    (the all-clear signal.)
+	//
+	// This wouldn't be the end of the world (the API process has a maximum delay, and
+	// the ttlcache will expire the entry), but it would still be nice to avoid it.
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
@@ -86,7 +104,7 @@ func (c *PendingTransactionIDs) MissingTxnID(eventID, userID, myDeviceID string)
 // for this event.
 func (c *PendingTransactionIDs) SeenTxnID(eventID string) error {
 	c.mu.Lock()
-	c.mu.Unlock()
+	defer c.mu.Unlock()
 	return c.pending.Set(eventID, []string{})
 }
 
