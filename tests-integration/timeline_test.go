@@ -3,6 +3,7 @@ package syncv3
 import (
 	"encoding/json"
 	"fmt"
+	slidingsync "github.com/matrix-org/sliding-sync"
 	"testing"
 	"time"
 
@@ -694,7 +695,11 @@ func TestTimelineTxnIDAfterInitialSync(t *testing.T) {
 	pqString := testutils.PrepareDBConnectionString()
 	// setup code
 	v2 := runTestV2Server(t)
-	v3 := runTestServer(t, v2, pqString)
+	v3 := runTestServer(t, v2, pqString, slidingsync.Opts{
+		// This needs to be greater than the request timeout, which is hardcoded to a
+		// minimum of 100ms in connStateLive.liveUpdate.
+		MaxTransactionIDDelay: 200 * time.Millisecond,
+	})
 	defer v2.close()
 	defer v3.close()
 	roomID := "!a:localhost"
@@ -785,10 +790,6 @@ func TestTimelineTxnIDAfterInitialSync(t *testing.T) {
 	v2.waitUntilEmpty(t, alice)
 
 	t.Log("Alice makes another incremental sync request.")
-	// TODO: this is a hack to make the test pass by ensureing the API has enough time for the queue timer to expire.
-	// Need to add early expiry in response to the txn id payload.
-	// Will also need to ensure this request blocks long enough for that to happen before timing out.
-	time.Sleep(2 * time.Second)
 	aliceRes = v3.mustDoV3RequestWithPos(t, aliceToken, aliceRes.Pos, sync3.Request{})
 	t.Log("Alice's sync response includes the message with the txn ID.")
 	m.MatchResponse(t, aliceRes, m.MatchList("a", m.MatchV3Count(1)), m.MatchNoV3Ops(), m.MatchRoomSubscription(
