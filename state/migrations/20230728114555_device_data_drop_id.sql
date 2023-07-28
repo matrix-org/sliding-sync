@@ -1,6 +1,6 @@
 -- +goose Up
 -- +goose StatementBegin
-ALTER TABLE syncv3_device_data DROP COLUMN IF EXISTS id;
+ALTER TABLE IF EXISTS syncv3_device_data DROP COLUMN IF EXISTS id;
 DROP SEQUENCE IF EXISTS syncv3_device_data_seq;
 -- +goose StatementEnd
 
