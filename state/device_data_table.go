@@ -25,9 +25,7 @@ type DeviceDataTable struct {
 
 func NewDeviceDataTable(db *sqlx.DB) *DeviceDataTable {
 	db.MustExec(`
-	CREATE SEQUENCE IF NOT EXISTS syncv3_device_data_seq;
 	CREATE TABLE IF NOT EXISTS syncv3_device_data (
-		id BIGINT PRIMARY KEY NOT NULL DEFAULT nextval('syncv3_device_data_seq'),
 		user_id TEXT NOT NULL,
 		device_id TEXT NOT NULL,
 		data BYTEA NOT NULL,
