@@ -88,14 +88,14 @@ In both cases, the path `https://example.com/.well-known/matrix/client` must ret
 #### Same hostname
 The following nginx configuration can be used to pass the required endpoints to the sync proxy, running on local port 8009 (so as to not conflict with Synapse):
 ```nginx
-location ~* ^/(client/|_matrix/client/unstable/org.matrix.msc3575/sync) {
+location ~ ^/(client/|_matrix/client/unstable/org.matrix.msc3575/sync) {
     proxy_pass http://localhost:8009;
     proxy_set_header X-Forwarded-For $remote_addr;
     proxy_set_header X-Forwarded-Proto $scheme;
     proxy_set_header Host $host;
 }
 
-location ~* ^(\/_matrix|\/_synapse\/client) {
+location ~ ^(\/_matrix|\/_synapse\/client) {
     proxy_pass http://localhost:8008;
     proxy_set_header X-Forwarded-For $remote_addr;
     proxy_set_header X-Forwarded-Proto $scheme;

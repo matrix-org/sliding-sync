@@ -110,3 +110,121 @@ func TestBackfillInviteDoesntCorruptState(t *testing.T) {
 		},
 	))
 }
+
+func TestMalformedEventsTimeline(t *testing.T) {
+	pqString := testutils.PrepareDBConnectionString()
+	// setup code
+	v2 := runTestV2Server(t)
+	v3 := runTestServer(t, v2, pqString)
+	defer v2.close()
+	defer v3.close()
+
+	// unusual events ARE VALID EVENTS and should be sent to the client, but are unusual for some reason.
+	unusualEvents := []json.RawMessage{
+		testutils.NewStateEvent(t, "", "", alice, map[string]interface{}{
+			"empty string": "for event type",
+		}),
+	}
+	// malformed events are INVALID and should be ignored by the proxy.
+	malformedEvents := []json.RawMessage{
+		json.RawMessage(`{}`),                                        // empty object
+		json.RawMessage(`{"type":5}`),                                // type is an integer
+		json.RawMessage(`{"type":"foo","content":{},"event_id":""}`), // 0-length string as event ID
+		json.RawMessage(`{"type":"foo","content":{}}`),               // missing event ID
+	}
+
+	room := roomEvents{
+		roomID: "!TestMalformedEventsTimeline:localhost",
+		// append malformed after unusual. All malformed events should be dropped,
+		// leaving only unusualEvents.
+		events: append(unusualEvents, malformedEvents...),
+		state:  createRoomState(t, alice, time.Now()),
+	}
+	v2.addAccount(t, alice, aliceToken)
+	v2.queueResponse(alice, sync2.SyncResponse{
+		Rooms: sync2.SyncRoomsResponse{
+			Join: v2JoinTimeline(room),
+		},
+	})
+
+	// alice syncs and should see the room.
+	aliceRes := v3.mustDoV3Request(t, aliceToken, sync3.Request{
+		Lists: map[string]sync3.RequestList{
+			"a": {
+				Ranges: sync3.SliceRanges{{0, 20}},
+				RoomSubscription: sync3.RoomSubscription{
+					TimelineLimit: int64(len(unusualEvents)),
+				},
+			},
+		},
+	})
+	m.MatchResponse(t, aliceRes, m.MatchList("a", m.MatchV3Count(1), m.MatchV3Ops(m.MatchV3SyncOp(0, 0, []string{room.roomID}))),
+		m.MatchRoomSubscriptionsStrict(map[string][]m.RoomMatcher{
+			room.roomID: {
+				m.MatchJoinCount(1),
+				m.MatchRoomTimeline(unusualEvents),
+			},
+		}))
+}
+
+func TestMalformedEventsState(t *testing.T) {
+	pqString := testutils.PrepareDBConnectionString()
+	// setup code
+	v2 := runTestV2Server(t)
+	v3 := runTestServer(t, v2, pqString)
+	defer v2.close()
+	defer v3.close()
+
+	// unusual events ARE VALID EVENTS and should be sent to the client, but are unusual for some reason.
+	unusualEvents := []json.RawMessage{
+		testutils.NewStateEvent(t, "", "", alice, map[string]interface{}{
+			"empty string": "for event type",
+		}),
+	}
+	// malformed events are INVALID and should be ignored by the proxy.
+	malformedEvents := []json.RawMessage{
+		json.RawMessage(`{}`), // empty object
+		json.RawMessage(`{"type":5,"content":{},"event_id":"f","state_key":""}`),    // type is an integer
+		json.RawMessage(`{"type":"foo","content":{},"event_id":"","state_key":""}`), // 0-length string as event ID
+		json.RawMessage(`{"type":"foo","content":{},"state_key":""}`),               // missing event ID
+	}
+
+	latestEvent := testutils.NewEvent(t, "m.room.message", alice, map[string]interface{}{"body": "hi"})
+
+	room := roomEvents{
+		roomID: "!TestMalformedEventsState:localhost",
+		events: []json.RawMessage{latestEvent},
+		// append malformed after unusual. All malformed events should be dropped,
+		// leaving only unusualEvents.
+		state: append(createRoomState(t, alice, time.Now()), append(unusualEvents, malformedEvents...)...),
+	}
+	v2.addAccount(t, alice, aliceToken)
+	v2.queueResponse(alice, sync2.SyncResponse{
+		Rooms: sync2.SyncRoomsResponse{
+			Join: v2JoinTimeline(room),
+		},
+	})
+
+	// alice syncs and should see the room.
+	aliceRes := v3.mustDoV3Request(t, aliceToken, sync3.Request{
+		Lists: map[string]sync3.RequestList{
+			"a": {
+				Ranges: sync3.SliceRanges{{0, 20}},
+				RoomSubscription: sync3.RoomSubscription{
+					TimelineLimit: int64(len(unusualEvents)),
+					RequiredState: [][2]string{{"", ""}},
+				},
+			},
+		},
+	})
+	m.MatchResponse(t, aliceRes, m.MatchList("a", m.MatchV3Count(1), m.MatchV3Ops(m.MatchV3SyncOp(0, 0, []string{room.roomID}))),
+		m.MatchRoomSubscriptionsStrict(map[string][]m.RoomMatcher{
+			room.roomID: {
+				m.MatchJoinCount(1),
+				m.MatchRoomTimeline([]json.RawMessage{latestEvent}),
+				m.MatchRoomRequiredState([]json.RawMessage{
+					unusualEvents[0],
+				}),
+			},
+		}))
+}
