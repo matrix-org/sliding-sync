@@ -79,7 +79,7 @@ func main() {
 	sync2.ProxyVersion = version
 	syncv3.Version = fmt.Sprintf("%s (%s)", version, GitCommit)
 
-	if os.Args[1] == "migrate" {
+	if len(os.Args) > 1 && os.Args[1] == "migrate" {
 		executeMigrations()
 		return
 	}
