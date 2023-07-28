@@ -1,7 +1,9 @@
 package main
 
 import (
+	"flag"
 	"fmt"
+	"log"
 	"net/http"
 	_ "net/http/pprof"
 	"os"
@@ -16,6 +18,7 @@ import (
 	syncv3 "github.com/matrix-org/sliding-sync"
 	"github.com/matrix-org/sliding-sync/internal"
 	"github.com/matrix-org/sliding-sync/sync2"
+	"github.com/pressly/goose/v3"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/rs/zerolog"
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
@@ -24,6 +27,10 @@ import (
 var GitCommit string
 
 const version = "0.99.4"
+
+var (
+	flags = flag.NewFlagSet("goose", flag.ExitOnError)
+)
 
 const (
 	// Required fields
@@ -71,6 +78,12 @@ func main() {
 	fmt.Printf("Sync v3 [%s] (%s)\n", version, GitCommit)
 	sync2.ProxyVersion = version
 	syncv3.Version = fmt.Sprintf("%s (%s)", version, GitCommit)
+
+	if os.Args[1] == "migrate" {
+		executeMigrations()
+		return
+	}
+
 	args := map[string]string{
 		EnvServer:     os.Getenv(EnvServer),
 		EnvDB:         os.Getenv(EnvDB),
@@ -215,4 +228,50 @@ func WaitForShutdown(sentryInUse bool) {
 	}
 
 	fmt.Printf("Exiting now")
+}
+
+func executeMigrations() {
+	envArgs := map[string]string{
+		EnvDB: os.Getenv(EnvDB),
+	}
+	requiredEnvVars := []string{EnvDB}
+	for _, requiredEnvVar := range requiredEnvVars {
+		if envArgs[requiredEnvVar] == "" {
+			fmt.Print(helpMsg)
+			fmt.Printf("\n%s is not set", requiredEnvVar)
+			fmt.Printf("\n%s must be set\n", strings.Join(requiredEnvVars, ", "))
+			os.Exit(1)
+		}
+	}
+
+	flags.Parse(os.Args[1:])
+	args := flags.Args()
+
+	if len(args) < 2 {
+		flags.Usage()
+		return
+	}
+
+	command := args[1]
+
+	db, err := goose.OpenDBWithDriver("postgres", envArgs[EnvDB])
+	if err != nil {
+		log.Fatalf("goose: failed to open DB: %v\n", err)
+	}
+
+	defer func() {
+		if err := db.Close(); err != nil {
+			log.Fatalf("goose: failed to close DB: %v\n", err)
+		}
+	}()
+
+	arguments := []string{}
+	if len(args) > 2 {
+		arguments = append(arguments, args[2:]...)
+	}
+
+	goose.SetBaseFS(syncv3.EmbedMigrations)
+	if err := goose.Run(command, db, "state/migrations", arguments...); err != nil {
+		log.Fatalf("goose %v: %v", command, err)
+	}
 }

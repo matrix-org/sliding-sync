@@ -1,6 +1,7 @@
 package slidingsync
 
 import (
+	"embed"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -10,6 +11,7 @@ import (
 
 	"github.com/getsentry/sentry-go"
 	"github.com/jmoiron/sqlx"
+	"github.com/pressly/goose/v3"
 
 	"github.com/gorilla/mux"
 	"github.com/matrix-org/sliding-sync/internal"
@@ -21,6 +23,9 @@ import (
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/hlog"
 )
+
+//go:embed state/migrations/*
+var EmbedMigrations embed.FS
 
 var logger = zerolog.New(os.Stdout).With().Timestamp().Logger().Output(zerolog.ConsoleWriter{
 	Out:        os.Stderr,
@@ -83,6 +88,14 @@ func Setup(destHomeserver, postgresURI, secret string, opts Opts) (*handler2.Han
 		// TODO: if we panic(), will sentry have a chance to flush the event?
 		logger.Panic().Err(err).Str("uri", postgresURI).Msg("failed to open SQL DB")
 	}
+
+	// Automatically execute migrations
+	goose.SetBaseFS(EmbedMigrations)
+	err = goose.Up(db.DB, "state/migrations", goose.WithAllowMissing())
+	if err != nil {
+		logger.Panic().Err(err).Msg("failed to execute migrations")
+	}
+
 	if opts.DBMaxConns > 0 {
 		// https://github.com/go-sql-driver/mysql#important-settings
 		// "db.SetMaxIdleConns() is recommended to be set same to db.SetMaxOpenConns(). When it is smaller
