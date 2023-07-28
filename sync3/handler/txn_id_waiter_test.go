@@ -361,6 +361,7 @@ func TestTxnIDWaiter_PublishUpToNID_MultipleRooms(t *testing.T) {
 }
 
 func assertDelayed(t *testing.T, published []publishArg) {
+	t.Helper()
 	for _, p := range published {
 		if !p.delayed {
 			t.Errorf("published arg with NID %d was not delayed, but we expected it to be", p.update.(*caches.RoomEventUpdate).EventData.NID)
@@ -369,6 +370,7 @@ func assertDelayed(t *testing.T, published []publishArg) {
 }
 
 func assertNIDs(t *testing.T, published []publishArg, expectedNIDs []int64) {
+	t.Helper()
 	if len(published) != len(expectedNIDs) {
 		t.Errorf("Got %d nids, but expected %d", len(published), len(expectedNIDs))
 	}
