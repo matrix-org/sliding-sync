@@ -60,7 +60,6 @@ func (t *TxnIDWaiter) Ingest(up caches.Update) {
 	// TODO: bound the queue size?
 	t.queues[ed.RoomID] = append(queue, eventUpdate)
 
-	// TODO: if t gets gced, will this function still run? If so, will things explode?
 	time.AfterFunc(t.maxDelay, func() { t.PublishUpToNID(ed.RoomID, ed.NID) })
 }
 

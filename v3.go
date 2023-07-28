@@ -39,6 +39,7 @@ type Opts struct {
 	TestingSynchronousPubsub bool
 	// MaxTransactionIDDelay is the longest amount of time that we will wait for
 	// confirmation of an event's transaction_id before sending it to its sender.
+	// Set to 0 to disable this delay mechanism entirely.
 	MaxTransactionIDDelay time.Duration
 
 	DBMaxConns        int
