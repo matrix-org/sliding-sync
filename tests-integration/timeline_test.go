@@ -690,14 +690,25 @@ func TestTimelineTxnID(t *testing.T) {
 	))
 }
 
-// Like TestTimelineTxnID, but where ...
-func TestTimelineTxnIDAfterInitialSync(t *testing.T) {
+// TestTimelineTxnID checks that Alice sees her transaction_id if
+// - Bob's poller sees Alice's event,
+// - Alice's poller sees Alice's event with txn_id, and
+// - Alice syncs.
+//
+// This test is similar but not identical. It checks that Alice sees her transaction_id if
+// - Bob's poller sees Alice's event,
+// - Alice does an incremental sync, which should omit her event,
+// - Alice's poller sees Alice's event with txn_id, and
+// - Alice syncs, seeing her event with txn_id.
+func TestTimelineTxnIDBuffersForTxnID(t *testing.T) {
 	pqString := testutils.PrepareDBConnectionString()
 	// setup code
 	v2 := runTestV2Server(t)
 	v3 := runTestServer(t, v2, pqString, slidingsync.Opts{
 		// This needs to be greater than the request timeout, which is hardcoded to a
-		// minimum of 100ms in connStateLive.liveUpdate.
+		// minimum of 100ms in connStateLive.liveUpdate. This ensures that the
+		// liveUpdate call finishes before the TxnIDWaiter publishes the update,
+		// meaning that Alice doesn't see her event before the txn ID is known.
 		MaxTransactionIDDelay: 200 * time.Millisecond,
 	})
 	defer v2.close()
@@ -772,6 +783,13 @@ func TestTimelineTxnIDAfterInitialSync(t *testing.T) {
 	t.Log("Bob's poller sees the message.")
 	v2.waitUntilEmpty(t, bob)
 
+	t.Log("Bob makes an incremental sliding sync")
+	bobRes = v3.mustDoV3RequestWithPos(t, bobToken, bobRes.Pos, sync3.Request{})
+	t.Log("Bob should see the message without a transaction_id")
+	m.MatchResponse(t, bobRes, m.MatchList("a", m.MatchV3Count(1)), m.MatchNoV3Ops(), m.MatchRoomSubscription(
+		roomID, m.MatchRoomTimelineMostRecent(1, []json.RawMessage{newEventNoUnsigned}),
+	))
+
 	t.Log("Alice requests an incremental sliding sync with no request changes.")
 	aliceRes = v3.mustDoV3RequestWithPos(t, aliceToken, aliceRes.Pos, sync3.Request{})
 	t.Log("Alice should see no messages.")
@@ -796,12 +814,6 @@ func TestTimelineTxnIDAfterInitialSync(t *testing.T) {
 		roomID, m.MatchRoomTimelineMostRecent(1, []json.RawMessage{newEvent}),
 	))
 
-	t.Log("Bob makes an incremental sliding sync")
-	bobRes = v3.mustDoV3RequestWithPos(t, bobToken, bobRes.Pos, sync3.Request{})
-	t.Log("Bob should see the message without a transaction_id")
-	m.MatchResponse(t, bobRes, m.MatchList("a", m.MatchV3Count(1)), m.MatchNoV3Ops(), m.MatchRoomSubscription(
-		roomID, m.MatchRoomTimelineMostRecent(1, []json.RawMessage{newEventNoUnsigned}),
-	))
 }
 
 // Executes a sync v3 request without a ?pos and asserts that the count, rooms and timeline events m.Match the inputs given.
