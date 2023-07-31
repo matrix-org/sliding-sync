@@ -14,6 +14,10 @@ import (
 	"github.com/tidwall/gjson"
 )
 
+var (
+	userID = "@me:localhost"
+)
+
 func TestAccumulatorInitialise(t *testing.T) {
 	roomID := "!TestAccumulatorInitialise:localhost"
 	roomEvents := []json.RawMessage{
@@ -118,7 +122,7 @@ func TestAccumulatorAccumulate(t *testing.T) {
 	var numNew int
 	var latestNIDs []int64
 	err = sqlutil.WithTransaction(accumulator.db, func(txn *sqlx.Tx) error {
-		numNew, latestNIDs, err = accumulator.Accumulate(txn, roomID, "", newEvents)
+		numNew, latestNIDs, err = accumulator.Accumulate(txn, userID, roomID, "", newEvents)
 		return err
 	})
 	if err != nil {
@@ -192,7 +196,7 @@ func TestAccumulatorAccumulate(t *testing.T) {
 
 	// subsequent calls do nothing and are not an error
 	err = sqlutil.WithTransaction(accumulator.db, func(txn *sqlx.Tx) error {
-		_, _, err = accumulator.Accumulate(txn, roomID, "", newEvents)
+		_, _, err = accumulator.Accumulate(txn, userID, roomID, "", newEvents)
 		return err
 	})
 	if err != nil {
@@ -228,7 +232,7 @@ func TestAccumulatorMembershipLogs(t *testing.T) {
 		[]byte(`{"event_id":"` + roomEventIDs[7] + `", "type":"m.room.member", "state_key":"@me:localhost","unsigned":{"prev_content":{"membership":"join", "displayname":"Me"}}, "content":{"membership":"leave"}}`),
 	}
 	err = sqlutil.WithTransaction(accumulator.db, func(txn *sqlx.Tx) error {
-		_, _, err = accumulator.Accumulate(txn, roomID, "", roomEvents)
+		_, _, err = accumulator.Accumulate(txn, userID, roomID, "", roomEvents)
 		return err
 	})
 	if err != nil {
@@ -355,7 +359,7 @@ func TestAccumulatorDupeEvents(t *testing.T) {
 	}
 
 	err = sqlutil.WithTransaction(accumulator.db, func(txn *sqlx.Tx) error {
-		_, _, err = accumulator.Accumulate(txn, roomID, "", joinRoom.Timeline.Events)
+		_, _, err = accumulator.Accumulate(txn, userID, roomID, "", joinRoom.Timeline.Events)
 		return err
 	})
 	if err != nil {
@@ -555,7 +559,7 @@ func TestAccumulatorConcurrency(t *testing.T) {
 			defer wg.Done()
 			subset := newEvents[:(i + 1)] // i=0 => [1], i=1 => [1,2], etc
 			err := sqlutil.WithTransaction(accumulator.db, func(txn *sqlx.Tx) error {
-				numNew, _, err := accumulator.Accumulate(txn, roomID, "", subset)
+				numNew, _, err := accumulator.Accumulate(txn, userID, roomID, "", subset)
 				totalNumNew += numNew
 				return err
 			})
