@@ -288,7 +288,7 @@ func (h *SyncLiveHandler) serve(w http.ResponseWriter, req *http.Request) error 
 	}
 	internal.SetRequestContextResponseInfo(
 		req.Context(), cpos, resp.PosInt(), len(resp.Rooms), requestBody.TxnID, numToDeviceEvents, numGlobalAccountData,
-		numChangedDevices, numLeftDevices,
+		numChangedDevices, numLeftDevices, requestBody.ConnID, len(requestBody.Lists), len(requestBody.RoomSubscriptions), len(requestBody.UnsubscribeRooms),
 	)
 
 	w.Header().Set("Content-Type", "application/json")
