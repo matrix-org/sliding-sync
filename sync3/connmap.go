@@ -214,3 +214,12 @@ func (m *ConnMap) closeConn(conn *Conn) {
 	h.Destroy()
 	m.updateMetrics(len(m.connIDToConn))
 }
+
+func (m *ConnMap) ClearUpdateQueues(userID, roomID string, nid int64) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	for _, conn := range m.userIDToConn[userID] {
+		conn.handler.PublishEventsUpTo(roomID, nid)
+	}
+}
