@@ -273,17 +273,15 @@ func (h *Handler) Accumulate(ctx context.Context, userID, deviceID, roomID, prev
 		internal.GetSentryHubFromContextOrDefault(ctx).CaptureException(err)
 		return
 	}
-	if numNew == 0 {
-		// no new events
-		return
-	}
 
 	// We've updated the database. Now tell any pubsub listeners what we learned.
-	h.v2Pub.Notify(pubsub.ChanV2, &pubsub.V2Accumulate{
-		RoomID:    roomID,
-		PrevBatch: prevBatch,
-		EventNIDs: latestNIDs,
-	})
+	if numNew != 0 {
+		h.v2Pub.Notify(pubsub.ChanV2, &pubsub.V2Accumulate{
+			RoomID:    roomID,
+			PrevBatch: prevBatch,
+			EventNIDs: latestNIDs,
+		})
+	}
 
 	if len(eventIDToTxnID) > 0 || len(eventIDsLackingTxns) > 0 {
 		// The call to h.Store.Accumulate above only tells us about new events' NIDS;
