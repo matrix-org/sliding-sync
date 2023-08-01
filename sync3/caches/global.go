@@ -21,6 +21,15 @@ type EventData struct {
 	Content   gjson.Result
 	Timestamp uint64
 	Sender    string
+	// TransactionID is the unsigned.transaction_id field in the event as stored in the
+	// syncv3_events table, or the empty string if there is no such field.
+	//
+	// We may see the event on poller A without a transaction_id, and then later on
+	// poller B with a transaction_id. If this happens, we make a temporary note of the
+	// transaction_id in the syncv3_txns table, but do not edit the persisted event.
+	// This means that this field is not authoritative; we only include it here as a
+	// hint to avoid unnecessary waits for V2TransactionID payloads.
+	TransactionID string
 
 	// the number of joined users in this room. Use this value and don't try to work it out as you
 	// may get it wrong due to Synapse sending duplicate join events(!) This value has them de-duped

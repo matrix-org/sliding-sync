@@ -32,6 +32,7 @@ type ConnHandler interface {
 	// status code to send back.
 	OnIncomingRequest(ctx context.Context, cid ConnID, req *Request, isInitial bool, start time.Time) (*Response, error)
 	OnUpdate(ctx context.Context, update caches.Update)
+	PublishEventsUpTo(roomID string, nid int64)
 	Destroy()
 	Alive() bool
 }
