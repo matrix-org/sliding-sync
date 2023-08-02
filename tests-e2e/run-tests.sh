@@ -26,7 +26,7 @@ done
 
 # if the metrics env var is set, sanity check that metrics are being served
 if [ -n "${SYNCV3_PROM+1}" ]; then
-  status=$(curl --silent --write-out '%{http_code}' -o /dev/null http://localhost:2112/metrics)
+  status="$(curl --silent --write-out '%{http_code}' -o /dev/null http://localhost:2112/metrics)"
   if [ "$status" != 200 ]; then
     echo "Metrics endpoint returned $status, expected 200" > /dev/stderr
     exit 1
