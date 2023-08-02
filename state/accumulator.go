@@ -327,8 +327,11 @@ func (a *Accumulator) Accumulate(txn *sqlx.Tx, userID, roomID string, prevBatch 
 	// this leave event is an invite rejection, rather than a normal event. Invite rejections cannot be processed in
 	// a normal way because we lack room state (no create event, PLs, etc). If we were to process the invite rejection,
 	// the room state would just be a single event: this leave event, which is wrong.
-	if len(dedupedEvents) == 1 && dedupedEvents[0].Type == "m.room.member" && dedupedEvents[0].Membership == "leave" &&
-		dedupedEvents[0].StateKey == userID && snapID == 0 {
+	if len(dedupedEvents) == 1 &&
+		dedupedEvents[0].Type == "m.room.member" &&
+		(dedupedEvents[0].Membership == "leave" || dedupedEvents[0].Membership == "_leave") &&
+		dedupedEvents[0].StateKey == userID &&
+		snapID == 0 {
 		logger.Info().Str("event_id", dedupedEvents[0].ID).Str("room_id", roomID).Str("user_id", userID).Err(err).Msg(
 			"Accumulator: skipping processing of leave event, as no snapshot exists",
 		)
