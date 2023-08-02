@@ -100,15 +100,16 @@ func TestSecurityLiveStreamEventLeftLeak(t *testing.T) {
 	})
 
 	// check Alice sees both events
-	assertEventsEqual(t, []Event{
-		{
-			Type:     "m.room.member",
-			StateKey: ptr(eve.UserID),
-			Content: map[string]interface{}{
-				"membership": "leave",
-			},
-			Sender: alice.UserID,
+	kickEvent := Event{
+		Type:     "m.room.member",
+		StateKey: ptr(eve.UserID),
+		Content: map[string]interface{}{
+			"membership": "leave",
 		},
+		Sender: alice.UserID,
+	}
+	assertEventsEqual(t, []Event{
+		kickEvent,
 		{
 			Type:     "m.room.name",
 			StateKey: ptr(""),
@@ -120,7 +121,6 @@ func TestSecurityLiveStreamEventLeftLeak(t *testing.T) {
 		},
 	}, timeline)
 
-	kickEvent := timeline[0]
 	// Ensure Eve doesn't see this message in the timeline, name calc or required_state
 	eveRes = eve.SlidingSync(t, sync3.Request{
 		Lists: map[string]sync3.RequestList{
@@ -140,7 +140,7 @@ func TestSecurityLiveStreamEventLeftLeak(t *testing.T) {
 	}, WithPos(eveRes.Pos))
 	// the room is deleted from eve's point of view and she sees up to and including her kick event
 	m.MatchResponse(t, eveRes, m.MatchList("a", m.MatchV3Count(0), m.MatchV3Ops(m.MatchV3DeleteOp(0))), m.MatchRoomSubscription(
-		roomID, m.MatchRoomName(""), m.MatchRoomRequiredState(nil), m.MatchRoomTimelineMostRecent(1, []json.RawMessage{kickEvent}),
+		roomID, m.MatchRoomName(""), m.MatchRoomRequiredState(nil), MatchRoomTimelineMostRecent(1, []Event{kickEvent}),
 	))
 }
 

@@ -617,7 +617,8 @@ func (s *mockDataReceiver) OnReceipt(ctx context.Context, userID, roomID, ephEve
 }
 func (s *mockDataReceiver) OnInvite(ctx context.Context, userID, roomID string, inviteState []json.RawMessage) {
 }
-func (s *mockDataReceiver) OnLeftRoom(ctx context.Context, userID, roomID string) {}
+func (s *mockDataReceiver) OnLeftRoom(ctx context.Context, userID, roomID string, leaveEvent json.RawMessage) {
+}
 func (s *mockDataReceiver) OnE2EEData(ctx context.Context, userID, deviceID string, otkCounts map[string]int, fallbackKeyTypes []string, deviceListChanges map[string]int) {
 }
 func (s *mockDataReceiver) OnTerminated(ctx context.Context, pollerID PollerID) {}

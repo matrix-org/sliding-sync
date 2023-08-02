@@ -181,11 +181,13 @@ func (s *connStateLive) processLiveUpdate(ctx context.Context, up caches.Update,
 		if roomEventUpdate != nil && roomEventUpdate.EventData.Event != nil {
 			r.NumLive++
 			advancedPastEvent := false
-			if roomEventUpdate.EventData.NID <= s.loadPositions[roomEventUpdate.RoomID()] {
-				// this update has been accounted for by the initial:true room snapshot
-				advancedPastEvent = true
+			if !roomEventUpdate.EventData.AlwaysProcess {
+				if roomEventUpdate.EventData.NID <= s.loadPositions[roomEventUpdate.RoomID()] {
+					// this update has been accounted for by the initial:true room snapshot
+					advancedPastEvent = true
+				}
+				s.loadPositions[roomEventUpdate.RoomID()] = roomEventUpdate.EventData.NID
 			}
-			s.loadPositions[roomEventUpdate.RoomID()] = roomEventUpdate.EventData.NID
 			// we only append to the timeline if we haven't already got this event. This can happen when:
 			// - 2 live events for a room mid-connection
 			// - next request bumps a room from outside to inside the window

@@ -320,7 +320,6 @@ func (h *SyncLiveHandler) serve(w http.ResponseWriter, req *http.Request) error 
 // setupConnection associates this request with an existing connection or makes a new connection.
 // It also sets a v2 sync poll loop going if one didn't exist already for this user.
 // When this function returns, the connection is alive and active.
-
 func (h *SyncLiveHandler) setupConnection(req *http.Request, syncReq *sync3.Request, containsPos bool) (*sync3.Conn, *internal.HandlerError) {
 	taskCtx, task := internal.StartTask(req.Context(), "setupConnection")
 	defer task.End()
@@ -704,7 +703,7 @@ func (h *SyncLiveHandler) OnLeftRoom(p *pubsub.V2LeaveRoom) {
 	if !ok {
 		return
 	}
-	userCache.(*caches.UserCache).OnLeftRoom(ctx, p.RoomID)
+	userCache.(*caches.UserCache).OnLeftRoom(ctx, p.RoomID, p.LeaveEvent)
 }
 
 func (h *SyncLiveHandler) OnReceipt(p *pubsub.V2Receipt) {

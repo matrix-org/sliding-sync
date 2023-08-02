@@ -51,7 +51,7 @@ type V2DataReceiver interface {
 	// Sent when there is a room in the `invite` section of the v2 response.
 	OnInvite(ctx context.Context, userID, roomID string, inviteState []json.RawMessage) // invitestate in db
 	// Sent when there is a room in the `leave` section of the v2 response.
-	OnLeftRoom(ctx context.Context, userID, roomID string)
+	OnLeftRoom(ctx context.Context, userID, roomID string, leaveEvent json.RawMessage)
 	// Sent when there is a _change_ in E2EE data, not all the time
 	OnE2EEData(ctx context.Context, userID, deviceID string, otkCounts map[string]int, fallbackKeyTypes []string, deviceListChanges map[string]int)
 	// Sent when the poll loop terminates
@@ -316,11 +316,11 @@ func (h *PollerMap) OnInvite(ctx context.Context, userID, roomID string, inviteS
 	wg.Wait()
 }
 
-func (h *PollerMap) OnLeftRoom(ctx context.Context, userID, roomID string) {
+func (h *PollerMap) OnLeftRoom(ctx context.Context, userID, roomID string, leaveEvent json.RawMessage) {
 	var wg sync.WaitGroup
 	wg.Add(1)
 	h.executor <- func() {
-		h.callbacks.OnLeftRoom(ctx, userID, roomID)
+		h.callbacks.OnLeftRoom(ctx, userID, roomID, leaveEvent)
 		wg.Done()
 	}
 	wg.Wait()
@@ -734,12 +734,23 @@ func (p *poller) parseRoomsResponse(ctx context.Context, res *SyncResponse) {
 		}
 	}
 	for roomID, roomData := range res.Rooms.Leave {
-		// TODO: do we care about state?
 		if len(roomData.Timeline.Events) > 0 {
 			p.trackTimelineSize(len(roomData.Timeline.Events), roomData.Timeline.Limited)
 			p.receiver.Accumulate(ctx, p.userID, p.deviceID, roomID, roomData.Timeline.PrevBatch, roomData.Timeline.Events)
 		}
-		p.receiver.OnLeftRoom(ctx, p.userID, roomID)
+		// Pass the leave event directly to OnLeftRoom. We need to do this _in addition_ to calling Accumulate to handle
+		// the case where a user rejects an invite (there will be no room state, but the user still expects to see the leave event).
+		var leaveEvent json.RawMessage
+		for _, ev := range roomData.Timeline.Events {
+			leaveEv := gjson.ParseBytes(ev)
+			if leaveEv.Get("content.membership").Str == "leave" && leaveEv.Get("state_key").Str == p.userID {
+				leaveEvent = ev
+				break
+			}
+		}
+		if leaveEvent != nil {
+			p.receiver.OnLeftRoom(ctx, p.userID, roomID, leaveEvent)
+		}
 	}
 	for roomID, roomData := range res.Rooms.Invite {
 		p.receiver.OnInvite(ctx, p.userID, roomID, roomData.InviteState.Events)
