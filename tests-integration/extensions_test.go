@@ -604,3 +604,171 @@ func TestExtensionLateEnable(t *testing.T) {
 		},
 	})
 }
+
+func TestTypingMultiplePoller(t *testing.T) {
+	pqString := testutils.PrepareDBConnectionString()
+	// setup code
+	v2 := runTestV2Server(t)
+	v3 := runTestServer(t, v2, pqString)
+	defer v2.close()
+	defer v3.close()
+
+	roomA := "!a:localhost"
+
+	v2.addAccountWithDeviceID(alice, "first", aliceToken)
+	v2.addAccountWithDeviceID(bob, "second", bobToken)
+
+	// Create the room state and join with Bob
+	roomState := createRoomState(t, alice, time.Now())
+	joinEv := testutils.NewStateEvent(t, "m.room.member", bob, alice, map[string]interface{}{
+		"membership": "join",
+	})
+
+	// Queue the response with Alice typing
+	v2.queueResponse(aliceToken, sync2.SyncResponse{
+		Rooms: sync2.SyncRoomsResponse{
+			Join: map[string]sync2.SyncV2JoinResponse{
+				roomA: {
+					State: sync2.EventsResponse{
+						Events: roomState,
+					},
+					Timeline: sync2.TimelineResponse{
+						Events: []json.RawMessage{joinEv},
+					},
+					Ephemeral: sync2.EventsResponse{
+						Events: []json.RawMessage{json.RawMessage(`{"type":"m.typing","content":{"user_ids":["@alice:localhost"]}}`)},
+					},
+				},
+			},
+		},
+	})
+
+	// Queue another response for Bob with Bob typing.
+	v2.queueResponse(bobToken, sync2.SyncResponse{
+		Rooms: sync2.SyncRoomsResponse{
+			Join: map[string]sync2.SyncV2JoinResponse{
+				roomA: {
+					State: sync2.EventsResponse{
+						Events: roomState,
+					},
+					Timeline: sync2.TimelineResponse{
+						Events: []json.RawMessage{joinEv},
+					},
+					Ephemeral: sync2.EventsResponse{
+						Events: []json.RawMessage{json.RawMessage(`{"type":"m.typing","content":{"user_ids":["@bob:localhost"]}}`)}},
+				},
+			},
+		},
+	})
+
+	// Start the pollers. Since Alice's poller is started first, the poller is in
+	// charge of handling typing notifications for roomA.
+	aliceRes := v3.mustDoV3Request(t, aliceToken, sync3.Request{})
+	bobRes := v3.mustDoV3Request(t, bobToken, sync3.Request{})
+
+	// Get the response from v3
+	for _, token := range []string{aliceToken, bobToken} {
+		pos := aliceRes.Pos
+		if token == bobToken {
+			pos = bobRes.Pos
+		}
+
+		res := v3.mustDoV3RequestWithPos(t, token, pos, sync3.Request{
+			Extensions: extensions.Request{
+				Typing: &extensions.TypingRequest{
+					Core: extensions.Core{Enabled: &boolTrue},
+				},
+			},
+			Lists: map[string]sync3.RequestList{"a": {
+				Ranges: sync3.SliceRanges{
+					[2]int64{0, 1},
+				},
+				Sort: []string{sync3.SortByRecency},
+				RoomSubscription: sync3.RoomSubscription{
+					TimelineLimit: 0,
+				},
+			}},
+		})
+		// We expect only Alice typing, as only Alice Poller is "allowed"
+		// to update typing notifications.
+		m.MatchResponse(t, res, m.MatchTyping(roomA, []string{alice}))
+		if token == bobToken {
+			bobRes = res
+		}
+		if token == aliceToken {
+			aliceRes = res
+		}
+	}
+
+	// Queue the response with Bob typing
+	v2.queueResponse(aliceToken, sync2.SyncResponse{
+		Rooms: sync2.SyncRoomsResponse{
+			Join: map[string]sync2.SyncV2JoinResponse{
+				roomA: {
+					State: sync2.EventsResponse{
+						Events: roomState,
+					},
+					Timeline: sync2.TimelineResponse{
+						Events: []json.RawMessage{joinEv},
+					},
+					Ephemeral: sync2.EventsResponse{
+						Events: []json.RawMessage{json.RawMessage(`{"type":"m.typing","content":{"user_ids":["@bob:localhost"]}}`)},
+					},
+				},
+			},
+		},
+	})
+
+	// Queue another response for Bob with Charlie typing.
+	// Since Alice's poller is in charge of handling typing notifications, this shouldn't
+	// show up on future responses.
+	v2.queueResponse(bobToken, sync2.SyncResponse{
+		Rooms: sync2.SyncRoomsResponse{
+			Join: map[string]sync2.SyncV2JoinResponse{
+				roomA: {
+					State: sync2.EventsResponse{
+						Events: roomState,
+					},
+					Timeline: sync2.TimelineResponse{
+						Events: []json.RawMessage{joinEv},
+					},
+					Ephemeral: sync2.EventsResponse{
+						Events: []json.RawMessage{json.RawMessage(`{"type":"m.typing","content":{"user_ids":["@charlie:localhost"]}}`)},
+					},
+				},
+			},
+		},
+	})
+
+	// Wait for the queued responses to be processed.
+	v2.waitUntilEmpty(t, aliceToken)
+	v2.waitUntilEmpty(t, bobToken)
+
+	// Check that only Bob is typing and not Charlie.
+	for _, token := range []string{aliceToken, bobToken} {
+		pos := aliceRes.Pos
+		if token == bobToken {
+			pos = bobRes.Pos
+		}
+
+		res := v3.mustDoV3RequestWithPos(t, token, pos, sync3.Request{
+			Extensions: extensions.Request{
+				Typing: &extensions.TypingRequest{
+					Core: extensions.Core{Enabled: &boolTrue},
+				},
+			},
+			Lists: map[string]sync3.RequestList{"a": {
+				Ranges: sync3.SliceRanges{
+					[2]int64{0, 1},
+				},
+				Sort: []string{sync3.SortByRecency},
+				RoomSubscription: sync3.RoomSubscription{
+					TimelineLimit: 0,
+				},
+			}},
+		})
+		// We expect only Bob typing, as only Alice Poller is "allowed"
+		// to update typing notifications.
+		m.MatchResponse(t, res, m.MatchTyping(roomA, []string{bob}))
+	}
+}

@@ -293,7 +293,7 @@ func (a *Accumulator) Initialise(roomID string, state []json.RawMessage) (Initia
 //     to exist in the database, and the sync stream is already linearised for us.
 //   - Else it creates a new room state snapshot if the timeline contains state events (as this now represents the current state)
 //   - It adds entries to the membership log for membership events.
-func (a *Accumulator) Accumulate(txn *sqlx.Tx, roomID string, prevBatch string, timeline []json.RawMessage) (numNew int, timelineNIDs []int64, err error) {
+func (a *Accumulator) Accumulate(txn *sqlx.Tx, userID, roomID string, prevBatch string, timeline []json.RawMessage) (numNew int, timelineNIDs []int64, err error) {
 	// The first stage of accumulating events is mostly around validation around what the upstream HS sends us. For accumulation to work correctly
 	// we expect:
 	// - there to be no duplicate events
@@ -306,6 +306,36 @@ func (a *Accumulator) Accumulate(txn *sqlx.Tx, roomID string, prevBatch string, 
 	}
 	if len(dedupedEvents) == 0 {
 		return 0, nil, err // nothing to do
+	}
+
+	// Given a timeline of [E1, E2, S3, E4, S5, S6, E7] (E=message event, S=state event)
+	// And a prior state snapshot of SNAP0 then the BEFORE snapshot IDs are grouped as:
+	// E1,E2,S3 => SNAP0
+	// E4, S5 => (SNAP0 + S3)
+	// S6 => (SNAP0 + S3 + S5)
+	// E7 => (SNAP0 + S3 + S5 + S6)
+	// We can track this by loading the current snapshot ID (after snapshot) then rolling forward
+	// the timeline until we hit a state event, at which point we make a new snapshot but critically
+	// do NOT assign the new state event in the snapshot so as to represent the state before the event.
+	snapID, err := a.roomsTable.CurrentAfterSnapshotID(txn, roomID)
+	if err != nil {
+		return 0, nil, err
+	}
+
+	// if we have just got a leave event for the polling user, and there is no snapshot for this room already, then
+	// we do NOT want to add this event to the events table, nor do we want to make a room snapshot. This is because
+	// this leave event is an invite rejection, rather than a normal event. Invite rejections cannot be processed in
+	// a normal way because we lack room state (no create event, PLs, etc). If we were to process the invite rejection,
+	// the room state would just be a single event: this leave event, which is wrong.
+	if len(dedupedEvents) == 1 &&
+		dedupedEvents[0].Type == "m.room.member" &&
+		(dedupedEvents[0].Membership == "leave" || dedupedEvents[0].Membership == "_leave") &&
+		dedupedEvents[0].StateKey == userID &&
+		snapID == 0 {
+		logger.Info().Str("event_id", dedupedEvents[0].ID).Str("room_id", roomID).Str("user_id", userID).Err(err).Msg(
+			"Accumulator: skipping processing of leave event, as no snapshot exists",
+		)
+		return 0, nil, nil
 	}
 
 	eventIDToNID, err := a.eventsTable.Insert(txn, dedupedEvents, false)
@@ -339,19 +369,6 @@ func (a *Accumulator) Accumulate(txn *sqlx.Tx, roomID string, prevBatch string, 
 		}
 	}
 
-	// Given a timeline of [E1, E2, S3, E4, S5, S6, E7] (E=message event, S=state event)
-	// And a prior state snapshot of SNAP0 then the BEFORE snapshot IDs are grouped as:
-	// E1,E2,S3 => SNAP0
-	// E4, S5 => (SNAP0 + S3)
-	// S6 => (SNAP0 + S3 + S5)
-	// E7 => (SNAP0 + S3 + S5 + S6)
-	// We can track this by loading the current snapshot ID (after snapshot) then rolling forward
-	// the timeline until we hit a state event, at which point we make a new snapshot but critically
-	// do NOT assign the new state event in the snapshot so as to represent the state before the event.
-	snapID, err := a.roomsTable.CurrentAfterSnapshotID(txn, roomID)
-	if err != nil {
-		return 0, nil, err
-	}
 	for _, ev := range newEvents {
 		var replacesNID int64
 		// the snapshot ID we assign to this event is unaffected by whether /this/ event is state or not,

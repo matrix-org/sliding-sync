@@ -598,7 +598,7 @@ func (a *mockDataReceiver) Initialise(ctx context.Context, roomID string, state 
 	// timeline. Untested here---return nil for now.
 	return nil
 }
-func (a *mockDataReceiver) SetTyping(ctx context.Context, roomID string, ephEvent json.RawMessage) {
+func (a *mockDataReceiver) SetTyping(ctx context.Context, pollerID PollerID, roomID string, ephEvent json.RawMessage) {
 }
 func (s *mockDataReceiver) UpdateDeviceSince(ctx context.Context, userID, deviceID, since string) {
 	s.pollerIDToSince[PollerID{UserID: userID, DeviceID: deviceID}] = since
@@ -617,10 +617,11 @@ func (s *mockDataReceiver) OnReceipt(ctx context.Context, userID, roomID, ephEve
 }
 func (s *mockDataReceiver) OnInvite(ctx context.Context, userID, roomID string, inviteState []json.RawMessage) {
 }
-func (s *mockDataReceiver) OnLeftRoom(ctx context.Context, userID, roomID string) {}
+func (s *mockDataReceiver) OnLeftRoom(ctx context.Context, userID, roomID string, leaveEvent json.RawMessage) {
+}
 func (s *mockDataReceiver) OnE2EEData(ctx context.Context, userID, deviceID string, otkCounts map[string]int, fallbackKeyTypes []string, deviceListChanges map[string]int) {
 }
-func (s *mockDataReceiver) OnTerminated(ctx context.Context, userID, deviceID string) {}
+func (s *mockDataReceiver) OnTerminated(ctx context.Context, pollerID PollerID) {}
 func (s *mockDataReceiver) OnExpiredToken(ctx context.Context, accessTokenHash, userID, deviceID string) {
 }
 

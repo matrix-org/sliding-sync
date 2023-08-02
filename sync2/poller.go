@@ -39,7 +39,7 @@ type V2DataReceiver interface {
 	// If given a state delta from an incremental sync, returns the slice of all state events unknown to the DB.
 	Initialise(ctx context.Context, roomID string, state []json.RawMessage) []json.RawMessage // snapshot ID?
 	// SetTyping indicates which users are typing.
-	SetTyping(ctx context.Context, roomID string, ephEvent json.RawMessage)
+	SetTyping(ctx context.Context, pollerID PollerID, roomID string, ephEvent json.RawMessage)
 	// Sent when there is a new receipt
 	OnReceipt(ctx context.Context, userID, roomID, ephEventType string, ephEvent json.RawMessage)
 	// AddToDeviceMessages adds this chunk of to_device messages. Preserve the ordering.
@@ -51,11 +51,11 @@ type V2DataReceiver interface {
 	// Sent when there is a room in the `invite` section of the v2 response.
 	OnInvite(ctx context.Context, userID, roomID string, inviteState []json.RawMessage) // invitestate in db
 	// Sent when there is a room in the `leave` section of the v2 response.
-	OnLeftRoom(ctx context.Context, userID, roomID string)
+	OnLeftRoom(ctx context.Context, userID, roomID string, leaveEvent json.RawMessage)
 	// Sent when there is a _change_ in E2EE data, not all the time
 	OnE2EEData(ctx context.Context, userID, deviceID string, otkCounts map[string]int, fallbackKeyTypes []string, deviceListChanges map[string]int)
 	// Sent when the poll loop terminates
-	OnTerminated(ctx context.Context, userID, deviceID string)
+	OnTerminated(ctx context.Context, pollerID PollerID)
 	// Sent when the token gets a 401 response
 	OnExpiredToken(ctx context.Context, accessTokenHash, userID, deviceID string)
 }
@@ -64,8 +64,7 @@ type IPollerMap interface {
 	EnsurePolling(pid PollerID, accessToken, v2since string, isStartup bool, logger zerolog.Logger)
 	NumPollers() int
 	Terminate()
-	MissingTxnID(eventID, userID, deviceID string) (bool, error)
-	SeenTxnID(eventID string) error
+	DeviceIDs(userID string) []string
 }
 
 // PollerMap is a map of device ID to Poller
@@ -74,7 +73,6 @@ type PollerMap struct {
 	callbacks                   V2DataReceiver
 	pollerMu                    *sync.Mutex
 	Pollers                     map[PollerID]*poller
-	pendingTxnIDs               *PendingTransactionIDs
 	executor                    chan func()
 	executorRunning             bool
 	processHistogramVec         *prometheus.HistogramVec
@@ -115,7 +113,6 @@ func NewPollerMap(v2Client Client, enablePrometheus bool) *PollerMap {
 		Pollers:  make(map[PollerID]*poller),
 		executor: make(chan func(), 0),
 	}
-	pm.pendingTxnIDs = NewPendingTransactionIDs(pm.deviceIDs)
 	if enablePrometheus {
 		pm.processHistogramVec = prometheus.NewHistogramVec(prometheus.HistogramOpts{
 			Namespace: "sliding_sync",
@@ -199,9 +196,9 @@ func (h *PollerMap) NumPollers() (count int) {
 	return
 }
 
-// deviceIDs returns the slice of all devices currently being polled for by this user.
+// DeviceIDs returns the slice of all devices currently being polled for by this user.
 // The return value is brand-new and is fully owned by the caller.
-func (h *PollerMap) deviceIDs(userID string) []string {
+func (h *PollerMap) DeviceIDs(userID string) []string {
 	h.pollerMu.Lock()
 	defer h.pollerMu.Unlock()
 	var devices []string
@@ -211,14 +208,6 @@ func (h *PollerMap) deviceIDs(userID string) []string {
 		}
 	}
 	return devices
-}
-
-func (h *PollerMap) MissingTxnID(eventID, userID, deviceID string) (bool, error) {
-	return h.pendingTxnIDs.MissingTxnID(eventID, userID, deviceID)
-}
-
-func (h *PollerMap) SeenTxnID(eventID string) error {
-	return h.pendingTxnIDs.SeenTxnID(eventID)
 }
 
 // EnsurePolling makes sure there is a poller for this device, making one if need be.
@@ -308,11 +297,11 @@ func (h *PollerMap) Initialise(ctx context.Context, roomID string, state []json.
 	wg.Wait()
 	return
 }
-func (h *PollerMap) SetTyping(ctx context.Context, roomID string, ephEvent json.RawMessage) {
+func (h *PollerMap) SetTyping(ctx context.Context, pollerID PollerID, roomID string, ephEvent json.RawMessage) {
 	var wg sync.WaitGroup
 	wg.Add(1)
 	h.executor <- func() {
-		h.callbacks.SetTyping(ctx, roomID, ephEvent)
+		h.callbacks.SetTyping(ctx, pollerID, roomID, ephEvent)
 		wg.Done()
 	}
 	wg.Wait()
@@ -327,11 +316,11 @@ func (h *PollerMap) OnInvite(ctx context.Context, userID, roomID string, inviteS
 	wg.Wait()
 }
 
-func (h *PollerMap) OnLeftRoom(ctx context.Context, userID, roomID string) {
+func (h *PollerMap) OnLeftRoom(ctx context.Context, userID, roomID string, leaveEvent json.RawMessage) {
 	var wg sync.WaitGroup
 	wg.Add(1)
 	h.executor <- func() {
-		h.callbacks.OnLeftRoom(ctx, userID, roomID)
+		h.callbacks.OnLeftRoom(ctx, userID, roomID, leaveEvent)
 		wg.Done()
 	}
 	wg.Wait()
@@ -343,8 +332,8 @@ func (h *PollerMap) AddToDeviceMessages(ctx context.Context, userID, deviceID st
 	h.callbacks.AddToDeviceMessages(ctx, userID, deviceID, msgs)
 }
 
-func (h *PollerMap) OnTerminated(ctx context.Context, userID, deviceID string) {
-	h.callbacks.OnTerminated(ctx, userID, deviceID)
+func (h *PollerMap) OnTerminated(ctx context.Context, pollerID PollerID) {
+	h.callbacks.OnTerminated(ctx, pollerID)
 }
 
 func (h *PollerMap) OnExpiredToken(ctx context.Context, accessTokenHash, userID, deviceID string) {
@@ -484,7 +473,10 @@ func (p *poller) Poll(since string) {
 			logger.Error().Str("user", p.userID).Str("device", p.deviceID).Msgf("%s. Traceback:\n%s", panicErr, debug.Stack())
 			internal.GetSentryHubFromContextOrDefault(ctx).RecoverWithContext(ctx, panicErr)
 		}
-		p.receiver.OnTerminated(ctx, p.userID, p.deviceID)
+		p.receiver.OnTerminated(ctx, PollerID{
+			UserID:   p.userID,
+			DeviceID: p.deviceID,
+		})
 	}()
 
 	state := pollLoopState{
@@ -717,7 +709,7 @@ func (p *poller) parseRoomsResponse(ctx context.Context, res *SyncResponse) {
 			switch ephEventType {
 			case "m.typing":
 				typingCalls++
-				p.receiver.SetTyping(ctx, roomID, ephEvent)
+				p.receiver.SetTyping(ctx, PollerID{UserID: p.userID, DeviceID: p.deviceID}, roomID, ephEvent)
 			case "m.receipt":
 				receiptCalls++
 				p.receiver.OnReceipt(ctx, p.userID, roomID, ephEventType, ephEvent)
@@ -742,12 +734,23 @@ func (p *poller) parseRoomsResponse(ctx context.Context, res *SyncResponse) {
 		}
 	}
 	for roomID, roomData := range res.Rooms.Leave {
-		// TODO: do we care about state?
 		if len(roomData.Timeline.Events) > 0 {
 			p.trackTimelineSize(len(roomData.Timeline.Events), roomData.Timeline.Limited)
 			p.receiver.Accumulate(ctx, p.userID, p.deviceID, roomID, roomData.Timeline.PrevBatch, roomData.Timeline.Events)
 		}
-		p.receiver.OnLeftRoom(ctx, p.userID, roomID)
+		// Pass the leave event directly to OnLeftRoom. We need to do this _in addition_ to calling Accumulate to handle
+		// the case where a user rejects an invite (there will be no room state, but the user still expects to see the leave event).
+		var leaveEvent json.RawMessage
+		for _, ev := range roomData.Timeline.Events {
+			leaveEv := gjson.ParseBytes(ev)
+			if leaveEv.Get("content.membership").Str == "leave" && leaveEv.Get("state_key").Str == p.userID {
+				leaveEvent = ev
+				break
+			}
+		}
+		if leaveEvent != nil {
+			p.receiver.OnLeftRoom(ctx, p.userID, roomID, leaveEvent)
+		}
 	}
 	for roomID, roomData := range res.Rooms.Invite {
 		p.receiver.OnInvite(ctx, p.userID, roomID, roomData.InviteState.Events)
