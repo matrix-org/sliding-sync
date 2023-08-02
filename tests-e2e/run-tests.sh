@@ -24,8 +24,8 @@ do
   sleep 1
 done
 
-# if enabled, sanity check that metrics are being served
-if [ -n "$SYNCV3_METRICS" ]; then
+# if the metrics env var is set, sanity check that metrics are being served
+if [ -n "${SYNCV3_PROM+1}" ]; then
   status=$(curl --silent --write-out '%{http_code}' -o /dev/null http://localhost:8844/metrics)
   if [ "$status" != 200 ]; then
     echo "Metrics endpoint returned $status, expected 200" > /dev/stderr
