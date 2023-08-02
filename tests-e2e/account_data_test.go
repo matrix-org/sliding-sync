@@ -2,11 +2,13 @@ package syncv3_test
 
 import (
 	"encoding/json"
+	"testing"
+	"time"
+
 	"github.com/matrix-org/sliding-sync/sync3"
 	"github.com/matrix-org/sliding-sync/sync3/extensions"
 	"github.com/matrix-org/sliding-sync/testutils"
 	"github.com/matrix-org/sliding-sync/testutils/m"
-	"testing"
 )
 
 func TestAccountDataRespectsExtensionScope(t *testing.T) {
@@ -122,7 +124,90 @@ func TestAccountDataRespectsExtensionScope(t *testing.T) {
 			return m.MatchAccountData(nil, map[string][]json.RawMessage{room2: {room2AccountDataEvent}})(response)
 		},
 	)
+}
 
+// Regression test for https://github.com/matrix-org/sliding-sync/issues/189
+func TestAccountDataDoesntDupe(t *testing.T) {
+	alice := registerNewUser(t)
+	alice2 := *alice
+	alice2.Login(t, "password", "device2")
+
+	// send some initial account data
+	putGlobalAccountData(t, alice, "initial", map[string]interface{}{"foo": "bar"})
+
+	// no devices are polling.
+	// syncing with both devices => only shows 1 copy of this event per connection
+	for _, client := range []*CSAPI{alice, &alice2} {
+		res := client.SlidingSync(t, sync3.Request{
+			Extensions: extensions.Request{
+				AccountData: &extensions.AccountDataRequest{
+					Core: extensions.Core{
+						Enabled: &boolTrue,
+					},
+				},
+			},
+		})
+		m.MatchResponse(t, res, MatchGlobalAccountData([]Event{
+			{
+				Type: "m.push_rules",
+			},
+			{
+				Type:    "initial",
+				Content: map[string]interface{}{"foo": "bar"},
+			},
+		}))
+	}
+
+	// now both devices are polling, we're going to do the same thing to make sure we only see only 1 copy still.
+	putGlobalAccountData(t, alice, "initial2", map[string]interface{}{"foo2": "bar2"})
+	time.Sleep(time.Second) // TODO: we need to make sure the pollers have seen this and explciitly don't want to use SlidingSyncUntil...
+	var responses []*sync3.Response
+	for _, client := range []*CSAPI{alice, &alice2} {
+		res := client.SlidingSync(t, sync3.Request{
+			Extensions: extensions.Request{
+				AccountData: &extensions.AccountDataRequest{
+					Core: extensions.Core{
+						Enabled: &boolTrue,
+					},
+				},
+			},
+		})
+		m.MatchResponse(t, res, MatchGlobalAccountData([]Event{
+			{
+				Type: "m.push_rules",
+			},
+			{
+				Type:    "initial",
+				Content: map[string]interface{}{"foo": "bar"},
+			},
+			{
+				Type:    "initial2",
+				Content: map[string]interface{}{"foo2": "bar2"},
+			},
+		}))
+		responses = append(responses, res) // we need the pos values later
+	}
+
+	// now we're going to do an incremental sync with account data to make sure we don't see dupes either.
+	putGlobalAccountData(t, alice, "incremental", map[string]interface{}{"foo3": "bar3"})
+	time.Sleep(time.Second) // TODO: we need to make sure the pollers have seen this and explciitly don't want to use SlidingSyncUntil...
+	for i, client := range []*CSAPI{alice, &alice2} {
+		res := client.SlidingSync(t, sync3.Request{
+			Extensions: extensions.Request{
+				AccountData: &extensions.AccountDataRequest{
+					Core: extensions.Core{
+						Enabled: &boolTrue,
+					},
+				},
+			},
+		}, WithPos(responses[i].Pos))
+		m.MatchResponse(t, res, MatchGlobalAccountData([]Event{
+			{
+				Type:    "incremental",
+				Content: map[string]interface{}{"foo3": "bar3"},
+			},
+		}))
+	}
 }
 
 // putAccountData is a wrapper around SetGlobalAccountData. It returns the account data
