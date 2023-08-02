@@ -21,9 +21,8 @@ type Response struct {
 	Rooms      map[string]Room     `json:"rooms"`
 	Extensions extensions.Response `json:"extensions"`
 
-	Pos     string `json:"pos"`
-	TxnID   string `json:"txn_id,omitempty"`
-	Session string `json:"session_id,omitempty"`
+	Pos   string `json:"pos"`
+	TxnID string `json:"txn_id,omitempty"`
 }
 
 type ResponseList struct {
@@ -68,9 +67,8 @@ func (r *Response) UnmarshalJSON(b []byte) error {
 		} `json:"lists"`
 		Extensions extensions.Response `json:"extensions"`
 
-		Pos     string `json:"pos"`
-		TxnID   string `json:"txn_id,omitempty"`
-		Session string `json:"session_id,omitempty"`
+		Pos   string `json:"pos"`
+		TxnID string `json:"txn_id,omitempty"`
 	}{}
 	if err := json.Unmarshal(b, &temporary); err != nil {
 		return err
@@ -78,7 +76,6 @@ func (r *Response) UnmarshalJSON(b []byte) error {
 	r.Rooms = temporary.Rooms
 	r.Pos = temporary.Pos
 	r.TxnID = temporary.TxnID
-	r.Session = temporary.Session
 	r.Extensions = temporary.Extensions
 	r.Lists = make(map[string]ResponseList, len(temporary.Lists))
 

@@ -370,12 +370,14 @@ func runTestServer(t testutils.TestBenchInterface, v2Server *testV2Server, postg
 		TestingSynchronousPubsub: true, // critical to avoid flakey tests
 		AddPrometheusMetrics:     false,
 		MaxPendingEventUpdates:   200,
+		MaxTransactionIDDelay:    0, // disable the txnID buffering to avoid flakey tests
 	}
 	if len(opts) > 0 {
 		opt := opts[0]
 		combinedOpts.AddPrometheusMetrics = opt.AddPrometheusMetrics
 		combinedOpts.DBConnMaxIdleTime = opt.DBConnMaxIdleTime
 		combinedOpts.DBMaxConns = opt.DBMaxConns
+		combinedOpts.MaxTransactionIDDelay = opt.MaxTransactionIDDelay
 		if opt.MaxPendingEventUpdates > 0 {
 			combinedOpts.MaxPendingEventUpdates = opt.MaxPendingEventUpdates
 			handler.BufferWaitTime = 5 * time.Millisecond

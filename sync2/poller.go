@@ -64,6 +64,7 @@ type IPollerMap interface {
 	EnsurePolling(pid PollerID, accessToken, v2since string, isStartup bool, logger zerolog.Logger)
 	NumPollers() int
 	Terminate()
+	DeviceIDs(userID string) []string
 }
 
 // PollerMap is a map of device ID to Poller
@@ -193,6 +194,20 @@ func (h *PollerMap) NumPollers() (count int) {
 		}
 	}
 	return
+}
+
+// DeviceIDs returns the slice of all devices currently being polled for by this user.
+// The return value is brand-new and is fully owned by the caller.
+func (h *PollerMap) DeviceIDs(userID string) []string {
+	h.pollerMu.Lock()
+	defer h.pollerMu.Unlock()
+	var devices []string
+	for _, p := range h.Pollers {
+		if !p.terminated.Load() && p.userID == userID {
+			devices = append(devices, p.deviceID)
+		}
+	}
+	return devices
 }
 
 // EnsurePolling makes sure there is a poller for this device, making one if need be.

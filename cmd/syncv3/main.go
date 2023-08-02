@@ -186,9 +186,10 @@ func main() {
 		panic("invalid value for " + EnvMaxConns + ": " + args[EnvMaxConns])
 	}
 	h2, h3 := syncv3.Setup(args[EnvServer], args[EnvDB], args[EnvSecret], syncv3.Opts{
-		AddPrometheusMetrics: args[EnvPrometheus] != "",
-		DBMaxConns:           maxConnsInt,
-		DBConnMaxIdleTime:    time.Hour,
+		AddPrometheusMetrics:  args[EnvPrometheus] != "",
+		DBMaxConns:            maxConnsInt,
+		DBConnMaxIdleTime:     time.Hour,
+		MaxTransactionIDDelay: time.Second,
 	})
 
 	go h2.StartV2Pollers()

@@ -3,6 +3,7 @@ package syncv3
 import (
 	"encoding/json"
 	"fmt"
+	slidingsync "github.com/matrix-org/sliding-sync"
 	"testing"
 	"time"
 
@@ -687,6 +688,247 @@ func TestTimelineTxnID(t *testing.T) {
 	m.MatchResponse(t, bobRes, m.MatchList("a", m.MatchV3Count(1)), m.MatchNoV3Ops(), m.MatchRoomSubscription(
 		roomID, m.MatchRoomTimelineMostRecent(1, []json.RawMessage{newEventNoUnsigned}),
 	))
+}
+
+// TestTimelineTxnID checks that Alice sees her transaction_id if
+// - Bob's poller sees Alice's event,
+// - Alice's poller sees Alice's event with txn_id, and
+// - Alice syncs.
+//
+// This test is similar but not identical. It checks that Alice sees her transaction_id if
+// - Bob's poller sees Alice's event,
+// - Alice does an incremental sync, which should omit her event,
+// - Alice's poller sees Alice's event with txn_id, and
+// - Alice syncs, seeing her event with txn_id.
+func TestTimelineTxnIDBuffersForTxnID(t *testing.T) {
+	pqString := testutils.PrepareDBConnectionString()
+	// setup code
+	v2 := runTestV2Server(t)
+	v3 := runTestServer(t, v2, pqString, slidingsync.Opts{
+		// This needs to be greater than the request timeout, which is hardcoded to a
+		// minimum of 100ms in connStateLive.liveUpdate. This ensures that the
+		// liveUpdate call finishes before the TxnIDWaiter publishes the update,
+		// meaning that Alice doesn't see her event before the txn ID is known.
+		MaxTransactionIDDelay: 200 * time.Millisecond,
+	})
+	defer v2.close()
+	defer v3.close()
+	roomID := "!a:localhost"
+	latestTimestamp := time.Now()
+	t.Log("Alice and Bob are in the same room")
+	room := roomEvents{
+		roomID: roomID,
+		events: append(
+			createRoomState(t, alice, latestTimestamp),
+			testutils.NewJoinEvent(t, bob),
+		),
+	}
+	v2.addAccount(t, alice, aliceToken)
+	v2.addAccount(t, bob, bobToken)
+	v2.queueResponse(alice, sync2.SyncResponse{
+		Rooms: sync2.SyncRoomsResponse{
+			Join: v2JoinTimeline(room),
+		},
+		NextBatch: "alice_after_initial_poll",
+	})
+	v2.queueResponse(bob, sync2.SyncResponse{
+		Rooms: sync2.SyncRoomsResponse{
+			Join: v2JoinTimeline(room),
+		},
+		NextBatch: "bob_after_initial_poll",
+	})
+
+	t.Log("Alice and Bob make initial sliding syncs.")
+	aliceRes := v3.mustDoV3Request(t, aliceToken, sync3.Request{
+		Lists: map[string]sync3.RequestList{"a": {
+			Ranges: sync3.SliceRanges{
+				[2]int64{0, 10},
+			},
+			RoomSubscription: sync3.RoomSubscription{
+				TimelineLimit: 2,
+			},
+		},
+		},
+	})
+	bobRes := v3.mustDoV3Request(t, bobToken, sync3.Request{
+		Lists: map[string]sync3.RequestList{"a": {
+			Ranges: sync3.SliceRanges{
+				[2]int64{0, 10},
+			},
+			RoomSubscription: sync3.RoomSubscription{
+				TimelineLimit: 2,
+			},
+		},
+		},
+	})
+
+	t.Log("Alice has sent a message... but it arrives down Bob's poller first, without a transaction_id")
+	txnID := "m1234567890"
+	newEvent := testutils.NewEvent(t, "m.room.message", alice, map[string]interface{}{"body": "hi"}, testutils.WithUnsigned(map[string]interface{}{
+		"transaction_id": txnID,
+	}))
+	newEventNoUnsigned, err := sjson.DeleteBytes(newEvent, "unsigned")
+	if err != nil {
+		t.Fatalf("failed to delete bytes: %s", err)
+	}
+
+	v2.queueResponse(bob, sync2.SyncResponse{
+		Rooms: sync2.SyncRoomsResponse{
+			Join: v2JoinTimeline(roomEvents{
+				roomID: roomID,
+				events: []json.RawMessage{newEventNoUnsigned},
+			}),
+		},
+	})
+	t.Log("Bob's poller sees the message.")
+	v2.waitUntilEmpty(t, bob)
+
+	t.Log("Bob makes an incremental sliding sync")
+	bobRes = v3.mustDoV3RequestWithPos(t, bobToken, bobRes.Pos, sync3.Request{})
+	t.Log("Bob should see the message without a transaction_id")
+	m.MatchResponse(t, bobRes, m.MatchList("a", m.MatchV3Count(1)), m.MatchNoV3Ops(), m.MatchRoomSubscription(
+		roomID, m.MatchRoomTimelineMostRecent(1, []json.RawMessage{newEventNoUnsigned}),
+	))
+
+	t.Log("Alice requests an incremental sliding sync with no request changes.")
+	aliceRes = v3.mustDoV3RequestWithPos(t, aliceToken, aliceRes.Pos, sync3.Request{})
+	t.Log("Alice should see no messages.")
+	m.MatchResponse(t, aliceRes, m.MatchRoomSubscriptionsStrict(nil))
+
+	// Now the message arrives down Alice's poller.
+	v2.queueResponse(alice, sync2.SyncResponse{
+		Rooms: sync2.SyncRoomsResponse{
+			Join: v2JoinTimeline(roomEvents{
+				roomID: roomID,
+				events: []json.RawMessage{newEvent},
+			}),
+		},
+	})
+	t.Log("Alice's poller sees the message with transaction_id.")
+	v2.waitUntilEmpty(t, alice)
+
+	t.Log("Alice makes another incremental sync request.")
+	aliceRes = v3.mustDoV3RequestWithPos(t, aliceToken, aliceRes.Pos, sync3.Request{})
+	t.Log("Alice's sync response includes the message with the txn ID.")
+	m.MatchResponse(t, aliceRes, m.MatchList("a", m.MatchV3Count(1)), m.MatchNoV3Ops(), m.MatchRoomSubscription(
+		roomID, m.MatchRoomTimelineMostRecent(1, []json.RawMessage{newEvent}),
+	))
+
+}
+
+// Similar to TestTimelineTxnIDBuffersForTxnID, this test checks:
+// - Bob's poller sees Alice's event,
+// - Alice does an incremental sync, which should omit her event,
+// - Alice's poller sees Alice's event without a txn_id, and
+// - Alice syncs, seeing her event without txn_id.
+// I.e. we're checking that the "all clear" empties out the buffer of events.
+func TestTimelineTxnIDRespectsAllClear(t *testing.T) {
+	pqString := testutils.PrepareDBConnectionString()
+	// setup code
+	v2 := runTestV2Server(t)
+	v3 := runTestServer(t, v2, pqString, slidingsync.Opts{
+		// This needs to be greater than the request timeout, which is hardcoded to a
+		// minimum of 100ms in connStateLive.liveUpdate. This ensures that the
+		// liveUpdate call finishes before the TxnIDWaiter publishes the update,
+		// meaning that Alice doesn't see her event before the txn ID is known.
+		MaxTransactionIDDelay: 200 * time.Millisecond,
+	})
+	defer v2.close()
+	defer v3.close()
+	roomID := "!a:localhost"
+	latestTimestamp := time.Now()
+	t.Log("Alice and Bob are in the same room")
+	room := roomEvents{
+		roomID: roomID,
+		events: append(
+			createRoomState(t, alice, latestTimestamp),
+			testutils.NewJoinEvent(t, bob),
+		),
+	}
+	v2.addAccount(t, alice, aliceToken)
+	v2.addAccount(t, bob, bobToken)
+	v2.queueResponse(alice, sync2.SyncResponse{
+		Rooms: sync2.SyncRoomsResponse{
+			Join: v2JoinTimeline(room),
+		},
+		NextBatch: "alice_after_initial_poll",
+	})
+	v2.queueResponse(bob, sync2.SyncResponse{
+		Rooms: sync2.SyncRoomsResponse{
+			Join: v2JoinTimeline(room),
+		},
+		NextBatch: "bob_after_initial_poll",
+	})
+
+	t.Log("Alice and Bob make initial sliding syncs.")
+	aliceRes := v3.mustDoV3Request(t, aliceToken, sync3.Request{
+		Lists: map[string]sync3.RequestList{"a": {
+			Ranges: sync3.SliceRanges{
+				[2]int64{0, 10},
+			},
+			RoomSubscription: sync3.RoomSubscription{
+				TimelineLimit: 2,
+			},
+		},
+		},
+	})
+	bobRes := v3.mustDoV3Request(t, bobToken, sync3.Request{
+		Lists: map[string]sync3.RequestList{"a": {
+			Ranges: sync3.SliceRanges{
+				[2]int64{0, 10},
+			},
+			RoomSubscription: sync3.RoomSubscription{
+				TimelineLimit: 2,
+			},
+		},
+		},
+	})
+
+	t.Log("Alice has sent a message... but it arrives down Bob's poller first, without a transaction_id")
+	newEventNoTxn := testutils.NewEvent(t, "m.room.message", alice, map[string]interface{}{"body": "hi"})
+
+	v2.queueResponse(bob, sync2.SyncResponse{
+		Rooms: sync2.SyncRoomsResponse{
+			Join: v2JoinTimeline(roomEvents{
+				roomID: roomID,
+				events: []json.RawMessage{newEventNoTxn},
+			}),
+		},
+	})
+	t.Log("Bob's poller sees the message.")
+	v2.waitUntilEmpty(t, bob)
+
+	t.Log("Bob makes an incremental sliding sync")
+	bobRes = v3.mustDoV3RequestWithPos(t, bobToken, bobRes.Pos, sync3.Request{})
+	t.Log("Bob should see the message without a transaction_id")
+	m.MatchResponse(t, bobRes, m.MatchList("a", m.MatchV3Count(1)), m.MatchNoV3Ops(), m.MatchRoomSubscription(
+		roomID, m.MatchRoomTimelineMostRecent(1, []json.RawMessage{newEventNoTxn}),
+	))
+
+	t.Log("Alice requests an incremental sliding sync with no request changes.")
+	aliceRes = v3.mustDoV3RequestWithPos(t, aliceToken, aliceRes.Pos, sync3.Request{})
+	t.Log("Alice should see no messages.")
+	m.MatchResponse(t, aliceRes, m.MatchRoomSubscriptionsStrict(nil))
+
+	// Now the message arrives down Alice's poller.
+	v2.queueResponse(alice, sync2.SyncResponse{
+		Rooms: sync2.SyncRoomsResponse{
+			Join: v2JoinTimeline(roomEvents{
+				roomID: roomID,
+				events: []json.RawMessage{newEventNoTxn},
+			}),
+		},
+	})
+	t.Log("Alice's poller sees the message without transaction_id.")
+	v2.waitUntilEmpty(t, alice)
+
+	t.Log("Alice makes another incremental sync request.")
+	aliceRes = v3.mustDoV3RequestWithPos(t, aliceToken, aliceRes.Pos, sync3.Request{})
+	t.Log("Alice's sync response includes the event without a txn ID.")
+	m.MatchResponse(t, aliceRes, m.MatchList("a", m.MatchV3Count(1)), m.MatchNoV3Ops(), m.MatchRoomSubscription(
+		roomID, m.MatchRoomTimelineMostRecent(1, []json.RawMessage{newEventNoTxn}),
+	))
+
 }
 
 // Executes a sync v3 request without a ?pos and asserts that the count, rooms and timeline events m.Match the inputs given.

@@ -42,7 +42,8 @@ type ConnState struct {
 	// roomID -> latest load pos
 	loadPositions map[string]int64
 
-	live *connStateLive
+	txnIDWaiter *TxnIDWaiter
+	live        *connStateLive
 
 	globalCache *caches.GlobalCache
 	userCache   *caches.UserCache
@@ -59,7 +60,7 @@ type ConnState struct {
 func NewConnState(
 	userID, deviceID string, userCache *caches.UserCache, globalCache *caches.GlobalCache,
 	ex extensions.HandlerInterface, joinChecker JoinChecker, setupHistVec *prometheus.HistogramVec, histVec *prometheus.HistogramVec,
-	maxPendingEventUpdates int,
+	maxPendingEventUpdates int, maxTransactionIDDelay time.Duration,
 ) *ConnState {
 	cs := &ConnState{
 		globalCache:         globalCache,
@@ -80,6 +81,13 @@ func NewConnState(
 		ConnState: cs,
 		updates:   make(chan caches.Update, maxPendingEventUpdates),
 	}
+	cs.txnIDWaiter = NewTxnIDWaiter(
+		userID,
+		maxTransactionIDDelay,
+		func(delayed bool, update caches.Update) {
+			cs.live.onUpdate(update)
+		},
+	)
 	// subscribe for updates before loading. We risk seeing dupes but that's fine as load positions
 	// will stop us double-processing.
 	cs.userCacheID = cs.userCache.Subsribe(cs)
@@ -663,7 +671,8 @@ func (s *ConnState) UserID() string {
 }
 
 func (s *ConnState) OnUpdate(ctx context.Context, up caches.Update) {
-	s.live.onUpdate(up)
+	// will eventually call s.live.onUpdate
+	s.txnIDWaiter.Ingest(up)
 }
 
 // Called by the user cache when updates arrive
@@ -679,13 +688,17 @@ func (s *ConnState) OnRoomUpdate(ctx context.Context, up caches.RoomUpdate) {
 		}
 		internal.AssertWithContext(ctx, "missing global room metadata", update.GlobalRoomMetadata() != nil)
 		internal.Logf(ctx, "connstate", "queued update %d", update.EventData.NID)
-		s.live.onUpdate(update)
+		s.OnUpdate(ctx, update)
 	case caches.RoomUpdate:
 		internal.AssertWithContext(ctx, "missing global room metadata", update.GlobalRoomMetadata() != nil)
-		s.live.onUpdate(update)
+		s.OnUpdate(ctx, update)
 	default:
 		logger.Warn().Str("room_id", up.RoomID()).Msg("OnRoomUpdate unknown update type")
 	}
+}
+
+func (s *ConnState) PublishEventsUpTo(roomID string, nid int64) {
+	s.txnIDWaiter.PublishUpToNID(roomID, nid)
 }
 
 // clampSliceRangeToListSize helps us to send client-friendly SYNC and INVALIDATE ranges.
