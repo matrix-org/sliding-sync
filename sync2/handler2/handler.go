@@ -37,7 +37,7 @@ type Handler struct {
 	Store   *state.Storage
 	v2Pub   pubsub.Notifier
 	v3Sub   *pubsub.V3Sub
-	// user_id+room_id => fnv_hash(last_event_bytes)
+	// user_id|room_id|event_type => fnv_hash(last_event_bytes)
 	accountDataMap *sync.Map
 	unreadMap      map[string]struct {
 		Highlight int
