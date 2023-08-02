@@ -623,7 +623,6 @@ func TestTypingMultiplePoller(t *testing.T) {
 	joinEv := testutils.NewStateEvent(t, "m.room.member", bob, alice, map[string]interface{}{
 		"membership": "join",
 	})
-	roomState = append(roomState, joinEv)
 
 	// Queue the response with Alice typing
 	v2.queueResponse(aliceToken, sync2.SyncResponse{
@@ -644,9 +643,7 @@ func TestTypingMultiplePoller(t *testing.T) {
 		},
 	})
 
-	// Queue another response for bob, with bob typing.
-	// Since Bobs poller isn't allowed to update typing notifications, we should only see
-	// Alice typing below.
+	// Queue another response for Bob with Bob typing.
 	v2.queueResponse(bobToken, sync2.SyncResponse{
 		Rooms: sync2.SyncRoomsResponse{
 			Join: map[string]sync2.SyncV2JoinResponse{
@@ -664,7 +661,8 @@ func TestTypingMultiplePoller(t *testing.T) {
 		},
 	})
 
-	// start the pollers
+	// Start the pollers. Since Alice's poller is started first, the poller is in
+	// charge of handling typing notifications for roomA.
 	aliceRes := v3.mustDoV3Request(t, aliceToken, sync3.Request{})
 	bobRes := v3.mustDoV3Request(t, bobToken, sync3.Request{})
 
@@ -721,7 +719,28 @@ func TestTypingMultiplePoller(t *testing.T) {
 		},
 	})
 
-	// Get the response from v3
+	// Queue another response for Bob with Charlie typing.
+	// Since Alice's poller is in charge of handling typing notifications, this shouldn't
+	// show up on future responses.
+	v2.queueResponse(bobToken, sync2.SyncResponse{
+		Rooms: sync2.SyncRoomsResponse{
+			Join: map[string]sync2.SyncV2JoinResponse{
+				roomA: {
+					State: sync2.EventsResponse{
+						Events: roomState,
+					},
+					Timeline: sync2.TimelineResponse{
+						Events: []json.RawMessage{joinEv},
+					},
+					Ephemeral: sync2.EventsResponse{
+						Events: []json.RawMessage{json.RawMessage(`{"type":"m.typing","content":{"user_ids":["@charlie:localhost"]}}`)},
+					},
+				},
+			},
+		},
+	})
+
+	// Check that only Bob is typing and not Charlie.
 	for _, token := range []string{aliceToken, bobToken} {
 		pos := aliceRes.Pos
 		if token == bobToken {
