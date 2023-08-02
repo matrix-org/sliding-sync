@@ -34,6 +34,5 @@ if [ -n "${SYNCV3_PROM+1}" ]; then
     echo "Metrics endpoint returned 200 OK."
   fi
 fi
-curl -s -o
 
 go test "$@"
