@@ -122,8 +122,8 @@ func main() {
 		// https://github.com/matrix-org/synapse/blob/d93912042191d30ff1f7aa41d9f0779a609caca8/synapse/metrics/__init__.py#L413-L421
 		// and https://www.robustperception.io/exposing-the-software-version-to-prometheus/
 		versionGauge := prometheus.NewGauge(prometheus.GaugeOpts{
-			Namespace:   "sliding-sync",
-			Name:        "build-info",
+			Namespace:   "sliding_sync",
+			Name:        "build_info",
 			ConstLabels: map[string]string{"commit": GitCommit, "version": version},
 		})
 		versionGauge.Set(1) // Dummy value; the label is the data here
