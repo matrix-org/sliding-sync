@@ -73,8 +73,9 @@ type V2AccountData struct {
 func (*V2AccountData) Type() string { return "V2AccountData" }
 
 type V2LeaveRoom struct {
-	UserID string
-	RoomID string
+	UserID     string
+	RoomID     string
+	LeaveEvent json.RawMessage
 }
 
 func (*V2LeaveRoom) Type() string { return "V2LeaveRoom" }
