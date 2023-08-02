@@ -101,14 +101,14 @@ func TestAccountDataRespectsExtensionScope(t *testing.T) {
 		alice,
 		room1,
 		"com.example.room",
-		map[string]interface{}{"room": 1, "version": 1},
+		map[string]interface{}{"room": 1, "version": 11},
 	)
 	room2AccountDataEvent := putRoomAccountData(
 		t,
 		alice,
 		room2,
 		"com.example.room",
-		map[string]interface{}{"room": 2, "version": 2},
+		map[string]interface{}{"room": 2, "version": 22},
 	)
 
 	t.Log("Alice syncs until she sees the account data for room 2. She shouldn't see account data for room 1")

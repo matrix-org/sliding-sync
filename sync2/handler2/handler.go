@@ -454,6 +454,9 @@ func (h *Handler) OnAccountData(ctx context.Context, userID, roomID string, even
 		dedupedEvents = append(dedupedEvents, events[i])
 		h.accountDataMap.Store(key, thisHash)
 	}
+	if len(dedupedEvents) == 0 {
+		return
+	}
 
 	data, err := h.Store.InsertAccountData(userID, roomID, dedupedEvents)
 	if err != nil {
