@@ -269,7 +269,7 @@ func (h *Handler) Accumulate(ctx context.Context, userID, deviceID, roomID, prev
 	}
 
 	// Insert new events
-	numNew, latestNIDs, err := h.Store.Accumulate(roomID, prevBatch, timeline)
+	numNew, latestNIDs, err := h.Store.Accumulate(userID, roomID, prevBatch, timeline)
 	if err != nil {
 		logger.Err(err).Int("timeline", len(timeline)).Str("room", roomID).Msg("V2: failed to accumulate room")
 		internal.GetSentryHubFromContextOrDefault(ctx).CaptureException(err)
@@ -465,16 +465,18 @@ func (h *Handler) OnInvite(ctx context.Context, userID, roomID string, inviteSta
 	})
 }
 
-func (h *Handler) OnLeftRoom(ctx context.Context, userID, roomID string) {
+func (h *Handler) OnLeftRoom(ctx context.Context, userID, roomID string, leaveEv json.RawMessage) {
 	// remove any invites for this user if they are rejecting an invite
 	err := h.Store.InvitesTable.RemoveInvite(userID, roomID)
 	if err != nil {
 		logger.Err(err).Str("user", userID).Str("room", roomID).Msg("failed to retire invite")
 		internal.GetSentryHubFromContextOrDefault(ctx).CaptureException(err)
 	}
+
 	h.v2Pub.Notify(pubsub.ChanV2, &pubsub.V2LeaveRoom{
-		UserID: userID,
-		RoomID: roomID,
+		UserID:     userID,
+		RoomID:     roomID,
+		LeaveEvent: leaveEv,
 	})
 }
 

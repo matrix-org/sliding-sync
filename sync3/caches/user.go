@@ -606,7 +606,7 @@ func (c *UserCache) OnInvite(ctx context.Context, roomID string, inviteStateEven
 	c.emitOnRoomUpdate(ctx, up)
 }
 
-func (c *UserCache) OnLeftRoom(ctx context.Context, roomID string) {
+func (c *UserCache) OnLeftRoom(ctx context.Context, roomID string, leaveEvent json.RawMessage) {
 	urd := c.LoadRoomData(roomID)
 	urd.IsInvite = false
 	urd.HasLeft = true
@@ -616,13 +616,28 @@ func (c *UserCache) OnLeftRoom(ctx context.Context, roomID string) {
 	c.roomToData[roomID] = urd
 	c.roomToDataMu.Unlock()
 
-	up := &LeftRoomUpdate{
+	ev := gjson.ParseBytes(leaveEvent)
+	stateKey := ev.Get("state_key").Str
+
+	up := &RoomEventUpdate{
 		RoomUpdate: &roomUpdateCache{
 			roomID: roomID,
 			// do NOT pull from the global cache as it is a snapshot of the room at the point of
 			// the invite: don't leak additional data!!!
 			globalRoomData: internal.NewRoomMetadata(roomID),
 			userRoomData:   &urd,
+		},
+		EventData: &EventData{
+			Event:     leaveEvent,
+			RoomID:    roomID,
+			EventType: ev.Get("type").Str,
+			StateKey:  &stateKey,
+			Content:   ev.Get("content"),
+			Timestamp: ev.Get("origin_server_ts").Uint(),
+			Sender:    ev.Get("sender").Str,
+			// if this is an invite rejection we need to make sure we tell the client, and not
+			// skip it because of the lack of a NID (this event may not be in the events table)
+			AlwaysProcess: true,
 		},
 	}
 	c.emitOnRoomUpdate(ctx, up)
