@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/getsentry/sentry-go"
+	"github.com/jmoiron/sqlx"
 
 	"github.com/gorilla/mux"
 	"github.com/matrix-org/sliding-sync/internal"
@@ -36,6 +37,13 @@ type Opts struct {
 	// if true, publishing messages will block until the consumer has consumed it.
 	// Assumes a single producer and a single consumer.
 	TestingSynchronousPubsub bool
+	// MaxTransactionIDDelay is the longest amount of time that we will wait for
+	// confirmation of an event's transaction_id before sending it to its sender.
+	// Set to 0 to disable this delay mechanism entirely.
+	MaxTransactionIDDelay time.Duration
+
+	DBMaxConns        int
+	DBConnMaxIdleTime time.Duration
 }
 
 type server struct {
@@ -73,11 +81,29 @@ func Setup(destHomeserver, postgresURI, secret string, opts Opts) (*handler2.Han
 		},
 		DestinationServer: destHomeserver,
 	}
-	store := state.NewStorage(postgresURI)
-	storev2 := sync2.NewStore(postgresURI, secret)
+	db, err := sqlx.Open("postgres", postgresURI)
+	if err != nil {
+		sentry.CaptureException(err)
+		// TODO: if we panic(), will sentry have a chance to flush the event?
+		logger.Panic().Err(err).Str("uri", postgresURI).Msg("failed to open SQL DB")
+	}
+	if opts.DBMaxConns > 0 {
+		// https://github.com/go-sql-driver/mysql#important-settings
+		// "db.SetMaxIdleConns() is recommended to be set same to db.SetMaxOpenConns(). When it is smaller
+		// than SetMaxOpenConns(), connections can be opened and closed much more frequently than you expect."
+		db.SetMaxOpenConns(opts.DBMaxConns)
+		db.SetMaxIdleConns(opts.DBMaxConns)
+	}
+	if opts.DBConnMaxIdleTime > 0 {
+		db.SetConnMaxIdleTime(opts.DBConnMaxIdleTime)
+	}
+	store := state.NewStorageWithDB(db)
+	storev2 := sync2.NewStoreWithDB(db, secret)
 	bufferSize := 50
+	deviceDataUpdateFrequency := time.Second
 	if opts.TestingSynchronousPubsub {
 		bufferSize = 0
+		deviceDataUpdateFrequency = 0 // don't batch
 	}
 	if opts.MaxPendingEventUpdates == 0 {
 		opts.MaxPendingEventUpdates = 2000
@@ -86,14 +112,14 @@ func Setup(destHomeserver, postgresURI, secret string, opts Opts) (*handler2.Han
 
 	pMap := sync2.NewPollerMap(v2Client, opts.AddPrometheusMetrics)
 	// create v2 handler
-	h2, err := handler2.NewHandler(postgresURI, pMap, storev2, store, v2Client, pubSub, pubSub, opts.AddPrometheusMetrics)
+	h2, err := handler2.NewHandler(pMap, storev2, store, pubSub, pubSub, opts.AddPrometheusMetrics, deviceDataUpdateFrequency)
 	if err != nil {
 		panic(err)
 	}
 	pMap.SetCallbacks(h2)
 
 	// create v3 handler
-	h3, err := handler.NewSync3Handler(store, storev2, v2Client, postgresURI, secret, pubSub, pubSub, opts.AddPrometheusMetrics, opts.MaxPendingEventUpdates)
+	h3, err := handler.NewSync3Handler(store, storev2, v2Client, secret, pubSub, pubSub, opts.AddPrometheusMetrics, opts.MaxPendingEventUpdates, opts.MaxTransactionIDDelay)
 	if err != nil {
 		panic(err)
 	}

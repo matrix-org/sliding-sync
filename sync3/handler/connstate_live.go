@@ -37,7 +37,7 @@ func (s *connStateLive) onUpdate(up caches.Update) {
 	select {
 	case s.updates <- up:
 	case <-time.After(BufferWaitTime):
-		logger.Warn().Interface("update", up).Str("user", s.userID).Msg(
+		logger.Warn().Interface("update", up).Str("user", s.userID).Str("device", s.deviceID).Msg(
 			"cannot send update to connection, buffer exceeded. Destroying connection.",
 		)
 		s.bufferFull = true
@@ -57,6 +57,7 @@ func (s *connStateLive) liveUpdate(
 	if req.TimeoutMSecs() < 100 {
 		req.SetTimeoutMSecs(100)
 	}
+	startBufferSize := len(s.updates)
 	// block until we get a new event, with appropriate timeout
 	startTime := time.Now()
 	hasLiveStreamed := false
@@ -80,34 +81,48 @@ func (s *connStateLive) liveUpdate(
 			internal.Logf(ctx, "liveUpdate", "timed out after %v", timeLeftToWait)
 			return
 		case update := <-s.updates:
-			internal.Logf(ctx, "liveUpdate", "process live update")
-
-			s.processLiveUpdate(ctx, update, response)
-			// pass event to extensions AFTER processing
-			roomIDsToLists := s.lists.ListsByVisibleRoomIDs(s.muxedReq.Lists)
-			s.extensionsHandler.HandleLiveUpdate(ctx, update, ex, &response.Extensions, extensions.Context{
-				IsInitial:        false,
-				RoomIDToTimeline: response.RoomIDsToTimelineEventIDs(),
-				UserID:           s.userID,
-				DeviceID:         s.deviceID,
-				RoomIDsToLists:   roomIDsToLists,
-			})
+			s.processUpdate(ctx, update, response, ex)
 			// if there's more updates and we don't have lots stacked up already, go ahead and process another
 			for len(s.updates) > 0 && response.ListOps() < 50 {
 				update = <-s.updates
-				s.processLiveUpdate(ctx, update, response)
-				s.extensionsHandler.HandleLiveUpdate(ctx, update, ex, &response.Extensions, extensions.Context{
-					IsInitial:        false,
-					RoomIDToTimeline: response.RoomIDsToTimelineEventIDs(),
-					UserID:           s.userID,
-					DeviceID:         s.deviceID,
-					RoomIDsToLists:   roomIDsToLists,
-				})
+				s.processUpdate(ctx, update, response, ex)
 			}
 		}
 	}
+
+	// If a client constantly changes their request params in every request they make, we will never consume from
+	// the update channel as the response will always have data already. In an effort to prevent starvation of new
+	// data, we will process some updates even though we have data already, but only if A) we didn't live stream
+	// due to natural circumstances, B) it isn't an initial request and C) there is in fact some data there.
+	numQueuedUpdates := len(s.updates)
+	if !hasLiveStreamed && !isInitial && numQueuedUpdates > 0 {
+		for i := 0; i < numQueuedUpdates; i++ {
+			update := <-s.updates
+			s.processUpdate(ctx, update, response, ex)
+		}
+		log.Debug().Int("num_queued", numQueuedUpdates).Msg("liveUpdate: caught up")
+		internal.Logf(ctx, "connstate", "liveUpdate caught up %d updates", numQueuedUpdates)
+	}
+
 	log.Trace().Bool("live_streamed", hasLiveStreamed).Msg("liveUpdate: returning")
+
+	internal.SetConnBufferInfo(ctx, startBufferSize, len(s.updates), cap(s.updates))
+
 	// TODO: op consolidation
+}
+
+func (s *connStateLive) processUpdate(ctx context.Context, update caches.Update, response *sync3.Response, ex extensions.Request) {
+	internal.Logf(ctx, "liveUpdate", "process live update %s", update.Type())
+	s.processLiveUpdate(ctx, update, response)
+	// pass event to extensions AFTER processing
+	roomIDsToLists := s.lists.ListsByVisibleRoomIDs(s.muxedReq.Lists)
+	s.extensionsHandler.HandleLiveUpdate(ctx, update, ex, &response.Extensions, extensions.Context{
+		IsInitial:        false,
+		RoomIDToTimeline: response.RoomIDsToTimelineEventIDs(),
+		UserID:           s.userID,
+		DeviceID:         s.deviceID,
+		RoomIDsToLists:   roomIDsToLists,
+	})
 }
 
 func (s *connStateLive) processLiveUpdate(ctx context.Context, up caches.Update, response *sync3.Response) bool {
@@ -207,8 +222,13 @@ func (s *connStateLive) processLiveUpdate(ctx context.Context, up caches.Update,
 				metadata.RemoveHero(s.userID)
 				thisRoom.Name = internal.CalculateRoomName(metadata, 5) // TODO: customisable?
 			}
+			if delta.RoomAvatarChanged {
+				metadata := roomUpdate.GlobalRoomMetadata()
+				metadata.RemoveHero(s.userID)
+				thisRoom.AvatarChange = sync3.NewAvatarChange(internal.CalculateAvatar(metadata))
+			}
 			if delta.InviteCountChanged {
-				thisRoom.InvitedCount = roomUpdate.GlobalRoomMetadata().InviteCount
+				thisRoom.InvitedCount = &roomUpdate.GlobalRoomMetadata().InviteCount
 			}
 			if delta.JoinCountChanged {
 				thisRoom.JoinedCount = roomUpdate.GlobalRoomMetadata().JoinCount
@@ -279,8 +299,17 @@ func (s *connStateLive) processGlobalUpdates(ctx context.Context, builder *Rooms
 			}
 		}
 
+		metadata := rup.GlobalRoomMetadata().CopyHeroes()
+		metadata.RemoveHero(s.userID)
+		// TODO: if we change a room from being a DM to not being a DM, we should call
+		// SetRoom and recalculate avatars. To do that we'd need to
+		//  - listen to m.direct global account data events
+		//   - compute the symmetric difference between old and new
+		//   - call SetRooms for each room in the difference.
+		// I'm assuming this happens so rarely that we can ignore this for now. PRs
+		// welcome if you a strong opinion to the contrary.
 		delta = s.lists.SetRoom(sync3.RoomConnMetadata{
-			RoomMetadata:                  *rup.GlobalRoomMetadata(),
+			RoomMetadata:                  *metadata,
 			UserRoomData:                  *rup.UserRoomMetadata(),
 			LastInterestedEventTimestamps: bumpTimestampInList,
 		})

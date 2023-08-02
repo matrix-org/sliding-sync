@@ -134,6 +134,7 @@ type CSAPI struct {
 	Localpart   string
 	AccessToken string
 	DeviceID    string
+	AvatarURL   string
 	BaseURL     string
 	Client      *http.Client
 	// how long are we willing to wait for MustSyncUntil.... calls
@@ -157,6 +158,16 @@ func (c *CSAPI) UploadContent(t *testing.T, fileBody []byte, fileName string, co
 	)
 	body := ParseJSON(t, res)
 	return GetJSONFieldStr(t, body, "content_uri")
+}
+
+// Use an empty string to remove your avatar.
+func (c *CSAPI) SetAvatar(t *testing.T, avatarURL string) {
+	t.Helper()
+	reqBody := map[string]interface{}{
+		"avatar_url": avatarURL,
+	}
+	c.MustDoFunc(t, "PUT", []string{"_matrix", "client", "v3", "profile", c.UserID, "avatar_url"}, WithJSONBody(t, reqBody))
+	c.AvatarURL = avatarURL
 }
 
 // DownloadContent downloads media from the server, returning the raw bytes and the Content-Type. Fails the test on error.
@@ -678,16 +689,32 @@ func (c *CSAPI) SlidingSyncUntilMembership(t *testing.T, pos string, roomID stri
 		})
 	}
 
-	return c.SlidingSyncUntilEvent(t, pos, sync3.Request{
+	return c.SlidingSyncUntil(t, pos, sync3.Request{
 		RoomSubscriptions: map[string]sync3.RoomSubscription{
 			roomID: {
 				TimelineLimit: 10,
 			},
 		},
-	}, roomID, Event{
-		Type:     "m.room.member",
-		StateKey: &target.UserID,
-		Content:  content,
+	}, func(r *sync3.Response) error {
+		room, ok := r.Rooms[roomID]
+		if !ok {
+			return fmt.Errorf("missing room %s", roomID)
+		}
+		for _, got := range room.Timeline {
+			wantEvent := Event{
+				Type:     "m.room.member",
+				StateKey: &target.UserID,
+			}
+			if err := eventsEqual([]Event{wantEvent}, []json.RawMessage{got}); err == nil {
+				gotMembership := gjson.GetBytes(got, "content.membership")
+				if gotMembership.Exists() && gotMembership.Type == gjson.String && gotMembership.Str == membership {
+					return nil
+				}
+			} else {
+				t.Log(err)
+			}
+		}
+		return fmt.Errorf("found room %s but missing event", roomID)
 	})
 }
 

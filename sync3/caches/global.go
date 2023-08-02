@@ -21,6 +21,15 @@ type EventData struct {
 	Content   gjson.Result
 	Timestamp uint64
 	Sender    string
+	// TransactionID is the unsigned.transaction_id field in the event as stored in the
+	// syncv3_events table, or the empty string if there is no such field.
+	//
+	// We may see the event on poller A without a transaction_id, and then later on
+	// poller B with a transaction_id. If this happens, we make a temporary note of the
+	// transaction_id in the syncv3_txns table, but do not edit the persisted event.
+	// This means that this field is not authoritative; we only include it here as a
+	// hint to avoid unnecessary waits for V2TransactionID payloads.
+	TransactionID string
 
 	// the number of joined users in this room. Use this value and don't try to work it out as you
 	// may get it wrong due to Synapse sending duplicate join events(!) This value has them de-duped
@@ -118,13 +127,7 @@ func (c *GlobalCache) copyRoom(roomID string) *internal.RoomMetadata {
 		logger.Warn().Str("room", roomID).Msg("GlobalCache.LoadRoom: no metadata for this room, returning stub")
 		return internal.NewRoomMetadata(roomID)
 	}
-	srCopy := *sr
-	// copy the heroes or else we may modify the same slice which would be bad :(
-	srCopy.Heroes = make([]internal.Hero, len(sr.Heroes))
-	for i := range sr.Heroes {
-		srCopy.Heroes[i] = sr.Heroes[i]
-	}
-	return &srCopy
+	return sr.CopyHeroes()
 }
 
 // LoadJoinedRooms loads all current joined room metadata for the user given, together
@@ -158,7 +161,7 @@ func (c *GlobalCache) LoadJoinedRooms(ctx context.Context, userID string) (
 		i++
 	}
 
-	latestNIDs, err = c.store.EventsTable.LatestEventNIDInRooms(roomIDs, initialLoadPosition)
+	latestNIDs, err = c.store.LatestEventNIDInRooms(roomIDs, initialLoadPosition)
 	if err != nil {
 		return 0, nil, nil, nil, err
 	}
@@ -239,8 +242,13 @@ func (c *GlobalCache) Startup(roomIDToMetadata map[string]internal.RoomMetadata)
 	sort.Strings(roomIDs)
 	for _, roomID := range roomIDs {
 		metadata := roomIDToMetadata[roomID]
-		internal.Assert("room ID is set", metadata.RoomID != "")
-		internal.Assert("last message timestamp exists", metadata.LastMessageTimestamp > 1)
+		debugContext := map[string]interface{}{
+			"room_id":                       roomID,
+			"metadata.RoomID":               metadata.RoomID,
+			"metadata.LastMessageTimeStamp": metadata.LastMessageTimestamp,
+		}
+		internal.Assert("room ID is set", metadata.RoomID != "", debugContext)
+		internal.Assert("last message timestamp exists", metadata.LastMessageTimestamp > 1, debugContext)
 		c.roomIDToMetadata[roomID] = &metadata
 	}
 	return nil
@@ -284,6 +292,10 @@ func (c *GlobalCache) OnNewEvent(
 	case "m.room.name":
 		if ed.StateKey != nil && *ed.StateKey == "" {
 			metadata.NameEvent = ed.Content.Get("name").Str
+		}
+	case "m.room.avatar":
+		if ed.StateKey != nil && *ed.StateKey == "" {
+			metadata.AvatarEvent = ed.Content.Get("url").Str
 		}
 	case "m.room.encryption":
 		if ed.StateKey != nil && *ed.StateKey == "" {
@@ -349,14 +361,16 @@ func (c *GlobalCache) OnNewEvent(
 				for i := range metadata.Heroes {
 					if metadata.Heroes[i].ID == *ed.StateKey {
 						metadata.Heroes[i].Name = ed.Content.Get("displayname").Str
+						metadata.Heroes[i].Avatar = ed.Content.Get("avatar_url").Str
 						found = true
 						break
 					}
 				}
 				if !found {
 					metadata.Heroes = append(metadata.Heroes, internal.Hero{
-						ID:   *ed.StateKey,
-						Name: ed.Content.Get("displayname").Str,
+						ID:     *ed.StateKey,
+						Name:   ed.Content.Get("displayname").Str,
+						Avatar: ed.Content.Get("avatar_url").Str,
 					})
 				}
 			}

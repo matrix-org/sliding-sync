@@ -59,7 +59,7 @@ jobs:
             - name: Test
               run: |
                 set -euo pipefail
-                go test -count=1 -covermode=atomic -coverpkg ./... -p 1 -v -json $(go list ./... | grep -v tests-e2e) -coverprofile synccoverage.out 2>&1 | tee ./test-integration.log | gotestfmt
+                go test -count=1 -covermode=atomic -coverpkg ./... -p 1 -v -json $(go list ./... | grep -v tests-e2e) -coverprofile synccoverage.out 2>&1 | tee ./test-integration.log | gotestfmt -hide all
               shell: bash
               env:
                   POSTGRES_HOST: localhost
@@ -88,6 +88,10 @@ jobs:
                 if-no-files-found: error
     end_to_end:
         runs-on: ubuntu-latest
+        strategy:
+          matrix:
+            # test with unlimited + 1 + 2 max db conns. If we end up double transacting in the tests anywhere, conn=1 tests will fail.
+            max_db_conns: [0,1,2]
         services:
             synapse:
                 # Custom image built from https://github.com/matrix-org/synapse/tree/v1.72.0/docker/complement with a dummy /complement/ca set
@@ -97,6 +101,11 @@ jobs:
                     SERVER_NAME: synapse
                 ports:
                     - 8008:8008
+                # Set health checks to wait until synapse has started
+                options: >-
+                    --health-interval 10s
+                    --health-timeout 5s
+                    --health-retries 5
             # Label used to access the service container
             postgres:
                 # Docker Hub image
@@ -135,7 +144,7 @@ jobs:
             - name: Run end-to-end tests
               run: |
                 set -euo pipefail
-                ./run-tests.sh -count=1 -v -json . 2>&1 | tee test-e2e-runner.log | gotestfmt
+                ./run-tests.sh -count=1 -v -json . 2>&1 | tee test-e2e-runner.log | gotestfmt -hide all
               working-directory: tests-e2e
               shell: bash
               env:
@@ -143,6 +152,7 @@ jobs:
                   SYNCV3_SERVER: http://localhost:8008
                   SYNCV3_SECRET: itsasecret
                   SYNCV3_PROM: 2112
+                  SYNCV3_MAX_DB_CONN: ${{ matrix.max_db_conns }}
                   E2E_TEST_SERVER_STDOUT: test-e2e-server.log
 
             - name: Upload test log
@@ -165,6 +175,7 @@ jobs:
             - uses: actions/checkout@v3
               with:
                 repository: matrix-org/matrix-react-sdk
+                ref: "v3.71.0" # later versions break the SS E2E tests which need to be fixed :(
             - uses: actions/setup-node@v3
               with:
                 cache: 'yarn'

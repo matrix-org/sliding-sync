@@ -622,6 +622,20 @@ func TestSessionExpiryOnBufferFill(t *testing.T) {
 	if gjson.ParseBytes(body).Get("errcode").Str != "M_UNKNOWN_POS" {
 		t.Errorf("got %v want errcode=M_UNKNOWN_POS", string(body))
 	}
+
+	// make sure we can sync from fresh (regression for when we deadlocked after this point)
+	res = v3.mustDoV3Request(t, aliceToken, sync3.Request{
+		RoomSubscriptions: map[string]sync3.RoomSubscription{
+			roomID: {
+				TimelineLimit: 1,
+			},
+		},
+	})
+	m.MatchResponse(t, res, m.MatchRoomSubscriptionsStrict(map[string][]m.RoomMatcher{
+		roomID: {
+			m.MatchJoinCount(1),
+		},
+	}))
 }
 
 func TestExpiredAccessToken(t *testing.T) {

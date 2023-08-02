@@ -71,10 +71,18 @@ func ExpiredSessionError() *HandlerError {
 // Which then produces:
 //
 //	assertion failed: list is not empty
-func Assert(msg string, expr bool) {
+//
+// An optional debugContext map can be provided. If it is present and sentry is configured,
+// it is added as context to the sentry events generated for failed assertions.
+func Assert(msg string, expr bool, debugContext ...map[string]interface{}) {
 	assert(msg, expr)
 	if !expr {
-		sentry.CaptureException(fmt.Errorf("assertion failed: %s", msg))
+		sentry.WithScope(func(scope *sentry.Scope) {
+			if len(debugContext) > 0 {
+				scope.SetContext(SentryCtxKey, debugContext[0])
+			}
+			sentry.CaptureException(fmt.Errorf("assertion failed: %s", msg))
+		})
 	}
 }
 

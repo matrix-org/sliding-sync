@@ -247,3 +247,45 @@ func TestCalculateRoomName(t *testing.T) {
 		}
 	}
 }
+
+func TestCopyHeroes(t *testing.T) {
+	const alice = "@alice:test"
+	const bob = "@bob:test"
+	const chris = "@chris:test"
+	m1 := RoomMetadata{Heroes: []Hero{
+		{ID: alice},
+		{ID: bob},
+		{ID: chris},
+	}}
+
+	m2 := m1.CopyHeroes()
+	// Uncomment this to see why CopyHeroes is necessary!
+	//m2 := m1
+
+	t.Logf("Compare heroes:\n\tm1=%v\n\tm2=%v", m1.Heroes, m2.Heroes)
+
+	t.Log("Remove chris from m1")
+	m1.RemoveHero(chris)
+	t.Logf("Compare heroes:\n\tm1=%v\n\tm2=%v", m1.Heroes, m2.Heroes)
+
+	assertSliceIDs(t, "m1.Heroes", m1.Heroes, []string{alice, bob})
+	assertSliceIDs(t, "m2.Heroes", m2.Heroes, []string{alice, bob, chris})
+
+	t.Log("Remove alice from m1")
+	m1.RemoveHero(alice)
+	t.Logf("Compare heroes:\n\tm1=%v\n\tm2=%v", m1.Heroes, m2.Heroes)
+
+	assertSliceIDs(t, "m1.Heroes", m1.Heroes, []string{bob})
+	assertSliceIDs(t, "m2.Heroes", m2.Heroes, []string{alice, bob, chris})
+}
+
+func assertSliceIDs(t *testing.T, desc string, h []Hero, ids []string) {
+	if len(h) != len(ids) {
+		t.Errorf("%s has length %d, expected %d", desc, len(h), len(ids))
+	}
+	for index, id := range ids {
+		if h[index].ID != id {
+			t.Errorf("%s[%d] ID is %s, expected %s", desc, index, h[index].ID, id)
+		}
+	}
+}

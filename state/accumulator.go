@@ -207,8 +207,9 @@ func (a *Accumulator) Initialise(roomID string, state []json.RawMessage) (Initia
 				IsState: true,
 			}
 		}
-		if err := ensureFieldsSet(events); err != nil {
-			return fmt.Errorf("events malformed: %s", err)
+		events = filterAndEnsureFieldsSet(events)
+		if len(events) == 0 {
+			return fmt.Errorf("failed to insert events, all events were filtered out: %w", err)
 		}
 		eventIDToNID, err := a.eventsTable.Insert(txn, events, false)
 		if err != nil {
@@ -293,34 +294,20 @@ func (a *Accumulator) Initialise(roomID string, state []json.RawMessage) (Initia
 //   - Else it creates a new room state snapshot if the timeline contains state events (as this now represents the current state)
 //   - It adds entries to the membership log for membership events.
 func (a *Accumulator) Accumulate(txn *sqlx.Tx, roomID string, prevBatch string, timeline []json.RawMessage) (numNew int, timelineNIDs []int64, err error) {
-	// Insert the events. Check for duplicates which can happen in the real world when joining
-	// Matrix HQ on Synapse.
-	dedupedEvents := make([]Event, 0, len(timeline))
-	seenEvents := make(map[string]struct{})
-	for i := range timeline {
-		e := Event{
-			JSON:   timeline[i],
-			RoomID: roomID,
-		}
-		if err := e.ensureFieldsSetOnEvent(); err != nil {
-			return 0, nil, fmt.Errorf("event malformed: %s", err)
-		}
-		if _, ok := seenEvents[e.ID]; ok {
-			logger.Warn().Str("event_id", e.ID).Str("room_id", roomID).Msg(
-				"Accumulator.Accumulate: seen the same event ID twice, ignoring",
-			)
-			continue
-		}
-		if i == 0 && prevBatch != "" {
-			// tag the first timeline event with the prev batch token
-			e.PrevBatch = sql.NullString{
-				String: prevBatch,
-				Valid:  true,
-			}
-		}
-		dedupedEvents = append(dedupedEvents, e)
-		seenEvents[e.ID] = struct{}{}
+	// The first stage of accumulating events is mostly around validation around what the upstream HS sends us. For accumulation to work correctly
+	// we expect:
+	// - there to be no duplicate events
+	// - if there are new events, they are always new.
+	// Both of these assumptions can be false for different reasons
+	dedupedEvents, err := a.filterAndParseTimelineEvents(txn, roomID, timeline, prevBatch)
+	if err != nil {
+		err = fmt.Errorf("filterTimelineEvents: %w", err)
+		return
 	}
+	if len(dedupedEvents) == 0 {
+		return 0, nil, err // nothing to do
+	}
+
 	eventIDToNID, err := a.eventsTable.Insert(txn, dedupedEvents, false)
 	if err != nil {
 		return 0, nil, err
@@ -413,24 +400,90 @@ func (a *Accumulator) Accumulate(txn *sqlx.Tx, roomID string, prevBatch string, 
 	return numNew, timelineNIDs, nil
 }
 
-// Delta returns a list of events of at most `limit` for the room not including `lastEventNID`.
-// Returns the latest NID of the last event (most recent)
-func (a *Accumulator) Delta(roomID string, lastEventNID int64, limit int) (eventsJSON []json.RawMessage, latest int64, err error) {
-	txn, err := a.db.Beginx()
+// filterAndParseTimelineEvents takes a raw timeline array from sync v2 and applies sanity to it:
+// - removes duplicate events: this is just a bug which has been seen on Synapse on matrix.org
+// - removes old events: this is an edge case when joining rooms over federation, see https://github.com/matrix-org/sliding-sync/issues/192
+// - parses it and returns Event structs.
+// - check which events are unknown. If all events are known, filter them all out.
+func (a *Accumulator) filterAndParseTimelineEvents(txn *sqlx.Tx, roomID string, timeline []json.RawMessage, prevBatch string) ([]Event, error) {
+	// Check for duplicates which can happen in the real world when joining
+	// Matrix HQ on Synapse, as well as when you join rooms for the first time over federation.
+	dedupedEvents := make([]Event, 0, len(timeline))
+	seenEvents := make(map[string]struct{})
+	for i := range timeline {
+		e := Event{
+			JSON:   timeline[i],
+			RoomID: roomID,
+		}
+		if err := e.ensureFieldsSetOnEvent(); err != nil {
+			logger.Warn().Str("event_id", e.ID).Str("room_id", roomID).Err(err).Msg(
+				"Accumulator.filterAndParseTimelineEvents: failed to parse event, ignoring",
+			)
+			continue
+		}
+		if _, ok := seenEvents[e.ID]; ok {
+			logger.Warn().Str("event_id", e.ID).Str("room_id", roomID).Msg(
+				"Accumulator.filterAndParseTimelineEvents: seen the same event ID twice, ignoring",
+			)
+			continue
+		}
+		if i == 0 && prevBatch != "" {
+			// tag the first timeline event with the prev batch token
+			e.PrevBatch = sql.NullString{
+				String: prevBatch,
+				Valid:  true,
+			}
+		}
+		dedupedEvents = append(dedupedEvents, e)
+		seenEvents[e.ID] = struct{}{}
+	}
+
+	// if we only have a single timeline event we cannot determine if it is old or not, as we rely on already seen events
+	// being after (higher index) than it.
+	if len(dedupedEvents) <= 1 {
+		return dedupedEvents, nil
+	}
+
+	// Figure out which of these events are unseen and hence brand new live events.
+	// In some cases, we may have unseen OLD events - see https://github.com/matrix-org/sliding-sync/issues/192
+	// in which case we need to drop those events.
+	dedupedEventIDs := make([]string, 0, len(seenEvents))
+	for evID := range seenEvents {
+		dedupedEventIDs = append(dedupedEventIDs, evID)
+	}
+	unknownEventIDs, err := a.eventsTable.SelectUnknownEventIDs(txn, dedupedEventIDs)
 	if err != nil {
-		return nil, 0, err
+		return nil, fmt.Errorf("filterAndParseTimelineEvents: failed to SelectUnknownEventIDs: %w", err)
 	}
-	defer txn.Commit()
-	events, err := a.eventsTable.SelectEventsBetween(txn, roomID, lastEventNID, EventsEnd, limit)
-	if err != nil {
-		return nil, 0, err
+
+	if len(unknownEventIDs) == 0 {
+		// every event has been seen already, no work to do
+		return nil, nil
 	}
-	if len(events) == 0 {
-		return nil, lastEventNID, nil
+
+	// In the happy case, we expect to see timeline arrays like this: (SEEN=S, UNSEEN=U)
+	// [S,S,U,U] -> want last 2
+	// [U,U,U] -> want all
+	// In the backfill edge case, we might see:
+	// [U,S,S,S] -> want none
+	// [U,S,S,U] -> want last 1
+	// We should never see scenarios like:
+	// [U,S,S,U,S,S] <- we should only see 1 contiguous block of seen events.
+	// If we do, we'll just ignore all unseen events less than the highest seen event.
+
+	// The algorithm starts at the end and just looks for the first S event, returning the subslice after that S event (which may be [])
+	seenIndex := -1
+	for i := len(dedupedEvents) - 1; i >= 0; i-- {
+		_, unseen := unknownEventIDs[dedupedEvents[i].ID]
+		if !unseen {
+			seenIndex = i
+			break
+		}
 	}
-	eventsJSON = make([]json.RawMessage, len(events))
-	for i := range events {
-		eventsJSON[i] = events[i].JSON
-	}
-	return eventsJSON, int64(events[len(events)-1].NID), nil
+	// seenIndex can be -1 if all are unseen, or len-1 if all are seen, either way if we +1 this slices correctly:
+	// no seen events  s[A,B,C] =>  s[-1+1:] => [A,B,C]
+	// C is seen event s[A,B,C] => s[2+1:] => []
+	// B is seen event s[A,B,C] => s[1+1:] => [C]
+	// A is seen event s[A,B,C] => s[0+1:] => [B,C]
+	return dedupedEvents[seenIndex+1:], nil
 }

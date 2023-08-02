@@ -1,6 +1,5 @@
 package handler
 
-import "C"
 import (
 	"context"
 	"database/sql"
@@ -59,25 +58,29 @@ type SyncLiveHandler struct {
 
 	GlobalCache            *caches.GlobalCache
 	maxPendingEventUpdates int
+	maxTransactionIDDelay  time.Duration
 
-	numConns prometheus.Gauge
-	histVec  *prometheus.HistogramVec
+	setupHistVec *prometheus.HistogramVec
+	histVec      *prometheus.HistogramVec
+	slowReqs     prometheus.Counter
 }
 
 func NewSync3Handler(
-	store *state.Storage, storev2 *sync2.Storage, v2Client sync2.Client, postgresDBURI, secret string,
+	store *state.Storage, storev2 *sync2.Storage, v2Client sync2.Client, secret string,
 	pub pubsub.Notifier, sub pubsub.Listener, enablePrometheus bool, maxPendingEventUpdates int,
+	maxTransactionIDDelay time.Duration,
 ) (*SyncLiveHandler, error) {
 	logger.Info().Msg("creating handler")
 	sh := &SyncLiveHandler{
 		V2:                     v2Client,
 		Storage:                store,
 		V2Store:                storev2,
-		ConnMap:                sync3.NewConnMap(),
+		ConnMap:                sync3.NewConnMap(enablePrometheus),
 		userCaches:             &sync.Map{},
 		Dispatcher:             sync3.NewDispatcher(),
 		GlobalCache:            caches.NewGlobalCache(store),
 		maxPendingEventUpdates: maxPendingEventUpdates,
+		maxTransactionIDDelay:  maxTransactionIDDelay,
 	}
 	sh.Extensions = &extensions.Handler{
 		Store:       store,
@@ -91,7 +94,7 @@ func NewSync3Handler(
 	}
 
 	// set up pubsub mechanism to start from this point
-	sh.EnsurePoller = NewEnsurePoller(pub)
+	sh.EnsurePoller = NewEnsurePoller(pub, enablePrometheus)
 	sh.V2Sub = pubsub.NewV2Sub(sub, sh)
 
 	return sh, nil
@@ -127,37 +130,41 @@ func (h *SyncLiveHandler) Teardown() {
 	h.V2Sub.Teardown()
 	h.EnsurePoller.Teardown()
 	h.ConnMap.Teardown()
-	if h.numConns != nil {
-		prometheus.Unregister(h.numConns)
+	if h.setupHistVec != nil {
+		prometheus.Unregister(h.setupHistVec)
 	}
 	if h.histVec != nil {
 		prometheus.Unregister(h.histVec)
 	}
-}
-
-func (h *SyncLiveHandler) updateMetrics() {
-	if h.numConns == nil {
-		return
+	if h.slowReqs != nil {
+		prometheus.Unregister(h.slowReqs)
 	}
-	h.numConns.Set(float64(h.ConnMap.Len()))
 }
 
 func (h *SyncLiveHandler) addPrometheusMetrics() {
-	h.numConns = prometheus.NewGauge(prometheus.GaugeOpts{
+	h.setupHistVec = prometheus.NewHistogramVec(prometheus.HistogramOpts{
 		Namespace: "sliding_sync",
 		Subsystem: "api",
-		Name:      "num_active_conns",
-		Help:      "Number of active sliding sync connections.",
-	})
+		Name:      "setup_duration_secs",
+		Help:      "Time taken in seconds after receiving a request before we start calculating a sliding sync response.",
+		Buckets:   []float64{0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10},
+	}, []string{"initial"})
 	h.histVec = prometheus.NewHistogramVec(prometheus.HistogramOpts{
 		Namespace: "sliding_sync",
 		Subsystem: "api",
 		Name:      "process_duration_secs",
-		Help:      "Time taken in seconds for the sliding sync response to calculated, excludes long polling",
+		Help:      "Time taken in seconds for the sliding sync response to be calculated, excludes long polling",
 		Buckets:   []float64{0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10},
 	}, []string{"initial"})
-	prometheus.MustRegister(h.numConns)
+	h.slowReqs = prometheus.NewCounter(prometheus.CounterOpts{
+		Namespace: "sliding_sync",
+		Subsystem: "api",
+		Name:      "slow_requests",
+		Help:      "Counter of slow (>=50s) requests, initial or otherwise.",
+	})
+	prometheus.MustRegister(h.setupHistVec)
 	prometheus.MustRegister(h.histVec)
+	prometheus.MustRegister(h.slowReqs)
 }
 
 func (h *SyncLiveHandler) ServeHTTP(w http.ResponseWriter, req *http.Request) {
@@ -174,9 +181,13 @@ func (h *SyncLiveHandler) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 				Err:        err,
 			}
 		}
-		// artificially wait a bit before sending back the error
-		// this guards against tightlooping when the client hammers the server with invalid requests
-		time.Sleep(time.Second)
+		if herr.ErrCode != "M_UNKNOWN_POS" {
+			// artificially wait a bit before sending back the error
+			// this guards against tightlooping when the client hammers the server with invalid requests,
+			// but not for M_UNKNOWN_POS which we expect to send back after expiring a client's connection.
+			// We want to recover rapidly in that scenario, hence not sleeping.
+			time.Sleep(time.Second)
+		}
 		w.WriteHeader(herr.StatusCode)
 		w.Write(herr.JSON())
 	}
@@ -184,6 +195,16 @@ func (h *SyncLiveHandler) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 
 // Entry point for sync v3
 func (h *SyncLiveHandler) serve(w http.ResponseWriter, req *http.Request) error {
+	start := time.Now()
+	defer func() {
+		dur := time.Since(start)
+		if dur > 50*time.Second {
+			if h.slowReqs != nil {
+				h.slowReqs.Add(1.0)
+			}
+			internal.DecorateLogger(req.Context(), log.Warn()).Dur("duration", dur).Msg("slow request")
+		}
+	}()
 	var requestBody sync3.Request
 	if req.ContentLength != 0 {
 		defer req.Body.Close()
@@ -233,7 +254,6 @@ func (h *SyncLiveHandler) serve(w http.ResponseWriter, req *http.Request) error 
 		return herr
 	}
 	requestBody.SetPos(cpos)
-	internal.SetRequestContextUserID(req.Context(), conn.UserID)
 	log := hlog.FromRequest(req).With().Str("user", conn.UserID).Int64("pos", cpos).Logger()
 
 	var timeout int
@@ -250,7 +270,7 @@ func (h *SyncLiveHandler) serve(w http.ResponseWriter, req *http.Request) error 
 	requestBody.SetTimeoutMSecs(timeout)
 	log.Trace().Int("timeout", timeout).Msg("recv")
 
-	resp, herr := conn.OnIncomingRequest(req.Context(), &requestBody)
+	resp, herr := conn.OnIncomingRequest(req.Context(), &requestBody, start)
 	if herr != nil {
 		logErrorOrWarning("failed to OnIncomingRequest", herr)
 		return herr
@@ -271,7 +291,7 @@ func (h *SyncLiveHandler) serve(w http.ResponseWriter, req *http.Request) error 
 	}
 	internal.SetRequestContextResponseInfo(
 		req.Context(), cpos, resp.PosInt(), len(resp.Rooms), requestBody.TxnID, numToDeviceEvents, numGlobalAccountData,
-		numChangedDevices, numLeftDevices,
+		numChangedDevices, numLeftDevices, requestBody.ConnID, len(requestBody.Lists), len(requestBody.RoomSubscriptions), len(requestBody.UnsubscribeRooms),
 	)
 
 	w.Header().Set("Content-Type", "application/json")
@@ -302,6 +322,8 @@ func (h *SyncLiveHandler) serve(w http.ResponseWriter, req *http.Request) error 
 // When this function returns, the connection is alive and active.
 
 func (h *SyncLiveHandler) setupConnection(req *http.Request, syncReq *sync3.Request, containsPos bool) (*sync3.Conn, *internal.HandlerError) {
+	taskCtx, task := internal.StartTask(req.Context(), "setupConnection")
+	defer task.End()
 	var conn *sync3.Conn
 	// Extract an access token
 	accessToken, err := internal.ExtractAccessToken(req)
@@ -333,6 +355,8 @@ func (h *SyncLiveHandler) setupConnection(req *http.Request, syncReq *sync3.Requ
 		}
 	}
 	log := hlog.FromRequest(req).With().Str("user", token.UserID).Str("device", token.DeviceID).Logger()
+	internal.SetRequestContextUserID(req.Context(), token.UserID, token.DeviceID)
+	internal.Logf(taskCtx, "setupConnection", "identified access token as user=%s device=%s", token.UserID, token.DeviceID)
 
 	// Record the fact that we've recieved a request from this token
 	err = h.V2Store.TokensTable.MaybeUpdateLastSeen(token, time.Now())
@@ -358,9 +382,9 @@ func (h *SyncLiveHandler) setupConnection(req *http.Request, syncReq *sync3.Requ
 		return nil, internal.ExpiredSessionError()
 	}
 
-	log.Trace().Msg("checking poller exists and is running")
 	pid := sync2.PollerID{UserID: token.UserID, DeviceID: token.DeviceID}
-	h.EnsurePoller.EnsurePolling(pid, token.AccessTokenHash)
+	log.Trace().Any("pid", pid).Msg("checking poller exists and is running")
+	h.EnsurePoller.EnsurePolling(req.Context(), pid, token.AccessTokenHash)
 	log.Trace().Msg("poller exists and is running")
 	// this may take a while so if the client has given up (e.g timed out) by this point, just stop.
 	// We'll be quicker next time as the poller will already exist.
@@ -382,7 +406,7 @@ func (h *SyncLiveHandler) setupConnection(req *http.Request, syncReq *sync3.Requ
 	}
 
 	// once we have the conn, make sure our metrics are correct
-	defer h.updateMetrics()
+	defer h.ConnMap.UpdateMetrics()
 
 	// Now the v2 side of things are running, we can make a v3 live sync conn
 	// NB: this isn't inherently racey (we did the check for an existing conn before EnsurePolling)
@@ -390,7 +414,7 @@ func (h *SyncLiveHandler) setupConnection(req *http.Request, syncReq *sync3.Requ
 	// to check for an existing connection though, as it's possible for the client to call /sync
 	// twice for a new connection.
 	conn, created := h.ConnMap.CreateConn(connID, func() sync3.ConnHandler {
-		return NewConnState(token.UserID, token.DeviceID, userCache, h.GlobalCache, h.Extensions, h.Dispatcher, h.histVec, h.maxPendingEventUpdates)
+		return NewConnState(token.UserID, token.DeviceID, userCache, h.GlobalCache, h.Extensions, h.Dispatcher, h.setupHistVec, h.histVec, h.maxPendingEventUpdates, h.maxTransactionIDDelay)
 	})
 	if created {
 		log.Info().Msg("created new connection")
@@ -420,14 +444,14 @@ func (h *SyncLiveHandler) identifyUnknownAccessToken(accessToken string, logger 
 	var token *sync2.Token
 	err = sqlutil.WithTransaction(h.V2Store.DB, func(txn *sqlx.Tx) error {
 		// Create a brand-new row for this token.
-		token, err = h.V2Store.TokensTable.Insert(accessToken, userID, deviceID, time.Now())
+		token, err = h.V2Store.TokensTable.Insert(txn, accessToken, userID, deviceID, time.Now())
 		if err != nil {
 			logger.Warn().Err(err).Str("user", userID).Str("device", deviceID).Msg("failed to insert v2 token")
 			return err
 		}
 
 		// Ensure we have a device row for this token.
-		err = h.V2Store.DevicesTable.InsertDevice(userID, deviceID)
+		err = h.V2Store.DevicesTable.InsertDevice(txn, userID, deviceID)
 		if err != nil {
 			log.Warn().Err(err).Str("user", userID).Str("device", deviceID).Msg("failed to insert v2 device")
 			return err
@@ -601,7 +625,11 @@ func (h *SyncLiveHandler) Accumulate(p *pubsub.V2Accumulate) {
 func (h *SyncLiveHandler) OnTransactionID(p *pubsub.V2TransactionID) {
 	_, task := internal.StartTask(context.Background(), "TransactionID")
 	defer task.End()
-	// TODO implement me
+
+	// There is some event E for which we now have a transaction ID, or else now know
+	// that we will never get a transaction ID. In either case, tell the sender's
+	// connections to unblock that event in the transaction ID waiter.
+	h.ConnMap.ClearUpdateQueues(p.UserID, p.RoomID, p.NID)
 }
 
 // Called from the v2 poller, implements V2DataReceiver
@@ -632,9 +660,14 @@ func (h *SyncLiveHandler) OnUnreadCounts(p *pubsub.V2UnreadCounts) {
 func (h *SyncLiveHandler) OnDeviceData(p *pubsub.V2DeviceData) {
 	ctx, task := internal.StartTask(context.Background(), "OnDeviceData")
 	defer task.End()
-	conns := h.ConnMap.Conns(p.UserID, p.DeviceID)
-	for _, conn := range conns {
-		conn.OnUpdate(ctx, caches.DeviceDataUpdate{})
+	internal.Logf(ctx, "device_data", fmt.Sprintf("%v users to notify", len(p.UserIDToDeviceIDs)))
+	for userID, deviceIDs := range p.UserIDToDeviceIDs {
+		for _, deviceID := range deviceIDs {
+			conns := h.ConnMap.Conns(userID, deviceID)
+			for _, conn := range conns {
+				conn.OnUpdate(ctx, caches.DeviceDataUpdate{})
+			}
+		}
 	}
 }
 

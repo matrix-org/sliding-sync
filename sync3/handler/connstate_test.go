@@ -107,7 +107,7 @@ func TestConnStateInitial(t *testing.T) {
 		}
 		return result
 	}
-	cs := NewConnState(userID, deviceID, userCache, globalCache, &NopExtensionHandler{}, &NopJoinTracker{}, nil, 1000)
+	cs := NewConnState(userID, deviceID, userCache, globalCache, &NopExtensionHandler{}, &NopJoinTracker{}, nil, nil, 1000, 0)
 	if userID != cs.UserID() {
 		t.Fatalf("UserID returned wrong value, got %v want %v", cs.UserID(), userID)
 	}
@@ -118,7 +118,7 @@ func TestConnStateInitial(t *testing.T) {
 				{0, 9},
 			}),
 		}},
-	}, false)
+	}, false, time.Now())
 	if err != nil {
 		t.Fatalf("OnIncomingRequest returned error : %s", err)
 	}
@@ -168,7 +168,7 @@ func TestConnStateInitial(t *testing.T) {
 				{0, 9},
 			}),
 		}},
-	}, false)
+	}, false, time.Now())
 	if err != nil {
 		t.Fatalf("OnIncomingRequest returned error : %s", err)
 	}
@@ -206,7 +206,7 @@ func TestConnStateInitial(t *testing.T) {
 				{0, 9},
 			}),
 		}},
-	}, false)
+	}, false, time.Now())
 	if err != nil {
 		t.Fatalf("OnIncomingRequest returned error : %s", err)
 	}
@@ -272,7 +272,7 @@ func TestConnStateMultipleRanges(t *testing.T) {
 	userCache.LazyRoomDataOverride = mockLazyRoomOverride
 	dispatcher.Register(context.Background(), userCache.UserID, userCache)
 	dispatcher.Register(context.Background(), sync3.DispatcherAllUsers, globalCache)
-	cs := NewConnState(userID, deviceID, userCache, globalCache, &NopExtensionHandler{}, &NopJoinTracker{}, nil, 1000)
+	cs := NewConnState(userID, deviceID, userCache, globalCache, &NopExtensionHandler{}, &NopJoinTracker{}, nil, nil, 1000, 0)
 
 	// request first page
 	res, err := cs.OnIncomingRequest(context.Background(), ConnID, &sync3.Request{
@@ -282,7 +282,7 @@ func TestConnStateMultipleRanges(t *testing.T) {
 				{0, 2},
 			}),
 		}},
-	}, false)
+	}, false, time.Now())
 	if err != nil {
 		t.Fatalf("OnIncomingRequest returned error : %s", err)
 	}
@@ -308,7 +308,7 @@ func TestConnStateMultipleRanges(t *testing.T) {
 				{0, 2}, {4, 6},
 			}),
 		}},
-	}, false)
+	}, false, time.Now())
 	if err != nil {
 		t.Fatalf("OnIncomingRequest returned error : %s", err)
 	}
@@ -343,7 +343,7 @@ func TestConnStateMultipleRanges(t *testing.T) {
 				{0, 2}, {4, 6},
 			}),
 		}},
-	}, false)
+	}, false, time.Now())
 	if err != nil {
 		t.Fatalf("OnIncomingRequest returned error : %s", err)
 	}
@@ -383,7 +383,7 @@ func TestConnStateMultipleRanges(t *testing.T) {
 				{0, 2}, {4, 6},
 			}),
 		}},
-	}, false)
+	}, false, time.Now())
 	if err != nil {
 		t.Fatalf("OnIncomingRequest returned error : %s", err)
 	}
@@ -451,7 +451,7 @@ func TestBumpToOutsideRange(t *testing.T) {
 	userCache.LazyRoomDataOverride = mockLazyRoomOverride
 	dispatcher.Register(context.Background(), userCache.UserID, userCache)
 	dispatcher.Register(context.Background(), sync3.DispatcherAllUsers, globalCache)
-	cs := NewConnState(userID, deviceID, userCache, globalCache, &NopExtensionHandler{}, &NopJoinTracker{}, nil, 1000)
+	cs := NewConnState(userID, deviceID, userCache, globalCache, &NopExtensionHandler{}, &NopJoinTracker{}, nil, nil, 1000, 0)
 	// Ask for A,B
 	res, err := cs.OnIncomingRequest(context.Background(), ConnID, &sync3.Request{
 		Lists: map[string]sync3.RequestList{"a": {
@@ -460,7 +460,7 @@ func TestBumpToOutsideRange(t *testing.T) {
 				{0, 1},
 			}),
 		}},
-	}, false)
+	}, false, time.Now())
 	if err != nil {
 		t.Fatalf("OnIncomingRequest returned error : %s", err)
 	}
@@ -495,7 +495,7 @@ func TestBumpToOutsideRange(t *testing.T) {
 				{0, 1},
 			}),
 		}},
-	}, false)
+	}, false, time.Now())
 	if err != nil {
 		t.Fatalf("OnIncomingRequest returned error : %s", err)
 	}
@@ -562,7 +562,7 @@ func TestConnStateRoomSubscriptions(t *testing.T) {
 	}
 	dispatcher.Register(context.Background(), userCache.UserID, userCache)
 	dispatcher.Register(context.Background(), sync3.DispatcherAllUsers, globalCache)
-	cs := NewConnState(userID, deviceID, userCache, globalCache, &NopExtensionHandler{}, &NopJoinTracker{}, nil, 1000)
+	cs := NewConnState(userID, deviceID, userCache, globalCache, &NopExtensionHandler{}, &NopJoinTracker{}, nil, nil, 1000, 0)
 	// subscribe to room D
 	res, err := cs.OnIncomingRequest(context.Background(), ConnID, &sync3.Request{
 		RoomSubscriptions: map[string]sync3.RoomSubscription{
@@ -576,7 +576,7 @@ func TestConnStateRoomSubscriptions(t *testing.T) {
 				{0, 1},
 			}),
 		}},
-	}, false)
+	}, false, time.Now())
 	if err != nil {
 		t.Fatalf("OnIncomingRequest returned error : %s", err)
 	}
@@ -630,7 +630,7 @@ func TestConnStateRoomSubscriptions(t *testing.T) {
 				{0, 1},
 			}),
 		}},
-	}, false)
+	}, false, time.Now())
 	if err != nil {
 		t.Fatalf("OnIncomingRequest returned error : %s", err)
 	}
@@ -664,7 +664,7 @@ func TestConnStateRoomSubscriptions(t *testing.T) {
 				{0, 1},
 			}),
 		}},
-	}, false)
+	}, false, time.Now())
 	if err != nil {
 		t.Fatalf("OnIncomingRequest returned error : %s", err)
 	}

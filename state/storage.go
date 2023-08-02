@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"os"
 	"strings"
-	"time"
 
 	"github.com/getsentry/sentry-go"
 
@@ -58,9 +57,10 @@ func NewStorage(postgresURI string) *Storage {
 		// TODO: if we panic(), will sentry have a chance to flush the event?
 		logger.Panic().Err(err).Str("uri", postgresURI).Msg("failed to open SQL DB")
 	}
-	db.SetMaxOpenConns(100)
-	db.SetMaxIdleConns(80)
-	db.SetConnMaxLifetime(time.Hour)
+	return NewStorageWithDB(db)
+}
+
+func NewStorageWithDB(db *sqlx.DB) *Storage {
 	acc := &Accumulator{
 		db:            db,
 		roomsTable:    NewRoomsTable(db),
@@ -178,26 +178,12 @@ func (s *Storage) GlobalSnapshot() (ss StartupSnapshot, err error) {
 
 // Extract hero info for all rooms. Requires a prepared snapshot in order to be called.
 func (s *Storage) MetadataForAllRooms(txn *sqlx.Tx, tempTableName string, result map[string]internal.RoomMetadata) error {
-	// Select the invited member counts
-	rows, err := txn.Query(`
-	SELECT room_id, count(state_key) FROM syncv3_events INNER JOIN ` + tempTableName + ` ON membership_nid=event_nid
-		WHERE (membership='_invite' OR membership = 'invite') AND event_type='m.room.member' GROUP BY room_id`)
-	if err != nil {
-		return err
-	}
-	defer rows.Close()
-	for rows.Next() {
-		var roomID string
-		var inviteCount int
-		if err := rows.Scan(&roomID, &inviteCount); err != nil {
-			return err
-		}
+	loadMetadata := func(roomID string) internal.RoomMetadata {
 		metadata, ok := result[roomID]
 		if !ok {
 			metadata = *internal.NewRoomMetadata(roomID)
 		}
-		metadata.InviteCount = inviteCount
-		result[roomID] = metadata
+		return metadata
 	}
 
 	// work out latest timestamps
@@ -206,10 +192,8 @@ func (s *Storage) MetadataForAllRooms(txn *sqlx.Tx, tempTableName string, result
 		return err
 	}
 	for _, ev := range events {
-		metadata, ok := result[ev.RoomID]
-		if !ok {
-			metadata = *internal.NewRoomMetadata(ev.RoomID)
-		}
+		metadata := loadMetadata(ev.RoomID)
+
 		// For a given room, we'll see many events (one for each event type in the
 		// room's state). We need to pick the largest of these events' timestamps here.
 		ts := gjson.ParseBytes(ev.JSON).Get("origin_server_ts").Uint()
@@ -232,68 +216,32 @@ func (s *Storage) MetadataForAllRooms(txn *sqlx.Tx, tempTableName string, result
 
 	// Select the name / canonical alias for all rooms
 	roomIDToStateEvents, err := s.currentNotMembershipStateEventsInAllRooms(txn, []string{
-		"m.room.name", "m.room.canonical_alias",
+		"m.room.name", "m.room.canonical_alias", "m.room.avatar",
 	})
 	if err != nil {
 		return fmt.Errorf("failed to load state events for all rooms: %s", err)
 	}
 	for roomID, stateEvents := range roomIDToStateEvents {
-		metadata := result[roomID]
+		metadata := loadMetadata(roomID)
 		for _, ev := range stateEvents {
 			if ev.Type == "m.room.name" && ev.StateKey == "" {
 				metadata.NameEvent = gjson.ParseBytes(ev.JSON).Get("content.name").Str
 			} else if ev.Type == "m.room.canonical_alias" && ev.StateKey == "" {
 				metadata.CanonicalAlias = gjson.ParseBytes(ev.JSON).Get("content.alias").Str
+			} else if ev.Type == "m.room.avatar" && ev.StateKey == "" {
+				metadata.AvatarEvent = gjson.ParseBytes(ev.JSON).Get("content.url").Str
 			}
 		}
 		result[roomID] = metadata
 	}
 
-	// Select the most recent members for each room to serve as Heroes. The spec is ambiguous here:
-	// "This should be the first 5 members of the room, ordered by stream ordering, which are joined or invited."
-	// Unclear if this is the first 5 *most recent* (backwards) or forwards. For now we'll use the most recent
-	// ones, and select 6 of them so we can always use 5 no matter who is requesting the room name.
-	rows, err = txn.Query(`
-	SELECT rf.* FROM (
-		SELECT room_id, event, rank() OVER (
-			PARTITION BY room_id ORDER BY event_nid DESC
-		) FROM syncv3_events INNER JOIN ` + tempTableName + ` ON membership_nid=event_nid WHERE (
-			membership='join' OR membership='invite' OR membership='_join'
-		) AND event_type='m.room.member'
-	) rf WHERE rank <= 6;`)
-	if err != nil {
-		return fmt.Errorf("failed to query heroes: %s", err)
-	}
-	defer rows.Close()
-	seen := map[string]bool{}
-	for rows.Next() {
-		var roomID string
-		var event json.RawMessage
-		var rank int
-		if err := rows.Scan(&roomID, &event, &rank); err != nil {
-			return err
-		}
-		ev := gjson.ParseBytes(event)
-		targetUser := ev.Get("state_key").Str
-		key := roomID + " " + targetUser
-		if seen[key] {
-			continue
-		}
-		seen[key] = true
-		metadata := result[roomID]
-		metadata.Heroes = append(metadata.Heroes, internal.Hero{
-			ID:   targetUser,
-			Name: ev.Get("content.displayname").Str,
-		})
-		result[roomID] = metadata
-	}
 	roomInfos, err := s.Accumulator.roomsTable.SelectRoomInfos(txn)
 	if err != nil {
 		return fmt.Errorf("failed to select room infos: %s", err)
 	}
 	var spaceRoomIDs []string
 	for _, info := range roomInfos {
-		metadata := result[info.ID]
+		metadata := loadMetadata(info.ID)
 		metadata.Encrypted = info.IsEncrypted
 		metadata.UpgradedRoomID = info.UpgradedRoomID
 		metadata.PredecessorRoomID = info.PredecessorRoomID
@@ -310,7 +258,13 @@ func (s *Storage) MetadataForAllRooms(txn *sqlx.Tx, tempTableName string, result
 		return fmt.Errorf("failed to select space children: %s", err)
 	}
 	for roomID, relations := range spaceRoomToRelations {
-		metadata := result[roomID]
+		if _, exists := result[roomID]; !exists {
+			// this can happen when you join a space (so it populates the spaces table) then leave the space,
+			// so there are no joined members in the space so result doesn't include the room. In this case,
+			// we don't want to have a stub metadata with just the space children, so skip it.
+			continue
+		}
+		metadata := loadMetadata(roomID)
 		metadata.ChildSpaceRooms = make(map[string]struct{}, len(relations))
 		for _, r := range relations {
 			// For now we only honour child state events, but we store all the mappings just in case.
@@ -545,7 +499,7 @@ func (s *Storage) RoomStateAfterEventPosition(ctx context.Context, roomIDs []str
 			if err != nil {
 				return fmt.Errorf("failed to form sql query: %s", err)
 			}
-			rows, err := s.Accumulator.db.Query(s.Accumulator.db.Rebind(query), args...)
+			rows, err := txn.Query(txn.Rebind(query), args...)
 			if err != nil {
 				return fmt.Errorf("failed to execute query: %s", err)
 			}
@@ -630,7 +584,7 @@ func (s *Storage) LatestEventsInRooms(userID string, roomIDs []string, to int64,
 			}
 			if earliestEventNID != 0 {
 				// the oldest event needs a prev batch token, so find one now
-				prevBatch, err := s.EventsTable.SelectClosestPrevBatch(roomID, earliestEventNID)
+				prevBatch, err := s.EventsTable.SelectClosestPrevBatch(txn, roomID, earliestEventNID)
 				if err != nil {
 					return fmt.Errorf("failed to select prev_batch for room %s : %s", roomID, err)
 				}
@@ -810,32 +764,121 @@ func (s *Storage) RoomMembershipDelta(roomID string, from, to int64, limit int) 
 }
 
 // Extract all rooms with joined members, and include the joined user list. Requires a prepared snapshot in order to be called.
-func (s *Storage) AllJoinedMembers(txn *sqlx.Tx, tempTableName string) (result map[string][]string, metadata map[string]internal.RoomMetadata, err error) {
+// Populates the join/invite count and heroes for the returned metadata.
+func (s *Storage) AllJoinedMembers(txn *sqlx.Tx, tempTableName string) (joinedMembers map[string][]string, metadata map[string]internal.RoomMetadata, err error) {
+	// Select the most recent members for each room to serve as Heroes. The spec is ambiguous here:
+	// "This should be the first 5 members of the room, ordered by stream ordering, which are joined or invited."
+	// Unclear if this is the first 5 *most recent* (backwards) or forwards. For now we'll use the most recent
+	// ones, and select 6 of them so we can always use 5 no matter who is requesting the room name.
 	rows, err := txn.Query(
-		`SELECT room_id, state_key from ` + tempTableName + ` INNER JOIN syncv3_events on membership_nid = event_nid WHERE membership='join' OR membership='_join' ORDER BY event_nid ASC`,
+		`SELECT membership_nid, room_id, state_key, membership from ` + tempTableName + ` INNER JOIN syncv3_events
+		on membership_nid = event_nid WHERE membership='join' OR membership='_join' OR membership='invite' OR membership='_invite' ORDER BY event_nid ASC`,
 	)
 	if err != nil {
 		return nil, nil, err
 	}
 	defer rows.Close()
-	result = make(map[string][]string)
+	joinedMembers = make(map[string][]string)
+	inviteCounts := make(map[string]int)
+	heroNIDs := make(map[string]*circularSlice)
+	var stateKey string
+	var membership string
 	var roomID string
-	var joinedUserID string
+	var nid int64
 	for rows.Next() {
-		if err := rows.Scan(&roomID, &joinedUserID); err != nil {
+		if err := rows.Scan(&nid, &roomID, &stateKey, &membership); err != nil {
 			return nil, nil, err
 		}
-		users := result[roomID]
-		users = append(users, joinedUserID)
-		result[roomID] = users
+		heroes := heroNIDs[roomID]
+		if heroes == nil {
+			heroes = &circularSlice{max: 6}
+			heroNIDs[roomID] = heroes
+		}
+		switch membership {
+		case "join":
+			fallthrough
+		case "_join":
+			users := joinedMembers[roomID]
+			users = append(users, stateKey)
+			joinedMembers[roomID] = users
+			heroes.append(nid)
+		case "invite":
+			fallthrough
+		case "_invite":
+			inviteCounts[roomID] = inviteCounts[roomID] + 1
+			heroes.append(nid)
+		}
 	}
+
+	// now select the membership events for the heroes
+	var allHeroNIDs []int64
+	for _, nids := range heroNIDs {
+		allHeroNIDs = append(allHeroNIDs, nids.vals...)
+	}
+	heroEvents, err := s.EventsTable.SelectByNIDs(txn, true, allHeroNIDs)
+	if err != nil {
+		return nil, nil, err
+	}
+	heroes := make(map[string][]internal.Hero)
+	// loop backwards so the most recent hero is first in the hero list
+	for i := len(heroEvents) - 1; i >= 0; i-- {
+		ev := heroEvents[i]
+		evJSON := gjson.ParseBytes(ev.JSON)
+		roomHeroes := heroes[ev.RoomID]
+		roomHeroes = append(roomHeroes, internal.Hero{
+			ID:     ev.StateKey,
+			Name:   evJSON.Get("content.displayname").Str,
+			Avatar: evJSON.Get("content.avatar_url").Str,
+		})
+		heroes[ev.RoomID] = roomHeroes
+	}
+
 	metadata = make(map[string]internal.RoomMetadata)
-	for roomID, joinedMembers := range result {
+	for roomID, members := range joinedMembers {
 		m := internal.NewRoomMetadata(roomID)
-		m.JoinCount = len(joinedMembers)
+		m.JoinCount = len(members)
+		m.InviteCount = inviteCounts[roomID]
+		m.Heroes = heroes[roomID]
 		metadata[roomID] = *m
 	}
-	return result, metadata, nil
+	return joinedMembers, metadata, nil
+}
+
+func (s *Storage) LatestEventNIDInRooms(roomIDs []string, highestNID int64) (roomToNID map[string]int64, err error) {
+	roomToNID = make(map[string]int64)
+	err = sqlutil.WithTransaction(s.Accumulator.db, func(txn *sqlx.Tx) error {
+		// Pull out the latest nids for all the rooms. If they are < highestNID then use them, else we need to query the
+		// events table (slow) for the latest nid in this room which is < highestNID.
+		fastRoomToLatestNIDs, err := s.Accumulator.roomsTable.LatestNIDs(txn, roomIDs)
+		if err != nil {
+			return err
+		}
+		var slowRooms []string
+		for _, roomID := range roomIDs {
+			nid := fastRoomToLatestNIDs[roomID]
+			if nid > 0 && nid <= highestNID {
+				roomToNID[roomID] = nid
+			} else {
+				// we need to do a slow query for this
+				slowRooms = append(slowRooms, roomID)
+			}
+		}
+
+		if len(slowRooms) == 0 {
+			return nil // no work to do
+		}
+		logger.Warn().Int("slow_rooms", len(slowRooms)).Msg("LatestEventNIDInRooms: pos value provided is far behind the database copy, performance degraded")
+
+		slowRoomToLatestNIDs, err := s.EventsTable.LatestEventNIDInRooms(txn, slowRooms, highestNID)
+		if err != nil {
+			return err
+		}
+		for roomID, nid := range slowRoomToLatestNIDs {
+			roomToNID[roomID] = nid
+		}
+		return nil
+	})
+	return roomToNID, err
 }
 
 // Returns a map from joined room IDs to EventMetadata, which is nil iff a non-nil error
@@ -894,4 +937,28 @@ func (s *Storage) Teardown() {
 	if err != nil {
 		panic("Storage.Teardown: " + err.Error())
 	}
+}
+
+// circularSlice is a slice which can be appended to which will wraparound at `max`.
+// Mostly useful for lazily calculating heroes. The values returned aren't sorted.
+type circularSlice struct {
+	i    int
+	vals []int64
+	max  int
+}
+
+func (s *circularSlice) append(val int64) {
+	if len(s.vals) < s.max {
+		// populate up to max
+		s.vals = append(s.vals, val)
+		s.i++
+		return
+	}
+	// wraparound
+	if s.i == s.max {
+		s.i = 0
+	}
+	// replace this entry
+	s.vals[s.i] = val
+	s.i++
 }

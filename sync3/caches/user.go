@@ -46,10 +46,18 @@ type UserRoomData struct {
 	// The zero value of this safe to use (0 latest nid, no prev batch, no timeline).
 	RequestedLatestEvents state.LatestEvents
 
-	// TODO: should Canonicalised really be in RoomConMetadata? It's only set in SetRoom AFAICS
+	// TODO: should CanonicalisedName really be in RoomConMetadata? It's only set in SetRoom AFAICS
 	CanonicalisedName string // stripped leading symbols like #, all in lower case
 	// Set of spaces this room is a part of, from the perspective of this user. This is NOT global room data
 	// as the set of spaces may be different for different users.
+
+	// ResolvedAvatarURL is the avatar that should be displayed to this user to
+	// represent this room. The empty string means that this room has no avatar.
+	// Avatars set in m.room.avatar take precedence; if this is missing and the room is
+	// a DM with one other user joined or invited, we fall back to that user's
+	// avatar (if any) as specified in their membership event in that room.
+	ResolvedAvatarURL string
+
 	Spaces map[string]struct{}
 	// Map of tag to order float.
 	// See https://spec.matrix.org/latest/client-server-api/#room-tagging
@@ -73,6 +81,7 @@ type InviteData struct {
 	Heroes               []internal.Hero
 	InviteEvent          *EventData
 	NameEvent            string // the content of m.room.name, NOT the calculated name
+	AvatarEvent          string // the content of m.room.avatar, NOT the calculated avatar
 	CanonicalAlias       string
 	LastMessageTimestamp uint64
 	Encrypted            bool
@@ -108,12 +117,15 @@ func NewInviteData(ctx context.Context, userID, roomID string, inviteState []jso
 				id.IsDM = j.Get("is_direct").Bool()
 			} else if target == j.Get("sender").Str {
 				id.Heroes = append(id.Heroes, internal.Hero{
-					ID:   target,
-					Name: j.Get("content.displayname").Str,
+					ID:     target,
+					Name:   j.Get("content.displayname").Str,
+					Avatar: j.Get("content.avatar_url").Str,
 				})
 			}
 		case "m.room.name":
 			id.NameEvent = j.Get("content.name").Str
+		case "m.room.avatar":
+			id.AvatarEvent = j.Get("content.url").Str
 		case "m.room.canonical_alias":
 			id.CanonicalAlias = j.Get("content.alias").Str
 		case "m.room.encryption":
@@ -147,6 +159,7 @@ func (i *InviteData) RoomMetadata() *internal.RoomMetadata {
 	metadata := internal.NewRoomMetadata(i.roomID)
 	metadata.Heroes = i.Heroes
 	metadata.NameEvent = i.NameEvent
+	metadata.AvatarEvent = i.AvatarEvent
 	metadata.CanonicalAlias = i.CanonicalAlias
 	metadata.InviteCount = 1
 	metadata.JoinCount = 1
@@ -212,7 +225,7 @@ func (c *UserCache) Unsubscribe(id int) {
 // OnRegistered is called after the sync3.Dispatcher has successfully registered this
 // cache to receive updates. We use this to run some final initialisation logic that
 // is sensitive to race conditions; confusingly, most of the initialisation is driven
-// externally by sync3.SyncLiveHandler.userCache. It's importatn that we don't spend too
+// externally by sync3.SyncLiveHandler.userCaches. It's important that we don't spend too
 // long inside this function, because it is called within a global lock on the
 // sync3.Dispatcher (see sync3.Dispatcher.Register).
 func (c *UserCache) OnRegistered(ctx context.Context) error {
@@ -328,7 +341,10 @@ func (c *UserCache) LoadRoomData(roomID string) UserRoomData {
 }
 
 type roomUpdateCache struct {
-	roomID         string
+	roomID string
+	// globalRoomData is a snapshot of the global metadata for this room immediately
+	// after this update. It is a copy, specific to the given user whose Heroes
+	// field can be freely modified.
 	globalRoomData *internal.RoomMetadata
 	userRoomData   *UserRoomData
 }
@@ -393,8 +409,16 @@ func (c *UserCache) AnnotateWithTransactionIDs(ctx context.Context, userID strin
 		i      int
 	})
 	for roomID, events := range roomIDToEvents {
-		for i, ev := range events {
-			evID := gjson.GetBytes(ev, "event_id").Str
+		for i, evJSON := range events {
+			ev := gjson.ParseBytes(evJSON)
+			evID := ev.Get("event_id").Str
+			sender := ev.Get("sender").Str
+			if sender != userID {
+				// don't ask for txn IDs for events which weren't sent by us.
+				// If we do, we'll needlessly hit the database, increasing latencies when
+				// catching up from the live buffer.
+				continue
+			}
 			eventIDs = append(eventIDs, evID)
 			eventIDToEvent[evID] = struct {
 				roomID string
@@ -404,6 +428,10 @@ func (c *UserCache) AnnotateWithTransactionIDs(ctx context.Context, userID strin
 				i:      i,
 			}
 		}
+	}
+	if len(eventIDs) == 0 {
+		// don't do any work if we have no events
+		return roomIDToEvents
 	}
 	eventIDToTxnID := c.txnIDs.TransactionIDForEvents(userID, deviceID, eventIDs)
 	for eventID, txnID := range eventIDToTxnID {

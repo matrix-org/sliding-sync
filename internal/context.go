@@ -2,6 +2,8 @@ package internal
 
 import (
 	"context"
+	"fmt"
+
 	"github.com/getsentry/sentry-go"
 
 	"github.com/rs/zerolog"
@@ -16,6 +18,9 @@ var (
 // logging metadata for a single request
 type data struct {
 	userID               string
+	deviceID             string
+	bufferSummary        string
+	connID               string
 	since                int64
 	next                 int64
 	numRooms             int
@@ -24,6 +29,9 @@ type data struct {
 	numGlobalAccountData int
 	numChangedDevices    int
 	numLeftDevices       int
+	numLists             int
+	roomSubs             int
+	roomUnsubs           int
 }
 
 // prepare a request context so it can contain syncv3 info
@@ -37,13 +45,14 @@ func RequestContext(ctx context.Context) context.Context {
 }
 
 // add the user ID to this request context. Need to have called RequestContext first.
-func SetRequestContextUserID(ctx context.Context, userID string) {
+func SetRequestContextUserID(ctx context.Context, userID, deviceID string) {
 	d := ctx.Value(ctxData)
 	if d == nil {
 		return
 	}
 	da := d.(*data)
 	da.userID = userID
+	da.deviceID = deviceID
 	if hub := sentry.GetHubFromContext(ctx); hub != nil {
 		sentry.ConfigureScope(func(scope *sentry.Scope) {
 			scope.SetUser(sentry.User{Username: userID})
@@ -51,9 +60,18 @@ func SetRequestContextUserID(ctx context.Context, userID string) {
 	}
 }
 
+func SetConnBufferInfo(ctx context.Context, bufferLen, nextLen, bufferCap int) {
+	d := ctx.Value(ctxData)
+	if d == nil {
+		return
+	}
+	da := d.(*data)
+	da.bufferSummary = fmt.Sprintf("%d/%d/%d", bufferLen, nextLen, bufferCap)
+}
+
 func SetRequestContextResponseInfo(
 	ctx context.Context, since, next int64, numRooms int, txnID string, numToDeviceEvents, numGlobalAccountData int,
-	numChangedDevices, numLeftDevices int,
+	numChangedDevices, numLeftDevices int, connID string, numLists int, roomSubs, roomUnsubs int,
 ) {
 	d := ctx.Value(ctxData)
 	if d == nil {
@@ -68,6 +86,10 @@ func SetRequestContextResponseInfo(
 	da.numGlobalAccountData = numGlobalAccountData
 	da.numChangedDevices = numChangedDevices
 	da.numLeftDevices = numLeftDevices
+	da.connID = connID
+	da.numLists = numLists
+	da.roomSubs = roomSubs
+	da.roomUnsubs = roomUnsubs
 }
 
 func DecorateLogger(ctx context.Context, l *zerolog.Event) *zerolog.Event {
@@ -78,6 +100,9 @@ func DecorateLogger(ctx context.Context, l *zerolog.Event) *zerolog.Event {
 	da := d.(*data)
 	if da.userID != "" {
 		l = l.Str("u", da.userID)
+	}
+	if da.deviceID != "" {
+		l = l.Str("dev", da.deviceID)
 	}
 	if da.since >= 0 {
 		l = l.Int64("p", da.since)
@@ -103,5 +128,19 @@ func DecorateLogger(ctx context.Context, l *zerolog.Event) *zerolog.Event {
 	if da.numLeftDevices > 0 {
 		l = l.Int("dl-l", da.numLeftDevices)
 	}
+	if da.bufferSummary != "" {
+		l = l.Str("b", da.bufferSummary)
+	}
+	if da.roomSubs > 0 {
+		l = l.Int("sub", da.roomSubs)
+	}
+	if da.roomUnsubs > 0 {
+		l = l.Int("usub", da.roomUnsubs)
+	}
+	if da.numLists > 0 {
+		l = l.Int("l", da.numLists)
+	}
+	// always log the connection ID so we know when it isn't set
+	l = l.Str("c", da.connID)
 	return l
 }

@@ -1,10 +1,13 @@
 package syncv3_test
 
 import (
+	"fmt"
 	"testing"
+	"time"
 
 	"github.com/matrix-org/sliding-sync/sync3"
 	"github.com/matrix-org/sliding-sync/testutils/m"
+	"github.com/tidwall/gjson"
 )
 
 func TestNumLive(t *testing.T) {
@@ -125,4 +128,71 @@ func TestNumLive(t *testing.T) {
 			MatchRoomTimeline([]Event{{ID: eventID2}, {ID: eventID3}, {ID: eventID4}}),
 		},
 	}))
+}
+
+// Test that if you constantly change req params, we still see live traffic. It does this by:
+// - Creating 11 rooms.
+// - Hitting /sync with a range [0,1] then [0,2] then [0,3]. Each time this causes a new room to be returned.
+// - Interleaving each /sync request with genuine events sent into a room.
+// - ensuring we see the genuine events by the time we finish.
+func TestReqParamStarvation(t *testing.T) {
+	alice := registerNewUser(t)
+	bob := registerNewUser(t)
+	roomID := alice.CreateRoom(t, map[string]interface{}{
+		"preset": "public_chat",
+	})
+	numOtherRooms := 10
+	for i := 0; i < numOtherRooms; i++ {
+		bob.CreateRoom(t, map[string]interface{}{
+			"preset": "public_chat",
+		})
+	}
+	bob.JoinRoom(t, roomID, nil)
+	res := bob.SlidingSyncUntilMembership(t, "", roomID, bob, "join")
+
+	wantEventIDs := make(map[string]bool)
+	for i := 0; i < numOtherRooms; i++ {
+		res = bob.SlidingSync(t, sync3.Request{
+			Lists: map[string]sync3.RequestList{
+				"a": {
+					Ranges: sync3.SliceRanges{{0, int64(i)}}, // [0,0], [0,1], ... [0,9]
+				},
+			},
+		}, WithPos(res.Pos))
+
+		// mark off any event we see in wantEventIDs
+		for _, r := range res.Rooms {
+			for _, ev := range r.Timeline {
+				gotEventID := gjson.GetBytes(ev, "event_id").Str
+				wantEventIDs[gotEventID] = false
+			}
+		}
+
+		// send an event in the first few syncs to add to wantEventIDs
+		// We do this for the first few /syncs and don't dictate which response they should arrive
+		// in, as we do not know and cannot force the proxy to deliver the event in a particular response.
+		if i < 3 {
+			eventID := alice.SendEventSynced(t, roomID, Event{
+				Type: "m.room.message",
+				Content: map[string]interface{}{
+					"msgtype": "m.text",
+					"body":    fmt.Sprintf("msg %d", i),
+				},
+			})
+			wantEventIDs[eventID] = true
+		}
+
+		// it's possible the proxy won't see this event before the next /sync
+		// and that is the reason why we don't send it, as opposed to starvation.
+		// To try to counter this, sleep a bit. This is why we sleep on every cycle and
+		// why we send the events early on.
+		time.Sleep(50 * time.Millisecond)
+	}
+
+	// at this point wantEventIDs should all have false values if we got the events
+	for evID, unseen := range wantEventIDs {
+		if unseen {
+			t.Errorf("failed to see event %v", evID)
+		}
+	}
 }

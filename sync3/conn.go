@@ -14,7 +14,7 @@ import (
 // The amount of time to artificially wait if the server detects spamming clients. This time will
 // be added to responses when the server detects the same request being sent over and over e.g
 // /sync?pos=5 then /sync?pos=5 over and over. Likewise /sync without a ?pos=.
-var SpamProtectionInterval = time.Second
+var SpamProtectionInterval = 10 * time.Millisecond
 
 type ConnID struct {
 	UserID   string
@@ -30,8 +30,9 @@ type ConnHandler interface {
 	// Callback which is allowed to block as long as the context is active. Return the response
 	// to send back or an error. Errors of type *internal.HandlerError are inspected for the correct
 	// status code to send back.
-	OnIncomingRequest(ctx context.Context, cid ConnID, req *Request, isInitial bool) (*Response, error)
+	OnIncomingRequest(ctx context.Context, cid ConnID, req *Request, isInitial bool, start time.Time) (*Response, error)
 	OnUpdate(ctx context.Context, update caches.Update)
+	PublishEventsUpTo(roomID string, nid int64)
 	Destroy()
 	Alive() bool
 }
@@ -88,7 +89,7 @@ func (c *Conn) OnUpdate(ctx context.Context, update caches.Update) {
 // upwards but will NOT be logged to Sentry (neither here nor by the caller). Errors
 // should be reported to Sentry as close as possible to the point of creating the error,
 // to provide the best possible Sentry traceback.
-func (c *Conn) tryRequest(ctx context.Context, req *Request) (res *Response, err error) {
+func (c *Conn) tryRequest(ctx context.Context, req *Request, start time.Time) (res *Response, err error) {
 	// TODO: include useful information from the request in the sentry hub/context
 	// Might be better done in the caller though?
 	defer func() {
@@ -116,7 +117,7 @@ func (c *Conn) tryRequest(ctx context.Context, req *Request) (res *Response, err
 	ctx, task := internal.StartTask(ctx, taskType)
 	defer task.End()
 	internal.Logf(ctx, "connstate", "starting user=%v device=%v pos=%v", c.UserID, c.ConnID.DeviceID, req.pos)
-	return c.handler.OnIncomingRequest(ctx, c.ConnID, req, req.pos == 0)
+	return c.handler.OnIncomingRequest(ctx, c.ConnID, req, req.pos == 0, start)
 }
 
 func (c *Conn) isOutstanding(pos int64) bool {
@@ -132,7 +133,7 @@ func (c *Conn) isOutstanding(pos int64) bool {
 // If an error is returned, it will be logged by the caller and transmitted to the
 // client. It will NOT be reported to Sentry---this should happen as close as possible
 // to the creation of the error (or else Sentry cannot provide a meaningful traceback.)
-func (c *Conn) OnIncomingRequest(ctx context.Context, req *Request) (resp *Response, herr *internal.HandlerError) {
+func (c *Conn) OnIncomingRequest(ctx context.Context, req *Request, start time.Time) (resp *Response, herr *internal.HandlerError) {
 	c.cancelOutstandingRequestMu.Lock()
 	if c.cancelOutstandingRequest != nil {
 		c.cancelOutstandingRequest()
@@ -217,7 +218,7 @@ func (c *Conn) OnIncomingRequest(ctx context.Context, req *Request) (resp *Respo
 		req.SetTimeoutMSecs(1)
 	}
 
-	resp, err := c.tryRequest(ctx, req)
+	resp, err := c.tryRequest(ctx, req, start)
 	if err != nil {
 		herr, ok := err.(*internal.HandlerError)
 		if !ok {

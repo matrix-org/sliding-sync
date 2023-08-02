@@ -57,7 +57,7 @@ func (ev *Event) ensureFieldsSetOnEvent() error {
 	}
 	if ev.Type == "" {
 		typeResult := evJSON.Get("type")
-		if !typeResult.Exists() || typeResult.Str == "" {
+		if !typeResult.Exists() || typeResult.Type != gjson.String { // empty strings for 'type' are valid apparently
 			return fmt.Errorf("event JSON missing type key")
 		}
 		ev.Type = typeResult.Str
@@ -153,7 +153,7 @@ func (t *EventTable) SelectHighestNID() (highest int64, err error) {
 // we insert new events A and B in that order, then NID(A) < NID(B).
 func (t *EventTable) Insert(txn *sqlx.Tx, events []Event, checkFields bool) (map[string]int64, error) {
 	if checkFields {
-		ensureFieldsSet(events)
+		events = filterAndEnsureFieldsSet(events)
 	}
 	result := make(map[string]int64)
 	for i := range events {
@@ -317,10 +317,10 @@ func (t *EventTable) LatestEventInRooms(txn *sqlx.Tx, roomIDs []string, highestN
 	return
 }
 
-func (t *EventTable) LatestEventNIDInRooms(roomIDs []string, highestNID int64) (roomToNID map[string]int64, err error) {
+func (t *EventTable) LatestEventNIDInRooms(txn *sqlx.Tx, roomIDs []string, highestNID int64) (roomToNID map[string]int64, err error) {
 	// the position (event nid) may be for a random different room, so we need to find the highest nid <= this position for this room
 	var events []Event
-	err = t.db.Select(
+	err = txn.Select(
 		&events,
 		`SELECT event_nid, room_id FROM syncv3_events
 		WHERE event_nid IN (SELECT max(event_nid) FROM syncv3_events WHERE event_nid <= $1 AND room_id = ANY($2) GROUP BY room_id)`,
@@ -334,14 +334,6 @@ func (t *EventTable) LatestEventNIDInRooms(roomIDs []string, highestNID int64) (
 		roomToNID[ev.RoomID] = ev.NID
 	}
 	return
-}
-
-func (t *EventTable) SelectEventsBetween(txn *sqlx.Tx, roomID string, lowerExclusive, upperInclusive int64, limit int) ([]Event, error) {
-	var events []Event
-	err := txn.Select(&events, `SELECT event_nid, event FROM syncv3_events WHERE event_nid > $1 AND event_nid <= $2 AND room_id = $3 ORDER BY event_nid ASC LIMIT $4`,
-		lowerExclusive, upperInclusive, roomID, limit,
-	)
-	return events, err
 }
 
 func (t *EventTable) SelectLatestEventsBetween(txn *sqlx.Tx, roomID string, lowerExclusive, upperInclusive int64, limit int) ([]Event, error) {
@@ -438,8 +430,8 @@ func (t *EventTable) SelectClosestPrevBatchByID(roomID string, eventID string) (
 
 // Select the closest prev batch token for the provided event NID. Returns the empty string if there
 // is no closest.
-func (t *EventTable) SelectClosestPrevBatch(roomID string, eventNID int64) (prevBatch string, err error) {
-	err = t.db.QueryRow(
+func (t *EventTable) SelectClosestPrevBatch(txn *sqlx.Tx, roomID string, eventNID int64) (prevBatch string, err error) {
+	err = txn.QueryRow(
 		`SELECT prev_batch FROM syncv3_events WHERE prev_batch IS NOT NULL AND room_id=$1 AND event_nid >= $2 LIMIT 1`, roomID, eventNID,
 	).Scan(&prevBatch)
 	if err == sql.ErrNoRows {
@@ -457,14 +449,18 @@ func (c EventChunker) Subslice(i, j int) sqlutil.Chunker {
 	return c[i:j]
 }
 
-func ensureFieldsSet(events []Event) error {
+func filterAndEnsureFieldsSet(events []Event) []Event {
+	result := make([]Event, 0, len(events))
 	// ensure fields are set
 	for i := range events {
-		ev := events[i]
+		ev := &events[i]
 		if err := ev.ensureFieldsSetOnEvent(); err != nil {
-			return err
+			logger.Warn().Str("event_id", ev.ID).Err(err).Msg(
+				"filterAndEnsureFieldsSet: failed to parse event, ignoring",
+			)
+			continue
 		}
-		events[i] = ev
+		result = append(result, *ev)
 	}
-	return nil
+	return result
 }

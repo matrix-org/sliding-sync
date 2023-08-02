@@ -137,12 +137,9 @@ func TestRoomSubscriptionMisorderedTimeline(t *testing.T) {
 	})
 	m.MatchResponse(t, res, m.MatchRoomSubscriptionsStrict(map[string][]m.RoomMatcher{
 		room.roomID: {
-			// TODO: this is the correct result, but due to how timeline loading works currently
-			// it will be returning the last 5 events BEFORE D,E, which isn't ideal but also isn't
-			// incorrect per se due to the fact that clients don't know when D,E have been processed
-			// on the server.
-			// m.MatchRoomTimeline(append(abcInitialEvents, deLiveEvents...)),
-			m.MatchRoomTimeline(append(roomState[len(roomState)-2:], abcInitialEvents...)),
+			// we append live events AFTER processing the new timeline limit, so 7 events not 5.
+			// TODO: ideally we'd just return abcde here.
+			m.MatchRoomTimeline(append(roomState[len(roomState)-2:], append(abcInitialEvents, deLiveEvents...)...)),
 		},
 	}), m.LogResponse(t))
 
