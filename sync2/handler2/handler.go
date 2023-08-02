@@ -42,6 +42,7 @@ type Handler struct {
 	// room_id -> PollerID, stores which Poller is allowed to update typing notifications
 	typingHandler map[string]sync2.PollerID
 	typingMu      *sync.Mutex
+	PendingTxnIDs *sync2.PendingTransactionIDs
 
 	deviceDataTicker *sync2.DeviceDataTicker
 	e2eeWorkerPool   *internal.WorkerPool
@@ -65,6 +66,7 @@ func NewHandler(
 		}),
 		typingMu:         &sync.Mutex{},
 		typingHandler:    make(map[string]sync2.PollerID),
+		PendingTxnIDs:    sync2.NewPendingTransactionIDs(pMap.DeviceIDs),
 		deviceDataTicker: sync2.NewDeviceDataTicker(deviceDataUpdateDuration),
 		e2eeWorkerPool:   internal.NewWorkerPool(500), // TODO: assign as fraction of db max conns, not hardcoded
 	}
@@ -317,7 +319,7 @@ func (h *Handler) Accumulate(ctx context.Context, userID, deviceID, roomID, prev
 		for eventID, nid := range nidsByIDs {
 			txnID, ok := eventIDToTxnID[eventID]
 			if ok {
-				h.pMap.SeenTxnID(eventID)
+				h.PendingTxnIDs.SeenTxnID(eventID)
 				h.v2Pub.Notify(pubsub.ChanV2, &pubsub.V2TransactionID{
 					EventID:       eventID,
 					RoomID:        roomID,
@@ -327,7 +329,7 @@ func (h *Handler) Accumulate(ctx context.Context, userID, deviceID, roomID, prev
 					NID:           nid,
 				})
 			} else {
-				allClear, _ := h.pMap.MissingTxnID(eventID, userID, deviceID)
+				allClear, _ := h.PendingTxnIDs.MissingTxnID(eventID, userID, deviceID)
 				if allClear {
 					h.v2Pub.Notify(pubsub.ChanV2, &pubsub.V2TransactionID{
 						EventID:       eventID,

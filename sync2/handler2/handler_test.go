@@ -44,11 +44,7 @@ func (p *mockPollerMap) NumPollers() int {
 }
 func (p *mockPollerMap) Terminate() {}
 
-func (p *mockPollerMap) MissingTxnID(eventID, userID, deviceID string) (bool, error) {
-	return false, nil
-}
-
-func (p *mockPollerMap) SeenTxnID(eventID string) error {
+func (p *mockPollerMap) DeviceIDs(userID string) []string {
 	return nil
 }
 
@@ -60,6 +56,7 @@ func (p *mockPollerMap) EnsurePolling(pid sync2.PollerID, accessToken, v2since s
 		isStartup:   isStartup,
 	})
 }
+
 func (p *mockPollerMap) assertCallExists(t *testing.T, pi pollInfo) {
 	for _, c := range p.calls {
 		if reflect.DeepEqual(pi, c) {

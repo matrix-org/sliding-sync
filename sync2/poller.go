@@ -64,8 +64,7 @@ type IPollerMap interface {
 	EnsurePolling(pid PollerID, accessToken, v2since string, isStartup bool, logger zerolog.Logger)
 	NumPollers() int
 	Terminate()
-	MissingTxnID(eventID, userID, deviceID string) (bool, error)
-	SeenTxnID(eventID string) error
+	DeviceIDs(userID string) []string
 }
 
 // PollerMap is a map of device ID to Poller
@@ -74,7 +73,6 @@ type PollerMap struct {
 	callbacks                   V2DataReceiver
 	pollerMu                    *sync.Mutex
 	Pollers                     map[PollerID]*poller
-	pendingTxnIDs               *PendingTransactionIDs
 	executor                    chan func()
 	executorRunning             bool
 	processHistogramVec         *prometheus.HistogramVec
@@ -115,7 +113,6 @@ func NewPollerMap(v2Client Client, enablePrometheus bool) *PollerMap {
 		Pollers:  make(map[PollerID]*poller),
 		executor: make(chan func(), 0),
 	}
-	pm.pendingTxnIDs = NewPendingTransactionIDs(pm.deviceIDs)
 	if enablePrometheus {
 		pm.processHistogramVec = prometheus.NewHistogramVec(prometheus.HistogramOpts{
 			Namespace: "sliding_sync",
@@ -199,9 +196,9 @@ func (h *PollerMap) NumPollers() (count int) {
 	return
 }
 
-// deviceIDs returns the slice of all devices currently being polled for by this user.
+// DeviceIDs returns the slice of all devices currently being polled for by this user.
 // The return value is brand-new and is fully owned by the caller.
-func (h *PollerMap) deviceIDs(userID string) []string {
+func (h *PollerMap) DeviceIDs(userID string) []string {
 	h.pollerMu.Lock()
 	defer h.pollerMu.Unlock()
 	var devices []string
@@ -211,14 +208,6 @@ func (h *PollerMap) deviceIDs(userID string) []string {
 		}
 	}
 	return devices
-}
-
-func (h *PollerMap) MissingTxnID(eventID, userID, deviceID string) (bool, error) {
-	return h.pendingTxnIDs.MissingTxnID(eventID, userID, deviceID)
-}
-
-func (h *PollerMap) SeenTxnID(eventID string) error {
-	return h.pendingTxnIDs.SeenTxnID(eventID)
 }
 
 // EnsurePolling makes sure there is a poller for this device, making one if need be.
