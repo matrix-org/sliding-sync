@@ -152,7 +152,6 @@ jobs:
                   SYNCV3_DB: user=postgres dbname=syncv3 sslmode=disable password=postgres host=localhost
                   SYNCV3_SERVER: http://localhost:8008
                   SYNCV3_SECRET: itsasecret
-                  SYNCV3_PROM: :2112
                   SYNCV3_MAX_DB_CONN: ${{ matrix.max_db_conns }}
                   E2E_TEST_SERVER_STDOUT: test-e2e-server.log
 
