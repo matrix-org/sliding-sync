@@ -9,12 +9,18 @@ export SYNCV3_DEBUG=1
 SYNCV3_PID=$!
 trap "kill $SYNCV3_PID" EXIT
 
+waits=0
 # wait for the server to be listening, we want this endpoint to 404 instead of connrefused
 until [ \
   "$(curl -s -w '%{http_code}' -o /dev/null "http://localhost:8844/idonotexist")" \
   -eq 404 ]
 do
   echo 'Waiting for server to start...'
+  waits=$((i+1))
+  if [ "$waits" -ge 60 ]; then
+    echo "Server did not start within a minute" > /dev/stderr
+    exit 1
+  fi
   sleep 1
 done
 
@@ -22,7 +28,7 @@ done
 if [ -n "$SYNCV3_METRICS" ]; then
   status=$(curl --silent --write-out '%{http_code}' -o /dev/null http://localhost:8844/metrics)
   if [ "$status" != 200 ]; then
-    echo "Metrics endpoint returned $status, expected 200"
+    echo "Metrics endpoint returned $status, expected 200" > /dev/stderr
     exit 1
   else
     echo "Metrics endpoint returned 200 OK."
