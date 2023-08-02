@@ -740,6 +740,10 @@ func TestTypingMultiplePoller(t *testing.T) {
 		},
 	})
 
+	// Wait for the queued responses to be processed.
+	v2.waitUntilEmpty(t, aliceToken)
+	v2.waitUntilEmpty(t, bobToken)
+
 	// Check that only Bob is typing and not Charlie.
 	for _, token := range []string{aliceToken, bobToken} {
 		pos := aliceRes.Pos
