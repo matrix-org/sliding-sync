@@ -142,6 +142,7 @@ jobs:
                   SYNCV3_DB: user=postgres dbname=syncv3 sslmode=disable password=postgres host=localhost
                   SYNCV3_SERVER: http://localhost:8008
                   SYNCV3_SECRET: itsasecret
+                  SYNCV3_PROM: 2112
                   E2E_TEST_SERVER_STDOUT: test-e2e-server.log
 
             - name: Upload test log
