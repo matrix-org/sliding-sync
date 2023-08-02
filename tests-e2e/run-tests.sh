@@ -16,7 +16,7 @@ until [ \
   -eq 404 ]
 do
   echo 'Waiting for server to start...'
-  waits=$((i+1))
+  waits=$((waits+1))
   if [ "$waits" -ge 60 ]; then
     echo "Server did not start within a minute" > /dev/stderr
     exit 1
