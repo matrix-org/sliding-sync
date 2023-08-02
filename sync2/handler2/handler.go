@@ -3,7 +3,6 @@ package handler2
 import (
 	"context"
 	"encoding/json"
-	"hash/fnv"
 	"os"
 	"sync"
 	"time"
@@ -40,8 +39,9 @@ type Handler struct {
 		Highlight int
 		Notif     int
 	}
-	// room_id => fnv_hash([typing user ids])
-	typingMap     map[string]uint64
+	// room_id -> PollerID, stores which Poller is allowed to update typing notifications
+	typingHandler map[string]sync2.PollerID
+	typingMu      *sync.Mutex
 	PendingTxnIDs *sync2.PendingTransactionIDs
 
 	deviceDataTicker *sync2.DeviceDataTicker
@@ -64,7 +64,8 @@ func NewHandler(
 			Highlight int
 			Notif     int
 		}),
-		typingMap:        make(map[string]uint64),
+		typingMu:         &sync.Mutex{},
+		typingHandler:    make(map[string]sync2.PollerID),
 		PendingTxnIDs:    sync2.NewPendingTransactionIDs(pMap.DeviceIDs),
 		deviceDataTicker: sync2.NewDeviceDataTicker(deviceDataUpdateDuration),
 		e2eeWorkerPool:   internal.NewWorkerPool(500), // TODO: assign as fraction of db max conns, not hardcoded
@@ -166,7 +167,15 @@ func (h *Handler) updateMetrics() {
 	h.numPollers.Set(float64(h.pMap.NumPollers()))
 }
 
-func (h *Handler) OnTerminated(ctx context.Context, userID, deviceID string) {
+func (h *Handler) OnTerminated(ctx context.Context, pollerID sync2.PollerID) {
+	// Check if this device is handling any typing notifications, of so, remove it
+	h.typingMu.Lock()
+	defer h.typingMu.Unlock()
+	for roomID, devID := range h.typingHandler {
+		if devID == pollerID {
+			delete(h.typingHandler, roomID)
+		}
+	}
 	h.updateMetrics()
 }
 
@@ -352,13 +361,20 @@ func (h *Handler) Initialise(ctx context.Context, roomID string, state []json.Ra
 	return res.PrependTimelineEvents
 }
 
-func (h *Handler) SetTyping(ctx context.Context, roomID string, ephEvent json.RawMessage) {
-	next := typingHash(ephEvent)
-	existing := h.typingMap[roomID]
-	if existing == next {
+func (h *Handler) SetTyping(ctx context.Context, pollerID sync2.PollerID, roomID string, ephEvent json.RawMessage) {
+	h.typingMu.Lock()
+	defer h.typingMu.Unlock()
+
+	existingDevice := h.typingHandler[roomID]
+	isPollerAssigned := existingDevice.DeviceID != "" && existingDevice.UserID != ""
+	if isPollerAssigned && existingDevice != pollerID {
+		// A different device is already handling typing notifications for this room
 		return
+	} else if !isPollerAssigned {
+		// We're the first to call SetTyping, assign our pollerID
+		h.typingHandler[roomID] = pollerID
 	}
-	h.typingMap[roomID] = next
+
 	// we don't persist this for long term storage as typing notifs are inherently ephemeral.
 	// So rather than maintaining them forever, they will naturally expire when we terminate.
 	h.v2Pub.Notify(pubsub.ChanV2, &pubsub.V2Typing{
@@ -473,6 +489,12 @@ func (h *Handler) OnLeftRoom(ctx context.Context, userID, roomID string, leaveEv
 		internal.GetSentryHubFromContextOrDefault(ctx).CaptureException(err)
 	}
 
+	// Remove room from the typing deviceHandler map, this ensures we always
+	// have a device handling typing notifications for a given room.
+	h.typingMu.Lock()
+	defer h.typingMu.Unlock()
+	delete(h.typingHandler, roomID)
+
 	h.v2Pub.Notify(pubsub.ChanV2, &pubsub.V2LeaveRoom{
 		UserID:     userID,
 		RoomID:     roomID,
@@ -508,12 +530,4 @@ func (h *Handler) EnsurePolling(p *pubsub.V3EnsurePolling) {
 			DeviceID: p.DeviceID,
 		})
 	}()
-}
-
-func typingHash(ephEvent json.RawMessage) uint64 {
-	h := fnv.New64a()
-	for _, userID := range gjson.ParseBytes(ephEvent).Get("content.user_ids").Array() {
-		h.Write([]byte(userID.Str))
-	}
-	return h.Sum64()
 }
