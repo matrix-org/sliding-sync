@@ -10,16 +10,15 @@ import (
 	"time"
 
 	"github.com/getsentry/sentry-go"
-	"github.com/jmoiron/sqlx"
-	"github.com/pressly/goose/v3"
-
 	"github.com/gorilla/mux"
+	"github.com/jmoiron/sqlx"
 	"github.com/matrix-org/sliding-sync/internal"
 	"github.com/matrix-org/sliding-sync/pubsub"
 	"github.com/matrix-org/sliding-sync/state"
 	"github.com/matrix-org/sliding-sync/sync2"
 	"github.com/matrix-org/sliding-sync/sync2/handler2"
 	"github.com/matrix-org/sliding-sync/sync3/handler"
+	"github.com/pressly/goose/v3"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/hlog"
 )
@@ -93,13 +92,6 @@ func Setup(destHomeserver, postgresURI, secret string, opts Opts) (*handler2.Han
 		logger.Panic().Err(err).Str("uri", postgresURI).Msg("failed to open SQL DB")
 	}
 
-	// Automatically execute migrations
-	goose.SetBaseFS(EmbedMigrations)
-	err = goose.Up(db.DB, "state/migrations", goose.WithAllowMissing())
-	if err != nil {
-		logger.Panic().Err(err).Msg("failed to execute migrations")
-	}
-
 	if opts.DBMaxConns > 0 {
 		// https://github.com/go-sql-driver/mysql#important-settings
 		// "db.SetMaxIdleConns() is recommended to be set same to db.SetMaxOpenConns(). When it is smaller
@@ -112,6 +104,14 @@ func Setup(destHomeserver, postgresURI, secret string, opts Opts) (*handler2.Han
 	}
 	store := state.NewStorageWithDB(db)
 	storev2 := sync2.NewStoreWithDB(db, secret)
+
+	// Automatically execute migrations
+	goose.SetBaseFS(EmbedMigrations)
+	err = goose.Up(db.DB, "state/migrations", goose.WithAllowMissing())
+	if err != nil {
+		logger.Panic().Err(err).Msg("failed to execute migrations")
+	}
+
 	bufferSize := 50
 	deviceDataUpdateFrequency := time.Second
 	if opts.TestingSynchronousPubsub {

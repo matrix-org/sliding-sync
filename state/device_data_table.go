@@ -28,7 +28,7 @@ func NewDeviceDataTable(db *sqlx.DB) *DeviceDataTable {
 	CREATE TABLE IF NOT EXISTS syncv3_device_data (
 		user_id TEXT NOT NULL,
 		device_id TEXT NOT NULL,
-		data BYTEA NOT NULL,
+		data JSONB NOT NULL,
 		UNIQUE(user_id, device_id)
 	);
 	-- Set the fillfactor to 90%, to allow for HOT updates (e.g. we only
@@ -77,12 +77,12 @@ func (t *DeviceDataTable) Select(userID, deviceID string, swap bool) (result *in
 			return nil
 		}
 
-		// re-marshal and write
-		data, err := json.Marshal(writeBack)
-		if err != nil {
-			return err
-		}
-		_, err = txn.Exec(`UPDATE syncv3_device_data SET data=$1 WHERE user_id=$2 AND device_id=$3`, data, userID, deviceID)
+		// Some JSON juggling in Postgres ahead. This is to avoid pushing
+		// DeviceLists.Sent -> DeviceLists.New over the wire again.
+		_, err = txn.Exec(`UPDATE syncv3_device_data SET data = jsonb_set(
+    		jsonb_set(data, '{dl,s}', data->'dl'->'n', false), -- move 'dl.n' -> 'dl.s'
+    		'{dl,n}',  '{}', false) || '{"c":0}' -- clear 'dl.n' and set the changed bits to 0
+			WHERE user_id = $1 AND device_id = $2`, userID, deviceID)
 		return err
 	})
 	return
