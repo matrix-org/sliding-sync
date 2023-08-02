@@ -80,7 +80,7 @@ jobs:
                   SYNCV3_SECRET: itsasecret
 
             - name: Check /metrics works
-              run: ./tests-e2e/client-metrics.sh
+              run: ./tests-e2e/metrics-check.sh
               env:
                 SYNCV3_DB: user=postgres dbname=syncv3 sslmode=disable password=postgres host=localhost
                 SYNCV3_SERVER: https://matrix-client.matrix.org
