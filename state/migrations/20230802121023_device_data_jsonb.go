@@ -3,6 +3,7 @@ package migrations
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"strings"
 
 	"github.com/pressly/goose/v3"
@@ -17,6 +18,11 @@ func upJSONB(ctx context.Context, tx *sql.Tx) error {
 	var dataType string
 	err := tx.QueryRow("select data_type from information_schema.columns where table_name = 'syncv3_device_data' AND column_name = 'data'").Scan(&dataType)
 	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			// The table/column doesn't exist in is likely going to be created soon with the
+			// correct schema
+			return nil
+		}
 		return err
 	}
 	if strings.ToLower(dataType) == "jsonb" {
