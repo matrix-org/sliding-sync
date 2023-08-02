@@ -87,6 +87,7 @@ jobs:
                 path: ./test-integration.log
                 if-no-files-found: error
     end_to_end:
+        name: E2E tests (maxconns=${{ matrix.max_db_conns }})
         runs-on: ubuntu-latest
         strategy:
           matrix:
@@ -159,7 +160,7 @@ jobs:
               uses: actions/upload-artifact@v3
               if: always()
               with:
-                name: E2E test logs
+                name: E2E test logs (maxconns=${{ matrix.max_db_conns }})
                 path: |
                   ./tests-e2e/test-e2e-runner.log
                   ./tests-e2e/test-e2e-server.log
