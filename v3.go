@@ -21,6 +21,8 @@ import (
 	"github.com/pressly/goose/v3"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/hlog"
+
+	_ "github.com/matrix-org/sliding-sync/state/migrations"
 )
 
 //go:embed state/migrations/*
