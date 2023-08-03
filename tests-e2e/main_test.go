@@ -6,6 +6,7 @@ import (
 	"net/url"
 	"os"
 	"reflect"
+	"sort"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -13,6 +14,7 @@ import (
 
 	"github.com/matrix-org/sliding-sync/sync3"
 	"github.com/matrix-org/sliding-sync/testutils/m"
+	"github.com/tidwall/gjson"
 )
 
 var (
@@ -161,6 +163,34 @@ func MatchRoomInviteState(events []Event, partial bool) m.RoomMatcher {
 			if !found {
 				return fmt.Errorf("MatchRoomInviteState: want event %+v but it does not exist or failed to pass equality checks", want)
 			}
+		}
+		return nil
+	}
+}
+
+// MatchGlobalAccountData builds a matcher which asserts that the account data in a sync
+// response matches the given `globals`, with any ordering.
+// If there is no account data extension in the response, the match fails.
+func MatchGlobalAccountData(globals []Event) m.RespMatcher {
+	// sort want list by type
+	sort.Slice(globals, func(i, j int) bool {
+		return globals[i].Type < globals[j].Type
+	})
+
+	return func(res *sync3.Response) error {
+		if res.Extensions.AccountData == nil {
+			return fmt.Errorf("MatchGlobalAccountData: no account_data extension")
+		}
+		if len(globals) != len(res.Extensions.AccountData.Global) {
+			return fmt.Errorf("MatchGlobalAccountData: got %v global account data, want %v", len(res.Extensions.AccountData.Global), len(globals))
+		}
+		// sort the got list by type
+		got := res.Extensions.AccountData.Global
+		sort.Slice(got, func(i, j int) bool {
+			return gjson.GetBytes(got[i], "type").Str < gjson.GetBytes(got[j], "type").Str
+		})
+		if err := eventsEqual(globals, got); err != nil {
+			return fmt.Errorf("MatchGlobalAccountData: %s", err)
 		}
 		return nil
 	}

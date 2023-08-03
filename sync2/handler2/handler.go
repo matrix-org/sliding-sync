@@ -3,6 +3,8 @@ package handler2
 import (
 	"context"
 	"encoding/json"
+	"fmt"
+	"hash/fnv"
 	"os"
 	"sync"
 	"time"
@@ -30,12 +32,14 @@ var logger = zerolog.New(os.Stdout).With().Timestamp().Logger().Output(zerolog.C
 // processing v2 data (as a sync2.V2DataReceiver) and publishing updates (pubsub.Payload to V2Listeners);
 // and receiving and processing EnsurePolling events.
 type Handler struct {
-	pMap      sync2.IPollerMap
-	v2Store   *sync2.Storage
-	Store     *state.Storage
-	v2Pub     pubsub.Notifier
-	v3Sub     *pubsub.V3Sub
-	unreadMap map[string]struct {
+	pMap    sync2.IPollerMap
+	v2Store *sync2.Storage
+	Store   *state.Storage
+	v2Pub   pubsub.Notifier
+	v3Sub   *pubsub.V3Sub
+	// user_id|room_id|event_type => fnv_hash(last_event_bytes)
+	accountDataMap *sync.Map
+	unreadMap      map[string]struct {
 		Highlight int
 		Notif     int
 	}
@@ -64,6 +68,7 @@ func NewHandler(
 			Highlight int
 			Notif     int
 		}),
+		accountDataMap:   &sync.Map{},
 		typingMu:         &sync.Mutex{},
 		typingHandler:    make(map[string]sync2.PollerID),
 		PendingTxnIDs:    sync2.NewPendingTransactionIDs(pMap.DeviceIDs),
@@ -451,7 +456,28 @@ func (h *Handler) UpdateUnreadCounts(ctx context.Context, roomID, userID string,
 }
 
 func (h *Handler) OnAccountData(ctx context.Context, userID, roomID string, events []json.RawMessage) {
-	data, err := h.Store.InsertAccountData(userID, roomID, events)
+	// duplicate suppression for multiple devices on the same account.
+	// We suppress by remembering the last bytes for a given account data, and if they match we ignore.
+	dedupedEvents := make([]json.RawMessage, 0, len(events))
+	for i := range events {
+		evType := gjson.GetBytes(events[i], "type").Str
+		key := fmt.Sprintf("%s|%s|%s", userID, roomID, evType)
+		thisHash := fnvHash(events[i])
+		last, _ := h.accountDataMap.Load(key)
+		if last != nil {
+			lastHash := last.(uint64)
+			if lastHash == thisHash {
+				continue // skip this event
+			}
+		}
+		dedupedEvents = append(dedupedEvents, events[i])
+		h.accountDataMap.Store(key, thisHash)
+	}
+	if len(dedupedEvents) == 0 {
+		return
+	}
+
+	data, err := h.Store.InsertAccountData(userID, roomID, dedupedEvents)
 	if err != nil {
 		logger.Err(err).Str("user", userID).Str("room", roomID).Msg("failed to update account data")
 		sentry.CaptureException(err)
@@ -530,4 +556,10 @@ func (h *Handler) EnsurePolling(p *pubsub.V3EnsurePolling) {
 			DeviceID: p.DeviceID,
 		})
 	}()
+}
+
+func fnvHash(event json.RawMessage) uint64 {
+	h := fnv.New64a()
+	h.Write(event)
+	return h.Sum64()
 }
