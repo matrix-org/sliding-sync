@@ -6,6 +6,7 @@ import (
 	"reflect"
 
 	"github.com/jmoiron/sqlx"
+	"github.com/lib/pq"
 	"github.com/matrix-org/sliding-sync/internal"
 	"github.com/matrix-org/sliding-sync/sqlutil"
 )
@@ -118,6 +119,22 @@ func (t *DeviceDataTable) Upsert(dd *internal.DeviceData) (err error) {
 			tempDD.SetOTKCountChanged()
 		}
 		tempDD.DeviceLists = tempDD.DeviceLists.Combine(dd.DeviceLists)
+
+		// we already got something in the database - update by just sending the new data
+		if len(row.Data) > 0 {
+			if tempDD.FallbackKeyTypes == nil {
+				// If fallback is null, it would, for some reason, nuke the whole
+				// column, so make sure we have something set.
+				tempDD.FallbackKeyTypes = []string{}
+			}
+			_, err = txn.Exec(`UPDATE syncv3_device_data SET data = 
+				jsonb_set(jsonb_set(jsonb_set(jsonb_set(jsonb_set(data, '{otk}', $3, false), '{fallback}', to_jsonb($4::text[]), false), '{c}', $5, false), '{dl,s}', $6, false),'{dl,n}', $7, false)
+				WHERE user_id = $1 AND device_id = $2
+				`,
+				dd.UserID, dd.DeviceID, tempDD.OTKCounts, pq.StringArray(tempDD.FallbackKeyTypes), tempDD.ChangedBits, tempDD.DeviceLists.Sent, tempDD.DeviceLists.New,
+			)
+			return err
+		}
 
 		data, err := json.Marshal(tempDD)
 		if err != nil {
