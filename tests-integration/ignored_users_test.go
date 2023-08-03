@@ -161,8 +161,10 @@ func TestIgnoredUsersDuringLiveUpdate(t *testing.T) {
 			},
 		},
 	})
-	t.Log("Alice sees her message.")
-	m.MatchResponse(t, aliceRes, m.MatchRoomSubscription(roomID, m.MatchRoomTimelineMostRecent(1, []json.RawMessage{aliceMsg2})))
+	t.Log("Alice sees her join, her messages and nigel's state in the timeline.")
+	m.MatchResponse(t, aliceRes, m.MatchRoomSubscription(roomID, m.MatchRoomTimeline([]json.RawMessage{
+		aliceJoin, aliceMsg, nigelState, aliceMsg2,
+	})))
 
 	t.Log("Bob's poller sees Nigel and Alice send a message.")
 	nigelMsg2 := testutils.NewMessageEvent(t, nigel, "naughty nigel 3")
