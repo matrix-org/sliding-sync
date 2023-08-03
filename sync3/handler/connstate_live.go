@@ -130,13 +130,24 @@ func (s *connStateLive) processLiveUpdate(ctx context.Context, up caches.Update,
 	internal.AssertWithContext(ctx, "processLiveUpdate: request list length != internal list length", s.lists.Len() == len(s.muxedReq.Lists))
 	roomUpdate, _ := up.(caches.RoomUpdate)
 	roomEventUpdate, _ := up.(*caches.RoomEventUpdate)
-	// if this is a room event update we may not want to process this if the event nid is < loadPos,
-	// as that means we have already taken it into account
-	if roomEventUpdate != nil && !roomEventUpdate.EventData.AlwaysProcess {
-		// check if we should skip this update. Do we know of this room (lp > 0) and if so, is this event
-		// behind what we've processed before?
-		lp := s.loadPositions[roomEventUpdate.RoomID()]
-		if lp > 0 && roomEventUpdate.EventData.NID < lp {
+	if roomEventUpdate != nil {
+		// if this is a room event update we may not want to process this event, for a few reasons.
+		if !roomEventUpdate.EventData.AlwaysProcess {
+			// check if we should skip this update. Do we know of this room (lp > 0) and if so, is this event
+			// behind what we've processed before?
+			lp := s.loadPositions[roomEventUpdate.RoomID()]
+			if lp > 0 && roomEventUpdate.EventData.NID < lp {
+				return false
+			}
+		}
+
+		// Skip message events from ignored users.
+		if roomEventUpdate.EventData.StateKey == nil && s.userCache.ShouldIgnore(roomEventUpdate.EventData.Sender) {
+			logger.Trace().
+				Str("user", s.userID).
+				Str("type", roomEventUpdate.EventData.EventType).
+				Str("sender", roomEventUpdate.EventData.Sender).
+				Msg("ignoring event update")
 			return false
 		}
 	}

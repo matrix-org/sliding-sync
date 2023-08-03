@@ -507,6 +507,15 @@ func (h *SyncLiveHandler) userCache(userID string) (*caches.UserCache, error) {
 		uc.OnAccountData(context.Background(), []state.AccountData{directEvent[0]})
 	}
 
+	// select the ignored users account data event and set ignored user list
+	ignoreEvent, err := h.Storage.AccountData(userID, sync2.AccountDataGlobalRoom, []string{"m.ignored_user_list"})
+	if err != nil {
+		return nil, fmt.Errorf("failed to load ignored user list for user %s: %w", userID, err)
+	}
+	if len(ignoreEvent) == 1 {
+		uc.OnAccountData(context.Background(), []state.AccountData{ignoreEvent[0]})
+	}
+
 	// select all room tag account data and set it
 	tagEvents, err := h.Storage.RoomAccountDatasWithType(userID, "m.tag")
 	if err != nil {

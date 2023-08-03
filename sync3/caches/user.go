@@ -191,18 +191,22 @@ type UserCache struct {
 	store                *state.Storage
 	globalCache          *GlobalCache
 	txnIDs               TransactionIDFetcher
+	ignoredUsers         map[string]struct{}
+	ignoredUsersMu       *sync.RWMutex
 }
 
 func NewUserCache(userID string, globalCache *GlobalCache, store *state.Storage, txnIDs TransactionIDFetcher) *UserCache {
 	uc := &UserCache{
-		UserID:       userID,
-		roomToDataMu: &sync.RWMutex{},
-		roomToData:   make(map[string]UserRoomData),
-		listeners:    make(map[int]UserCacheListener),
-		listenersMu:  &sync.RWMutex{},
-		store:        store,
-		globalCache:  globalCache,
-		txnIDs:       txnIDs,
+		UserID:         userID,
+		roomToDataMu:   &sync.RWMutex{},
+		roomToData:     make(map[string]UserRoomData),
+		listeners:      make(map[int]UserCacheListener),
+		listenersMu:    &sync.RWMutex{},
+		store:          store,
+		globalCache:    globalCache,
+		txnIDs:         txnIDs,
+		ignoredUsers:   make(map[string]struct{}),
+		ignoredUsersMu: &sync.RWMutex{},
 	}
 	return uc
 }
@@ -651,7 +655,8 @@ func (c *UserCache) OnAccountData(ctx context.Context, datas []state.AccountData
 		up := roomUpdates[d.RoomID]
 		up = append(up, d)
 		roomUpdates[d.RoomID] = up
-		if d.Type == "m.direct" {
+		switch d.Type {
+		case "m.direct":
 			dmRoomSet := make(map[string]struct{})
 			// pull out rooms and mark them as DMs
 			content := gjson.ParseBytes(d.Data).Get("content")
@@ -676,7 +681,7 @@ func (c *UserCache) OnAccountData(ctx context.Context, datas []state.AccountData
 				c.roomToData[dmRoomID] = u
 			}
 			c.roomToDataMu.Unlock()
-		} else if d.Type == "m.tag" {
+		case "m.tag":
 			content := gjson.ParseBytes(d.Data).Get("content.tags")
 			if tagUpdates[d.RoomID] == nil {
 				tagUpdates[d.RoomID] = make(map[string]float64)
@@ -685,6 +690,22 @@ func (c *UserCache) OnAccountData(ctx context.Context, datas []state.AccountData
 				tagUpdates[d.RoomID][k.Str] = v.Get("order").Float()
 				return true
 			})
+		case "m.ignored_user_list":
+			if d.RoomID != state.AccountDataGlobalRoom {
+				continue
+			}
+			content := gjson.ParseBytes(d.Data).Get("content.ignored_users")
+			if !content.IsObject() {
+				continue
+			}
+			ignoredUsers := make(map[string]struct{})
+			content.ForEach(func(k, v gjson.Result) bool {
+				ignoredUsers[k.Str] = struct{}{}
+				return true
+			})
+			c.ignoredUsersMu.Lock()
+			c.ignoredUsers = ignoredUsers
+			c.ignoredUsersMu.Unlock()
 		}
 	}
 	if len(tagUpdates) > 0 {
@@ -716,4 +737,11 @@ func (c *UserCache) OnAccountData(ctx context.Context, datas []state.AccountData
 		}
 	}
 
+}
+
+func (u *UserCache) ShouldIgnore(userID string) bool {
+	u.ignoredUsersMu.RLock()
+	defer u.ignoredUsersMu.RUnlock()
+	_, ignored := u.ignoredUsers[userID]
+	return ignored
 }
