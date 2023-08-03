@@ -326,6 +326,7 @@ func (c *UserCache) LazyLoadTimelines(ctx context.Context, loadPos int64, roomID
 			urd = NewUserRoomData()
 		}
 		if latestEvents != nil {
+			latestEvents.DiscardIgnoredMessages(c.ShouldIgnore)
 			urd.RequestedLatestEvents = *latestEvents
 		}
 		result[requestedRoomID] = urd
