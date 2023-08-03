@@ -651,7 +651,8 @@ func (c *UserCache) OnAccountData(ctx context.Context, datas []state.AccountData
 		up := roomUpdates[d.RoomID]
 		up = append(up, d)
 		roomUpdates[d.RoomID] = up
-		if d.Type == "m.direct" {
+		switch d.Type {
+		case "m.direct":
 			dmRoomSet := make(map[string]struct{})
 			// pull out rooms and mark them as DMs
 			content := gjson.ParseBytes(d.Data).Get("content")
@@ -676,7 +677,7 @@ func (c *UserCache) OnAccountData(ctx context.Context, datas []state.AccountData
 				c.roomToData[dmRoomID] = u
 			}
 			c.roomToDataMu.Unlock()
-		} else if d.Type == "m.tag" {
+		case "m.tag":
 			content := gjson.ParseBytes(d.Data).Get("content.tags")
 			if tagUpdates[d.RoomID] == nil {
 				tagUpdates[d.RoomID] = make(map[string]float64)
