@@ -512,7 +512,7 @@ func (h *SyncLiveHandler) userCache(userID string) (*caches.UserCache, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to load ignored user list for user %s: %w", userID, err)
 	}
-	if len(directEvent) == 1 {
+	if len(ignoreEvent) == 1 {
 		uc.OnAccountData(context.Background(), []state.AccountData{ignoreEvent[0]})
 	}
 
