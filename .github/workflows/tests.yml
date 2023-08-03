@@ -206,3 +206,66 @@ jobs:
                 path: |
                   cypress/screenshots
                   cypress/videos
+
+
+    upgrade-test:
+        runs-on: ubuntu-latest
+
+        env:
+          PREV_VERSION: "v0.99.4"
+
+      # Service containers to run with `container-job`
+        services:
+          # Label used to access the service container
+          postgres:
+            # Docker Hub image
+            image: postgres:13-alpine
+            # Provide the password for postgres
+            env:
+              POSTGRES_USER: postgres
+              POSTGRES_PASSWORD: postgres
+              POSTGRES_DB: syncv3
+            ports:
+              # Maps tcp port 5432 on service container to the host
+              - 5432:5432
+            # Set health checks to wait until postgres has started
+            options: >-
+              --health-cmd pg_isready
+              --health-interval 10s
+              --health-timeout 5s
+              --health-retries 5
+
+        steps:
+          - name: Install Go
+            uses: actions/setup-go@v4
+            with:
+              go-version: 1.19
+
+
+          # client check with ${{env.PREV_VERSION}}
+          - uses: actions/checkout@v3
+            ref: ${{env.PREV_VERSION}}
+
+          - name: Build ${{env.PREV_VERSION}}
+            run: go build ./cmd/syncv3
+
+          - name: Check /client works ${{env.PREV_VERSION}}
+            run: ./tests-e2e/client-check.sh
+            env:
+              SYNCV3_DB: user=postgres dbname=syncv3 sslmode=disable password=postgres host=localhost
+              SYNCV3_SERVER: https://matrix-client.matrix.org
+              SYNCV3_SECRET: itsasecret
+
+
+          # client check with current commit
+          - uses: actions/checkout@v3
+
+          - name: Build
+            run: go build ./cmd/syncv3
+
+          - name: Check /client works
+            run: ./tests-e2e/client-check.sh
+            env:
+              SYNCV3_DB: user=postgres dbname=syncv3 sslmode=disable password=postgres host=localhost
+              SYNCV3_SERVER: https://matrix-client.matrix.org
+              SYNCV3_SECRET: itsasecret
