@@ -254,16 +254,16 @@ jobs:
             with:
               go-version: 1.19
 
+          # E2E tests with ${{env.PREV_VERSION}}
+          - uses: actions/checkout@v3
+            with:
+              ref: ${{env.PREV_VERSION}}
+
           - name: Set up gotestfmt
             uses: GoTestTools/gotestfmt-action@v2
             with:
               # Note: constrained to `packages:read` only at the top of the file
               token: ${{ secrets.GITHUB_TOKEN }}
-
-          # E2E tests with ${{env.PREV_VERSION}}
-          - uses: actions/checkout@v3
-            with:
-              ref: ${{env.PREV_VERSION}}
 
           - name: Build ${{env.PREV_VERSION}}
             run: go build ./cmd/syncv3
@@ -271,7 +271,7 @@ jobs:
           - name: Run end-to-end tests
             run: |
               set -euo pipefail
-              ./run-tests.sh -count=1 -v -json . 2>&1 | tee test-e2e-runner.log | gotestfmt -hide all
+              ./run-tests.sh -count=1 -v -json . 2>&1 | tee test-e2e-runner-${{env.PREV_VERSION}}.log | gotestfmt -hide all
             working-directory: tests-e2e
             shell: bash
             env:
@@ -279,7 +279,7 @@ jobs:
               SYNCV3_SERVER: http://localhost:8008
               SYNCV3_SECRET: itsasecret
               SYNCV3_MAX_DB_CONN: ${{ matrix.max_db_conns }}
-              E2E_TEST_SERVER_STDOUT: test-e2e-server.log
+              E2E_TEST_SERVER_STDOUT: test-e2e-server-${{env.PREV_VERSION}}.log
 
           - name: Upload test log ${{env.PREV_VERSION}}
             uses: actions/upload-artifact@v3
@@ -287,13 +287,19 @@ jobs:
             with:
               name: E2E test logs upgrade ${{env.PREV_VERSION}}
               path: |
-                ./tests-e2e/test-e2e-runner.log
-                ./tests-e2e/test-e2e-server.log
+                ./tests-e2e/test-e2e-runner-${{env.PREV_VERSION}}.log
+                ./tests-e2e/test-e2e-server-${{env.PREV_VERSION}}.log
               if-no-files-found: error
 
 
           # E2E tests with current commit
           - uses: actions/checkout@v3
+
+          - name: Set up gotestfmt
+            uses: GoTestTools/gotestfmt-action@v2
+            with:
+              # Note: constrained to `packages:read` only at the top of the file
+              token: ${{ secrets.GITHUB_TOKEN }}
 
           - name: Build
             run: go build ./cmd/syncv3
