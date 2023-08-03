@@ -152,8 +152,8 @@ func TestIgnoredUsersDuringLiveUpdate(t *testing.T) {
 	})
 	v2.waitUntilEmpty(t, bob)
 
-	t.Log("Alice syncs, changing to a direct room subscription.")
-	aliceRes = v3.mustDoV3RequestWithPos(t, aliceToken, aliceRes.Pos, sync3.Request{
+	t.Log("Alice syncs, making a new conn with a direct room subscription.")
+	aliceRes = v3.mustDoV3Request(t, aliceToken, sync3.Request{
 		Lists: map[string]sync3.RequestList{},
 		RoomSubscriptions: map[string]sync3.RoomSubscription{
 			roomID: {
@@ -181,6 +181,6 @@ func TestIgnoredUsersDuringLiveUpdate(t *testing.T) {
 
 	t.Log("Alice syncs. She should only see her message.")
 	aliceRes = v3.mustDoV3RequestWithPos(t, aliceToken, aliceRes.Pos, sync3.Request{})
-	m.MatchResponse(t, aliceRes, m.MatchRoomSubscription(roomID, m.MatchRoomTimelineMostRecent(1, []json.RawMessage{aliceMsg3})))
+	m.MatchResponse(t, aliceRes, m.MatchRoomSubscription(roomID, m.MatchRoomTimeline([]json.RawMessage{aliceMsg3})))
 
 }
