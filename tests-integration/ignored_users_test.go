@@ -12,7 +12,7 @@ import (
 
 // Test that messages from ignored users are not sent to clients, even if they appear
 // on someone else's poller first.
-func TestIgnoredUsers(t *testing.T) {
+func TestIgnoredUsersDuringLiveUpdate(t *testing.T) {
 	pqString := testutils.PrepareDBConnectionString()
 	v2 := runTestV2Server(t)
 	v3 := runTestServer(t, v2, pqString)
@@ -100,15 +100,13 @@ func TestIgnoredUsers(t *testing.T) {
 	v2.waitUntilEmpty(t, alice)
 
 	t.Log("Bob's poller sees a message from Nigel, then a message from Alice.")
-	messages := []json.RawMessage{
-		testutils.NewMessageEvent(t, nigel, "naughty nigel"),
-		testutils.NewMessageEvent(t, alice, "angelic alice"),
-	}
+	nigelMsg := testutils.NewMessageEvent(t, nigel, "naughty nigel")
+	aliceMsg := testutils.NewMessageEvent(t, alice, "angelic alice")
 	v2.queueResponse(bob, sync2.SyncResponse{
 		Rooms: sync2.SyncRoomsResponse{
 			Join: v2JoinTimeline(roomEvents{
 				roomID: roomID,
-				events: messages,
+				events: []json.RawMessage{nigelMsg, aliceMsg},
 			}),
 		},
 		NextBatch: "bob_sync_2",
@@ -117,11 +115,11 @@ func TestIgnoredUsers(t *testing.T) {
 
 	t.Log("Bob syncs. He should see both messages.")
 	bobRes = v3.mustDoV3RequestWithPos(t, bobToken, bobRes.Pos, sync3.Request{})
-	m.MatchResponse(t, bobRes, m.MatchRoomSubscription(roomID, m.MatchRoomTimeline(messages)))
+	m.MatchResponse(t, bobRes, m.MatchRoomSubscription(roomID, m.MatchRoomTimeline([]json.RawMessage{nigelMsg, aliceMsg})))
 
 	t.Log("Alice syncs. She should see her message, but not Nigel's.")
 	aliceRes = v3.mustDoV3RequestWithPos(t, aliceToken, aliceRes.Pos, sync3.Request{})
-	m.MatchResponse(t, aliceRes, m.MatchRoomSubscription(roomID, m.MatchRoomTimeline(messages[1:])))
+	m.MatchResponse(t, aliceRes, m.MatchRoomSubscription(roomID, m.MatchRoomTimeline([]json.RawMessage{aliceMsg})))
 
 	t.Log("Bob's poller sees Nigel set a custom state event")
 	nigelState := testutils.NewStateEvent(t, "com.example.fruit", "banana", nigel, map[string]any{})
@@ -139,5 +137,50 @@ func TestIgnoredUsers(t *testing.T) {
 	t.Log("Alice syncs. She should see Nigel's state event.")
 	aliceRes = v3.mustDoV3RequestWithPos(t, aliceToken, aliceRes.Pos, sync3.Request{})
 	m.MatchResponse(t, aliceRes, m.MatchRoomSubscription(roomID, m.MatchRoomTimeline([]json.RawMessage{nigelState})))
+
+	t.Log("Bob's poller sees Alice send a message.")
+	aliceMsg2 := testutils.NewMessageEvent(t, alice, "angelic alice 2")
+
+	v2.queueResponse(bob, sync2.SyncResponse{
+		Rooms: sync2.SyncRoomsResponse{
+			Join: v2JoinTimeline(roomEvents{
+				roomID: roomID,
+				events: []json.RawMessage{aliceMsg2},
+			}),
+		},
+		NextBatch: "bob_sync_4",
+	})
+	v2.waitUntilEmpty(t, bob)
+
+	t.Log("Alice syncs, changing to a direct room subscription.")
+	aliceRes = v3.mustDoV3RequestWithPos(t, aliceToken, aliceRes.Pos, sync3.Request{
+		Lists: map[string]sync3.RequestList{},
+		RoomSubscriptions: map[string]sync3.RoomSubscription{
+			roomID: {
+				TimelineLimit: 20,
+			},
+		},
+	})
+	t.Log("Alice sees her message.")
+	m.MatchResponse(t, aliceRes, m.MatchRoomSubscription(roomID, m.MatchRoomTimelineMostRecent(1, []json.RawMessage{aliceMsg2})))
+
+	t.Log("Bob's poller sees Nigel and Alice send a message.")
+	nigelMsg2 := testutils.NewMessageEvent(t, nigel, "naughty nigel 3")
+	aliceMsg3 := testutils.NewMessageEvent(t, alice, "angelic alice 3")
+
+	v2.queueResponse(bob, sync2.SyncResponse{
+		Rooms: sync2.SyncRoomsResponse{
+			Join: v2JoinTimeline(roomEvents{
+				roomID: roomID,
+				events: []json.RawMessage{nigelMsg2, aliceMsg3},
+			}),
+		},
+		NextBatch: "bob_sync_5",
+	})
+	v2.waitUntilEmpty(t, bob)
+
+	t.Log("Alice syncs. She should only see her message.")
+	aliceRes = v3.mustDoV3RequestWithPos(t, aliceToken, aliceRes.Pos, sync3.Request{})
+	m.MatchResponse(t, aliceRes, m.MatchRoomSubscription(roomID, m.MatchRoomTimelineMostRecent(1, []json.RawMessage{aliceMsg3})))
 
 }
