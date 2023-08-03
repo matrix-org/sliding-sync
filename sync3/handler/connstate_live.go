@@ -330,6 +330,15 @@ func (s *connStateLive) processLiveUpdateForList(
 ) (hasUpdates bool) {
 	switch update := up.(type) {
 	case *caches.RoomEventUpdate:
+		if update.EventData.StateKey == nil && s.userCache.ShouldIgnore(update.EventData.Sender) {
+			logger.Trace().
+				Str("user", s.userID).
+				Str("type", update.EventData.EventType).
+				Str("sender", update.EventData.Sender).
+				Msg("ignoring event update")
+			return false
+		}
+
 		logger.Trace().Str("user", s.userID).Str("type", update.EventData.EventType).Msg("received event update")
 		if update.EventData.ForceInitial {
 			// add room to sub: this applies for when we track all rooms too as we want joins/etc to come through with initial data
