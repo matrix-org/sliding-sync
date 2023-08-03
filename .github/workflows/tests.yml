@@ -241,8 +241,13 @@ jobs:
             with:
               go-version: 1.19
 
+          - name: Set up gotestfmt
+            uses: GoTestTools/gotestfmt-action@v2
+            with:
+              # Note: constrained to `packages:read` only at the top of the file
+              token: ${{ secrets.GITHUB_TOKEN }}
 
-          # client check with ${{env.PREV_VERSION}}
+          # E2E tests with ${{env.PREV_VERSION}}
           - uses: actions/checkout@v3
             with:
               ref: ${{env.PREV_VERSION}}
@@ -250,23 +255,55 @@ jobs:
           - name: Build ${{env.PREV_VERSION}}
             run: go build ./cmd/syncv3
 
-          - name: Check /client works ${{env.PREV_VERSION}}
-            run: ./tests-e2e/client-check.sh
+          - name: Run end-to-end tests
+            run: |
+              set -euo pipefail
+              ./run-tests.sh -count=1 -v -json . 2>&1 | tee test-e2e-runner.log | gotestfmt -hide all
+            working-directory: tests-e2e
+            shell: bash
             env:
               SYNCV3_DB: user=postgres dbname=syncv3 sslmode=disable password=postgres host=localhost
-              SYNCV3_SERVER: https://matrix-client.matrix.org
+              SYNCV3_SERVER: http://localhost:8008
               SYNCV3_SECRET: itsasecret
+              SYNCV3_MAX_DB_CONN: ${{ matrix.max_db_conns }}
+              E2E_TEST_SERVER_STDOUT: test-e2e-server.log
+
+          - name: Upload test log ${{env.PREV_VERSION}}
+            uses: actions/upload-artifact@v3
+            if: failure()
+            with:
+              name: E2E test logs upgrade ${{env.PREV_VERSION}}
+              path: |
+                ./tests-e2e/test-e2e-runner.log
+                ./tests-e2e/test-e2e-server.log
+              if-no-files-found: error
 
 
-          # client check with current commit
+          # E2E tests with current commit
           - uses: actions/checkout@v3
 
           - name: Build
             run: go build ./cmd/syncv3
 
-          - name: Check /client works
-            run: ./tests-e2e/client-check.sh
+          - name: Run end-to-end tests
+            run: |
+              set -euo pipefail
+              ./run-tests.sh -count=1 -v -json . 2>&1 | tee test-e2e-runner.log | gotestfmt -hide all
+            working-directory: tests-e2e
+            shell: bash
             env:
               SYNCV3_DB: user=postgres dbname=syncv3 sslmode=disable password=postgres host=localhost
-              SYNCV3_SERVER: https://matrix-client.matrix.org
+              SYNCV3_SERVER: http://localhost:8008
               SYNCV3_SECRET: itsasecret
+              SYNCV3_MAX_DB_CONN: ${{ matrix.max_db_conns }}
+              E2E_TEST_SERVER_STDOUT: test-e2e-server.log
+
+          - name: Upload test log
+            uses: actions/upload-artifact@v3
+            if: failure()
+            with:
+              name: E2E test logs upgrade
+              path: |
+                ./tests-e2e/test-e2e-runner.log
+                ./tests-e2e/test-e2e-server.log
+              if-no-files-found: error
