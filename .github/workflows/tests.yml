@@ -206,3 +206,123 @@ jobs:
                 path: |
                   cypress/screenshots
                   cypress/videos
+
+
+    upgrade-test:
+        runs-on: ubuntu-latest
+
+        env:
+          PREV_VERSION: "v0.99.4"
+
+      # Service containers to run with `container-job`
+        services:
+          synapse:
+            # Custom image built from https://github.com/matrix-org/synapse/tree/v1.72.0/docker/complement with a dummy /complement/ca set
+            image: ghcr.io/matrix-org/synapse-service:v1.72.0
+            env:
+              SYNAPSE_COMPLEMENT_DATABASE: sqlite
+              SERVER_NAME: synapse
+            ports:
+              - 8008:8008
+            # Set health checks to wait until synapse has started
+            options: >-
+              --health-interval 10s
+              --health-timeout 5s
+              --health-retries 5
+          # Label used to access the service container
+          postgres:
+            # Docker Hub image
+            image: postgres:13-alpine
+            # Provide the password for postgres
+            env:
+              POSTGRES_USER: postgres
+              POSTGRES_PASSWORD: postgres
+              POSTGRES_DB: syncv3
+            ports:
+              # Maps tcp port 5432 on service container to the host
+              - 5432:5432
+            # Set health checks to wait until postgres has started
+            options: >-
+              --health-cmd pg_isready
+              --health-interval 10s
+              --health-timeout 5s
+              --health-retries 5
+
+        steps:
+          - name: Install Go
+            uses: actions/setup-go@v4
+            with:
+              go-version: 1.19
+
+          # E2E tests with ${{env.PREV_VERSION}}
+          - uses: actions/checkout@v3
+            with:
+              ref: ${{env.PREV_VERSION}}
+
+          - name: Set up gotestfmt
+            uses: GoTestTools/gotestfmt-action@v2
+            with:
+              # Note: constrained to `packages:read` only at the top of the file
+              token: ${{ secrets.GITHUB_TOKEN }}
+
+          - name: Build ${{env.PREV_VERSION}}
+            run: go build ./cmd/syncv3
+
+          - name: Run end-to-end tests
+            run: |
+              set -euo pipefail
+              ./run-tests.sh -count=1 -v -json . 2>&1 | tee test-e2e-runner-${{env.PREV_VERSION}}.log | gotestfmt -hide all
+            working-directory: tests-e2e
+            shell: bash
+            env:
+              SYNCV3_DB: user=postgres dbname=syncv3 sslmode=disable password=postgres host=localhost
+              SYNCV3_SERVER: http://localhost:8008
+              SYNCV3_SECRET: itsasecret
+              SYNCV3_MAX_DB_CONN: ${{ matrix.max_db_conns }}
+              E2E_TEST_SERVER_STDOUT: test-e2e-server-${{env.PREV_VERSION}}.log
+
+          - name: Upload test log ${{env.PREV_VERSION}}
+            uses: actions/upload-artifact@v3
+            if: failure()
+            with:
+              name: E2E test logs upgrade ${{env.PREV_VERSION}}
+              path: |
+                ./tests-e2e/test-e2e-runner-${{env.PREV_VERSION}}.log
+                ./tests-e2e/test-e2e-server-${{env.PREV_VERSION}}.log
+              if-no-files-found: error
+
+
+          # E2E tests with current commit
+          - uses: actions/checkout@v3
+
+          - name: Set up gotestfmt
+            uses: GoTestTools/gotestfmt-action@v2
+            with:
+              # Note: constrained to `packages:read` only at the top of the file
+              token: ${{ secrets.GITHUB_TOKEN }}
+
+          - name: Build
+            run: go build ./cmd/syncv3
+
+          - name: Run end-to-end tests
+            run: |
+              set -euo pipefail
+              ./run-tests.sh -count=1 -v -json . 2>&1 | tee test-e2e-runner.log | gotestfmt -hide all
+            working-directory: tests-e2e
+            shell: bash
+            env:
+              SYNCV3_DB: user=postgres dbname=syncv3 sslmode=disable password=postgres host=localhost
+              SYNCV3_SERVER: http://localhost:8008
+              SYNCV3_SECRET: itsasecret
+              SYNCV3_MAX_DB_CONN: ${{ matrix.max_db_conns }}
+              E2E_TEST_SERVER_STDOUT: test-e2e-server.log
+
+          - name: Upload test log
+            uses: actions/upload-artifact@v3
+            if: failure()
+            with:
+              name: E2E test logs upgrade
+              path: |
+                ./tests-e2e/test-e2e-runner.log
+                ./tests-e2e/test-e2e-server.log
+              if-no-files-found: error

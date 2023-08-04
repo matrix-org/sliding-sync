@@ -1,11 +1,12 @@
 package state
 
 import (
-	"bytes"
 	"database/sql"
 	"encoding/json"
+	"reflect"
 
 	"github.com/jmoiron/sqlx"
+	"github.com/lib/pq"
 	"github.com/matrix-org/sliding-sync/internal"
 	"github.com/matrix-org/sliding-sync/sqlutil"
 )
@@ -25,14 +26,15 @@ type DeviceDataTable struct {
 
 func NewDeviceDataTable(db *sqlx.DB) *DeviceDataTable {
 	db.MustExec(`
-	CREATE SEQUENCE IF NOT EXISTS syncv3_device_data_seq;
 	CREATE TABLE IF NOT EXISTS syncv3_device_data (
-		id BIGINT PRIMARY KEY NOT NULL DEFAULT nextval('syncv3_device_data_seq'),
 		user_id TEXT NOT NULL,
 		device_id TEXT NOT NULL,
-		data BYTEA NOT NULL,
+		data JSONB NOT NULL,
 		UNIQUE(user_id, device_id)
 	);
+	-- Set the fillfactor to 90%, to allow for HOT updates (e.g. we only
+	-- change the data, not anything indexed like the id)
+	ALTER TABLE syncv3_device_data SET (fillfactor = 90);
 	`)
 	return &DeviceDataTable{
 		db: db,
@@ -67,18 +69,21 @@ func (t *DeviceDataTable) Select(userID, deviceID string, swap bool) (result *in
 		writeBack.DeviceLists.New = make(map[string]int)
 		writeBack.ChangedBits = 0
 
-		// re-marshal and write
-		data, err := json.Marshal(writeBack)
-		if err != nil {
-			return err
-		}
-		if bytes.Equal(data, row.Data) {
+		// DeepEqual uses fewer allocations and is faster than
+		// json.Marshal and comparing bytes
+		if reflect.DeepEqual(writeBack, *result) {
 			// The update to the DB would be a no-op; don't bother with it.
 			// This helps reduce write usage and the contention on the unique index for
 			// the device_data table.
 			return nil
 		}
-		_, err = txn.Exec(`UPDATE syncv3_device_data SET data=$1 WHERE user_id=$2 AND device_id=$3`, data, userID, deviceID)
+
+		// Some JSON juggling in Postgres ahead. This is to avoid pushing
+		// DeviceLists.Sent -> DeviceLists.New over the wire again.
+		_, err = txn.Exec(`UPDATE syncv3_device_data SET data = jsonb_set(
+    		jsonb_set(data, '{dl,s}', data->'dl'->'n', false), -- move 'dl.n' -> 'dl.s'
+    		'{dl,n}',  '{}', false) || '{"c":0}' -- clear 'dl.n' and set the changed bits to 0
+			WHERE user_id = $1 AND device_id = $2`, userID, deviceID)
 		return err
 	})
 	return
@@ -90,7 +95,7 @@ func (t *DeviceDataTable) DeleteDevice(userID, deviceID string) error {
 }
 
 // Upsert combines what is in the database for this user|device with the partial entry `dd`
-func (t *DeviceDataTable) Upsert(dd *internal.DeviceData) (pos int64, err error) {
+func (t *DeviceDataTable) Upsert(dd *internal.DeviceData) (err error) {
 	err = sqlutil.WithTransaction(t.db, func(txn *sqlx.Tx) error {
 		// select what already exists
 		var row DeviceDataRow
@@ -115,15 +120,31 @@ func (t *DeviceDataTable) Upsert(dd *internal.DeviceData) (pos int64, err error)
 		}
 		tempDD.DeviceLists = tempDD.DeviceLists.Combine(dd.DeviceLists)
 
+		// we already got something in the database - update by just sending the new data
+		if len(row.Data) > 0 {
+			if tempDD.FallbackKeyTypes == nil {
+				// If fallback is null, it would, for some reason, nuke the whole
+				// column, so make sure we have something set.
+				tempDD.FallbackKeyTypes = []string{}
+			}
+			_, err = txn.Exec(`UPDATE syncv3_device_data SET data = 
+				jsonb_set(jsonb_set(jsonb_set(jsonb_set(jsonb_set(data, '{otk}', $3, false), '{fallback}', to_jsonb($4::text[]), false), '{c}', $5, false), '{dl,s}', $6, false),'{dl,n}', $7, false)
+				WHERE user_id = $1 AND device_id = $2
+				`,
+				dd.UserID, dd.DeviceID, tempDD.OTKCounts, pq.StringArray(tempDD.FallbackKeyTypes), tempDD.ChangedBits, tempDD.DeviceLists.Sent, tempDD.DeviceLists.New,
+			)
+			return err
+		}
+
 		data, err := json.Marshal(tempDD)
 		if err != nil {
 			return err
 		}
-		err = txn.QueryRow(
+		_, err = txn.Exec(
 			`INSERT INTO syncv3_device_data(user_id, device_id, data) VALUES($1,$2,$3)
-			ON CONFLICT (user_id, device_id) DO UPDATE SET data=$3, id=nextval('syncv3_device_data_seq') RETURNING id`,
+			ON CONFLICT (user_id, device_id) DO UPDATE SET data=$3`,
 			dd.UserID, dd.DeviceID, data,
-		).Scan(&pos)
+		)
 		return err
 	})
 	return

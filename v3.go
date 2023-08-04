@@ -1,6 +1,7 @@
 package slidingsync
 
 import (
+	"embed"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -9,18 +10,23 @@ import (
 	"time"
 
 	"github.com/getsentry/sentry-go"
-	"github.com/jmoiron/sqlx"
-
 	"github.com/gorilla/mux"
+	"github.com/jmoiron/sqlx"
 	"github.com/matrix-org/sliding-sync/internal"
 	"github.com/matrix-org/sliding-sync/pubsub"
 	"github.com/matrix-org/sliding-sync/state"
 	"github.com/matrix-org/sliding-sync/sync2"
 	"github.com/matrix-org/sliding-sync/sync2/handler2"
 	"github.com/matrix-org/sliding-sync/sync3/handler"
+	"github.com/pressly/goose/v3"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/hlog"
+
+	_ "github.com/matrix-org/sliding-sync/state/migrations"
 )
+
+//go:embed state/migrations/*
+var EmbedMigrations embed.FS
 
 var logger = zerolog.New(os.Stdout).With().Timestamp().Logger().Output(zerolog.ConsoleWriter{
 	Out:        os.Stderr,
@@ -87,6 +93,7 @@ func Setup(destHomeserver, postgresURI, secret string, opts Opts) (*handler2.Han
 		// TODO: if we panic(), will sentry have a chance to flush the event?
 		logger.Panic().Err(err).Str("uri", postgresURI).Msg("failed to open SQL DB")
 	}
+
 	if opts.DBMaxConns > 0 {
 		// https://github.com/go-sql-driver/mysql#important-settings
 		// "db.SetMaxIdleConns() is recommended to be set same to db.SetMaxOpenConns(). When it is smaller
@@ -99,6 +106,14 @@ func Setup(destHomeserver, postgresURI, secret string, opts Opts) (*handler2.Han
 	}
 	store := state.NewStorageWithDB(db)
 	storev2 := sync2.NewStoreWithDB(db, secret)
+
+	// Automatically execute migrations
+	goose.SetBaseFS(EmbedMigrations)
+	err = goose.Up(db.DB, "state/migrations", goose.WithAllowMissing())
+	if err != nil {
+		logger.Panic().Err(err).Msg("failed to execute migrations")
+	}
+
 	bufferSize := 50
 	deviceDataUpdateFrequency := time.Second
 	if opts.TestingSynchronousPubsub {
