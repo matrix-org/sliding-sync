@@ -37,6 +37,22 @@ type LatestEvents struct {
 	LatestNID int64
 }
 
+// DiscardIgnoredMessages modifies the struct in-place, replacing the Timeline with
+// a copy that has all ignored events omitted. The order of timelines is preserved.
+func (e *LatestEvents) DiscardIgnoredMessages(shouldIgnore func(sender string) bool) {
+	// A little bit sad to be effectively doing a copy here---most of the time there
+	// won't be any messages to ignore (and the timeline is likely short). But that copy
+	// is unlikely to be a bottleneck.
+	newTimeline := make([]json.RawMessage, 0, len(e.Timeline))
+	for _, ev := range e.Timeline {
+		parsed := gjson.ParseBytes(ev)
+		if parsed.Get("state_key").Exists() || !shouldIgnore(parsed.Get("sender").Str) {
+			newTimeline = append(newTimeline, ev)
+		}
+	}
+	e.Timeline = newTimeline
+}
+
 type Storage struct {
 	Accumulator       *Accumulator
 	EventsTable       *EventTable
