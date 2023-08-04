@@ -160,7 +160,7 @@ func TestDeviceDataTableSwaps(t *testing.T) {
 	assertDeviceData(t, *got, want4)
 
 	// another append then consume
-	// This results in dave to be added to Sent
+	// This results in dave to be added to New
 	err = table.Upsert(&internal.DeviceData{
 		UserID:   userID,
 		DeviceID: deviceID,
