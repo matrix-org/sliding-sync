@@ -100,7 +100,7 @@ func TestTokenForEachDevice(t *testing.T) {
 
 	// HACK: discard rows inserted by other tests. We don't normally need to do this,
 	// but this is testing a query that scans the entire devices table.
-	db.MustExec("TRUNCATE syncv3_sync2_devices, syncv3_sync2_tokens;")
+	db.Exec("TRUNCATE syncv3_sync2_devices, syncv3_sync2_tokens;")
 
 	tokens := NewTokensTable(db, "my_secret")
 	devices := NewDevicesTable(db)
