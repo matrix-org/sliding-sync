@@ -163,6 +163,7 @@ func (h *Handler) StartV2Pollers() {
 	wg.Wait()
 	logger.Info().Msg("StartV2Pollers finished")
 	h.updateMetrics()
+	h.startCleanupTicker()
 }
 
 func (h *Handler) updateMetrics() {
@@ -556,6 +557,31 @@ func (h *Handler) EnsurePolling(p *pubsub.V3EnsurePolling) {
 			DeviceID: p.DeviceID,
 		})
 	}()
+}
+
+func (h *Handler) startCleanupTicker() {
+	// TODO: would be nice to make this method idempotent so we don't run >1 ticker.
+	ticker := time.NewTicker(time.Hour)
+	go func() {
+		for range ticker.C {
+			h.cleanup()
+		}
+	}()
+}
+
+func (h *Handler) cleanup() {
+	devices, err := h.v2Store.DevicesTable.FindOldDevices(30 * 24 * time.Hour)
+	if err != nil {
+		logger.Err(err).Msg("Error fetching old devices")
+		sentry.CaptureException(err)
+	}
+	pids := make([]sync2.PollerID, len(devices))
+	for i := range devices {
+		pids[i].UserID = devices[i].UserID
+		pids[i].DeviceID = devices[i].DeviceID
+	}
+	numExpired := h.pMap.ExpirePollers(pids)
+	logger.Info().Int("old", len(devices)).Int("expired", numExpired).Msg("poller cleanup")
 }
 
 func fnvHash(event json.RawMessage) uint64 {
