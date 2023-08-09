@@ -570,7 +570,7 @@ func (p *poller) poll(ctx context.Context, s *pollLoopState) error {
 		}
 	}
 	if s.since == "" {
-		p.logger.Info().Msg("Poller: valid initial sync response received")
+		p.logger.Info().Str("user_id", p.userID).Str("device_id", p.deviceID).Msg("Poller: valid initial sync response received")
 	}
 	p.initialToDeviceOnly = false
 	start = time.Now()
