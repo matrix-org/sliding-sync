@@ -48,6 +48,10 @@ func (p *mockPollerMap) DeviceIDs(userID string) []string {
 	return nil
 }
 
+func (p *mockPollerMap) ExpirePollers([]sync2.PollerID) int {
+	return 0
+}
+
 func (p *mockPollerMap) EnsurePolling(pid sync2.PollerID, accessToken, v2since string, isStartup bool, logger zerolog.Logger) bool {
 	p.calls = append(p.calls, pollInfo{
 		pid:         pid,

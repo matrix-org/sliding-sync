@@ -65,6 +65,9 @@ type IPollerMap interface {
 	NumPollers() int
 	Terminate()
 	DeviceIDs(userID string) []string
+	// ExpirePollers requests that the given pollers are terminated as if their access
+	// tokens had expired. Returns the number of pollers successfully terminated.
+	ExpirePollers(ids []PollerID) int
 }
 
 // PollerMap is a map of device ID to Poller
@@ -208,6 +211,22 @@ func (h *PollerMap) DeviceIDs(userID string) []string {
 		}
 	}
 	return devices
+}
+
+func (h *PollerMap) ExpirePollers(pids []PollerID) int {
+	h.pollerMu.Lock()
+	defer h.pollerMu.Unlock()
+	numTerminated := 0
+	for _, pid := range pids {
+		p, ok := h.Pollers[pid]
+		if !ok || p.terminated.Load() {
+			continue
+		}
+		p.Terminate()
+		h.callbacks.OnExpiredToken(context.Background(), hashToken(p.accessToken), p.userID, p.deviceID)
+		numTerminated++
+	}
+	return numTerminated
 }
 
 // EnsurePolling makes sure there is a poller for this device, making one if need be.
