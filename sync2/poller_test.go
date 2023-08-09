@@ -244,12 +244,14 @@ func TestPollerPollFromNothing(t *testing.T) {
 	case <-time.After(time.Second):
 		t.Errorf("WaitUntilInitialSync failed to fire")
 	}
+	accumulator.mu.RLock()
 	if len(accumulator.states[roomID]) != len(roomState) {
 		t.Errorf("did not accumulate initial state for room, got %d events want %d", len(accumulator.states[roomID]), len(roomState))
 	}
 	if accumulator.pollerIDToSince[pid] != nextSince {
 		t.Errorf("did not persist latest since token, got %s want %s", accumulator.pollerIDToSince[pid], nextSince)
 	}
+	accumulator.mu.RUnlock()
 }
 
 // Check that a call to Poll starts polling with an existing since token and accumulates timeline entries
@@ -334,6 +336,7 @@ func TestPollerPollFromExisting(t *testing.T) {
 	case <-time.After(time.Second):
 		t.Errorf("WaitUntilInitialSync failed to fire")
 	}
+	accumulator.mu.RLock()
 	if len(accumulator.timelines[roomID]) != 10 {
 		t.Errorf("did not accumulate timelines for room, got %d events want %d", len(accumulator.timelines[roomID]), 10)
 	}
@@ -341,6 +344,7 @@ func TestPollerPollFromExisting(t *testing.T) {
 	if accumulator.pollerIDToSince[pid] != wantSince {
 		t.Errorf("did not persist latest since token, got %s want %s", accumulator.pollerIDToSince[pid], wantSince)
 	}
+	accumulator.mu.RUnlock()
 }
 
 // Check that the since token in the database
@@ -575,6 +579,8 @@ func (c *mockClient) WhoAmI(authHeader string) (string, string, error) {
 }
 
 type mockDataReceiver struct {
+	// mu guards states, timelines and pollerIDToSince.
+	mu                *sync.RWMutex
 	states            map[string][]json.RawMessage
 	timelines         map[string][]json.RawMessage
 	pollerIDToSince   map[PollerID]string
@@ -584,10 +590,14 @@ type mockDataReceiver struct {
 }
 
 func (a *mockDataReceiver) Accumulate(ctx context.Context, userID, deviceID, roomID, prevBatch string, timeline []json.RawMessage) {
+	a.mu.Lock()
 	a.timelines[roomID] = append(a.timelines[roomID], timeline...)
+	a.mu.Unlock()
 }
 func (a *mockDataReceiver) Initialise(ctx context.Context, roomID string, state []json.RawMessage) []json.RawMessage {
+	a.mu.Lock()
 	a.states[roomID] = state
+	a.mu.Unlock()
 	if a.incomingProcess != nil {
 		a.incomingProcess <- struct{}{}
 	}
@@ -601,7 +611,9 @@ func (a *mockDataReceiver) Initialise(ctx context.Context, roomID string, state 
 func (a *mockDataReceiver) SetTyping(ctx context.Context, pollerID PollerID, roomID string, ephEvent json.RawMessage) {
 }
 func (s *mockDataReceiver) UpdateDeviceSince(ctx context.Context, userID, deviceID, since string) {
+	s.mu.Lock()
 	s.pollerIDToSince[PollerID{UserID: userID, DeviceID: deviceID}] = since
+	s.mu.Unlock()
 	if s.updateSinceCalled != nil {
 		s.updateSinceCalled <- struct{}{}
 	}
@@ -630,6 +642,7 @@ func newMocks(doSyncV2 func(authHeader, since string) (*SyncResponse, int, error
 		fn: doSyncV2,
 	}
 	accumulator := &mockDataReceiver{
+		mu:              &sync.RWMutex{},
 		states:          make(map[string][]json.RawMessage),
 		timelines:       make(map[string][]json.RawMessage),
 		pollerIDToSince: make(map[PollerID]string),
