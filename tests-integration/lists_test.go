@@ -192,6 +192,121 @@ func TestUnreadCountMisordering(t *testing.T) {
 	)))
 }
 
+func TestEventMisordering(t *testing.T) {
+	pqString := testutils.PrepareDBConnectionString()
+	// setup code
+	v2 := runTestV2Server(t)
+	v3 := runTestServer(t, v2, pqString)
+	defer v2.close()
+	defer v3.close()
+
+	roomA := "!a:localhost"
+	roomB := "!b:localhost"
+	roomC := "!c:localhost"
+	data := map[string]struct {
+		ts time.Time
+	}{
+		roomA: {ts: time.Now().Add(-time.Second)},
+		roomB: {ts: time.Now().Add(-time.Second * 2)},
+		roomC: {ts: time.Now().Add(-time.Second * 3)},
+	}
+	var re []roomEvents
+	for roomID, info := range data {
+		re = append(re, roomEvents{
+			roomID: roomID,
+			state:  createRoomState(t, alice, time.Now()),
+			events: []json.RawMessage{
+				testutils.NewEvent(t, "m.room.message", alice, map[string]interface{}{"body": "latest msg"}, testutils.WithTimestamp(info.ts)),
+			},
+		})
+	}
+	v2.addAccount(t, alice, aliceToken)
+
+	// Join all rooms
+	v2.queueResponse(alice, sync2.SyncResponse{
+		Rooms: sync2.SyncRoomsResponse{
+			Join: v2JoinTimeline(re...),
+		},
+	})
+
+	// Initial v3 request, starting the poller
+	res := v3.mustDoV3Request(t, aliceToken, sync3.Request{
+		Lists: map[string]sync3.RequestList{
+			"all_rooms": {
+				RoomSubscription: sync3.RoomSubscription{
+					RequiredState: [][2]string{{"m.room.avatar", ""}, {"m.room.encryption", ""}, {"m.room.member", "$ME"}, {"m.room.canonical_alias", ""}},
+				},
+				Ranges: [][2]int64{{0, 5}},
+				Sort:   []string{sync3.SortByRecency, sync3.SortByName},
+			},
+		},
+	})
+	m.MatchResponse(t, res,
+		m.MatchList("all_rooms", m.MatchV3Count(3), m.MatchV3Ops(m.MatchV3SyncOp(0, 2, []string{roomA, roomB, roomC}))),
+	)
+
+	// Create a leave event for roomC, this is now the most recent event in this room
+	leaveEv := testutils.NewStateEvent(t, "m.room.member", alice, alice, map[string]interface{}{"membership": "leave"}, testutils.WithUnsigned(map[string]interface{}{
+		"prev_content": map[string]interface{}{
+			"membership": "join",
+		},
+	}), testutils.WithTimestamp(time.Now().Add(time.Second*1)))
+
+	// Leave room C
+	v2.queueResponse(alice, sync2.SyncResponse{
+		Rooms: sync2.SyncRoomsResponse{
+			Leave: map[string]sync2.SyncV2LeaveResponse{
+				roomC: {
+					Timeline: sync2.TimelineResponse{Events: []json.RawMessage{leaveEv}},
+				},
+			},
+		},
+	})
+	// Wait until the poller has processed the leave
+	v2.waitUntilEmpty(t, alice)
+
+	// Create a join event for roomC, this is now the most recent event in this room.
+	// This is the event which doesn't seem to be handled correctly by the poller?
+	joinEv := testutils.NewStateEvent(t, "m.room.member", alice, alice, map[string]interface{}{"membership": "join"}, testutils.WithTimestamp(time.Now().Add(time.Second*2)))
+	// And immediately re-join
+	v2.queueResponse(alice, sync2.SyncResponse{
+		Rooms: sync2.SyncRoomsResponse{
+			Join: map[string]sync2.SyncV2JoinResponse{
+				roomC: {
+					Timeline: sync2.TimelineResponse{Events: []json.RawMessage{joinEv}},
+				},
+			},
+		},
+	})
+
+	// Wait until the poller has processed the re-join
+	v2.waitUntilEmpty(t, alice)
+
+	// Request a v3 sync
+	res = v3.mustDoV3RequestWithPos(t, aliceToken, res.Pos, sync3.Request{})
+	// Unclear which ops should be expected at this point? currently a DELETE 2, INSERT 0 (roomC), DELETE 0 is returned, which feels wrong?
+	// As well as the leave event twice in the timeline for roomC
+	m.MatchResponse(t, res,
+		m.MatchList("all_rooms", m.MatchV3Count(3), m.MatchV3Ops(m.MatchV3DeleteOp(2), m.MatchV3InsertOp(0, roomC))),
+	)
+
+	// Bump roomC, this message won't be received by Alice
+	msgEv := testutils.NewEvent(t, "m.room.message", alice, map[string]interface{}{"body": "latest msg"}, testutils.WithTimestamp(time.Now().Add(time.Second*3)))
+	v2.queueResponse(alice, sync2.SyncResponse{
+		Rooms: sync2.SyncRoomsResponse{
+			Join: map[string]sync2.SyncV2JoinResponse{
+				roomC: {
+					Timeline: sync2.TimelineResponse{Events: []json.RawMessage{msgEv}},
+				},
+			},
+		},
+	})
+
+	res = v3.mustDoV3RequestWithPos(t, aliceToken, res.Pos, sync3.Request{})
+	// msgEv is not received
+	m.MatchResponse(t, res, m.MatchRoomSubscription(roomC, m.MatchRoomTimeline([]json.RawMessage{msgEv})))
+}
+
 func TestBumpEventTypesOnStartup(t *testing.T) {
 	const room1ID = "!room1:localhost"
 	const room2ID = "!room2:localhost"

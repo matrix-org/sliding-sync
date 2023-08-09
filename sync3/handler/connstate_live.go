@@ -36,6 +36,10 @@ func (s *connStateLive) onUpdate(up caches.Update) {
 	}
 	select {
 	case s.updates <- up:
+		up, ok := up.(*caches.RoomEventUpdate)
+		if ok {
+			logger.Trace().Msgf("send message to s.Updates: %#v", up.EventData.Content)
+		}
 	case <-time.After(BufferWaitTime):
 		logger.Warn().Interface("update", up).Str("user", s.userID).Str("device", s.deviceID).Msg(
 			"cannot send update to connection, buffer exceeded. Destroying connection.",
@@ -81,10 +85,18 @@ func (s *connStateLive) liveUpdate(
 			internal.Logf(ctx, "liveUpdate", "timed out after %v", timeLeftToWait)
 			return
 		case update := <-s.updates:
+			up, ok := update.(*caches.RoomEventUpdate)
+			if ok {
+				logger.Trace().Msgf("process update %#v", up.EventData.Content)
+			}
 			s.processUpdate(ctx, update, response, ex)
 			// if there's more updates and we don't have lots stacked up already, go ahead and process another
 			for len(s.updates) > 0 && response.ListOps() < 50 {
 				update = <-s.updates
+				up, ok := update.(*caches.RoomEventUpdate)
+				if ok {
+					logger.Trace().Msgf("mooore data: %#v", up.EventData.Content)
+				}
 				s.processUpdate(ctx, update, response, ex)
 			}
 		}
@@ -160,7 +172,7 @@ func (s *connStateLive) processLiveUpdate(ctx context.Context, up caches.Update,
 
 	// process room subscriptions
 	hasUpdates := s.processUpdatesForSubscriptions(ctx, builder, up)
-
+	logger.Trace().Msgf("Delta: %#v", delta)
 	// do per-list updates (e.g resorting, adding/removing rooms which no longer match filter)
 	for _, listDelta := range delta.Lists {
 		listKey := listDelta.ListKey
@@ -292,9 +304,11 @@ func (s *connStateLive) processGlobalUpdates(ctx context.Context, builder *Rooms
 
 	bumpTimestampInList := make(map[string]uint64, len(s.muxedReq.Lists))
 	rup, isRoomUpdate := up.(caches.RoomUpdate)
+	logger.Trace().Msgf("isRoomUpdate: %v - isRoomEventUpdate: %v", isRoomUpdate, isRoomEventUpdate)
 	if isRoomUpdate {
 		updateTimestamp := rup.GlobalRoomMetadata().LastMessageTimestamp
 		for listKey, list := range s.muxedReq.Lists {
+			logger.Trace().Msgf("list: %#v", list)
 			if len(list.BumpEventTypes) == 0 {
 				// If this list hasn't provided BumpEventTypes, bump the room list for all room updates.
 				bumpTimestampInList[listKey] = updateTimestamp
@@ -341,7 +355,12 @@ func (s *connStateLive) processLiveUpdateForList(
 ) (hasUpdates bool) {
 	switch update := up.(type) {
 	case *caches.RoomEventUpdate:
-		logger.Trace().Str("user", s.userID).Str("type", update.EventData.EventType).Msg("received event update")
+		logger.Trace().Str("user", s.userID).
+			Str("type", update.EventData.EventType).
+			Any("data", update.EventData.Content).
+			Str("roomID", update.RoomID()).
+			Bool("force_initial", update.EventData.ForceInitial).
+			Msg("received event update")
 		if update.EventData.ForceInitial {
 			// add room to sub: this applies for when we track all rooms too as we want joins/etc to come through with initial data
 			subID := builder.AddSubscription(reqList.RoomSubscription)

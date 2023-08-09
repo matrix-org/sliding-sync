@@ -85,6 +85,11 @@ func NewConnState(
 		userID,
 		maxTransactionIDDelay,
 		func(delayed bool, update caches.Update) {
+			up, ok := update.(*caches.RoomEventUpdate)
+			if ok {
+				logger.Trace().Msgf("wuuuu: %#v", up.EventData.Content)
+			}
+			logger.Trace().Bool("delayed", delayed).Msgf("sending onUpdate: %#v", update)
 			cs.live.onUpdate(update)
 		},
 	)

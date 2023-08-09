@@ -126,6 +126,7 @@ func (s *InternalRequestLists) SetRoom(r RoomConnMetadata) (delta RoomDelta) {
 			shouldExist = false
 		}
 		// weird nesting ensures we handle all 4 cases
+		logger.Trace().Msgf("SetRoom exists: %v - alreadyExists: %v, shouldExist: %v: hasLeft: %v", exists, alreadyExists, shouldExist, r.HasLeft)
 		if alreadyExists {
 			if shouldExist { // could be a change
 				delta.Lists = append(delta.Lists, RoomListDelta{

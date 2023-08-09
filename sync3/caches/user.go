@@ -564,6 +564,12 @@ func (c *UserCache) OnNewEvent(ctx context.Context, eventData *EventData) {
 			urd.HighlightCount = 0
 		}
 	}
+	logger.Trace().Msgf("OnNewEvent called: %#v - %v", eventData.Content, urd.HasLeft)
+	if eventData.EventType == "m.room.member" && eventData.StateKey != nil && *eventData.StateKey == c.UserID {
+		if urd.HasLeft && eventData.Content.Get("membership").Str == "join" {
+			//urd.HasLeft = false
+		}
+	}
 	if eventData.EventType == "m.space.child" && eventData.StateKey != nil {
 		// the children for a space we are a part of have changed. Find the room that was affected and update our cache value.
 		childRoomID := *eventData.StateKey
