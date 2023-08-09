@@ -14,8 +14,11 @@ func TestDeviceTickerBasic(t *testing.T) {
 	duration := time.Millisecond
 	ticker := NewDeviceDataTicker(duration)
 	var payloads []*pubsub.V2DeviceData
+	mu := &sync.Mutex{}
 	ticker.SetCallback(func(payload *pubsub.V2DeviceData) {
+		mu.Lock()
 		payloads = append(payloads, payload)
+		mu.Unlock()
 	})
 	var wg sync.WaitGroup
 	wg.Add(1)
@@ -31,6 +34,7 @@ func TestDeviceTickerBasic(t *testing.T) {
 		DeviceID: "b",
 	})
 	time.Sleep(duration * 2)
+	mu.Lock()
 	if len(payloads) != 1 {
 		t.Fatalf("expected 1 callback, got %d", len(payloads))
 	}
@@ -38,8 +42,12 @@ func TestDeviceTickerBasic(t *testing.T) {
 		"a": {"b"},
 	}
 	assertPayloadEqual(t, payloads[0].UserIDToDeviceIDs, want)
+	mu.Unlock()
+
 	// check stopping works
+	mu.Lock()
 	payloads = []*pubsub.V2DeviceData{}
+	mu.Unlock()
 	ticker.Stop()
 	wg.Wait()
 	time.Sleep(duration * 2)
@@ -52,8 +60,11 @@ func TestDeviceTickerBatchesCorrectly(t *testing.T) {
 	duration := 100 * time.Millisecond
 	ticker := NewDeviceDataTicker(duration)
 	var payloads []*pubsub.V2DeviceData
+	mu := &sync.Mutex{}
 	ticker.SetCallback(func(payload *pubsub.V2DeviceData) {
+		mu.Lock()
 		payloads = append(payloads, payload)
+		mu.Unlock()
 	})
 	go ticker.Run()
 	defer ticker.Stop()
@@ -74,6 +85,8 @@ func TestDeviceTickerBatchesCorrectly(t *testing.T) {
 		DeviceID: "y", // new device and user
 	})
 	time.Sleep(duration * 2)
+	mu.Lock()
+	defer mu.Unlock()
 	if len(payloads) != 1 {
 		t.Fatalf("expected 1 callback, got %d", len(payloads))
 	}
@@ -88,9 +101,12 @@ func TestDeviceTickerForgetsAfterEmitting(t *testing.T) {
 	duration := time.Millisecond
 	ticker := NewDeviceDataTicker(duration)
 	var payloads []*pubsub.V2DeviceData
+	mu := &sync.Mutex{}
 
 	ticker.SetCallback(func(payload *pubsub.V2DeviceData) {
+		mu.Lock()
 		payloads = append(payloads, payload)
+		mu.Unlock()
 	})
 	ticker.Remember(PollerID{
 		UserID:   "a",
@@ -104,6 +120,8 @@ func TestDeviceTickerForgetsAfterEmitting(t *testing.T) {
 		DeviceID: "b",
 	})
 	time.Sleep(10 * duration)
+	mu.Lock()
+	defer mu.Unlock()
 	if len(payloads) != 1 {
 		t.Fatalf("got %d payloads, want 1", len(payloads))
 	}
