@@ -39,6 +39,7 @@ func upJSONB(ctx context.Context, tx *sql.Tx) error {
 	if err != nil {
 		return err
 	}
+	defer rows.Close()
 
 	// abusing PollerID here
 	var deviceData sync2.PollerID
@@ -58,6 +59,10 @@ func upJSONB(ctx context.Context, tx *sql.Tx) error {
 		if err != nil {
 			return err
 		}
+	}
+
+	if rows.Err() != nil {
+		return rows.Err()
 	}
 
 	_, err = tx.ExecContext(ctx, "ALTER TABLE IF EXISTS syncv3_device_data DROP COLUMN IF EXISTS data;")
