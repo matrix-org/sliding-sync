@@ -6,6 +6,7 @@ import (
 	"errors"
 	"strings"
 
+	"github.com/matrix-org/sliding-sync/sync2"
 	"github.com/pressly/goose/v3"
 )
 
@@ -33,10 +34,37 @@ func upJSONB(ctx context.Context, tx *sql.Tx) error {
 	if err != nil {
 		return err
 	}
-	_, err = tx.ExecContext(ctx, "UPDATE syncv3_device_data SET dataj = encode(data, 'escape')::JSONB;")
+
+	rows, err := tx.Query("SELECT user_id, device_id, data FROM syncv3_device_data")
 	if err != nil {
 		return err
 	}
+	defer rows.Close()
+
+	// abusing PollerID here
+	var deviceData sync2.PollerID
+	var data []byte
+
+	// map from PollerID -> deviceData
+	deviceDatas := make(map[sync2.PollerID][]byte)
+	for rows.Next() {
+		if err = rows.Scan(&deviceData.UserID, &deviceData.DeviceID, &data); err != nil {
+			return err
+		}
+		deviceDatas[deviceData] = data
+	}
+
+	for dd, d := range deviceDatas {
+		_, err = tx.ExecContext(ctx, "UPDATE syncv3_device_data SET dataj = $1 WHERE user_id = $2 AND device_id = $3;", d, dd.UserID, dd.DeviceID)
+		if err != nil {
+			return err
+		}
+	}
+
+	if rows.Err() != nil {
+		return rows.Err()
+	}
+
 	_, err = tx.ExecContext(ctx, "ALTER TABLE IF EXISTS syncv3_device_data DROP COLUMN IF EXISTS data;")
 	if err != nil {
 		return err
