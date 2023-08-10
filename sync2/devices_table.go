@@ -52,9 +52,9 @@ func (t *DevicesTable) UpdateDeviceSince(userID, deviceID, since string) error {
 // no particular order.
 //
 // This is determined using the syncv3_sync2_tokens.last_seen column, which is updated
-// at most once per day to save DB throughtput (see MaybeUpdateLastSeen). The caller
-// should therefore use an inactivityPeriod of at least two days to avoid considering
-// a recently-used device as old.
+// at most once per day to save DB throughtput (see TokensTable.MaybeUpdateLastSeen).
+// The caller should therefore use an inactivityPeriod of at least two days to avoid
+// considering a recently-used device as old.
 func (t *DevicesTable) FindOldDevices(inactivityPeriod time.Duration) (devices []Device, err error) {
 	err = t.db.Select(&devices, `
 		SELECT user_id, device_id
