@@ -112,7 +112,9 @@ func (h *Handler) Teardown() {
 	h.v2Store.Teardown()
 	h.pMap.Terminate()
 	h.deviceDataTicker.Stop()
-	h.pollerExpiryTicker.Stop()
+	if h.pollerExpiryTicker != nil {
+		h.pollerExpiryTicker.Stop()
+	}
 	if h.numPollers != nil {
 		prometheus.Unregister(h.numPollers)
 	}
