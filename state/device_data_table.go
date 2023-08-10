@@ -3,6 +3,7 @@ package state
 import (
 	"database/sql"
 	"encoding/json"
+	"fmt"
 	"reflect"
 
 	"github.com/jmoiron/sqlx"
@@ -97,55 +98,76 @@ func (t *DeviceDataTable) DeleteDevice(userID, deviceID string) error {
 // Upsert combines what is in the database for this user|device with the partial entry `dd`
 func (t *DeviceDataTable) Upsert(dd *internal.DeviceData) (err error) {
 	err = sqlutil.WithTransaction(t.db, func(txn *sqlx.Tx) error {
-		// select what already exists
-		var row DeviceDataRow
-		err = txn.Get(&row, `SELECT data FROM syncv3_device_data WHERE user_id=$1 AND device_id=$2`, dd.UserID, dd.DeviceID)
+		// see if anything already exists
+		var changedBit int
+		err = txn.QueryRow(`SELECT data->>'c' FROM syncv3_device_data WHERE user_id=$1 AND device_id=$2 FOR UPDATE`, dd.UserID, dd.DeviceID).Scan(&changedBit)
 		if err != nil && err != sql.ErrNoRows {
-			return err
+			return fmt.Errorf("failed to check if device data exists: %v", err)
 		}
-		// unmarshal and combine
-		var tempDD internal.DeviceData
-		if len(row.Data) > 0 {
-			if err = json.Unmarshal(row.Data, &tempDD); err != nil {
-				return err
+		// brand new insert, do it and return
+		if err == sql.ErrNoRows {
+			// we need to tell postgres these fields are objects not arrays, else || won't behave as we want
+			if dd.DeviceLists.New == nil {
+				dd.DeviceLists.New = make(internal.MapStringInt)
 			}
-		}
-		if dd.FallbackKeyTypes != nil {
-			tempDD.FallbackKeyTypes = dd.FallbackKeyTypes
-			tempDD.SetFallbackKeysChanged()
-		}
-		if dd.OTKCounts != nil {
-			tempDD.OTKCounts = dd.OTKCounts
-			tempDD.SetOTKCountChanged()
-		}
-		tempDD.DeviceLists = tempDD.DeviceLists.Combine(dd.DeviceLists)
-
-		// we already got something in the database - update by just sending the new data
-		if len(row.Data) > 0 {
-			if tempDD.FallbackKeyTypes == nil {
-				// If fallback is null, it would, for some reason, nuke the whole
-				// column, so make sure we have something set.
-				tempDD.FallbackKeyTypes = []string{}
+			if dd.DeviceLists.Sent == nil {
+				dd.DeviceLists.Sent = make(internal.MapStringInt)
 			}
-			_, err = txn.Exec(`UPDATE syncv3_device_data SET data = 
-				jsonb_set(jsonb_set(jsonb_set(jsonb_set(jsonb_set(data, '{otk}', $3, false), '{fallback}', to_jsonb($4::text[]), false), '{c}', $5, false), '{dl,s}', $6, false),'{dl,n}', $7, false)
-				WHERE user_id = $1 AND device_id = $2
-				`,
-				dd.UserID, dd.DeviceID, tempDD.OTKCounts, pq.StringArray(tempDD.FallbackKeyTypes), tempDD.ChangedBits, tempDD.DeviceLists.Sent, tempDD.DeviceLists.New,
+			newInsert := internal.DeviceData{
+				DeviceLists: dd.DeviceLists,
+			}
+			if dd.FallbackKeyTypes != nil {
+				newInsert.FallbackKeyTypes = dd.FallbackKeyTypes
+				newInsert.SetFallbackKeysChanged()
+			}
+			if dd.OTKCounts != nil {
+				newInsert.OTKCounts = dd.OTKCounts
+				newInsert.SetOTKCountChanged()
+			}
+			data, err := json.Marshal(newInsert)
+			if err != nil {
+				return fmt.Errorf("failed to marshal new device data: %v", err)
+			}
+			_, err = txn.Exec(
+				`INSERT INTO syncv3_device_data(user_id, device_id, data) VALUES($1,$2,$3)
+				ON CONFLICT (user_id, device_id) DO UPDATE SET data=$3`,
+				dd.UserID, dd.DeviceID, data,
 			)
 			return err
 		}
+		dd.ChangedBits = changedBit
 
-		data, err := json.Marshal(tempDD)
-		if err != nil {
-			return err
+		// figure out which keys have changed and just update that section of the JSON
+		if dd.FallbackKeyTypes != nil {
+			_, err = txn.Exec(`UPDATE syncv3_device_data SET data = jsonb_set(data, '{fallback}', to_jsonb($3::text[]), true) WHERE user_id = $1 AND device_id = $2`, dd.UserID, dd.DeviceID, pq.StringArray(dd.FallbackKeyTypes))
+			if err != nil {
+				return fmt.Errorf("failed to set fallback keys: %v", err)
+			}
+			dd.SetFallbackKeysChanged()
 		}
-		_, err = txn.Exec(
-			`INSERT INTO syncv3_device_data(user_id, device_id, data) VALUES($1,$2,$3)
-			ON CONFLICT (user_id, device_id) DO UPDATE SET data=$3`,
-			dd.UserID, dd.DeviceID, data,
-		)
-		return err
+		if dd.OTKCounts != nil {
+			_, err = txn.Exec(`UPDATE syncv3_device_data SET data = jsonb_set(data, '{otk}', $3, true) WHERE user_id = $1 AND device_id = $2`, dd.UserID, dd.DeviceID, dd.OTKCounts)
+			if err != nil {
+				return fmt.Errorf("failed to set otk counts: %v", err)
+			}
+			dd.SetOTKCountChanged()
+		}
+		if len(dd.DeviceLists.New) > 0 {
+			_, err = txn.Exec(`UPDATE syncv3_device_data SET data = jsonb_set(data, '{dl,n}', data->'dl'->'n' || $3::jsonb, true) WHERE user_id = $1 AND device_id = $2`,
+				dd.UserID, dd.DeviceID, dd.DeviceLists.New)
+			if err != nil {
+				return fmt.Errorf("failed to update device list changes: %v", err)
+			}
+		}
+
+		if changedBit != dd.ChangedBits {
+			_, err = txn.Exec(`UPDATE syncv3_device_data SET data = jsonb_set(data, '{c}', $3) WHERE user_id = $1 AND device_id = $2`, dd.UserID, dd.DeviceID, dd.ChangedBits)
+			if err != nil {
+				return fmt.Errorf("failed to set changed bit: %v", err)
+			}
+		}
+
+		return nil
 	})
 	return
 }
