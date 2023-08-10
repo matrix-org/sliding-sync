@@ -29,7 +29,7 @@ func TestDeviceDataTableSwaps(t *testing.T) {
 	defer close()
 	table := NewDeviceDataTable(db)
 	userID := "@bob"
-	deviceID := "💣"
+	deviceID := "BOB"
 
 	// test accumulating deltas
 	deltas := []internal.DeviceData{
