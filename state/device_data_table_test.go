@@ -29,7 +29,7 @@ func TestDeviceDataTableSwaps(t *testing.T) {
 	defer close()
 	table := NewDeviceDataTable(db)
 	userID := "@bob"
-	deviceID := "BOB"
+	deviceID := "💣"
 
 	// test accumulating deltas
 	deltas := []internal.DeviceData{
@@ -60,7 +60,7 @@ func TestDeviceDataTableSwaps(t *testing.T) {
 			UserID:   userID,
 			DeviceID: deviceID,
 			DeviceLists: internal.DeviceLists{
-				New: internal.ToDeviceListChangesMap([]string{"bob"}, nil),
+				New: internal.ToDeviceListChangesMap([]string{"💣"}, nil),
 			},
 		},
 	}
@@ -77,7 +77,7 @@ func TestDeviceDataTableSwaps(t *testing.T) {
 		},
 		FallbackKeyTypes: []string{"foobar"},
 		DeviceLists: internal.DeviceLists{
-			New:  internal.ToDeviceListChangesMap([]string{"alice", "bob"}, nil),
+			New:  internal.ToDeviceListChangesMap([]string{"alice", "💣"}, nil),
 			Sent: map[string]int{},
 		},
 	}
@@ -98,7 +98,7 @@ func TestDeviceDataTableSwaps(t *testing.T) {
 	// changed bits were reset when we swapped
 	want2 := want
 	want2.DeviceLists = internal.DeviceLists{
-		Sent: internal.ToDeviceListChangesMap([]string{"alice", "bob"}, nil),
+		Sent: internal.ToDeviceListChangesMap([]string{"alice", "💣"}, nil),
 		New:  map[string]int{},
 	}
 	want2.ChangedBits = 0
@@ -142,7 +142,7 @@ func TestDeviceDataTableSwaps(t *testing.T) {
 		UserID:   userID,
 		DeviceID: deviceID,
 		DeviceLists: internal.DeviceLists{
-			New: internal.ToDeviceListChangesMap([]string{"bob"}, []string{"charlie"}),
+			New: internal.ToDeviceListChangesMap([]string{"💣"}, []string{"charlie"}),
 		},
 	})
 	assertNoError(t, err)
@@ -151,8 +151,8 @@ func TestDeviceDataTableSwaps(t *testing.T) {
 
 	want4 := want
 	want4.DeviceLists = internal.DeviceLists{
-		Sent: internal.ToDeviceListChangesMap([]string{"alice", "bob"}, nil),
-		New:  internal.ToDeviceListChangesMap([]string{"bob"}, []string{"charlie"}),
+		Sent: internal.ToDeviceListChangesMap([]string{"alice", "💣"}, nil),
+		New:  internal.ToDeviceListChangesMap([]string{"💣"}, []string{"charlie"}),
 	}
 	// Without swapping, we expect Alice and Bob in Sent, and Bob and Charlie in New
 	got, err = table.Select(userID, deviceID, false)
@@ -173,8 +173,8 @@ func TestDeviceDataTableSwaps(t *testing.T) {
 	assertNoError(t, err)
 	want5 := want4
 	want5.DeviceLists = internal.DeviceLists{
-		Sent: internal.ToDeviceListChangesMap([]string{"alice", "bob"}, nil),
-		New:  internal.ToDeviceListChangesMap([]string{"bob"}, []string{"charlie", "dave"}),
+		Sent: internal.ToDeviceListChangesMap([]string{"alice", "💣"}, nil),
+		New:  internal.ToDeviceListChangesMap([]string{"💣"}, []string{"charlie", "dave"}),
 	}
 	assertDeviceData(t, *got, want5)
 
@@ -183,7 +183,7 @@ func TestDeviceDataTableSwaps(t *testing.T) {
 	assertNoError(t, err)
 	want5 = want4
 	want5.DeviceLists = internal.DeviceLists{
-		Sent: internal.ToDeviceListChangesMap([]string{"bob"}, []string{"charlie", "dave"}),
+		Sent: internal.ToDeviceListChangesMap([]string{"💣"}, []string{"charlie", "dave"}),
 		New:  map[string]int{},
 	}
 	assertDeviceData(t, *got, want5)
