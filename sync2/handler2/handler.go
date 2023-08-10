@@ -568,12 +568,16 @@ func (h *Handler) startPollerExpiryTicker() {
 	h.pollerExpiryTicker = time.NewTicker(time.Hour)
 	go func() {
 		for range h.pollerExpiryTicker.C {
-			h.expireOldPollers()
+			h.ExpireOldPollers()
 		}
 	}()
 }
 
-func (h *Handler) expireOldPollers() {
+// ExpireOldPollers looks for pollers whose devices have not made a sliding sync query
+// in the last 30 days, and asks the poller map to expire their corresponding pollers.
+// This function does not normally need to be called manually (StartV2Pollers queues it
+// up to run hourly); we expose it publicly only for testing purposes.
+func (h *Handler) ExpireOldPollers() {
 	devices, err := h.v2Store.DevicesTable.FindOldDevices(30 * 24 * time.Hour)
 	if err != nil {
 		logger.Err(err).Msg("Error fetching old devices")
