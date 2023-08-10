@@ -98,9 +98,11 @@ func (t *DeviceDataTable) DeleteDevice(userID, deviceID string) error {
 // Upsert combines what is in the database for this user|device with the partial entry `dd`
 func (t *DeviceDataTable) Upsert(dd *internal.DeviceData) (err error) {
 	err = sqlutil.WithTransaction(t.db, func(txn *sqlx.Tx) error {
-		// see if anything already exists
-		var changedBit int
-		err = txn.QueryRow(`SELECT data->>'c' FROM syncv3_device_data WHERE user_id=$1 AND device_id=$2 FOR UPDATE`, dd.UserID, dd.DeviceID).Scan(&changedBit)
+		// see if anything already exists. We do this by pulling out the changed bit because we need it to calculate the new bitset,
+		// so it's a useful proxy for "does this data exist for this user/device?"
+		// We use FOR UPDATE to block any potential changes to this JSON structure through the lifetime of the transaction.
+		var changedBits int
+		err = txn.QueryRow(`SELECT data->>'c' FROM syncv3_device_data WHERE user_id=$1 AND device_id=$2 FOR UPDATE`, dd.UserID, dd.DeviceID).Scan(&changedBits)
 		if err != nil && err != sql.ErrNoRows {
 			return fmt.Errorf("failed to check if device data exists: %v", err)
 		}
@@ -135,24 +137,35 @@ func (t *DeviceDataTable) Upsert(dd *internal.DeviceData) (err error) {
 			)
 			return err
 		}
-		dd.ChangedBits = changedBit
 
-		// figure out which keys have changed and just update that section of the JSON
+		// There are changes and we already have a JSON object in the DB. Rather than updating the entire JSON object,
+		// we'll just update the keys that have changes.
+
+		// remember what the old changed bits were, as we might need to set additional bits.
+		dd.ChangedBits = changedBits
+
+		// if there are fallback key changes, update that key
 		if dd.FallbackKeyTypes != nil {
 			_, err = txn.Exec(`UPDATE syncv3_device_data SET data = jsonb_set(data, '{fallback}', to_jsonb($3::text[]), true) WHERE user_id = $1 AND device_id = $2`, dd.UserID, dd.DeviceID, pq.StringArray(dd.FallbackKeyTypes))
 			if err != nil {
 				return fmt.Errorf("failed to set fallback keys: %v", err)
 			}
+			// mark it as changed on the changed bits
 			dd.SetFallbackKeysChanged()
 		}
+		// if there are otk count changes, update that key
 		if dd.OTKCounts != nil {
 			_, err = txn.Exec(`UPDATE syncv3_device_data SET data = jsonb_set(data, '{otk}', $3, true) WHERE user_id = $1 AND device_id = $2`, dd.UserID, dd.DeviceID, dd.OTKCounts)
 			if err != nil {
 				return fmt.Errorf("failed to set otk counts: %v", err)
 			}
+			// mark it as changed on the changed bits
 			dd.SetOTKCountChanged()
 		}
+		// if there are device list changes, combine what is already in the map with dd.DeviceLists.New
+		// This does the same thing as the old Combine function.
 		if len(dd.DeviceLists.New) > 0 {
+			// set dl.n to what was already in dl.n concatenated with our new JSON object (cast it to JSON so postgres knows it's an object)
 			_, err = txn.Exec(`UPDATE syncv3_device_data SET data = jsonb_set(data, '{dl,n}', data->'dl'->'n' || $3::jsonb, true) WHERE user_id = $1 AND device_id = $2`,
 				dd.UserID, dd.DeviceID, dd.DeviceLists.New)
 			if err != nil {
@@ -160,7 +173,8 @@ func (t *DeviceDataTable) Upsert(dd *internal.DeviceData) (err error) {
 			}
 		}
 
-		if changedBit != dd.ChangedBits {
+		// if we have modified fallback keys or otk counts, the bits will be different so update it.
+		if changedBits != dd.ChangedBits {
 			_, err = txn.Exec(`UPDATE syncv3_device_data SET data = jsonb_set(data, '{c}', $3) WHERE user_id = $1 AND device_id = $2`, dd.UserID, dd.DeviceID, dd.ChangedBits)
 			if err != nil {
 				return fmt.Errorf("failed to set changed bit: %v", err)
