@@ -265,143 +265,103 @@ func TestDeviceDataTableBitset(t *testing.T) {
 func TestDeviceDataTableBadStoredData(t *testing.T) {
 	// we know that the data column is a JSON object but we don't know if any of the keys are sensible values.
 	// This test ensures that Select work with missing/null/explicit empty values in the DB.
+	// We know for sure that:
+	// - the 'c' changed bit is always present and is an integer.
+	// - the 'dl' key is always present and is an object.
 	db, close := connectToDB(t)
 	defer close()
 	table := NewDeviceDataTable(db)
+
+	partialUpdateFallbackKeys := &internal.DeviceData{FallbackKeyTypes: []string{"foo"}}
+	checkFallbackKeys := func(d *internal.DeviceData) error {
+		if !reflect.DeepEqual(d.FallbackKeyTypes, partialUpdateFallbackKeys.FallbackKeyTypes) {
+			return fmt.Errorf("got %v want %v", d.FallbackKeyTypes, partialUpdateFallbackKeys.FallbackKeyTypes)
+		}
+		return nil
+	}
+
+	partialUpdateOTKCounts := &internal.DeviceData{OTKCounts: map[string]int{"foo": 100}}
+	checkOTKCounts := func(d *internal.DeviceData) error {
+		if !reflect.DeepEqual(d.OTKCounts, partialUpdateOTKCounts.OTKCounts) {
+			return fmt.Errorf("got %v want %v", d.OTKCounts, partialUpdateOTKCounts.OTKCounts)
+		}
+		return nil
+	}
+
+	// we don't test Sent lists as we never Upsert sent values: they only get set when swapping from New
+	partialUpdateNewDeviceList := &internal.DeviceData{
+		DeviceLists: internal.DeviceLists{
+			New: map[string]int{"foo": internal.DeviceListChanged},
+		},
+	}
+	checkNewDeviceList := func(d *internal.DeviceData) error {
+		if !reflect.DeepEqual(d.DeviceLists.New, partialUpdateNewDeviceList.DeviceLists.New) {
+			return fmt.Errorf("got %v want %v", d.DeviceLists.New, partialUpdateNewDeviceList.DeviceLists.New)
+		}
+		return nil
+	}
+
 	testCases := []struct {
-		name     string
-		jsonBlob string
-		check    func(d *internal.DeviceData) error
+		name          string
+		jsonBlob      string
+		partialUpsert *internal.DeviceData
+		check         func(d *internal.DeviceData) error
 	}{
 		{
-			name:     "missing fallback keys",
-			jsonBlob: `{}`,
-			check: func(d *internal.DeviceData) error {
-				if len(d.FallbackKeyTypes) != 0 {
-					return fmt.Errorf("got %v want no keys", d.FallbackKeyTypes)
-				}
-				return nil
-			},
+			name:          "existing fallback keys",
+			jsonBlob:      `{"c":0,"dl":{},"fallback":["hello there"]}`,
+			partialUpsert: partialUpdateFallbackKeys,
+			check:         checkFallbackKeys,
 		},
 		{
-			name:     "null fallback keys",
-			jsonBlob: `{"fallback":null}`,
-			check: func(d *internal.DeviceData) error {
-				if len(d.FallbackKeyTypes) != 0 {
-					return fmt.Errorf("got %v want no keys", d.FallbackKeyTypes)
-				}
-				return nil
-			},
+			name:          "missing fallback keys",
+			jsonBlob:      `{"c":0,"dl":{}}`,
+			partialUpsert: partialUpdateFallbackKeys,
+			check:         checkFallbackKeys,
 		},
 		{
-			name:     "explicit empty fallback keys",
-			jsonBlob: `{"fallback":[]}`,
-			check: func(d *internal.DeviceData) error {
-				if len(d.FallbackKeyTypes) != 0 {
-					return fmt.Errorf("got %v want no keys", d.FallbackKeyTypes)
-				}
-				return nil
-			},
+			name:          "null fallback keys",
+			jsonBlob:      `{"c":0,"dl":{},"fallback":null}`,
+			partialUpsert: partialUpdateFallbackKeys,
+			check:         checkFallbackKeys,
 		},
 		{
-			name:     "missing otk key",
-			jsonBlob: `{}`,
-			check: func(d *internal.DeviceData) error {
-				if len(d.OTKCounts) != 0 {
-					return fmt.Errorf("got %v want no otks", d.OTKCounts)
-				}
-				return nil
-			},
+			name:          "explicit empty fallback keys",
+			jsonBlob:      `{"c":0,"dl":{},"fallback":[]}`,
+			partialUpsert: partialUpdateFallbackKeys,
+			check:         checkFallbackKeys,
 		},
 		{
-			name:     "null otk key",
-			jsonBlob: `{"otk":null}`,
-			check: func(d *internal.DeviceData) error {
-				if len(d.OTKCounts) != 0 {
-					return fmt.Errorf("got %v want no otks", d.OTKCounts)
-				}
-				return nil
-			},
+			name:          "existing otk key",
+			jsonBlob:      `{"c":0,"dl":{},"otk":{"a":55}}`,
+			partialUpsert: partialUpdateOTKCounts,
+			check:         checkOTKCounts,
 		},
 		{
-			name:     "explicit empty otk key",
-			jsonBlob: `{"otk":{}}`,
-			check: func(d *internal.DeviceData) error {
-				if len(d.OTKCounts) != 0 {
-					return fmt.Errorf("got %v want no otks", d.OTKCounts)
-				}
-				return nil
-			},
+			name:          "missing otk key",
+			jsonBlob:      `{"c":0,"dl":{}}`,
+			partialUpsert: partialUpdateOTKCounts,
+			check:         checkOTKCounts,
 		},
 		{
-			name:     "missing device list key",
-			jsonBlob: `{}`,
-			check: func(d *internal.DeviceData) error {
-				if len(d.DeviceLists.New) != 0 || len(d.DeviceLists.Sent) != 0 {
-					return fmt.Errorf("got %v want no device lists", d.DeviceLists)
-				}
-				return nil
-			},
+			name:          "null otk key",
+			jsonBlob:      `{"c":0,"dl":{},"otk":null}`,
+			partialUpsert: partialUpdateOTKCounts,
+			check:         checkOTKCounts,
 		},
 		{
-			name:     "null device list key",
-			jsonBlob: `{"dl":null}`,
-			check: func(d *internal.DeviceData) error {
-				if len(d.DeviceLists.New) != 0 || len(d.DeviceLists.Sent) != 0 {
-					return fmt.Errorf("got %v want no device lists", d.DeviceLists)
-				}
-				return nil
-			},
+			name:          "explicit empty otk key",
+			jsonBlob:      `{"c":0,"dl":{},"otk":{}}`,
+			partialUpsert: partialUpdateOTKCounts,
+			check:         checkOTKCounts,
 		},
+		// missing / null device list key is not possible
+		// missing / null "n" and "s" keys are not possible.
 		{
-			name:     "explicit empty device list key",
-			jsonBlob: `{"dl":{}}`,
-			check: func(d *internal.DeviceData) error {
-				if len(d.DeviceLists.New) != 0 || len(d.DeviceLists.Sent) != 0 {
-					return fmt.Errorf("got %v want no device lists", d.DeviceLists)
-				}
-				return nil
-			},
-		},
-		{
-			name:     "null new device list key",
-			jsonBlob: `{"dl":{"n":null}}`,
-			check: func(d *internal.DeviceData) error {
-				if len(d.DeviceLists.New) != 0 {
-					return fmt.Errorf("got %v want no new device lists", d.DeviceLists.New)
-				}
-				return nil
-			},
-		},
-		{
-			name:     "explicit empty new device list key",
-			jsonBlob: `{"dl":{"n":{}}}`,
-			check: func(d *internal.DeviceData) error {
-				if len(d.DeviceLists.New) != 0 {
-					return fmt.Errorf("got %v want no new device lists", d.DeviceLists.New)
-				}
-				return nil
-			},
-		},
-		{
-			name:     "null sent device list key",
-			jsonBlob: `{"dl":{"s":null}}`,
-			check: func(d *internal.DeviceData) error {
-				if len(d.DeviceLists.Sent) != 0 {
-					return fmt.Errorf("got %v want no sent device lists", d.DeviceLists.Sent)
-				}
-				return nil
-			},
-		},
-		{
-			name:     "explicit empty sent device list key",
-			jsonBlob: `{"dl":{"s":{}}}`,
-			check: func(d *internal.DeviceData) error {
-				if len(d.DeviceLists.Sent) != 0 {
-					return fmt.Errorf("got %v want no sent device lists", d.DeviceLists.Sent)
-				}
-				return nil
-			},
+			name:          "explicit empty new device list key",
+			jsonBlob:      `{"c":0,"dl":{"n":{}}}`,
+			partialUpsert: partialUpdateNewDeviceList,
+			check:         checkNewDeviceList,
 		},
 	}
 	for i, tc := range testCases {
@@ -415,12 +375,18 @@ func TestDeviceDataTableBadStoredData(t *testing.T) {
 		if err != nil {
 			t.Fatalf("%s: failed to insert: %s", tc.name, err)
 		}
+		tc.partialUpsert.DeviceID = deviceID
+		tc.partialUpsert.UserID = userID
+		err = table.Upsert(tc.partialUpsert)
+		if err != nil {
+			t.Fatalf("%s: failed to Upsert: %s", tc.name, err)
+		}
 		got, err := table.Select(userID, deviceID, false)
 		if err != nil {
 			t.Fatalf("%s: failed to Select: %s", tc.name, err)
 		}
 		if err = tc.check(got); err != nil {
-			t.Fatalf("%s: check failed: %s", tc.name, err)
+			t.Errorf("%s: check failed: %s", tc.name, err)
 		}
 	}
 }

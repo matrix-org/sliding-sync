@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"reflect"
 
+	"github.com/getsentry/sentry-go"
 	"github.com/jmoiron/sqlx"
 	"github.com/lib/pq"
 	"github.com/matrix-org/sliding-sync/internal"
@@ -181,8 +182,10 @@ func (t *DeviceDataTable) Upsert(dd *internal.DeviceData) (err error) {
 				return fmt.Errorf("failed to set changed bit: %w", err)
 			}
 		}
-
 		return nil
 	})
+	if err != nil && err != sql.ErrNoRows {
+		sentry.CaptureException(err)
+	}
 	return
 }
