@@ -624,6 +624,7 @@ func (s *ConnState) getInitialRoomData(ctx context.Context, roomSub sync3.RoomSu
 			JoinedCount:       metadata.JoinCount,
 			InvitedCount:      &metadata.InviteCount,
 			PrevBatch:         userRoomData.RequestedLatestEvents.PrevBatch,
+			Timestamp:         metadata.LastMessageTimestamp,
 		}
 	}
 

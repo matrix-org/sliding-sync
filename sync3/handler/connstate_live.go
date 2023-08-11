@@ -187,6 +187,14 @@ func (s *connStateLive) processLiveUpdate(ctx context.Context, up caches.Update,
 		// include this update in the rooms response TODO: filters on event type?
 		userRoomData := roomUpdate.UserRoomMetadata()
 		r := response.Rooms[roomUpdate.RoomID()]
+
+		conMeta := s.lists.ReadOnlyRoom(roomUpdate.RoomID())
+		for _, ts := range conMeta.LastInterestedEventTimestamps {
+			if ts >= r.Timestamp {
+				r.Timestamp = ts
+			}
+		}
+
 		r.HighlightCount = int64(userRoomData.HighlightCount)
 		r.NotificationCount = int64(userRoomData.NotificationCount)
 		if roomEventUpdate != nil && roomEventUpdate.EventData.Event != nil {
