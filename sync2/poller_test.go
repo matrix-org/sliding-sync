@@ -624,6 +624,9 @@ func (s *mockDataReceiver) OnE2EEData(ctx context.Context, userID, deviceID stri
 func (s *mockDataReceiver) OnTerminated(ctx context.Context, pollerID PollerID) {}
 func (s *mockDataReceiver) OnExpiredToken(ctx context.Context, accessTokenHash, userID, deviceID string) {
 }
+func (s *mockDataReceiver) ProcessNewEvents(ctx context.Context, userID, deviceID, roomID string, timeline, state []json.RawMessage, prevBatch string) {
+
+}
 
 func newMocks(doSyncV2 func(authHeader, since string) (*SyncResponse, int, error)) (*mockDataReceiver, *mockClient) {
 	client := &mockClient{

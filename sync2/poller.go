@@ -38,6 +38,7 @@ type V2DataReceiver interface {
 	// Initialise the room, if it hasn't been already. This means the state section of the v2 response.
 	// If given a state delta from an incremental sync, returns the slice of all state events unknown to the DB.
 	Initialise(ctx context.Context, roomID string, state []json.RawMessage) []json.RawMessage // snapshot ID?
+	ProcessNewEvents(ctx context.Context, userID, deviceID, roomID string, timeline, state []json.RawMessage, prevBatch string)
 	// SetTyping indicates which users are typing.
 	SetTyping(ctx context.Context, pollerID PollerID, roomID string, ephEvent json.RawMessage)
 	// Sent when there is a new receipt
@@ -296,6 +297,15 @@ func (h *PollerMap) Initialise(ctx context.Context, roomID string, state []json.
 	}
 	wg.Wait()
 	return
+}
+func (h *PollerMap) ProcessNewEvents(ctx context.Context, userID, deviceID, roomID string, timeline, state []json.RawMessage, prevBatch string) {
+	var wg sync.WaitGroup
+	wg.Add(1)
+	h.executor <- func() {
+		h.callbacks.ProcessNewEvents(ctx, userID, deviceID, roomID, timeline, state, prevBatch)
+		wg.Done()
+	}
+	wg.Wait()
 }
 func (h *PollerMap) SetTyping(ctx context.Context, pollerID PollerID, roomID string, ephEvent json.RawMessage) {
 	var wg sync.WaitGroup
@@ -675,34 +685,17 @@ func (p *poller) parseGlobalAccountData(ctx context.Context, res *SyncResponse) 
 func (p *poller) parseRoomsResponse(ctx context.Context, res *SyncResponse) {
 	ctx, task := internal.StartTask(ctx, "parseRoomsResponse")
 	defer task.End()
-	stateCalls := 0
-	timelineCalls := 0
 	typingCalls := 0
 	receiptCalls := 0
+	stateEvents := 0
+	timelineEvents := 0
 	for roomID, roomData := range res.Rooms.Join {
-		if len(roomData.State.Events) > 0 {
-			stateCalls++
-			prependStateEvents := p.receiver.Initialise(ctx, roomID, roomData.State.Events)
-			if len(prependStateEvents) > 0 {
-				// The poller has just learned of these state events due to an
-				// incremental poller sync; we must have missed the opportunity to see
-				// these down /sync in a timeline. As a workaround, inject these into
-				// the timeline now so that future events are received under the
-				// correct room state.
-				const warnMsg = "parseRoomsResponse: prepending state events to timeline after gappy poll"
-				logger.Warn().Str("room_id", roomID).Int("prependStateEvents", len(prependStateEvents)).Msg(warnMsg)
-				hub := internal.GetSentryHubFromContextOrDefault(ctx)
-				hub.WithScope(func(scope *sentry.Scope) {
-					scope.SetContext(internal.SentryCtxKey, map[string]interface{}{
-						"room_id":                  roomID,
-						"num_prepend_state_events": len(prependStateEvents),
-					})
-					hub.CaptureMessage(warnMsg)
-				})
-				p.trackGappyStateSize(len(prependStateEvents))
-				roomData.Timeline.Events = append(prependStateEvents, roomData.Timeline.Events...)
-			}
+		stateEvents += len(roomData.State.Events)
+		timelineEvents += len(roomData.Timeline.Events)
+		if len(roomData.Timeline.Events) > 0 {
+			p.trackTimelineSize(len(roomData.Timeline.Events), roomData.Timeline.Limited)
 		}
+		p.receiver.ProcessNewEvents(ctx, p.userID, p.deviceID, roomID, roomData.Timeline.Events, roomData.State.Events, roomData.Timeline.PrevBatch)
 		// process typing/receipts before events so we seed the caches correctly for when we return the room
 		for _, ephEvent := range roomData.Ephemeral.Events {
 			ephEventType := gjson.GetBytes(ephEvent, "type").Str
@@ -720,11 +713,6 @@ func (p *poller) parseRoomsResponse(ctx context.Context, res *SyncResponse) {
 		if len(roomData.AccountData.Events) > 0 {
 			p.receiver.OnAccountData(ctx, p.userID, roomID, roomData.AccountData.Events)
 		}
-		if len(roomData.Timeline.Events) > 0 {
-			timelineCalls++
-			p.trackTimelineSize(len(roomData.Timeline.Events), roomData.Timeline.Limited)
-			p.receiver.Accumulate(ctx, p.userID, p.deviceID, roomID, roomData.Timeline.PrevBatch, roomData.Timeline.Events)
-		}
 
 		// process unread counts AFTER events so global caches have been updated by the time this metadata is added.
 		// Previously we did this BEFORE events so we atomically showed the event and the unread count in one go, but
@@ -736,8 +724,8 @@ func (p *poller) parseRoomsResponse(ctx context.Context, res *SyncResponse) {
 	for roomID, roomData := range res.Rooms.Leave {
 		if len(roomData.Timeline.Events) > 0 {
 			p.trackTimelineSize(len(roomData.Timeline.Events), roomData.Timeline.Limited)
-			p.receiver.Accumulate(ctx, p.userID, p.deviceID, roomID, roomData.Timeline.PrevBatch, roomData.Timeline.Events)
 		}
+		p.receiver.ProcessNewEvents(ctx, p.userID, p.deviceID, roomID, roomData.Timeline.Events, roomData.State.Events, roomData.Timeline.PrevBatch)
 		// Pass the leave event directly to OnLeftRoom. We need to do this _in addition_ to calling Accumulate to handle
 		// the case where a user rejects an invite (there will be no room state, but the user still expects to see the leave event).
 		var leaveEvent json.RawMessage
@@ -757,8 +745,8 @@ func (p *poller) parseRoomsResponse(ctx context.Context, res *SyncResponse) {
 	}
 
 	p.totalReceipts += receiptCalls
-	p.totalStateCalls += stateCalls
-	p.totalTimelineCalls += timelineCalls
+	p.totalStateCalls += stateEvents
+	p.totalTimelineCalls += timelineEvents
 	p.totalTyping += typingCalls
 	p.totalInvites += len(res.Rooms.Invite)
 }
