@@ -298,9 +298,11 @@ func TestVisibleEventNIDsBetween(t *testing.T) {
 		},
 	}
 	for roomID, eventMap := range roomIDToEventMap {
-		_, err := store.Initialise(roomID, eventMap)
+		lastEvent := eventMap[len(eventMap)-1]
+		stateBlock := eventMap[:len(eventMap)-1]
+		_, err := store.Accumulator.ProcessRoomEvents(bob, roomID, []json.RawMessage{lastEvent}, stateBlock, "")
 		if err != nil {
-			t.Fatalf("Initialise on %s failed: %s", roomID, err)
+			t.Fatalf("ProcessRoomEvents on %s failed: %s", roomID, err)
 		}
 	}
 	startPos, err := store.LatestEventNID()
@@ -351,11 +353,11 @@ func TestVisibleEventNIDsBetween(t *testing.T) {
 		},
 	}
 	for _, tl := range timelineInjections {
-		numNew, _, err := store.Accumulate(userID, tl.RoomID, "", tl.Events)
+		result, err := store.Accumulator.ProcessRoomEvents(bob, tl.RoomID, tl.Events, nil, "")
 		if err != nil {
-			t.Fatalf("Accumulate on %s failed: %s", tl.RoomID, err)
+			t.Fatalf("ProcessRoomEvents on %s failed: %s", tl.RoomID, err)
 		}
-		t.Logf("%s added %d new events", tl.RoomID, numNew)
+		t.Logf("%s added %d new events", tl.RoomID, len(result.TimelineNIDs))
 	}
 	latestPos, err := store.LatestEventNID()
 	if err != nil {
@@ -528,7 +530,7 @@ func TestStorageLatestEventsInRoomsPrevBatch(t *testing.T) {
 		},
 	}
 
-	_, err := store.Initialise(roomID, stateEvents)
+	_, err := store.Accumulator.ProcessRoomEvents(alice, roomID, []json.RawMessage{stateEvents[len(stateEvents)-1]}, stateEvents[:len(stateEvents)-1], "")
 	if err != nil {
 		t.Fatalf("failed to initialise: %s", err)
 	}
@@ -630,8 +632,10 @@ func TestGlobalSnapshot(t *testing.T) {
 	store := NewStorage(postgresConnectionString)
 	defer store.Teardown()
 	for roomID, stateEvents := range roomIDToEventMap {
-		_, err := store.Initialise(roomID, stateEvents)
+		result, err := store.Accumulator.ProcessRoomEvents(alice, roomID, []json.RawMessage{stateEvents[len(stateEvents)-1]}, stateEvents[:len(stateEvents)-1], "")
 		assertNoError(t, err)
+		assertVal(t, "got brand new snapshot", result.BrandNewSnapshot, true)
+		assertVal(t, "got timeline nids", len(result.TimelineNIDs), 1)
 	}
 	snapshot, err := store.GlobalSnapshot()
 	assertNoError(t, err)
@@ -769,11 +773,11 @@ func TestAllJoinedMembers(t *testing.T) {
 
 	for i, tc := range testCases {
 		roomID := fmt.Sprintf("!TestAllJoinedMembers_%d:localhost", i)
-		_, err := store.Initialise(roomID, append([]json.RawMessage{
+		_, err := store.Accumulator.ProcessRoomEvents(alice, roomID, append([]json.RawMessage{
 			testutils.NewStateEvent(t, "m.room.create", "", alice, map[string]interface{}{
 				"creator": alice, // alice is always the creator
 			}),
-		}, serialise(tc.InitMemberships)...))
+		}, serialise(tc.InitMemberships)...), nil, "")
 		assertNoError(t, err)
 
 		_, _, err = store.Accumulate(userID, roomID, "foo", serialise(tc.AccumulateMemberships))
@@ -886,6 +890,7 @@ func cleanDB(t *testing.T) error {
 
 func assertRoomMetadata(t *testing.T, got, want internal.RoomMetadata) {
 	t.Helper()
+	t.Logf("assertRoomMetadata %s", want.RoomID)
 	assertValue(t, "CanonicalAlias", got.CanonicalAlias, want.CanonicalAlias)
 	assertValue(t, "ChildSpaceRooms", got.ChildSpaceRooms, want.ChildSpaceRooms)
 	assertValue(t, "Encrypted", got.Encrypted, want.Encrypted)
@@ -902,6 +907,7 @@ func assertRoomMetadata(t *testing.T, got, want internal.RoomMetadata) {
 }
 
 func assertValue(t *testing.T, msg string, got, want interface{}) {
+	t.Helper()
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("%s: got %v want %v", msg, got, want)
 	}

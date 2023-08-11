@@ -176,7 +176,7 @@ func (a *Accumulator) ProcessRoomEvents(userID, roomID string, timeline, state [
 		// we know there are some events to insert which are new. We need to work out what snapshot
 		// to base these changes on.
 
-		snapID, brandNew, err := a.calculateSnapshotForRoom(txn, roomID, state)
+		snapID, brandNew, newStateEvents, err := a.calculateSnapshotForRoom(txn, roomID, state)
 		if err != nil {
 			return err
 		}
@@ -269,12 +269,15 @@ func (a *Accumulator) ProcessRoomEvents(userID, roomID string, timeline, state [
 			}
 		}
 
-		if err = a.spacesTable.HandleSpaceUpdates(txn, newEvents); err != nil {
+		// we need to track the 'latest' values for the room, which is union of the new state events and the new timeline events,
+		// with the state events first as they are "behind" the timeline events.
+		latestEvents := append(newStateEvents, newEvents...)
+		if err = a.spacesTable.HandleSpaceUpdates(txn, latestEvents); err != nil {
 			return fmt.Errorf("HandleSpaceUpdates: %s", err)
 		}
 
 		// the last fetched snapshot ID is the current one, so set it on the rooms table.
-		info := a.roomInfoDelta(roomID, newEvents)
+		info := a.roomInfoDelta(roomID, latestEvents)
 		if err = a.roomsTable.Upsert(txn, info, snapID, latestNID); err != nil {
 			return fmt.Errorf("failed to UpdateCurrentSnapshotID to %d: %w", snapID, err)
 		}
@@ -298,13 +301,15 @@ func (a *Accumulator) ProcessRoomEvents(userID, roomID string, timeline, state [
 //	2: Client poller is super slow, or we restarted a previously stopped poller. The classic 'gappy state' use case.
 //	3: Client joins (or re-joins) a room. The state slice here is the most accurate representation of the room, as it will be the
 //	   latest upstream state (which will have fixed state resets), vs rolling forward which will not.
-func (a *Accumulator) calculateSnapshotForRoom(txn *sqlx.Tx, roomID string, state []json.RawMessage) (snapID int64, brandNew bool, err error) {
+//
+// Returns the calculated snapshot ID, a flag if this is a newly created snapshot, the new events which weren't in the DB before, or an error.
+func (a *Accumulator) calculateSnapshotForRoom(txn *sqlx.Tx, roomID string, state []json.RawMessage) (snapID int64, brandNew bool, newEvents []Event, err error) {
 	snapshotID, err := a.roomsTable.CurrentAfterSnapshotID(txn, roomID)
 	if err != nil {
-		return 0, false, fmt.Errorf("calculateSnapshotForRoom: error fetching snapshot id for room %s: %s", roomID, err)
+		return 0, false, nil, fmt.Errorf("calculateSnapshotForRoom: error fetching snapshot id for room %s: %s", roomID, err)
 	}
 	if len(state) == 0 {
-		return snapshotID, false, nil // Case 1, the snapshot may be 0.
+		return snapshotID, false, nil, nil // Case 1, the snapshot may be 0.
 	}
 
 	// Preprocess the state JSON
@@ -318,7 +323,7 @@ func (a *Accumulator) calculateSnapshotForRoom(txn *sqlx.Tx, roomID string, stat
 	}
 	events = filterAndEnsureFieldsSet(events)
 	if len(events) == 0 {
-		return 0, false, fmt.Errorf("calculateSnapshotForRoom: failed to insert events, all events were filtered out: %w", err)
+		return 0, false, nil, fmt.Errorf("calculateSnapshotForRoom: failed to insert events, all events were filtered out: %w", err)
 	}
 
 	// Check for a create event
@@ -334,7 +339,14 @@ func (a *Accumulator) calculateSnapshotForRoom(txn *sqlx.Tx, roomID string, stat
 	// Insert new events
 	insertedEventIDToNID, err := a.eventsTable.Insert(txn, events, false)
 	if err != nil {
-		return 0, false, fmt.Errorf("calculateSnapshotForRoom: failed to insert events: %w", err)
+		return 0, false, nil, fmt.Errorf("calculateSnapshotForRoom: failed to insert events: %w", err)
+	}
+
+	newEvents = make([]Event, 0, len(insertedEventIDToNID))
+	for i, ev := range events {
+		if _, ok := insertedEventIDToNID[ev.ID]; ok {
+			newEvents = append(newEvents, events[i])
+		}
 	}
 
 	if hasCreateEvent { // Case 3
@@ -342,7 +354,7 @@ func (a *Accumulator) calculateSnapshotForRoom(txn *sqlx.Tx, roomID string, stat
 		// So just use allEventIDs, and verify all those events exist in the DB now.
 		strippedEvents, err := a.eventsTable.SelectStrippedEventsByIDs(txn, true, allEventIDs)
 		if err != nil {
-			return 0, false, fmt.Errorf("calculateSnapshotForRoom.SelectStrippedEventsByIDs: %w", err)
+			return 0, false, nil, fmt.Errorf("calculateSnapshotForRoom.SelectStrippedEventsByIDs: %w", err)
 		}
 		memNIDs, otherNIDs := strippedEvents.NIDs()
 		// Make a current snapshot
@@ -353,9 +365,9 @@ func (a *Accumulator) calculateSnapshotForRoom(txn *sqlx.Tx, roomID string, stat
 		}
 		err = a.snapshotTable.Insert(txn, snapshot)
 		if err != nil {
-			return 0, false, fmt.Errorf("calculateSnapshotForRoom: failed to insert create snapshot: %w", err)
+			return 0, false, nil, fmt.Errorf("calculateSnapshotForRoom: failed to insert create snapshot: %w", err)
 		}
-		return snapshot.SnapshotID, true, nil
+		return snapshot.SnapshotID, true, newEvents, nil
 	}
 	// no create event: Case 2
 	// If we don't have a create event then we want to load the state at snapshot ID (which may be the empty set)
@@ -366,7 +378,7 @@ func (a *Accumulator) calculateSnapshotForRoom(txn *sqlx.Tx, roomID string, stat
 	if snapID != 0 {
 		oldStripped, err = a.strippedEventsForSnapshot(txn, snapID)
 		if err != nil {
-			return 0, false, fmt.Errorf("calculateSnapshotForRoom: failed to load stripped state events for snapshot %d: %s", snapID, err)
+			return 0, false, nil, fmt.Errorf("calculateSnapshotForRoom: failed to load stripped state events for snapshot %d: %s", snapID, err)
 		}
 	}
 
@@ -404,9 +416,9 @@ func (a *Accumulator) calculateSnapshotForRoom(txn *sqlx.Tx, roomID string, stat
 		OtherEvents:      otherNIDs,
 	}
 	if err = a.snapshotTable.Insert(txn, newSnapshot); err != nil {
-		return 0, false, fmt.Errorf("calculateSnapshotForRoom: failed to insert new snapshot: %w", err)
+		return 0, false, nil, fmt.Errorf("calculateSnapshotForRoom: failed to insert new snapshot: %w", err)
 	}
-	return newSnapshot.SnapshotID, true, nil
+	return newSnapshot.SnapshotID, true, newEvents, nil
 }
 
 type InitialiseResult struct {

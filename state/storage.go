@@ -334,10 +334,6 @@ func (s *Storage) Accumulate(userID, roomID, prevBatch string, timeline []json.R
 	return
 }
 
-func (s *Storage) Initialise(roomID string, state []json.RawMessage) (InitialiseResult, error) {
-	return s.Accumulator.Initialise(roomID, state)
-}
-
 // EventNIDs fetches the raw JSON form of events given a slice of eventNIDs. The events
 // are returned in ascending NID order; the order of eventNIDs is ignored.
 func (s *Storage) EventNIDs(eventNIDs []int64) ([]json.RawMessage, error) {
