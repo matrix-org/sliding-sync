@@ -251,105 +251,6 @@ func (h *Handler) OnBulkDeviceDataUpdate(payload *pubsub.V2DeviceData) {
 	h.v2Pub.Notify(pubsub.ChanV2, payload)
 }
 
-func (h *Handler) Accumulate(ctx context.Context, userID, deviceID, roomID, prevBatch string, timeline []json.RawMessage) {
-	// Remember any transaction IDs that may be unique to this user
-	eventIDsWithTxns := make([]string, 0, len(timeline))     // in timeline order
-	eventIDToTxnID := make(map[string]string, len(timeline)) // event_id -> txn_id
-	// Also remember events which were sent by this user but lack a transaction ID.
-	eventIDsLackingTxns := make([]string, 0, len(timeline))
-
-	for _, e := range timeline {
-		parsed := gjson.ParseBytes(e)
-		eventID := parsed.Get("event_id").Str
-
-		if txnID := parsed.Get("unsigned.transaction_id"); txnID.Exists() {
-			eventIDsWithTxns = append(eventIDsWithTxns, eventID)
-			eventIDToTxnID[eventID] = txnID.Str
-			continue
-		}
-
-		if sender := parsed.Get("sender"); sender.Str == userID {
-			eventIDsLackingTxns = append(eventIDsLackingTxns, eventID)
-		}
-	}
-
-	if len(eventIDToTxnID) > 0 {
-		// persist the txn IDs
-		err := h.Store.TransactionsTable.Insert(userID, deviceID, eventIDToTxnID)
-		if err != nil {
-			logger.Err(err).Str("user", userID).Str("device", deviceID).Int("num_txns", len(eventIDToTxnID)).Msg("failed to persist txn IDs for user")
-			internal.GetSentryHubFromContextOrDefault(ctx).CaptureException(err)
-		}
-	}
-
-	// Insert new events
-	numNew, latestNIDs, err := h.Store.Accumulate(userID, roomID, prevBatch, timeline)
-	if err != nil {
-		logger.Err(err).Int("timeline", len(timeline)).Str("room", roomID).Msg("V2: failed to accumulate room")
-		internal.GetSentryHubFromContextOrDefault(ctx).CaptureException(err)
-		return
-	}
-
-	// We've updated the database. Now tell any pubsub listeners what we learned.
-	if numNew != 0 {
-		h.v2Pub.Notify(pubsub.ChanV2, &pubsub.V2Accumulate{
-			RoomID:    roomID,
-			PrevBatch: prevBatch,
-			EventNIDs: latestNIDs,
-		})
-	}
-
-	if len(eventIDToTxnID) > 0 || len(eventIDsLackingTxns) > 0 {
-		// The call to h.Store.Accumulate above only tells us about new events' NIDS;
-		// for existing events we need to requery the database to fetch them.
-		// Rather than try to reuse work, keep things simple and just fetch NIDs for
-		// all events with txnIDs.
-		var nidsByIDs map[string]int64
-		eventIDsToFetch := append(eventIDsWithTxns, eventIDsLackingTxns...)
-		err = sqlutil.WithTransaction(h.Store.DB, func(txn *sqlx.Tx) error {
-			nidsByIDs, err = h.Store.EventsTable.SelectNIDsByIDs(txn, eventIDsToFetch)
-			return err
-		})
-		if err != nil {
-			logger.Err(err).
-				Int("timeline", len(timeline)).
-				Int("num_transaction_ids", len(eventIDsWithTxns)).
-				Int("num_missing_transaction_ids", len(eventIDsLackingTxns)).
-				Str("room", roomID).
-				Msg("V2: failed to fetch nids for event transaction_id handling")
-			internal.GetSentryHubFromContextOrDefault(ctx).CaptureException(err)
-			return
-		}
-
-		for eventID, nid := range nidsByIDs {
-			txnID, ok := eventIDToTxnID[eventID]
-			if ok {
-				h.PendingTxnIDs.SeenTxnID(eventID)
-				h.v2Pub.Notify(pubsub.ChanV2, &pubsub.V2TransactionID{
-					EventID:       eventID,
-					RoomID:        roomID,
-					UserID:        userID,
-					DeviceID:      deviceID,
-					TransactionID: txnID,
-					NID:           nid,
-				})
-			} else {
-				allClear, _ := h.PendingTxnIDs.MissingTxnID(eventID, userID, deviceID)
-				if allClear {
-					h.v2Pub.Notify(pubsub.ChanV2, &pubsub.V2TransactionID{
-						EventID:       eventID,
-						RoomID:        roomID,
-						UserID:        userID,
-						DeviceID:      deviceID,
-						TransactionID: "",
-						NID:           nid,
-					})
-				}
-			}
-		}
-	}
-}
-
 func (h *Handler) ProcessNewEvents(ctx context.Context, userID, deviceID, roomID string, timeline, state []json.RawMessage, prevBatch string) {
 	// Remember any transaction IDs that may be unique to this user
 	eventIDsWithTxns := make([]string, 0, len(timeline))     // in timeline order
@@ -450,22 +351,6 @@ func (h *Handler) ProcessNewEvents(ctx context.Context, userID, deviceID, roomID
 			}
 		}
 	}
-}
-
-func (h *Handler) Initialise(ctx context.Context, roomID string, state []json.RawMessage) []json.RawMessage {
-	res, err := h.Store.Initialise(roomID, state)
-	if err != nil {
-		logger.Err(err).Int("state", len(state)).Str("room", roomID).Msg("V2: failed to initialise room")
-		internal.GetSentryHubFromContextOrDefault(ctx).CaptureException(err)
-		return nil
-	}
-	if res.AddedEvents {
-		h.v2Pub.Notify(pubsub.ChanV2, &pubsub.V2Initialise{
-			RoomID:      roomID,
-			SnapshotNID: res.SnapshotID,
-		})
-	}
-	return res.PrependTimelineEvents
 }
 
 func (h *Handler) SetTyping(ctx context.Context, pollerID sync2.PollerID, roomID string, ephEvent json.RawMessage) {

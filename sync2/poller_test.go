@@ -583,21 +583,6 @@ type mockDataReceiver struct {
 	updateSinceCalled chan struct{}
 }
 
-func (a *mockDataReceiver) Accumulate(ctx context.Context, userID, deviceID, roomID, prevBatch string, timeline []json.RawMessage) {
-	a.timelines[roomID] = append(a.timelines[roomID], timeline...)
-}
-func (a *mockDataReceiver) Initialise(ctx context.Context, roomID string, state []json.RawMessage) []json.RawMessage {
-	a.states[roomID] = state
-	if a.incomingProcess != nil {
-		a.incomingProcess <- struct{}{}
-	}
-	if a.unblockProcess != nil {
-		<-a.unblockProcess
-	}
-	// The return value is a list of unknown state events to be prepended to the room
-	// timeline. Untested here---return nil for now.
-	return nil
-}
 func (a *mockDataReceiver) SetTyping(ctx context.Context, pollerID PollerID, roomID string, ephEvent json.RawMessage) {
 }
 func (s *mockDataReceiver) UpdateDeviceSince(ctx context.Context, userID, deviceID, since string) {
@@ -625,7 +610,18 @@ func (s *mockDataReceiver) OnTerminated(ctx context.Context, pollerID PollerID) 
 func (s *mockDataReceiver) OnExpiredToken(ctx context.Context, accessTokenHash, userID, deviceID string) {
 }
 func (s *mockDataReceiver) ProcessNewEvents(ctx context.Context, userID, deviceID, roomID string, timeline, state []json.RawMessage, prevBatch string) {
-
+	if len(timeline) > 0 {
+		s.timelines[roomID] = append(s.timelines[roomID], timeline...)
+	}
+	if len(state) > 0 {
+		s.states[roomID] = state
+		if s.incomingProcess != nil {
+			s.incomingProcess <- struct{}{}
+		}
+		if s.unblockProcess != nil {
+			<-s.unblockProcess
+		}
+	}
 }
 
 func newMocks(doSyncV2 func(authHeader, since string) (*SyncResponse, int, error)) (*mockDataReceiver, *mockClient) {

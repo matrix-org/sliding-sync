@@ -33,11 +33,7 @@ var logInterval = 30 * time.Second
 type V2DataReceiver interface {
 	// Update the since token for this device. Called AFTER all other data in this sync response has been processed.
 	UpdateDeviceSince(ctx context.Context, userID, deviceID, since string)
-	// Accumulate data for this room. This means the timeline section of the v2 response.
-	Accumulate(ctx context.Context, userID, deviceID, roomID, prevBatch string, timeline []json.RawMessage) // latest pos with event nids of timeline entries
-	// Initialise the room, if it hasn't been already. This means the state section of the v2 response.
-	// If given a state delta from an incremental sync, returns the slice of all state events unknown to the DB.
-	Initialise(ctx context.Context, roomID string, state []json.RawMessage) []json.RawMessage // snapshot ID?
+	// ProcessNewEvents handles the state and timeline arrays of the sync response.
 	ProcessNewEvents(ctx context.Context, userID, deviceID, roomID string, timeline, state []json.RawMessage, prevBatch string)
 	// SetTyping indicates which users are typing.
 	SetTyping(ctx context.Context, pollerID PollerID, roomID string, ephEvent json.RawMessage)
@@ -278,25 +274,6 @@ func (h *PollerMap) execute() {
 
 func (h *PollerMap) UpdateDeviceSince(ctx context.Context, userID, deviceID, since string) {
 	h.callbacks.UpdateDeviceSince(ctx, userID, deviceID, since)
-}
-func (h *PollerMap) Accumulate(ctx context.Context, userID, deviceID, roomID, prevBatch string, timeline []json.RawMessage) {
-	var wg sync.WaitGroup
-	wg.Add(1)
-	h.executor <- func() {
-		h.callbacks.Accumulate(ctx, userID, deviceID, roomID, prevBatch, timeline)
-		wg.Done()
-	}
-	wg.Wait()
-}
-func (h *PollerMap) Initialise(ctx context.Context, roomID string, state []json.RawMessage) (result []json.RawMessage) {
-	var wg sync.WaitGroup
-	wg.Add(1)
-	h.executor <- func() {
-		result = h.callbacks.Initialise(ctx, roomID, state)
-		wg.Done()
-	}
-	wg.Wait()
-	return
 }
 func (h *PollerMap) ProcessNewEvents(ctx context.Context, userID, deviceID, roomID string, timeline, state []json.RawMessage, prevBatch string) {
 	var wg sync.WaitGroup
