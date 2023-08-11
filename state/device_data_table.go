@@ -3,6 +3,7 @@ package state
 import (
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"reflect"
 
@@ -104,10 +105,10 @@ func (t *DeviceDataTable) Upsert(dd *internal.DeviceData) (err error) {
 		var changedBits int
 		err = txn.QueryRow(`SELECT data->>'c' FROM syncv3_device_data WHERE user_id=$1 AND device_id=$2 FOR UPDATE`, dd.UserID, dd.DeviceID).Scan(&changedBits)
 		if err != nil && err != sql.ErrNoRows {
-			return fmt.Errorf("failed to check if device data exists: %v", err)
+			return fmt.Errorf("failed to check if device data exists: %w", err)
 		}
 		// brand new insert, do it and return
-		if err == sql.ErrNoRows {
+		if errors.Is(err, sql.ErrNoRows) {
 			// we need to tell postgres these fields are objects not arrays, else || won't behave as we want
 			if dd.DeviceLists.New == nil {
 				dd.DeviceLists.New = make(internal.MapStringInt)
@@ -128,7 +129,7 @@ func (t *DeviceDataTable) Upsert(dd *internal.DeviceData) (err error) {
 			}
 			data, err := json.Marshal(newInsert)
 			if err != nil {
-				return fmt.Errorf("failed to marshal new device data: %v", err)
+				return fmt.Errorf("failed to marshal new device data: %w", err)
 			}
 			_, err = txn.Exec(
 				`INSERT INTO syncv3_device_data(user_id, device_id, data) VALUES($1,$2,$3)
@@ -148,7 +149,7 @@ func (t *DeviceDataTable) Upsert(dd *internal.DeviceData) (err error) {
 		if dd.FallbackKeyTypes != nil {
 			_, err = txn.Exec(`UPDATE syncv3_device_data SET data = jsonb_set(data, '{fallback}', to_jsonb($3::text[]), true) WHERE user_id = $1 AND device_id = $2`, dd.UserID, dd.DeviceID, pq.StringArray(dd.FallbackKeyTypes))
 			if err != nil {
-				return fmt.Errorf("failed to set fallback keys: %v", err)
+				return fmt.Errorf("failed to set fallback keys: %w", err)
 			}
 			// mark it as changed on the changed bits
 			dd.SetFallbackKeysChanged()
@@ -157,7 +158,7 @@ func (t *DeviceDataTable) Upsert(dd *internal.DeviceData) (err error) {
 		if dd.OTKCounts != nil {
 			_, err = txn.Exec(`UPDATE syncv3_device_data SET data = jsonb_set(data, '{otk}', $3, true) WHERE user_id = $1 AND device_id = $2`, dd.UserID, dd.DeviceID, dd.OTKCounts)
 			if err != nil {
-				return fmt.Errorf("failed to set otk counts: %v", err)
+				return fmt.Errorf("failed to set otk counts: %w", err)
 			}
 			// mark it as changed on the changed bits
 			dd.SetOTKCountChanged()
@@ -169,7 +170,7 @@ func (t *DeviceDataTable) Upsert(dd *internal.DeviceData) (err error) {
 			_, err = txn.Exec(`UPDATE syncv3_device_data SET data = jsonb_set(data, '{dl,n}', data->'dl'->'n' || $3::jsonb, true) WHERE user_id = $1 AND device_id = $2`,
 				dd.UserID, dd.DeviceID, dd.DeviceLists.New)
 			if err != nil {
-				return fmt.Errorf("failed to update device list changes: %v", err)
+				return fmt.Errorf("failed to update device list changes: %w", err)
 			}
 		}
 
@@ -177,7 +178,7 @@ func (t *DeviceDataTable) Upsert(dd *internal.DeviceData) (err error) {
 		if changedBits != dd.ChangedBits {
 			_, err = txn.Exec(`UPDATE syncv3_device_data SET data = jsonb_set(data, '{c}', $3) WHERE user_id = $1 AND device_id = $2`, dd.UserID, dd.DeviceID, dd.ChangedBits)
 			if err != nil {
-				return fmt.Errorf("failed to set changed bit: %v", err)
+				return fmt.Errorf("failed to set changed bit: %w", err)
 			}
 		}
 
