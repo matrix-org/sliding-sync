@@ -1,6 +1,7 @@
 package state
 
 import (
+	"fmt"
 	"reflect"
 	"testing"
 
@@ -259,4 +260,167 @@ func TestDeviceDataTableBitset(t *testing.T) {
 	bothUpdate.SetFallbackKeysChanged()
 	bothUpdate.SetOTKCountChanged()
 	assertDeviceData(t, *got, bothUpdate)
+}
+
+func TestDeviceDataTableBadStoredData(t *testing.T) {
+	// we know that the data column is a JSON object but we don't know if any of the keys are sensible values.
+	// This test ensures that Select work with missing/null/explicit empty values in the DB.
+	db, close := connectToDB(t)
+	defer close()
+	table := NewDeviceDataTable(db)
+	testCases := []struct {
+		name     string
+		jsonBlob string
+		check    func(d *internal.DeviceData) error
+	}{
+		{
+			name:     "missing fallback keys",
+			jsonBlob: `{}`,
+			check: func(d *internal.DeviceData) error {
+				if len(d.FallbackKeyTypes) != 0 {
+					return fmt.Errorf("got %v want no keys", d.FallbackKeyTypes)
+				}
+				return nil
+			},
+		},
+		{
+			name:     "null fallback keys",
+			jsonBlob: `{"fallback":null}`,
+			check: func(d *internal.DeviceData) error {
+				if len(d.FallbackKeyTypes) != 0 {
+					return fmt.Errorf("got %v want no keys", d.FallbackKeyTypes)
+				}
+				return nil
+			},
+		},
+		{
+			name:     "explicit empty fallback keys",
+			jsonBlob: `{"fallback":[]}`,
+			check: func(d *internal.DeviceData) error {
+				if len(d.FallbackKeyTypes) != 0 {
+					return fmt.Errorf("got %v want no keys", d.FallbackKeyTypes)
+				}
+				return nil
+			},
+		},
+		{
+			name:     "missing otk key",
+			jsonBlob: `{}`,
+			check: func(d *internal.DeviceData) error {
+				if len(d.OTKCounts) != 0 {
+					return fmt.Errorf("got %v want no otks", d.OTKCounts)
+				}
+				return nil
+			},
+		},
+		{
+			name:     "null otk key",
+			jsonBlob: `{"otk":null}`,
+			check: func(d *internal.DeviceData) error {
+				if len(d.OTKCounts) != 0 {
+					return fmt.Errorf("got %v want no otks", d.OTKCounts)
+				}
+				return nil
+			},
+		},
+		{
+			name:     "explicit empty otk key",
+			jsonBlob: `{"otk":{}}`,
+			check: func(d *internal.DeviceData) error {
+				if len(d.OTKCounts) != 0 {
+					return fmt.Errorf("got %v want no otks", d.OTKCounts)
+				}
+				return nil
+			},
+		},
+		{
+			name:     "missing device list key",
+			jsonBlob: `{}`,
+			check: func(d *internal.DeviceData) error {
+				if len(d.DeviceLists.New) != 0 || len(d.DeviceLists.Sent) != 0 {
+					return fmt.Errorf("got %v want no device lists", d.DeviceLists)
+				}
+				return nil
+			},
+		},
+		{
+			name:     "null device list key",
+			jsonBlob: `{"dl":null}`,
+			check: func(d *internal.DeviceData) error {
+				if len(d.DeviceLists.New) != 0 || len(d.DeviceLists.Sent) != 0 {
+					return fmt.Errorf("got %v want no device lists", d.DeviceLists)
+				}
+				return nil
+			},
+		},
+		{
+			name:     "explicit empty device list key",
+			jsonBlob: `{"dl":{}}`,
+			check: func(d *internal.DeviceData) error {
+				if len(d.DeviceLists.New) != 0 || len(d.DeviceLists.Sent) != 0 {
+					return fmt.Errorf("got %v want no device lists", d.DeviceLists)
+				}
+				return nil
+			},
+		},
+		{
+			name:     "null new device list key",
+			jsonBlob: `{"dl":{"n":null}}`,
+			check: func(d *internal.DeviceData) error {
+				if len(d.DeviceLists.New) != 0 {
+					return fmt.Errorf("got %v want no new device lists", d.DeviceLists.New)
+				}
+				return nil
+			},
+		},
+		{
+			name:     "explicit empty new device list key",
+			jsonBlob: `{"dl":{"n":{}}}`,
+			check: func(d *internal.DeviceData) error {
+				if len(d.DeviceLists.New) != 0 {
+					return fmt.Errorf("got %v want no new device lists", d.DeviceLists.New)
+				}
+				return nil
+			},
+		},
+		{
+			name:     "null sent device list key",
+			jsonBlob: `{"dl":{"s":null}}`,
+			check: func(d *internal.DeviceData) error {
+				if len(d.DeviceLists.Sent) != 0 {
+					return fmt.Errorf("got %v want no sent device lists", d.DeviceLists.Sent)
+				}
+				return nil
+			},
+		},
+		{
+			name:     "explicit empty sent device list key",
+			jsonBlob: `{"dl":{"s":{}}}`,
+			check: func(d *internal.DeviceData) error {
+				if len(d.DeviceLists.Sent) != 0 {
+					return fmt.Errorf("got %v want no sent device lists", d.DeviceLists.Sent)
+				}
+				return nil
+			},
+		},
+	}
+	for i, tc := range testCases {
+		userID := fmt.Sprintf("@TestDeviceDataTableInsertWithBadData_user%d:localhost", i)
+		deviceID := fmt.Sprintf("TestDeviceDataTableInsertWithBadData_DEVICE_%d", i)
+		_, err := db.Exec(
+			`INSERT INTO syncv3_device_data(user_id, device_id, data) VALUES($1,$2,$3)
+			ON CONFLICT (user_id, device_id) DO UPDATE SET data=$3`,
+			userID, deviceID, tc.jsonBlob,
+		)
+		if err != nil {
+			t.Fatalf("%s: failed to insert: %s", tc.name, err)
+		}
+		got, err := table.Select(userID, deviceID, false)
+		if err != nil {
+			t.Fatalf("%s: failed to Select: %s", tc.name, err)
+		}
+		if err = tc.check(got); err != nil {
+			t.Fatalf("%s: check failed: %s", tc.name, err)
+		}
+	}
 }
