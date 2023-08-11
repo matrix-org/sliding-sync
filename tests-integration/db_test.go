@@ -40,11 +40,15 @@ func TestMaxDBConns(t *testing.T) {
 				token := fmt.Sprintf("maxconns_%d", n)
 				roomID := fmt.Sprintf("!maxconns_%d", n)
 				v2.addAccount(t, userID, token)
+				state := createRoomState(t, userID, time.Now())
 				v2.queueResponse(userID, sync2.SyncResponse{
 					Rooms: sync2.SyncRoomsResponse{
 						Join: v2JoinTimeline(roomEvents{
 							roomID: roomID,
-							state:  createRoomState(t, userID, time.Now()),
+							state:  state[:len(state)-1],
+							events: []json.RawMessage{
+								state[len(state)-1],
+							},
 						}),
 					},
 				})
