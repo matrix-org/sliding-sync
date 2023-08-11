@@ -133,6 +133,12 @@ func (s *testV2Server) deviceID(token string) string {
 }
 
 func (s *testV2Server) queueResponse(userIDOrToken string, resp sync2.SyncResponse) {
+	// ensure we send valid responses
+	for roomID, room := range resp.Rooms.Join {
+		if len(room.State.Events) > 0 && len(room.Timeline.Events) == 0 {
+			panic(fmt.Sprintf("invalid queued v2 response for room %s: no timeline events but %d events in state block", roomID, len(room.State.Events)))
+		}
+	}
 	s.mu.Lock()
 	ch := s.queues[userIDOrToken]
 	if ch == nil {

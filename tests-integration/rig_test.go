@@ -108,6 +108,13 @@ func (r *testRig) SetupV2RoomsForUser(t *testing.T, v2UserID string, f FlushEnum
 			} else {
 				stateBlock = createRoomState(t, creator, timestamp)
 			}
+			// A valid v2 response always has a timeline entry with state.
+			if len(timeline) == 0 {
+				timeline = []json.RawMessage{
+					stateBlock[len(stateBlock)-1],
+				}
+				stateBlock = stateBlock[:len(stateBlock)-1]
+			}
 			joinRooms[roomID] = sync2.SyncV2JoinResponse{
 				State: sync2.EventsResponse{
 					Events: stateBlock,
