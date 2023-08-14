@@ -3,7 +3,6 @@ package migrations
 import (
 	"context"
 	"encoding/json"
-	"os"
 	"testing"
 
 	"github.com/jmoiron/sqlx"
@@ -14,13 +13,8 @@ import (
 
 var postgresConnectionString = "user=xxxxx dbname=syncv3_test sslmode=disable"
 
-func TestMain(m *testing.M) {
-	postgresConnectionString = testutils.PrepareDBConnectionString()
-	exitCode := m.Run()
-	os.Exit(exitCode)
-}
-
 func connectToDB(t *testing.T) (*sqlx.DB, func()) {
+	postgresConnectionString = testutils.PrepareDBConnectionString()
 	db, err := sqlx.Open("postgres", postgresConnectionString)
 	if err != nil {
 		t.Fatalf("failed to open SQL db: %s", err)
