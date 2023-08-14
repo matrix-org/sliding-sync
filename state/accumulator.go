@@ -198,6 +198,20 @@ func (a *Accumulator) ProcessRoomEvents(userID, roomID string, timeline, state [
 			return nil
 		}
 
+		// if there is no existing snapshot AND there is no state block, then timeline[0] MUST be the create event, else we
+		// are seemingly getting random events without being told the room state. Whine loudly in sentry about it.
+		// We hypothesise that these events happen when a slow server finally sends some events to the upstream HS after a
+		// period of downtime. _When those events were sent_ the user was in the room, but now they are not, and /sync just
+		// blindly chucks them down anyway.
+		if snapID == 0 && gjson.ParseBytes(timeline[0]).Get("type").Str != "m.room.create" {
+			err := fmt.Errorf(
+				"ProcessRoomEvents: no state block, no existing snapID, and timeline[0] isn't m.room.create, did we just get pushed random events? room=%s user=%s len(timeline)=%d",
+				roomID, userID, len(timeline),
+			)
+			sentry.CaptureException(err)
+			return err
+		}
+
 		// Insert the event JSON
 		eventIDToNID, err := a.eventsTable.Insert(txn, dedupedEvents, false)
 		if err != nil {
