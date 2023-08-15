@@ -231,7 +231,7 @@ func (s *ConnState) onIncomingRequest(reqCtx context.Context, req *sync3.Request
 		RoomIDToTimeline:   response.RoomIDsToTimelineEventIDs(),
 		IsInitial:          isInitial,
 		RoomIDsToLists:     s.lists.ListsByVisibleRoomIDs(s.muxedReq.Lists),
-		AllSubscribedRooms: s.muxedReq.SubscribedRoomIDs(),
+		AllSubscribedRooms: keys(s.roomSubscriptions),
 		AllLists:           s.muxedReq.ListKeys(),
 	})
 	region.End()
@@ -760,4 +760,17 @@ func clampSliceRangeToListSize(ctx context.Context, r [2]int64, totalRooms int64
 	} else {
 		return [2]int64{r[0], lastIndexWithRoom}
 	}
+}
+
+// Returns a slice containing copies of the keys of the given map, in no particular
+// order.
+func keys[K comparable, V any](m map[K]V) []K {
+	if m == nil {
+		return nil
+	}
+	output := make([]K, len(m))
+	for key := range m {
+		output = append(output, key)
+	}
+	return output
 }
