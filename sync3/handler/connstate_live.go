@@ -202,7 +202,7 @@ func (s *connStateLive) processLiveUpdate(ctx context.Context, up caches.Update,
 			}
 		}
 
-		// If there are now bumpEventTypes defined, use the last message timestamp
+		// If there are no bumpEventTypes defined, use the last message timestamp
 		if r.Timestamp == 0 && len(bumpEventTypes) == 0 {
 			r.Timestamp = roomUpdate.GlobalRoomMetadata().LastMessageTimestamp
 		}
