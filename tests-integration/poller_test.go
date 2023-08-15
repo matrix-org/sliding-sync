@@ -364,8 +364,16 @@ func TestPollersCanBeResumedAfterExpiry(t *testing.T) {
 	t.Log("Manually trigger a poller cleanup.")
 	v3.h2.ExpireOldPollers()
 
-	t.Log("Queue up a sync v2 response for both Alice and Bob.")
-	v2.queueResponse(aliceToken, sync2.SyncResponse{NextBatch: "alice_response_2"})
+	t.Log("Queue up a sync v2 response for both Alice and Bob. Alice's response includes account data.")
+	accdata := testutils.NewAccountData(t, "dummytype", map[string]any{})
+	v2.queueResponse(aliceToken, sync2.SyncResponse{
+		NextBatch: "alice_response_2",
+		AccountData: sync2.EventsResponse{
+			Events: []json.RawMessage{
+				accdata,
+			},
+		},
+	})
 	v2.queueResponse(bobToken, sync2.SyncResponse{NextBatch: "bob_response_2"})
 
 	t.Log("Wait for Bob's poller to poll")
@@ -384,4 +392,32 @@ func TestPollersCanBeResumedAfterExpiry(t *testing.T) {
 	if since != "alice_response_1" {
 		t.Errorf("Alice's sync token in DB was %s, expected alice_response_1", since)
 	}
+
+	t.Log("Requeue the same response for Alice's restarted poller to consume.")
+	v2.queueResponse(aliceToken, sync2.SyncResponse{
+		NextBatch: "alice_response_2",
+		AccountData: sync2.EventsResponse{
+			Events: []json.RawMessage{
+				accdata,
+			},
+		},
+	})
+
+	t.Log("Alice makes a new sliding sync request")
+	res := v3.mustDoV3Request(t, aliceToken, sync3.Request{
+		Extensions: extensions.Request{
+			AccountData: &extensions.AccountDataRequest{
+				extensions.Core{
+					Enabled: &boolTrue,
+				},
+			},
+		},
+	})
+
+	t.Log("Alice's poller should have been polled.")
+	v2.waitUntilEmpty(t, aliceToken)
+
+	t.Log("Alice should see her account data")
+	m.MatchResponse(t, res, m.MatchAccountData([]json.RawMessage{accdata}, nil))
+
 }
