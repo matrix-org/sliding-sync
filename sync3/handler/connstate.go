@@ -626,7 +626,7 @@ func (s *ConnState) getInitialRoomData(ctx context.Context, roomSub sync3.RoomSu
 			if roomListsMeta == nil {
 				break
 			}
-			
+
 			evMeta := roomListsMeta.LatestEventsByType[t]
 			if evMeta.Timestamp > maxTs {
 				maxTs = evMeta.Timestamp
@@ -639,6 +639,12 @@ func (s *ConnState) getInitialRoomData(ctx context.Context, roomSub sync3.RoomSu
 		if maxTs == 0 || maxTs < roomListsMeta.JoinTiming.Timestamp {
 			if roomListsMeta != nil {
 				maxTs = roomListsMeta.JoinTiming.Timestamp
+				// If no bumpEventTypes are specified, use the
+				// LastMessageTimestamp so clients are still able
+				// to correctly sort on it.
+				if len(bumpEventTypes) == 0 {
+					maxTs = roomListsMeta.LastMessageTimestamp
+				}
 			}
 		}
 
