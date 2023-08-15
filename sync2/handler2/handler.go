@@ -216,7 +216,7 @@ func (h *Handler) UpdateDeviceSince(ctx context.Context, userID, deviceID, since
 	}
 }
 
-func (h *Handler) OnE2EEData(ctx context.Context, userID, deviceID string, otkCounts map[string]int, fallbackKeyTypes []string, deviceListChanges map[string]int) {
+func (h *Handler) OnE2EEData(ctx context.Context, userID, deviceID string, otkCounts map[string]int, fallbackKeyTypes []string, deviceListChanges map[string]int) (retErr error) {
 	var wg sync.WaitGroup
 	wg.Add(1)
 	h.e2eeWorkerPool.Queue(func() {
@@ -235,6 +235,7 @@ func (h *Handler) OnE2EEData(ctx context.Context, userID, deviceID string, otkCo
 		if err != nil {
 			logger.Err(err).Str("user", userID).Msg("failed to upsert device data")
 			internal.GetSentryHubFromContextOrDefault(ctx).CaptureException(err)
+			retErr = err
 			return
 		}
 		// remember this to notify on pubsub later
@@ -244,6 +245,7 @@ func (h *Handler) OnE2EEData(ctx context.Context, userID, deviceID string, otkCo
 		})
 	})
 	wg.Wait()
+	return
 }
 
 // Called periodically by deviceDataTicker, contains many updates
@@ -251,7 +253,7 @@ func (h *Handler) OnBulkDeviceDataUpdate(payload *pubsub.V2DeviceData) {
 	h.v2Pub.Notify(pubsub.ChanV2, payload)
 }
 
-func (h *Handler) Accumulate(ctx context.Context, userID, deviceID, roomID, prevBatch string, timeline []json.RawMessage) {
+func (h *Handler) Accumulate(ctx context.Context, userID, deviceID, roomID, prevBatch string, timeline []json.RawMessage) error {
 	// Remember any transaction IDs that may be unique to this user
 	eventIDsWithTxns := make([]string, 0, len(timeline))     // in timeline order
 	eventIDToTxnID := make(map[string]string, len(timeline)) // event_id -> txn_id
@@ -287,7 +289,7 @@ func (h *Handler) Accumulate(ctx context.Context, userID, deviceID, roomID, prev
 	if err != nil {
 		logger.Err(err).Int("timeline", len(timeline)).Str("room", roomID).Msg("V2: failed to accumulate room")
 		internal.GetSentryHubFromContextOrDefault(ctx).CaptureException(err)
-		return
+		return err
 	}
 
 	// We've updated the database. Now tell any pubsub listeners what we learned.
@@ -318,7 +320,7 @@ func (h *Handler) Accumulate(ctx context.Context, userID, deviceID, roomID, prev
 				Str("room", roomID).
 				Msg("V2: failed to fetch nids for event transaction_id handling")
 			internal.GetSentryHubFromContextOrDefault(ctx).CaptureException(err)
-			return
+			return nil // non-fatal if we fail to insert txns
 		}
 
 		for eventID, nid := range nidsByIDs {
@@ -348,14 +350,15 @@ func (h *Handler) Accumulate(ctx context.Context, userID, deviceID, roomID, prev
 			}
 		}
 	}
+	return nil
 }
 
-func (h *Handler) Initialise(ctx context.Context, roomID string, state []json.RawMessage) []json.RawMessage {
+func (h *Handler) Initialise(ctx context.Context, roomID string, state []json.RawMessage) ([]json.RawMessage, error) {
 	res, err := h.Store.Initialise(roomID, state)
 	if err != nil {
 		logger.Err(err).Int("state", len(state)).Str("room", roomID).Msg("V2: failed to initialise room")
 		internal.GetSentryHubFromContextOrDefault(ctx).CaptureException(err)
-		return nil
+		return nil, err
 	}
 	if res.AddedEvents {
 		h.v2Pub.Notify(pubsub.ChanV2, &pubsub.V2Initialise{
@@ -363,7 +366,7 @@ func (h *Handler) Initialise(ctx context.Context, roomID string, state []json.Ra
 			SnapshotNID: res.SnapshotID,
 		})
 	}
-	return res.PrependTimelineEvents
+	return res.PrependTimelineEvents, nil
 }
 
 func (h *Handler) SetTyping(ctx context.Context, pollerID sync2.PollerID, roomID string, ephEvent json.RawMessage) {
@@ -406,16 +409,18 @@ func (h *Handler) OnReceipt(ctx context.Context, userID, roomID, ephEventType st
 	})
 }
 
-func (h *Handler) AddToDeviceMessages(ctx context.Context, userID, deviceID string, msgs []json.RawMessage) {
+func (h *Handler) AddToDeviceMessages(ctx context.Context, userID, deviceID string, msgs []json.RawMessage) error {
 	_, err := h.Store.ToDeviceTable.InsertMessages(userID, deviceID, msgs)
 	if err != nil {
 		logger.Err(err).Str("user", userID).Str("device", deviceID).Int("msgs", len(msgs)).Msg("V2: failed to store to-device messages")
 		internal.GetSentryHubFromContextOrDefault(ctx).CaptureException(err)
+		return err
 	}
 	h.v2Pub.Notify(pubsub.ChanV2, &pubsub.V2DeviceMessages{
 		UserID:   userID,
 		DeviceID: deviceID,
 	})
+	return nil
 }
 
 func (h *Handler) UpdateUnreadCounts(ctx context.Context, roomID, userID string, highlightCount, notifCount *int) {
@@ -455,7 +460,7 @@ func (h *Handler) UpdateUnreadCounts(ctx context.Context, roomID, userID string,
 	})
 }
 
-func (h *Handler) OnAccountData(ctx context.Context, userID, roomID string, events []json.RawMessage) {
+func (h *Handler) OnAccountData(ctx context.Context, userID, roomID string, events []json.RawMessage) error {
 	// duplicate suppression for multiple devices on the same account.
 	// We suppress by remembering the last bytes for a given account data, and if they match we ignore.
 	dedupedEvents := make([]json.RawMessage, 0, len(events))
@@ -474,14 +479,14 @@ func (h *Handler) OnAccountData(ctx context.Context, userID, roomID string, even
 		h.accountDataMap.Store(key, thisHash)
 	}
 	if len(dedupedEvents) == 0 {
-		return
+		return nil
 	}
 
 	data, err := h.Store.InsertAccountData(userID, roomID, dedupedEvents)
 	if err != nil {
 		logger.Err(err).Str("user", userID).Str("room", roomID).Msg("failed to update account data")
 		sentry.CaptureException(err)
-		return
+		return err
 	}
 	var types []string
 	for _, d := range data {
@@ -492,27 +497,30 @@ func (h *Handler) OnAccountData(ctx context.Context, userID, roomID string, even
 		RoomID: roomID,
 		Types:  types,
 	})
+	return nil
 }
 
-func (h *Handler) OnInvite(ctx context.Context, userID, roomID string, inviteState []json.RawMessage) {
+func (h *Handler) OnInvite(ctx context.Context, userID, roomID string, inviteState []json.RawMessage) error {
 	err := h.Store.InvitesTable.InsertInvite(userID, roomID, inviteState)
 	if err != nil {
 		logger.Err(err).Str("user", userID).Str("room", roomID).Msg("failed to insert invite")
 		internal.GetSentryHubFromContextOrDefault(ctx).CaptureException(err)
-		return
+		return err
 	}
 	h.v2Pub.Notify(pubsub.ChanV2, &pubsub.V2InviteRoom{
 		UserID: userID,
 		RoomID: roomID,
 	})
+	return nil
 }
 
-func (h *Handler) OnLeftRoom(ctx context.Context, userID, roomID string, leaveEv json.RawMessage) {
+func (h *Handler) OnLeftRoom(ctx context.Context, userID, roomID string, leaveEv json.RawMessage) error {
 	// remove any invites for this user if they are rejecting an invite
 	err := h.Store.InvitesTable.RemoveInvite(userID, roomID)
 	if err != nil {
 		logger.Err(err).Str("user", userID).Str("room", roomID).Msg("failed to retire invite")
 		internal.GetSentryHubFromContextOrDefault(ctx).CaptureException(err)
+		return err
 	}
 
 	// Remove room from the typing deviceHandler map, this ensures we always
@@ -526,6 +534,7 @@ func (h *Handler) OnLeftRoom(ctx context.Context, userID, roomID string, leaveEv
 		RoomID:     roomID,
 		LeaveEvent: leaveEv,
 	})
+	return nil
 }
 
 func (h *Handler) EnsurePolling(p *pubsub.V3EnsurePolling) {

@@ -13,6 +13,8 @@ import (
 	"github.com/rs/zerolog"
 )
 
+const initialSinceToken = "0"
+
 // Tests that EnsurePolling works in the happy case
 func TestPollerMapEnsurePolling(t *testing.T) {
 	nextSince := "next"
@@ -256,7 +258,7 @@ func TestPollerPollFromNothing(t *testing.T) {
 func TestPollerPollFromExisting(t *testing.T) {
 	pid := PollerID{UserID: "@alice:localhost", DeviceID: "FOOBAR"}
 	roomID := "!foo:bar"
-	since := "0"
+	since := initialSinceToken
 	roomTimelineResponses := [][]json.RawMessage{
 		{
 			json.RawMessage(`{"event":1}`),
@@ -363,7 +365,7 @@ func TestPollerPollUpdateDeviceSincePeriodically(t *testing.T) {
 	poller := newPoller(pid, "Authorization: hello world", client, accumulator, zerolog.New(os.Stderr), false)
 	defer poller.Terminate()
 	go func() {
-		poller.Poll("0")
+		poller.Poll(initialSinceToken)
 	}()
 
 	hasPolledSuccessfully := make(chan struct{})
@@ -376,7 +378,7 @@ func TestPollerPollUpdateDeviceSincePeriodically(t *testing.T) {
 	// 1. Initial poll updates the database
 	next := "1"
 	syncResponses <- &SyncResponse{NextBatch: next}
-	mustEqualSince(t, <-syncCalledWithSince, "0")
+	mustEqualSince(t, <-syncCalledWithSince, initialSinceToken)
 
 	select {
 	case <-hasPolledSuccessfully:
@@ -506,6 +508,9 @@ func TestPollerBackoff(t *testing.T) {
 		// actually sleep to make sure async actions can happen if any
 		time.Sleep(1 * time.Millisecond)
 	}
+	defer func() { // reset the value after the test runs
+		timeSleep = time.Sleep
+	}()
 	var wg sync.WaitGroup
 	wg.Add(1)
 	poller := newPoller(PollerID{UserID: "@alice:localhost", DeviceID: deviceID}, "Authorization: hello world", client, accumulator, zerolog.New(os.Stderr), false)
@@ -563,6 +568,310 @@ func TestPollerUnblocksIfTerminatedInitially(t *testing.T) {
 	}
 }
 
+// Test that the poller sends the same sync v2 request, without incrementing the since token,
+// when an errorable callback returns an error.
+func TestPollerResendsOnCallbackError(t *testing.T) {
+	pid := PollerID{UserID: "@TestPollerResendsOnCallbackError:localhost", DeviceID: "FOOBAR"}
+
+	defer func() { // reset the value after the test runs
+		timeSleep = time.Sleep
+	}()
+	// we don't actually want to wait 3s between retries, so monkey patch it out
+	timeSleep = func(d time.Duration) {
+		time.Sleep(time.Millisecond)
+	}
+
+	testCases := []struct {
+		name             string
+		generateReceiver func() V2DataReceiver
+		syncResponse     *SyncResponse
+	}{
+		{
+			name: "AddToDeviceMessages",
+			// generate a response which will trigger the right callback
+			syncResponse: &SyncResponse{
+				ToDevice: EventsResponse{
+					Events: []json.RawMessage{
+						[]byte(`{"type":"device","content":{"yep":true}}`),
+					},
+				},
+			},
+			// generate a receiver which errors for the right callback
+			generateReceiver: func() V2DataReceiver {
+				return &overrideDataReceiver{
+					addToDeviceMessages: func(ctx context.Context, userID, deviceID string, msgs []json.RawMessage) error {
+						return fmt.Errorf("addToDeviceMessages error")
+					},
+				}
+			},
+		},
+		{
+			name: "OnE2EEData,OTKCount",
+			// generate a response which will trigger the right callback
+			syncResponse: &SyncResponse{
+				DeviceListsOTKCount: map[string]int{
+					"foo": 5,
+				},
+			},
+			// generate a receiver which errors for the right callback
+			generateReceiver: func() V2DataReceiver {
+				return &overrideDataReceiver{
+					onE2EEData: func(ctx context.Context, userID, deviceID string, otkCounts map[string]int, fallbackKeyTypes []string, deviceListChanges map[string]int) error {
+						return fmt.Errorf("onE2EEData error")
+					},
+				}
+			},
+		},
+		{
+			name: "OnE2EEData,FallbackKeys",
+			// generate a response which will trigger the right callback
+			syncResponse: &SyncResponse{
+				DeviceUnusedFallbackKeyTypes: []string{"foo", "bar"},
+			},
+			// generate a receiver which errors for the right callback
+			generateReceiver: func() V2DataReceiver {
+				return &overrideDataReceiver{
+					onE2EEData: func(ctx context.Context, userID, deviceID string, otkCounts map[string]int, fallbackKeyTypes []string, deviceListChanges map[string]int) error {
+						return fmt.Errorf("onE2EEData error")
+					},
+				}
+			},
+		},
+		{
+			name: "OnE2EEData,DeviceListChanges",
+			// generate a response which will trigger the right callback
+			syncResponse: &SyncResponse{
+				DeviceLists: struct {
+					Changed []string `json:"changed,omitempty"`
+					Left    []string `json:"left,omitempty"`
+				}{
+					Changed: []string{"alice"},
+					Left:    []string{"bob"},
+				},
+			},
+			// generate a receiver which errors for the right callback
+			generateReceiver: func() V2DataReceiver {
+				return &overrideDataReceiver{
+					onE2EEData: func(ctx context.Context, userID, deviceID string, otkCounts map[string]int, fallbackKeyTypes []string, deviceListChanges map[string]int) error {
+						return fmt.Errorf("onE2EEData error")
+					},
+				}
+			},
+		},
+		{
+			name: "Initialise",
+			// generate a response which will trigger the right callback
+			syncResponse: &SyncResponse{
+				Rooms: SyncRoomsResponse{
+					Join: map[string]SyncV2JoinResponse{
+						"!foo:bar": {
+							State: EventsResponse{
+								Events: []json.RawMessage{
+									[]byte(`{"type":"m.room.create","state_key":"","content":{},"sender":"@alice:localhost","event_id":"$111"}`),
+								},
+							},
+						},
+					},
+				},
+			},
+			// generate a receiver which errors for the right callback
+			generateReceiver: func() V2DataReceiver {
+				return &overrideDataReceiver{
+					initialise: func(ctx context.Context, roomID string, state []json.RawMessage) ([]json.RawMessage, error) {
+						return nil, fmt.Errorf("initialise error")
+					},
+				}
+			},
+		},
+		{
+			name: "Accumulate",
+			// generate a response which will trigger the right callback
+			syncResponse: &SyncResponse{
+				Rooms: SyncRoomsResponse{
+					Join: map[string]SyncV2JoinResponse{
+						"!foo:bar": {
+							Timeline: TimelineResponse{
+								Events: []json.RawMessage{
+									[]byte(`{"type":"m.room.message","content":{},"sender":"@alice:localhost","event_id":"$222"}`),
+								},
+							},
+						},
+					},
+				},
+			},
+			// generate a receiver which errors for the right callback
+			generateReceiver: func() V2DataReceiver {
+				return &overrideDataReceiver{
+					accumulate: func(ctx context.Context, userID, deviceID, roomID, prevBatch string, timeline []json.RawMessage) error {
+						return fmt.Errorf("accumulate error")
+					},
+				}
+			},
+		},
+		{
+			name: "OnAccountData,Global",
+			// generate a response which will trigger the right callback
+			syncResponse: &SyncResponse{
+				AccountData: EventsResponse{
+					Events: []json.RawMessage{
+						[]byte(`{"type":"foo","content":{"bar":53}}`),
+					},
+				},
+			},
+			// generate a receiver which errors for the right callback
+			generateReceiver: func() V2DataReceiver {
+				return &overrideDataReceiver{
+					onAccountData: func(ctx context.Context, userID, roomID string, events []json.RawMessage) error {
+						return fmt.Errorf("onAccountData error")
+					},
+				}
+			},
+		},
+		{
+			name: "OnAccountData,Room",
+			// generate a response which will trigger the right callback
+			syncResponse: &SyncResponse{
+				Rooms: SyncRoomsResponse{
+					Join: map[string]SyncV2JoinResponse{
+						"!foo:bar": {
+							AccountData: EventsResponse{
+								Events: []json.RawMessage{
+									[]byte(`{"type":"foo_room","content":{"bar":53}}`),
+								},
+							},
+						},
+					},
+				},
+			},
+			// generate a receiver which errors for the right callback
+			generateReceiver: func() V2DataReceiver {
+				return &overrideDataReceiver{
+					onAccountData: func(ctx context.Context, userID, roomID string, events []json.RawMessage) error {
+						return fmt.Errorf("onAccountData error")
+					},
+				}
+			},
+		},
+		{
+			name: "OnInvite",
+			// generate a response which will trigger the right callback
+			syncResponse: &SyncResponse{
+				Rooms: SyncRoomsResponse{
+					Invite: map[string]SyncV2InviteResponse{
+						"!foo:bar": {
+							InviteState: EventsResponse{
+								Events: []json.RawMessage{
+									[]byte(`{"type":"foo_room","content":{"bar":53}}`),
+								},
+							},
+						},
+					},
+				},
+			},
+			// generate a receiver which errors for the right callback
+			generateReceiver: func() V2DataReceiver {
+				return &overrideDataReceiver{
+					onInvite: func(ctx context.Context, userID, roomID string, inviteState []json.RawMessage) error {
+						return fmt.Errorf("onInvite error")
+					},
+				}
+			},
+		},
+		{
+			name: "OnLeftRoom",
+			// generate a response which will trigger the right callback
+			syncResponse: &SyncResponse{
+				Rooms: SyncRoomsResponse{
+					Leave: map[string]SyncV2LeaveResponse{
+						"!foo:bar": {
+							Timeline: TimelineResponse{
+								Events: []json.RawMessage{
+									[]byte(`{"type":"m.room.member","state_key":"` + pid.UserID + `","content":{"membership":"leave"}}`),
+								},
+							},
+						},
+					},
+				},
+			},
+			// generate a receiver which errors for the right callback
+			generateReceiver: func() V2DataReceiver {
+				return &overrideDataReceiver{
+					onLeftRoom: func(ctx context.Context, userID, roomID string, leaveEvent json.RawMessage) error {
+						return fmt.Errorf("onLeftRoom error")
+					},
+				}
+			},
+		},
+	}
+
+	for _, tc := range testCases {
+		tc := tc
+		// test that if you get an error NOT on an initial sync, we retry with the right since token
+		var numSyncLoops int
+		waitForStuckPolling := make(chan struct{})
+		client := &mockClient{
+			// We initially sync with `initialSinceToken`, then advance the client to "1".
+			// We then expect the client to get stuck with "1" and never send "2", because
+			// the error returned in the receiver is preventing the advancement.
+			fn: func(authHeader, since string) (*SyncResponse, int, error) {
+				t.Logf("%v DoSyncV2 since=%v", tc.name, since)
+				if since == initialSinceToken {
+					return &SyncResponse{
+						NextBatch: "1",
+					}, 200, nil
+				}
+				if since != "1" {
+					t.Errorf("bad since token, got %s", since)
+					close(waitForStuckPolling)
+					return nil, 0, fmt.Errorf("bad since token: %v", since)
+				}
+				numSyncLoops++
+				if numSyncLoops > 2 {
+					// we are clearly stuck hitting "1" over and over, which is good.
+					// close the channel to unblock this test.
+					t.Log("stuck in a loop: closing channel")
+					close(waitForStuckPolling)
+				}
+				// we should never sync with since="2" because this syncResponse is going to
+				// produce an error in the receiver
+				tc.syncResponse.NextBatch = "2"
+				// we expect the since token to be "1"
+				return tc.syncResponse, 200, nil
+			},
+		}
+		receiver := tc.generateReceiver()
+		poller := newPoller(pid, "Authorization: hello world", client, receiver, zerolog.New(os.Stderr), false)
+		waitForInitialSync(t, poller)
+		select {
+		case <-waitForStuckPolling:
+			poller.Terminate()
+			continue
+		case <-time.After(time.Second):
+			t.Fatalf("%s: timed out waiting for repeated polling", tc.name)
+		}
+	}
+}
+
+func waitForInitialSync(t *testing.T, poller *poller) {
+	go func() {
+		poller.Poll(initialSinceToken)
+	}()
+
+	hasPolledSuccessfully := make(chan struct{})
+
+	go func() {
+		poller.WaitUntilInitialSync()
+		close(hasPolledSuccessfully)
+	}()
+
+	select {
+	case <-hasPolledSuccessfully:
+		return
+	case <-time.After(time.Second):
+		t.Fatalf("timed out waiting for WaitUntilInitialSync to return")
+	}
+}
+
 type mockClient struct {
 	fn func(authHeader, since string) (*SyncResponse, int, error)
 }
@@ -575,6 +884,7 @@ func (c *mockClient) WhoAmI(authHeader string) (string, string, error) {
 }
 
 type mockDataReceiver struct {
+	*overrideDataReceiver
 	states            map[string][]json.RawMessage
 	timelines         map[string][]json.RawMessage
 	pollerIDToSince   map[PollerID]string
@@ -583,10 +893,11 @@ type mockDataReceiver struct {
 	updateSinceCalled chan struct{}
 }
 
-func (a *mockDataReceiver) Accumulate(ctx context.Context, userID, deviceID, roomID, prevBatch string, timeline []json.RawMessage) {
+func (a *mockDataReceiver) Accumulate(ctx context.Context, userID, deviceID, roomID, prevBatch string, timeline []json.RawMessage) error {
 	a.timelines[roomID] = append(a.timelines[roomID], timeline...)
+	return nil
 }
-func (a *mockDataReceiver) Initialise(ctx context.Context, roomID string, state []json.RawMessage) []json.RawMessage {
+func (a *mockDataReceiver) Initialise(ctx context.Context, roomID string, state []json.RawMessage) ([]json.RawMessage, error) {
 	a.states[roomID] = state
 	if a.incomingProcess != nil {
 		a.incomingProcess <- struct{}{}
@@ -596,9 +907,7 @@ func (a *mockDataReceiver) Initialise(ctx context.Context, roomID string, state 
 	}
 	// The return value is a list of unknown state events to be prepended to the room
 	// timeline. Untested here---return nil for now.
-	return nil
-}
-func (a *mockDataReceiver) SetTyping(ctx context.Context, pollerID PollerID, roomID string, ephEvent json.RawMessage) {
+	return nil, nil
 }
 func (s *mockDataReceiver) UpdateDeviceSince(ctx context.Context, userID, deviceID, since string) {
 	s.pollerIDToSince[PollerID{UserID: userID, DeviceID: deviceID}] = since
@@ -606,23 +915,100 @@ func (s *mockDataReceiver) UpdateDeviceSince(ctx context.Context, userID, device
 		s.updateSinceCalled <- struct{}{}
 	}
 }
-func (s *mockDataReceiver) AddToDeviceMessages(ctx context.Context, userID, deviceID string, msgs []json.RawMessage) {
+
+type overrideDataReceiver struct {
+	accumulate          func(ctx context.Context, userID, deviceID, roomID, prevBatch string, timeline []json.RawMessage) error
+	initialise          func(ctx context.Context, roomID string, state []json.RawMessage) ([]json.RawMessage, error)
+	setTyping           func(ctx context.Context, pollerID PollerID, roomID string, ephEvent json.RawMessage)
+	updateDeviceSince   func(ctx context.Context, userID, deviceID, since string)
+	addToDeviceMessages func(ctx context.Context, userID, deviceID string, msgs []json.RawMessage) error
+	updateUnreadCounts  func(ctx context.Context, roomID, userID string, highlightCount, notifCount *int)
+	onAccountData       func(ctx context.Context, userID, roomID string, events []json.RawMessage) error
+	onReceipt           func(ctx context.Context, userID, roomID, ephEventType string, ephEvent json.RawMessage)
+	onInvite            func(ctx context.Context, userID, roomID string, inviteState []json.RawMessage) error
+	onLeftRoom          func(ctx context.Context, userID, roomID string, leaveEvent json.RawMessage) error
+	onE2EEData          func(ctx context.Context, userID, deviceID string, otkCounts map[string]int, fallbackKeyTypes []string, deviceListChanges map[string]int) error
+	onTerminated        func(ctx context.Context, pollerID PollerID)
+	onExpiredToken      func(ctx context.Context, accessTokenHash, userID, deviceID string)
 }
 
-func (s *mockDataReceiver) UpdateUnreadCounts(ctx context.Context, roomID, userID string, highlightCount, notifCount *int) {
+func (s *overrideDataReceiver) Accumulate(ctx context.Context, userID, deviceID, roomID, prevBatch string, timeline []json.RawMessage) error {
+	if s.accumulate == nil {
+		return nil
+	}
+	return s.accumulate(ctx, userID, deviceID, roomID, prevBatch, timeline)
 }
-func (s *mockDataReceiver) OnAccountData(ctx context.Context, userID, roomID string, events []json.RawMessage) {
+func (s *overrideDataReceiver) Initialise(ctx context.Context, roomID string, state []json.RawMessage) ([]json.RawMessage, error) {
+	if s.initialise == nil {
+		return nil, nil
+	}
+	return s.initialise(ctx, roomID, state)
 }
-func (s *mockDataReceiver) OnReceipt(ctx context.Context, userID, roomID, ephEventType string, ephEvent json.RawMessage) {
+func (s *overrideDataReceiver) SetTyping(ctx context.Context, pollerID PollerID, roomID string, ephEvent json.RawMessage) {
+	if s.setTyping == nil {
+		return
+	}
+	s.setTyping(ctx, pollerID, roomID, ephEvent)
 }
-func (s *mockDataReceiver) OnInvite(ctx context.Context, userID, roomID string, inviteState []json.RawMessage) {
+func (s *overrideDataReceiver) UpdateDeviceSince(ctx context.Context, userID, deviceID, since string) {
+	if s.updateDeviceSince == nil {
+		return
+	}
+	s.updateDeviceSince(ctx, userID, deviceID, since)
 }
-func (s *mockDataReceiver) OnLeftRoom(ctx context.Context, userID, roomID string, leaveEvent json.RawMessage) {
+func (s *overrideDataReceiver) AddToDeviceMessages(ctx context.Context, userID, deviceID string, msgs []json.RawMessage) error {
+	if s.addToDeviceMessages == nil {
+		return nil
+	}
+	return s.addToDeviceMessages(ctx, userID, deviceID, msgs)
 }
-func (s *mockDataReceiver) OnE2EEData(ctx context.Context, userID, deviceID string, otkCounts map[string]int, fallbackKeyTypes []string, deviceListChanges map[string]int) {
+func (s *overrideDataReceiver) UpdateUnreadCounts(ctx context.Context, roomID, userID string, highlightCount, notifCount *int) {
+	if s.updateUnreadCounts == nil {
+		return
+	}
+	s.updateUnreadCounts(ctx, roomID, userID, highlightCount, notifCount)
 }
-func (s *mockDataReceiver) OnTerminated(ctx context.Context, pollerID PollerID) {}
-func (s *mockDataReceiver) OnExpiredToken(ctx context.Context, accessTokenHash, userID, deviceID string) {
+func (s *overrideDataReceiver) OnAccountData(ctx context.Context, userID, roomID string, events []json.RawMessage) error {
+	if s.onAccountData == nil {
+		return nil
+	}
+	return s.onAccountData(ctx, userID, roomID, events)
+}
+func (s *overrideDataReceiver) OnReceipt(ctx context.Context, userID, roomID, ephEventType string, ephEvent json.RawMessage) {
+	if s.onReceipt == nil {
+		return
+	}
+	s.onReceipt(ctx, userID, roomID, ephEventType, ephEvent)
+}
+func (s *overrideDataReceiver) OnInvite(ctx context.Context, userID, roomID string, inviteState []json.RawMessage) error {
+	if s.onInvite == nil {
+		return nil
+	}
+	return s.onInvite(ctx, userID, roomID, inviteState)
+}
+func (s *overrideDataReceiver) OnLeftRoom(ctx context.Context, userID, roomID string, leaveEvent json.RawMessage) error {
+	if s.onLeftRoom == nil {
+		return nil
+	}
+	return s.onLeftRoom(ctx, userID, roomID, leaveEvent)
+}
+func (s *overrideDataReceiver) OnE2EEData(ctx context.Context, userID, deviceID string, otkCounts map[string]int, fallbackKeyTypes []string, deviceListChanges map[string]int) error {
+	if s.onE2EEData == nil {
+		return nil
+	}
+	return s.onE2EEData(ctx, userID, deviceID, otkCounts, fallbackKeyTypes, deviceListChanges)
+}
+func (s *overrideDataReceiver) OnTerminated(ctx context.Context, pollerID PollerID) {
+	if s.onTerminated == nil {
+		return
+	}
+	s.onTerminated(ctx, pollerID)
+}
+func (s *overrideDataReceiver) OnExpiredToken(ctx context.Context, accessTokenHash, userID, deviceID string) {
+	if s.onExpiredToken == nil {
+		return
+	}
+	s.onExpiredToken(ctx, accessTokenHash, userID, deviceID)
 }
 
 func newMocks(doSyncV2 func(authHeader, since string) (*SyncResponse, int, error)) (*mockDataReceiver, *mockClient) {
