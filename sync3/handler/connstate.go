@@ -465,6 +465,12 @@ func (s *ConnState) buildRooms(ctx context.Context, builtSubs []BuiltSubscriptio
 	ctx, span := internal.StartSpan(ctx, "buildRooms")
 	defer span.End()
 	result := make(map[string]sync3.Room)
+
+	var bumpEventTypes []string
+	for _, x := range s.muxedReq.Lists {
+		bumpEventTypes = append(bumpEventTypes, x.BumpEventTypes...)
+	}
+
 	for _, bs := range builtSubs {
 		roomIDs := bs.RoomIDs
 		if bs.RoomSubscription.IncludeOldRooms != nil {
@@ -493,7 +499,7 @@ func (s *ConnState) buildRooms(ctx context.Context, builtSubs []BuiltSubscriptio
 			// If we have old rooms to fetch, do so.
 			if len(oldRoomIDs) > 0 {
 				// old rooms use a different subscription
-				oldRooms := s.getInitialRoomData(ctx, *bs.RoomSubscription.IncludeOldRooms, oldRoomIDs...)
+				oldRooms := s.getInitialRoomData(ctx, *bs.RoomSubscription.IncludeOldRooms, bumpEventTypes, oldRoomIDs...)
 				for oldRoomID, oldRoom := range oldRooms {
 					result[oldRoomID] = oldRoom
 				}
@@ -505,7 +511,7 @@ func (s *ConnState) buildRooms(ctx context.Context, builtSubs []BuiltSubscriptio
 			continue
 		}
 
-		rooms := s.getInitialRoomData(ctx, bs.RoomSubscription, roomIDs...)
+		rooms := s.getInitialRoomData(ctx, bs.RoomSubscription, bumpEventTypes, roomIDs...)
 		for roomID, room := range rooms {
 			result[roomID] = room
 		}
@@ -542,7 +548,7 @@ func (s *ConnState) lazyLoadTypingMembers(ctx context.Context, response *sync3.R
 	}
 }
 
-func (s *ConnState) getInitialRoomData(ctx context.Context, roomSub sync3.RoomSubscription, roomIDs ...string) map[string]sync3.Room {
+func (s *ConnState) getInitialRoomData(ctx context.Context, roomSub sync3.RoomSubscription, bumpEventTypes []string, roomIDs ...string) map[string]sync3.Room {
 	ctx, span := internal.StartSpan(ctx, "getInitialRoomData")
 	defer span.End()
 	rooms := make(map[string]sync3.Room, len(roomIDs))
@@ -611,6 +617,31 @@ func (s *ConnState) getInitialRoomData(ctx context.Context, roomSub sync3.RoomSu
 				requiredState = make([]json.RawMessage, 0)
 			}
 		}
+
+		// Get the highest timestamp, determined by bumpEventTypes,
+		// for this room
+		roomListsMeta := s.lists.ReadOnlyRoom(roomID)
+		var maxTs uint64
+		for _, t := range bumpEventTypes {
+			if roomListsMeta == nil {
+				break
+			}
+			
+			evMeta := roomListsMeta.LatestEventsByType[t]
+			if evMeta.Timestamp > maxTs {
+				maxTs = evMeta.Timestamp
+			}
+		}
+
+		// If we didn't find any events which would update the timestamp
+		// use the join event timestamp instead. Also don't leak
+		// timestamp from before we joined.
+		if maxTs == 0 || maxTs < roomListsMeta.JoinTiming.Timestamp {
+			if roomListsMeta != nil {
+				maxTs = roomListsMeta.JoinTiming.Timestamp
+			}
+		}
+
 		rooms[roomID] = sync3.Room{
 			Name:              internal.CalculateRoomName(metadata, 5), // TODO: customisable?
 			AvatarChange:      sync3.NewAvatarChange(internal.CalculateAvatar(metadata)),
@@ -624,6 +655,7 @@ func (s *ConnState) getInitialRoomData(ctx context.Context, roomSub sync3.RoomSu
 			JoinedCount:       metadata.JoinCount,
 			InvitedCount:      &metadata.InviteCount,
 			PrevBatch:         userRoomData.RequestedLatestEvents.PrevBatch,
+			Timestamp:         maxTs,
 		}
 	}
 
