@@ -163,4 +163,18 @@ func TestTimestamp(t *testing.T) {
 	if gotTs != expectedTs {
 		t.Fatalf("Charlie should see the timestamp they joined, but didn't: %d, expected %d", gotTs, expectedTs)
 	}
+
+	// Initial sync without bump types should see the most recent timestamp
+	resAlice = alice.SlidingSync(t, sync3.Request{
+		RoomSubscriptions: map[string]sync3.RoomSubscription{
+			roomID: {
+				TimelineLimit: 10,
+			},
+		},
+	})
+	// expected TS stays the same, so the join of Charlie
+	gotTs = resAlice.Rooms[roomID].Timestamp
+	if gotTs != expectedTs {
+		t.Fatalf("Alice should see the timestamp of Charlie joining, but didn't: %d, expected %d", gotTs, expectedTs)
+	}
 }
