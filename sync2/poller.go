@@ -223,6 +223,8 @@ func (h *PollerMap) ExpirePollers(pids []PollerID) int {
 			continue
 		}
 		p.Terminate()
+		// Ensure that we won't recreate this poller on startup. If it reappears later,
+		// we'll make another EnsurePolling call which will recreate the poller.
 		h.callbacks.OnExpiredToken(context.Background(), hashToken(p.accessToken), p.userID, p.deviceID)
 		numTerminated++
 	}
