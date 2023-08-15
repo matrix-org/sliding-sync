@@ -623,6 +623,9 @@ func (s *ConnState) getInitialRoomData(ctx context.Context, roomSub sync3.RoomSu
 		roomListsMeta := s.lists.ReadOnlyRoom(roomID)
 		var maxTs uint64
 		for _, t := range bumpEventTypes {
+			if roomListsMeta == nil {
+				break
+			}
 			evMeta := roomListsMeta.LatestEventsByType[t]
 			if evMeta.Timestamp > maxTs {
 				maxTs = evMeta.Timestamp
@@ -632,8 +635,10 @@ func (s *ConnState) getInitialRoomData(ctx context.Context, roomSub sync3.RoomSu
 		// If we didn't find any events which would update the timestamp
 		// use the join event timestamp instead. Also don't leak
 		// timestamp from before we joined.
-		if maxTs == 0 || maxTs < roomListsMeta.JoinTiming.Timestamp {
-			maxTs = roomListsMeta.JoinTiming.Timestamp
+		if maxTs == 0 {
+			if roomListsMeta != nil && maxTs < roomListsMeta.JoinTiming.Timestamp {
+				maxTs = roomListsMeta.JoinTiming.Timestamp
+			}
 		}
 
 		rooms[roomID] = sync3.Room{
