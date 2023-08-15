@@ -3,16 +3,48 @@ package syncv3
 import (
 	"context"
 	"encoding/json"
-	"github.com/tidwall/gjson"
 	"net/http"
 	"testing"
 	"time"
+
+	"github.com/tidwall/gjson"
 
 	"github.com/matrix-org/sliding-sync/sync2"
 	"github.com/matrix-org/sliding-sync/sync3"
 	"github.com/matrix-org/sliding-sync/testutils"
 	"github.com/matrix-org/sliding-sync/testutils/m"
 )
+
+func TestInvalidTokenReturnsMUnknownTokenError(t *testing.T) {
+	pqString := testutils.PrepareDBConnectionString()
+	v2 := runTestV2Server(t)
+	v3 := runTestServer(t, v2, pqString)
+	defer v2.close()
+	defer v3.close()
+
+	_, respBytes, statusCode := v3.doV3Request(t, context.Background(), "invalid_token", "", sync3.Request{
+		Lists: map[string]sync3.RequestList{
+			"a": {
+				Ranges: sync3.SliceRanges{{0, 1}},
+			},
+		},
+	})
+	if statusCode != 401 {
+		t.Errorf("got HTTP %v want 401", statusCode)
+	}
+	var jsonError struct {
+		Err     string `json:"error"`
+		ErrCode string `json:"errcode"`
+	}
+	if err := json.Unmarshal(respBytes, &jsonError); err != nil {
+		t.Fatalf("failed to unmarshal error response into JSON: %v", string(respBytes))
+	}
+	wantErrCode := "M_UNKNOWN_TOKEN"
+	if jsonError.ErrCode != wantErrCode {
+		t.Errorf("errcode: got %v want %v", jsonError.ErrCode, wantErrCode)
+	}
+
+}
 
 func TestSyncWithNewTokenAfterOldExpires(t *testing.T) {
 	pqString := testutils.PrepareDBConnectionString()
