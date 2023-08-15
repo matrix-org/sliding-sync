@@ -592,7 +592,9 @@ func (h *Handler) ExpireOldPollers() {
 		pids[i].DeviceID = devices[i].DeviceID
 	}
 	numExpired := h.pMap.ExpirePollers(pids)
-	logger.Info().Int("old", len(devices)).Int("expired", numExpired).Msg("poller cleanup old devices")
+	if len(devices) > 0 {
+		logger.Info().Int("old", len(devices)).Int("expired", numExpired).Msg("poller cleanup old devices")
+	}
 }
 
 func fnvHash(event json.RawMessage) uint64 {
