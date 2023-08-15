@@ -81,7 +81,6 @@ func (s *connStateLive) liveUpdate(
 			internal.Logf(ctx, "liveUpdate", "timed out after %v", timeLeftToWait)
 			return
 		case update := <-s.updates:
-			internal.Logf(ctx, "liveUpdate", "process live update")
 			s.processUpdate(ctx, update, response, ex)
 			// if there's more updates and we don't have lots stacked up already, go ahead and process another
 			for len(s.updates) > 0 && response.ListOps() < 50 {
