@@ -1016,9 +1016,10 @@ func newMocks(doSyncV2 func(authHeader, since string) (*SyncResponse, int, error
 		fn: doSyncV2,
 	}
 	accumulator := &mockDataReceiver{
-		states:          make(map[string][]json.RawMessage),
-		timelines:       make(map[string][]json.RawMessage),
-		pollerIDToSince: make(map[PollerID]string),
+		overrideDataReceiver: &overrideDataReceiver{},
+		states:               make(map[string][]json.RawMessage),
+		timelines:            make(map[string][]json.RawMessage),
+		pollerIDToSince:      make(map[PollerID]string),
 	}
 	return accumulator, client
 }
