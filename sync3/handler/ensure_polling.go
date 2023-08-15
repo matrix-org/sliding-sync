@@ -1,8 +1,12 @@
 package handler
 
 import (
-	"github.com/matrix-org/sliding-sync/sync2"
+	"context"
 	"sync"
+
+	"github.com/matrix-org/sliding-sync/internal"
+	"github.com/matrix-org/sliding-sync/sync2"
+	"github.com/prometheus/client_golang/prometheus"
 
 	"github.com/matrix-org/sliding-sync/pubsub"
 )
@@ -28,23 +32,38 @@ type EnsurePoller struct {
 	// pendingPolls tracks the status of pollers that we are waiting to start.
 	pendingPolls map[sync2.PollerID]pendingInfo
 	notifier     pubsub.Notifier
+	// the total number of outstanding ensurepolling requests.
+	numPendingEnsurePolling prometheus.Gauge
 }
 
-func NewEnsurePoller(notifier pubsub.Notifier) *EnsurePoller {
-	return &EnsurePoller{
+func NewEnsurePoller(notifier pubsub.Notifier, enablePrometheus bool) *EnsurePoller {
+	p := &EnsurePoller{
 		chanName:     pubsub.ChanV3,
 		mu:           &sync.Mutex{},
 		pendingPolls: make(map[sync2.PollerID]pendingInfo),
 		notifier:     notifier,
 	}
+	if enablePrometheus {
+		p.numPendingEnsurePolling = prometheus.NewGauge(prometheus.GaugeOpts{
+			Namespace: "sliding_sync",
+			Subsystem: "api",
+			Name:      "num_devices_pending_ensure_polling",
+			Help:      "Number of devices blocked on EnsurePolling returning.",
+		})
+		prometheus.MustRegister(p.numPendingEnsurePolling)
+	}
+	return p
 }
 
 // EnsurePolling blocks until the V2InitialSyncComplete response is received for this device. It is
 // the caller's responsibility to call OnInitialSyncComplete when new events arrive.
-func (p *EnsurePoller) EnsurePolling(pid sync2.PollerID, tokenHash string) {
+func (p *EnsurePoller) EnsurePolling(ctx context.Context, pid sync2.PollerID, tokenHash string) {
+	ctx, region := internal.StartSpan(ctx, "EnsurePolling")
+	defer region.End()
 	p.mu.Lock()
 	// do we need to wait?
 	if p.pendingPolls[pid].done {
+		internal.Logf(ctx, "EnsurePolling", "user %s device %s already done", pid.UserID, pid.DeviceID)
 		p.mu.Unlock()
 		return
 	}
@@ -56,7 +75,10 @@ func (p *EnsurePoller) EnsurePolling(pid sync2.PollerID, tokenHash string) {
 		// TODO: several times there have been problems getting the response back from the poller
 		// we should time out here after 100s and return an error or something to kick conns into
 		// trying again
+		internal.Logf(ctx, "EnsurePolling", "user %s device %s channel exits, listening for channel close", pid.UserID, pid.DeviceID)
+		_, r2 := internal.StartSpan(ctx, "waitForExistingChannelClose")
 		<-ch
+		r2.End()
 		return
 	}
 	// Make a channel to wait until we have done an initial sync
@@ -65,6 +87,7 @@ func (p *EnsurePoller) EnsurePolling(pid sync2.PollerID, tokenHash string) {
 		done: false,
 		ch:   ch,
 	}
+	p.calculateNumOutstanding() // increment total
 	p.mu.Unlock()
 	// ask the pollers to poll for this device
 	p.notifier.Notify(p.chanName, &pubsub.V3EnsurePolling{
@@ -74,10 +97,15 @@ func (p *EnsurePoller) EnsurePolling(pid sync2.PollerID, tokenHash string) {
 	})
 	// if by some miracle the notify AND sync completes before we receive on ch then this is
 	// still fine as recv on a closed channel will return immediately.
+	internal.Logf(ctx, "EnsurePolling", "user %s device %s just made channel, listening for channel close", pid.UserID, pid.DeviceID)
+	_, r2 := internal.StartSpan(ctx, "waitForNewChannelClose")
 	<-ch
+	r2.End()
 }
 
 func (p *EnsurePoller) OnInitialSyncComplete(payload *pubsub.V2InitialSyncComplete) {
+	log := logger.With().Str("user", payload.UserID).Str("device", payload.DeviceID).Logger()
+	log.Trace().Msg("OnInitialSyncComplete: got payload")
 	pid := sync2.PollerID{UserID: payload.UserID, DeviceID: payload.DeviceID}
 	p.mu.Lock()
 	defer p.mu.Unlock()
@@ -86,12 +114,14 @@ func (p *EnsurePoller) OnInitialSyncComplete(payload *pubsub.V2InitialSyncComple
 	if !ok {
 		// This can happen when the v2 poller spontaneously starts polling even without us asking it to
 		// e.g from the database
+		log.Trace().Msg("OnInitialSyncComplete: we weren't waiting for this")
 		p.pendingPolls[pid] = pendingInfo{
 			done: true,
 		}
 		return
 	}
 	if pending.done {
+		log.Trace().Msg("OnInitialSyncComplete: already done")
 		// nothing to do, we just got OnInitialSyncComplete called twice
 		return
 	}
@@ -101,6 +131,8 @@ func (p *EnsurePoller) OnInitialSyncComplete(payload *pubsub.V2InitialSyncComple
 	pending.done = true
 	pending.ch = nil
 	p.pendingPolls[pid] = pending
+	p.calculateNumOutstanding() // decrement total
+	log.Trace().Msg("OnInitialSyncComplete: closing channel")
 	close(ch)
 }
 
@@ -121,4 +153,21 @@ func (p *EnsurePoller) OnExpiredToken(payload *pubsub.V2ExpiredToken) {
 
 func (p *EnsurePoller) Teardown() {
 	p.notifier.Close()
+	if p.numPendingEnsurePolling != nil {
+		prometheus.Unregister(p.numPendingEnsurePolling)
+	}
+}
+
+// must hold p.mu
+func (p *EnsurePoller) calculateNumOutstanding() {
+	if p.numPendingEnsurePolling == nil {
+		return
+	}
+	var total int
+	for _, pi := range p.pendingPolls {
+		if !pi.done {
+			total++
+		}
+	}
+	p.numPendingEnsurePolling.Set(float64(total))
 }

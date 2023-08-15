@@ -41,12 +41,15 @@ type V2Accumulate struct {
 
 func (*V2Accumulate) Type() string { return "V2Accumulate" }
 
-// V2TransactionID is emitted by a poller when it sees an event with a transaction ID.
+// V2TransactionID is emitted by a poller when it sees an event with a transaction ID,
+// or when it is certain that no other poller will see a transaction ID for this event
+// (the "all-clear").
 type V2TransactionID struct {
 	EventID       string
-	UserID        string
+	RoomID        string
+	UserID        string // of the sender
 	DeviceID      string
-	TransactionID string
+	TransactionID string // Note: an empty transaction ID represents the all-clear.
 	NID           int64
 }
 
@@ -70,8 +73,9 @@ type V2AccountData struct {
 func (*V2AccountData) Type() string { return "V2AccountData" }
 
 type V2LeaveRoom struct {
-	UserID string
-	RoomID string
+	UserID     string
+	RoomID     string
+	LeaveEvent json.RawMessage
 }
 
 func (*V2LeaveRoom) Type() string { return "V2LeaveRoom" }
@@ -91,9 +95,7 @@ type V2InitialSyncComplete struct {
 func (*V2InitialSyncComplete) Type() string { return "V2InitialSyncComplete" }
 
 type V2DeviceData struct {
-	UserID   string
-	DeviceID string
-	Pos      int64
+	UserIDToDeviceIDs map[string][]string
 }
 
 func (*V2DeviceData) Type() string { return "V2DeviceData" }

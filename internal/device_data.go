@@ -23,7 +23,7 @@ func isBitSet(n int, bit int) bool {
 type DeviceData struct {
 	// Contains the latest device_one_time_keys_count values.
 	// Set whenever this field arrives down the v2 poller, and it replaces what was previously there.
-	OTKCounts map[string]int `json:"otk"`
+	OTKCounts MapStringInt `json:"otk"`
 	// Contains the latest device_unused_fallback_key_types value
 	// Set whenever this field arrives down the v2 poller, and it replaces what was previously there.
 	FallbackKeyTypes []string `json:"fallback"`

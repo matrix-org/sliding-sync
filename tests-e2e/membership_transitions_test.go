@@ -64,7 +64,22 @@ func TestRoomStateTransitions(t *testing.T) {
 			m.MatchRoomHighlightCount(1),
 			m.MatchRoomInitial(true),
 			m.MatchRoomRequiredState(nil),
-			// TODO m.MatchRoomInviteState(inviteStrippedState.InviteState.Events),
+			m.MatchInviteCount(1),
+			m.MatchJoinCount(1),
+			MatchRoomInviteState([]Event{
+				{
+					Type:     "m.room.create",
+					StateKey: ptr(""),
+					// no content as it includes the room version which we don't want to guess/hardcode
+				},
+				{
+					Type:     "m.room.join_rules",
+					StateKey: ptr(""),
+					Content: map[string]interface{}{
+						"join_rule": "public",
+					},
+				},
+			}, true),
 		},
 		joinRoomID: {},
 	}),
@@ -105,6 +120,8 @@ func TestRoomStateTransitions(t *testing.T) {
 			},
 		}),
 		m.MatchRoomInitial(true),
+		m.MatchJoinCount(2),
+		m.MatchInviteCount(0),
 		m.MatchRoomHighlightCount(0),
 	))
 }
@@ -216,17 +233,18 @@ func TestInviteRejection(t *testing.T) {
 }
 
 func TestInviteAcceptance(t *testing.T) {
-	alice := registerNewUser(t)
-	bob := registerNewUser(t)
+	alice := registerNamedUser(t, "alice")
+	bob := registerNamedUser(t, "bob")
 
 	// ensure that invite state correctly propagates. One room will already be in 'invite' state
 	// prior to the first proxy sync, whereas the 2nd will transition.
+	t.Logf("Alice creates two rooms and invites Bob to the first.")
 	firstInviteRoomID := alice.CreateRoom(t, map[string]interface{}{"preset": "private_chat", "name": "First"})
 	alice.InviteRoom(t, firstInviteRoomID, bob.UserID)
 	secondInviteRoomID := alice.CreateRoom(t, map[string]interface{}{"preset": "private_chat", "name": "Second"})
 	t.Logf("first %s second %s", firstInviteRoomID, secondInviteRoomID)
 
-	// sync as bob, we should see 1 invite
+	t.Log("Sync as Bob, requesting invites only. He should see 1 invite")
 	res := bob.SlidingSync(t, sync3.Request{
 		Lists: map[string]sync3.RequestList{
 			"a": {
@@ -256,10 +274,12 @@ func TestInviteAcceptance(t *testing.T) {
 		},
 	}))
 
-	// now invite bob
+	t.Log("Alice invites bob to room 2.")
 	alice.InviteRoom(t, secondInviteRoomID, bob.UserID)
+	t.Log("Alice syncs until she sees Bob's invite.")
 	alice.SlidingSyncUntilMembership(t, "", secondInviteRoomID, bob, "invite")
 
+	t.Log("Bob syncs. He should see the invite to room 2 as well.")
 	res = bob.SlidingSync(t, sync3.Request{
 		Lists: map[string]sync3.RequestList{
 			"a": {
@@ -287,13 +307,16 @@ func TestInviteAcceptance(t *testing.T) {
 		},
 	}))
 
-	// now accept the invites
+	t.Log("Bob accept the invites.")
 	bob.JoinRoom(t, firstInviteRoomID, nil)
 	bob.JoinRoom(t, secondInviteRoomID, nil)
+
+	t.Log("Alice syncs until she sees Bob join room 1.")
 	alice.SlidingSyncUntilMembership(t, "", firstInviteRoomID, bob, "join")
+	t.Log("Alice syncs until she sees Bob join room 2.")
 	alice.SlidingSyncUntilMembership(t, "", secondInviteRoomID, bob, "join")
 
-	// the list should be purged
+	t.Log("Bob does an incremental sync")
 	res = bob.SlidingSync(t, sync3.Request{
 		Lists: map[string]sync3.RequestList{
 			"a": {
@@ -301,12 +324,13 @@ func TestInviteAcceptance(t *testing.T) {
 			},
 		},
 	}, WithPos(res.Pos))
+	t.Log("Both of his invites should be purged.")
 	m.MatchResponse(t, res, m.MatchList("a", m.MatchV3Count(0), m.MatchV3Ops(
 		m.MatchV3DeleteOp(1),
 		m.MatchV3DeleteOp(0),
 	)))
 
-	// fresh sync -> no invites
+	t.Log("Bob makes a fresh sliding sync request.")
 	res = bob.SlidingSync(t, sync3.Request{
 		Lists: map[string]sync3.RequestList{
 			"a": {
@@ -317,6 +341,7 @@ func TestInviteAcceptance(t *testing.T) {
 			},
 		},
 	})
+	t.Log("He should see no invites.")
 	m.MatchResponse(t, res, m.MatchNoV3Ops(), m.MatchRoomSubscriptionsStrict(nil), m.MatchList("a", m.MatchV3Count(0)))
 }
 
@@ -467,7 +492,7 @@ func TestMemberCounts(t *testing.T) {
 	m.MatchResponse(t, res, m.MatchRoomSubscriptionsStrict(map[string][]m.RoomMatcher{
 		secondRoomID: {
 			m.MatchRoomInitial(false),
-			m.MatchInviteCount(0),
+			m.MatchNoInviteCount(),
 			m.MatchJoinCount(0), // omitempty
 		},
 	}))
@@ -486,7 +511,7 @@ func TestMemberCounts(t *testing.T) {
 	m.MatchResponse(t, res, m.MatchRoomSubscriptionsStrict(map[string][]m.RoomMatcher{
 		secondRoomID: {
 			m.MatchRoomInitial(false),
-			m.MatchInviteCount(0),
+			m.MatchNoInviteCount(),
 			m.MatchJoinCount(2),
 		},
 	}))

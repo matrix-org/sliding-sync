@@ -2,7 +2,11 @@
 
 Run a sliding sync proxy. An implementation of [MSC3575](https://github.com/matrix-org/matrix-doc/blob/kegan/sync-v3/proposals/3575-sync.md).
 
-Proxy version to MSC API specification:
+## Proxy version to MSC API specification
+
+This describes which proxy versions implement which version of the API drafted
+in MSC3575. See https://github.com/matrix-org/sliding-sync/releases for the
+changes in the proxy itself.
 
 -   Version 0.1.x: [2022/04/01](https://github.com/matrix-org/matrix-spec-proposals/blob/615e8f5a7bfe4da813bc2db661ed0bd00bccac20/proposals/3575-sync.md)
     -   First release
@@ -21,29 +25,102 @@ Proxy version to MSC API specification:
     -   Support for `errcode` when sessions expire.
 -   Version 0.99.1 [2023/01/20](https://github.com/matrix-org/matrix-spec-proposals/blob/b4b4e7ff306920d2c862c6ff4d245110f6fa5bc7/proposals/3575-sync.md)
     -   Preparing for major v1.x release: lists-as-keys support.
--   Version 0.99.2 [2024/07/27](https://github.com/matrix-org/matrix-spec-proposals/blob/eab643cb3ca63b03537a260fa343e1fb2d1ee284/proposals/3575-sync.md)
+-   Version 0.99.2 [2023/03/31](https://github.com/matrix-org/matrix-spec-proposals/blob/eab643cb3ca63b03537a260fa343e1fb2d1ee284/proposals/3575-sync.md)
     -   Experimental support for `bump_event_types` when ordering rooms by recency.
     -   Support for opting in to extensions on a per-list and per-room basis.
-    -   Sentry support.
+-   Version 0.99.3 [2023/05/23](https://github.com/matrix-org/matrix-spec-proposals/blob/4103ee768a4a3e1decee80c2987f50f4c6b3d539/proposals/3575-sync.md)
+    -   Support for per-list `bump_event_types`.
+    -   Support for [`conn_id`](https://github.com/matrix-org/matrix-spec-proposals/blob/4103ee768a4a3e1decee80c2987f50f4c6b3d539/proposals/3575-sync.md#concurrent-connections) for distinguishing multiple concurrent connections.
+-   Version 0.99.4 [2023/07/12](https://github.com/matrix-org/matrix-spec-proposals/blob/4103ee768a4a3e1decee80c2987f50f4c6b3d539/proposals/3575-sync.md)
+    -   Support for `SYNCV3_MAX_DB_CONN`, and reduce the amount of concurrent connections required during normal operation.
+    -   Add more metrics and logs. Reduce log spam.
+    -   Improve performance when handling changed device lists.
+    -   Responses will consume from the live buffer even when clients change their request parameters to more speedily send new events down.
+    -   Bugfix: return `invited_count` correctly when it transitions to 0.
+    -   Bugfix: fix a data corruption bug when 2 users join a federated room where the first user was invited to said room.
 
 ## Usage
 
+### Setup
 Requires Postgres 13+.
 
+First, you must create a Postgres database and secret:
 ```bash
 $ createdb syncv3
 $ echo -n "$(openssl rand -hex 32)" > .secret # this MUST remain the same throughout the lifetime of the database created above.
 ```
 
-Compiling from source and running:
+The Sliding Sync proxy requires some environment variables set to function. They are described when the proxy is run with missing variables.
+
+Here is a short description of each, as of writing:
+```
+SYNCV3_SERVER     Required. The destination homeserver to talk to (CS API HTTPS URL) e.g 'https://matrix-client.matrix.org'
+SYNCV3_DB         Required. The postgres connection string: https://www.postgresql.org/docs/current/libpq-connect.html#LIBPQ-CONNSTRING
+SYNCV3_SECRET     Required. A secret to use to encrypt access tokens. Must remain the same for the lifetime of the database.
+SYNCV3_BINDADDR   Default: 0.0.0.0:8008.  The interface and port to listen on.
+SYNCV3_TLS_CERT   Default: unset. Path to a certificate file to serve to HTTPS clients. Specifying this enables TLS on the bound address.
+SYNCV3_TLS_KEY    Default: unset. Path to a key file for the certificate. Must be provided along with the certificate file.
+SYNCV3_PPROF      Default: unset. The bind addr for pprof debugging e.g ':6060'. If not set, does not listen.
+SYNCV3_PROM       Default: unset. The bind addr for Prometheus metrics, which will be accessible at /metrics at this address.
+SYNCV3_JAEGER_URL Default: unset. The Jaeger URL to send spans to e.g http://localhost:14268/api/traces - if unset does not send OTLP traces.
+SYNCV3_SENTRY_DSN Default: unset. The Sentry DSN to report events to e.g https://sliding-sync@sentry.example.com/123 - if unset does not send sentry events.
+SYNCV3_LOG_LEVEL  Default: info. The level of verbosity for messages logged. Available values are trace, debug, info, warn, error and fatal
+SYNCV3_MAX_DB_CONN Default: unset. Max database connections to use when communicating with postgres. Unset or 0 means no limit.
+```
+
+It is easiest to host the proxy on a separate hostname than the Matrix server, though it is possible to use the same hostname by forwarding the used endpoints.
+
+In both cases, the path `https://example.com/.well-known/matrix/client` must return a JSON with at least the following contents:
+```json
+{
+    "m.server": {
+        "base_url": "https://example.com"
+    },
+    "m.homeserver": {
+        "base_url": "https://example.com"
+    },
+    "org.matrix.msc3575.proxy": {
+        "url": "https://syncv3.example.com"
+    }
+}
+```
+
+#### Same hostname
+The following nginx configuration can be used to pass the required endpoints to the sync proxy, running on local port 8009 (so as to not conflict with Synapse):
+```nginx
+location ~ ^/(client/|_matrix/client/unstable/org.matrix.msc3575/sync) {
+    proxy_pass http://localhost:8009;
+    proxy_set_header X-Forwarded-For $remote_addr;
+    proxy_set_header X-Forwarded-Proto $scheme;
+    proxy_set_header Host $host;
+}
+
+location ~ ^(\/_matrix|\/_synapse\/client) {
+    proxy_pass http://localhost:8008;
+    proxy_set_header X-Forwarded-For $remote_addr;
+    proxy_set_header X-Forwarded-Proto $scheme;
+    proxy_set_header Host $host;
+}
+
+location /.well-known/matrix/client {
+    add_header Access-Control-Allow-Origin *;
+}
+```
+
+### Running
+There are two ways to run the proxy:
+- Compiling from source:
 ```
 $ go build ./cmd/syncv3
-$ SYNCV3_SECRET=$(cat .secret) SYNCV3_SERVER="https://matrix-client.matrix.org" SYNCV3_DB="user=$(whoami) dbname=syncv3 sslmode=disable" SYNCV3_BINDADDR=0.0.0.0:8008 ./syncv3
+$ SYNCV3_SECRET=$(cat .secret) SYNCV3_SERVER="https://matrix-client.matrix.org" SYNCV3_DB="user=$(whoami) dbname=syncv3 sslmode=disable password='DATABASE_PASSWORD_HERE'" SYNCV3_BINDADDR=0.0.0.0:8008 ./syncv3
 ```
-Using a Docker image:
+
+- Using a Docker image:
 ```
-docker run --rm -e "SYNCV3_SERVER=https://matrix-client.matrix.org" -e "SYNCV3_SECRET=$(cat .secret)" -e "SYNCV3_BINDADDR=:8008" -e "SYNCV3_DB=user=$(whoami) dbname=syncv3 sslmode=disable host=host.docker.internal" -p 8008:8008 ghcr.io/matrix-org/sliding-sync:latest
+docker run --rm -e "SYNCV3_SERVER=https://matrix-client.matrix.org" -e "SYNCV3_SECRET=$(cat .secret)" -e "SYNCV3_BINDADDR=:8008" -e "SYNCV3_DB=user=$(whoami) dbname=syncv3 sslmode=disable host=host.docker.internal password='DATABASE_PASSWORD_HERE'" -p 8008:8008 ghcr.io/matrix-org/sliding-sync:latest
 ```
+
+
 Optionally also set `SYNCV3_TLS_CERT=path/to/cert.pem` and `SYNCV3_TLS_KEY=path/to/key.pem` to listen on HTTPS instead of HTTP.
 Make sure to tweak the `SYNCV3_DB` environment variable if the Postgres database isn't running on the host.
 

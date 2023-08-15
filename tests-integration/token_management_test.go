@@ -3,10 +3,11 @@ package syncv3
 import (
 	"context"
 	"encoding/json"
-	"github.com/tidwall/gjson"
 	"net/http"
 	"testing"
 	"time"
+
+	"github.com/tidwall/gjson"
 
 	"github.com/matrix-org/sliding-sync/sync2"
 	"github.com/matrix-org/sliding-sync/sync3"

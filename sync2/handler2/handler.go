@@ -4,11 +4,13 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"github.com/jmoiron/sqlx"
-	"github.com/matrix-org/sliding-sync/sqlutil"
 	"hash/fnv"
 	"os"
 	"sync"
+	"time"
+
+	"github.com/jmoiron/sqlx"
+	"github.com/matrix-org/sliding-sync/sqlutil"
 
 	"github.com/getsentry/sentry-go"
 
@@ -30,38 +32,48 @@ var logger = zerolog.New(os.Stdout).With().Timestamp().Logger().Output(zerolog.C
 // processing v2 data (as a sync2.V2DataReceiver) and publishing updates (pubsub.Payload to V2Listeners);
 // and receiving and processing EnsurePolling events.
 type Handler struct {
-	pMap      *sync2.PollerMap
-	v2Store   *sync2.Storage
-	Store     *state.Storage
-	v2Pub     pubsub.Notifier
-	v3Sub     *pubsub.V3Sub
-	client    sync2.Client
-	unreadMap map[string]struct {
+	pMap    sync2.IPollerMap
+	v2Store *sync2.Storage
+	Store   *state.Storage
+	v2Pub   pubsub.Notifier
+	v3Sub   *pubsub.V3Sub
+	// user_id|room_id|event_type => fnv_hash(last_event_bytes)
+	accountDataMap *sync.Map
+	unreadMap      map[string]struct {
 		Highlight int
 		Notif     int
 	}
-	// room_id => fnv_hash([typing user ids])
-	typingMap map[string]uint64
+	// room_id -> PollerID, stores which Poller is allowed to update typing notifications
+	typingHandler map[string]sync2.PollerID
+	typingMu      *sync.Mutex
+	PendingTxnIDs *sync2.PendingTransactionIDs
+
+	deviceDataTicker *sync2.DeviceDataTicker
+	e2eeWorkerPool   *internal.WorkerPool
 
 	numPollers prometheus.Gauge
 	subSystem  string
 }
 
 func NewHandler(
-	connStr string, pMap *sync2.PollerMap, v2Store *sync2.Storage, store *state.Storage, client sync2.Client,
-	pub pubsub.Notifier, sub pubsub.Listener, enablePrometheus bool,
+	pMap sync2.IPollerMap, v2Store *sync2.Storage, store *state.Storage,
+	pub pubsub.Notifier, sub pubsub.Listener, enablePrometheus bool, deviceDataUpdateDuration time.Duration,
 ) (*Handler, error) {
 	h := &Handler{
 		pMap:      pMap,
 		v2Store:   v2Store,
-		client:    client,
 		Store:     store,
 		subSystem: "poller",
 		unreadMap: make(map[string]struct {
 			Highlight int
 			Notif     int
 		}),
-		typingMap: make(map[string]uint64),
+		accountDataMap:   &sync.Map{},
+		typingMu:         &sync.Mutex{},
+		typingHandler:    make(map[string]sync2.PollerID),
+		PendingTxnIDs:    sync2.NewPendingTransactionIDs(pMap.DeviceIDs),
+		deviceDataTicker: sync2.NewDeviceDataTicker(deviceDataUpdateDuration),
+		e2eeWorkerPool:   internal.NewWorkerPool(500), // TODO: assign as fraction of db max conns, not hardcoded
 	}
 
 	if enablePrometheus {
@@ -86,6 +98,9 @@ func (h *Handler) Listen() {
 			sentry.CaptureException(err)
 		}
 	}()
+	h.e2eeWorkerPool.Start()
+	h.deviceDataTicker.SetCallback(h.OnBulkDeviceDataUpdate)
+	go h.deviceDataTicker.Run()
 }
 
 func (h *Handler) Teardown() {
@@ -95,6 +110,7 @@ func (h *Handler) Teardown() {
 	h.Store.Teardown()
 	h.v2Store.Teardown()
 	h.pMap.Terminate()
+	h.deviceDataTicker.Stop()
 	if h.numPollers != nil {
 		prometheus.Unregister(h.numPollers)
 	}
@@ -156,7 +172,15 @@ func (h *Handler) updateMetrics() {
 	h.numPollers.Set(float64(h.pMap.NumPollers()))
 }
 
-func (h *Handler) OnTerminated(ctx context.Context, userID, deviceID string) {
+func (h *Handler) OnTerminated(ctx context.Context, pollerID sync2.PollerID) {
+	// Check if this device is handling any typing notifications, of so, remove it
+	h.typingMu.Lock()
+	defer h.typingMu.Unlock()
+	for roomID, devID := range h.typingHandler {
+		if devID == pollerID {
+			delete(h.typingHandler, roomID)
+		}
+	}
 	h.updateMetrics()
 }
 
@@ -193,42 +217,62 @@ func (h *Handler) UpdateDeviceSince(ctx context.Context, userID, deviceID, since
 }
 
 func (h *Handler) OnE2EEData(ctx context.Context, userID, deviceID string, otkCounts map[string]int, fallbackKeyTypes []string, deviceListChanges map[string]int) {
-	// some of these fields may be set
-	partialDD := internal.DeviceData{
-		UserID:           userID,
-		DeviceID:         deviceID,
-		OTKCounts:        otkCounts,
-		FallbackKeyTypes: fallbackKeyTypes,
-		DeviceLists: internal.DeviceLists{
-			New: deviceListChanges,
-		},
-	}
-	nextPos, err := h.Store.DeviceDataTable.Upsert(&partialDD)
-	if err != nil {
-		logger.Err(err).Str("user", userID).Msg("failed to upsert device data")
-		internal.GetSentryHubFromContextOrDefault(ctx).CaptureException(err)
-		return
-	}
-	h.v2Pub.Notify(pubsub.ChanV2, &pubsub.V2DeviceData{
-		UserID:   userID,
-		DeviceID: deviceID,
-		Pos:      nextPos,
+	var wg sync.WaitGroup
+	wg.Add(1)
+	h.e2eeWorkerPool.Queue(func() {
+		defer wg.Done()
+		// some of these fields may be set
+		partialDD := internal.DeviceData{
+			UserID:           userID,
+			DeviceID:         deviceID,
+			OTKCounts:        otkCounts,
+			FallbackKeyTypes: fallbackKeyTypes,
+			DeviceLists: internal.DeviceLists{
+				New: deviceListChanges,
+			},
+		}
+		err := h.Store.DeviceDataTable.Upsert(&partialDD)
+		if err != nil {
+			logger.Err(err).Str("user", userID).Msg("failed to upsert device data")
+			internal.GetSentryHubFromContextOrDefault(ctx).CaptureException(err)
+			return
+		}
+		// remember this to notify on pubsub later
+		h.deviceDataTicker.Remember(sync2.PollerID{
+			UserID:   userID,
+			DeviceID: deviceID,
+		})
 	})
+	wg.Wait()
+}
+
+// Called periodically by deviceDataTicker, contains many updates
+func (h *Handler) OnBulkDeviceDataUpdate(payload *pubsub.V2DeviceData) {
+	h.v2Pub.Notify(pubsub.ChanV2, payload)
 }
 
 func (h *Handler) Accumulate(ctx context.Context, userID, deviceID, roomID, prevBatch string, timeline []json.RawMessage) {
 	// Remember any transaction IDs that may be unique to this user
 	eventIDsWithTxns := make([]string, 0, len(timeline))     // in timeline order
 	eventIDToTxnID := make(map[string]string, len(timeline)) // event_id -> txn_id
+	// Also remember events which were sent by this user but lack a transaction ID.
+	eventIDsLackingTxns := make([]string, 0, len(timeline))
+
 	for _, e := range timeline {
-		txnID := gjson.GetBytes(e, "unsigned.transaction_id")
-		if !txnID.Exists() {
+		parsed := gjson.ParseBytes(e)
+		eventID := parsed.Get("event_id").Str
+
+		if txnID := parsed.Get("unsigned.transaction_id"); txnID.Exists() {
+			eventIDsWithTxns = append(eventIDsWithTxns, eventID)
+			eventIDToTxnID[eventID] = txnID.Str
 			continue
 		}
-		eventID := gjson.GetBytes(e, "event_id").Str
-		eventIDsWithTxns = append(eventIDsWithTxns, eventID)
-		eventIDToTxnID[eventID] = txnID.Str
+
+		if sender := parsed.Get("sender"); sender.Str == userID {
+			eventIDsLackingTxns = append(eventIDsLackingTxns, eventID)
+		}
 	}
+
 	if len(eventIDToTxnID) > 0 {
 		// persist the txn IDs
 		err := h.Store.TransactionsTable.Insert(userID, deviceID, eventIDToTxnID)
@@ -239,62 +283,69 @@ func (h *Handler) Accumulate(ctx context.Context, userID, deviceID, roomID, prev
 	}
 
 	// Insert new events
-	numNew, latestNIDs, err := h.Store.Accumulate(roomID, prevBatch, timeline)
+	numNew, latestNIDs, err := h.Store.Accumulate(userID, roomID, prevBatch, timeline)
 	if err != nil {
 		logger.Err(err).Int("timeline", len(timeline)).Str("room", roomID).Msg("V2: failed to accumulate room")
 		internal.GetSentryHubFromContextOrDefault(ctx).CaptureException(err)
 		return
 	}
-	if numNew == 0 {
-		// no new events
-		return
-	}
-	h.v2Pub.Notify(pubsub.ChanV2, &pubsub.V2Accumulate{
-		RoomID:    roomID,
-		PrevBatch: prevBatch,
-		EventNIDs: latestNIDs,
-	})
 
-	if len(eventIDToTxnID) > 0 {
+	// We've updated the database. Now tell any pubsub listeners what we learned.
+	if numNew != 0 {
+		h.v2Pub.Notify(pubsub.ChanV2, &pubsub.V2Accumulate{
+			RoomID:    roomID,
+			PrevBatch: prevBatch,
+			EventNIDs: latestNIDs,
+		})
+	}
+
+	if len(eventIDToTxnID) > 0 || len(eventIDsLackingTxns) > 0 {
 		// The call to h.Store.Accumulate above only tells us about new events' NIDS;
 		// for existing events we need to requery the database to fetch them.
 		// Rather than try to reuse work, keep things simple and just fetch NIDs for
 		// all events with txnIDs.
 		var nidsByIDs map[string]int64
+		eventIDsToFetch := append(eventIDsWithTxns, eventIDsLackingTxns...)
 		err = sqlutil.WithTransaction(h.Store.DB, func(txn *sqlx.Tx) error {
-			nidsByIDs, err = h.Store.EventsTable.SelectNIDsByIDs(txn, eventIDsWithTxns)
+			nidsByIDs, err = h.Store.EventsTable.SelectNIDsByIDs(txn, eventIDsToFetch)
 			return err
 		})
 		if err != nil {
 			logger.Err(err).
 				Int("timeline", len(timeline)).
 				Int("num_transaction_ids", len(eventIDsWithTxns)).
+				Int("num_missing_transaction_ids", len(eventIDsLackingTxns)).
 				Str("room", roomID).
-				Msg("V2: failed to fetch nids for events with transaction_ids")
+				Msg("V2: failed to fetch nids for event transaction_id handling")
 			internal.GetSentryHubFromContextOrDefault(ctx).CaptureException(err)
 			return
 		}
 
-		for _, eventID := range eventIDsWithTxns {
+		for eventID, nid := range nidsByIDs {
 			txnID, ok := eventIDToTxnID[eventID]
-			if !ok {
-				continue
+			if ok {
+				h.PendingTxnIDs.SeenTxnID(eventID)
+				h.v2Pub.Notify(pubsub.ChanV2, &pubsub.V2TransactionID{
+					EventID:       eventID,
+					RoomID:        roomID,
+					UserID:        userID,
+					DeviceID:      deviceID,
+					TransactionID: txnID,
+					NID:           nid,
+				})
+			} else {
+				allClear, _ := h.PendingTxnIDs.MissingTxnID(eventID, userID, deviceID)
+				if allClear {
+					h.v2Pub.Notify(pubsub.ChanV2, &pubsub.V2TransactionID{
+						EventID:       eventID,
+						RoomID:        roomID,
+						UserID:        userID,
+						DeviceID:      deviceID,
+						TransactionID: "",
+						NID:           nid,
+					})
+				}
 			}
-			nid, ok := nidsByIDs[eventID]
-			if !ok {
-				errMsg := "V2: failed to fetch NID for txnID"
-				logger.Error().Str("user", userID).Str("device", deviceID).Msg(errMsg)
-				internal.GetSentryHubFromContextOrDefault(ctx).CaptureException(fmt.Errorf("errMsg"))
-				continue
-			}
-
-			h.v2Pub.Notify(pubsub.ChanV2, &pubsub.V2TransactionID{
-				EventID:       eventID,
-				UserID:        userID,
-				DeviceID:      deviceID,
-				TransactionID: txnID,
-				NID:           nid,
-			})
 		}
 	}
 }
@@ -315,13 +366,20 @@ func (h *Handler) Initialise(ctx context.Context, roomID string, state []json.Ra
 	return res.PrependTimelineEvents
 }
 
-func (h *Handler) SetTyping(ctx context.Context, roomID string, ephEvent json.RawMessage) {
-	next := typingHash(ephEvent)
-	existing := h.typingMap[roomID]
-	if existing == next {
+func (h *Handler) SetTyping(ctx context.Context, pollerID sync2.PollerID, roomID string, ephEvent json.RawMessage) {
+	h.typingMu.Lock()
+	defer h.typingMu.Unlock()
+
+	existingDevice := h.typingHandler[roomID]
+	isPollerAssigned := existingDevice.DeviceID != "" && existingDevice.UserID != ""
+	if isPollerAssigned && existingDevice != pollerID {
+		// A different device is already handling typing notifications for this room
 		return
+	} else if !isPollerAssigned {
+		// We're the first to call SetTyping, assign our pollerID
+		h.typingHandler[roomID] = pollerID
 	}
-	h.typingMap[roomID] = next
+
 	// we don't persist this for long term storage as typing notifs are inherently ephemeral.
 	// So rather than maintaining them forever, they will naturally expire when we terminate.
 	h.v2Pub.Notify(pubsub.ChanV2, &pubsub.V2Typing{
@@ -398,7 +456,28 @@ func (h *Handler) UpdateUnreadCounts(ctx context.Context, roomID, userID string,
 }
 
 func (h *Handler) OnAccountData(ctx context.Context, userID, roomID string, events []json.RawMessage) {
-	data, err := h.Store.InsertAccountData(userID, roomID, events)
+	// duplicate suppression for multiple devices on the same account.
+	// We suppress by remembering the last bytes for a given account data, and if they match we ignore.
+	dedupedEvents := make([]json.RawMessage, 0, len(events))
+	for i := range events {
+		evType := gjson.GetBytes(events[i], "type").Str
+		key := fmt.Sprintf("%s|%s|%s", userID, roomID, evType)
+		thisHash := fnvHash(events[i])
+		last, _ := h.accountDataMap.Load(key)
+		if last != nil {
+			lastHash := last.(uint64)
+			if lastHash == thisHash {
+				continue // skip this event
+			}
+		}
+		dedupedEvents = append(dedupedEvents, events[i])
+		h.accountDataMap.Store(key, thisHash)
+	}
+	if len(dedupedEvents) == 0 {
+		return
+	}
+
+	data, err := h.Store.InsertAccountData(userID, roomID, dedupedEvents)
 	if err != nil {
 		logger.Err(err).Str("user", userID).Str("room", roomID).Msg("failed to update account data")
 		sentry.CaptureException(err)
@@ -428,16 +507,24 @@ func (h *Handler) OnInvite(ctx context.Context, userID, roomID string, inviteSta
 	})
 }
 
-func (h *Handler) OnLeftRoom(ctx context.Context, userID, roomID string) {
+func (h *Handler) OnLeftRoom(ctx context.Context, userID, roomID string, leaveEv json.RawMessage) {
 	// remove any invites for this user if they are rejecting an invite
 	err := h.Store.InvitesTable.RemoveInvite(userID, roomID)
 	if err != nil {
 		logger.Err(err).Str("user", userID).Str("room", roomID).Msg("failed to retire invite")
 		internal.GetSentryHubFromContextOrDefault(ctx).CaptureException(err)
 	}
+
+	// Remove room from the typing deviceHandler map, this ensures we always
+	// have a device handling typing notifications for a given room.
+	h.typingMu.Lock()
+	defer h.typingMu.Unlock()
+	delete(h.typingHandler, roomID)
+
 	h.v2Pub.Notify(pubsub.ChanV2, &pubsub.V2LeaveRoom{
-		UserID: userID,
-		RoomID: roomID,
+		UserID:     userID,
+		RoomID:     roomID,
+		LeaveEvent: leaveEv,
 	})
 }
 
@@ -471,10 +558,8 @@ func (h *Handler) EnsurePolling(p *pubsub.V3EnsurePolling) {
 	}()
 }
 
-func typingHash(ephEvent json.RawMessage) uint64 {
+func fnvHash(event json.RawMessage) uint64 {
 	h := fnv.New64a()
-	for _, userID := range gjson.ParseBytes(ephEvent).Get("content.user_ids").Array() {
-		h.Write([]byte(userID.Str))
-	}
+	h.Write(event)
 	return h.Sum64()
 }

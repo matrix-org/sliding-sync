@@ -11,8 +11,11 @@ import (
 	"github.com/jmoiron/sqlx"
 	"github.com/matrix-org/sliding-sync/sqlutil"
 	"github.com/matrix-org/sliding-sync/sync2"
-	"github.com/matrix-org/sliding-sync/testutils"
 	"github.com/tidwall/gjson"
+)
+
+var (
+	userID = "@me:localhost"
 )
 
 func TestAccumulatorInitialise(t *testing.T) {
@@ -119,7 +122,7 @@ func TestAccumulatorAccumulate(t *testing.T) {
 	var numNew int
 	var latestNIDs []int64
 	err = sqlutil.WithTransaction(accumulator.db, func(txn *sqlx.Tx) error {
-		numNew, latestNIDs, err = accumulator.Accumulate(txn, roomID, "", newEvents)
+		numNew, latestNIDs, err = accumulator.Accumulate(txn, userID, roomID, "", newEvents)
 		return err
 	})
 	if err != nil {
@@ -193,64 +196,11 @@ func TestAccumulatorAccumulate(t *testing.T) {
 
 	// subsequent calls do nothing and are not an error
 	err = sqlutil.WithTransaction(accumulator.db, func(txn *sqlx.Tx) error {
-		_, _, err = accumulator.Accumulate(txn, roomID, "", newEvents)
+		_, _, err = accumulator.Accumulate(txn, userID, roomID, "", newEvents)
 		return err
 	})
 	if err != nil {
 		t.Fatalf("failed to Accumulate: %s", err)
-	}
-}
-
-func TestAccumulatorDelta(t *testing.T) {
-	roomID := "!TestAccumulatorDelta:localhost"
-	db, close := connectToDB(t)
-	defer close()
-	accumulator := NewAccumulator(db)
-	_, err := accumulator.Initialise(roomID, nil)
-	if err != nil {
-		t.Fatalf("failed to Initialise accumulator: %s", err)
-	}
-	roomEvents := []json.RawMessage{
-		[]byte(`{"event_id":"aD", "type":"m.room.create", "state_key":"", "content":{"creator":"@TestAccumulatorDelta:localhost"}}`),
-		[]byte(`{"event_id":"aE", "type":"m.room.member", "state_key":"@TestAccumulatorDelta:localhost", "content":{"membership":"join"}}`),
-		[]byte(`{"event_id":"aF", "type":"m.room.join_rules", "state_key":"", "content":{"join_rule":"public"}}`),
-		[]byte(`{"event_id":"aG", "type":"m.room.message","content":{"body":"Hello World","msgtype":"m.text"}}`),
-		[]byte(`{"event_id":"aH", "type":"m.room.join_rules", "state_key":"", "content":{"join_rule":"public"}}`),
-		[]byte(`{"event_id":"aI", "type":"m.room.history_visibility", "state_key":"", "content":{"visibility":"public"}}`),
-	}
-	err = sqlutil.WithTransaction(accumulator.db, func(txn *sqlx.Tx) error {
-		_, _, err = accumulator.Accumulate(txn, roomID, "", roomEvents)
-		return err
-	})
-	if err != nil {
-		t.Fatalf("failed to Accumulate: %s", err)
-	}
-
-	// Draw the create event, tests limits
-	events, position, err := accumulator.Delta(roomID, EventsStart, 1)
-	if err != nil {
-		t.Fatalf("failed to Delta: %s", err)
-	}
-	if len(events) != 1 {
-		t.Fatalf("failed to get events from Delta, got %d want 1", len(events))
-	}
-	if gjson.GetBytes(events[0], "event_id").Str != gjson.GetBytes(roomEvents[0], "event_id").Str {
-		t.Fatalf("failed to draw first event, got %s want %s", string(events[0]), string(roomEvents[0]))
-	}
-	if position == 0 {
-		t.Errorf("Delta returned zero position")
-	}
-
-	// Draw up to the end
-	events, position, err = accumulator.Delta(roomID, position, 1000)
-	if err != nil {
-		t.Fatalf("failed to Delta: %s", err)
-	}
-	if len(events) != len(roomEvents)-1 {
-		t.Fatalf("failed to get events from Delta, got %d want %d", len(events), len(roomEvents)-1)
-	}
-	if position == 0 {
-		t.Errorf("Delta returned zero position")
 	}
 }
 
@@ -282,7 +232,7 @@ func TestAccumulatorMembershipLogs(t *testing.T) {
 		[]byte(`{"event_id":"` + roomEventIDs[7] + `", "type":"m.room.member", "state_key":"@me:localhost","unsigned":{"prev_content":{"membership":"join", "displayname":"Me"}}, "content":{"membership":"leave"}}`),
 	}
 	err = sqlutil.WithTransaction(accumulator.db, func(txn *sqlx.Tx) error {
-		_, _, err = accumulator.Accumulate(txn, roomID, "", roomEvents)
+		_, _, err = accumulator.Accumulate(txn, userID, roomID, "", roomEvents)
 		return err
 	})
 	if err != nil {
@@ -409,91 +359,11 @@ func TestAccumulatorDupeEvents(t *testing.T) {
 	}
 
 	err = sqlutil.WithTransaction(accumulator.db, func(txn *sqlx.Tx) error {
-		_, _, err = accumulator.Accumulate(txn, roomID, "", joinRoom.Timeline.Events)
+		_, _, err = accumulator.Accumulate(txn, userID, roomID, "", joinRoom.Timeline.Events)
 		return err
 	})
 	if err != nil {
 		t.Fatalf("failed to Accumulate: %s", err)
-	}
-}
-
-// Regression test for corrupt state snapshots.
-// This seems to have happened in the wild, whereby the snapshot exhibited 2 things:
-//   - A message event having a event_replaces_nid. This should be impossible as messages are not state.
-//   - Duplicate events in the state snapshot.
-//
-// We can reproduce a message event having a event_replaces_nid by doing the following:
-//   - Create a room with initial state A,C
-//   - Accumulate events D, A, B(msg). This should be impossible because we already got A initially but whatever, roll with it, blame state resets or something.
-//   - This leads to A,B being processed and D ignored if you just take the newest results.
-//
-// This can then be tested by:
-//   - Query the current room snapshot. This will include B(msg) when it shouldn't.
-func TestAccumulatorMisorderedGraceful(t *testing.T) {
-	alice := "@alice:localhost"
-	bob := "@bob:localhost"
-
-	eventA := testutils.NewStateEvent(t, "m.room.member", alice, alice, map[string]interface{}{"membership": "join"})
-	eventC := testutils.NewStateEvent(t, "m.room.create", "", alice, map[string]interface{}{})
-	eventD := testutils.NewStateEvent(
-		t, "m.room.member", bob, "join", map[string]interface{}{"membership": "join"},
-	)
-	eventBMsg := testutils.NewEvent(
-		t, "m.room.message", bob, map[string]interface{}{"body": "hello"},
-	)
-	t.Logf("A=member-alice, B=msg, C=create, D=member-bob")
-
-	db, close := connectToDB(t)
-	defer close()
-	accumulator := NewAccumulator(db)
-	roomID := "!TestAccumulatorStateReset:localhost"
-	// Create a room with initial state A,C
-	_, err := accumulator.Initialise(roomID, []json.RawMessage{
-		eventA, eventC,
-	})
-	if err != nil {
-		t.Fatalf("failed to Initialise accumulator: %s", err)
-	}
-
-	// Accumulate events D, A, B(msg).
-	err = sqlutil.WithTransaction(accumulator.db, func(txn *sqlx.Tx) error {
-		_, _, err = accumulator.Accumulate(txn, roomID, "", []json.RawMessage{eventD, eventA, eventBMsg})
-		return err
-	})
-	if err != nil {
-		t.Fatalf("failed to Accumulate: %s", err)
-	}
-
-	eventIDs := []string{
-		gjson.GetBytes(eventA, "event_id").Str,
-		gjson.GetBytes(eventBMsg, "event_id").Str,
-		gjson.GetBytes(eventC, "event_id").Str,
-		gjson.GetBytes(eventD, "event_id").Str,
-	}
-	t.Logf("Events A,B,C,D: %v", eventIDs)
-	txn := accumulator.db.MustBeginTx(context.Background(), nil)
-	idsToNIDs, err := accumulator.eventsTable.SelectNIDsByIDs(txn, eventIDs)
-	if err != nil {
-		t.Fatalf("Failed to SelectNIDsByIDs: %s", err)
-	}
-	if len(idsToNIDs) != len(eventIDs) {
-		t.Errorf("SelectNIDsByIDs: asked for %v got %v", eventIDs, idsToNIDs)
-	}
-	t.Logf("Events: %v", idsToNIDs)
-
-	wantEventNIDs := []int64{
-		idsToNIDs[eventIDs[0]], idsToNIDs[eventIDs[2]], idsToNIDs[eventIDs[3]],
-	}
-	sort.Slice(wantEventNIDs, func(i, j int) bool {
-		return wantEventNIDs[i] < wantEventNIDs[j]
-	})
-	// Query the current room snapshot
-	gotSnapshotEvents := currentSnapshotNIDs(t, accumulator.snapshotTable, roomID)
-	if len(gotSnapshotEvents) != len(wantEventNIDs) { // events A,C,D
-		t.Errorf("corrupt snapshot, got %v want %v", gotSnapshotEvents, wantEventNIDs)
-	}
-	if !reflect.DeepEqual(wantEventNIDs, gotSnapshotEvents) {
-		t.Errorf("got %v want %v", gotSnapshotEvents, wantEventNIDs)
 	}
 }
 
@@ -689,7 +559,7 @@ func TestAccumulatorConcurrency(t *testing.T) {
 			defer wg.Done()
 			subset := newEvents[:(i + 1)] // i=0 => [1], i=1 => [1,2], etc
 			err := sqlutil.WithTransaction(accumulator.db, func(txn *sqlx.Tx) error {
-				numNew, _, err := accumulator.Accumulate(txn, roomID, "", subset)
+				numNew, _, err := accumulator.Accumulate(txn, userID, roomID, "", subset)
 				totalNumNew += numNew
 				return err
 			})

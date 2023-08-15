@@ -38,15 +38,6 @@ func (u *InviteUpdate) Type() string {
 	return fmt.Sprintf("InviteUpdate[%s]", u.RoomID())
 }
 
-// LeftRoomUpdate corresponds to a key-value pair from a v2 sync's `leave` section.
-type LeftRoomUpdate struct {
-	RoomUpdate
-}
-
-func (u *LeftRoomUpdate) Type() string {
-	return fmt.Sprintf("LeftRoomUpdate[%s]", u.RoomID())
-}
-
 // TypingEdu corresponds to a typing EDU in the `ephemeral` section of a joined room's v2 sync resposne.
 type TypingUpdate struct {
 	RoomUpdate

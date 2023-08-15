@@ -42,7 +42,8 @@ type ConnState struct {
 	// roomID -> latest load pos
 	loadPositions map[string]int64
 
-	live *connStateLive
+	txnIDWaiter *TxnIDWaiter
+	live        *connStateLive
 
 	globalCache *caches.GlobalCache
 	userCache   *caches.UserCache
@@ -52,13 +53,14 @@ type ConnState struct {
 	joinChecker JoinChecker
 
 	extensionsHandler   extensions.HandlerInterface
+	setupHistogramVec   *prometheus.HistogramVec
 	processHistogramVec *prometheus.HistogramVec
 }
 
 func NewConnState(
 	userID, deviceID string, userCache *caches.UserCache, globalCache *caches.GlobalCache,
-	ex extensions.HandlerInterface, joinChecker JoinChecker, histVec *prometheus.HistogramVec,
-	maxPendingEventUpdates int,
+	ex extensions.HandlerInterface, joinChecker JoinChecker, setupHistVec *prometheus.HistogramVec, histVec *prometheus.HistogramVec,
+	maxPendingEventUpdates int, maxTransactionIDDelay time.Duration,
 ) *ConnState {
 	cs := &ConnState{
 		globalCache:         globalCache,
@@ -72,12 +74,20 @@ func NewConnState(
 		extensionsHandler:   ex,
 		joinChecker:         joinChecker,
 		lazyCache:           NewLazyCache(),
+		setupHistogramVec:   setupHistVec,
 		processHistogramVec: histVec,
 	}
 	cs.live = &connStateLive{
 		ConnState: cs,
 		updates:   make(chan caches.Update, maxPendingEventUpdates),
 	}
+	cs.txnIDWaiter = NewTxnIDWaiter(
+		userID,
+		maxTransactionIDDelay,
+		func(delayed bool, update caches.Update) {
+			cs.live.onUpdate(update)
+		},
+	)
 	// subscribe for updates before loading. We risk seeing dupes but that's fine as load positions
 	// will stop us double-processing.
 	cs.userCacheID = cs.userCache.Subsribe(cs)
@@ -160,7 +170,7 @@ func (s *ConnState) load(ctx context.Context, req *sync3.Request) error {
 }
 
 // OnIncomingRequest is guaranteed to be called sequentially (it's protected by a mutex in conn.go)
-func (s *ConnState) OnIncomingRequest(ctx context.Context, cid sync3.ConnID, req *sync3.Request, isInitial bool) (*sync3.Response, error) {
+func (s *ConnState) OnIncomingRequest(ctx context.Context, cid sync3.ConnID, req *sync3.Request, isInitial bool, start time.Time) (*sync3.Response, error) {
 	if s.anchorLoadPosition <= 0 {
 		// load() needs no ctx so drop it
 		_, region := internal.StartSpan(ctx, "load")
@@ -172,45 +182,50 @@ func (s *ConnState) OnIncomingRequest(ctx context.Context, cid sync3.ConnID, req
 		}
 		region.End()
 	}
+	setupTime := time.Since(start)
+	s.trackSetupDuration(setupTime, isInitial)
 	return s.onIncomingRequest(ctx, req, isInitial)
 }
 
 // onIncomingRequest is a callback which fires when the client makes a request to the server. Whilst each request may
 // be on their own goroutine, the requests are linearised for us by Conn so it is safe to modify ConnState without
 // additional locking mechanisms.
-func (s *ConnState) onIncomingRequest(ctx context.Context, req *sync3.Request, isInitial bool) (*sync3.Response, error) {
+func (s *ConnState) onIncomingRequest(reqCtx context.Context, req *sync3.Request, isInitial bool) (*sync3.Response, error) {
 	start := time.Now()
 	// ApplyDelta works fine if s.muxedReq is nil
 	var delta *sync3.RequestDelta
 	s.muxedReq, delta = s.muxedReq.ApplyDelta(req)
-	internal.Logf(ctx, "connstate", "new subs=%v unsubs=%v num_lists=%v", len(delta.Subs), len(delta.Unsubs), len(delta.Lists))
+	internal.Logf(reqCtx, "connstate", "new subs=%v unsubs=%v num_lists=%v", len(delta.Subs), len(delta.Unsubs), len(delta.Lists))
 	for key, l := range delta.Lists {
 		listData := ""
 		if l.Curr != nil {
 			listDataBytes, _ := json.Marshal(l.Curr)
 			listData = string(listDataBytes)
 		}
-		internal.Logf(ctx, "connstate", "list[%v] prev_empty=%v curr=%v", key, l.Prev == nil, listData)
+		internal.Logf(reqCtx, "connstate", "list[%v] prev_empty=%v curr=%v", key, l.Prev == nil, listData)
+	}
+	for roomID, sub := range s.muxedReq.RoomSubscriptions {
+		internal.Logf(reqCtx, "connstate", "room sub[%v] %v", roomID, sub)
 	}
 
 	// work out which rooms we'll return data for and add their relevant subscriptions to the builder
 	// for it to mix together
 	builder := NewRoomsBuilder()
 	// works out which rooms are subscribed to but doesn't pull room data
-	s.buildRoomSubscriptions(ctx, builder, delta.Subs, delta.Unsubs)
+	s.buildRoomSubscriptions(reqCtx, builder, delta.Subs, delta.Unsubs)
 	// works out how rooms get moved about but doesn't pull room data
-	respLists := s.buildListSubscriptions(ctx, builder, delta.Lists)
+	respLists := s.buildListSubscriptions(reqCtx, builder, delta.Lists)
 
 	// pull room data and set changes on the response
 	response := &sync3.Response{
-		Rooms: s.buildRooms(ctx, builder.BuildSubscriptions()), // pull room data
+		Rooms: s.buildRooms(reqCtx, builder.BuildSubscriptions()), // pull room data
 		Lists: respLists,
 	}
 
 	// Handle extensions AFTER processing lists as extensions may need to know which rooms the client
 	// is being notified about (e.g. for room account data)
-	ctx, region := internal.StartSpan(ctx, "extensions")
-	response.Extensions = s.extensionsHandler.Handle(ctx, s.muxedReq.Extensions, extensions.Context{
+	extCtx, region := internal.StartSpan(reqCtx, "extensions")
+	response.Extensions = s.extensionsHandler.Handle(extCtx, s.muxedReq.Extensions, extensions.Context{
 		UserID:             s.userID,
 		DeviceID:           s.deviceID,
 		RoomIDToTimeline:   response.RoomIDsToTimelineEventIDs(),
@@ -231,8 +246,8 @@ func (s *ConnState) onIncomingRequest(ctx context.Context, req *sync3.Request, i
 	}
 
 	// do live tracking if we have nothing to tell the client yet
-	ctx, region = internal.StartSpan(ctx, "liveUpdate")
-	s.live.liveUpdate(ctx, req, s.muxedReq.Extensions, isInitial, response)
+	updateCtx, region := internal.StartSpan(reqCtx, "liveUpdate")
+	s.live.liveUpdate(updateCtx, req, s.muxedReq.Extensions, isInitial, response)
 	region.End()
 
 	// counts are AFTER events are applied, hence after liveUpdate
@@ -245,7 +260,7 @@ func (s *ConnState) onIncomingRequest(ctx context.Context, req *sync3.Request, i
 	// Add membership events for users sending typing notifications. We do this after live update
 	// and initial room loading code so we LL room members in all cases.
 	if response.Extensions.Typing != nil && response.Extensions.Typing.HasData(isInitial) {
-		s.lazyLoadTypingMembers(ctx, response)
+		s.lazyLoadTypingMembers(reqCtx, response)
 	}
 	return response, nil
 }
@@ -453,6 +468,12 @@ func (s *ConnState) buildRooms(ctx context.Context, builtSubs []BuiltSubscriptio
 	ctx, span := internal.StartSpan(ctx, "buildRooms")
 	defer span.End()
 	result := make(map[string]sync3.Room)
+
+	var bumpEventTypes []string
+	for _, x := range s.muxedReq.Lists {
+		bumpEventTypes = append(bumpEventTypes, x.BumpEventTypes...)
+	}
+
 	for _, bs := range builtSubs {
 		roomIDs := bs.RoomIDs
 		if bs.RoomSubscription.IncludeOldRooms != nil {
@@ -477,14 +498,23 @@ func (s *ConnState) buildRooms(ctx context.Context, builtSubs []BuiltSubscriptio
 					}
 				}
 			}
-			// old rooms use a different subscription
-			oldRooms := s.getInitialRoomData(ctx, *bs.RoomSubscription.IncludeOldRooms, oldRoomIDs...)
-			for oldRoomID, oldRoom := range oldRooms {
-				result[oldRoomID] = oldRoom
+
+			// If we have old rooms to fetch, do so.
+			if len(oldRoomIDs) > 0 {
+				// old rooms use a different subscription
+				oldRooms := s.getInitialRoomData(ctx, *bs.RoomSubscription.IncludeOldRooms, bumpEventTypes, oldRoomIDs...)
+				for oldRoomID, oldRoom := range oldRooms {
+					result[oldRoomID] = oldRoom
+				}
 			}
 		}
 
-		rooms := s.getInitialRoomData(ctx, bs.RoomSubscription, roomIDs...)
+		// There won't be anything to fetch, try the next subscription.
+		if len(roomIDs) == 0 {
+			continue
+		}
+
+		rooms := s.getInitialRoomData(ctx, bs.RoomSubscription, bumpEventTypes, roomIDs...)
 		for roomID, room := range rooms {
 			result[roomID] = room
 		}
@@ -521,7 +551,7 @@ func (s *ConnState) lazyLoadTypingMembers(ctx context.Context, response *sync3.R
 	}
 }
 
-func (s *ConnState) getInitialRoomData(ctx context.Context, roomSub sync3.RoomSubscription, roomIDs ...string) map[string]sync3.Room {
+func (s *ConnState) getInitialRoomData(ctx context.Context, roomSub sync3.RoomSubscription, bumpEventTypes []string, roomIDs ...string) map[string]sync3.Room {
 	ctx, span := internal.StartSpan(ctx, "getInitialRoomData")
 	defer span.End()
 	rooms := make(map[string]sync3.Room, len(roomIDs))
@@ -590,8 +620,40 @@ func (s *ConnState) getInitialRoomData(ctx context.Context, roomSub sync3.RoomSu
 				requiredState = make([]json.RawMessage, 0)
 			}
 		}
+
+		// Get the highest timestamp, determined by bumpEventTypes,
+		// for this room
+		roomListsMeta := s.lists.ReadOnlyRoom(roomID)
+		var maxTs uint64
+		for _, t := range bumpEventTypes {
+			if roomListsMeta == nil {
+				break
+			}
+
+			evMeta := roomListsMeta.LatestEventsByType[t]
+			if evMeta.Timestamp > maxTs {
+				maxTs = evMeta.Timestamp
+			}
+		}
+
+		// If we didn't find any events which would update the timestamp
+		// use the join event timestamp instead. Also don't leak
+		// timestamp from before we joined.
+		if maxTs == 0 || maxTs < roomListsMeta.JoinTiming.Timestamp {
+			if roomListsMeta != nil {
+				maxTs = roomListsMeta.JoinTiming.Timestamp
+				// If no bumpEventTypes are specified, use the
+				// LastMessageTimestamp so clients are still able
+				// to correctly sort on it.
+				if len(bumpEventTypes) == 0 {
+					maxTs = roomListsMeta.LastMessageTimestamp
+				}
+			}
+		}
+
 		rooms[roomID] = sync3.Room{
 			Name:              internal.CalculateRoomName(metadata, 5), // TODO: customisable?
+			AvatarChange:      sync3.NewAvatarChange(internal.CalculateAvatar(metadata)),
 			NotificationCount: int64(userRoomData.NotificationCount),
 			HighlightCount:    int64(userRoomData.HighlightCount),
 			Timeline:          roomToTimeline[roomID],
@@ -600,8 +662,9 @@ func (s *ConnState) getInitialRoomData(ctx context.Context, roomSub sync3.RoomSu
 			Initial:           true,
 			IsDM:              userRoomData.IsDM,
 			JoinedCount:       metadata.JoinCount,
-			InvitedCount:      metadata.InviteCount,
+			InvitedCount:      &metadata.InviteCount,
 			PrevBatch:         userRoomData.RequestedLatestEvents.PrevBatch,
+			Timestamp:         maxTs,
 		}
 	}
 
@@ -611,6 +674,17 @@ func (s *ConnState) getInitialRoomData(ctx context.Context, roomSub sync3.RoomSu
 		}
 	}
 	return rooms
+}
+
+func (s *ConnState) trackSetupDuration(dur time.Duration, isInitial bool) {
+	if s.setupHistogramVec == nil {
+		return
+	}
+	val := "0"
+	if isInitial {
+		val = "1"
+	}
+	s.setupHistogramVec.WithLabelValues(val).Observe(float64(dur.Seconds()))
 }
 
 func (s *ConnState) trackProcessDuration(dur time.Duration, isInitial bool) {
@@ -638,7 +712,8 @@ func (s *ConnState) UserID() string {
 }
 
 func (s *ConnState) OnUpdate(ctx context.Context, up caches.Update) {
-	s.live.onUpdate(up)
+	// will eventually call s.live.onUpdate
+	s.txnIDWaiter.Ingest(up)
 }
 
 // Called by the user cache when updates arrive
@@ -654,13 +729,17 @@ func (s *ConnState) OnRoomUpdate(ctx context.Context, up caches.RoomUpdate) {
 		}
 		internal.AssertWithContext(ctx, "missing global room metadata", update.GlobalRoomMetadata() != nil)
 		internal.Logf(ctx, "connstate", "queued update %d", update.EventData.NID)
-		s.live.onUpdate(update)
+		s.OnUpdate(ctx, update)
 	case caches.RoomUpdate:
 		internal.AssertWithContext(ctx, "missing global room metadata", update.GlobalRoomMetadata() != nil)
-		s.live.onUpdate(update)
+		s.OnUpdate(ctx, update)
 	default:
 		logger.Warn().Str("room_id", up.RoomID()).Msg("OnRoomUpdate unknown update type")
 	}
+}
+
+func (s *ConnState) PublishEventsUpTo(roomID string, nid int64) {
+	s.txnIDWaiter.PublishUpToNID(roomID, nid)
 }
 
 // clampSliceRangeToListSize helps us to send client-friendly SYNC and INVALIDATE ranges.

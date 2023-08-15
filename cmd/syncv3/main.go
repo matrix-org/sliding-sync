@@ -1,27 +1,36 @@
 package main
 
 import (
+	"flag"
 	"fmt"
+	"log"
+	"net/http"
+	_ "net/http/pprof"
+	"os"
+	"os/signal"
+	"strconv"
+	"strings"
+	"syscall"
+	"time"
+
 	"github.com/getsentry/sentry-go"
 	sentryhttp "github.com/getsentry/sentry-go/http"
 	syncv3 "github.com/matrix-org/sliding-sync"
 	"github.com/matrix-org/sliding-sync/internal"
 	"github.com/matrix-org/sliding-sync/sync2"
+	"github.com/pressly/goose/v3"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/rs/zerolog"
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
-	"net/http"
-	_ "net/http/pprof"
-	"os"
-	"os/signal"
-	"strings"
-	"syscall"
-	"time"
 )
 
 var GitCommit string
 
-const version = "0.99.2"
+const version = "0.99.5"
+
+var (
+	flags = flag.NewFlagSet("goose", flag.ExitOnError)
+)
 
 const (
 	// Required fields
@@ -39,6 +48,7 @@ const (
 	EnvJaeger     = "SYNCV3_JAEGER_URL"
 	EnvSentryDsn  = "SYNCV3_SENTRY_DSN"
 	EnvLogLevel   = "SYNCV3_LOG_LEVEL"
+	EnvMaxConns   = "SYNCV3_MAX_DB_CONN"
 )
 
 var helpMsg = fmt.Sprintf(`
@@ -54,7 +64,8 @@ Environment var
 %s Default: unset. The Jaeger URL to send spans to e.g http://localhost:14268/api/traces - if unset does not send OTLP traces.
 %s Default: unset. The Sentry DSN to report events to e.g https://sliding-sync@sentry.example.com/123 - if unset does not send sentry events.
 %s  Default: info. The level of verbosity for messages logged. Available values are trace, debug, info, warn, error and fatal
-`, EnvServer, EnvDB, EnvSecret, EnvBindAddr, EnvTLSCert, EnvTLSKey, EnvPPROF, EnvPrometheus, EnvJaeger, EnvSentryDsn, EnvLogLevel)
+%s Default: unset. Max database connections to use when communicating with postgres. Unset or 0 means no limit.
+`, EnvServer, EnvDB, EnvSecret, EnvBindAddr, EnvTLSCert, EnvTLSKey, EnvPPROF, EnvPrometheus, EnvJaeger, EnvSentryDsn, EnvLogLevel, EnvMaxConns)
 
 func defaulting(in, dft string) string {
 	if in == "" {
@@ -67,6 +78,12 @@ func main() {
 	fmt.Printf("Sync v3 [%s] (%s)\n", version, GitCommit)
 	sync2.ProxyVersion = version
 	syncv3.Version = fmt.Sprintf("%s (%s)", version, GitCommit)
+
+	if len(os.Args) > 1 && os.Args[1] == "migrate" {
+		executeMigrations()
+		return
+	}
+
 	args := map[string]string{
 		EnvServer:     os.Getenv(EnvServer),
 		EnvDB:         os.Getenv(EnvDB),
@@ -80,6 +97,7 @@ func main() {
 		EnvJaeger:     os.Getenv(EnvJaeger),
 		EnvSentryDsn:  os.Getenv(EnvSentryDsn),
 		EnvLogLevel:   os.Getenv(EnvLogLevel),
+		EnvMaxConns:   defaulting(os.Getenv(EnvMaxConns), "0"),
 	}
 	requiredEnvVars := []string{EnvServer, EnvDB, EnvSecret, EnvBindAddr}
 	for _, requiredEnvVar := range requiredEnvVars {
@@ -135,6 +153,8 @@ func main() {
 		}
 	}
 
+	fmt.Printf("Debug=%v LogLevel=%v MaxConns=%v\n", args[EnvDebug] == "1", args[EnvLogLevel], args[EnvMaxConns])
+
 	if args[EnvDebug] == "1" {
 		zerolog.SetGlobalLevel(zerolog.TraceLevel)
 	} else {
@@ -161,8 +181,15 @@ func main() {
 		panic(err)
 	}
 
+	maxConnsInt, err := strconv.Atoi(args[EnvMaxConns])
+	if err != nil {
+		panic("invalid value for " + EnvMaxConns + ": " + args[EnvMaxConns])
+	}
 	h2, h3 := syncv3.Setup(args[EnvServer], args[EnvDB], args[EnvSecret], syncv3.Opts{
-		AddPrometheusMetrics: args[EnvPrometheus] != "",
+		AddPrometheusMetrics:  args[EnvPrometheus] != "",
+		DBMaxConns:            maxConnsInt,
+		DBConnMaxIdleTime:     time.Hour,
+		MaxTransactionIDDelay: time.Second,
 	})
 
 	go h2.StartV2Pollers()
@@ -202,4 +229,50 @@ func WaitForShutdown(sentryInUse bool) {
 	}
 
 	fmt.Printf("Exiting now")
+}
+
+func executeMigrations() {
+	envArgs := map[string]string{
+		EnvDB: os.Getenv(EnvDB),
+	}
+	requiredEnvVars := []string{EnvDB}
+	for _, requiredEnvVar := range requiredEnvVars {
+		if envArgs[requiredEnvVar] == "" {
+			fmt.Print(helpMsg)
+			fmt.Printf("\n%s is not set", requiredEnvVar)
+			fmt.Printf("\n%s must be set\n", strings.Join(requiredEnvVars, ", "))
+			os.Exit(1)
+		}
+	}
+
+	flags.Parse(os.Args[1:])
+	args := flags.Args()
+
+	if len(args) < 2 {
+		flags.Usage()
+		return
+	}
+
+	command := args[1]
+
+	db, err := goose.OpenDBWithDriver("postgres", envArgs[EnvDB])
+	if err != nil {
+		log.Fatalf("goose: failed to open DB: %v\n", err)
+	}
+
+	defer func() {
+		if err := db.Close(); err != nil {
+			log.Fatalf("goose: failed to close DB: %v\n", err)
+		}
+	}()
+
+	arguments := []string{}
+	if len(args) > 2 {
+		arguments = append(arguments, args[2:]...)
+	}
+
+	goose.SetBaseFS(syncv3.EmbedMigrations)
+	if err := goose.Run(command, db, "state/migrations", arguments...); err != nil {
+		log.Fatalf("goose %v: %v", command, err)
+	}
 }

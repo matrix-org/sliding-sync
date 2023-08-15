@@ -297,125 +297,6 @@ func TestEventTableDupeInsert(t *testing.T) {
 	}
 }
 
-func TestEventTableSelectEventsBetween(t *testing.T) {
-	db, close := connectToDB(t)
-	defer close()
-	txn, err := db.Beginx()
-	if err != nil {
-		t.Fatalf("failed to start txn: %s", err)
-	}
-	table := NewEventTable(db)
-	searchRoomID := "!0TestEventTableSelectEventsBetween:localhost"
-	eventIDs := []string{
-		"100TestEventTableSelectEventsBetween",
-		"101TestEventTableSelectEventsBetween",
-		"102TestEventTableSelectEventsBetween",
-		"103TestEventTableSelectEventsBetween",
-		"104TestEventTableSelectEventsBetween",
-	}
-	events := []Event{
-		{
-			JSON: []byte(`{"event_id":"` + eventIDs[0] + `","type": "T1", "state_key":"S1", "room_id":"` + searchRoomID + `"}`),
-		},
-		{
-			JSON: []byte(`{"event_id":"` + eventIDs[1] + `","type": "T2", "state_key":"S2", "room_id":"` + searchRoomID + `"}`),
-		},
-		{
-			JSON: []byte(`{"event_id":"` + eventIDs[2] + `","type": "T3", "state_key":"", "room_id":"` + searchRoomID + `"}`),
-		},
-		{
-			// different room
-			JSON: []byte(`{"event_id":"` + eventIDs[3] + `","type": "T4", "state_key":"", "room_id":"!1TestEventTableSelectEventsBetween:localhost"}`),
-		},
-		{
-			JSON: []byte(`{"event_id":"` + eventIDs[4] + `","type": "T5", "state_key":"", "room_id":"` + searchRoomID + `"}`),
-		},
-	}
-	idToNID, err := table.Insert(txn, events, true)
-	if err != nil {
-		t.Fatalf("Insert failed: %s", err)
-	}
-	if len(idToNID) != len(events) {
-		t.Fatalf("failed to insert events: got %d want %d", len(idToNID), len(events))
-	}
-	txn.Commit()
-
-	t.Run("subgroup", func(t *testing.T) {
-		t.Run("selecting multiple events known lower bound", func(t *testing.T) {
-			t.Parallel()
-			txn2, err := db.Beginx()
-			if err != nil {
-				t.Fatalf("failed to start txn: %s", err)
-			}
-			defer txn2.Rollback()
-			events, err := table.SelectByIDs(txn2, true, []string{eventIDs[0]})
-			if err != nil || len(events) == 0 {
-				t.Fatalf("failed to extract event for lower bound: %s", err)
-			}
-			events, err = table.SelectEventsBetween(txn2, searchRoomID, int64(events[0].NID), EventsEnd, 1000)
-			if err != nil {
-				t.Fatalf("failed to SelectEventsBetween: %s", err)
-			}
-			// 3 as 1 is from a different room
-			if len(events) != 3 {
-				t.Fatalf("wanted 3 events, got %d", len(events))
-			}
-		})
-		t.Run("selecting multiple events known lower and upper bound", func(t *testing.T) {
-			t.Parallel()
-			txn3, err := db.Beginx()
-			if err != nil {
-				t.Fatalf("failed to start txn: %s", err)
-			}
-			defer txn3.Rollback()
-			events, err := table.SelectByIDs(txn3, true, []string{eventIDs[0], eventIDs[2]})
-			if err != nil || len(events) == 0 {
-				t.Fatalf("failed to extract event for lower/upper bound: %s", err)
-			}
-			events, err = table.SelectEventsBetween(txn3, searchRoomID, int64(events[0].NID), int64(events[1].NID), 1000)
-			if err != nil {
-				t.Fatalf("failed to SelectEventsBetween: %s", err)
-			}
-			// eventIDs[1] and eventIDs[2]
-			if len(events) != 2 {
-				t.Fatalf("wanted 2 events, got %d", len(events))
-			}
-		})
-		t.Run("selecting multiple events unknown bounds (all events)", func(t *testing.T) {
-			t.Parallel()
-			txn4, err := db.Beginx()
-			if err != nil {
-				t.Fatalf("failed to start txn: %s", err)
-			}
-			defer txn4.Rollback()
-			gotEvents, err := table.SelectEventsBetween(txn4, searchRoomID, EventsStart, EventsEnd, 1000)
-			if err != nil {
-				t.Fatalf("failed to SelectEventsBetween: %s", err)
-			}
-			// one less as one event is for a different room
-			if len(gotEvents) != (len(events) - 1) {
-				t.Fatalf("wanted %d events, got %d", len(events)-1, len(gotEvents))
-			}
-		})
-		t.Run("selecting multiple events hitting the limit", func(t *testing.T) {
-			t.Parallel()
-			txn5, err := db.Beginx()
-			if err != nil {
-				t.Fatalf("failed to start txn: %s", err)
-			}
-			defer txn5.Rollback()
-			limit := 2
-			gotEvents, err := table.SelectEventsBetween(txn5, searchRoomID, EventsStart, EventsEnd, limit)
-			if err != nil {
-				t.Fatalf("failed to SelectEventsBetween: %s", err)
-			}
-			if len(gotEvents) != limit {
-				t.Fatalf("wanted %d events, got %d", limit, len(gotEvents))
-			}
-		})
-	})
-}
-
 func TestEventTableMembershipDetection(t *testing.T) {
 	db, close := connectToDB(t)
 	defer close()
@@ -778,10 +659,14 @@ func TestEventTablePrevBatch(t *testing.T) {
 	}
 
 	assertPrevBatch := func(roomID string, index int, wantPrevBatch string) {
-		gotPrevBatch, err := table.SelectClosestPrevBatch(roomID, int64(idToNID[events[index].ID]))
-		if err != nil {
-			t.Fatalf("failed to SelectClosestPrevBatch: %s", err)
-		}
+		var gotPrevBatch string
+		_ = sqlutil.WithTransaction(db, func(txn *sqlx.Tx) error {
+			gotPrevBatch, err = table.SelectClosestPrevBatch(txn, roomID, int64(idToNID[events[index].ID]))
+			if err != nil {
+				t.Fatalf("failed to SelectClosestPrevBatch: %s", err)
+			}
+			return nil
+		})
 		if wantPrevBatch != "" {
 			if gotPrevBatch == "" || gotPrevBatch != wantPrevBatch {
 				t.Fatalf("SelectClosestPrevBatch: got %v want %v", gotPrevBatch, wantPrevBatch)
@@ -947,7 +832,11 @@ func TestLatestEventNIDInRooms(t *testing.T) {
 		},
 	}
 	for _, tc := range testCases {
-		gotRoomToNID, err := table.LatestEventNIDInRooms(tc.roomIDs, int64(tc.highestNID))
+		var gotRoomToNID map[string]int64
+		err = sqlutil.WithTransaction(table.db, func(txn *sqlx.Tx) error {
+			gotRoomToNID, err = table.LatestEventNIDInRooms(txn, tc.roomIDs, int64(tc.highestNID))
+			return err
+		})
 		assertNoError(t, err)
 		want := make(map[string]int64) // map event IDs to nids
 		for roomID, eventID := range tc.wantMap {

@@ -2,7 +2,6 @@ package sync2
 
 import (
 	"os"
-	"time"
 
 	"github.com/getsentry/sentry-go"
 	"github.com/jmoiron/sqlx"
@@ -27,9 +26,10 @@ func NewStore(postgresURI, secret string) *Storage {
 		// TODO: if we panic(), will sentry have a chance to flush the event?
 		logger.Panic().Err(err).Str("uri", postgresURI).Msg("failed to open SQL DB")
 	}
-	db.SetMaxOpenConns(100)
-	db.SetMaxIdleConns(80)
-	db.SetConnMaxLifetime(time.Hour)
+	return NewStoreWithDB(db, secret)
+}
+
+func NewStoreWithDB(db *sqlx.DB, secret string) *Storage {
 	return &Storage{
 		DevicesTable: NewDevicesTable(db),
 		TokensTable:  NewTokensTable(db, secret),

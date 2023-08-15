@@ -39,6 +39,39 @@ func MatchRoomName(name string) RoomMatcher {
 	}
 }
 
+// MatchRoomAvatar builds a RoomMatcher which checks that the given room response has
+// set the room's avatar to the given value.
+func MatchRoomAvatar(wantAvatar string) RoomMatcher {
+	return func(r sync3.Room) error {
+		if string(r.AvatarChange) != wantAvatar {
+			return fmt.Errorf("MatchRoomAvatar: got \"%s\" want \"%s\"", r.AvatarChange, wantAvatar)
+		}
+		return nil
+	}
+}
+
+// MatchRoomUnsetAvatar builds a RoomMatcher which checks that the given room has no
+// avatar, or has had its avatar deleted.
+func MatchRoomUnsetAvatar() RoomMatcher {
+	return func(r sync3.Room) error {
+		if r.AvatarChange != sync3.DeletedAvatar {
+			return fmt.Errorf("MatchRoomAvatar: got \"%s\" want \"%s\"", r.AvatarChange, sync3.DeletedAvatar)
+		}
+		return nil
+	}
+}
+
+// MatchRoomUnchangedAvatar builds a RoomMatcher which checks that the given room has no
+// change to its avatar, or has had its avatar deleted.
+func MatchRoomUnchangedAvatar() RoomMatcher {
+	return func(r sync3.Room) error {
+		if r.AvatarChange != sync3.UnchangedAvatar {
+			return fmt.Errorf("MatchRoomAvatar: got \"%s\" want \"%s\"", r.AvatarChange, sync3.UnchangedAvatar)
+		}
+		return nil
+	}
+}
+
 func MatchJoinCount(count int) RoomMatcher {
 	return func(r sync3.Room) error {
 		if r.JoinedCount != count {
@@ -48,10 +81,22 @@ func MatchJoinCount(count int) RoomMatcher {
 	}
 }
 
+func MatchNoInviteCount() RoomMatcher {
+	return func(r sync3.Room) error {
+		if r.InvitedCount != nil {
+			return fmt.Errorf("MatchInviteCount: invited_count is present when it should be missing: val=%v", *r.InvitedCount)
+		}
+		return nil
+	}
+}
+
 func MatchInviteCount(count int) RoomMatcher {
 	return func(r sync3.Room) error {
-		if r.InvitedCount != count {
-			return fmt.Errorf("MatchInviteCount: got %v want %v", r.InvitedCount, count)
+		if r.InvitedCount == nil {
+			return fmt.Errorf("MatchInviteCount: invited_count is missing")
+		}
+		if *r.InvitedCount != count {
+			return fmt.Errorf("MatchInviteCount: got %v want %v", *r.InvitedCount, count)
 		}
 		return nil
 	}
@@ -210,11 +255,11 @@ func MatchRoomSubscription(roomID string, matchers ...RoomMatcher) RespMatcher {
 	return func(res *sync3.Response) error {
 		room, ok := res.Rooms[roomID]
 		if !ok {
-			return fmt.Errorf("MatchRoomSubscription: want sub for %s but it was missing", roomID)
+			return fmt.Errorf("MatchRoomSubscription[%s]: want sub but it was missing", roomID)
 		}
 		for _, m := range matchers {
 			if err := m(room); err != nil {
-				return fmt.Errorf("MatchRoomSubscription: %s", err)
+				return fmt.Errorf("MatchRoomSubscription[%s]: %s", roomID, err)
 			}
 		}
 		return nil
@@ -633,6 +678,15 @@ func LogResponse(t *testing.T) RespMatcher {
 	}
 }
 
+// LogRooms is like LogResponse, but only logs the rooms section of the response.
+func LogRooms(t *testing.T) RespMatcher {
+	return func(res *sync3.Response) error {
+		dump, _ := json.MarshalIndent(res.Rooms, "", "    ")
+		t.Logf("Response rooms were: %s", dump)
+		return nil
+	}
+}
+
 func CheckList(listKey string, res sync3.ResponseList, matchers ...ListMatcher) error {
 	for _, m := range matchers {
 		if err := m(res); err != nil {
@@ -675,13 +729,16 @@ func MatchLists(matchers map[string][]ListMatcher) RespMatcher {
 	}
 }
 
+const AnsiRedForeground = "\x1b[31m"
+const AnsiResetForeground = "\x1b[39m"
+
 func MatchResponse(t *testing.T, res *sync3.Response, matchers ...RespMatcher) {
 	t.Helper()
 	for _, m := range matchers {
 		err := m(res)
 		if err != nil {
-			b, _ := json.Marshal(res)
-			t.Errorf("MatchResponse: %s\n%+v", err, string(b))
+			b, _ := json.MarshalIndent(res, "", "    ")
+			t.Errorf("%vMatchResponse: %s\n%s%v", AnsiRedForeground, err, string(b), AnsiResetForeground)
 		}
 	}
 }

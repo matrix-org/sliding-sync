@@ -13,7 +13,12 @@ type EventMetadata struct {
 	Timestamp uint64
 }
 
-// RoomMetadata holds room-scoped data. It is primarily used in two places:
+// RoomMetadata holds room-scoped data.
+// TODO: This is a lie: we sometimes remove a user U from the list of heroes
+// when calculating the sync response for that user U. Grep for `RemoveHero`.
+//
+// It is primarily used in two places:
+//
 //   - in the caches.GlobalCache, to hold the latest version of data that is consistent
 //     between all users in the room; and
 //   - in the sync3.RoomConnMetadata struct, to hold the version of data last seen by
@@ -25,6 +30,7 @@ type RoomMetadata struct {
 	RoomID         string
 	Heroes         []Hero
 	NameEvent      string // the content of m.room.name, NOT the calculated name
+	AvatarEvent    string // the content of m.room.avatar, NOT the resolved avatar
 	CanonicalAlias string
 	JoinCount      int
 	InviteCount    int
@@ -54,6 +60,32 @@ func NewRoomMetadata(roomID string) *RoomMetadata {
 	}
 }
 
+// CopyHeroes returns a version of the current RoomMetadata whose Heroes field is
+// a brand-new copy of the original Heroes. The return value's Heroes field can be
+// safely modified by the caller, but it is NOT safe for the caller to modify any other
+// fields.
+func (m *RoomMetadata) CopyHeroes() *RoomMetadata {
+	newMetadata := *m
+
+	// XXX: We're doing this because we end up calling RemoveHero() to omit the
+	// currently-sycning user in various places. But this seems smelly. The set of
+	// heroes in the room is a global, room-scoped fact: it is a property of the room
+	// state and nothing else, and all users see the same set of heroes.
+	//
+	// I think the data model would be cleaner if we made the hero-reading functions
+	// aware of the currently syncing user, in order to ignore them without having to
+	// change the underlying data.
+	//
+	// copy the heroes or else we may modify the same slice which would be bad :(
+	newMetadata.Heroes = make([]Hero, len(m.Heroes))
+	copy(newMetadata.Heroes, m.Heroes)
+
+	// ⚠️ NB: there are other pointer fields (e.g. PredecessorRoomID *string) or
+	// and pointer-backed fields (e.g. LatestEventsByType map[string]EventMetadata)
+	// which are not deepcopied here.
+	return &newMetadata
+}
+
 // SameRoomName checks if the fields relevant for room names have changed between the two metadatas.
 // Returns true if there are no changes.
 func (m *RoomMetadata) SameRoomName(other *RoomMetadata) bool {
@@ -62,7 +94,13 @@ func (m *RoomMetadata) SameRoomName(other *RoomMetadata) bool {
 		m.CanonicalAlias == other.CanonicalAlias &&
 		m.JoinCount == other.JoinCount &&
 		m.InviteCount == other.InviteCount &&
-		sameHeroes(m.Heroes, other.Heroes))
+		sameHeroNames(m.Heroes, other.Heroes))
+}
+
+// SameRoomAvatar checks if the fields relevant for room avatars have changed between the two metadatas.
+// Returns true if there are no changes.
+func (m *RoomMetadata) SameRoomAvatar(other *RoomMetadata) bool {
+	return m.AvatarEvent == other.AvatarEvent && sameHeroAvatars(m.Heroes, other.Heroes)
 }
 
 func (m *RoomMetadata) SameJoinCount(other *RoomMetadata) bool {
@@ -73,7 +111,7 @@ func (m *RoomMetadata) SameInviteCount(other *RoomMetadata) bool {
 	return m.InviteCount == other.InviteCount
 }
 
-func sameHeroes(a, b []Hero) bool {
+func sameHeroNames(a, b []Hero) bool {
 	if len(a) != len(b) {
 		return false
 	}
@@ -82,6 +120,21 @@ func sameHeroes(a, b []Hero) bool {
 			return false
 		}
 		if a[i].Name != b[i].Name {
+			return false
+		}
+	}
+	return true
+}
+
+func sameHeroAvatars(a, b []Hero) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i].ID != b[i].ID {
+			return false
+		}
+		if a[i].Avatar != b[i].Avatar {
 			return false
 		}
 	}
@@ -102,8 +155,9 @@ func (m *RoomMetadata) IsSpace() bool {
 }
 
 type Hero struct {
-	ID   string
-	Name string
+	ID     string
+	Name   string
+	Avatar string
 }
 
 func CalculateRoomName(heroInfo *RoomMetadata, maxNumNamesPerRoom int) string {
@@ -189,4 +243,19 @@ func disambiguate(heroes []Hero) []string {
 		}
 	}
 	return disambiguatedNames
+}
+
+const noAvatar = ""
+
+// CalculateAvatar computes the avatar for the room, based on the global room metadata.
+// Assumption: metadata.RemoveHero has been called to remove the user who is syncing
+// from the list of heroes.
+func CalculateAvatar(metadata *RoomMetadata) string {
+	if metadata.AvatarEvent != "" {
+		return metadata.AvatarEvent
+	}
+	if len(metadata.Heroes) == 1 {
+		return metadata.Heroes[0].Avatar
+	}
+	return noAvatar
 }

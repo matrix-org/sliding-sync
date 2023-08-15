@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"reflect"
 	"sort"
 	"testing"
@@ -30,7 +31,7 @@ func TestStorageRoomStateBeforeAndAfterEventPosition(t *testing.T) {
 		testutils.NewStateEvent(t, "m.room.join_rules", "", alice, map[string]interface{}{"join_rule": "invite"}),
 		testutils.NewStateEvent(t, "m.room.member", bob, alice, map[string]interface{}{"membership": "invite"}),
 	}
-	_, latestNIDs, err := store.Accumulate(roomID, "", events)
+	_, latestNIDs, err := store.Accumulate(userID, roomID, "", events)
 	if err != nil {
 		t.Fatalf("Accumulate returned error: %s", err)
 	}
@@ -160,7 +161,7 @@ func TestStorageJoinedRoomsAfterPosition(t *testing.T) {
 	var latestNIDs []int64
 	var err error
 	for roomID, eventMap := range roomIDToEventMap {
-		_, latestNIDs, err = store.Accumulate(roomID, "", eventMap)
+		_, latestNIDs, err = store.Accumulate(userID, roomID, "", eventMap)
 		if err != nil {
 			t.Fatalf("Accumulate on %s failed: %s", roomID, err)
 		}
@@ -210,18 +211,19 @@ func TestStorageJoinedRoomsAfterPosition(t *testing.T) {
 		}
 	}
 
-	newMetadata := func(roomID string, joinCount int) internal.RoomMetadata {
+	newMetadata := func(roomID string, joinCount, inviteCount int) internal.RoomMetadata {
 		m := internal.NewRoomMetadata(roomID)
 		m.JoinCount = joinCount
+		m.InviteCount = inviteCount
 		return *m
 	}
 
 	// also test MetadataForAllRooms
 	roomIDToMetadata := map[string]internal.RoomMetadata{
-		joinedRoomID:    newMetadata(joinedRoomID, 1),
-		invitedRoomID:   newMetadata(invitedRoomID, 1),
-		banRoomID:       newMetadata(banRoomID, 1),
-		bobJoinedRoomID: newMetadata(bobJoinedRoomID, 2),
+		joinedRoomID:    newMetadata(joinedRoomID, 1, 0),
+		invitedRoomID:   newMetadata(invitedRoomID, 1, 1),
+		banRoomID:       newMetadata(banRoomID, 1, 0),
+		bobJoinedRoomID: newMetadata(bobJoinedRoomID, 2, 0),
 	}
 
 	tempTableName, err := store.PrepareSnapshot(txn)
@@ -349,7 +351,7 @@ func TestVisibleEventNIDsBetween(t *testing.T) {
 		},
 	}
 	for _, tl := range timelineInjections {
-		numNew, _, err := store.Accumulate(tl.RoomID, "", tl.Events)
+		numNew, _, err := store.Accumulate(userID, tl.RoomID, "", tl.Events)
 		if err != nil {
 			t.Fatalf("Accumulate on %s failed: %s", tl.RoomID, err)
 		}
@@ -452,7 +454,7 @@ func TestVisibleEventNIDsBetween(t *testing.T) {
 		t.Fatalf("LatestEventNID: %s", err)
 	}
 	for _, tl := range timelineInjections {
-		numNew, _, err := store.Accumulate(tl.RoomID, "", tl.Events)
+		numNew, _, err := store.Accumulate(userID, tl.RoomID, "", tl.Events)
 		if err != nil {
 			t.Fatalf("Accumulate on %s failed: %s", tl.RoomID, err)
 		}
@@ -532,7 +534,7 @@ func TestStorageLatestEventsInRoomsPrevBatch(t *testing.T) {
 	}
 	eventIDs := []string{}
 	for _, timeline := range timelines {
-		_, _, err = store.Accumulate(roomID, timeline.prevBatch, timeline.timeline)
+		_, _, err = store.Accumulate(userID, roomID, timeline.prevBatch, timeline.timeline)
 		if err != nil {
 			t.Fatalf("failed to accumulate: %s", err)
 		}
@@ -566,10 +568,15 @@ func TestStorageLatestEventsInRoomsPrevBatch(t *testing.T) {
 		wantPrevBatch := wantPrevBatches[i]
 		eventNID := idsToNIDs[eventIDs[i]]
 		// closest batch to the last event in the chunk (latest nid) is always the next prev batch token
-		pb, err := store.EventsTable.SelectClosestPrevBatch(roomID, eventNID)
-		if err != nil {
-			t.Fatalf("failed to SelectClosestPrevBatch: %s", err)
-		}
+		var pb string
+		_ = sqlutil.WithTransaction(store.DB, func(txn *sqlx.Tx) (err error) {
+			pb, err = store.EventsTable.SelectClosestPrevBatch(txn, roomID, eventNID)
+			if err != nil {
+				t.Fatalf("failed to SelectClosestPrevBatch: %s", err)
+			}
+			return nil
+		})
+
 		if pb != wantPrevBatch {
 			t.Fatalf("SelectClosestPrevBatch: got %v want %v", pb, wantPrevBatch)
 		}
@@ -680,6 +687,189 @@ func TestGlobalSnapshot(t *testing.T) {
 	for roomID, want := range wantMetadata {
 		assertRoomMetadata(t, snapshot.GlobalMetadata[roomID], want)
 	}
+}
+
+func TestAllJoinedMembers(t *testing.T) {
+	assertNoError(t, cleanDB(t))
+	store := NewStorage(postgresConnectionString)
+	defer store.Teardown()
+
+	alice := "@alice:localhost"
+	bob := "@bob:localhost"
+	charlie := "@charlie:localhost"
+	doris := "@doris:localhost"
+	eve := "@eve:localhost"
+	frank := "@frank:localhost"
+
+	// Alice is always the creator and the inviter for simplicity's sake
+	testCases := []struct {
+		Name                  string
+		InitMemberships       [][2]string
+		AccumulateMemberships [][2]string
+		RoomID                string // tests set this dynamically
+		WantJoined            []string
+		WantInvited           []string
+	}{
+		{
+			Name:                  "basic joined users",
+			InitMemberships:       [][2]string{{alice, "join"}},
+			AccumulateMemberships: [][2]string{{bob, "join"}},
+			WantJoined:            []string{alice, bob},
+		},
+		{
+			Name:                  "basic invited users",
+			InitMemberships:       [][2]string{{alice, "join"}, {charlie, "invite"}},
+			AccumulateMemberships: [][2]string{{bob, "invite"}},
+			WantJoined:            []string{alice},
+			WantInvited:           []string{bob, charlie},
+		},
+		{
+			Name:                  "many join/leaves, use latest",
+			InitMemberships:       [][2]string{{alice, "join"}, {charlie, "join"}, {frank, "join"}},
+			AccumulateMemberships: [][2]string{{bob, "join"}, {charlie, "leave"}, {frank, "leave"}, {charlie, "join"}, {eve, "join"}},
+			WantJoined:            []string{alice, bob, charlie, eve},
+		},
+		{
+			Name:                  "many invites, use latest",
+			InitMemberships:       [][2]string{{alice, "join"}, {doris, "join"}},
+			AccumulateMemberships: [][2]string{{doris, "leave"}, {charlie, "invite"}, {doris, "invite"}},
+			WantJoined:            []string{alice},
+			WantInvited:           []string{charlie, doris},
+		},
+		{
+			Name:                  "invite and rejection in accumulate",
+			InitMemberships:       [][2]string{{alice, "join"}},
+			AccumulateMemberships: [][2]string{{frank, "invite"}, {frank, "leave"}},
+			WantJoined:            []string{alice},
+		},
+		{
+			Name:                  "invite in initial, rejection in accumulate",
+			InitMemberships:       [][2]string{{alice, "join"}, {frank, "invite"}},
+			AccumulateMemberships: [][2]string{{frank, "leave"}},
+			WantJoined:            []string{alice},
+		},
+	}
+
+	serialise := func(memberships [][2]string) []json.RawMessage {
+		var result []json.RawMessage
+		for _, userWithMembership := range memberships {
+			target := userWithMembership[0]
+			sender := userWithMembership[0]
+			membership := userWithMembership[1]
+			if membership == "invite" {
+				// Alice is always the inviter
+				sender = alice
+			}
+			result = append(result, testutils.NewStateEvent(t, "m.room.member", target, sender, map[string]interface{}{
+				"membership": membership,
+			}))
+		}
+		return result
+	}
+
+	for i, tc := range testCases {
+		roomID := fmt.Sprintf("!TestAllJoinedMembers_%d:localhost", i)
+		_, err := store.Initialise(roomID, append([]json.RawMessage{
+			testutils.NewStateEvent(t, "m.room.create", "", alice, map[string]interface{}{
+				"creator": alice, // alice is always the creator
+			}),
+		}, serialise(tc.InitMemberships)...))
+		assertNoError(t, err)
+
+		_, _, err = store.Accumulate(userID, roomID, "foo", serialise(tc.AccumulateMemberships))
+		assertNoError(t, err)
+		testCases[i].RoomID = roomID // remember this for later
+	}
+
+	// should get all joined members correctly
+	var joinedMembers map[string][]string
+	// should set join/invite counts correctly
+	var roomMetadatas map[string]internal.RoomMetadata
+	err := sqlutil.WithTransaction(store.DB, func(txn *sqlx.Tx) error {
+		tableName, err := store.PrepareSnapshot(txn)
+		if err != nil {
+			return err
+		}
+		joinedMembers, roomMetadatas, err = store.AllJoinedMembers(txn, tableName)
+		return err
+	})
+	assertNoError(t, err)
+
+	for _, tc := range testCases {
+		roomID := tc.RoomID
+		if roomID == "" {
+			t.Fatalf("test case has no room id set: %+v", tc)
+		}
+		// make sure joined members match
+		sort.Strings(joinedMembers[roomID])
+		sort.Strings(tc.WantJoined)
+		if !reflect.DeepEqual(joinedMembers[roomID], tc.WantJoined) {
+			t.Errorf("%v: got joined members %v want %v", tc.Name, joinedMembers[roomID], tc.WantJoined)
+		}
+		// make sure join/invite counts match
+		wantJoined := len(tc.WantJoined)
+		wantInvited := len(tc.WantInvited)
+		metadata, ok := roomMetadatas[roomID]
+		if !ok {
+			t.Fatalf("no room metadata for room %v", roomID)
+		}
+		if metadata.InviteCount != wantInvited {
+			t.Errorf("%v: got invite count %d want %d", tc.Name, metadata.InviteCount, wantInvited)
+		}
+		if metadata.JoinCount != wantJoined {
+			t.Errorf("%v: got join count %d want %d", tc.Name, metadata.JoinCount, wantJoined)
+		}
+	}
+}
+
+func TestCircularSlice(t *testing.T) {
+	testCases := []struct {
+		name    string
+		max     int
+		appends []int64
+		want    []int64 // these get sorted in the test
+	}{
+		{
+			name:    "wraparound",
+			max:     5,
+			appends: []int64{9, 8, 7, 6, 5, 4, 3, 2},
+			want:    []int64{2, 3, 4, 5, 6},
+		},
+		{
+			name:    "exact",
+			max:     5,
+			appends: []int64{9, 8, 7, 6, 5},
+			want:    []int64{5, 6, 7, 8, 9},
+		},
+		{
+			name:    "unfilled",
+			max:     5,
+			appends: []int64{9, 8, 7},
+			want:    []int64{7, 8, 9},
+		},
+		{
+			name:    "wraparound x2",
+			max:     5,
+			appends: []int64{9, 8, 7, 6, 5, 4, 3, 2, 1, 0, 10},
+			want:    []int64{0, 1, 2, 3, 10},
+		},
+	}
+	for _, tc := range testCases {
+		cs := &circularSlice{
+			max: tc.max,
+		}
+		for _, val := range tc.appends {
+			cs.append(val)
+		}
+		sort.Slice(cs.vals, func(i, j int) bool {
+			return cs.vals[i] < cs.vals[j]
+		})
+		if !reflect.DeepEqual(cs.vals, tc.want) {
+			t.Errorf("%s: got %v want %v", tc.name, cs.vals, tc.want)
+		}
+
+	}
+
 }
 
 func cleanDB(t *testing.T) error {
