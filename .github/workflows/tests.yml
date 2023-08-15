@@ -180,6 +180,8 @@ jobs:
                 cache: 'yarn'
             - name: Fetch layered build
               run: scripts/ci/layered.sh
+              env:
+                JS_SDK_GITHUB_BASE_REF: "v25.0.0-rc.1"
             - name: Copy config
               run: cp element.io/develop/config.json config.json
               working-directory: ./element-web
