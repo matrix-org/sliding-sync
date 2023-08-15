@@ -431,6 +431,7 @@ func (h *SyncLiveHandler) identifyUnknownAccessToken(accessToken string, logger 
 			return nil, &internal.HandlerError{
 				StatusCode: 401,
 				Err:        fmt.Errorf("/whoami returned HTTP 401"),
+				ErrCode:    "M_UNKNOWN_TOKEN",
 			}
 		}
 		log.Warn().Err(err).Msg("failed to get user ID from device ID")
