@@ -584,6 +584,7 @@ func (h *Handler) ExpireOldPollers() {
 	if err != nil {
 		logger.Err(err).Msg("Error fetching old devices")
 		sentry.CaptureException(err)
+		return
 	}
 	pids := make([]sync2.PollerID, len(devices))
 	for i := range devices {
