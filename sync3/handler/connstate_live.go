@@ -188,11 +188,27 @@ func (s *connStateLive) processLiveUpdate(ctx context.Context, up caches.Update,
 		userRoomData := roomUpdate.UserRoomMetadata()
 		r := response.Rooms[roomUpdate.RoomID()]
 
-		conMeta := s.lists.ReadOnlyRoom(roomUpdate.RoomID())
-		for _, ts := range conMeta.LastInterestedEventTimestamps {
-			if ts >= r.Timestamp {
-				r.Timestamp = ts
+		// Get the highest timestamp, determined by bumpEventTypes,
+		// for this room
+		roomListsMeta := s.lists.ReadOnlyRoom(roomUpdate.RoomID())
+		var bumpEventTypes []string
+		for _, list := range s.muxedReq.Lists {
+			bumpEventTypes = append(bumpEventTypes, list.BumpEventTypes...)
+		}
+		for _, t := range bumpEventTypes {
+			evMeta := roomListsMeta.LatestEventsByType[t]
+			if evMeta.Timestamp > r.Timestamp {
+				r.Timestamp = evMeta.Timestamp
 			}
+		}
+
+		// If there are now bumpEventTypes defined, use the last message timestamp
+		if r.Timestamp == 0 && len(bumpEventTypes) == 0 {
+			r.Timestamp = roomUpdate.GlobalRoomMetadata().LastMessageTimestamp
+		}
+		// Make sure we don't leak a timestamp from before we joined
+		if r.Timestamp < roomListsMeta.JoinTiming.Timestamp {
+			r.Timestamp = roomListsMeta.JoinTiming.Timestamp
 		}
 
 		r.HighlightCount = int64(userRoomData.HighlightCount)
