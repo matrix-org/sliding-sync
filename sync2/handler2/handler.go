@@ -48,8 +48,9 @@ type Handler struct {
 	typingMu      *sync.Mutex
 	PendingTxnIDs *sync2.PendingTransactionIDs
 
-	deviceDataTicker *sync2.DeviceDataTicker
-	e2eeWorkerPool   *internal.WorkerPool
+	deviceDataTicker   *sync2.DeviceDataTicker
+	pollerExpiryTicker *time.Ticker
+	e2eeWorkerPool     *internal.WorkerPool
 
 	numPollers prometheus.Gauge
 	subSystem  string
@@ -111,6 +112,9 @@ func (h *Handler) Teardown() {
 	h.v2Store.Teardown()
 	h.pMap.Terminate()
 	h.deviceDataTicker.Stop()
+	if h.pollerExpiryTicker != nil {
+		h.pollerExpiryTicker.Stop()
+	}
 	if h.numPollers != nil {
 		prometheus.Unregister(h.numPollers)
 	}
@@ -163,6 +167,7 @@ func (h *Handler) StartV2Pollers() {
 	wg.Wait()
 	logger.Info().Msg("StartV2Pollers finished")
 	h.updateMetrics()
+	h.startPollerExpiryTicker()
 }
 
 func (h *Handler) updateMetrics() {
@@ -565,6 +570,40 @@ func (h *Handler) EnsurePolling(p *pubsub.V3EnsurePolling) {
 			DeviceID: p.DeviceID,
 		})
 	}()
+}
+
+func (h *Handler) startPollerExpiryTicker() {
+	if h.pollerExpiryTicker != nil {
+		return
+	}
+	h.pollerExpiryTicker = time.NewTicker(time.Hour)
+	go func() {
+		for range h.pollerExpiryTicker.C {
+			h.ExpireOldPollers()
+		}
+	}()
+}
+
+// ExpireOldPollers looks for pollers whose devices have not made a sliding sync query
+// in the last 30 days, and asks the poller map to expire their corresponding pollers.
+// This function does not normally need to be called manually (StartV2Pollers queues it
+// up to run hourly); we expose it publicly only for testing purposes.
+func (h *Handler) ExpireOldPollers() {
+	devices, err := h.v2Store.DevicesTable.FindOldDevices(30 * 24 * time.Hour)
+	if err != nil {
+		logger.Err(err).Msg("Error fetching old devices")
+		sentry.CaptureException(err)
+		return
+	}
+	pids := make([]sync2.PollerID, len(devices))
+	for i := range devices {
+		pids[i].UserID = devices[i].UserID
+		pids[i].DeviceID = devices[i].DeviceID
+	}
+	numExpired := h.pMap.ExpirePollers(pids)
+	if len(devices) > 0 {
+		logger.Info().Int("old", len(devices)).Int("expired", numExpired).Msg("poller cleanup old devices")
+	}
 }
 
 func fnvHash(event json.RawMessage) uint64 {

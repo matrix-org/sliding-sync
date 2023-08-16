@@ -1,9 +1,11 @@
 package sync2
 
 import (
+	"fmt"
 	"github.com/jmoiron/sqlx"
 	"github.com/matrix-org/sliding-sync/sqlutil"
 	"os"
+	"reflect"
 	"sort"
 	"testing"
 	"time"
@@ -100,7 +102,7 @@ func TestTokenForEachDevice(t *testing.T) {
 
 	// HACK: discard rows inserted by other tests. We don't normally need to do this,
 	// but this is testing a query that scans the entire devices table.
-	db.MustExec("TRUNCATE syncv3_sync2_devices, syncv3_sync2_tokens;")
+	db.Exec("TRUNCATE syncv3_sync2_devices, syncv3_sync2_tokens;")
 
 	tokens := NewTokensTable(db, "my_secret")
 	devices := NewDevicesTable(db)
@@ -182,5 +184,71 @@ func TestTokenForEachDevice(t *testing.T) {
 		assertEqual(t, gotTokens[i].UserID, wantTokens[i].UserID, "Token.UserID mismatch")
 		assertEqual(t, gotTokens[i].DeviceID, wantTokens[i].DeviceID, "Token.DeviceID mismatch")
 		assertEqual(t, gotTokens[i].AccessToken, wantTokens[i].AccessToken, "Token.AccessToken mismatch")
+	}
+}
+
+func TestDevicesTable_FindOldDevices(t *testing.T) {
+	db, close := connectToDB(t)
+	defer close()
+
+	// HACK: discard rows inserted by other tests. We don't normally need to do this,
+	// but this is testing a query that scans the entire devices table.
+	db.Exec("TRUNCATE syncv3_sync2_devices, syncv3_sync2_tokens;")
+
+	tokens := NewTokensTable(db, "my_secret")
+	devices := NewDevicesTable(db)
+
+	tcs := []struct {
+		UserID    string
+		DeviceID  string
+		tokenAges []time.Duration
+	}{
+		{UserID: "@alice:test", DeviceID: "no_tokens", tokenAges: nil},
+		{UserID: "@bob:test", DeviceID: "one_active_token", tokenAges: []time.Duration{time.Hour}},
+		{UserID: "@bob:test", DeviceID: "one_old_token", tokenAges: []time.Duration{7 * 24 * time.Hour}},
+		{UserID: "@chris:test", DeviceID: "one_old_one_active", tokenAges: []time.Duration{time.Hour, 7 * 24 * time.Hour}},
+		{UserID: "@delia:test", DeviceID: "two_old_tokens", tokenAges: []time.Duration{7 * 24 * time.Hour, 14 * 24 * time.Hour}},
+	}
+
+	txn, err := db.Beginx()
+	if err != nil {
+		t.Fatal(err)
+	}
+	numTokens := 0
+	for _, tc := range tcs {
+		err = devices.InsertDevice(txn, tc.UserID, tc.DeviceID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, age := range tc.tokenAges {
+			numTokens++
+			_, err = tokens.Insert(
+				txn,
+				fmt.Sprintf("token-%d", numTokens),
+				tc.UserID,
+				tc.DeviceID,
+				time.Now().Add(-age),
+			)
+		}
+	}
+	err = txn.Commit()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	oldDevices, err := devices.FindOldDevices(24 * time.Hour)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sort.Slice(oldDevices, func(i, j int) bool {
+		return oldDevices[i].UserID < oldDevices[j].UserID
+	})
+	expectedDevices := []Device{
+		{UserID: "@bob:test", DeviceID: "one_old_token"},
+		{UserID: "@delia:test", DeviceID: "two_old_tokens"},
+	}
+
+	if !reflect.DeepEqual(oldDevices, expectedDevices) {
+		t.Errorf("Got %+v, but expected %v+", oldDevices, expectedDevices)
 	}
 }

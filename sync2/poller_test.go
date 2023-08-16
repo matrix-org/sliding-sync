@@ -198,6 +198,72 @@ func TestPollerMapEnsurePollingIdempotent(t *testing.T) {
 	t.Logf("EnsurePolling unblocked")
 }
 
+func TestPollerMap_ExpirePollers(t *testing.T) {
+	receiver, client := newMocks(func(authHeader, since string) (*SyncResponse, int, error) {
+		r := SyncResponse{
+			NextBatch: "batchy-mc-batchface",
+		}
+		return &r, 200, nil
+	})
+	pm := NewPollerMap(client, false)
+	pm.SetCallbacks(receiver)
+
+	// Start 5 pollers.
+	pollerSpecs := []struct {
+		UserID   string
+		DeviceID string
+		Token    string
+	}{
+		{UserID: "alice", DeviceID: "a_device", Token: "a_token"},
+		{UserID: "bob", DeviceID: "b_device2", Token: "b_token1"},
+		{UserID: "bob", DeviceID: "b_device1", Token: "b_token2"},
+		{UserID: "chris", DeviceID: "phone", Token: "c_token"},
+		{UserID: "delia", DeviceID: "phone", Token: "d_token"},
+	}
+
+	for _, spec := range pollerSpecs {
+		created := pm.EnsurePolling(
+			PollerID{UserID: spec.UserID, DeviceID: spec.DeviceID},
+			spec.Token, "", true, logger,
+		)
+		if !created {
+			t.Errorf("Poller for %v was not newly created", spec)
+		}
+	}
+
+	// Expire some of them. This tests that:
+	pm.ExpirePollers([]PollerID{
+		// - Easy mode: if you have one poller and ask it to be deleted, it is deleted.
+		{"alice", "a_device"},
+		// - If you have two devices and ask for one of their pollers to be expired,
+		//   only that poller is terminated.
+		{"bob", "b_device1"},
+		// - If there is a device ID clash, only the specified user's poller is expired.
+		//   I.e. Delia unaffected
+		{"chris", "phone"},
+	})
+
+	// Try to recreate each poller. EnsurePolling should only report having to create a
+	// poller for the pollers we asked to be deleted.
+	expectDeleted := []bool{
+		true,
+		false,
+		true,
+		true,
+		false,
+	}
+
+	for i, spec := range pollerSpecs {
+		created := pm.EnsurePolling(
+			PollerID{UserID: spec.UserID, DeviceID: spec.DeviceID},
+			spec.Token, "", true, logger,
+		)
+		if created != expectDeleted[i] {
+			t.Errorf("Poller #%d (%v): created=%t, expected %t", i, spec, created, expectDeleted[i])
+		}
+	}
+}
+
 // Check that a call to Poll starts polling and accumulating, and terminates on 401s.
 func TestPollerPollFromNothing(t *testing.T) {
 	nextSince := "next"

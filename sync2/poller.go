@@ -68,10 +68,13 @@ type V2DataReceiver interface {
 }
 
 type IPollerMap interface {
-	EnsurePolling(pid PollerID, accessToken, v2since string, isStartup bool, logger zerolog.Logger)
+	EnsurePolling(pid PollerID, accessToken, v2since string, isStartup bool, logger zerolog.Logger) (created bool)
 	NumPollers() int
 	Terminate()
 	DeviceIDs(userID string) []string
+	// ExpirePollers requests that the given pollers are terminated as if their access
+	// tokens had expired. Returns the number of pollers successfully terminated.
+	ExpirePollers(ids []PollerID) int
 }
 
 // PollerMap is a map of device ID to Poller
@@ -217,6 +220,24 @@ func (h *PollerMap) DeviceIDs(userID string) []string {
 	return devices
 }
 
+func (h *PollerMap) ExpirePollers(pids []PollerID) int {
+	h.pollerMu.Lock()
+	defer h.pollerMu.Unlock()
+	numTerminated := 0
+	for _, pid := range pids {
+		p, ok := h.Pollers[pid]
+		if !ok || p.terminated.Load() {
+			continue
+		}
+		p.Terminate()
+		// Ensure that we won't recreate this poller on startup. If it reappears later,
+		// we'll make another EnsurePolling call which will recreate the poller.
+		h.callbacks.OnExpiredToken(context.Background(), hashToken(p.accessToken), p.userID, p.deviceID)
+		numTerminated++
+	}
+	return numTerminated
+}
+
 // EnsurePolling makes sure there is a poller for this device, making one if need be.
 // Blocks until at least 1 sync is done if and only if the poller was just created.
 // This ensures that calls to the database will return data.
@@ -224,7 +245,7 @@ func (h *PollerMap) DeviceIDs(userID string) []string {
 // Note that we will immediately return if there is a poller for the same user but a different device.
 // We do this to allow for logins on clients to be snappy fast, even though they won't yet have the
 // to-device msgs to decrypt E2EE rooms.
-func (h *PollerMap) EnsurePolling(pid PollerID, accessToken, v2since string, isStartup bool, logger zerolog.Logger) {
+func (h *PollerMap) EnsurePolling(pid PollerID, accessToken, v2since string, isStartup bool, logger zerolog.Logger) bool {
 	h.pollerMu.Lock()
 	if !h.executorRunning {
 		h.executorRunning = true
@@ -240,7 +261,7 @@ func (h *PollerMap) EnsurePolling(pid PollerID, accessToken, v2since string, isS
 		// this existing poller may not have completed the initial sync yet, so we need to make sure
 		// it has before we return.
 		poller.WaitUntilInitialSync()
-		return
+		return false
 	}
 	// check if we need to wait at all: we don't need to if this user is already syncing on a different device
 	// This is O(n) so we may want to map this if we get a lot of users...
@@ -274,6 +295,7 @@ func (h *PollerMap) EnsurePolling(pid PollerID, accessToken, v2since string, isS
 	} else {
 		logger.Info().Str("user", poller.userID).Msg("a poller exists for this user; not waiting for this device to do an initial sync")
 	}
+	return true
 }
 
 func (h *PollerMap) execute() {
