@@ -936,6 +936,11 @@ func TestPollerDoesNotResendOnDataError(t *testing.T) {
 		// This should return a DataError but the since token will still be advanced due to it being a DataError
 		// and not some other kind of error.
 		fn: func(authHeader, since string) (*SyncResponse, int, error) {
+			if since == "" {
+				// we should start with since=0, but can end up with since=""
+				// if we continue to advance beyond what we are testing.
+				return nil, 500, fmt.Errorf("test has ended")
+			}
 			t.Logf("DoSyncV2 since=%v, last=%v", since, lastSince)
 			if lastSince == since {
 				t.Errorf("since token was retried: got %v", since)
