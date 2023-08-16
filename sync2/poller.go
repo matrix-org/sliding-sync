@@ -3,6 +3,7 @@ package sync2
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"runtime/debug"
 	"sync"
@@ -568,27 +569,33 @@ func (p *poller) poll(ctx context.Context, s *pollLoopState) error {
 
 	// If any of these sections return an error, we will NOT increment the since token and so
 	// retry processing the same response after a brief period
-	retryErr := p.parseToDeviceMessages(ctx, resp)
-	if retryErr != nil {
-		p.logger.Err(retryErr).Msg("Poller: parseToDeviceMessages returned an error")
-		s.failCount += 1
-		return nil
-	}
-	retryErr = p.parseE2EEData(ctx, resp)
-	if retryErr != nil {
+	retryErr := p.parseE2EEData(ctx, resp)
+	if shouldRetry(retryErr) {
 		p.logger.Err(retryErr).Msg("Poller: parseE2EEData returned an error")
 		s.failCount += 1
 		return nil
 	}
 	retryErr = p.parseGlobalAccountData(ctx, resp)
-	if retryErr != nil {
+	if shouldRetry(retryErr) {
 		p.logger.Err(retryErr).Msg("Poller: parseGlobalAccountData returned an error")
 		s.failCount += 1
 		return nil
 	}
 	retryErr = p.parseRoomsResponse(ctx, resp)
-	if retryErr != nil {
+	if shouldRetry(retryErr) {
 		p.logger.Err(retryErr).Msg("Poller: parseRoomsResponse returned an error")
+		s.failCount += 1
+		return nil
+	}
+	// process to-device messages as the LAST retryable data so we don't double-process
+	// to-device msgs on retrys. In other words, if parseToDeviceMessages returns no error
+	// then we for sure are going to increment the since token, so cannot see duplicates.
+	// If parseToDeviceMessages was earlier, a later parse function could force a retry,
+	// causing duplicates. Other parse functions don't have this problem as they are
+	// deduplicated.
+	retryErr = p.parseToDeviceMessages(ctx, resp)
+	if shouldRetry(retryErr) {
+		p.logger.Err(retryErr).Msg("Poller: parseToDeviceMessages returned an error")
 		s.failCount += 1
 		return nil
 	}
@@ -640,6 +647,18 @@ func labels(isInitial, isFirst bool) []string {
 		l[1] = "0"
 	}
 	return l
+}
+
+func shouldRetry(retryErr error) bool {
+	if retryErr == nil {
+		return false
+	}
+	// we retry on all errors EXCEPT DataError as this indicates that retrying won't help
+	var de *internal.DataError
+	if errors.As(retryErr, &de) {
+		return false
+	}
+	return true
 }
 
 func (p *poller) parseToDeviceMessages(ctx context.Context, res *SyncResponse) error {

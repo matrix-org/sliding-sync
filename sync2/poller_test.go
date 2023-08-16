@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/matrix-org/sliding-sync/internal"
 	"github.com/rs/zerolog"
 )
 
@@ -850,6 +851,71 @@ func TestPollerResendsOnCallbackError(t *testing.T) {
 			t.Fatalf("%s: timed out waiting for repeated polling", tc.name)
 		}
 	}
+}
+
+// The purpose of this test is to make sure *internal.DataError errors do NOT cause the since token
+// to be retried.
+func TestPollerDoesNotResendOnDataError(t *testing.T) {
+	pid := PollerID{UserID: "@TestPollerDoesNotResendOnDataError:localhost", DeviceID: "FOOBAR"}
+	// make a receiver which will return a DataError when Accumulate is called
+	receiver := &overrideDataReceiver{
+		accumulate: func(ctx context.Context, userID, deviceID, roomID, prevBatch string, timeline []json.RawMessage) error {
+			return internal.NewDataError("this is a test: %v", 42)
+		},
+	}
+	waitForSuccess := make(chan struct{})
+	lastSince := ""
+	client := &mockClient{
+		// Process the initial sync then send back a timeline for a room which will cause Accumulate to be called.
+		// This should return a DataError but the since token will still be advanced due to it being a DataError
+		// and not some other kind of error.
+		fn: func(authHeader, since string) (*SyncResponse, int, error) {
+			t.Logf("DoSyncV2 since=%v, last=%v", since, lastSince)
+			if lastSince == since {
+				t.Errorf("since token was retried: got %v", since)
+			}
+			lastSince = since
+			switch since {
+			case initialSinceToken:
+				// skip over initial syncs
+				return &SyncResponse{
+					NextBatch: "1",
+				}, 200, nil
+			case "1":
+				// return a response which will trigger Accumulate code
+				return &SyncResponse{
+					NextBatch: "2",
+					Rooms: SyncRoomsResponse{
+						Join: map[string]SyncV2JoinResponse{
+							"!foo:bar": {
+								Timeline: TimelineResponse{
+									Events: []json.RawMessage{
+										[]byte(`{"type":"m.room.message","content":{},"sender":"@alice:localhost","event_id":"$222"}`),
+									},
+								},
+							},
+						},
+					},
+				}, 200, nil
+			case "2":
+				close(waitForSuccess)
+				return &SyncResponse{
+					NextBatch: "3",
+				}, 200, nil
+			}
+			return &SyncResponse{
+				NextBatch: "",
+			}, 200, nil
+		},
+	}
+	poller := newPoller(pid, "Authorization: hello world", client, receiver, zerolog.New(os.Stderr), false)
+	waitForInitialSync(t, poller)
+	select {
+	case <-waitForSuccess:
+	case <-time.After(time.Second):
+		t.Errorf("timed out waiting for repeated polling")
+	}
+	poller.Terminate()
 }
 
 func waitForInitialSync(t *testing.T, poller *poller) {

@@ -197,7 +197,7 @@ func (t *EventTable) selectAny(txn *sqlx.Tx, numWanted int, queryStr string, pqA
 	}
 	if numWanted > 0 {
 		if numWanted != len(events) {
-			return nil, fmt.Errorf("events table query %s got %d events wanted %d. err=%s", queryStr, len(events), numWanted, err)
+			return nil, internal.NewDataError("events table query %s got %d events wanted %d. err=%s", queryStr, len(events), numWanted, err)
 		}
 	}
 	return
