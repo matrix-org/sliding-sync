@@ -3,6 +3,7 @@ package sync2
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"runtime/debug"
 	"sync"
@@ -34,26 +35,32 @@ type V2DataReceiver interface {
 	// Update the since token for this device. Called AFTER all other data in this sync response has been processed.
 	UpdateDeviceSince(ctx context.Context, userID, deviceID, since string)
 	// Accumulate data for this room. This means the timeline section of the v2 response.
-	Accumulate(ctx context.Context, userID, deviceID, roomID, prevBatch string, timeline []json.RawMessage) // latest pos with event nids of timeline entries
+	// Return an error to stop the since token advancing.
+	Accumulate(ctx context.Context, userID, deviceID, roomID, prevBatch string, timeline []json.RawMessage) error // latest pos with event nids of timeline entries
 	// Initialise the room, if it hasn't been already. This means the state section of the v2 response.
 	// If given a state delta from an incremental sync, returns the slice of all state events unknown to the DB.
-	Initialise(ctx context.Context, roomID string, state []json.RawMessage) []json.RawMessage // snapshot ID?
+	// Return an error to stop the since token advancing.
+	Initialise(ctx context.Context, roomID string, state []json.RawMessage) ([]json.RawMessage, error) // snapshot ID?
 	// SetTyping indicates which users are typing.
 	SetTyping(ctx context.Context, pollerID PollerID, roomID string, ephEvent json.RawMessage)
 	// Sent when there is a new receipt
 	OnReceipt(ctx context.Context, userID, roomID, ephEventType string, ephEvent json.RawMessage)
 	// AddToDeviceMessages adds this chunk of to_device messages. Preserve the ordering.
-	AddToDeviceMessages(ctx context.Context, userID, deviceID string, msgs []json.RawMessage) // start/end stream pos
+	// Return an error to stop the since token advancing.
+	AddToDeviceMessages(ctx context.Context, userID, deviceID string, msgs []json.RawMessage) error
 	// UpdateUnreadCounts sets the highlight_count and notification_count for this user in this room.
 	UpdateUnreadCounts(ctx context.Context, roomID, userID string, highlightCount, notifCount *int)
 	// Set the latest account data for this user.
-	OnAccountData(ctx context.Context, userID, roomID string, events []json.RawMessage) // ping update with types? Can you race when re-querying?
+	// Return an error to stop the since token advancing.
+	OnAccountData(ctx context.Context, userID, roomID string, events []json.RawMessage) error // ping update with types? Can you race when re-querying?
 	// Sent when there is a room in the `invite` section of the v2 response.
-	OnInvite(ctx context.Context, userID, roomID string, inviteState []json.RawMessage) // invitestate in db
+	// Return an error to stop the since token advancing.
+	OnInvite(ctx context.Context, userID, roomID string, inviteState []json.RawMessage) error // invitestate in db
 	// Sent when there is a room in the `leave` section of the v2 response.
-	OnLeftRoom(ctx context.Context, userID, roomID string, leaveEvent json.RawMessage)
+	// Return an error to stop the since token advancing.
+	OnLeftRoom(ctx context.Context, userID, roomID string, leaveEvent json.RawMessage) error
 	// Sent when there is a _change_ in E2EE data, not all the time
-	OnE2EEData(ctx context.Context, userID, deviceID string, otkCounts map[string]int, fallbackKeyTypes []string, deviceListChanges map[string]int)
+	OnE2EEData(ctx context.Context, userID, deviceID string, otkCounts map[string]int, fallbackKeyTypes []string, deviceListChanges map[string]int) error
 	// Sent when the poll loop terminates
 	OnTerminated(ctx context.Context, pollerID PollerID)
 	// Sent when the token gets a 401 response
@@ -278,20 +285,21 @@ func (h *PollerMap) execute() {
 func (h *PollerMap) UpdateDeviceSince(ctx context.Context, userID, deviceID, since string) {
 	h.callbacks.UpdateDeviceSince(ctx, userID, deviceID, since)
 }
-func (h *PollerMap) Accumulate(ctx context.Context, userID, deviceID, roomID, prevBatch string, timeline []json.RawMessage) {
+func (h *PollerMap) Accumulate(ctx context.Context, userID, deviceID, roomID, prevBatch string, timeline []json.RawMessage) (err error) {
 	var wg sync.WaitGroup
 	wg.Add(1)
 	h.executor <- func() {
-		h.callbacks.Accumulate(ctx, userID, deviceID, roomID, prevBatch, timeline)
+		err = h.callbacks.Accumulate(ctx, userID, deviceID, roomID, prevBatch, timeline)
 		wg.Done()
 	}
 	wg.Wait()
+	return
 }
-func (h *PollerMap) Initialise(ctx context.Context, roomID string, state []json.RawMessage) (result []json.RawMessage) {
+func (h *PollerMap) Initialise(ctx context.Context, roomID string, state []json.RawMessage) (result []json.RawMessage, err error) {
 	var wg sync.WaitGroup
 	wg.Add(1)
 	h.executor <- func() {
-		result = h.callbacks.Initialise(ctx, roomID, state)
+		result, err = h.callbacks.Initialise(ctx, roomID, state)
 		wg.Done()
 	}
 	wg.Wait()
@@ -306,30 +314,32 @@ func (h *PollerMap) SetTyping(ctx context.Context, pollerID PollerID, roomID str
 	}
 	wg.Wait()
 }
-func (h *PollerMap) OnInvite(ctx context.Context, userID, roomID string, inviteState []json.RawMessage) {
+func (h *PollerMap) OnInvite(ctx context.Context, userID, roomID string, inviteState []json.RawMessage) (err error) {
 	var wg sync.WaitGroup
 	wg.Add(1)
 	h.executor <- func() {
-		h.callbacks.OnInvite(ctx, userID, roomID, inviteState)
+		err = h.callbacks.OnInvite(ctx, userID, roomID, inviteState)
 		wg.Done()
 	}
 	wg.Wait()
+	return
 }
 
-func (h *PollerMap) OnLeftRoom(ctx context.Context, userID, roomID string, leaveEvent json.RawMessage) {
+func (h *PollerMap) OnLeftRoom(ctx context.Context, userID, roomID string, leaveEvent json.RawMessage) (err error) {
 	var wg sync.WaitGroup
 	wg.Add(1)
 	h.executor <- func() {
-		h.callbacks.OnLeftRoom(ctx, userID, roomID, leaveEvent)
+		err = h.callbacks.OnLeftRoom(ctx, userID, roomID, leaveEvent)
 		wg.Done()
 	}
 	wg.Wait()
+	return
 }
 
 // Add messages for this device. If an error is returned, the poll loop is terminated as continuing
 // would implicitly acknowledge these messages.
-func (h *PollerMap) AddToDeviceMessages(ctx context.Context, userID, deviceID string, msgs []json.RawMessage) {
-	h.callbacks.AddToDeviceMessages(ctx, userID, deviceID, msgs)
+func (h *PollerMap) AddToDeviceMessages(ctx context.Context, userID, deviceID string, msgs []json.RawMessage) error {
+	return h.callbacks.AddToDeviceMessages(ctx, userID, deviceID, msgs)
 }
 
 func (h *PollerMap) OnTerminated(ctx context.Context, pollerID PollerID) {
@@ -350,14 +360,15 @@ func (h *PollerMap) UpdateUnreadCounts(ctx context.Context, roomID, userID strin
 	wg.Wait()
 }
 
-func (h *PollerMap) OnAccountData(ctx context.Context, userID, roomID string, events []json.RawMessage) {
+func (h *PollerMap) OnAccountData(ctx context.Context, userID, roomID string, events []json.RawMessage) (err error) {
 	var wg sync.WaitGroup
 	wg.Add(1)
 	h.executor <- func() {
-		h.callbacks.OnAccountData(ctx, userID, roomID, events)
+		err = h.callbacks.OnAccountData(ctx, userID, roomID, events)
 		wg.Done()
 	}
 	wg.Wait()
+	return
 }
 
 func (h *PollerMap) OnReceipt(ctx context.Context, userID, roomID, ephEventType string, ephEvent json.RawMessage) {
@@ -370,12 +381,12 @@ func (h *PollerMap) OnReceipt(ctx context.Context, userID, roomID, ephEventType 
 	wg.Wait()
 }
 
-func (h *PollerMap) OnE2EEData(ctx context.Context, userID, deviceID string, otkCounts map[string]int, fallbackKeyTypes []string, deviceListChanges map[string]int) {
+func (h *PollerMap) OnE2EEData(ctx context.Context, userID, deviceID string, otkCounts map[string]int, fallbackKeyTypes []string, deviceListChanges map[string]int) error {
 	// This is device-scoped data and will never race with another poller. Therefore we
 	// do not need to queue this up in the executor. However: the poller does need to
 	// wait for this to complete before advancing the since token, or else we risk
 	// losing device list changes.
-	h.callbacks.OnE2EEData(ctx, userID, deviceID, otkCounts, fallbackKeyTypes, deviceListChanges)
+	return h.callbacks.OnE2EEData(ctx, userID, deviceID, otkCounts, fallbackKeyTypes, deviceListChanges)
 }
 
 // Poller can automatically poll the sync v2 endpoint and accumulate the responses in storage
@@ -555,12 +566,39 @@ func (p *poller) poll(ctx context.Context, s *pollLoopState) error {
 	p.initialToDeviceOnly = false
 	start = time.Now()
 	s.failCount = 0
-	// Do the most latency-sensitive parsing first.
-	// This only helps if the executor isn't already busy.
-	p.parseToDeviceMessages(ctx, resp)
-	p.parseE2EEData(ctx, resp)
-	p.parseGlobalAccountData(ctx, resp)
-	p.parseRoomsResponse(ctx, resp)
+
+	// If any of these sections return an error, we will NOT increment the since token and so
+	// retry processing the same response after a brief period
+	retryErr := p.parseE2EEData(ctx, resp)
+	if shouldRetry(retryErr) {
+		p.logger.Err(retryErr).Msg("Poller: parseE2EEData returned an error")
+		s.failCount += 1
+		return nil
+	}
+	retryErr = p.parseGlobalAccountData(ctx, resp)
+	if shouldRetry(retryErr) {
+		p.logger.Err(retryErr).Msg("Poller: parseGlobalAccountData returned an error")
+		s.failCount += 1
+		return nil
+	}
+	retryErr = p.parseRoomsResponse(ctx, resp)
+	if shouldRetry(retryErr) {
+		p.logger.Err(retryErr).Msg("Poller: parseRoomsResponse returned an error")
+		s.failCount += 1
+		return nil
+	}
+	// process to-device messages as the LAST retryable data so we don't double-process
+	// to-device msgs on retrys. In other words, if parseToDeviceMessages returns no error
+	// then we for sure are going to increment the since token, so cannot see duplicates.
+	// If parseToDeviceMessages was earlier, a later parse function could force a retry,
+	// causing duplicates. Other parse functions don't have this problem as they are
+	// deduplicated.
+	retryErr = p.parseToDeviceMessages(ctx, resp)
+	if shouldRetry(retryErr) {
+		p.logger.Err(retryErr).Msg("Poller: parseToDeviceMessages returned an error")
+		s.failCount += 1
+		return nil
+	}
 
 	wasInitial := s.since == ""
 	wasFirst := s.firstTime
@@ -611,20 +649,33 @@ func labels(isInitial, isFirst bool) []string {
 	return l
 }
 
-func (p *poller) parseToDeviceMessages(ctx context.Context, res *SyncResponse) {
+func shouldRetry(retryErr error) bool {
+	if retryErr == nil {
+		return false
+	}
+	// we retry on all errors EXCEPT DataError as this indicates that retrying won't help
+	var de *internal.DataError
+	if errors.As(retryErr, &de) {
+		return false
+	}
+	return true
+}
+
+func (p *poller) parseToDeviceMessages(ctx context.Context, res *SyncResponse) error {
 	ctx, task := internal.StartTask(ctx, "parseToDeviceMessages")
 	defer task.End()
 	if len(res.ToDevice.Events) == 0 {
-		return
+		return nil
 	}
 	p.totalDeviceEvents += len(res.ToDevice.Events)
-	p.receiver.AddToDeviceMessages(ctx, p.userID, p.deviceID, res.ToDevice.Events)
+	return p.receiver.AddToDeviceMessages(ctx, p.userID, p.deviceID, res.ToDevice.Events)
 }
 
-func (p *poller) parseE2EEData(ctx context.Context, res *SyncResponse) {
+func (p *poller) parseE2EEData(ctx context.Context, res *SyncResponse) error {
 	ctx, task := internal.StartTask(ctx, "parseE2EEData")
 	defer task.End()
 	var changedOTKCounts map[string]int
+	shouldSetOTKs := false
 	if res.DeviceListsOTKCount != nil && len(res.DeviceListsOTKCount) > 0 {
 		if len(p.otkCounts) != len(res.DeviceListsOTKCount) {
 			changedOTKCounts = res.DeviceListsOTKCount
@@ -636,9 +687,10 @@ func (p *poller) parseE2EEData(ctx context.Context, res *SyncResponse) {
 				}
 			}
 		}
-		p.otkCounts = res.DeviceListsOTKCount
+		shouldSetOTKs = true
 	}
 	var changedFallbackTypes []string
+	shouldSetFallbackKeys := false
 	if len(res.DeviceUnusedFallbackKeyTypes) > 0 {
 		if len(p.fallbackKeyTypes) != len(res.DeviceUnusedFallbackKeyTypes) {
 			changedFallbackTypes = res.DeviceUnusedFallbackKeyTypes
@@ -650,7 +702,7 @@ func (p *poller) parseE2EEData(ctx context.Context, res *SyncResponse) {
 				}
 			}
 		}
-		p.fallbackKeyTypes = res.DeviceUnusedFallbackKeyTypes
+		shouldSetFallbackKeys = true
 	}
 
 	deviceListChanges := internal.ToDeviceListChangesMap(res.DeviceLists.Changed, res.DeviceLists.Left)
@@ -658,21 +710,33 @@ func (p *poller) parseE2EEData(ctx context.Context, res *SyncResponse) {
 	if deviceListChanges != nil || changedFallbackTypes != nil || changedOTKCounts != nil {
 		p.totalChangedDeviceLists += len(res.DeviceLists.Changed)
 		p.totalLeftDeviceLists += len(res.DeviceLists.Left)
-		p.receiver.OnE2EEData(ctx, p.userID, p.deviceID, changedOTKCounts, changedFallbackTypes, deviceListChanges)
+		err := p.receiver.OnE2EEData(ctx, p.userID, p.deviceID, changedOTKCounts, changedFallbackTypes, deviceListChanges)
+		if err != nil {
+			return err
+		}
 	}
+	// we should only update our internal state if OnE2EEData returns no error. Otherwise, we would fail to re-process the
+	// retried response as there would be no diff between internal state and the response received.
+	if shouldSetOTKs {
+		p.otkCounts = res.DeviceListsOTKCount
+	}
+	if shouldSetFallbackKeys {
+		p.fallbackKeyTypes = res.DeviceUnusedFallbackKeyTypes
+	}
+	return nil
 }
 
-func (p *poller) parseGlobalAccountData(ctx context.Context, res *SyncResponse) {
+func (p *poller) parseGlobalAccountData(ctx context.Context, res *SyncResponse) error {
 	ctx, task := internal.StartTask(ctx, "parseGlobalAccountData")
 	defer task.End()
 	if len(res.AccountData.Events) == 0 {
-		return
+		return nil
 	}
 	p.totalAccountData += len(res.AccountData.Events)
-	p.receiver.OnAccountData(ctx, p.userID, AccountDataGlobalRoom, res.AccountData.Events)
+	return p.receiver.OnAccountData(ctx, p.userID, AccountDataGlobalRoom, res.AccountData.Events)
 }
 
-func (p *poller) parseRoomsResponse(ctx context.Context, res *SyncResponse) {
+func (p *poller) parseRoomsResponse(ctx context.Context, res *SyncResponse) error {
 	ctx, task := internal.StartTask(ctx, "parseRoomsResponse")
 	defer task.End()
 	stateCalls := 0
@@ -682,7 +746,10 @@ func (p *poller) parseRoomsResponse(ctx context.Context, res *SyncResponse) {
 	for roomID, roomData := range res.Rooms.Join {
 		if len(roomData.State.Events) > 0 {
 			stateCalls++
-			prependStateEvents := p.receiver.Initialise(ctx, roomID, roomData.State.Events)
+			prependStateEvents, err := p.receiver.Initialise(ctx, roomID, roomData.State.Events)
+			if err != nil {
+				return fmt.Errorf("Initialise[%s]: %w", roomID, err)
+			}
 			if len(prependStateEvents) > 0 {
 				// The poller has just learned of these state events due to an
 				// incremental poller sync; we must have missed the opportunity to see
@@ -718,12 +785,18 @@ func (p *poller) parseRoomsResponse(ctx context.Context, res *SyncResponse) {
 
 		// process account data
 		if len(roomData.AccountData.Events) > 0 {
-			p.receiver.OnAccountData(ctx, p.userID, roomID, roomData.AccountData.Events)
+			err := p.receiver.OnAccountData(ctx, p.userID, roomID, roomData.AccountData.Events)
+			if err != nil {
+				return fmt.Errorf("OnAccountData[%s]: %w", roomID, err)
+			}
 		}
 		if len(roomData.Timeline.Events) > 0 {
 			timelineCalls++
 			p.trackTimelineSize(len(roomData.Timeline.Events), roomData.Timeline.Limited)
-			p.receiver.Accumulate(ctx, p.userID, p.deviceID, roomID, roomData.Timeline.PrevBatch, roomData.Timeline.Events)
+			err := p.receiver.Accumulate(ctx, p.userID, p.deviceID, roomID, roomData.Timeline.PrevBatch, roomData.Timeline.Events)
+			if err != nil {
+				return fmt.Errorf("Accumulate[%s]: %w", roomID, err)
+			}
 		}
 
 		// process unread counts AFTER events so global caches have been updated by the time this metadata is added.
@@ -736,7 +809,10 @@ func (p *poller) parseRoomsResponse(ctx context.Context, res *SyncResponse) {
 	for roomID, roomData := range res.Rooms.Leave {
 		if len(roomData.Timeline.Events) > 0 {
 			p.trackTimelineSize(len(roomData.Timeline.Events), roomData.Timeline.Limited)
-			p.receiver.Accumulate(ctx, p.userID, p.deviceID, roomID, roomData.Timeline.PrevBatch, roomData.Timeline.Events)
+			err := p.receiver.Accumulate(ctx, p.userID, p.deviceID, roomID, roomData.Timeline.PrevBatch, roomData.Timeline.Events)
+			if err != nil {
+				return fmt.Errorf("Accumulate_Leave[%s]: %w", roomID, err)
+			}
 		}
 		// Pass the leave event directly to OnLeftRoom. We need to do this _in addition_ to calling Accumulate to handle
 		// the case where a user rejects an invite (there will be no room state, but the user still expects to see the leave event).
@@ -749,11 +825,17 @@ func (p *poller) parseRoomsResponse(ctx context.Context, res *SyncResponse) {
 			}
 		}
 		if leaveEvent != nil {
-			p.receiver.OnLeftRoom(ctx, p.userID, roomID, leaveEvent)
+			err := p.receiver.OnLeftRoom(ctx, p.userID, roomID, leaveEvent)
+			if err != nil {
+				return fmt.Errorf("OnLeftRoom[%s]: %w", roomID, err)
+			}
 		}
 	}
 	for roomID, roomData := range res.Rooms.Invite {
-		p.receiver.OnInvite(ctx, p.userID, roomID, roomData.InviteState.Events)
+		err := p.receiver.OnInvite(ctx, p.userID, roomID, roomData.InviteState.Events)
+		if err != nil {
+			return fmt.Errorf("OnInvite[%s]: %w", roomID, err)
+		}
 	}
 
 	p.totalReceipts += receiptCalls
@@ -761,6 +843,7 @@ func (p *poller) parseRoomsResponse(ctx context.Context, res *SyncResponse) {
 	p.totalTimelineCalls += timelineCalls
 	p.totalTyping += typingCalls
 	p.totalInvites += len(res.Rooms.Invite)
+	return nil
 }
 
 func (p *poller) maybeLogStats(force bool) {
