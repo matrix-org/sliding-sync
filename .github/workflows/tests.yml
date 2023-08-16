@@ -181,7 +181,7 @@ jobs:
             # we need this so we can use a tag instead of a branch name for JS_SDK_GITHUB_BASE_REF
             - name: Patch script
               run: |
-                sed -i '' 's/git fetch --depth 1 origin $JS_SDK_GITHUB_BASE_REF/git fetch --depth 1 origin $JS_SDK_GITHUB_BASE_REF --tags/' layered.sh
+                sed -i '' 's/git fetch --depth 1 origin $JS_SDK_GITHUB_BASE_REF/git fetch --depth 1 origin $JS_SDK_GITHUB_BASE_REF --tags/' scripts/ci/layered.sh
             - name: Fetch layered build
               run: scripts/ci/layered.sh
               env:
