@@ -299,7 +299,7 @@ func TestTypingRespectsExtensionScopeWithOmittedFields(t *testing.T) {
 
 	t.Log("Alice creates four rooms. Bob joins each one.")
 	rooms := make([]string, 4)
-	for i := 0; i < cap(rooms); i++ {
+	for i := 0; i < len(rooms); i++ {
 		rooms[i] = alice.CreateRoom(t, map[string]interface{}{"preset": "public_chat", "name": fmt.Sprintf("room %d", i)})
 		bob.JoinRoom(t, rooms[i], nil)
 	}
