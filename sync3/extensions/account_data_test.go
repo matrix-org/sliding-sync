@@ -16,10 +16,14 @@ func TestLiveAccountDataAggregation(t *testing.T) {
 	ext := &AccountDataRequest{
 		Core: Core{
 			Enabled: &boolTrue,
+			Lists:   []string{"*"},
+			Rooms:   []string{"*"},
 		},
 	}
 	var res Response
-	var extCtx Context
+	var extCtx = Context{
+		AllSubscribedRooms: []string{roomA},
+	}
 	room1 := &caches.RoomAccountDataUpdate{
 		RoomUpdate: &dummyRoomUpdate{
 			roomID: roomA,
@@ -77,6 +81,9 @@ func TestLiveAccountDataAggregation(t *testing.T) {
 		roomA: []json.RawMessage{
 			room1.AccountData[0].Data, room1.AccountData[1].Data,
 		},
+	}
+	if res.AccountData == nil {
+		t.Fatalf("Didn't get account data: %v", res)
 	}
 	if !reflect.DeepEqual(res.AccountData.Rooms, wantRoomAccountData) {
 		t.Fatalf("got  %+v\nwant %+v", res.AccountData.Rooms, wantRoomAccountData)

@@ -27,6 +27,10 @@ type GenericRequest interface {
 	OnlyLists() []string
 	// Returns the value of the `rooms` JSON key. nil for "not specified".
 	OnlyRooms() []string
+	// InterpretAsInitial interprets this as an initial request rather than a delta, and
+	// overwrites fields accordingly. This can be useful when fields have default
+	// values, but is a little ugly. Use sparingly.
+	InterpretAsInitial()
 	// Overwrite fields in the request by side-effecting on this struct.
 	ApplyDelta(next GenericRequest)
 	// ProcessInitial provides a means for extensions to return data to clients immediately.
@@ -77,6 +81,17 @@ func (r *Core) OnlyRooms() []string {
 	return r.Rooms
 }
 
+func (r *Core) InterpretAsInitial() {
+	// An omitted/nil value for lists and rooms normally means "no change".
+	// If this extension has never been specified before, nil means "all lists/rooms".
+	if r.Lists == nil {
+		r.Lists = []string{"*"}
+	}
+	if r.Rooms == nil {
+		r.Rooms = []string{"*"}
+	}
+}
+
 func (r *Core) ApplyDelta(gnext GenericRequest) {
 	if gnext == nil {
 		return
@@ -100,22 +115,28 @@ func (r *Core) ApplyDelta(gnext GenericRequest) {
 // according to the "core" extension scoping logic. Extensions are free to suppress
 // updates for a room based on additional criteria.
 func (r *Core) RoomInScope(roomID string, extCtx Context) bool {
-	// If the extension hasn't had its scope configured, process everything.
-	if r.Lists == nil && r.Rooms == nil {
-		return true
+	// First determine which rooms the extension is monitoring outside of any sliding windows.
+	roomsToMonitor := r.Rooms
+	if len(roomsToMonitor) > 0 && roomsToMonitor[0] == "*" {
+		roomsToMonitor = extCtx.AllSubscribedRooms
 	}
-
-	// If this extension has been explicitly subscribed to this room, process the update.
-	for _, roomInScope := range r.Rooms {
+	// Process the update if this room is one of those monitored rooms.
+	for _, roomInScope := range roomsToMonitor {
 		if roomInScope == roomID {
 			return true
 		}
 	}
 
-	// If the room belongs to one of the lists that this extension should process, process the update.
+	// Next determine which lists the extension is monitoring.
+	listsToMonitor := r.Lists
+	if len(listsToMonitor) > 0 && listsToMonitor[0] == "*" {
+		listsToMonitor = extCtx.AllLists
+	}
+
+	// Process the update if the room is visible in one of those lists.
 	visibleInLists := extCtx.RoomIDsToLists[roomID]
 	for _, visibleInList := range visibleInLists {
-		for _, shouldProcessList := range r.Lists {
+		for _, shouldProcessList := range listsToMonitor {
 			if visibleInList == shouldProcessList {
 				return true
 			}
@@ -175,6 +196,8 @@ func (r Request) EnabledExtensions() (exts []GenericRequest) {
 	return
 }
 
+// ApplyDelta applies the `next` request as a delta atop the previous Request r, and
+// returns the result as a new Request.
 func (r Request) ApplyDelta(next *Request) Request {
 	currFields := r.fields()
 	nextFields := next.fields()
@@ -187,6 +210,7 @@ func (r Request) ApplyDelta(next *Request) Request {
 		}
 		if isNil(curr) {
 			// the next field is what we want to apply
+			next.InterpretAsInitial()
 			currFields[i] = next
 			hasChanges = true
 		} else {
@@ -200,6 +224,24 @@ func (r Request) ApplyDelta(next *Request) Request {
 	}
 
 	return r
+}
+
+func (r *Request) InterpretAsInitial() {
+	if r.ToDevice != nil {
+		r.ToDevice.InterpretAsInitial()
+	}
+	if r.E2EE != nil {
+		r.E2EE.InterpretAsInitial()
+	}
+	if r.AccountData != nil {
+		r.AccountData.InterpretAsInitial()
+	}
+	if r.Typing != nil {
+		r.Typing.InterpretAsInitial()
+	}
+	if r.Receipts != nil {
+		r.Receipts.InterpretAsInitial()
+	}
 }
 
 // Response represents the top-level `extensions` key in the JSON response.
@@ -233,6 +275,8 @@ func (r Response) HasData(isInitial bool) bool {
 	return false
 }
 
+// Context is a summary of useful information about the sync3.Request and the state of
+// the requester's connection.
 type Context struct {
 	*Handler
 	// RoomIDToTimeline is a map from room IDs to slices of event IDs. The keys are the
@@ -253,6 +297,10 @@ type Context struct {
 	// enclose those sliding windows. Values should be nonnil and nonempty, and may
 	// contain multiple list names.
 	RoomIDsToLists map[string][]string
+	// AllLists is the slice of list names provided to the Sliding Window API.
+	AllLists []string
+	// AllSubscribedRooms is the slice of room IDs provided to the Room Subscription API.
+	AllSubscribedRooms []string
 }
 
 type HandlerInterface interface {

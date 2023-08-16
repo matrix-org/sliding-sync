@@ -5,6 +5,12 @@ import (
 	"sort"
 )
 
+// SliceRanges is a slice of integer pairs [a, b]. Each pair represents the integers x
+// in the range a <= x <= b (note: closed at both ends). The slice as a whole represents
+// the set of integers x in any of the slice's closed intervals.
+//
+// Within the slice, pairs are arranged in no particular order. Two pairs may represent
+// overlapping ranges of integers; use Valid to test for this.
 type SliceRanges [][2]int64
 
 func (r SliceRanges) Valid() bool {

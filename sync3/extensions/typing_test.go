@@ -16,10 +16,14 @@ func TestLiveTypingAggregation(t *testing.T) {
 	ext := &TypingRequest{
 		Core: Core{
 			Enabled: &boolTrue,
+			Lists:   []string{"*"},
+			Rooms:   []string{"*"},
 		},
 	}
 	var res Response
-	var extCtx Context
+	extCtx := Context{
+		AllSubscribedRooms: []string{roomA, roomB, roomC},
+	}
 	typingA1 := &caches.TypingUpdate{
 		RoomUpdate: &dummyRoomUpdate{
 			roomID: roomA,
@@ -83,6 +87,6 @@ func TestLiveTypingAggregation(t *testing.T) {
 	ext.AppendLive(ctx, &res, extCtx, eventC1)
 	want[roomC] = eventC1.GlobalRoomMetadata().TypingEvent
 	if !reflect.DeepEqual(res.Typing.Rooms, want) {
-		t.Fatalf("got  %+v\nwant %+v", res.Typing.Rooms, want)
+		t.Fatalf("got  %s\nwant %s", res.Typing.Rooms, want)
 	}
 }

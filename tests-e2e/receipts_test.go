@@ -317,3 +317,116 @@ func TestReceiptsRespectsExtensionScope(t *testing.T) {
 		},
 	)
 }
+
+func TestReceiptsOnRoomsOnly(t *testing.T) {
+	alice := registerNamedUser(t, "alice")
+	bob := registerNamedUser(t, "bob")
+
+	t.Log("Alice creates two rooms.")
+	room1 := alice.CreateRoom(t, map[string]interface{}{"preset": "public_chat", "name": "room 1"})
+	room2 := alice.CreateRoom(t, map[string]interface{}{"preset": "public_chat", "name": "room 2"})
+	t.Logf("room1=%s room2=%s", room1, room2)
+
+	t.Log("Bob joins those rooms.")
+	bob.JoinRoom(t, room1, nil)
+	bob.JoinRoom(t, room2, nil)
+
+	t.Log("Alice posts a message to each room")
+	messageEvent := Event{
+		Type: "m.room.message",
+		Content: map[string]interface{}{
+			"msgtype": "m.text",
+			"body":    "Hello, room!",
+		},
+	}
+	message1 := alice.SendEventSynced(t, room1, messageEvent)
+	message2 := alice.SendEventSynced(t, room2, messageEvent)
+
+	t.Log("Bob posts a public read receipt for the messages in both rooms.")
+	bob.SendReceipt(t, room1, message1, "m.read")
+	bob.SendReceipt(t, room2, message2, "m.read")
+
+	t.Log("Bob makes an initial sliding sync, with a window to capture room 1 and a subscription to room 2.")
+	t.Log("He requests receipts for his explicit room subscriptions only.")
+	res := bob.SlidingSync(t, sync3.Request{
+		Lists: map[string]sync3.RequestList{
+			"room1": {
+				RoomSubscription: sync3.RoomSubscription{
+					TimelineLimit: 20,
+				},
+				Ranges: sync3.SliceRanges{{0, 0}},
+				Sort:   []string{"by_name"},
+			},
+		},
+		RoomSubscriptions: map[string]sync3.RoomSubscription{
+			room2: {
+				TimelineLimit: 20,
+			},
+		},
+		Extensions: extensions.Request{
+			Receipts: &extensions.ReceiptsRequest{
+				Core: extensions.Core{Enabled: &boolTrue, Lists: []string{}, Rooms: nil},
+			},
+		},
+	})
+
+	t.Log("Bob should see the messages in both rooms, but only a receipt in room 2.")
+	m.MatchResponse(
+		t,
+		res,
+		m.MatchList("room1", m.MatchV3Count(2), m.MatchV3Ops(m.MatchV3SyncOp(0, 0, []string{room1}))),
+		m.MatchRoomSubscription(room1, MatchRoomTimelineMostRecent(1, []Event{{ID: message1}})),
+		m.MatchRoomSubscription(room2, MatchRoomTimelineMostRecent(1, []Event{{ID: message2}})),
+		m.MatchReceipts(room1, nil),
+		m.MatchReceipts(room2, []m.Receipt{{
+			EventID: message2,
+			UserID:  bob.UserID,
+			Type:    "m.read",
+		}}),
+	)
+
+	// Now do the same, but live-streaming.
+
+	t.Log("Alice posts another message to each room")
+	message3 := alice.SendEventSynced(t, room1, messageEvent)
+	message4 := alice.SendEventSynced(t, room2, messageEvent)
+
+	t.Log("Bob posts a public read receipt for the messages both rooms.")
+	bob.SendReceipt(t, room1, message3, "m.read")
+	bob.SendReceipt(t, room2, message4, "m.read")
+
+	seenMsg3 := false
+	seenMsg4 := false
+	seenReceipt4 := false
+	res = bob.SlidingSyncUntil(t, res.Pos, sync3.Request{}, func(response *sync3.Response) error {
+		matchMsg3 := m.MatchRoomSubscription(room1, MatchRoomTimelineMostRecent(1, []Event{{ID: message3}}))
+		matchMsg4 := m.MatchRoomSubscription(room2, MatchRoomTimelineMostRecent(1, []Event{{ID: message4}}))
+
+		if matchMsg3(response) == nil {
+			seenMsg3 = true
+		}
+		if matchMsg4(response) == nil {
+			seenMsg4 = true
+		}
+
+		matchNoReceiptsRoom1 := m.MatchReceipts(room1, nil)
+		matchReceiptRoom2 := m.MatchReceipts(room2, []m.Receipt{{
+			EventID: message4,
+			UserID:  bob.UserID,
+			Type:    "m.read",
+		}})
+
+		if err := matchNoReceiptsRoom1(response); err != nil {
+			return err
+		}
+
+		if matchReceiptRoom2(response) == nil {
+			seenReceipt4 = true
+		}
+
+		if !(seenMsg3 && seenMsg4 && seenReceipt4) {
+			return fmt.Errorf("still waiting: seenMsg3 = %t, seenMsg4 = %t, seenReceipt4 = %t", seenMsg3, seenMsg4, seenReceipt4)
+		}
+		return nil
+	})
+}

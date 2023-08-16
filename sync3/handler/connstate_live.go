@@ -117,11 +117,13 @@ func (s *connStateLive) processUpdate(ctx context.Context, update caches.Update,
 	// pass event to extensions AFTER processing
 	roomIDsToLists := s.lists.ListsByVisibleRoomIDs(s.muxedReq.Lists)
 	s.extensionsHandler.HandleLiveUpdate(ctx, update, ex, &response.Extensions, extensions.Context{
-		IsInitial:        false,
-		RoomIDToTimeline: response.RoomIDsToTimelineEventIDs(),
-		UserID:           s.userID,
-		DeviceID:         s.deviceID,
-		RoomIDsToLists:   roomIDsToLists,
+		IsInitial:          false,
+		RoomIDToTimeline:   response.RoomIDsToTimelineEventIDs(),
+		UserID:             s.userID,
+		DeviceID:           s.deviceID,
+		RoomIDsToLists:     roomIDsToLists,
+		AllSubscribedRooms: keys(s.roomSubscriptions),
+		AllLists:           s.muxedReq.ListKeys(),
 	})
 }
 

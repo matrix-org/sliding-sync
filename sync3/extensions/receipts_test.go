@@ -16,10 +16,14 @@ func TestLiveReceiptsAggregation(t *testing.T) {
 	ext := &ReceiptsRequest{
 		Core: Core{
 			Enabled: &boolTrue,
+			Lists:   []string{"*"},
+			Rooms:   []string{"*"},
 		},
 	}
 	var res Response
-	var extCtx Context
+	extCtx := Context{
+		AllSubscribedRooms: []string{roomA, roomB},
+	}
 	receiptA1 := &caches.ReceiptUpdate{
 		Receipt: internal.Receipt{
 			RoomID:  roomA,

@@ -313,6 +313,7 @@ type RequestListDelta struct {
 // request.
 func (r *Request) ApplyDelta(nextReq *Request) (result *Request, delta *RequestDelta) {
 	if r == nil {
+		nextReq.Extensions.InterpretAsInitial()
 		result = &Request{
 			Extensions: nextReq.Extensions,
 		}
@@ -468,6 +469,15 @@ func (r *Request) ApplyDelta(nextReq *Request) (result *Request, delta *RequestD
 	result.RoomSubscriptions = resultSubs
 
 	return
+}
+
+// ListKeys builds a slice containing the names of the lists this request has defined.
+func (r *Request) ListKeys() []string {
+	listKeys := make([]string, 0, len(r.Lists))
+	for listKey, _ := range r.Lists {
+		listKeys = append(listKeys, listKey)
+	}
+	return listKeys
 }
 
 type RequestFilters struct {

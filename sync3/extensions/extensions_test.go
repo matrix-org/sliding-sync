@@ -90,6 +90,8 @@ func TestExtension_ApplyDelta(t *testing.T) {
 				AccountData: &AccountDataRequest{
 					Core: Core{
 						Enabled: &boolTrue,
+						Lists:   []string{"*"},
+						Rooms:   []string{"*"},
 					},
 				},
 			},
