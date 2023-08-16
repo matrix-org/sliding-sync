@@ -1017,6 +1017,7 @@ func (c *mockClient) WhoAmI(authHeader string) (string, string, error) {
 
 type mockDataReceiver struct {
 	*overrideDataReceiver
+	mu                *sync.Mutex
 	states            map[string][]json.RawMessage
 	timelines         map[string][]json.RawMessage
 	pollerIDToSince   map[PollerID]string
@@ -1042,6 +1043,8 @@ func (a *mockDataReceiver) Initialise(ctx context.Context, roomID string, state 
 	return nil, nil
 }
 func (s *mockDataReceiver) UpdateDeviceSince(ctx context.Context, userID, deviceID, since string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	s.pollerIDToSince[PollerID{UserID: userID, DeviceID: deviceID}] = since
 	if s.updateSinceCalled != nil {
 		s.updateSinceCalled <- struct{}{}
@@ -1149,6 +1152,7 @@ func newMocks(doSyncV2 func(authHeader, since string) (*SyncResponse, int, error
 	}
 	accumulator := &mockDataReceiver{
 		overrideDataReceiver: &overrideDataReceiver{},
+		mu:                   &sync.Mutex{},
 		states:               make(map[string][]json.RawMessage),
 		timelines:            make(map[string][]json.RawMessage),
 		pollerIDToSince:      make(map[PollerID]string),
