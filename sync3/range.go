@@ -9,7 +9,8 @@ import (
 // in the range a <= x <= b (note: closed at both ends). The slice as a whole represents
 // the set of integers x in any of the slice's closed intervals.
 //
-// The slices are arranged in no particular order and may overlap.
+// Within the slice, pairs are arranged in no particular order. Two pairs may represent
+// overlapping ranges of integers; use Valid to test for this.
 type SliceRanges [][2]int64
 
 func (r SliceRanges) Valid() bool {
