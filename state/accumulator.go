@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"github.com/matrix-org/sliding-sync/internal"
 
 	"github.com/getsentry/sentry-go"
 
@@ -322,20 +323,40 @@ func (a *Accumulator) Accumulate(txn *sqlx.Tx, userID, roomID string, prevBatch 
 		return 0, nil, err
 	}
 
-	// if we have just got a leave event for the polling user, and there is no snapshot for this room already, then
-	// we do NOT want to add this event to the events table, nor do we want to make a room snapshot. This is because
-	// this leave event is an invite rejection, rather than a normal event. Invite rejections cannot be processed in
-	// a normal way because we lack room state (no create event, PLs, etc). If we were to process the invite rejection,
-	// the room state would just be a single event: this leave event, which is wrong.
-	if len(dedupedEvents) == 1 &&
-		dedupedEvents[0].Type == "m.room.member" &&
-		(dedupedEvents[0].Membership == "leave" || dedupedEvents[0].Membership == "_leave") &&
-		dedupedEvents[0].StateKey == userID &&
-		snapID == 0 {
-		logger.Info().Str("event_id", dedupedEvents[0].ID).Str("room_id", roomID).Str("user_id", userID).Err(err).Msg(
-			"Accumulator: skipping processing of leave event, as no snapshot exists",
-		)
-		return 0, nil, nil
+	// The only situation where no prior snapshot should exist is if this timeline is
+	// the very start of the room. If we get here in some other way, we should ignore
+	// this timeline completely.
+	//
+	// For example: we can sometimes get stray events from the homeserver down the
+	// timeline, often leaves after an invite rejection. Ignoring these ensures we
+	// don't create a false (e.g. lacking m.room.create) record of the room state.
+	if snapID == 0 {
+		if len(dedupedEvents) > 0 && dedupedEvents[0].Type == "m.room.create" && dedupedEvents[0].StateKey == "" {
+			// All okay, continue on.
+		} else {
+			// Bail out and complain loudly.
+			err = fmt.Errorf("accumulator: skipping processing of timeline, as no snapshot exists")
+			logger.Warn().
+				Str("event_id", dedupedEvents[0].ID).
+				Str("event_type", dedupedEvents[0].Type).
+				Str("event_state_key", dedupedEvents[0].StateKey).
+				Str("room_id", roomID).
+				Str("user_id", userID).
+				Int("len_timeline", len(dedupedEvents)).
+				Msg(err.Error())
+			sentry.WithScope(func(scope *sentry.Scope) {
+				scope.SetUser(sentry.User{ID: userID})
+				scope.SetContext(internal.SentryCtxKey, map[string]interface{}{
+					"event_id":        dedupedEvents[0].ID,
+					"event_type":      dedupedEvents[0].Type,
+					"event_state_key": dedupedEvents[0].StateKey,
+					"room_id":         roomID,
+					"len_timeline":    len(dedupedEvents),
+				})
+				sentry.CaptureException(err)
+			})
+			return 0, nil, err
+		}
 	}
 
 	eventIDToNID, err := a.eventsTable.Insert(txn, dedupedEvents, false)
