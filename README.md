@@ -73,9 +73,6 @@ It is easiest to host the proxy on a separate hostname than the Matrix server, t
 In both cases, the path `https://example.com/.well-known/matrix/client` must return a JSON with at least the following contents:
 ```json
 {
-    "m.server": {
-        "base_url": "https://example.com"
-    },
     "m.homeserver": {
         "base_url": "https://example.com"
     },
