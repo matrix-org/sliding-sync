@@ -55,26 +55,6 @@ jobs:
           pip install -r tests-e2e/synapse-requirements.txt
           pip list
 
-      - name: Configure Synapse
-        shell: bash
-        run: |
-          mkdir synapse
-          echo <<EOF
-          server_name: "exampledomain"
-          listeners:
-            - port: 8008
-              type: http
-              bind_addresses: ['::1', '127.0.0.1']
-              resources:
-                - names: [client]
-          database:
-            name: sqlite3
-            args:
-              database: synapse/homeserver.db
-          suppress_key_server_warning: true
-          report_stats: false
-          EOF > synapse/homeserver.yaml
-
       - name: Run end-to-end tests
         run: |
           set -euo pipefail

@@ -1,0 +1,13 @@
+server_name: "exampledomain"
+listeners:
+- port: 8008
+  type: http
+  bind_addresses: ['::1', '127.0.0.1']
+  resources:
+    - names: [client]
+database:
+name: sqlite3
+args:
+  database: synapse/homeserver.db
+suppress_key_server_warning: true
+report_stats: false
