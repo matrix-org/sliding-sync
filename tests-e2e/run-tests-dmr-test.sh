@@ -22,4 +22,14 @@ do
   sleep 1
 done
 
+until [ \
+  "$(curl -s -w '%{http_code}' -o /dev/null "http://localhost:8008/health")" \
+  -eq 200 ]
+do
+  echo 'Waiting for Synapse to start...'
+  sleep 1
+done
+
+
+
 go test "$@"
