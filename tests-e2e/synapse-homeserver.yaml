@@ -8,6 +8,6 @@ listeners:
 database:
   name: sqlite3
   args:
-    database: synapse/homeserver.db
+    database: ":memory:"
 suppress_key_server_warning: true
 report_stats: false
