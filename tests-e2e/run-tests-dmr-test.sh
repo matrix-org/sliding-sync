@@ -4,7 +4,7 @@ export SYNCV3_ADDR='http://localhost:8844'
 export SYNCV3_DEBUG=1
 
 # Run synapse and stop it afterwards.
-python -m synapse.app.homeserver -c synapse-homeserver.yaml &
+python -m synapse.app.homeserver -c synapse-homeserver.yaml &>/dev/stderr &
 SYNAPSE_PID=$!
 
 # Run the binary and stop it afterwards.
