@@ -335,7 +335,7 @@ func (a *Accumulator) Accumulate(txn *sqlx.Tx, userID, roomID string, prevBatch 
 			// All okay, continue on.
 		} else {
 			// Bail out and complain loudly.
-			err = fmt.Errorf("accumulator: skipping processing of timeline, as no snapshot exists")
+			const msg = "Accumulator: skipping processing of timeline, as no snapshot exists"
 			logger.Warn().
 				Str("event_id", dedupedEvents[0].ID).
 				Str("event_type", dedupedEvents[0].Type).
@@ -343,7 +343,7 @@ func (a *Accumulator) Accumulate(txn *sqlx.Tx, userID, roomID string, prevBatch 
 				Str("room_id", roomID).
 				Str("user_id", userID).
 				Int("len_timeline", len(dedupedEvents)).
-				Msg(err.Error())
+				Msg(msg)
 			sentry.WithScope(func(scope *sentry.Scope) {
 				scope.SetUser(sentry.User{ID: userID})
 				scope.SetContext(internal.SentryCtxKey, map[string]interface{}{
@@ -353,9 +353,9 @@ func (a *Accumulator) Accumulate(txn *sqlx.Tx, userID, roomID string, prevBatch 
 					"room_id":         roomID,
 					"len_timeline":    len(dedupedEvents),
 				})
-				sentry.CaptureException(err)
+				sentry.CaptureMessage(msg)
 			})
-			return 0, nil, err
+			return 0, nil, nil
 		}
 	}
 
