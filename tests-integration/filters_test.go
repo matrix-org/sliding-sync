@@ -3,6 +3,7 @@ package syncv3
 import (
 	"encoding/json"
 	"testing"
+	"time"
 
 	"github.com/matrix-org/sliding-sync/sync2"
 	"github.com/matrix-org/sliding-sync/sync3"
@@ -199,7 +200,20 @@ func TestFiltersInvite(t *testing.T) {
 	))
 
 	t.Log("Alice accepts the invite.")
-	rig.JoinRoom(t, alice, roomID)
+	rig.V2.queueResponse(alice, sync2.SyncResponse{
+		Rooms: sync2.SyncRoomsResponse{
+			Join: map[string]sync2.SyncV2JoinResponse{
+				roomID: {
+					State: sync2.EventsResponse{
+						Events: createRoomState(t, "@creator:other", time.Now()),
+					},
+					Timeline: sync2.TimelineResponse{
+						Events: []json.RawMessage{testutils.NewJoinEvent(t, alice)},
+					},
+				},
+			},
+		},
+	})
 
 	// now the room should move from one room to another
 	res = rig.V3.mustDoV3RequestWithPos(t, aliceToken, res.Pos, sync3.Request{
