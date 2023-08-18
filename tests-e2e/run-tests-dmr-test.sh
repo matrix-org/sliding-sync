@@ -4,7 +4,7 @@ export SYNCV3_ADDR='http://localhost:8844'
 export SYNCV3_DEBUG=1
 
 # Run synapse and stop it afterwards.
-python -m synapse.app.homeserver -c synapse-homeserver.yaml &>/dev/stderr &
+python -m synapse.app.homeserver -c synapse-homeserver.yaml &> /dev/null &
 SYNAPSE_PID=$!
 
 # Run the binary and stop it afterwards.
@@ -18,7 +18,7 @@ until [ \
   "$(curl -s -w '%{http_code}' -o /dev/null "http://localhost:8844/idonotexist")" \
   -eq 404 ]
 do
-  echo 'Waiting for server to start...'
+  echo 'Waiting for proxy to start...' > /dev/stderr
   sleep 1
 done
 
@@ -26,7 +26,7 @@ until [ \
   "$(curl -s -w '%{http_code}' -o /dev/null "http://localhost:8008/health")" \
   -eq 200 ]
 do
-  echo 'Waiting for Synapse to start...'
+  echo 'Waiting for Synapse to start...' > /dev/stderr
   sleep 1
 done
 

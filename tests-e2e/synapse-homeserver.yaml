@@ -1,3 +1,4 @@
+# Minimal config for getting Synapse to run
 server_name: "exampledomain"
 listeners:
   - port: 8008
@@ -9,5 +10,28 @@ database:
   name: sqlite3
   args:
     database: ":memory:"
-suppress_key_server_warning: true
 report_stats: false
+
+# Disable rate limits
+rc_login:
+  address:
+    per_second: 123456
+    burst_count: 123456
+  account:
+    per_second: 123456
+    burst_count: 123456
+  failed_attempts:
+    per_second: 123456
+    burst_count: 123456
+
+rc_message:
+  per_second: 123456
+  burst_count: 123456
+
+rc_registration:
+  per_second: 123456
+  burst_count: 123456
+
+# Allow tests to create users programmatically
+enable_registration: true
+enable_registration_without_verification: true
