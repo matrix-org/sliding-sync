@@ -48,11 +48,11 @@ jobs:
         with:
           python-version: 3.11
           cache: 'pip'
-          cache-dependency-path: 'requirements.txt'
+          cache-dependency-path: 'tests-e2e/synapse-requirements.txt'
 
       - name: Install Synapse
         run: |
-          pip install -r requirements.txt
+          pip install -r tests-e2e/synapse-requirements.txt
           pip list
 
       - name: Configure Synapse
@@ -75,24 +75,24 @@ jobs:
           report_stats: false
           EOF > synapse/homeserver.config
 
-            - name: Run end-to-end tests
-              run: |
-                set -euo pipefail
-                ./run-tests-dmr-test.sh -count=1 -v -json . 2>&1 | tee test-e2e-runner.log | gotestfmt -hide all
-              working-directory: tests-e2e
-              shell: bash
-              env:
-                  SYNCV3_DB: user=postgres dbname=syncv3 sslmode=disable password=postgres host=localhost
-                  SYNCV3_SERVER: http://localhost:8008
-                  SYNCV3_SECRET: itsasecret
-                  E2E_TEST_SERVER_STDOUT: test-e2e-server.log
+      - name: Run end-to-end tests
+        run: |
+          set -euo pipefail
+          ./run-tests-dmr-test.sh -count=1 -v -json . 2>&1 | tee test-e2e-runner.log | gotestfmt -hide all
+        working-directory: tests-e2e
+        shell: bash
+        env:
+            SYNCV3_DB: user=postgres dbname=syncv3 sslmode=disable password=postgres host=localhost
+            SYNCV3_SERVER: http://localhost:8008
+            SYNCV3_SECRET: itsasecret
+            E2E_TEST_SERVER_STDOUT: test-e2e-server.log
 
-            - name: Upload test log
-              uses: actions/upload-artifact@v3
-              if: always()
-              with:
-                name: E2E test logs
-                path: |
-                  ./tests-e2e/test-e2e-runner.log
-                  ./tests-e2e/test-e2e-server.log
-                if-no-files-found: error
+      - name: Upload test log
+        uses: actions/upload-artifact@v3
+        if: always()
+        with:
+          name: E2E test logs
+          path: |
+            ./tests-e2e/test-e2e-runner.log
+            ./tests-e2e/test-e2e-server.log
+          if-no-files-found: error
