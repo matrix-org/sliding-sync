@@ -1,5 +1,8 @@
 # Minimal config for getting Synapse to run
-server_name: "exampledomain"
+
+# XXX: A couple of tests expect that the homeserver is called `synapse`.
+# TestMultipleListsDMUpdate and TestMultipleOverlappingLists
+server_name: "synapse"
 listeners:
   - port: 8008
     type: http
