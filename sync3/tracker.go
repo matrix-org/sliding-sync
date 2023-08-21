@@ -179,6 +179,18 @@ func (t *JoinedRoomsTracker) UsersInvitedToRoom(userIDs []string, roomID string)
 	t.roomIDToInvitedUsers[roomID] = users
 }
 
+func (t *JoinedRoomsTracker) IsUserInvited(userID, roomID string) bool {
+	t.mu.RLock()
+	defer t.mu.RUnlock()
+	users := t.roomIDToInvitedUsers[roomID]
+	for u := range users {
+		if u == userID {
+			return true
+		}
+	}
+	return false
+}
+
 func (t *JoinedRoomsTracker) NumInvitedUsersForRoom(roomID string) int {
 	t.mu.RLock()
 	defer t.mu.RUnlock()
