@@ -3,6 +3,7 @@ package syncv3
 import (
 	"encoding/json"
 	"testing"
+	"time"
 
 	"github.com/matrix-org/sliding-sync/sync2"
 	"github.com/matrix-org/sliding-sync/sync3"
@@ -154,6 +155,7 @@ func TestFiltersInvite(t *testing.T) {
 	rig := NewTestRig(t)
 	defer rig.Finish()
 	roomID := "!a:localhost"
+	t.Log("Alice is invited to a room.")
 	rig.SetupV2RoomsForUser(t, alice, NoFlush, map[string]RoomDescriptor{
 		roomID: {
 			MembershipOfSyncer: "invite",
@@ -161,7 +163,7 @@ func TestFiltersInvite(t *testing.T) {
 	})
 	aliceToken := rig.Token(alice)
 
-	// make sure the is_invite filter works
+	t.Log("Alice sliding syncs, requesting two separate lists: invites and joined rooms.")
 	res := rig.V3.mustDoV3Request(t, aliceToken, sync3.Request{
 		Lists: map[string]sync3.RequestList{
 			"inv": {
@@ -182,6 +184,7 @@ func TestFiltersInvite(t *testing.T) {
 			},
 		},
 	})
+	t.Log("Alice should see the room appear in the invites list, and nothing in the joined rooms list.")
 	m.MatchResponse(t, res, m.MatchLists(
 		map[string][]m.ListMatcher{
 			"inv": {
@@ -196,8 +199,21 @@ func TestFiltersInvite(t *testing.T) {
 		},
 	))
 
-	// Accept the invite
-	rig.JoinRoom(t, alice, roomID)
+	t.Log("Alice accepts the invite.")
+	rig.V2.queueResponse(alice, sync2.SyncResponse{
+		Rooms: sync2.SyncRoomsResponse{
+			Join: map[string]sync2.SyncV2JoinResponse{
+				roomID: {
+					State: sync2.EventsResponse{
+						Events: createRoomState(t, "@creator:other", time.Now()),
+					},
+					Timeline: sync2.TimelineResponse{
+						Events: []json.RawMessage{testutils.NewJoinEvent(t, alice)},
+					},
+				},
+			},
+		},
+	})
 
 	// now the room should move from one room to another
 	res = rig.V3.mustDoV3RequestWithPos(t, aliceToken, res.Pos, sync3.Request{
