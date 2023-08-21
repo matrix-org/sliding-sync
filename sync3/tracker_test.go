@@ -45,8 +45,10 @@ func TestTracker(t *testing.T) {
 
 	jrt.UsersInvitedToRoom([]string{"alice"}, "room4")
 	assertNumEquals(t, jrt.NumInvitedUsersForRoom("room4"), 1)
+	assertBool(t, "expected alice to be invited", jrt.IsUserInvited("alice", "room4"), true)
 	jrt.UserJoinedRoom("alice", "room4")
 	assertNumEquals(t, jrt.NumInvitedUsersForRoom("room4"), 0)
+	assertBool(t, "expected alice to be not invited anymore", jrt.IsUserInvited("alice", "room4"), false)
 	jrt.UserJoinedRoom("alice", "room4") // dupe joins don't bother it
 	assertNumEquals(t, jrt.NumInvitedUsersForRoom("room4"), 0)
 	jrt.UsersInvitedToRoom([]string{"bob"}, "room4")
@@ -55,6 +57,8 @@ func TestTracker(t *testing.T) {
 	assertNumEquals(t, jrt.NumInvitedUsersForRoom("room4"), 1)
 	jrt.UserLeftRoom("bob", "room4")
 	assertNumEquals(t, jrt.NumInvitedUsersForRoom("room4"), 0)
+
+	assertBool(t, "expected unknown user to be not invited", jrt.IsUserInvited("doesnotexist", "room3"), false)
 }
 
 func TestTrackerStartup(t *testing.T) {

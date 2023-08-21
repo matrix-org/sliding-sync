@@ -15,6 +15,7 @@ import (
 
 type JoinChecker interface {
 	IsUserJoined(userID, roomID string) bool
+	IsUserInvited(userID, roomID string) bool
 }
 
 // ConnState tracks all high-level connection state for this connection, like the combined request
@@ -590,10 +591,20 @@ func (s *ConnState) getInitialRoomData(ctx context.Context, roomSub sync3.RoomSu
 	}
 	roomToTimeline = s.userCache.AnnotateWithTransactionIDs(ctx, s.userID, s.deviceID, roomToTimeline)
 	rsm := roomSub.RequiredStateMap(s.userID)
+
+	// Filter out rooms we are only invited to, as we don't need to fetch the state
+	// since we'll be using the invite_state only.
+	loadRoomIDs := make([]string, 0, len(roomIDs))
+	for _, roomID := range roomIDs {
+		if !s.joinChecker.IsUserInvited(s.userID, roomID) {
+			loadRoomIDs = append(loadRoomIDs, roomID)
+		}
+	}
+
 	// by reusing the same global load position anchor here, we can be sure that the state returned here
 	// matches the timeline we loaded earlier - the race conditions happen around pubsub updates and not
 	// the events table itself, so whatever position is picked based on this anchor is immutable.
-	roomIDToState := s.globalCache.LoadRoomState(ctx, roomIDs, s.anchorLoadPosition, rsm, roomToUsersInTimeline)
+	roomIDToState := s.globalCache.LoadRoomState(ctx, loadRoomIDs, s.anchorLoadPosition, rsm, roomToUsersInTimeline)
 	if roomIDToState == nil { // e.g no required_state
 		roomIDToState = make(map[string][]json.RawMessage)
 	}

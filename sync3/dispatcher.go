@@ -47,6 +47,10 @@ func (d *Dispatcher) IsUserJoined(userID, roomID string) bool {
 	return d.jrt.IsUserJoined(userID, roomID)
 }
 
+func (d *Dispatcher) IsUserInvited(userID, roomID string) bool {
+	return d.jrt.IsUserInvited(userID, roomID)
+}
+
 // Load joined members into the dispatcher.
 // MUST BE CALLED BEFORE V2 POLL LOOPS START.
 func (d *Dispatcher) Startup(roomToJoinedUsers map[string][]string) error {

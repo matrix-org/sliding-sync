@@ -8,9 +8,9 @@ import (
 	"strings"
 
 	"github.com/getsentry/sentry-go"
+	"github.com/lib/pq"
 
 	"github.com/jmoiron/sqlx"
-	"github.com/lib/pq"
 	"github.com/matrix-org/sliding-sync/internal"
 	"github.com/matrix-org/sliding-sync/sqlutil"
 	"github.com/rs/zerolog"
@@ -470,6 +470,13 @@ func (s *Storage) RoomStateAfterEventPosition(ctx context.Context, roomIDs []str
 		} else {
 			// do an optimised query to pull out only the event types and state keys we care about.
 			var args []interface{} // event type, state key, event type, state key, ....
+
+			snapIDs := make([]int64, len(latestEvents))
+			for i := range latestEvents {
+				snapIDs[i] = latestEvents[i].BeforeStateSnapshotID
+			}
+			args = append(args, pq.Int64Array(snapIDs))
+
 			var wheres []string
 			hasMembershipFilter := false
 			hasOtherFilter := false
@@ -488,28 +495,30 @@ func (s *Storage) RoomStateAfterEventPosition(ctx context.Context, roomIDs []str
 					wheres = append(wheres, "syncv3_events.event_type = ?")
 				}
 			}
-			snapIDs := make([]int64, len(latestEvents))
-			for i := range latestEvents {
-				snapIDs[i] = latestEvents[i].BeforeStateSnapshotID
-			}
-			args = append(args, pq.Int64Array(snapIDs))
 
 			// figure out which state events to look at - if there is no m.room.member filter we can be super fast
-			nidcols := "unnest(array_cat(events, membership_events))"
+			nidcols := "array_cat(events, membership_events)"
 			if hasMembershipFilter && !hasOtherFilter {
-				nidcols = "unnest(membership_events)"
+				nidcols = "membership_events"
 			} else if !hasMembershipFilter && hasOtherFilter {
-				nidcols = "unnest(events)"
+				nidcols = "events"
 			}
 			// it's not possible for there to be no membership filter and no other filter, we wouldn't be executing this code
 			// it is possible to have both, so neither if will execute.
 
 			// Similar to CurrentStateEventsInAllRooms
+			// We're using a CTE here, since unnestting the nids is quite expensive. Using the array as is
+			// and using ANY() instead performs quite well (e.g. 86k membership events and 130ms execution time, vs
+			// the previous query with unnest took 2.5s)
 			query, args, err := sqlx.In(
-				`SELECT syncv3_events.event_nid, syncv3_events.room_id, syncv3_events.event_type, syncv3_events.state_key, syncv3_events.event FROM syncv3_events
-				WHERE (`+strings.Join(wheres, " OR ")+`) AND syncv3_events.event_nid IN (
-					SELECT `+nidcols+` FROM syncv3_snapshots WHERE syncv3_snapshots.snapshot_id = ANY(?)
-				) ORDER BY syncv3_events.event_nid ASC`,
+				`
+				WITH nids AS (
+    				SELECT `+nidcols+` AS allNids FROM syncv3_snapshots WHERE syncv3_snapshots.snapshot_id = ANY(?)
+				)
+				SELECT syncv3_events.event_nid, syncv3_events.room_id, syncv3_events.event_type, syncv3_events.state_key, syncv3_events.event 
+				FROM syncv3_events, nids
+				WHERE (`+strings.Join(wheres, " OR ")+`) AND syncv3_events.event_nid = ANY(nids.allNids)
+				ORDER BY syncv3_events.event_nid ASC`,
 				args...,
 			)
 			if err != nil {

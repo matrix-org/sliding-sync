@@ -31,6 +31,10 @@ func (t *NopJoinTracker) IsUserJoined(userID, roomID string) bool {
 	return true
 }
 
+func (t *NopJoinTracker) IsUserInvited(userID, roomID string) bool {
+	return true
+}
+
 type NopTransactionFetcher struct{}
 
 func (t *NopTransactionFetcher) TransactionIDForEvents(userID, deviceID string, eventIDs []string) (eventIDToTxnID map[string]string) {
