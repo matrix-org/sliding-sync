@@ -199,7 +199,7 @@ func (a *Accumulator) Initialise(roomID string, state []json.RawMessage) (Initia
 			return nil
 		}
 
-		// Insert the events
+		// We don't have a snapshot for this room. Parse the events first.
 		events := make([]Event, len(state))
 		for i := range events {
 			events[i] = Event{
@@ -212,6 +212,33 @@ func (a *Accumulator) Initialise(roomID string, state []json.RawMessage) (Initia
 		if len(events) == 0 {
 			return fmt.Errorf("failed to insert events, all events were filtered out: %w", err)
 		}
+
+		// Before proceeding further, ensure that we have "proper" state and not just a
+		// single stray event by looking for the create event.
+		hasCreate := false
+		for _, e := range events {
+			if e.Type == "m.room.create" && e.StateKey == "" {
+				hasCreate = true
+				break
+			}
+		}
+		if !hasCreate {
+			const errMsg = "cannot create first snapshot without a create event"
+			sentry.WithScope(func(scope *sentry.Scope) {
+				scope.SetContext(internal.SentryCtxKey, map[string]interface{}{
+					"room_id":   roomID,
+					"len_state": len(events),
+				})
+				sentry.CaptureMessage(errMsg)
+			})
+			logger.Warn().
+				Str("room_id", roomID).
+				Int("len_state", len(events)).
+				Msg(errMsg)
+			return fmt.Errorf(errMsg)
+		}
+
+		// Insert the events.
 		eventIDToNID, err := a.eventsTable.Insert(txn, events, false)
 		if err != nil {
 			return fmt.Errorf("failed to insert events: %w", err)

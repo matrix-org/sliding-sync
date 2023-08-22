@@ -3,9 +3,10 @@ package syncv3
 import (
 	"encoding/json"
 	"fmt"
-	slidingsync "github.com/matrix-org/sliding-sync"
 	"testing"
 	"time"
+
+	slidingsync "github.com/matrix-org/sliding-sync"
 
 	"github.com/matrix-org/sliding-sync/sync2"
 	"github.com/matrix-org/sliding-sync/sync3"
@@ -344,7 +345,7 @@ func TestInitialFlag(t *testing.T) {
 		Rooms: sync2.SyncRoomsResponse{
 			Join: v2JoinTimeline(roomEvents{
 				roomID: roomID,
-				state:  createRoomState(t, alice, time.Now()),
+				events: createRoomState(t, alice, time.Now()),
 			}),
 		},
 	})

@@ -3,6 +3,7 @@ package state
 import (
 	"context"
 	"encoding/json"
+	"github.com/matrix-org/sliding-sync/testutils"
 	"reflect"
 	"sort"
 	"sync"
@@ -92,6 +93,21 @@ func TestAccumulatorInitialise(t *testing.T) {
 	}
 	if res.AddedEvents {
 		t.Fatalf("added events when it shouldn't have")
+	}
+}
+
+// Test that an unknown room shouldn't initialise if given state without a create event.
+func TestAccumulatorInitialiseBadInputs(t *testing.T) {
+	const roomID = "!TestAccumulatorInitialiseBadInputs:localhost"
+	db, close := connectToDB(t)
+	defer close()
+
+	notcreate := testutils.NewStateEvent(t, "com.example.notacreate", "potato", "@someone:else", map[string]any{})
+
+	accumulator := NewAccumulator(db)
+	_, err := accumulator.Initialise(roomID, []json.RawMessage{notcreate})
+	if err == nil {
+		t.Fatalf("Initialise suceeded, but it should not have")
 	}
 }
 
@@ -303,7 +319,16 @@ func TestAccumulatorDupeEvents(t *testing.T) {
 	data := `
 	{
 		"state": {
-			"events": [{
+			"events": [
+			{
+				"content": {},
+				"origin_server_ts": 123456,
+				"sender": "@alice:localhost",
+				"state_key": "",
+				"type": "m.room.create",
+				"event_id": "$create"
+			},
+			{
 				"content": {
 					"foo": "bar"
 				},
