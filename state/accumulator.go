@@ -217,7 +217,7 @@ func (a *Accumulator) Initialise(roomID string, state []json.RawMessage) (Initia
 		// single stray event by looking for the create event.
 		hasCreate := false
 		for _, e := range events {
-			if e.Type == "m.room.create" {
+			if e.Type == "m.room.create" && e.StateKey == "" {
 				hasCreate = true
 				break
 			}
