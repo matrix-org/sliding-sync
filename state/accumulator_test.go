@@ -319,7 +319,16 @@ func TestAccumulatorDupeEvents(t *testing.T) {
 	data := `
 	{
 		"state": {
-			"events": [{
+			"events": [
+			{
+				"content": {},
+				"origin_server_ts": 123456,
+				"sender": "@alice:localhost",
+				"state_key": "",
+				"type": "m.room.create",
+				"event_id": "$create"
+			},
+			{
 				"content": {
 					"foo": "bar"
 				},
