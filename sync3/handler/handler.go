@@ -353,7 +353,11 @@ func (h *SyncLiveHandler) setupConnection(req *http.Request, syncReq *sync3.Requ
 			}
 		}
 	}
-	log := hlog.FromRequest(req).With().Str("user", token.UserID).Str("device", token.DeviceID).Logger()
+	log := hlog.FromRequest(req).With().
+		Str("user", token.UserID).
+		Str("device", token.DeviceID).
+		Str("conn", syncReq.ConnID).
+		Logger()
 	internal.SetRequestContextUserID(req.Context(), token.UserID, token.DeviceID)
 	internal.Logf(taskCtx, "setupConnection", "identified access token as user=%s device=%s", token.UserID, token.DeviceID)
 
