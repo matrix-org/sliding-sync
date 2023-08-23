@@ -39,16 +39,18 @@ const (
 	EnvSecret = "SYNCV3_SECRET"
 
 	// Optional fields
-	EnvBindAddr   = "SYNCV3_BINDADDR"
-	EnvTLSCert    = "SYNCV3_TLS_CERT"
-	EnvTLSKey     = "SYNCV3_TLS_KEY"
-	EnvPPROF      = "SYNCV3_PPROF"
-	EnvPrometheus = "SYNCV3_PROM"
-	EnvDebug      = "SYNCV3_DEBUG"
-	EnvJaeger     = "SYNCV3_JAEGER_URL"
-	EnvSentryDsn  = "SYNCV3_SENTRY_DSN"
-	EnvLogLevel   = "SYNCV3_LOG_LEVEL"
-	EnvMaxConns   = "SYNCV3_MAX_DB_CONN"
+	EnvBindAddr     = "SYNCV3_BINDADDR"
+	EnvTLSCert      = "SYNCV3_TLS_CERT"
+	EnvTLSKey       = "SYNCV3_TLS_KEY"
+	EnvPPROF        = "SYNCV3_PPROF"
+	EnvPrometheus   = "SYNCV3_PROM"
+	EnvDebug        = "SYNCV3_DEBUG"
+	EnvOTLP         = "SYNCV3_OTLP_URL"
+	EnvOTLPUsername = "SYNCV3_OTLP_USERNAME"
+	EnvOTLPPassword = "SYNCV3_OTLP_PASSWORD"
+	EnvSentryDsn    = "SYNCV3_SENTRY_DSN"
+	EnvLogLevel     = "SYNCV3_LOG_LEVEL"
+	EnvMaxConns     = "SYNCV3_MAX_DB_CONN"
 )
 
 var helpMsg = fmt.Sprintf(`
@@ -61,11 +63,14 @@ Environment var
 %s    Default: unset. Path to a key file for the certificate. Must be provided along with the certificate file.
 %s      Default: unset. The bind addr for pprof debugging e.g ':6060'. If not set, does not listen.
 %s       Default: unset. The bind addr for Prometheus metrics, which will be accessible at /metrics at this address.
-%s Default: unset. The Jaeger URL to send spans to e.g http://localhost:14268/api/traces - if unset does not send OTLP traces.
+%s Default: unset. The OTLP HTTP URL to send spans to e.g https://localhost:4318 - if unset does not send OTLP traces.
+%s Default: unset. The OTLP username for Basic auth. If unset, does not send an Authorization header.
+%s Default: unset. The OTLP password for Basic auth. If unset, does not send an Authorization header.
 %s Default: unset. The Sentry DSN to report events to e.g https://sliding-sync@sentry.example.com/123 - if unset does not send sentry events.
 %s  Default: info. The level of verbosity for messages logged. Available values are trace, debug, info, warn, error and fatal
 %s Default: unset. Max database connections to use when communicating with postgres. Unset or 0 means no limit.
-`, EnvServer, EnvDB, EnvSecret, EnvBindAddr, EnvTLSCert, EnvTLSKey, EnvPPROF, EnvPrometheus, EnvJaeger, EnvSentryDsn, EnvLogLevel, EnvMaxConns)
+`, EnvServer, EnvDB, EnvSecret, EnvBindAddr, EnvTLSCert, EnvTLSKey, EnvPPROF, EnvPrometheus, EnvOTLP, EnvOTLPUsername, EnvOTLPPassword,
+	EnvSentryDsn, EnvLogLevel, EnvMaxConns)
 
 func defaulting(in, dft string) string {
 	if in == "" {
@@ -85,19 +90,21 @@ func main() {
 	}
 
 	args := map[string]string{
-		EnvServer:     os.Getenv(EnvServer),
-		EnvDB:         os.Getenv(EnvDB),
-		EnvSecret:     os.Getenv(EnvSecret),
-		EnvBindAddr:   defaulting(os.Getenv(EnvBindAddr), "0.0.0.0:8008"),
-		EnvTLSCert:    os.Getenv(EnvTLSCert),
-		EnvTLSKey:     os.Getenv(EnvTLSKey),
-		EnvPPROF:      os.Getenv(EnvPPROF),
-		EnvPrometheus: os.Getenv(EnvPrometheus),
-		EnvDebug:      os.Getenv(EnvDebug),
-		EnvJaeger:     os.Getenv(EnvJaeger),
-		EnvSentryDsn:  os.Getenv(EnvSentryDsn),
-		EnvLogLevel:   os.Getenv(EnvLogLevel),
-		EnvMaxConns:   defaulting(os.Getenv(EnvMaxConns), "0"),
+		EnvServer:       os.Getenv(EnvServer),
+		EnvDB:           os.Getenv(EnvDB),
+		EnvSecret:       os.Getenv(EnvSecret),
+		EnvBindAddr:     defaulting(os.Getenv(EnvBindAddr), "0.0.0.0:8008"),
+		EnvTLSCert:      os.Getenv(EnvTLSCert),
+		EnvTLSKey:       os.Getenv(EnvTLSKey),
+		EnvPPROF:        os.Getenv(EnvPPROF),
+		EnvPrometheus:   os.Getenv(EnvPrometheus),
+		EnvDebug:        os.Getenv(EnvDebug),
+		EnvOTLP:         os.Getenv(EnvOTLP),
+		EnvOTLPUsername: os.Getenv(EnvOTLPUsername),
+		EnvOTLPPassword: os.Getenv(EnvOTLPPassword),
+		EnvSentryDsn:    os.Getenv(EnvSentryDsn),
+		EnvLogLevel:     os.Getenv(EnvLogLevel),
+		EnvMaxConns:     defaulting(os.Getenv(EnvMaxConns), "0"),
 	}
 	requiredEnvVars := []string{EnvServer, EnvDB, EnvSecret, EnvBindAddr}
 	for _, requiredEnvVar := range requiredEnvVars {
@@ -131,9 +138,9 @@ func main() {
 			}
 		}()
 	}
-	if args[EnvJaeger] != "" {
-		fmt.Printf("Configuring Jaeger collector...\n")
-		if err := internal.ConfigureJaeger(args[EnvJaeger], syncv3.Version); err != nil {
+	if args[EnvOTLP] != "" {
+		fmt.Printf("Configuring OTLP collector...\n")
+		if err := internal.ConfigureOTLP(args[EnvOTLP], args[EnvOTLPUsername], args[EnvOTLPPassword], syncv3.Version); err != nil {
 			panic(err)
 		}
 	}
@@ -193,7 +200,7 @@ func main() {
 	})
 
 	go h2.StartV2Pollers()
-	if args[EnvJaeger] != "" {
+	if args[EnvOTLP] != "" {
 		h3 = otelhttp.NewHandler(h3, "Sync")
 	}
 
