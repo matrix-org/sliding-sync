@@ -91,7 +91,7 @@ func ConfigureOTLP(otlpURL, otlpUser, otlpPass, version string) error {
 	if isInsecure {
 		opts = append(opts, otlptracehttp.WithInsecure())
 	}
-	fmt.Println("ConfigureOTLP: host=", parsedOTLPURL.Host, "insecure=", isInsecure)
+	fmt.Println("ConfigureOTLP: host=", parsedOTLPURL.Host, "insecure=", isInsecure, "basic auth=", otlpPass != "" && otlpUser != "")
 	if otlpPass != "" && otlpUser != "" {
 		opts = append(opts, otlptracehttp.WithHeaders(
 			map[string]string{

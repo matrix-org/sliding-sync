@@ -90,19 +90,21 @@ func main() {
 	}
 
 	args := map[string]string{
-		EnvServer:     os.Getenv(EnvServer),
-		EnvDB:         os.Getenv(EnvDB),
-		EnvSecret:     os.Getenv(EnvSecret),
-		EnvBindAddr:   defaulting(os.Getenv(EnvBindAddr), "0.0.0.0:8008"),
-		EnvTLSCert:    os.Getenv(EnvTLSCert),
-		EnvTLSKey:     os.Getenv(EnvTLSKey),
-		EnvPPROF:      os.Getenv(EnvPPROF),
-		EnvPrometheus: os.Getenv(EnvPrometheus),
-		EnvDebug:      os.Getenv(EnvDebug),
-		EnvOTLP:       os.Getenv(EnvOTLP),
-		EnvSentryDsn:  os.Getenv(EnvSentryDsn),
-		EnvLogLevel:   os.Getenv(EnvLogLevel),
-		EnvMaxConns:   defaulting(os.Getenv(EnvMaxConns), "0"),
+		EnvServer:       os.Getenv(EnvServer),
+		EnvDB:           os.Getenv(EnvDB),
+		EnvSecret:       os.Getenv(EnvSecret),
+		EnvBindAddr:     defaulting(os.Getenv(EnvBindAddr), "0.0.0.0:8008"),
+		EnvTLSCert:      os.Getenv(EnvTLSCert),
+		EnvTLSKey:       os.Getenv(EnvTLSKey),
+		EnvPPROF:        os.Getenv(EnvPPROF),
+		EnvPrometheus:   os.Getenv(EnvPrometheus),
+		EnvDebug:        os.Getenv(EnvDebug),
+		EnvOTLP:         os.Getenv(EnvOTLP),
+		EnvOTLPUsername: os.Getenv(EnvOTLPUsername),
+		EnvOTLPPassword: os.Getenv(EnvOTLPPassword),
+		EnvSentryDsn:    os.Getenv(EnvSentryDsn),
+		EnvLogLevel:     os.Getenv(EnvLogLevel),
+		EnvMaxConns:     defaulting(os.Getenv(EnvMaxConns), "0"),
 	}
 	requiredEnvVars := []string{EnvServer, EnvDB, EnvSecret, EnvBindAddr}
 	for _, requiredEnvVar := range requiredEnvVars {
