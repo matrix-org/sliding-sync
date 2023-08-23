@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/base64"
 	"fmt"
+	"net/url"
 	"runtime/trace"
 
 	"go.opentelemetry.io/otel"
@@ -75,9 +76,22 @@ func StartTask(ctx context.Context, name string) (context.Context, *Task) {
 
 func ConfigureOTLP(otlpURL, otlpUser, otlpPass, version string) error {
 	ctx := context.Background()
-	opts := []otlptracehttp.Option{
-		otlptracehttp.WithEndpoint(otlpURL),
+	parsedOTLPURL, err := url.Parse(otlpURL)
+	if err != nil {
+		return err
 	}
+	isInsecure := parsedOTLPURL.Scheme == "http" // e.g testing and development
+	if parsedOTLPURL.Path != "" {
+		return fmt.Errorf("OTLP URL %s cannot contain any path segments", otlpURL)
+	}
+
+	opts := []otlptracehttp.Option{
+		otlptracehttp.WithEndpoint(parsedOTLPURL.Host),
+	}
+	if isInsecure {
+		opts = append(opts, otlptracehttp.WithInsecure())
+	}
+	fmt.Println("ConfigureOTLP: host=", parsedOTLPURL.Host, "insecure=", isInsecure)
 	if otlpPass != "" && otlpUser != "" {
 		opts = append(opts, otlptracehttp.WithHeaders(
 			map[string]string{
