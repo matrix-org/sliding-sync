@@ -54,7 +54,7 @@ func deleteFromTable(ctx context.Context, tx *sql.Tx, table string, roomIDs []st
 	if err != nil {
 		logger.Warn().Err(err).Msgf("Couldn't get number of rows deleted from %s", table)
 	} else {
-		logger.Info().Msgf("Deleted %d snapshots from %s", ra, table)
+		logger.Info().Msgf("Deleted %d rows from %s", ra, table)
 	}
 	return nil
 }
