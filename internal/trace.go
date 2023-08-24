@@ -23,8 +23,34 @@ const tracerName = "sliding-sync"
 type TraceKey string
 
 var (
-	OTLPSpan TraceKey = "otlp"
+	OTLPTagDeviceID TraceKey = "device_id"
+	OTLPTagUserID   TraceKey = "user_id"
+	OTLPTagConnID   TraceKey = "conn_id"
+	OTLPTagTxnID    TraceKey = "txn_id"
 )
+
+// SetAttributeOnContext sets one of the trace tag keys on the given context, so derived spans will use said tags.
+func SetAttributeOnContext(ctx context.Context, key TraceKey, val string) context.Context {
+	return context.WithValue(ctx, key, val)
+}
+
+// attributesFromContext sets span tags based on data in the provided ctx
+func attributesFromContext(ctx context.Context) []otrace.SpanStartOption {
+	var attrs []attribute.KeyValue
+	for _, tag := range []TraceKey{OTLPTagConnID, OTLPTagDeviceID, OTLPTagUserID, OTLPTagTxnID} {
+		val := ctx.Value(tag)
+		if val == nil {
+			continue
+		}
+		attrs = append(attrs, attribute.String(string(tag), val.(string)))
+	}
+	if len(attrs) == 0 {
+		return nil
+	}
+	return []otrace.SpanStartOption{
+		otrace.WithAttributes(attrs...),
+	}
+}
 
 type Task struct {
 	t *trace.Task
@@ -57,7 +83,7 @@ func Logf(ctx context.Context, category, format string, args ...interface{}) {
 
 func StartSpan(ctx context.Context, name string) (newCtx context.Context, span *RuntimeTraceOTLPSpan) {
 	region := trace.StartRegion(ctx, name)
-	newCtx, ospan := otel.Tracer(tracerName).Start(ctx, name)
+	newCtx, ospan := otel.Tracer(tracerName).Start(ctx, name, attributesFromContext(ctx)...)
 	// use the same api as NewTask to allow context nesting
 	return newCtx, &RuntimeTraceOTLPSpan{
 		region: region,
@@ -67,7 +93,7 @@ func StartSpan(ctx context.Context, name string) (newCtx context.Context, span *
 
 func StartTask(ctx context.Context, name string) (context.Context, *Task) {
 	ctx, task := trace.NewTask(ctx, name)
-	newCtx, ospan := otel.Tracer(tracerName).Start(ctx, name)
+	newCtx, ospan := otel.Tracer(tracerName).Start(ctx, name, attributesFromContext(ctx)...)
 	return newCtx, &Task{
 		t: task,
 		o: ospan,
