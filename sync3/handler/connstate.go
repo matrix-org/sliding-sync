@@ -15,7 +15,6 @@ import (
 
 type JoinChecker interface {
 	IsUserJoined(userID, roomID string) bool
-	IsUserInvited(userID, roomID string) bool
 }
 
 // ConnState tracks all high-level connection state for this connection, like the combined request
@@ -596,7 +595,8 @@ func (s *ConnState) getInitialRoomData(ctx context.Context, roomSub sync3.RoomSu
 	// since we'll be using the invite_state only.
 	loadRoomIDs := make([]string, 0, len(roomIDs))
 	for _, roomID := range roomIDs {
-		if !s.joinChecker.IsUserInvited(s.userID, roomID) {
+		userRoomData, ok := roomIDToUserRoomData[roomID]
+		if !ok || !userRoomData.IsInvite {
 			loadRoomIDs = append(loadRoomIDs, roomID)
 		}
 	}
