@@ -222,6 +222,12 @@ func (h *SyncLiveHandler) serve(w http.ResponseWriter, req *http.Request) error 
 			}
 		}
 	}
+	if requestBody.ConnID != "" {
+		req = req.WithContext(internal.SetAttributeOnContext(req.Context(), internal.OTLPTagConnID, requestBody.ConnID))
+	}
+	if requestBody.TxnID != "" {
+		req = req.WithContext(internal.SetAttributeOnContext(req.Context(), internal.OTLPTagTxnID, requestBody.TxnID))
+	}
 	hlog.FromRequest(req).UpdateContext(func(c zerolog.Context) zerolog.Context {
 		c.Str("txn_id", requestBody.TxnID)
 		return c
@@ -243,7 +249,7 @@ func (h *SyncLiveHandler) serve(w http.ResponseWriter, req *http.Request) error 
 		}
 	}
 
-	conn, herr := h.setupConnection(req, &requestBody, req.URL.Query().Get("pos") != "")
+	req, conn, herr := h.setupConnection(req, &requestBody, req.URL.Query().Get("pos") != "")
 	if herr != nil {
 		logErrorOrWarning("failed to get or create Conn", herr)
 		return herr
@@ -320,7 +326,7 @@ func (h *SyncLiveHandler) serve(w http.ResponseWriter, req *http.Request) error 
 // setupConnection associates this request with an existing connection or makes a new connection.
 // It also sets a v2 sync poll loop going if one didn't exist already for this user.
 // When this function returns, the connection is alive and active.
-func (h *SyncLiveHandler) setupConnection(req *http.Request, syncReq *sync3.Request, containsPos bool) (*sync3.Conn, *internal.HandlerError) {
+func (h *SyncLiveHandler) setupConnection(req *http.Request, syncReq *sync3.Request, containsPos bool) (*http.Request, *sync3.Conn, *internal.HandlerError) {
 	taskCtx, task := internal.StartTask(req.Context(), "setupConnection")
 	defer task.End()
 	var conn *sync3.Conn
@@ -328,7 +334,7 @@ func (h *SyncLiveHandler) setupConnection(req *http.Request, syncReq *sync3.Requ
 	accessToken, err := internal.ExtractAccessToken(req)
 	if err != nil || accessToken == "" {
 		hlog.FromRequest(req).Warn().Err(err).Msg("failed to get access token from request")
-		return nil, &internal.HandlerError{
+		return req, nil, &internal.HandlerError{
 			StatusCode: http.StatusUnauthorized,
 			Err:        err,
 		}
@@ -342,17 +348,19 @@ func (h *SyncLiveHandler) setupConnection(req *http.Request, syncReq *sync3.Requ
 			hlog.FromRequest(req).Info().Msg("Received connection from unknown access token, querying with homeserver")
 			newToken, herr := h.identifyUnknownAccessToken(accessToken, hlog.FromRequest(req))
 			if herr != nil {
-				return nil, herr
+				return req, nil, herr
 			}
 			token = newToken
 		} else {
 			hlog.FromRequest(req).Err(err).Msg("Failed to lookup access token")
-			return nil, &internal.HandlerError{
+			return req, nil, &internal.HandlerError{
 				StatusCode: http.StatusInternalServerError,
 				Err:        err,
 			}
 		}
 	}
+	req = req.WithContext(internal.SetAttributeOnContext(req.Context(), internal.OTLPTagUserID, token.UserID))
+	req = req.WithContext(internal.SetAttributeOnContext(req.Context(), internal.OTLPTagDeviceID, token.DeviceID))
 	log := hlog.FromRequest(req).With().
 		Str("user", token.UserID).
 		Str("device", token.DeviceID).
@@ -379,10 +387,10 @@ func (h *SyncLiveHandler) setupConnection(req *http.Request, syncReq *sync3.Requ
 		conn = h.ConnMap.Conn(connID)
 		if conn != nil {
 			log.Trace().Str("conn", conn.ConnID.String()).Msg("reusing conn")
-			return conn, nil
+			return req, conn, nil
 		}
 		// conn doesn't exist, we probably nuked it.
-		return nil, internal.ExpiredSessionError()
+		return req, nil, internal.ExpiredSessionError()
 	}
 
 	pid := sync2.PollerID{UserID: token.UserID, DeviceID: token.DeviceID}
@@ -393,7 +401,7 @@ func (h *SyncLiveHandler) setupConnection(req *http.Request, syncReq *sync3.Requ
 	// We'll be quicker next time as the poller will already exist.
 	if req.Context().Err() != nil {
 		log.Warn().Msg("client gave up, not creating connection")
-		return nil, &internal.HandlerError{
+		return req, nil, &internal.HandlerError{
 			StatusCode: 400,
 			Err:        req.Context().Err(),
 		}
@@ -402,7 +410,7 @@ func (h *SyncLiveHandler) setupConnection(req *http.Request, syncReq *sync3.Requ
 	userCache, err := h.userCache(token.UserID)
 	if err != nil {
 		log.Warn().Err(err).Msg("failed to load user cache")
-		return nil, &internal.HandlerError{
+		return req, nil, &internal.HandlerError{
 			StatusCode: 500,
 			Err:        err,
 		}
@@ -424,7 +432,7 @@ func (h *SyncLiveHandler) setupConnection(req *http.Request, syncReq *sync3.Requ
 	} else {
 		log.Info().Msg("using existing connection")
 	}
-	return conn, nil
+	return req, conn, nil
 }
 
 func (h *SyncLiveHandler) identifyUnknownAccessToken(accessToken string, logger *zerolog.Logger) (*sync2.Token, *internal.HandlerError) {

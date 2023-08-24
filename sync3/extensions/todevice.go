@@ -4,9 +4,10 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"github.com/matrix-org/sliding-sync/internal"
 	"strconv"
 	"sync"
+
+	"github.com/matrix-org/sliding-sync/internal"
 
 	"github.com/matrix-org/sliding-sync/sync3/caches"
 )
@@ -83,6 +84,7 @@ func (r *ToDeviceRequest) ProcessInitial(ctx context.Context, res *Response, ext
 	}
 	mapMu.Lock()
 	lastSentPos := deviceIDToSinceDebugOnly[extCtx.DeviceID]
+	internal.Logf(ctx, "to_device", "since=%v limit=%v last_sent=%v", r.Since, r.Limit, lastSentPos)
 	mapMu.Unlock()
 	if from < lastSentPos {
 		// we told the client about a newer position, but yet they are using an older position, yell loudly
