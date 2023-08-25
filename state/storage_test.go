@@ -17,6 +17,7 @@ import (
 	"github.com/matrix-org/sliding-sync/internal"
 	"github.com/matrix-org/sliding-sync/sqlutil"
 	"github.com/matrix-org/sliding-sync/testutils"
+	"github.com/stretchr/testify/assert"
 	"github.com/tidwall/gjson"
 )
 
@@ -874,8 +875,9 @@ func TestCircularSlice(t *testing.T) {
 
 }
 
+// Test to validate that LatestEventsInRooms and LatestEventsInRoomsV2 return the same results
 func TestLatestEventsInRooms(t *testing.T) {
-	//assertNoError(t, cleanDB(t))
+	assertNoError(t, cleanDB(t))
 	store := NewStorage(postgresConnectionString)
 	defer store.Teardown()
 
@@ -921,25 +923,16 @@ func TestLatestEventsInRooms(t *testing.T) {
 
 	}
 
-	limit := 1
+	limit := 5
 	var to int64 = 100
 
 	events, err := store.LatestEventsInRooms(alice, []string{roomAlice, roomAliceBob}, to, limit)
 	assertNoError(t, err)
-	for _, ev := range events {
-		t.Logf("EV: %#v", ev)
-	}
 
 	eventsV2, err := store.LatestEventsInRoomsV2(alice, []string{roomAlice, roomAliceBob}, to, limit)
 	assertNoError(t, err)
-	for _, ev := range eventsV2 {
-		t.Logf("EV: %#v", ev)
-	}
 
-	if !reflect.DeepEqual(events, eventsV2) {
-		t.Fatalf("expected results to be the same")
-	}
-
+	assert.Equal(t, events, eventsV2)
 }
 
 func cleanDB(t *testing.T) error {

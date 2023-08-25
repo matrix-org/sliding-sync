@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"os"
 	"strings"
-	"time"
 
 	"github.com/getsentry/sentry-go"
 	"github.com/lib/pq"
@@ -571,10 +570,6 @@ func (s *Storage) RoomStateAfterEventPosition(ctx context.Context, roomIDs []str
 }
 
 func (s *Storage) LatestEventsInRooms(userID string, roomIDs []string, to int64, limit int) (map[string]*LatestEvents, error) {
-	start := time.Now()
-	defer func() {
-		logger.Trace().Dur("duration", time.Since(start)).Msg("LatestEventsInRooms")
-	}()
 	roomIDToRanges, err := s.visibleEventNIDsBetweenForRooms(userID, roomIDs, 0, to)
 	if err != nil {
 		return nil, err
@@ -628,10 +623,6 @@ func (s *Storage) LatestEventsInRooms(userID string, roomIDs []string, to int64,
 }
 
 func (s *Storage) LatestEventsInRoomsV2(userID string, roomIDs []string, to int64, limit int) (map[string]*LatestEvents, error) {
-	start := time.Now()
-	defer func() {
-		logger.Trace().Int("rooms", len(roomIDs)).Dur("duration", time.Since(start)).Msg("LatestEventsInRoomsV2")
-	}()
 	roomIDToRanges, err := s.visibleEventNIDsBetweenForRooms(userID, roomIDs, 0, to)
 	if err != nil {
 		return nil, err
@@ -674,19 +665,6 @@ func (s *Storage) LatestEventsInRoomsV2(userID string, roomIDs []string, to int6
 			r.PrevBatch = ev.PrevBatch.String
 			result[ev.RoomID] = r
 		}
-
-		/*
-			for roomID, nid := range earliestEventNIDMap {
-				if nid != 0 {
-					prevBatch, err := s.EventsTable.SelectClosestPrevBatch(txn, roomID, nid)
-					if err != nil {
-						return fmt.Errorf("failed to select prev_batch for room %s : %s", roomID, err)
-					}
-					result[roomID].PrevBatch = prevBatch
-				}
-			}
-
-		*/
 		return nil
 	})
 	return result, err
