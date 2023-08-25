@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/getsentry/sentry-go"
 	"github.com/lib/pq"
@@ -570,6 +571,10 @@ func (s *Storage) RoomStateAfterEventPosition(ctx context.Context, roomIDs []str
 }
 
 func (s *Storage) LatestEventsInRooms(userID string, roomIDs []string, to int64, limit int) (map[string]*LatestEvents, error) {
+	start := time.Now()
+	defer func() {
+		logger.Trace().Dur("duration", time.Since(start)).Msg("LatestEventsInRooms")
+	}()
 	roomIDToRanges, err := s.visibleEventNIDsBetweenForRooms(userID, roomIDs, 0, to)
 	if err != nil {
 		return nil, err
@@ -617,6 +622,71 @@ func (s *Storage) LatestEventsInRooms(userID string, roomIDs []string, to int64,
 			}
 			result[roomID] = &latestEvents
 		}
+		return nil
+	})
+	return result, err
+}
+
+func (s *Storage) LatestEventsInRoomsV2(userID string, roomIDs []string, to int64, limit int) (map[string]*LatestEvents, error) {
+	start := time.Now()
+	defer func() {
+		logger.Trace().Int("rooms", len(roomIDs)).Dur("duration", time.Since(start)).Msg("LatestEventsInRoomsV2")
+	}()
+	roomIDToRanges, err := s.visibleEventNIDsBetweenForRooms(userID, roomIDs, 0, to)
+	if err != nil {
+		return nil, err
+	}
+	result := make(map[string]*LatestEvents, len(roomIDs))
+
+	queryRoomIDs := make([]string, 0, len(roomIDToRanges))
+	queryStartNIDs := make([]int64, 0, len(roomIDToRanges))
+	queryEndNIDs := make([]int64, 0, len(roomIDToRanges))
+
+	// build the query parameters
+	for roomID, ranges := range roomIDToRanges {
+		// start at the most recent range as we want to return the most recent `limit` events
+		for i := len(ranges) - 1; i >= 0; i-- {
+			r := ranges[i]
+			queryRoomIDs = append(queryRoomIDs, roomID)
+			queryStartNIDs = append(queryStartNIDs, r[0]-1)
+			queryEndNIDs = append(queryEndNIDs, r[1])
+		}
+	}
+
+	err = sqlutil.WithTransaction(s.Accumulator.db, func(txn *sqlx.Tx) error {
+		events, err := s.EventsTable.SelectLatestEventsBetweenV2(txn, queryRoomIDs, queryStartNIDs, queryEndNIDs, limit)
+		if err != nil {
+			return err
+		}
+
+		earliestEventNIDMap := make(map[string]int64)
+		for _, ev := range events {
+			r, exists := result[ev.RoomID]
+			if !exists {
+				r = &LatestEvents{}
+			}
+			// keep pushing to the front so we end up with A,B,C
+			r.Timeline = append([]json.RawMessage{ev.JSON}, r.Timeline...)
+			if r.LatestNID == 0 { // set first time and never again
+				r.LatestNID = ev.NID
+			}
+			earliestEventNIDMap[ev.RoomID] = ev.NID
+			r.PrevBatch = ev.PrevBatch.String
+			result[ev.RoomID] = r
+		}
+
+		/*
+			for roomID, nid := range earliestEventNIDMap {
+				if nid != 0 {
+					prevBatch, err := s.EventsTable.SelectClosestPrevBatch(txn, roomID, nid)
+					if err != nil {
+						return fmt.Errorf("failed to select prev_batch for room %s : %s", roomID, err)
+					}
+					result[roomID].PrevBatch = prevBatch
+				}
+			}
+
+		*/
 		return nil
 	})
 	return result, err

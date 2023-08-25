@@ -3,10 +3,12 @@ package state
 import (
 	"bytes"
 	"context"
+	"database/sql"
 	"encoding/json"
 	"fmt"
 	"reflect"
 	"sort"
+	"strconv"
 	"testing"
 	"time"
 
@@ -868,6 +870,74 @@ func TestCircularSlice(t *testing.T) {
 			t.Errorf("%s: got %v want %v", tc.name, cs.vals, tc.want)
 		}
 
+	}
+
+}
+
+func TestLatestEventsInRooms(t *testing.T) {
+	//assertNoError(t, cleanDB(t))
+	store := NewStorage(postgresConnectionString)
+	defer store.Teardown()
+
+	alice := "@alice:localhost"
+	bob := "@bob:localhost"
+	roomAlice := "!alice"
+	roomAliceBob := "!alice_bob"
+	roomIDToEventMap := map[string][]json.RawMessage{
+		roomAlice: {
+			testutils.NewStateEvent(t, "m.room.create", "", alice, map[string]interface{}{"creator": alice}),
+			testutils.NewJoinEvent(t, alice),
+			testutils.NewStateEvent(t, "m.room.encryption", "", alice, map[string]interface{}{"algorithm": "m.megolm.v1.aes-sha2"}),
+		},
+		roomAliceBob: {
+			testutils.NewStateEvent(t, "m.room.create", "", bob, map[string]interface{}{"creator": bob}),
+			testutils.NewJoinEvent(t, bob),
+			testutils.NewJoinEvent(t, alice),
+			testutils.NewStateEvent(t, "m.room.canonical_alias", "", alice, map[string]interface{}{"alias": "#alias"}),
+		},
+	}
+
+	for roomID, stateEvents := range roomIDToEventMap {
+		_, err := store.Initialise(roomID, stateEvents)
+		assertNoError(t, err)
+
+		var dummyEvents []Event
+		for i := 0; i <= 5; i++ {
+			ev := testutils.NewMessageEvent(t, alice, "hello world!")
+			dbEv := Event{
+				RoomID:    roomID,
+				JSON:      ev,
+				ID:        "$" + roomID + alice + strconv.Itoa(i),
+				PrevBatch: sql.NullString{String: "prev_batch" + alice + strconv.Itoa(i), Valid: true},
+			}
+			dummyEvents = append(dummyEvents, dbEv)
+		}
+
+		err = sqlutil.WithTransaction(store.DB, func(txn *sqlx.Tx) error {
+			_, err = store.EventsTable.Insert(txn, dummyEvents, false)
+			return err
+		})
+		assertNoError(t, err)
+
+	}
+
+	limit := 1
+	var to int64 = 100
+
+	events, err := store.LatestEventsInRooms(alice, []string{roomAlice, roomAliceBob}, to, limit)
+	assertNoError(t, err)
+	for _, ev := range events {
+		t.Logf("EV: %#v", ev)
+	}
+
+	eventsV2, err := store.LatestEventsInRoomsV2(alice, []string{roomAlice, roomAliceBob}, to, limit)
+	assertNoError(t, err)
+	for _, ev := range eventsV2 {
+		t.Logf("EV: %#v", ev)
+	}
+
+	if !reflect.DeepEqual(events, eventsV2) {
+		t.Fatalf("expected results to be the same")
 	}
 
 }
