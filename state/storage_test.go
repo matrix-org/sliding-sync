@@ -14,11 +14,12 @@ import (
 
 	"github.com/jmoiron/sqlx"
 	"github.com/matrix-org/gomatrixserverlib"
+	"github.com/stretchr/testify/assert"
+	"github.com/tidwall/gjson"
+
 	"github.com/matrix-org/sliding-sync/internal"
 	"github.com/matrix-org/sliding-sync/sqlutil"
 	"github.com/matrix-org/sliding-sync/testutils"
-	"github.com/stretchr/testify/assert"
-	"github.com/tidwall/gjson"
 )
 
 func TestStorageRoomStateBeforeAndAfterEventPosition(t *testing.T) {
@@ -911,6 +912,10 @@ func TestLatestEventsInRooms(t *testing.T) {
 				JSON:      ev,
 				ID:        "$" + roomID + alice + strconv.Itoa(i),
 				PrevBatch: sql.NullString{String: "prev_batch" + alice + strconv.Itoa(i), Valid: true},
+			}
+			// set the last prevBatch to null, so this is tested as well
+			if i == 5 {
+				dbEv.PrevBatch = sql.NullString{}
 			}
 			dummyEvents = append(dummyEvents, dbEv)
 		}

@@ -356,8 +356,8 @@ WITH input AS (
            unnest($3::bigint[]) end
 )
 SELECT room_id, event_nid, event, prev_batch FROM input,
-lateral (SELECT room_id, event_nid, event FROM syncv3_events WHERE event_nid > input.start AND event_nid <= input.end AND room_id = input.roomID AND is_state=FALSE ORDER BY event_nid DESC LIMIT $4 ) AS events,
-lateral (SELECT prev_batch FROM syncv3_events WHERE prev_batch IS NOT NULL AND room_id=input.roomID AND event_nid >= events.event_nid LIMIT 1) AS prevBatch
+LATERAL (SELECT room_id, event_nid, event FROM syncv3_events WHERE event_nid > input.start AND event_nid <= input.end AND room_id = input.roomID AND is_state=FALSE ORDER BY event_nid DESC LIMIT $4 ) AS events
+LEFT JOIN LATERAL (SELECT prev_batch FROM syncv3_events WHERE prev_batch IS NOT NULL AND room_id=input.roomID AND event_nid >= events.event_nid LIMIT 1) AS prevBatch ON true
 `,
 		pq.StringArray(roomIDs), pq.Int64Array(startNIDs), pq.Int64Array(endNIDs), limit,
 	)
