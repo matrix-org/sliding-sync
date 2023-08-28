@@ -351,9 +351,9 @@ func (t *EventTable) SelectLatestEventsBetweenV2(txn *sqlx.Tx, roomIDs []string,
 	// do not pull in events which were in the v2 state block
 	err := txn.Select(&events, `
 WITH input AS (
-    select unnest($1::text[]) roomID,
-           unnest($2::bigint[]) start,
-           unnest($3::bigint[]) end
+    select unnest($1::text[]) AS roomID,
+           unnest($2::bigint[]) AS start,
+           unnest($3::bigint[]) AS end
 )
 SELECT room_id, event_nid, event, prev_batch FROM input,
 LATERAL (SELECT room_id, event_nid, event FROM syncv3_events WHERE event_nid > input.start AND event_nid <= input.end AND room_id = input.roomID AND is_state=FALSE ORDER BY event_nid DESC LIMIT $4 ) AS events
