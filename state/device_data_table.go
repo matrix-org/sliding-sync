@@ -55,7 +55,14 @@ func (t *DeviceDataTable) Select(userID, deviceID string, swap bool) (result *in
 			return err
 		}
 		// unmarshal to swap
-		if err = cbor.Unmarshal(row.Data, &result); err != nil {
+		opts := cbor.DecOptions{
+			MaxMapPairs: 1000000000, // 1 billion :(
+		}
+		decMode, err := opts.DecMode()
+		if err != nil {
+			return err
+		}
+		if err = decMode.Unmarshal(row.Data, &result); err != nil {
 			return err
 		}
 		result.UserID = userID
