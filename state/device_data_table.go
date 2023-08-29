@@ -104,7 +104,14 @@ func (t *DeviceDataTable) Upsert(dd *internal.DeviceData) (err error) {
 		// unmarshal and combine
 		var tempDD internal.DeviceData
 		if len(row.Data) > 0 {
-			if err = cbor.Unmarshal(row.Data, &tempDD); err != nil {
+			opts := cbor.DecOptions{
+				MaxMapPairs: 1000000000, // 1 billion :(
+			}
+			decMode, err := opts.DecMode()
+			if err != nil {
+				return err
+			}
+			if err = decMode.Unmarshal(row.Data, &tempDD); err != nil {
 				return err
 			}
 		}
