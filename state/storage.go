@@ -550,8 +550,6 @@ ORDER BY event_nid ASC`
 			query, args, err := sqlx.In(qry, args...)
 
 			if err != nil {
-				logger.Trace().Msgf("Query: %s", qry)
-				logger.Trace().Msgf("Args: %#v", args)
 				return fmt.Errorf("failed to form sql query: %s", err)
 			}
 			qryStart := time.Now()
@@ -559,8 +557,6 @@ ORDER BY event_nid ASC`
 			if err != nil {
 				return fmt.Errorf("failed to execute query: %s", err)
 			}
-			logger.Trace().Msgf("%s - Query: %s", time.Since(qryStart), query)
-			logger.Trace().Msgf("Args: %#v", args)
 			defer rows.Close()
 			eventCount := 0
 			for rows.Next() {
