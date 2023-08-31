@@ -789,3 +789,21 @@ func serialise(t *testing.T, thing interface{}) string {
 func intPtr(val int) *int {
 	return &val
 }
+
+func TestDummy(t *testing.T) {
+	//room sub[!OGEhHVWSdvArJzumhm:matrix.org] {[[m.room.avatar ] [m.room.encryption ] [m.room.member $LAZY] [m.room.member $ME] [m.room.canonical_alias ] [m.room.name ] [m.room.power_levels ]] 16 <nil>}
+	x := sync3.RoomSubscription{
+		RequiredState: [][2]string{
+			{"m.room.avatar", ""},
+			{"m.room.encryption", ""},
+			{"m.room.canonical_alias", ""},
+			{"m.room.name", ""},
+			{"m.room.power_levels", ""},
+			{"m.room.member", "$LAZY"},
+			{"m.room.member", "$ME"},
+		},
+		TimelineLimit: 16,
+	}
+
+	t.Logf("%#v", x.RequiredStateMap("@s7evink:dendrite.s3cr3t.me").QueryStateMap())
+}

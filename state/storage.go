@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/getsentry/sentry-go"
 	"github.com/lib/pq"
@@ -524,11 +525,15 @@ func (s *Storage) RoomStateAfterEventPosition(ctx context.Context, roomIDs []str
 			if err != nil {
 				return fmt.Errorf("failed to form sql query: %s", err)
 			}
+			qryStart := time.Now()
 			rows, err := txn.Query(txn.Rebind(query), args...)
 			if err != nil {
 				return fmt.Errorf("failed to execute query: %s", err)
 			}
+			logger.Trace().Msgf("%s - Query: %s", time.Since(qryStart), query)
+			logger.Trace().Msgf("Args: %#v", args)
 			defer rows.Close()
+			eventCount := 0
 			for rows.Next() {
 				var ev Event
 				if err := rows.Scan(&ev.NID, &ev.RoomID, &ev.Type, &ev.StateKey, &ev.JSON); err != nil {
@@ -540,7 +545,9 @@ func (s *Storage) RoomStateAfterEventPosition(ctx context.Context, roomIDs []str
 					ev = latestEvents[i]
 				}
 				roomToEvents[ev.RoomID] = append(roomToEvents[ev.RoomID], ev)
+				eventCount++
 			}
+			logger.Trace().Int("events", eventCount).Strs("rooms", roomIDs).Msgf("%s - Received events from database", time.Since(qryStart))
 			// handle the most recent events which won't be in the snapshot but may need to be.
 			// we handle the replace case but don't handle brand new state events
 			for i := range latestEvents {
