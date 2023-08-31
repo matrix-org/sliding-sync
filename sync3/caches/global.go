@@ -7,10 +7,11 @@ import (
 	"sort"
 	"sync"
 
-	"github.com/matrix-org/sliding-sync/internal"
-	"github.com/matrix-org/sliding-sync/state"
 	"github.com/rs/zerolog"
 	"github.com/tidwall/gjson"
+
+	"github.com/matrix-org/sliding-sync/internal"
+	"github.com/matrix-org/sliding-sync/state"
 )
 
 type EventData struct {
@@ -196,7 +197,13 @@ func (c *GlobalCache) LoadRoomState(ctx context.Context, roomIDs []string, loadP
 		return nil
 	}
 	resultMap := make(map[string][]json.RawMessage, len(roomIDs))
-	roomIDToStateEvents, err := c.store.RoomStateAfterEventPosition(ctx, roomIDs, loadPosition, requiredStateMap.QueryStateMap())
+	var userIDs []string
+
+	for _, users := range roomToUsersInTimeline {
+		userIDs = append(userIDs, users...)
+	}
+
+	roomIDToStateEvents, err := c.store.RoomStateAfterEventPosition(ctx, roomIDs, loadPosition, requiredStateMap.QueryStateMap(), userIDs...)
 	if err != nil {
 		logger.Err(err).Strs("rooms", roomIDs).Int64("pos", loadPosition).Msg("failed to load room state")
 		internal.GetSentryHubFromContextOrDefault(ctx).CaptureException(err)

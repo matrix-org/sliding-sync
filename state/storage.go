@@ -12,10 +12,11 @@ import (
 	"github.com/lib/pq"
 
 	"github.com/jmoiron/sqlx"
-	"github.com/matrix-org/sliding-sync/internal"
-	"github.com/matrix-org/sliding-sync/sqlutil"
 	"github.com/rs/zerolog"
 	"github.com/tidwall/gjson"
+
+	"github.com/matrix-org/sliding-sync/internal"
+	"github.com/matrix-org/sliding-sync/sqlutil"
 )
 
 var logger = zerolog.New(os.Stdout).With().Timestamp().Logger().Output(zerolog.ConsoleWriter{
@@ -377,7 +378,7 @@ func (s *Storage) StateSnapshot(snapID int64) (state []json.RawMessage, err erro
 // Look up room state after the given event position and no further. eventTypesToStateKeys is a map of event type to a list of state keys for that event type.
 // If the list of state keys is empty then all events matching that event type will be returned. If the map is empty entirely, then all room state
 // will be returned.
-func (s *Storage) RoomStateAfterEventPosition(ctx context.Context, roomIDs []string, pos int64, eventTypesToStateKeys map[string][]string) (roomToEvents map[string][]Event, err error) {
+func (s *Storage) RoomStateAfterEventPosition(ctx context.Context, roomIDs []string, pos int64, eventTypesToStateKeys map[string][]string, userIDs ...string) (roomToEvents map[string][]Event, err error) {
 	_, span := internal.StartSpan(ctx, "RoomStateAfterEventPosition")
 	defer span.End()
 	roomToEvents = make(map[string][]Event, len(roomIDs))
@@ -480,7 +481,6 @@ func (s *Storage) RoomStateAfterEventPosition(ctx context.Context, roomIDs []str
 
 			var wheres []string
 			hasMembershipFilter := false
-			var userIDs []string
 			var typeArgs []interface{}
 			for evType, skeys := range eventTypesToStateKeys {
 				if evType == "m.room.member" {
