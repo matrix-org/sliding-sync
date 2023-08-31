@@ -345,6 +345,25 @@ func (t *EventTable) SelectLatestEventsBetween(txn *sqlx.Tx, roomID string, lowe
 	return events, err
 }
 
+// / SELECT prev_batch FROM syncv3_events WHERE prev_batch IS NOT NULL AND room_id=$1 AND event_nid >= $2 LIMIT 1
+func (t *EventTable) SelectLatestEventsBetweenV2(txn *sqlx.Tx, roomIDs []string, startNIDs, endNIDs []int64, limit int) ([]Event, error) {
+	var events []Event
+	// do not pull in events which were in the v2 state block
+	err := txn.Select(&events, `
+WITH input AS (
+    select unnest($1::text[]) AS roomID,
+           unnest($2::bigint[]) AS start,
+           unnest($3::bigint[]) AS end
+)
+SELECT room_id, event_nid, event, prev_batch FROM input,
+LATERAL (SELECT room_id, event_nid, event FROM syncv3_events WHERE event_nid > input.start AND event_nid <= input.end AND room_id = input.roomID AND is_state=FALSE ORDER BY event_nid DESC LIMIT $4 ) AS events
+LEFT JOIN LATERAL (SELECT prev_batch FROM syncv3_events WHERE prev_batch IS NOT NULL AND room_id=input.roomID AND event_nid >= events.event_nid LIMIT 1) AS prevBatch ON true
+`,
+		pq.StringArray(roomIDs), pq.Int64Array(startNIDs), pq.Int64Array(endNIDs), limit,
+	)
+	return events, err
+}
+
 func (t *EventTable) selectLatestEventByTypeInAllRooms(txn *sqlx.Tx) ([]Event, error) {
 	result := []Event{}
 	// TODO: this query ends up doing a sequential scan on the events table. We have

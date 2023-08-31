@@ -3,19 +3,23 @@ package state
 import (
 	"bytes"
 	"context"
+	"database/sql"
 	"encoding/json"
 	"fmt"
 	"reflect"
 	"sort"
+	"strconv"
 	"testing"
 	"time"
 
 	"github.com/jmoiron/sqlx"
 	"github.com/matrix-org/gomatrixserverlib"
+	"github.com/stretchr/testify/assert"
+	"github.com/tidwall/gjson"
+
 	"github.com/matrix-org/sliding-sync/internal"
 	"github.com/matrix-org/sliding-sync/sqlutil"
 	"github.com/matrix-org/sliding-sync/testutils"
-	"github.com/tidwall/gjson"
 )
 
 func TestStorageRoomStateBeforeAndAfterEventPosition(t *testing.T) {
@@ -870,6 +874,70 @@ func TestCircularSlice(t *testing.T) {
 
 	}
 
+}
+
+// Test to validate that LatestEventsInRooms and LatestEventsInRoomsV2 return the same results
+func TestLatestEventsInRooms(t *testing.T) {
+	assertNoError(t, cleanDB(t))
+	store := NewStorage(postgresConnectionString)
+	defer store.Teardown()
+
+	alice := "@alice:localhost"
+	bob := "@bob:localhost"
+	roomAlice := "!alice"
+	roomAliceBob := "!alice_bob"
+	roomIDToEventMap := map[string][]json.RawMessage{
+		roomAlice: {
+			testutils.NewStateEvent(t, "m.room.create", "", alice, map[string]interface{}{"creator": alice}),
+			testutils.NewJoinEvent(t, alice),
+			testutils.NewStateEvent(t, "m.room.encryption", "", alice, map[string]interface{}{"algorithm": "m.megolm.v1.aes-sha2"}),
+		},
+		roomAliceBob: {
+			testutils.NewStateEvent(t, "m.room.create", "", bob, map[string]interface{}{"creator": bob}),
+			testutils.NewJoinEvent(t, bob),
+			testutils.NewJoinEvent(t, alice),
+			testutils.NewStateEvent(t, "m.room.canonical_alias", "", alice, map[string]interface{}{"alias": "#alias"}),
+		},
+	}
+
+	for roomID, stateEvents := range roomIDToEventMap {
+		_, err := store.Initialise(roomID, stateEvents)
+		assertNoError(t, err)
+
+		var dummyEvents []Event
+		for i := 0; i <= 5; i++ {
+			ev := testutils.NewMessageEvent(t, alice, "hello world!")
+			dbEv := Event{
+				RoomID:    roomID,
+				JSON:      ev,
+				ID:        "$" + roomID + alice + strconv.Itoa(i),
+				PrevBatch: sql.NullString{String: "prev_batch" + alice + strconv.Itoa(i), Valid: true},
+			}
+			// set the last prevBatch to null, so this is tested as well
+			if i == 5 {
+				dbEv.PrevBatch = sql.NullString{}
+			}
+			dummyEvents = append(dummyEvents, dbEv)
+		}
+
+		err = sqlutil.WithTransaction(store.DB, func(txn *sqlx.Tx) error {
+			_, err = store.EventsTable.Insert(txn, dummyEvents, false)
+			return err
+		})
+		assertNoError(t, err)
+
+	}
+
+	limit := 5
+	var to int64 = 100
+
+	events, err := store.LatestEventsInRooms(alice, []string{roomAlice, roomAliceBob}, to, limit)
+	assertNoError(t, err)
+
+	eventsV2, err := store.LatestEventsInRoomsV2(alice, []string{roomAlice, roomAliceBob}, to, limit)
+	assertNoError(t, err)
+
+	assert.Equal(t, events, eventsV2)
 }
 
 func cleanDB(t *testing.T) error {
