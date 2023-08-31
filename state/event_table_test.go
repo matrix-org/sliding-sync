@@ -3,6 +3,7 @@ package state
 import (
 	"bytes"
 	"database/sql"
+	"encoding/json"
 	"fmt"
 	"reflect"
 	"testing"
@@ -923,4 +924,169 @@ func TestEventTableSelectUnknownEventIDs(t *testing.T) {
 			t.Errorf("Expected %s to be unknown to the DB, but it wasn't", unknownEventID)
 		}
 	}
+}
+
+func TestEventTableRedact(t *testing.T) {
+	db, close := connectToDB(t)
+	defer close()
+	table := NewEventTable(db)
+	txn, err := db.Beginx()
+	if err != nil {
+		t.Fatalf("failed to start txn: %s", err)
+	}
+	defer txn.Rollback()
+
+	testCases := []struct {
+		original    map[string]interface{}
+		roomVer     string
+		wantContent map[string]interface{}
+	}{
+		// sanity check
+		{
+			original: map[string]interface{}{
+				"type":   "m.room.message",
+				"sender": "@nasty-mc-nastyface:localhost",
+				"content": map[string]interface{}{
+					"msgtype": "m.text",
+					"body":    "Something not very nice",
+				},
+			},
+			wantContent: map[string]interface{}{},
+			roomVer:     "10",
+		},
+		// keep membership
+		{
+			original: map[string]interface{}{
+				"type":      "m.room.member",
+				"state_key": "@nasty-mc-nastyface:localhost",
+				"sender":    "@nasty-mc-nastyface:localhost",
+				"content": map[string]interface{}{
+					"membership":  "join",
+					"displayname": "Something not very nice",
+					"avatar_url":  "mxc://something/not/very/nice",
+				},
+			},
+			wantContent: map[string]interface{}{
+				"membership": "join",
+			},
+			roomVer: "10",
+		},
+		// keep join rule
+		{
+			original: map[string]interface{}{
+				"type":      "m.room.join_rules",
+				"state_key": "",
+				"sender":    "@nasty-mc-nastyface:localhost",
+				"content": map[string]interface{}{
+					"join_rule":  "invite",
+					"extra_data": "not very nice",
+				},
+			},
+			wantContent: map[string]interface{}{
+				"join_rule": "invite",
+			},
+			roomVer: "10",
+		},
+		// keep his vis
+		{
+			original: map[string]interface{}{
+				"type":      "m.room.history_visibility",
+				"state_key": "",
+				"sender":    "@nasty-mc-nastyface:localhost",
+				"content": map[string]interface{}{
+					"history_visibility": "shared",
+					"extra_data":         "not very nice",
+				},
+			},
+			wantContent: map[string]interface{}{
+				"history_visibility": "shared",
+			},
+			roomVer: "10",
+		},
+		// keep version specific fields
+		{
+			original: map[string]interface{}{
+				"type":      "m.room.member",
+				"state_key": "@nasty-mc-nastyface:localhost",
+				"sender":    "@nasty-mc-nastyface:localhost",
+				"content": map[string]interface{}{
+					"membership":                       "join",
+					"displayname":                      "Something not very nice",
+					"avatar_url":                       "mxc://something/not/very/nice",
+					"join_authorised_via_users_server": "@bob:localhost",
+				},
+			},
+			wantContent: map[string]interface{}{
+				"membership":                       "join",
+				"join_authorised_via_users_server": "@bob:localhost",
+			},
+			roomVer: "10",
+		},
+		// remove same field on lower room version
+		{
+			original: map[string]interface{}{
+				"type":      "m.room.member",
+				"state_key": "@nasty-mc-nastyface:localhost",
+				"sender":    "@nasty-mc-nastyface:localhost",
+				"content": map[string]interface{}{
+					"membership":                       "join",
+					"displayname":                      "Something not very nice",
+					"avatar_url":                       "mxc://something/not/very/nice",
+					"join_authorised_via_users_server": "@bob:localhost",
+				},
+			},
+			wantContent: map[string]interface{}{
+				"membership": "join",
+			},
+			roomVer: "2",
+		},
+	}
+
+	roomID := "!TestEventTableRedact"
+	for i, tc := range testCases {
+		eventID := fmt.Sprintf("$TestEventTableRedact_%d", i)
+		tc.original["event_id"] = eventID
+		tc.original["room_id"] = roomID
+		stateKey := ""
+		if tc.original["state_key"] != nil {
+			stateKey = tc.original["state_key"].(string)
+		}
+		j, err := json.Marshal(tc.original)
+		assertNoError(t, err)
+		table.Insert(txn, []Event{
+			{
+				ID:                    eventID,
+				Type:                  tc.original["type"].(string),
+				RoomID:                roomID,
+				StateKey:              stateKey,
+				BeforeStateSnapshotID: 22,
+				JSON:                  j,
+			},
+		}, false)
+		assertNoError(t, table.Redact(txn, tc.roomVer, []string{eventID}))
+		gots, err := table.SelectByIDs(txn, true, []string{eventID})
+		assertNoError(t, err)
+		if len(gots) != 1 {
+			t.Errorf("SelectByIDs: got %v results, want 1", len(gots))
+			continue
+		}
+		got := gots[0]
+		assertVal(t, "event id mismatch", got.ID, eventID)
+		assertVal(t, "room id mismatch", got.RoomID, roomID)
+		var gotJSON map[string]interface{}
+		assertNoError(t, json.Unmarshal(got.JSON, &gotJSON))
+		assertVal(t, "content mismatch", gotJSON["content"], tc.wantContent)
+	}
+}
+
+func TestEventTableRedactMissingOK(t *testing.T) {
+	db, close := connectToDB(t)
+	defer close()
+	table := NewEventTable(db)
+	txn, err := db.Beginx()
+	if err != nil {
+		t.Fatalf("failed to start txn: %s", err)
+	}
+	defer txn.Rollback()
+	assertNoError(t, table.Redact(txn, "2", []string{"$unknown", "$event", "$ids"}))
 }

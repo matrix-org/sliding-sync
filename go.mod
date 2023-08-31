@@ -9,7 +9,7 @@ require (
 	github.com/gorilla/mux v1.8.0
 	github.com/jmoiron/sqlx v1.3.3
 	github.com/lib/pq v1.10.9
-	github.com/matrix-org/gomatrixserverlib v0.0.0-20230105074811-965b10ae73ab
+	github.com/matrix-org/gomatrixserverlib v0.0.0-20230822143230-740f742d6993
 	github.com/matrix-org/util v0.0.0-20200807132607-55161520e1d4
 	github.com/pressly/goose/v3 v3.14.0
 	github.com/prometheus/client_golang v1.13.0

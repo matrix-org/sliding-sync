@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+
 	"github.com/matrix-org/sliding-sync/internal"
 
 	"github.com/getsentry/sentry-go"
@@ -398,11 +399,13 @@ func (a *Accumulator) Accumulate(txn *sqlx.Tx, userID, roomID string, prevBatch 
 
 	var latestNID int64
 	newEvents := make([]Event, 0, len(eventIDToNID))
+	var redactTheseEventIDs []string
 	for _, ev := range dedupedEvents {
 		nid, ok := eventIDToNID[ev.ID]
 		if ok {
 			ev.NID = int64(nid)
-			if gjson.GetBytes(ev.JSON, "state_key").Exists() {
+			parsedEv := gjson.ParseBytes(ev.JSON)
+			if parsedEv.Get("state_key").Exists() {
 				// XXX: reusing this to mean "it's a state event" as well as "it's part of the state v2 response"
 				// its important that we don't insert 'ev' at this point as this should be False in the DB.
 				ev.IsState = true
@@ -412,8 +415,37 @@ func (a *Accumulator) Accumulate(txn *sqlx.Tx, userID, roomID string, prevBatch 
 			if ev.NID > latestNID {
 				latestNID = ev.NID
 			}
+			// if this is a redaction, try to redact the referenced event (best effort)
+			if !ev.IsState && ev.Type == "m.room.redaction" {
+				// look for top-level redacts then content.redacts (room version 11+)
+				redactsEventID := parsedEv.Get("redacts").Str
+				if redactsEventID == "" {
+					redactsEventID = parsedEv.Get("content.redacts").Str
+				}
+				if redactsEventID != "" {
+					redactTheseEventIDs = append(redactTheseEventIDs, redactsEventID)
+				}
+			}
 			newEvents = append(newEvents, ev)
 			timelineNIDs = append(timelineNIDs, ev.NID)
+		}
+	}
+
+	// if we are going to redact things, we need the room version to know the redaction algorithm
+	// so pull it out once now.
+	var roomVersion string
+	if len(redactTheseEventIDs) > 0 {
+		createEventJSON, err := a.eventsTable.SelectCreateEvent(txn, roomID)
+		if err != nil {
+			return 0, nil, fmt.Errorf("SelectCreateEvent: %s", err)
+		}
+		roomVersion = gjson.GetBytes(createEventJSON, "content.room_version").Str
+		if roomVersion == "" {
+			// Defaults to "1" if the key does not exist.
+			roomVersion = "1"
+		}
+		if err = a.eventsTable.Redact(txn, roomVersion, redactTheseEventIDs); err != nil {
+			return 0, nil, err
 		}
 	}
 

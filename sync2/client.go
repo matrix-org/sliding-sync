@@ -9,7 +9,6 @@ import (
 	"net/url"
 	"time"
 
-	"github.com/matrix-org/gomatrixserverlib"
 	"github.com/tidwall/gjson"
 )
 
@@ -135,7 +134,7 @@ type SyncResponse struct {
 	NextBatch   string         `json:"next_batch"`
 	AccountData EventsResponse `json:"account_data"`
 	Presence    struct {
-		Events []gomatrixserverlib.ClientEvent `json:"events,omitempty"`
+		Events []json.RawMessage `json:"events,omitempty"`
 	} `json:"presence"`
 	Rooms       SyncRoomsResponse `json:"rooms"`
 	ToDevice    EventsResponse    `json:"to_device"`
