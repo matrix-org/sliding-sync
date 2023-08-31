@@ -183,7 +183,7 @@ func (s *ConnState) OnIncomingRequest(ctx context.Context, cid sync3.ConnID, req
 		region.End()
 	}
 	setupTime := time.Since(start)
-	s.trackSetupDuration(setupTime, isInitial)
+	s.trackSetupDuration(ctx, setupTime, isInitial)
 	return s.onIncomingRequest(ctx, req, isInitial)
 }
 
@@ -242,7 +242,7 @@ func (s *ConnState) onIncomingRequest(reqCtx context.Context, req *sync3.Request
 		// we will have tons of fast requests logged (as they get tracked and then hit live streaming)
 		// In other words, this metric tracks the time it takes to process _changes_ in the client
 		// requests (initial connection, modifying index positions, etc) which should always be fast.
-		s.trackProcessDuration(time.Since(start), isInitial)
+		s.trackProcessDuration(reqCtx, time.Since(start), isInitial)
 	}
 
 	// do live tracking if we have nothing to tell the client yet
@@ -687,7 +687,7 @@ func (s *ConnState) getInitialRoomData(ctx context.Context, roomSub sync3.RoomSu
 	return rooms
 }
 
-func (s *ConnState) trackSetupDuration(dur time.Duration, isInitial bool) {
+func (s *ConnState) trackSetupDuration(ctx context.Context, dur time.Duration, isInitial bool) {
 	if s.setupHistogramVec == nil {
 		return
 	}
@@ -696,9 +696,10 @@ func (s *ConnState) trackSetupDuration(dur time.Duration, isInitial bool) {
 		val = "1"
 	}
 	s.setupHistogramVec.WithLabelValues(val).Observe(float64(dur.Seconds()))
+	internal.SetRequestContextSetupDuration(ctx, dur)
 }
 
-func (s *ConnState) trackProcessDuration(dur time.Duration, isInitial bool) {
+func (s *ConnState) trackProcessDuration(ctx context.Context, dur time.Duration, isInitial bool) {
 	if s.processHistogramVec == nil {
 		return
 	}
@@ -707,6 +708,7 @@ func (s *ConnState) trackProcessDuration(dur time.Duration, isInitial bool) {
 		val = "1"
 	}
 	s.processHistogramVec.WithLabelValues(val).Observe(float64(dur.Seconds()))
+	internal.SetRequestContextProcessingDuration(ctx, dur)
 }
 
 // Called when the connection is torn down
