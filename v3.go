@@ -196,7 +196,7 @@ func RunSyncV3Server(h http.Handler, bindAddr, destV2Server, tlsCert, tlsKey str
 				durStr := fmt.Sprintf("%.3f", duration.Seconds())
 				setupDur, processingDur := internal.RequestContextDurations(r.Context())
 				if setupDur != 0 || processingDur != 0 {
-					durStr += fmt.Sprintf("(%.3fs+%.3fp)", setupDur.Seconds(), processingDur.Seconds())
+					durStr += fmt.Sprintf("(%.3f+%.3f)", setupDur.Seconds(), processingDur.Seconds())
 				}
 				entry.Int("status", status).
 					Int("size", size).
