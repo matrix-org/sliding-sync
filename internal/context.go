@@ -3,6 +3,7 @@ package internal
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/getsentry/sentry-go"
 
@@ -25,6 +26,8 @@ type data struct {
 	next                 int64
 	numRooms             int
 	txnID                string
+	setupTime            time.Duration
+	processingTime       time.Duration
 	numToDeviceEvents    int
 	numGlobalAccountData int
 	numChangedDevices    int
@@ -143,4 +146,31 @@ func DecorateLogger(ctx context.Context, l *zerolog.Event) *zerolog.Event {
 	// always log the connection ID so we know when it isn't set
 	l = l.Str("c", da.connID)
 	return l
+}
+
+func SetRequestContextSetupDuration(ctx context.Context, setup time.Duration) {
+	d := ctx.Value(ctxData)
+	if d == nil {
+		return
+	}
+	da := d.(*data)
+	da.setupTime = setup
+}
+
+func SetRequestContextProcessingDuration(ctx context.Context, processing time.Duration) {
+	d := ctx.Value(ctxData)
+	if d == nil {
+		return
+	}
+	da := d.(*data)
+	da.processingTime = processing
+}
+
+func RequestContextDurations(ctx context.Context) (setup time.Duration, processing time.Duration) {
+	d := ctx.Value(ctxData)
+	if d == nil {
+		return 0, 0
+	}
+	da := d.(*data)
+	return da.setupTime, da.processingTime
 }
