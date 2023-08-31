@@ -193,9 +193,14 @@ func RunSyncV3Server(h http.Handler, bindAddr, destV2Server, tlsCert, tlsKey str
 				if !strings.HasSuffix(r.URL.Path, "/sync") {
 					entry.Str("path", r.URL.Path)
 				}
+				durStr := fmt.Sprintf("%.3f", duration.Seconds())
+				setupDur, processingDur := internal.RequestContextDurations(r.Context())
+				if setupDur != 0 || processingDur != 0 {
+					durStr += fmt.Sprintf("(%.3f+%.3f)", setupDur.Seconds(), processingDur.Seconds())
+				}
 				entry.Int("status", status).
 					Int("size", size).
-					Dur("duration", duration).
+					Str("duration", durStr).
 					Msg("")
 			}),
 		},
