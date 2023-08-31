@@ -480,29 +480,31 @@ func (s *Storage) RoomStateAfterEventPosition(ctx context.Context, roomIDs []str
 
 			var wheres []string
 			hasMembershipFilter := false
-			hasOtherFilter := false
+			var userIDs []string
+			var typeArgs []interface{}
 			for evType, skeys := range eventTypesToStateKeys {
 				if evType == "m.room.member" {
 					hasMembershipFilter = true
-				} else {
-					hasOtherFilter = true
+					userIDs = append(userIDs, skeys...)
+					continue
 				}
 				for _, skey := range skeys {
-					args = append(args, evType, skey)
+					typeArgs = append(typeArgs, evType, skey)
 					wheres = append(wheres, "(syncv3_events.event_type = ? AND syncv3_events.state_key = ?)")
 				}
 				if len(skeys) == 0 {
-					args = append(args, evType)
+					typeArgs = append(typeArgs, evType)
 					wheres = append(wheres, "syncv3_events.event_type = ?")
 				}
 			}
 
+			args = append(args, pq.StringArray(userIDs))
+			args = append(args, typeArgs...)
+
 			// figure out which state events to look at - if there is no m.room.member filter we can be super fast
-			nidcols := "array_cat(events, membership_events)"
-			if hasMembershipFilter && !hasOtherFilter {
-				nidcols = "membership_events"
-			} else if !hasMembershipFilter && hasOtherFilter {
-				nidcols = "events"
+			needUnion := false
+			if hasMembershipFilter {
+				needUnion = true
 			}
 			// it's not possible for there to be no membership filter and no other filter, we wouldn't be executing this code
 			// it is possible to have both, so neither if will execute.
@@ -511,18 +513,32 @@ func (s *Storage) RoomStateAfterEventPosition(ctx context.Context, roomIDs []str
 			// We're using a CTE here, since unnestting the nids is quite expensive. Using the array as is
 			// and using ANY() instead performs quite well (e.g. 86k membership events and 130ms execution time, vs
 			// the previous query with unnest took 2.5s)
-			query, args, err := sqlx.In(
-				`
-				WITH nids AS (
-    				SELECT `+nidcols+` AS allNids FROM syncv3_snapshots WHERE syncv3_snapshots.snapshot_id = ANY(?)
-				)
-				SELECT syncv3_events.event_nid, syncv3_events.room_id, syncv3_events.event_type, syncv3_events.state_key, syncv3_events.event 
-				FROM syncv3_events, nids
-				WHERE (`+strings.Join(wheres, " OR ")+`) AND syncv3_events.event_nid = ANY(nids.allNids)
-				ORDER BY syncv3_events.event_nid ASC`,
-				args...,
-			)
+			qry := `WITH nids AS (
+    SELECT snapshot_id, events, membership_events FROM syncv3_snapshots WHERE snapshot_id = ANY(?)
+), memberships AS (
+    SELECT syncv3_memberships.event_nid
+    FROM syncv3_memberships, nids
+    WHERE syncv3_memberships.snapshot_id IN (nids.snapshot_id) AND state_key = ANY (?)
+)
+SELECT syncv3_events.event_nid, syncv3_events.room_id, syncv3_events.event_type, syncv3_events.state_key, syncv3_events.event
+FROM syncv3_events, nids
+WHERE (syncv3_events.event_nid = ANY(nids.events) AND (` + strings.Join(wheres, " OR ") + `))`
+
+			if needUnion {
+				qry += `UNION
+SELECT syncv3_events.event_nid, syncv3_events.room_id, syncv3_events.event_type, syncv3_events.state_key, syncv3_events.event
+FROM syncv3_events, memberships
+WHERE syncv3_events.event_nid IN (memberships.event_nid)
+ORDER BY event_nid ASC`
+			} else {
+				qry += ` ORDER BY event_nid ASC`
+			}
+
+			query, args, err := sqlx.In(qry, args...)
+
 			if err != nil {
+				logger.Trace().Msgf("Query: %s", qry)
+				logger.Trace().Msgf("Args: %#v", args)
 				return fmt.Errorf("failed to form sql query: %s", err)
 			}
 			qryStart := time.Now()
