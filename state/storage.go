@@ -513,19 +513,22 @@ func (s *Storage) RoomStateAfterEventPosition(ctx context.Context, roomIDs []str
 			// We're using a CTE here, since unnestting the nids is quite expensive. Using the array as is
 			// and using ANY() instead performs quite well (e.g. 86k membership events and 130ms execution time, vs
 			// the previous query with unnest took 2.5s)
+			if len(wheres) == 0 {
+				wheres = append(wheres, "1=1")
+			}
 			qry := `WITH nids AS (
     SELECT snapshot_id, events, membership_events FROM syncv3_snapshots WHERE snapshot_id = ANY(?)
 ), memberships AS (
     SELECT syncv3_memberships.event_nid
     FROM syncv3_memberships, nids
-    WHERE WHERE state_key = ANY (?) AND nids.snapshot_id = ANY(syncv3_memberships.snapshot_id)
+    WHERE state_key = ANY (?) AND nids.snapshot_id = ANY(syncv3_memberships.snapshot_id)
 )
 SELECT syncv3_events.event_nid, syncv3_events.room_id, syncv3_events.event_type, syncv3_events.state_key, syncv3_events.event
 FROM syncv3_events, nids
 WHERE (syncv3_events.event_nid = ANY(nids.events) AND (` + strings.Join(wheres, " OR ") + `))`
 
 			if needUnion {
-				qry += `UNION
+				qry += ` UNION
 SELECT syncv3_events.event_nid, syncv3_events.room_id, syncv3_events.event_type, syncv3_events.state_key, syncv3_events.event
 FROM syncv3_events, memberships
 WHERE syncv3_events.event_nid IN (memberships.event_nid)
@@ -559,6 +562,8 @@ ORDER BY event_nid ASC`
 				roomToEvents[ev.RoomID] = append(roomToEvents[ev.RoomID], ev)
 				eventCount++
 			}
+			logger.Trace().Int("events", eventCount).Strs("rooms", roomIDs).Msgf("Query: %s", query)
+			logger.Trace().Int("events", eventCount).Strs("rooms", roomIDs).Msgf("Args: %#v", args)
 			logger.Trace().Int("events", eventCount).Strs("rooms", roomIDs).Msgf("%s - Received events from database", time.Since(qryStart))
 			// handle the most recent events which won't be in the snapshot but may need to be.
 			// we handle the replace case but don't handle brand new state events
