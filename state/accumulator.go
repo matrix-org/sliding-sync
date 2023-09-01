@@ -425,7 +425,11 @@ func (a *Accumulator) Accumulate(txn *sqlx.Tx, userID, roomID string, prevBatch 
 		}
 	}
 
+	var containsStateEv bool
 	defer func() {
+		if !containsStateEv {
+			return
+		}
 		if err := a.snapshotTable.RefreshView(txn); err != nil {
 			logger.Error().Err(err).Msg("failed to refresh materialized view")
 		}
@@ -460,6 +464,7 @@ func (a *Accumulator) Accumulate(txn *sqlx.Tx, userID, roomID string, prevBatch 
 			if err = a.snapshotTable.Insert(txn, newSnapshot); err != nil {
 				return 0, nil, fmt.Errorf("failed to insert new snapshot: %w", err)
 			}
+			containsStateEv = true
 			snapID = newSnapshot.SnapshotID
 		}
 		if err := a.eventsTable.UpdateBeforeSnapshotID(txn, ev.NID, beforeSnapID, replacesNID); err != nil {
