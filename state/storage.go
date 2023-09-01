@@ -545,7 +545,6 @@ func (s *Storage) RoomStateAfterEventPosition(ctx context.Context, roomIDs []str
 				return fmt.Errorf("failed to execute query: %s", err)
 			}
 			defer rows.Close()
-			eventCount := 0
 			for rows.Next() {
 				var ev Event
 				if err := rows.Scan(&ev.NID, &ev.RoomID, &ev.Type, &ev.StateKey, &ev.JSON); err != nil {
@@ -557,7 +556,6 @@ func (s *Storage) RoomStateAfterEventPosition(ctx context.Context, roomIDs []str
 					ev = latestEvents[i]
 				}
 				roomToEvents[ev.RoomID] = append(roomToEvents[ev.RoomID], ev)
-				eventCount++
 			}
 			// handle the most recent events which won't be in the snapshot but may need to be.
 			// we handle the replace case but don't handle brand new state events
