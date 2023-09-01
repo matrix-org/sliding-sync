@@ -218,11 +218,6 @@ func (c *GlobalCache) LoadRoomState(ctx context.Context, roomIDs []string, loadP
 		}
 		resultMap[roomID] = result
 	}
-	eventCount := 0
-	for _, events := range resultMap {
-		eventCount += len(events)
-	}
-	logger.Trace().Int("events", eventCount).Strs("rooms", roomIDs).Msg("Events filtered")
 	// TODO: cache?
 	return resultMap
 }
