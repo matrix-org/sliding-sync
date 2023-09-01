@@ -80,14 +80,15 @@ func (s *SnapshotTable) Insert(txn *sqlx.Tx, row *SnapshotRow) error {
 		`INSERT INTO syncv3_snapshots(room_id, events, membership_events) VALUES($1, $2, $3) RETURNING snapshot_id`,
 		row.RoomID, row.OtherEvents, row.MembershipEvents,
 	).Scan(&id)
-	if err != nil {
-		return err
-	}
+	row.SnapshotID = id
+	return err
+}
+
+func (s *SnapshotTable) RefreshView(txn *sqlx.Tx) (err error) {
 	start := time.Now()
 	logger.Trace().Msg("refreshing materialized view")
 	_, err = txn.Exec("refresh materialized view syncv3_memberships;")
 	logger.Trace().Msgf("refreshed materialized view in %s", time.Since(start))
-	row.SnapshotID = id
 	return err
 }
 
