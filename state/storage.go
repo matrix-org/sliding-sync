@@ -389,7 +389,7 @@ func (s *Storage) StateSnapshot(snapID int64) (state []json.RawMessage, err erro
 // Look up room state after the given event position and no further. eventTypesToStateKeys is a map of event type to a list of state keys for that event type.
 // If the list of state keys is empty then all events matching that event type will be returned. If the map is empty entirely, then all room state
 // will be returned.
-func (s *Storage) RoomStateAfterEventPosition(ctx context.Context, roomIDs []string, pos int64, eventTypesToStateKeys map[string][]string) (roomToEvents map[string][]Event, err error) {
+func (s *Storage) RoomStateAfterEventPosition(ctx context.Context, roomIDs []string, pos int64, eventTypesToStateKeys map[string][]string, userIDs ...string) (roomToEvents map[string][]Event, err error) {
 	_, span := internal.StartSpan(ctx, "RoomStateAfterEventPosition")
 	defer span.End()
 	roomToEvents = make(map[string][]Event, len(roomIDs))
@@ -492,12 +492,18 @@ func (s *Storage) RoomStateAfterEventPosition(ctx context.Context, roomIDs []str
 
 			var wheres []string
 			hasMembershipFilter := false
-			var userIDs []string
 			var typeArgs []interface{}
 			for evType, skeys := range eventTypesToStateKeys {
 				if evType == "m.room.member" {
 					hasMembershipFilter = true
 					userIDs = append(userIDs, skeys...)
+
+					for i, uid := range userIDs {
+						if uid == "" {
+							userIDs = append(userIDs[:i], userIDs[i+1:]...)
+						}
+					}
+
 					continue
 				}
 				for _, skey := range skeys {
@@ -555,6 +561,7 @@ ORDER BY event_nid ASC`
 			qryStart := time.Now()
 			rows, err := txn.Query(txn.Rebind(query), args...)
 			if err != nil {
+				logger.Trace().Msgf("Query: %s\nArgs: %#v", qry, args)
 				return fmt.Errorf("failed to execute query: %s", err)
 			}
 			defer rows.Close()
@@ -570,9 +577,8 @@ ORDER BY event_nid ASC`
 				}
 				roomToEvents[ev.RoomID] = append(roomToEvents[ev.RoomID], ev)
 			}
-			logger.Trace().Int("events", eventCount).Strs("rooms", roomIDs).Msgf("Query: %s", query)
-			logger.Trace().Int("events", eventCount).Strs("rooms", roomIDs).Msgf("Args: %#v", args)
-			logger.Trace().Int("events", eventCount).Strs("rooms", roomIDs).Msgf("%s - Received events from database", time.Since(qryStart))
+			logger.Trace().Msgf("Query: %s", query)
+			logger.Trace().Msgf("Args: %#v", args)
 			// handle the most recent events which won't be in the snapshot but may need to be.
 			// we handle the replace case but don't handle brand new state events
 			for i := range latestEvents {

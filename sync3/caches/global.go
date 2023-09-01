@@ -188,15 +188,21 @@ func (c *GlobalCache) LoadStateEvent(ctx context.Context, roomID string, loadPos
 }
 
 // TODO: remove? Doesn't touch global cache fields
-func (c *GlobalCache) LoadRoomState(ctx context.Context, roomIDs []string, loadPosition int64, requiredStateMap *internal.RequiredStateMap, roomToUsersInTimeline map[string][]string) map[string][]json.RawMessage {
+func (c *GlobalCache) LoadRoomState(ctx context.Context, roomIDs []string, loadPosition int64, requiredStateMap *internal.RequiredStateMap, roomToUsersInTimeline map[string][]string, userID string) map[string][]json.RawMessage {
 	if c.store == nil {
 		return nil
 	}
 	if requiredStateMap.Empty() {
 		return nil
 	}
+
+	userIDs := []string{userID}
+	for _, users := range roomToUsersInTimeline {
+		userIDs = append(userIDs, users...)
+	}
+
 	resultMap := make(map[string][]json.RawMessage, len(roomIDs))
-	roomIDToStateEvents, err := c.store.RoomStateAfterEventPosition(ctx, roomIDs, loadPosition, requiredStateMap.QueryStateMap())
+	roomIDToStateEvents, err := c.store.RoomStateAfterEventPosition(ctx, roomIDs, loadPosition, requiredStateMap.QueryStateMap(), userIDs...)
 	if err != nil {
 		logger.Err(err).Strs("rooms", roomIDs).Int64("pos", loadPosition).Msg("failed to load room state")
 		internal.GetSentryHubFromContextOrDefault(ctx).CaptureException(err)

@@ -606,7 +606,7 @@ func (s *ConnState) getInitialRoomData(ctx context.Context, roomSub sync3.RoomSu
 	// by reusing the same global load position anchor here, we can be sure that the state returned here
 	// matches the timeline we loaded earlier - the race conditions happen around pubsub updates and not
 	// the events table itself, so whatever position is picked based on this anchor is immutable.
-	roomIDToState := s.globalCache.LoadRoomState(ctx, loadRoomIDs, s.anchorLoadPosition, rsm, roomToUsersInTimeline)
+	roomIDToState := s.globalCache.LoadRoomState(ctx, loadRoomIDs, s.anchorLoadPosition, rsm, roomToUsersInTimeline, s.userID)
 	if roomIDToState == nil { // e.g no required_state
 		roomIDToState = make(map[string][]json.RawMessage)
 	}
