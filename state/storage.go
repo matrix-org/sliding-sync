@@ -558,7 +558,6 @@ ORDER BY event_nid ASC`
 				return fmt.Errorf("failed to execute query: %s", err)
 			}
 			defer rows.Close()
-			eventCount := 0
 			for rows.Next() {
 				var ev Event
 				if err := rows.Scan(&ev.NID, &ev.RoomID, &ev.Type, &ev.StateKey, &ev.JSON); err != nil {
@@ -570,7 +569,6 @@ ORDER BY event_nid ASC`
 					ev = latestEvents[i]
 				}
 				roomToEvents[ev.RoomID] = append(roomToEvents[ev.RoomID], ev)
-				eventCount++
 			}
 			logger.Trace().Int("events", eventCount).Strs("rooms", roomIDs).Msgf("Query: %s", query)
 			logger.Trace().Int("events", eventCount).Strs("rooms", roomIDs).Msgf("Args: %#v", args)
