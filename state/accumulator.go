@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+
 	"github.com/matrix-org/sliding-sync/internal"
 
 	"github.com/getsentry/sentry-go"
@@ -279,6 +280,13 @@ func (a *Accumulator) Initialise(roomID string, state []json.RawMessage) (Initia
 		if err != nil {
 			return fmt.Errorf("failed to insert snapshot: %w", err)
 		}
+
+		defer func() {
+			if err := a.snapshotTable.RefreshView(txn); err != nil {
+				logger.Error().Err(err).Msg("failed to refresh materialized view")
+			}
+		}()
+
 		res.AddedEvents = true
 		latestNID := int64(0)
 		for _, nid := range otherNIDs {
@@ -416,6 +424,12 @@ func (a *Accumulator) Accumulate(txn *sqlx.Tx, userID, roomID string, prevBatch 
 			timelineNIDs = append(timelineNIDs, ev.NID)
 		}
 	}
+
+	defer func() {
+		if err := a.snapshotTable.RefreshView(txn); err != nil {
+			logger.Error().Err(err).Msg("failed to refresh materialized view")
+		}
+	}()
 
 	for _, ev := range newEvents {
 		var replacesNID int64
