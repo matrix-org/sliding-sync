@@ -376,7 +376,7 @@ func (s *Storage) StateSnapshot(snapID int64) (state []json.RawMessage, err erro
 // Look up room state after the given event position and no further. eventTypesToStateKeys is a map of event type to a list of state keys for that event type.
 // If the list of state keys is empty then all events matching that event type will be returned. If the map is empty entirely, then all room state
 // will be returned.
-func (s *Storage) RoomStateAfterEventPosition(ctx context.Context, roomIDs []string, pos int64, eventTypesToStateKeys map[string][]string) (roomToEvents map[string][]Event, err error) {
+func (s *Storage) RoomStateAfterEventPosition(ctx context.Context, roomIDs []string, pos int64, eventTypesToStateKeys map[string][]string, userIDs ...string) (roomToEvents map[string][]Event, err error) {
 	_, span := internal.StartSpan(ctx, "RoomStateAfterEventPosition")
 	defer span.End()
 	roomToEvents = make(map[string][]Event, len(roomIDs))
@@ -479,12 +479,18 @@ func (s *Storage) RoomStateAfterEventPosition(ctx context.Context, roomIDs []str
 
 			var wheres []string
 			hasMembershipFilter := false
-			var userIDs []string
 			var typeArgs []interface{}
 			for evType, skeys := range eventTypesToStateKeys {
 				if evType == "m.room.member" {
 					hasMembershipFilter = true
 					userIDs = append(userIDs, skeys...)
+
+					for i, uid := range userIDs {
+						if uid == "" {
+							userIDs = append(userIDs[:i], userIDs[i+1:]...)
+						}
+					}
+
 					continue
 				}
 				for _, skey := range skeys {
@@ -497,14 +503,20 @@ func (s *Storage) RoomStateAfterEventPosition(ctx context.Context, roomIDs []str
 				}
 			}
 
-			args = append(args, pq.StringArray(userIDs))
+			cols := "state_key = ANY (?) AND"
+			if len(userIDs) == 0 {
+				cols = ""
+			} else {
+				args = append(args, pq.StringArray(userIDs))
+			}
+
 			args = append(args, typeArgs...)
 
 			// If there are no where clauses, we need to add a "dummy" where, so we don't get
 			// anything back. This is mostly the case if we only care about membership events,
 			// which aren't added in the above loop.
 			if len(wheres) == 0 {
-				wheres = append(wheres, "1>1")
+				wheres = append(wheres, "TRUE")
 			}
 
 			// Similar to CurrentStateEventsInAllRooms
@@ -517,7 +529,7 @@ func (s *Storage) RoomStateAfterEventPosition(ctx context.Context, roomIDs []str
 				), memberships AS (
     				SELECT syncv3_memberships.event_nid
     				FROM syncv3_memberships, nids
-    				WHERE state_key = ANY (?) AND nids.snapshot_id = ANY(syncv3_memberships.snapshot_id)
+    				WHERE ` + cols + ` nids.snapshot_id = ANY(syncv3_memberships.snapshot_id)
 				)
 				SELECT syncv3_events.event_nid, syncv3_events.room_id, syncv3_events.event_type, syncv3_events.state_key, syncv3_events.event
 				FROM syncv3_events, nids
@@ -526,7 +538,8 @@ func (s *Storage) RoomStateAfterEventPosition(ctx context.Context, roomIDs []str
 			// If we're getting membership events, add the UNION select as well.
 			// This causes the CTE "memberships" to be executed.
 			if hasMembershipFilter {
-				qry += ` UNION
+				qry += `
+				UNION
 				SELECT syncv3_events.event_nid, syncv3_events.room_id, syncv3_events.event_type, syncv3_events.state_key, syncv3_events.event
 				FROM syncv3_events, memberships
 				WHERE syncv3_events.event_nid IN (memberships.event_nid)
@@ -542,6 +555,7 @@ func (s *Storage) RoomStateAfterEventPosition(ctx context.Context, roomIDs []str
 			}
 			rows, err := txn.Query(txn.Rebind(query), args...)
 			if err != nil {
+				logger.Trace().Msgf("Query: %s\nArgs: %#v", qry, args)
 				return fmt.Errorf("failed to execute query: %s", err)
 			}
 			defer rows.Close()
@@ -557,6 +571,8 @@ func (s *Storage) RoomStateAfterEventPosition(ctx context.Context, roomIDs []str
 				}
 				roomToEvents[ev.RoomID] = append(roomToEvents[ev.RoomID], ev)
 			}
+			logger.Trace().Msgf("Query: %s", query)
+			logger.Trace().Msgf("Args: %#v", args)
 			// handle the most recent events which won't be in the snapshot but may need to be.
 			// we handle the replace case but don't handle brand new state events
 			for i := range latestEvents {

@@ -216,7 +216,7 @@ func TestGlobalCacheLoadState(t *testing.T) {
 			rs := sync3.RoomSubscription{
 				RequiredState: tc.requiredState,
 			}
-			gotMap := globalCache.LoadRoomState(ctx, roomIDs, latest, rs.RequiredStateMap(tc.me), tc.roomToUsersInTimeline)
+			gotMap := globalCache.LoadRoomState(ctx, roomIDs, latest, rs.RequiredStateMap(tc.me), tc.roomToUsersInTimeline, tc.me)
 			for _, roomID := range roomIDs {
 				got := gotMap[roomID]
 				wantEvents := tc.wantEvents[roomID]
