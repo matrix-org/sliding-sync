@@ -518,7 +518,7 @@ func (s *Storage) RoomStateAfterEventPosition(ctx context.Context, roomIDs []str
 ), memberships AS (
     SELECT syncv3_memberships.event_nid
     FROM syncv3_memberships, nids
-    WHERE syncv3_memberships.snapshot_id IN (nids.snapshot_id) AND state_key = ANY (?)
+    WHERE WHERE state_key = ANY (?) AND nids.snapshot_id = ANY(syncv3_memberships.snapshot_id)
 )
 SELECT syncv3_events.event_nid, syncv3_events.room_id, syncv3_events.event_type, syncv3_events.state_key, syncv3_events.event
 FROM syncv3_events, nids
