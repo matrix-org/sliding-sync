@@ -27,6 +27,7 @@ type Accumulator struct {
 	eventsTable   *EventTable
 	snapshotTable *SnapshotTable
 	spacesTable   *SpacesTable
+	membersTable  *MembershipsTable
 	entityName    string
 }
 
@@ -37,6 +38,7 @@ func NewAccumulator(db *sqlx.DB) *Accumulator {
 		eventsTable:   NewEventTable(db),
 		snapshotTable: NewSnapshotsTable(db),
 		spacesTable:   NewSpacesTable(db),
+		membersTable:  NewMembershipsTable(db),
 		entityName:    "server",
 	}
 }
@@ -254,10 +256,10 @@ func (a *Accumulator) Initialise(roomID string, state []json.RawMessage) (Initia
 		}
 
 		// pull out the event NIDs we just inserted
-		membershipEventIDs := make(map[string]struct{}, len(events))
+		membershipEventIDs := make(map[string]string, len(events))
 		for _, event := range events {
 			if event.Type == "m.room.member" {
-				membershipEventIDs[event.ID] = struct{}{}
+				membershipEventIDs[event.ID] = event.StateKey
 			}
 		}
 		memberNIDs := make([]int64, 0, len(eventIDToNID))
@@ -281,11 +283,9 @@ func (a *Accumulator) Initialise(roomID string, state []json.RawMessage) (Initia
 			return fmt.Errorf("failed to insert snapshot: %w", err)
 		}
 
-		defer func() {
-			if err := a.snapshotTable.RefreshView(txn); err != nil {
-				logger.Error().Err(err).Msg("failed to refresh materialized view")
-			}
-		}()
+		if err := a.membersTable.Insert(txn, *snapshot); err != nil {
+			return fmt.Errorf("failed to insert new membership: %w", err)
+		}
 
 		res.AddedEvents = true
 		latestNID := int64(0)
@@ -425,16 +425,6 @@ func (a *Accumulator) Accumulate(txn *sqlx.Tx, userID, roomID string, prevBatch 
 		}
 	}
 
-	var containsStateEv bool
-	defer func() {
-		if !containsStateEv {
-			return
-		}
-		if err := a.snapshotTable.RefreshView(txn); err != nil {
-			logger.Error().Err(err).Msg("failed to refresh materialized view")
-		}
-	}()
-
 	for _, ev := range newEvents {
 		var replacesNID int64
 		// the snapshot ID we assign to this event is unaffected by whether /this/ event is state or not,
@@ -464,8 +454,11 @@ func (a *Accumulator) Accumulate(txn *sqlx.Tx, userID, roomID string, prevBatch 
 			if err = a.snapshotTable.Insert(txn, newSnapshot); err != nil {
 				return 0, nil, fmt.Errorf("failed to insert new snapshot: %w", err)
 			}
-			containsStateEv = true
 			snapID = newSnapshot.SnapshotID
+
+			if err := a.membersTable.Insert(txn, *newSnapshot); err != nil {
+				return 0, nil, fmt.Errorf("failed to insert new membership: %w", err)
+			}
 		}
 		if err := a.eventsTable.UpdateBeforeSnapshotID(txn, ev.NID, beforeSnapID, replacesNID); err != nil {
 			return 0, nil, err

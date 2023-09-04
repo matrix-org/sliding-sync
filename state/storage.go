@@ -83,6 +83,7 @@ func NewStorageWithDB(db *sqlx.DB) *Storage {
 		eventsTable:   NewEventTable(db),
 		snapshotTable: NewSnapshotsTable(db),
 		spacesTable:   NewSpacesTable(db),
+		membersTable:  NewMembershipsTable(db),
 		entityName:    "server",
 	}
 	return &Storage{
@@ -479,6 +480,7 @@ func (s *Storage) RoomStateAfterEventPosition(ctx context.Context, roomIDs []str
 
 			var wheres []string
 			hasMembershipFilter := false
+			hasOtherFilter := false
 			var typeArgs []interface{}
 			for evType, skeys := range eventTypesToStateKeys {
 				if evType == "m.room.member" {
@@ -492,6 +494,8 @@ func (s *Storage) RoomStateAfterEventPosition(ctx context.Context, roomIDs []str
 					}
 
 					continue
+				} else {
+					hasOtherFilter = true
 				}
 				for _, skey := range skeys {
 					typeArgs = append(typeArgs, evType, skey)
@@ -516,7 +520,11 @@ func (s *Storage) RoomStateAfterEventPosition(ctx context.Context, roomIDs []str
 			// anything back. This is mostly the case if we only care about membership events,
 			// which aren't added in the above loop.
 			if len(wheres) == 0 {
-				wheres = append(wheres, "TRUE")
+				if hasOtherFilter {
+					wheres = append(wheres, "TRUE")
+				} else {
+					wheres = append(wheres, "FALSE")
+				}
 			}
 
 			// Similar to CurrentStateEventsInAllRooms
@@ -529,7 +537,7 @@ func (s *Storage) RoomStateAfterEventPosition(ctx context.Context, roomIDs []str
 				), memberships AS (
     				SELECT syncv3_memberships.event_nid
     				FROM syncv3_memberships, nids
-    				WHERE ` + cols + ` nids.snapshot_id = ANY(syncv3_memberships.snapshot_id)
+    				WHERE ` + cols + ` nids.snapshot_id = ANY(syncv3_memberships.snapshot_ids)
 				)
 				SELECT syncv3_events.event_nid, syncv3_events.room_id, syncv3_events.event_type, syncv3_events.state_key, syncv3_events.event
 				FROM syncv3_events, nids

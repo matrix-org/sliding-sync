@@ -2,7 +2,6 @@ package state
 
 import (
 	"fmt"
-	"time"
 
 	"github.com/jmoiron/sqlx"
 	"github.com/lib/pq"
@@ -31,21 +30,7 @@ func NewSnapshotsTable(db *sqlx.DB) *SnapshotTable {
 		events BIGINT[] NOT NULL,
 		membership_events BIGINT[] NOT NULL,
 		UNIQUE(snapshot_id, room_id)
-	);
-
-create materialized view if not exists syncv3_memberships as
-WITH nids AS (SELECT syncv3_snapshots.snapshot_id,
-                     syncv3_snapshots.membership_events
-              FROM syncv3_snapshots)
-SELECT evs.event_nid,
-       array_agg(nids.snapshot_id) AS snapshot_id,
-       evs.state_key
-FROM syncv3_events evs,
-     nids
-WHERE evs.event_nid = ANY (nids.membership_events)
-GROUP BY evs.event_nid;
-
-create index if not exists syncv3_memberships_event_nid_index on syncv3_memberships (state_key);	`)
+	);`)
 	return &SnapshotTable{db}
 }
 
@@ -94,14 +79,6 @@ func (s *SnapshotTable) Insert(txn *sqlx.Tx, row *SnapshotRow) error {
 		row.RoomID, row.OtherEvents, row.MembershipEvents,
 	).Scan(&id)
 	row.SnapshotID = id
-	return err
-}
-
-func (s *SnapshotTable) RefreshView(txn *sqlx.Tx) (err error) {
-	start := time.Now()
-	logger.Trace().Msg("refreshing materialized view")
-	_, err = txn.Exec("refresh materialized view syncv3_memberships;")
-	logger.Trace().Msgf("refreshed materialized view in %s", time.Since(start))
 	return err
 }
 
