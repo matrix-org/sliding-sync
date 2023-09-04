@@ -8,6 +8,7 @@ import (
 	_ "net/http/pprof"
 	"os"
 	"os/signal"
+	"runtime/debug"
 	"strconv"
 	"strings"
 	"syscall"
@@ -15,13 +16,14 @@ import (
 
 	"github.com/getsentry/sentry-go"
 	sentryhttp "github.com/getsentry/sentry-go/http"
-	syncv3 "github.com/matrix-org/sliding-sync"
-	"github.com/matrix-org/sliding-sync/internal"
-	"github.com/matrix-org/sliding-sync/sync2"
 	"github.com/pressly/goose/v3"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/rs/zerolog"
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
+
+	syncv3 "github.com/matrix-org/sliding-sync"
+	"github.com/matrix-org/sliding-sync/internal"
+	"github.com/matrix-org/sliding-sync/sync2"
 )
 
 var GitCommit string
@@ -281,5 +283,28 @@ func executeMigrations() {
 	goose.SetBaseFS(syncv3.EmbedMigrations)
 	if err := goose.Run(command, db, "state/migrations", arguments...); err != nil {
 		log.Fatalf("goose %v: %v", command, err)
+	}
+}
+
+const gitRevLen = 7 // 7 matches the displayed characters on github.com
+func init() {
+	// Try to get the revision sliding-sync was build from.
+	// If we can't, e.g. sliding-sync wasn't built (go run) or no VCS version is present,
+	// we just use the provided version above.
+	info, ok := debug.ReadBuildInfo()
+	if !ok {
+		return
+	}
+
+	for _, setting := range info.Settings {
+		if setting.Key == "vcs.revision" {
+			revLen := len(setting.Value)
+			if revLen >= gitRevLen {
+				GitCommit = setting.Value[:gitRevLen]
+			} else {
+				GitCommit = setting.Value[:gitRevLen]
+			}
+			break
+		}
 	}
 }
