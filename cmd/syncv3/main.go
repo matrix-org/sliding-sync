@@ -302,7 +302,7 @@ func init() {
 			if revLen >= gitRevLen {
 				GitCommit = setting.Value[:gitRevLen]
 			} else {
-				GitCommit = setting.Value[:gitRevLen]
+				GitCommit = setting.Value[:revLen]
 			}
 			break
 		}
