@@ -84,6 +84,7 @@ func NewStorageWithDB(db *sqlx.DB, addPrometheusMetrics bool) *Storage {
 		eventsTable:   NewEventTable(db),
 		snapshotTable: NewSnapshotsTable(db),
 		spacesTable:   NewSpacesTable(db),
+		membersTable:  NewMembershipsTable(db),
 		entityName:    "server",
 	}
 
@@ -492,6 +493,7 @@ func (s *Storage) RoomStateAfterEventPosition(ctx context.Context, roomIDs []str
 
 			var wheres []string
 			hasMembershipFilter := false
+			hasOtherFilter := false
 			var typeArgs []interface{}
 			for evType, skeys := range eventTypesToStateKeys {
 				if evType == "m.room.member" {
@@ -505,6 +507,8 @@ func (s *Storage) RoomStateAfterEventPosition(ctx context.Context, roomIDs []str
 					}
 
 					continue
+				} else {
+					hasOtherFilter = true
 				}
 				for _, skey := range skeys {
 					typeArgs = append(typeArgs, evType, skey)

@@ -23,12 +23,13 @@ import (
 // Accumulate function for timeline events. v2 sync must be called with a large enough timeline.limit
 // for this to work!
 type Accumulator struct {
-	db                     *sqlx.DB
-	roomsTable             *RoomsTable
-	eventsTable            *EventTable
-	snapshotTable          *SnapshotTable
-	spacesTable            *SpacesTable
-	entityName             string
+	db            *sqlx.DB
+	roomsTable    *RoomsTable
+	eventsTable   *EventTable
+	snapshotTable *SnapshotTable
+	spacesTable   *SpacesTable
+	membersTable  *MembershipsTable
+	entityName    string
 	snapshotMemberCountVec *prometheus.HistogramVec // TODO: Remove, this is temporary to get a feeling how often a new snapshot is created
 }
 
@@ -39,6 +40,7 @@ func NewAccumulator(db *sqlx.DB) *Accumulator {
 		eventsTable:   NewEventTable(db),
 		snapshotTable: NewSnapshotsTable(db),
 		spacesTable:   NewSpacesTable(db),
+		membersTable:  NewMembershipsTable(db),
 		entityName:    "server",
 	}
 }
@@ -256,10 +258,10 @@ func (a *Accumulator) Initialise(roomID string, state []json.RawMessage) (Initia
 		}
 
 		// pull out the event NIDs we just inserted
-		membershipEventIDs := make(map[string]struct{}, len(events))
+		membershipEventIDs := make(map[string]string, len(events))
 		for _, event := range events {
 			if event.Type == "m.room.member" {
-				membershipEventIDs[event.ID] = struct{}{}
+				membershipEventIDs[event.ID] = event.StateKey
 			}
 		}
 		memberNIDs := make([]int64, 0, len(eventIDToNID))
@@ -282,10 +284,16 @@ func (a *Accumulator) Initialise(roomID string, state []json.RawMessage) (Initia
 		if err != nil {
 			return fmt.Errorf("failed to insert snapshot: %w", err)
 		}
+
 		if a.snapshotMemberCountVec != nil {
 			logger.Trace().Str("room_id", roomID).Int("members", len(memberNIDs)).Msg("Inserted new snapshot")
 			a.snapshotMemberCountVec.WithLabelValues(roomID).Observe(float64(len(memberNIDs)))
 		}
+
+		if err := a.membersTable.Insert(txn, *snapshot); err != nil {
+			return fmt.Errorf("failed to insert new membership: %w", err)
+		}
+
 		res.AddedEvents = true
 		latestNID := int64(0)
 		for _, nid := range otherNIDs {
@@ -492,6 +500,10 @@ func (a *Accumulator) Accumulate(txn *sqlx.Tx, userID, roomID string, prevBatch 
 				a.snapshotMemberCountVec.WithLabelValues(roomID).Observe(float64(len(memNIDs)))
 			}
 			snapID = newSnapshot.SnapshotID
+
+			if err := a.membersTable.Insert(txn, *newSnapshot); err != nil {
+				return 0, nil, fmt.Errorf("failed to insert new membership: %w", err)
+			}
 		}
 		if err := a.eventsTable.UpdateBeforeSnapshotID(txn, ev.NID, beforeSnapID, replacesNID); err != nil {
 			return 0, nil, err
