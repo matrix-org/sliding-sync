@@ -546,7 +546,7 @@ func (h *Handler) EnsurePolling(p *pubsub.V3EnsurePolling) {
 	log := logger.With().Str("user_id", p.UserID).Str("device_id", p.DeviceID).Logger()
 	log.Info().Msg("EnsurePolling: new request")
 	defer func() {
-		log.Info().Msg("EnsurePolling: request finished")
+		log.Info().Msg("EnsurePolling: preprocessing done")
 	}()
 	accessToken, since, err := h.v2Store.TokensTable.GetTokenAndSince(p.UserID, p.DeviceID, p.AccessTokenHash)
 	if err != nil {
