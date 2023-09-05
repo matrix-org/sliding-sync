@@ -428,3 +428,32 @@ func TestPollersCanBeResumedAfterExpiry(t *testing.T) {
 	m.MatchResponse(t, res, m.MatchAccountData([]json.RawMessage{accdata}, nil))
 
 }
+
+// Regression test for https://github.com/matrix-org/sliding-sync/issues/287#issuecomment-1706522718
+func TestPollerExpiryEnsurePollingRace(t *testing.T) {
+	pqString := testutils.PrepareDBConnectionString()
+	v2 := runTestV2Server(t)
+	defer v2.close()
+	v3 := runTestServer(t, v2, pqString)
+	defer v3.close()
+
+	v2.addAccount(t, alice, aliceToken)
+
+	// Arrange the following:
+	// 1. A request arrives from an unknown token.
+	// 2. The API makes a /whoami lookup for the new token. That returns without error.
+	// 3. The old token expires.
+	// 4. The poller tries to call /sync but finds that the token has expired.
+
+	t.Log("Alice makes a sliding sync request.")
+	v2.SetCheckRequest(func(token string, req *http.Request) {
+		if token != aliceToken {
+			t.Fatalf("unexpected poll from %s", token)
+		}
+		// Expire the token before we process the request.
+		t.Log("Alice's token expires.")
+		v2.invalidateToken(token)
+	})
+
+	v3.mustDoV3Request(t, aliceToken, sync3.Request{})
+}
