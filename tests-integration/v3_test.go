@@ -50,11 +50,11 @@ var (
 
 // testV2Server is a fake stand-in for the v2 sync API provided by a homeserver.
 type testV2Server struct {
-	// CheckRequest is an arbitrary function which runs after a request has been
+	// checkRequest is an arbitrary function which runs after a request has been
 	// received from pollers, but before the response is generated. This allows us to
 	// confirm that the proxy is polling the homeserver's v2 sync endpoint in the
 	// manner that we expect.
-	CheckRequest            func(userID, token string, req *http.Request)
+	checkRequest            func(userID, token string, req *http.Request)
 	mu                      *sync.Mutex
 	tokenToUser             map[string]string
 	tokenToDevice           map[string]string
@@ -68,7 +68,7 @@ type testV2Server struct {
 func (s *testV2Server) SetCheckRequest(fn func(userID, token string, req *http.Request)) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.CheckRequest = fn
+	s.checkRequest = fn
 }
 
 // Most tests only use a single device per user. Give them this helper so they don't
@@ -265,7 +265,7 @@ func runTestV2Server(t testutils.TestBenchInterface) *testV2Server {
 			return
 		}
 		server.mu.Lock()
-		check := server.CheckRequest
+		check := server.checkRequest
 		server.mu.Unlock()
 		if check != nil {
 			check(userID, token, req)

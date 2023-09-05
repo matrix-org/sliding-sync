@@ -44,7 +44,7 @@ func TestSecondPollerFiltersToDevice(t *testing.T) {
 	deviceBToken := "DEVICE_B_TOKEN"
 	v2.addAccountWithDeviceID(alice, "B", deviceBToken)
 	seenInitialRequest := false
-	v2.CheckRequest = func(userID, token string, req *http.Request) {
+	v2.SetCheckRequest(func(userID, token string, req *http.Request) {
 		if userID != alice || token != deviceBToken {
 			return
 		}
@@ -88,7 +88,7 @@ func TestSecondPollerFiltersToDevice(t *testing.T) {
 		}
 
 		seenInitialRequest = true
-	}
+	})
 
 	wantMsg := json.RawMessage(`{"type":"f","content":{"f":"b"}}`)
 	v2.queueResponse(deviceBToken, sync2.SyncResponse{
