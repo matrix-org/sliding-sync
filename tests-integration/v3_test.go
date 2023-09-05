@@ -54,6 +54,9 @@ type testV2Server struct {
 	// received from pollers, but before the response is generated. This allows us to
 	// confirm that the proxy is polling the homeserver's v2 sync endpoint in the
 	// manner that we expect.
+	//
+	// checkRequest is called before we lookup a user for the given token. Tests can
+	// use this to invalidate the token right before a poll is made.
 	checkRequest            func(token string, req *http.Request)
 	mu                      *sync.Mutex
 	tokenToUser             map[string]string
@@ -253,6 +256,12 @@ func runTestV2Server(t testutils.TestBenchInterface) *testV2Server {
 	})
 	r.HandleFunc("/_matrix/client/r0/sync", func(w http.ResponseWriter, req *http.Request) {
 		token := strings.TrimPrefix(req.Header.Get("Authorization"), "Bearer ")
+		server.mu.Lock()
+		check := server.checkRequest
+		server.mu.Unlock()
+		if check != nil {
+			check(token, req)
+		}
 		userID := server.userID(token)
 		if userID == "" {
 			w.WriteHeader(401)
@@ -263,12 +272,6 @@ func runTestV2Server(t testutils.TestBenchInterface) *testV2Server {
 			}
 			server.mu.Unlock()
 			return
-		}
-		server.mu.Lock()
-		check := server.checkRequest
-		server.mu.Unlock()
-		if check != nil {
-			check(token, req)
 		}
 		resp := server.nextResponse(userID, token)
 		body, err := json.Marshal(resp)
