@@ -97,6 +97,12 @@ func (s *testV2Server) addAccountWithDeviceID(userID, deviceID, token string) {
 	}
 }
 
+// like invalidateToken, but doesn't do any waiting.
+func (s *testV2Server) invalidateTokenImmediately(token string) {
+	delete(s.tokenToUser, token)
+	delete(s.tokenToDevice, token)
+}
+
 // remove the token and wait until the proxy sends a request with this token, then 401 it and return.
 func (s *testV2Server) invalidateToken(token string) {
 	var wg sync.WaitGroup

@@ -452,7 +452,7 @@ func TestPollerExpiryEnsurePollingRace(t *testing.T) {
 		}
 		// Expire the token before we process the request.
 		t.Log("Alice's token expires.")
-		v2.invalidateToken(token)
+		v2.invalidateTokenImmediately(token)
 	})
 
 	v3.mustDoV3Request(t, aliceToken, sync3.Request{})
