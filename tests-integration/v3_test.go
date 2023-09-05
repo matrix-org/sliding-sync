@@ -54,7 +54,7 @@ type testV2Server struct {
 	// received from pollers, but before the response is generated. This allows us to
 	// confirm that the proxy is polling the homeserver's v2 sync endpoint in the
 	// manner that we expect.
-	checkRequest            func(userID, token string, req *http.Request)
+	checkRequest            func(token string, req *http.Request)
 	mu                      *sync.Mutex
 	tokenToUser             map[string]string
 	tokenToDevice           map[string]string
@@ -65,7 +65,7 @@ type testV2Server struct {
 	timeToWaitForV2Response time.Duration
 }
 
-func (s *testV2Server) SetCheckRequest(fn func(userID, token string, req *http.Request)) {
+func (s *testV2Server) SetCheckRequest(fn func(token string, req *http.Request)) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.checkRequest = fn
@@ -268,7 +268,7 @@ func runTestV2Server(t testutils.TestBenchInterface) *testV2Server {
 		check := server.checkRequest
 		server.mu.Unlock()
 		if check != nil {
-			check(userID, token, req)
+			check(token, req)
 		}
 		resp := server.nextResponse(userID, token)
 		body, err := json.Marshal(resp)

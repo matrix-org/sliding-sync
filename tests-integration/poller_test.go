@@ -44,14 +44,14 @@ func TestSecondPollerFiltersToDevice(t *testing.T) {
 	deviceBToken := "DEVICE_B_TOKEN"
 	v2.addAccountWithDeviceID(alice, "B", deviceBToken)
 	seenInitialRequest := false
-	v2.SetCheckRequest(func(userID, token string, req *http.Request) {
-		if userID != alice || token != deviceBToken {
+	v2.SetCheckRequest(func(token string, req *http.Request) {
+		if token != deviceBToken {
 			return
 		}
 		qps := req.URL.Query()
 		since := qps.Get("since")
 		filter := qps.Get("filter")
-		t.Logf("CheckRequest: %v %v since=%v filter=%v", userID, token, since, filter)
+		t.Logf("CheckRequest: %v since=%v filter=%v", token, since, filter)
 		if filter == "" {
 			t.Errorf("expected a filter on all v2 syncs from poller, but got none")
 			return
