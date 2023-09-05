@@ -50,7 +50,12 @@ func (m *MembershipsTable) Insert(txn *sqlx.Tx, snapshot SnapshotRow) error {
 	totalTimeRefreshing += dur
 	countRefresh++
 
-	logger.Trace().Msgf("inserted memberships event in %s (total: %s (%d times))", dur, totalTimeRefreshing, countRefresh)
+	logger.Trace().
+		Str("room_id", snapshot.RoomID).
+		Int64("snapshot_id", snapshot.SnapshotID).
+		Int("membership_events", len(snapshot.MembershipEvents)).
+		Int("count", countRefresh).
+		Msgf("inserted memberships event in %s (total: %s)", dur, totalTimeRefreshing)
 
 	return err
 }
