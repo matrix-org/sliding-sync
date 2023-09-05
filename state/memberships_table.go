@@ -39,13 +39,6 @@ func (m *MembershipsTable) Insert(txn *sqlx.Tx, snapshot SnapshotRow) error {
 		return err
 	}
 
-	if len(snapshot.MembershipEvents) > 1 {
-		_, err = txn.Exec(`
-	UPDATE syncv3_memberships
-	SET snapshot_ids = (select array( select distinct unnest(array_append(syncv3_memberships.snapshot_ids, $1)) ) )
-	WHERE event_nid = ANY($2)`, snapshot.SnapshotID, snapshot.MembershipEvents)
-	}
-
 	dur := time.Since(start)
 	totalTimeRefreshing += dur
 	countRefresh++
