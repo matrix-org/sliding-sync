@@ -446,7 +446,6 @@ func TestPollerExpiryEnsurePollingRace(t *testing.T) {
 	// 3. The old token expires.
 	// 4. The poller tries to call /sync but finds that the token has expired.
 
-	t.Log("Alice makes a sliding sync request.")
 	v2.SetCheckRequest(func(token string, req *http.Request) {
 		if token != aliceToken {
 			t.Fatalf("unexpected poll from %s", token)
@@ -456,6 +455,7 @@ func TestPollerExpiryEnsurePollingRace(t *testing.T) {
 		v2.invalidateTokenImmediately(token)
 	})
 
+	t.Log("Alice makes a sliding sync request with a token that's about to expire.")
 	_, _, code := v3.doV3Request(t, context.Background(), aliceToken, "", sync3.Request{})
 	if code == 200 {
 		t.Fatalf("Should have got non 200 http response")
