@@ -1,6 +1,7 @@
 package syncv3
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"github.com/jmoiron/sqlx"
@@ -455,5 +456,8 @@ func TestPollerExpiryEnsurePollingRace(t *testing.T) {
 		v2.invalidateTokenImmediately(token)
 	})
 
-	v3.mustDoV3Request(t, aliceToken, sync3.Request{})
+	_, _, code := v3.doV3Request(t, context.Background(), aliceToken, "", sync3.Request{})
+	if code == 200 {
+		t.Fatalf("Should have got non 200 http response")
+	}
 }
