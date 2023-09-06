@@ -58,7 +58,8 @@ func NewEnsurePoller(notifier pubsub.Notifier, enablePrometheus bool) *EnsurePol
 }
 
 // EnsurePolling blocks until the V2InitialSyncComplete response is received for this device. It is
-// the caller's responsibility to call OnInitialSyncComplete when new events arrive.
+// the caller's responsibility to call OnInitialSyncComplete when new events arrive. Returns the Success field from the
+// V2InitialSyncComplete response, which is true iff there is an active poller.
 func (p *EnsurePoller) EnsurePolling(ctx context.Context, pid sync2.PollerID, tokenHash string) bool {
 	ctx, region := internal.StartSpan(ctx, "EnsurePolling")
 	defer region.End()
