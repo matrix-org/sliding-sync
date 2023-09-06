@@ -581,7 +581,7 @@ ORDER BY event_nid ASC`
 				}
 				roomToEvents[ev.RoomID] = append(roomToEvents[ev.RoomID], ev)
 			}
-
+			logger.Trace().Msgf("Query: %s\nArgs: %#v", qry, args)
 			// handle the most recent events which won't be in the snapshot but may need to be.
 			// we handle the replace case but don't handle brand new state events
 			for i := range latestEvents {

@@ -34,17 +34,11 @@ func (m *MembershipsTable) Insert(txn *sqlx.Tx, snapshot SnapshotRow) error {
 	_, err := txn.Exec(`
 	INSERT INTO syncv3_memberships (event_nid, state_key, snapshot_ids)
 	SELECT event_nid, state_key, $1 FROM syncv3_events WHERE event_nid = ANY ($2)
-	ON CONFLICT (event_nid, state_key) DO UPDATE SET snapshot_ids = (select array( select distinct unnest(array_append(syncv3_memberships.snapshot_ids, $3)) ) )
+	ON CONFLICT (event_nid, state_key) DO UPDATE SET snapshot_ids = (array_append(syncv3_memberships.snapshot_ids, $3))
 	`, pq.Array([]int64{snapshot.SnapshotID}), pq.Array(snapshot.MembershipEvents), snapshot.SnapshotID)
 	if err != nil {
 		return err
 	}
-
-	// Update existing entries with the new snapshot ID
-	_, err = txn.Exec(`
-	UPDATE syncv3_memberships
-	SET snapshot_ids = (select array( select distinct unnest(array_append(syncv3_memberships.snapshot_ids, $1)) ) )
-	WHERE event_nid = ANY($2)`, snapshot.SnapshotID, snapshot.MembershipEvents)
 
 	dur := time.Since(start)
 	totalTimeRefreshing += dur
