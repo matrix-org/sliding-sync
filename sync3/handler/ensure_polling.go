@@ -127,7 +127,8 @@ func (p *EnsurePoller) OnInitialSyncComplete(payload *pubsub.V2InitialSyncComple
 		// e.g from the database
 		log.Trace().Msg("OnInitialSyncComplete: we weren't waiting for this")
 		p.pendingPolls[pid] = pendingInfo{
-			done: true,
+			done:    true,
+			success: payload.Success,
 		}
 		return
 	}
@@ -141,6 +142,7 @@ func (p *EnsurePoller) OnInitialSyncComplete(payload *pubsub.V2InitialSyncComple
 	ch := pending.ch
 	pending.done = true
 	pending.ch = nil
+	pending.success = payload.Success
 	p.pendingPolls[pid] = pending
 	p.calculateNumOutstanding() // decrement total
 	log.Trace().Msg("OnInitialSyncComplete: closing channel")
