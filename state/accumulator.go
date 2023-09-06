@@ -437,12 +437,15 @@ func (a *Accumulator) Accumulate(txn *sqlx.Tx, userID, roomID string, prevBatch 
 	if len(redactTheseEventIDs) > 0 {
 		createEventJSON, err := a.eventsTable.SelectCreateEvent(txn, roomID)
 		if err != nil {
-			return 0, nil, fmt.Errorf("SelectCreateEvent: %s", err)
+			return 0, nil, fmt.Errorf("SelectCreateEvent: %w", err)
 		}
 		roomVersion = gjson.GetBytes(createEventJSON, "content.room_version").Str
 		if roomVersion == "" {
 			// Defaults to "1" if the key does not exist.
 			roomVersion = "1"
+			logger.Warn().Str("room", roomID).Err(err).Msg(
+				"Redact: no content.room_version in create event, defaulting to v1",
+			)
 		}
 		if err = a.eventsTable.Redact(txn, roomVersion, redactTheseEventIDs); err != nil {
 			return 0, nil, err

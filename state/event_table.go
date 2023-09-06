@@ -342,21 +342,24 @@ func (t *EventTable) Redact(txn *sqlx.Tx, roomVer string, eventIDs []string) err
 	// verifyAll=false so if we are asked to redact an event we don't have we don't fall over.
 	eventsToRedact, err := t.SelectByIDs(txn, false, eventIDs)
 	if err != nil {
-		return fmt.Errorf("EventTable.Redact[%v]: %s", eventIDs, err)
+		return fmt.Errorf("EventTable.Redact[%v]: %w", eventIDs, err)
 	}
 	rv, err := gomatrixserverlib.GetRoomVersion(gomatrixserverlib.RoomVersion(roomVer))
 	if err != nil {
 		// unknown room version... let's just default to "1"
 		rv = gomatrixserverlib.MustGetRoomVersion(gomatrixserverlib.RoomVersionV1)
+		logger.Warn().Str("version", roomVer).Err(err).Msg(
+			"Redact: GetRoomVersion: unknown room version, defaulting to v1",
+		)
 	}
 	for i := range eventsToRedact {
 		eventsToRedact[i].JSON, err = rv.RedactEventJSON(eventsToRedact[i].JSON)
 		if err != nil {
-			return fmt.Errorf("RedactEventJSON[%s]: %s", eventsToRedact[i].ID, err)
+			return fmt.Errorf("RedactEventJSON[%s]: %w", eventsToRedact[i].ID, err)
 		}
 		_, err = txn.Exec(`UPDATE syncv3_events SET event=$1 WHERE event_id=$2`, eventsToRedact[i].JSON, eventsToRedact[i].ID)
 		if err != nil {
-			return fmt.Errorf("cannot update event %s: %v", eventsToRedact[i].ID, err)
+			return fmt.Errorf("cannot update event %s: %w", eventsToRedact[i].ID, err)
 		}
 	}
 	return nil
