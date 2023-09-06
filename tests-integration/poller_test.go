@@ -456,9 +456,8 @@ func TestPollerExpiryEnsurePollingRace(t *testing.T) {
 	})
 
 	t.Log("Alice makes a sliding sync request with a token that's about to expire.")
-	res, _, code := v3.doV3Request(t, context.Background(), aliceToken, "", sync3.Request{})
-	if code == 200 {
-		pprinted, _ := json.MarshalIndent(res, "", "    ")
-		t.Fatalf("Should have got non 200 http response; got 200 OK\n%s", pprinted)
+	_, resBytes, status := v3.doV3Request(t, context.Background(), aliceToken, "", sync3.Request{})
+	if status != http.StatusUnauthorized {
+		t.Fatalf("Should have got 401 http response; got %d\n%s", status, resBytes)
 	}
 }
