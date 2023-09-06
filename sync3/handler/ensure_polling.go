@@ -14,8 +14,10 @@ import (
 // pendingInfo tracks the status of a poller that we are (or previously were) waiting
 // to start.
 type pendingInfo struct {
-	// done is set to true when we confirm that this poller has started polling.
+	// done is set to true when the EnsurePolling request received a response.
 	done bool
+	// success is true when done is true and EnsurePolling succeeded; otherwise false.
+	success bool
 	// ch is a dummy channel which never receives any data. A call to
 	// EnsurePoller.OnInitialSyncComplete will close the channel (unblocking any
 	// EnsurePoller.EnsurePolling calls which are waiting on it) and then set the ch
@@ -56,16 +58,18 @@ func NewEnsurePoller(notifier pubsub.Notifier, enablePrometheus bool) *EnsurePol
 }
 
 // EnsurePolling blocks until the V2InitialSyncComplete response is received for this device. It is
-// the caller's responsibility to call OnInitialSyncComplete when new events arrive.
-func (p *EnsurePoller) EnsurePolling(ctx context.Context, pid sync2.PollerID, tokenHash string) {
+// the caller's responsibility to call OnInitialSyncComplete when new events arrive. Returns the Success field from the
+// V2InitialSyncComplete response, which is true iff there is an active poller.
+func (p *EnsurePoller) EnsurePolling(ctx context.Context, pid sync2.PollerID, tokenHash string) bool {
 	ctx, region := internal.StartSpan(ctx, "EnsurePolling")
 	defer region.End()
 	p.mu.Lock()
 	// do we need to wait?
 	if p.pendingPolls[pid].done {
 		internal.Logf(ctx, "EnsurePolling", "user %s device %s already done", pid.UserID, pid.DeviceID)
+		success := p.pendingPolls[pid].success
 		p.mu.Unlock()
-		return
+		return success
 	}
 	// have we called EnsurePolling for this user/device before?
 	ch := p.pendingPolls[pid].ch
@@ -79,7 +83,10 @@ func (p *EnsurePoller) EnsurePolling(ctx context.Context, pid sync2.PollerID, to
 		_, r2 := internal.StartSpan(ctx, "waitForExistingChannelClose")
 		<-ch
 		r2.End()
-		return
+		p.mu.Lock()
+		success := p.pendingPolls[pid].success
+		p.mu.Unlock()
+		return success
 	}
 	// Make a channel to wait until we have done an initial sync
 	ch = make(chan struct{})
@@ -101,6 +108,11 @@ func (p *EnsurePoller) EnsurePolling(ctx context.Context, pid sync2.PollerID, to
 	_, r2 := internal.StartSpan(ctx, "waitForNewChannelClose")
 	<-ch
 	r2.End()
+
+	p.mu.Lock()
+	success := p.pendingPolls[pid].success
+	p.mu.Unlock()
+	return success
 }
 
 func (p *EnsurePoller) OnInitialSyncComplete(payload *pubsub.V2InitialSyncComplete) {
@@ -116,7 +128,8 @@ func (p *EnsurePoller) OnInitialSyncComplete(payload *pubsub.V2InitialSyncComple
 		// e.g from the database
 		log.Trace().Msg("OnInitialSyncComplete: we weren't waiting for this")
 		p.pendingPolls[pid] = pendingInfo{
-			done: true,
+			done:    true,
+			success: payload.Success,
 		}
 		return
 	}
@@ -130,6 +143,7 @@ func (p *EnsurePoller) OnInitialSyncComplete(payload *pubsub.V2InitialSyncComple
 	ch := pending.ch
 	pending.done = true
 	pending.ch = nil
+	pending.success = payload.Success
 	p.pendingPolls[pid] = pending
 	p.calculateNumOutstanding() // decrement total
 	log.Trace().Msg("OnInitialSyncComplete: closing channel")

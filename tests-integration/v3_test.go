@@ -50,11 +50,14 @@ var (
 
 // testV2Server is a fake stand-in for the v2 sync API provided by a homeserver.
 type testV2Server struct {
-	// CheckRequest is an arbitrary function which runs after a request has been
+	// checkRequest is an arbitrary function which runs after a request has been
 	// received from pollers, but before the response is generated. This allows us to
 	// confirm that the proxy is polling the homeserver's v2 sync endpoint in the
 	// manner that we expect.
-	CheckRequest            func(userID, token string, req *http.Request)
+	//
+	// checkRequest is called before we lookup a user for the given token. Tests can
+	// use this to invalidate the token right before a poll is made.
+	checkRequest            func(token string, req *http.Request)
 	mu                      *sync.Mutex
 	tokenToUser             map[string]string
 	tokenToDevice           map[string]string
@@ -65,10 +68,10 @@ type testV2Server struct {
 	timeToWaitForV2Response time.Duration
 }
 
-func (s *testV2Server) SetCheckRequest(fn func(userID, token string, req *http.Request)) {
+func (s *testV2Server) SetCheckRequest(fn func(token string, req *http.Request)) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.CheckRequest = fn
+	s.checkRequest = fn
 }
 
 // Most tests only use a single device per user. Give them this helper so they don't
@@ -92,6 +95,12 @@ func (s *testV2Server) addAccountWithDeviceID(userID, deviceID, token string) {
 	s.waiting[token] = &sync.Cond{
 		L: &sync.Mutex{},
 	}
+}
+
+// like invalidateToken, but doesn't do any waiting.
+func (s *testV2Server) invalidateTokenImmediately(token string) {
+	delete(s.tokenToUser, token)
+	delete(s.tokenToDevice, token)
 }
 
 // remove the token and wait until the proxy sends a request with this token, then 401 it and return.
@@ -253,6 +262,12 @@ func runTestV2Server(t testutils.TestBenchInterface) *testV2Server {
 	})
 	r.HandleFunc("/_matrix/client/r0/sync", func(w http.ResponseWriter, req *http.Request) {
 		token := strings.TrimPrefix(req.Header.Get("Authorization"), "Bearer ")
+		server.mu.Lock()
+		check := server.checkRequest
+		server.mu.Unlock()
+		if check != nil {
+			check(token, req)
+		}
 		userID := server.userID(token)
 		if userID == "" {
 			w.WriteHeader(401)
@@ -263,12 +278,6 @@ func runTestV2Server(t testutils.TestBenchInterface) *testV2Server {
 			}
 			server.mu.Unlock()
 			return
-		}
-		server.mu.Lock()
-		check := server.CheckRequest
-		server.mu.Unlock()
-		if check != nil {
-			check(userID, token, req)
 		}
 		resp := server.nextResponse(userID, token)
 		body, err := json.Marshal(resp)

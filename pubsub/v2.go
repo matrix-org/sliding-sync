@@ -90,6 +90,7 @@ func (*V2InviteRoom) Type() string { return "V2InviteRoom" }
 type V2InitialSyncComplete struct {
 	UserID   string
 	DeviceID string
+	Success  bool
 }
 
 func (*V2InitialSyncComplete) Type() string { return "V2InitialSyncComplete" }
