@@ -153,14 +153,17 @@ func (h *Handler) StartV2Pollers() {
 					UserID:   t.UserID,
 					DeviceID: t.DeviceID,
 				}
-				h.pMap.EnsurePolling(
+				_, err = h.pMap.EnsurePolling(
 					pid, t.AccessToken, t.Since, true,
 					logger.With().Str("user_id", t.UserID).Str("device_id", t.DeviceID).Logger(),
 				)
+				if err != nil {
+					logger.Err(err).Str("user_id", t.UserID).Str("device_id", t.DeviceID).Msg("Failed to start poller")
+				}
 				h.v2Pub.Notify(pubsub.ChanV2, &pubsub.V2InitialSyncComplete{
 					UserID:   t.UserID,
 					DeviceID: t.DeviceID,
-					Success:  true,
+					Success:  err != nil,
 				})
 			}
 		}()
@@ -562,14 +565,17 @@ func (h *Handler) EnsurePolling(p *pubsub.V3EnsurePolling) {
 			UserID:   p.UserID,
 			DeviceID: p.DeviceID,
 		}
-		h.pMap.EnsurePolling(
+		_, err = h.pMap.EnsurePolling(
 			pid, accessToken, since, false, log,
 		)
+		if err != nil {
+			log.Err(err).Msg("Failed to start poller")
+		}
 		h.updateMetrics()
 		h.v2Pub.Notify(pubsub.ChanV2, &pubsub.V2InitialSyncComplete{
 			UserID:   p.UserID,
 			DeviceID: p.DeviceID,
-			Success:  true,
+			Success:  err != nil,
 		})
 	}()
 }

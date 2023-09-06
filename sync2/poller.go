@@ -295,6 +295,9 @@ func (h *PollerMap) EnsurePolling(pid PollerID, accessToken, v2since string, isS
 	} else {
 		logger.Info().Str("user", poller.userID).Msg("a poller exists for this user; not waiting for this device to do an initial sync")
 	}
+	if poller.terminated.Load() {
+		return false, fmt.Errorf("PollerMap.EnsurePolling: poller terminated after intial sync")
+	}
 	return true, nil
 }
 
