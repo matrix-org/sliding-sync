@@ -2,6 +2,7 @@ package state
 
 import (
 	"database/sql"
+	"encoding/json"
 	"fmt"
 	"math"
 
@@ -10,6 +11,7 @@ import (
 	"github.com/tidwall/gjson"
 	"github.com/tidwall/sjson"
 
+	"github.com/matrix-org/gomatrixserverlib"
 	"github.com/matrix-org/sliding-sync/internal"
 	"github.com/matrix-org/sliding-sync/sqlutil"
 )
@@ -336,6 +338,33 @@ func (t *EventTable) LatestEventNIDInRooms(txn *sqlx.Tx, roomIDs []string, highe
 	return
 }
 
+func (t *EventTable) Redact(txn *sqlx.Tx, roomVer string, eventIDs []string) error {
+	// verifyAll=false so if we are asked to redact an event we don't have we don't fall over.
+	eventsToRedact, err := t.SelectByIDs(txn, false, eventIDs)
+	if err != nil {
+		return fmt.Errorf("EventTable.Redact[%v]: %w", eventIDs, err)
+	}
+	rv, err := gomatrixserverlib.GetRoomVersion(gomatrixserverlib.RoomVersion(roomVer))
+	if err != nil {
+		// unknown room version... let's just default to "1"
+		rv = gomatrixserverlib.MustGetRoomVersion(gomatrixserverlib.RoomVersionV1)
+		logger.Warn().Str("version", roomVer).Err(err).Msg(
+			"Redact: GetRoomVersion: unknown room version, defaulting to v1",
+		)
+	}
+	for i := range eventsToRedact {
+		eventsToRedact[i].JSON, err = rv.RedactEventJSON(eventsToRedact[i].JSON)
+		if err != nil {
+			return fmt.Errorf("RedactEventJSON[%s]: %w", eventsToRedact[i].ID, err)
+		}
+		_, err = txn.Exec(`UPDATE syncv3_events SET event=$1 WHERE event_id=$2`, eventsToRedact[i].JSON, eventsToRedact[i].ID)
+		if err != nil {
+			return fmt.Errorf("cannot update event %s: %w", eventsToRedact[i].ID, err)
+		}
+	}
+	return nil
+}
+
 func (t *EventTable) SelectLatestEventsBetween(txn *sqlx.Tx, roomID string, lowerExclusive, upperInclusive int64, limit int) ([]Event, error) {
 	var events []Event
 	// do not pull in events which were in the v2 state block
@@ -438,6 +467,13 @@ func (t *EventTable) SelectClosestPrevBatch(txn *sqlx.Tx, roomID string, eventNI
 		err = nil
 	}
 	return
+}
+
+func (t *EventTable) SelectCreateEvent(txn *sqlx.Tx, roomID string) (json.RawMessage, error) {
+	var evJSON []byte
+	// there is only 1 create event
+	err := txn.QueryRow(`SELECT event FROM syncv3_events WHERE room_id=$1 AND event_type='m.room.create' AND state_key=''`, roomID).Scan(&evJSON)
+	return evJSON, err
 }
 
 type EventChunker []Event
