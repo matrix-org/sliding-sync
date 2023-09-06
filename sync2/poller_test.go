@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net/http"
 	"os"
 	"strconv"
 	"sync"
@@ -196,6 +197,24 @@ func TestPollerMapEnsurePollingIdempotent(t *testing.T) {
 		t.Fatalf("EnsurePolling did not unblock after 1s")
 	}
 	t.Logf("EnsurePolling unblocked")
+}
+
+func TestPollerMapEnsurePollingFailsWithExpiredToken(t *testing.T) {
+	accumulator, client := newMocks(func(authHeader, since string) (*SyncResponse, int, error) {
+		t.Logf("Responding to token '%s' with 401 Unauthorized", authHeader)
+		return nil, http.StatusUnauthorized, fmt.Errorf("RUH ROH unrecognised token")
+	})
+	pm := NewPollerMap(client, false)
+	pm.SetCallbacks(accumulator)
+
+	created, err := pm.EnsurePolling(PollerID{}, "dummy_token", "", true, zerolog.New(os.Stderr))
+
+	if created {
+		t.Errorf("Expected created=false, got created=true")
+	}
+	if err == nil {
+		t.Errorf("Expected nonnil error, got nil")
+	}
 }
 
 func TestPollerMap_ExpirePollers(t *testing.T) {
