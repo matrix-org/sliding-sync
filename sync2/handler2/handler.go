@@ -160,6 +160,7 @@ func (h *Handler) StartV2Pollers() {
 				h.v2Pub.Notify(pubsub.ChanV2, &pubsub.V2InitialSyncComplete{
 					UserID:   t.UserID,
 					DeviceID: t.DeviceID,
+					Success:  true,
 				})
 			}
 		}()
@@ -568,6 +569,7 @@ func (h *Handler) EnsurePolling(p *pubsub.V3EnsurePolling) {
 		h.v2Pub.Notify(pubsub.ChanV2, &pubsub.V2InitialSyncComplete{
 			UserID:   p.UserID,
 			DeviceID: p.DeviceID,
+			Success:  true,
 		})
 	}()
 }
