@@ -221,13 +221,16 @@ func TestPollerMap_ExpirePollers(t *testing.T) {
 		{UserID: "delia", DeviceID: "phone", Token: "d_token"},
 	}
 
-	for _, spec := range pollerSpecs {
-		created := pm.EnsurePolling(
+	for i, spec := range pollerSpecs {
+		created, err := pm.EnsurePolling(
 			PollerID{UserID: spec.UserID, DeviceID: spec.DeviceID},
 			spec.Token, "", true, logger,
 		)
+		if err != nil {
+			t.Errorf("EnsurePolling error for poller #%d (%v): %s", i, spec, err)
+		}
 		if !created {
-			t.Errorf("Poller for %v was not newly created", spec)
+			t.Errorf("Poller #%d (%v) was not newly created", i, spec)
 		}
 	}
 
@@ -254,10 +257,13 @@ func TestPollerMap_ExpirePollers(t *testing.T) {
 	}
 
 	for i, spec := range pollerSpecs {
-		created := pm.EnsurePolling(
+		created, err := pm.EnsurePolling(
 			PollerID{UserID: spec.UserID, DeviceID: spec.DeviceID},
 			spec.Token, "", true, logger,
 		)
+		if err != nil {
+			t.Errorf("EnsurePolling error for poller #%d (%v): %s", i, spec, err)
+		}
 		if created != expectDeleted[i] {
 			t.Errorf("Poller #%d (%v): created=%t, expected %t", i, spec, created, expectDeleted[i])
 		}
