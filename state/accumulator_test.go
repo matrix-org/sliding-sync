@@ -135,25 +135,24 @@ func TestAccumulatorAccumulate(t *testing.T) {
 		// new state event should be added to the snapshot
 		[]byte(`{"event_id":"I", "type":"m.room.history_visibility", "state_key":"", "content":{"visibility":"public"}}`),
 	}
-	var numNew int
-	var latestNIDs []int64
+	var result AccumulateResult
 	err = sqlutil.WithTransaction(accumulator.db, func(txn *sqlx.Tx) error {
-		numNew, latestNIDs, err = accumulator.Accumulate(txn, userID, roomID, "", newEvents)
+		result, err = accumulator.Accumulate(txn, userID, roomID, "", newEvents)
 		return err
 	})
 	if err != nil {
 		t.Fatalf("failed to Accumulate: %s", err)
 	}
-	if numNew != len(newEvents) {
-		t.Fatalf("got %d new events, want %d", numNew, len(newEvents))
+	if result.NumNew != len(newEvents) {
+		t.Fatalf("got %d new events, want %d", result.NumNew, len(newEvents))
 	}
 	// latest nid shoould match
 	wantLatestNID, err := accumulator.eventsTable.SelectHighestNID()
 	if err != nil {
 		t.Fatalf("failed to check latest NID from Accumulate: %s", err)
 	}
-	if latestNIDs[len(latestNIDs)-1] != wantLatestNID {
-		t.Errorf("Accumulator.Accumulate returned latest nid %d, want %d", latestNIDs[len(latestNIDs)-1], wantLatestNID)
+	if result.TimelineNIDs[len(result.TimelineNIDs)-1] != wantLatestNID {
+		t.Errorf("Accumulator.Accumulate returned latest nid %d, want %d", result.TimelineNIDs[len(result.TimelineNIDs)-1], wantLatestNID)
 	}
 
 	// Begin assertions
@@ -212,7 +211,7 @@ func TestAccumulatorAccumulate(t *testing.T) {
 
 	// subsequent calls do nothing and are not an error
 	err = sqlutil.WithTransaction(accumulator.db, func(txn *sqlx.Tx) error {
-		_, _, err = accumulator.Accumulate(txn, userID, roomID, "", newEvents)
+		_, err = accumulator.Accumulate(txn, userID, roomID, "", newEvents)
 		return err
 	})
 	if err != nil {
@@ -248,7 +247,7 @@ func TestAccumulatorMembershipLogs(t *testing.T) {
 		[]byte(`{"event_id":"` + roomEventIDs[7] + `", "type":"m.room.member", "state_key":"@me:localhost","unsigned":{"prev_content":{"membership":"join", "displayname":"Me"}}, "content":{"membership":"leave"}}`),
 	}
 	err = sqlutil.WithTransaction(accumulator.db, func(txn *sqlx.Tx) error {
-		_, _, err = accumulator.Accumulate(txn, userID, roomID, "", roomEvents)
+		_, err = accumulator.Accumulate(txn, userID, roomID, "", roomEvents)
 		return err
 	})
 	if err != nil {
@@ -384,7 +383,7 @@ func TestAccumulatorDupeEvents(t *testing.T) {
 	}
 
 	err = sqlutil.WithTransaction(accumulator.db, func(txn *sqlx.Tx) error {
-		_, _, err = accumulator.Accumulate(txn, userID, roomID, "", joinRoom.Timeline.Events)
+		_, err = accumulator.Accumulate(txn, userID, roomID, "", joinRoom.Timeline.Events)
 		return err
 	})
 	if err != nil {
@@ -584,8 +583,8 @@ func TestAccumulatorConcurrency(t *testing.T) {
 			defer wg.Done()
 			subset := newEvents[:(i + 1)] // i=0 => [1], i=1 => [1,2], etc
 			err := sqlutil.WithTransaction(accumulator.db, func(txn *sqlx.Tx) error {
-				numNew, _, err := accumulator.Accumulate(txn, userID, roomID, "", subset)
-				totalNumNew += numNew
+				result, err := accumulator.Accumulate(txn, userID, roomID, "", subset)
+				totalNumNew += result.NumNew
 				return err
 			})
 			if err != nil {

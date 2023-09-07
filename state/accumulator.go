@@ -317,6 +317,12 @@ func (a *Accumulator) Initialise(roomID string, state []json.RawMessage) (Initia
 	return res, err
 }
 
+type AccumulateResult struct {
+	// TODO: is this redundant---identical to len(TimelineNIDs)?
+	NumNew       int
+	TimelineNIDs []int64
+}
+
 // Accumulate internal state from a user's sync response. The timeline order MUST be in the order
 // received from the server. Returns the number of new events in the timeline, the new timeline event NIDs
 // or an error.
@@ -328,7 +334,7 @@ func (a *Accumulator) Initialise(roomID string, state []json.RawMessage) (Initia
 //     to exist in the database, and the sync stream is already linearised for us.
 //   - Else it creates a new room state snapshot if the timeline contains state events (as this now represents the current state)
 //   - It adds entries to the membership log for membership events.
-func (a *Accumulator) Accumulate(txn *sqlx.Tx, userID, roomID string, prevBatch string, timeline []json.RawMessage) (numNew int, timelineNIDs []int64, err error) {
+func (a *Accumulator) Accumulate(txn *sqlx.Tx, userID, roomID string, prevBatch string, timeline []json.RawMessage) (AccumulateResult, error) {
 	// The first stage of accumulating events is mostly around validation around what the upstream HS sends us. For accumulation to work correctly
 	// we expect:
 	// - there to be no duplicate events
@@ -337,10 +343,10 @@ func (a *Accumulator) Accumulate(txn *sqlx.Tx, userID, roomID string, prevBatch 
 	dedupedEvents, err := a.filterAndParseTimelineEvents(txn, roomID, timeline, prevBatch)
 	if err != nil {
 		err = fmt.Errorf("filterTimelineEvents: %w", err)
-		return
+		return AccumulateResult{}, err
 	}
 	if len(dedupedEvents) == 0 {
-		return 0, nil, err // nothing to do
+		return AccumulateResult{}, nil // nothing to do
 	}
 
 	// Given a timeline of [E1, E2, S3, E4, S5, S6, E7] (E=message event, S=state event)
@@ -354,7 +360,7 @@ func (a *Accumulator) Accumulate(txn *sqlx.Tx, userID, roomID string, prevBatch 
 	// do NOT assign the new state event in the snapshot so as to represent the state before the event.
 	snapID, err := a.roomsTable.CurrentAfterSnapshotID(txn, roomID)
 	if err != nil {
-		return 0, nil, err
+		return AccumulateResult{}, err
 	}
 
 	// The only situation where no prior snapshot should exist is if this timeline is
@@ -389,19 +395,22 @@ func (a *Accumulator) Accumulate(txn *sqlx.Tx, userID, roomID string, prevBatch 
 				})
 				sentry.CaptureMessage(msg)
 			})
-			return 0, nil, nil
+			return AccumulateResult{}, nil
 		}
 	}
 
 	eventIDToNID, err := a.eventsTable.Insert(txn, dedupedEvents, false)
 	if err != nil {
-		return 0, nil, err
+		return AccumulateResult{}, err
 	}
 	if len(eventIDToNID) == 0 {
 		// nothing to do, we already know about these events
-		return 0, nil, nil
+		return AccumulateResult{}, nil
 	}
-	numNew = len(eventIDToNID)
+
+	result := AccumulateResult{
+		NumNew: len(eventIDToNID),
+	}
 
 	var latestNID int64
 	newEvents := make([]Event, 0, len(eventIDToNID))
@@ -433,7 +442,7 @@ func (a *Accumulator) Accumulate(txn *sqlx.Tx, userID, roomID string, prevBatch 
 				}
 			}
 			newEvents = append(newEvents, ev)
-			timelineNIDs = append(timelineNIDs, ev.NID)
+			result.TimelineNIDs = append(result.TimelineNIDs, ev.NID)
 		}
 	}
 
@@ -443,7 +452,7 @@ func (a *Accumulator) Accumulate(txn *sqlx.Tx, userID, roomID string, prevBatch 
 	if len(redactTheseEventIDs) > 0 {
 		createEventJSON, err := a.eventsTable.SelectCreateEvent(txn, roomID)
 		if err != nil {
-			return 0, nil, fmt.Errorf("SelectCreateEvent: %w", err)
+			return AccumulateResult{}, fmt.Errorf("SelectCreateEvent: %w", err)
 		}
 		roomVersion = gjson.GetBytes(createEventJSON, "content.room_version").Str
 		if roomVersion == "" {
@@ -454,7 +463,7 @@ func (a *Accumulator) Accumulate(txn *sqlx.Tx, userID, roomID string, prevBatch 
 			)
 		}
 		if err = a.eventsTable.Redact(txn, roomVersion, redactTheseEventIDs); err != nil {
-			return 0, nil, err
+			return AccumulateResult{}, err
 		}
 	}
 
@@ -470,12 +479,12 @@ func (a *Accumulator) Accumulate(txn *sqlx.Tx, userID, roomID string, prevBatch 
 			if snapID != 0 {
 				oldStripped, err = a.strippedEventsForSnapshot(txn, snapID)
 				if err != nil {
-					return 0, nil, fmt.Errorf("failed to load stripped state events for snapshot %d: %s", snapID, err)
+					return AccumulateResult{}, fmt.Errorf("failed to load stripped state events for snapshot %d: %s", snapID, err)
 				}
 			}
 			newStripped, replacedNID, err := a.calculateNewSnapshot(oldStripped, ev)
 			if err != nil {
-				return 0, nil, fmt.Errorf("failed to calculateNewSnapshot: %s", err)
+				return AccumulateResult{}, fmt.Errorf("failed to calculateNewSnapshot: %s", err)
 			}
 			replacesNID = replacedNID
 			memNIDs, otherNIDs := newStripped.NIDs()
@@ -485,7 +494,7 @@ func (a *Accumulator) Accumulate(txn *sqlx.Tx, userID, roomID string, prevBatch 
 				OtherEvents:      otherNIDs,
 			}
 			if err = a.snapshotTable.Insert(txn, newSnapshot); err != nil {
-				return 0, nil, fmt.Errorf("failed to insert new snapshot: %w", err)
+				return AccumulateResult{}, fmt.Errorf("failed to insert new snapshot: %w", err)
 			}
 			if a.snapshotMemberCountVec != nil {
 				logger.Trace().Str("room_id", roomID).Int("members", len(memNIDs)).Msg("Inserted new snapshot")
@@ -494,20 +503,20 @@ func (a *Accumulator) Accumulate(txn *sqlx.Tx, userID, roomID string, prevBatch 
 			snapID = newSnapshot.SnapshotID
 		}
 		if err := a.eventsTable.UpdateBeforeSnapshotID(txn, ev.NID, beforeSnapID, replacesNID); err != nil {
-			return 0, nil, err
+			return AccumulateResult{}, err
 		}
 	}
 
 	if err = a.spacesTable.HandleSpaceUpdates(txn, newEvents); err != nil {
-		return 0, nil, fmt.Errorf("HandleSpaceUpdates: %s", err)
+		return AccumulateResult{}, fmt.Errorf("HandleSpaceUpdates: %s", err)
 	}
 
 	// the last fetched snapshot ID is the current one
 	info := a.roomInfoDelta(roomID, newEvents)
 	if err = a.roomsTable.Upsert(txn, info, snapID, latestNID); err != nil {
-		return 0, nil, fmt.Errorf("failed to UpdateCurrentSnapshotID to %d: %w", snapID, err)
+		return AccumulateResult{}, fmt.Errorf("failed to UpdateCurrentSnapshotID to %d: %w", snapID, err)
 	}
-	return numNew, timelineNIDs, nil
+	return result, nil
 }
 
 // filterAndParseTimelineEvents takes a raw timeline array from sync v2 and applies sanity to it:

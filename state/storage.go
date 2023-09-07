@@ -336,15 +336,15 @@ func (s *Storage) currentNotMembershipStateEventsInAllRooms(txn *sqlx.Tx, eventT
 	return result, nil
 }
 
-func (s *Storage) Accumulate(userID, roomID, prevBatch string, timeline []json.RawMessage) (numNew int, timelineNIDs []int64, err error) {
+func (s *Storage) Accumulate(userID, roomID, prevBatch string, timeline []json.RawMessage) (result AccumulateResult, err error) {
 	if len(timeline) == 0 {
-		return 0, nil, nil
+		return AccumulateResult{}, nil
 	}
 	err = sqlutil.WithTransaction(s.Accumulator.db, func(txn *sqlx.Tx) error {
-		numNew, timelineNIDs, err = s.Accumulator.Accumulate(txn, userID, roomID, prevBatch, timeline)
+		result, err = s.Accumulator.Accumulate(txn, userID, roomID, prevBatch, timeline)
 		return err
 	})
-	return
+	return result, err
 }
 
 func (s *Storage) Initialise(roomID string, state []json.RawMessage) (InitialiseResult, error) {
