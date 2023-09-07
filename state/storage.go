@@ -975,6 +975,9 @@ func (s *Storage) Teardown() {
 	if err != nil {
 		panic("Storage.Teardown: " + err.Error())
 	}
+	if s.Accumulator.snapshotSizeVec != nil {
+		prometheus.Unregister(s.Accumulator.snapshotSizeVec)
+	}
 }
 
 // circularSlice is a slice which can be appended to which will wraparound at `max`.
