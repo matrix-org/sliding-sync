@@ -104,7 +104,7 @@ func Setup(destHomeserver, postgresURI, secret string, opts Opts) (*handler2.Han
 	if opts.DBConnMaxIdleTime > 0 {
 		db.SetConnMaxIdleTime(opts.DBConnMaxIdleTime)
 	}
-	store := state.NewStorageWithDB(db)
+	store := state.NewStorageWithDB(db, opts.AddPrometheusMetrics)
 	storev2 := sync2.NewStoreWithDB(db, secret)
 
 	// Automatically execute migrations

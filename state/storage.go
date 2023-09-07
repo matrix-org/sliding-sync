@@ -9,6 +9,7 @@ import (
 
 	"github.com/getsentry/sentry-go"
 	"github.com/lib/pq"
+	"github.com/prometheus/client_golang/prometheus"
 
 	"github.com/jmoiron/sqlx"
 	"github.com/matrix-org/sliding-sync/internal"
@@ -73,10 +74,10 @@ func NewStorage(postgresURI string) *Storage {
 		// TODO: if we panic(), will sentry have a chance to flush the event?
 		logger.Panic().Err(err).Str("uri", postgresURI).Msg("failed to open SQL DB")
 	}
-	return NewStorageWithDB(db)
+	return NewStorageWithDB(db, false)
 }
 
-func NewStorageWithDB(db *sqlx.DB) *Storage {
+func NewStorageWithDB(db *sqlx.DB, addPrometheusMetrics bool) *Storage {
 	acc := &Accumulator{
 		db:            db,
 		roomsTable:    NewRoomsTable(db),
@@ -85,6 +86,18 @@ func NewStorageWithDB(db *sqlx.DB) *Storage {
 		spacesTable:   NewSpacesTable(db),
 		entityName:    "server",
 	}
+
+	if addPrometheusMetrics {
+		acc.snapshotSizeVec = prometheus.NewHistogramVec(prometheus.HistogramOpts{
+			Namespace: "sliding_sync",
+			Subsystem: "poller",
+			Name:      "snapshot_size",
+			Help:      "Number of membership events in a snapshot",
+			Buckets:   []float64{100.0, 500.0, 1000.0, 5000.0, 10000.0, 20000.0, 50000.0, 100000.0, 150000.0},
+		}, []string{"room_id"})
+		prometheus.MustRegister(acc.snapshotSizeVec)
+	}
+
 	return &Storage{
 		Accumulator:       acc,
 		ToDeviceTable:     NewToDeviceTable(db),
