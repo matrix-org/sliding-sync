@@ -1063,7 +1063,17 @@ func TestEventTableRedact(t *testing.T) {
 				JSON:                  j,
 			},
 		}, false)
-		assertNoError(t, table.Redact(txn, tc.roomVer, []string{eventID}))
+		assertNoError(t, table.Redact(txn, tc.roomVer, map[string]*Event{
+			eventID: &Event{
+				JSON: json.RawMessage(`{
+					"type": "m.room.redaction",
+					"event_id": "$unimportant",
+					"content": {
+						"redacts": "` + eventID + `"
+					}
+				}`),
+			},
+		}))
 		gots, err := table.SelectByIDs(txn, true, []string{eventID})
 		assertNoError(t, err)
 		if len(gots) != 1 {
@@ -1088,5 +1098,32 @@ func TestEventTableRedactMissingOK(t *testing.T) {
 		t.Fatalf("failed to start txn: %s", err)
 	}
 	defer txn.Rollback()
-	assertNoError(t, table.Redact(txn, "2", []string{"$unknown", "$event", "$ids"}))
+	assertNoError(t, table.Redact(txn, "2", map[string]*Event{
+		"$unknown": {
+			JSON: json.RawMessage(`{
+				"type": "m.room.redaction",
+				"event_id": "$unimportant",
+				"content": {
+					"redacts": "$unknown"
+				}
+			}`),
+		},
+		"$event": {
+			JSON: json.RawMessage(`{
+				"type": "m.room.redaction",
+				"event_id": "$unimportant",
+				"content": {
+					"redacts": "$event"
+				}
+			}`),
+		},
+		"$ids": {
+			JSON: json.RawMessage(`{
+				"type": "m.room.redaction",
+				"event_id": "$unimportant",
+				"content": {
+					"redacts": "$ids"
+				}
+			}`),
+		}}))
 }

@@ -5,6 +5,7 @@ import (
 
 	"github.com/matrix-org/sliding-sync/sync3"
 	"github.com/matrix-org/sliding-sync/testutils/m"
+	"github.com/tidwall/gjson"
 )
 
 func TestRedactionsAreRedactedWherePossible(t *testing.T) {
@@ -59,5 +60,18 @@ func TestRedactionsAreRedactedWherePossible(t *testing.T) {
 			{ID: redactionEventID},
 		})},
 	}))
+	// introspect the unsigned key a bit more, we don't know all the fields so can't use a matcher
+	gotEvent := gjson.ParseBytes(res.Rooms[room].Timeline[len(res.Rooms[room].Timeline)-2])
+	redactedBecause := gotEvent.Get("unsigned.redacted_because")
+	if !redactedBecause.Exists() {
+		t.Fatalf("unsigned.redacted_because must exist, but it doesn't. Got: %v", gotEvent.Raw)
+	}
+	// assert basic fields
+	assertEqual(t, "event_id mismatch", redactedBecause.Get("event_id").Str, redactionEventID)
+	assertEqual(t, "sender mismatch", redactedBecause.Get("sender").Str, alice.UserID)
+	assertEqual(t, "type mismatch", redactedBecause.Get("type").Str, "m.room.redaction")
+	if !redactedBecause.Get("content").Exists() {
+		t.Fatalf("unsigned.redacted_because.content must exist, but it doesn't. Got: %v", gotEvent.Raw)
+	}
 
 }
