@@ -77,6 +77,15 @@ func eventsEqual(wantList []Event, gotList []json.RawMessage) error {
 		if want.Sender != "" && want.Sender != got.Sender {
 			return fmt.Errorf("event %d Sender mismatch: got %v want %v", i, got.Sender, want.Sender)
 		}
+		// loop each key on unsigned as unsigned also includes "age" which is unpredictable so cannot DeepEqual
+		if want.Unsigned != nil {
+			for k, v := range want.Unsigned {
+				got := got.Unsigned[k]
+				if !reflect.DeepEqual(got, v) {
+					return fmt.Errorf("event %d Unsigned.%s mismatch: got %v want %v", i, k, got, v)
+				}
+			}
+		}
 	}
 	return nil
 }
@@ -217,4 +226,11 @@ func registerNamedUser(t *testing.T, localpartPrefix string) *CSAPI {
 
 func ptr(s string) *string {
 	return &s
+}
+
+func assertEqual(t *testing.T, msg string, got, want interface{}) {
+	t.Helper()
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("%s: got %v want %v", msg, got, want)
+	}
 }
