@@ -591,6 +591,8 @@ func (s *ConnState) getInitialRoomData(ctx context.Context, roomSub sync3.RoomSu
 	roomToTimeline = s.userCache.AnnotateWithTransactionIDs(ctx, s.userID, s.deviceID, roomToTimeline)
 	rsm := roomSub.RequiredStateMap(s.userID)
 
+	internal.Logf(ctx, "connstate", "getInitialRoomData for %d rooms, RequiredStateMap: %#v", len(roomIDs), rsm)
+
 	// Filter out rooms we are only invited to, as we don't need to fetch the state
 	// since we'll be using the invite_state only.
 	loadRoomIDs := make([]string, 0, len(roomIDs))
