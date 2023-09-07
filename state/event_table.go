@@ -338,7 +338,11 @@ func (t *EventTable) LatestEventNIDInRooms(txn *sqlx.Tx, roomIDs []string, highe
 	return
 }
 
-func (t *EventTable) Redact(txn *sqlx.Tx, roomVer string, eventIDs []string) error {
+func (t *EventTable) Redact(txn *sqlx.Tx, roomVer string, redacteeEventIDToRedactEvent map[string]*Event) error {
+	eventIDs := make([]string, 0, len(redacteeEventIDToRedactEvent))
+	for e := range redacteeEventIDToRedactEvent {
+		eventIDs = append(eventIDs, e)
+	}
 	// verifyAll=false so if we are asked to redact an event we don't have we don't fall over.
 	eventsToRedact, err := t.SelectByIDs(txn, false, eventIDs)
 	if err != nil {
@@ -356,6 +360,13 @@ func (t *EventTable) Redact(txn *sqlx.Tx, roomVer string, eventIDs []string) err
 		eventsToRedact[i].JSON, err = rv.RedactEventJSON(eventsToRedact[i].JSON)
 		if err != nil {
 			return fmt.Errorf("RedactEventJSON[%s]: %w", eventsToRedact[i].ID, err)
+		}
+		// also set unsigned.redacted_because as EX relies on it
+		eventsToRedact[i].JSON, err = sjson.SetBytes(
+			eventsToRedact[i].JSON, "unsigned.redacted_because", json.RawMessage(redacteeEventIDToRedactEvent[eventsToRedact[i].ID].JSON),
+		)
+		if err != nil {
+			return fmt.Errorf("RedactEventJSON[%s]: setting redacted_because %w", eventsToRedact[i].ID, err)
 		}
 		_, err = txn.Exec(`UPDATE syncv3_events SET event=$1 WHERE event_id=$2`, eventsToRedact[i].JSON, eventsToRedact[i].ID)
 		if err != nil {

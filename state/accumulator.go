@@ -399,8 +399,8 @@ func (a *Accumulator) Accumulate(txn *sqlx.Tx, userID, roomID string, prevBatch 
 
 	var latestNID int64
 	newEvents := make([]Event, 0, len(eventIDToNID))
-	var redactTheseEventIDs []string
-	for _, ev := range dedupedEvents {
+	redactTheseEventIDs := make(map[string]*Event)
+	for i, ev := range dedupedEvents {
 		nid, ok := eventIDToNID[ev.ID]
 		if ok {
 			ev.NID = int64(nid)
@@ -423,7 +423,7 @@ func (a *Accumulator) Accumulate(txn *sqlx.Tx, userID, roomID string, prevBatch 
 					redactsEventID = parsedEv.Get("content.redacts").Str
 				}
 				if redactsEventID != "" {
-					redactTheseEventIDs = append(redactTheseEventIDs, redactsEventID)
+					redactTheseEventIDs[redactsEventID] = &dedupedEvents[i]
 				}
 			}
 			newEvents = append(newEvents, ev)
