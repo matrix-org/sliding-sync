@@ -1,6 +1,7 @@
 package syncv3_test
 
 import (
+	"fmt"
 	"testing"
 
 	"github.com/matrix-org/sliding-sync/sync3"
@@ -74,4 +75,49 @@ func TestRedactionsAreRedactedWherePossible(t *testing.T) {
 		t.Fatalf("unsigned.redacted_because.content must exist, but it doesn't. Got: %v", gotEvent.Raw)
 	}
 
+}
+
+func TestRedactingRoomNameIsReflectedInNextSync(t *testing.T) {
+	alice := registerNamedUser(t, "alice")
+
+	t.Log("Alice creates a room and sets a room name.")
+	room := alice.CreateRoom(t, map[string]any{})
+	const naughty = "naughty room for naughty people"
+	const aliasLocalPart = "nice-alias"
+	nameID := alice.SetState(t, room, "m.room.name", "", map[string]any{
+		"name":            naughty,
+		"room_alias_name": aliasLocalPart,
+	})
+
+	t.Log("Alice sliding syncs, subscribing to that room explicitly.")
+	res := alice.SlidingSync(t, sync3.Request{
+		RoomSubscriptions: map[string]sync3.RoomSubscription{
+			room: {
+				TimelineLimit: 20,
+			},
+		},
+	})
+
+	t.Log("Alice should see her room appear with its name.")
+	m.MatchResponse(t, res, m.MatchRoomSubscription(room, m.MatchRoomName(naughty)))
+
+	t.Log("Alice redacts the room name.")
+	redactionID := alice.RedactEvent(t, room, nameID)
+
+	t.Log("Alice syncs until she sees her redaction.")
+	res = alice.SlidingSyncUntil(
+		t,
+		res.Pos,
+		sync3.Request{},
+		m.MatchRoomSubscription(
+			room,
+			MatchRoomTimelineMostRecent(1, []Event{
+				{ID: redactionID},
+			}),
+		),
+	)
+
+	alias := fmt.Sprintf("#%s:synapse", aliasLocalPart)
+	t.Log("The room name should have been redacted, falling back to the canonical alias.")
+	m.MatchResponse(t, res, m.MatchRoomSubscription(room, m.MatchRoomName(alias)))
 }
