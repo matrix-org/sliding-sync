@@ -24,6 +24,7 @@ type Receiver interface {
 	OnNewEvent(ctx context.Context, event *caches.EventData)
 	OnReceipt(ctx context.Context, receipt internal.Receipt)
 	OnEphemeralEvent(ctx context.Context, roomID string, ephEvent json.RawMessage)
+	OnInvalidateRoom(ctx context.Context, roomID string, fromSnapshotID int64)
 	// OnRegistered is called after a successful call to Dispatcher.Register
 	OnRegistered(ctx context.Context) error
 }
@@ -283,5 +284,19 @@ func (d *Dispatcher) notifyListeners(ctx context.Context, ed *caches.EventData, 
 				l.OnNewEvent(ctx, ed)
 			}
 		}
+	}
+}
+
+func (d *Dispatcher) OnInvalidateRoom(ctx context.Context, roomID string, snapshotID int64) {
+	joinedUsers, _ := d.jrt.JoinedUsersForRoom(roomID, nil)
+	d.userToReceiverMu.RLock()
+	defer d.userToReceiverMu.RUnlock()
+	for _, userID := range joinedUsers {
+		receiver, ok := d.userToReceiver[userID]
+		if !ok {
+			logger.Warn().Str("user_id", userID).Msgf("User has no receiver")
+			continue
+		}
+		receiver.OnInvalidateRoom(ctx, roomID, snapshotID)
 	}
 }

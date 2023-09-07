@@ -803,10 +803,12 @@ func (h *SyncLiveHandler) OnExpiredToken(p *pubsub.V2ExpiredToken) {
 }
 
 func (h *SyncLiveHandler) OnInvalidateRoom(p *pubsub.V2InvalidateRoom) {
-	_, task := internal.StartTask(context.Background(), "OnInvalidateRoom")
+	ctx, task := internal.StartTask(context.Background(), "OnInvalidateRoom")
 	defer task.End()
 
 	logger.Warn().Msgf("DMR: invalidate room %s new snapshot %d", p.RoomID, p.SnapshotID)
+	h.GlobalCache.OnInvalidateRoom(ctx, p.RoomID, p.SnapshotID)
+	h.Dispatcher.OnInvalidateRoom(ctx, p.RoomID, p.SnapshotID)
 }
 
 func parseIntFromQuery(u *url.URL, param string) (result int64, err *internal.HandlerError) {
