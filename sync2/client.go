@@ -126,6 +126,8 @@ func (v *HTTPClient) createSyncURL(since string, isFirst, toDeviceOnly bool) str
 	}
 	filter := map[string]interface{}{
 		"room": room,
+		// filter out all presence events (remove this once/if the proxy handles presence)
+		"presence": map[string]interface{}{"not_types": []string{"*"}},
 	}
 	filterJSON, _ := json.Marshal(filter)
 	qps += "&filter=" + url.QueryEscape(string(filterJSON))
