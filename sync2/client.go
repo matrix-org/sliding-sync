@@ -104,6 +104,9 @@ func (v *HTTPClient) createSyncURL(since string, isFirst, toDeviceOnly bool) str
 		qps += "&since=" + since
 	}
 
+	// Set presence to offline, this potentially reduces CPU load on upstream homeservers
+	qps += "&set_presence=offline"
+
 	// To reduce the likelihood of a gappy v2 sync, ask for a large timeline by default.
 	// Synapse's default is 10; 50 is the maximum allowed, by my reading of
 	// https://github.com/matrix-org/synapse/blob/89a71e73905ffa1c97ae8be27d521cd2ef3f3a0c/synapse/handlers/sync.py#L576-L577
