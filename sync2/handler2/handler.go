@@ -301,6 +301,14 @@ func (h *Handler) Accumulate(ctx context.Context, userID, deviceID, roomID, prev
 		return err
 	}
 
+	// TODO: does the ordering of this versus V2Accumulate matter here?
+	if accResult.ReloadFromSnapshot > 0 {
+		h.v2Pub.Notify(pubsub.ChanV2, &pubsub.V2InvalidateRoom{
+			RoomID:     roomID,
+			SnapshotID: accResult.ReloadFromSnapshot,
+		})
+	}
+
 	// We've updated the database. Now tell any pubsub listeners what we learned.
 	if accResult.NumNew != 0 {
 		h.v2Pub.Notify(pubsub.ChanV2, &pubsub.V2Accumulate{

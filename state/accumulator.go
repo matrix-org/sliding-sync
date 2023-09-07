@@ -321,6 +321,10 @@ type AccumulateResult struct {
 	// TODO: is this redundant---identical to len(TimelineNIDs)?
 	NumNew       int
 	TimelineNIDs []int64
+	// ReloadSnapshot is set to the snapshot ID representing the current state of the room, if this Accumulate has
+	// changed state in a non-incremental fashion. If so, the application should reload its view of this room from the
+	// given snapshot. Otherwise this is 0.
+	ReloadFromSnapshot int64
 }
 
 // Accumulate internal state from a user's sync response. The timeline order MUST be in the order
@@ -505,6 +509,13 @@ func (a *Accumulator) Accumulate(txn *sqlx.Tx, userID, roomID string, prevBatch 
 		if err := a.eventsTable.UpdateBeforeSnapshotID(txn, ev.NID, beforeSnapID, replacesNID); err != nil {
 			return AccumulateResult{}, err
 		}
+	}
+
+	if len(redactTheseEventIDs) > 0 {
+		// TODO: this is going to send out a cache invalidation when someone redacts a
+		// message event, which is unnecessary. Can we get eventsTable.Redact to tell us
+		// if it redacted any state events, and only include a snapID here if so?
+		result.ReloadFromSnapshot = snapID
 	}
 
 	if err = a.spacesTable.HandleSpaceUpdates(txn, newEvents); err != nil {
