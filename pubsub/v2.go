@@ -24,6 +24,7 @@ type V2Listener interface {
 	OnReceipt(p *V2Receipt)
 	OnDeviceMessages(p *V2DeviceMessages)
 	OnExpiredToken(p *V2ExpiredToken)
+	OnInvalidateRoom(p *V2InvalidateRoom)
 }
 
 type V2Initialise struct {
@@ -129,6 +130,13 @@ type V2ExpiredToken struct {
 
 func (*V2ExpiredToken) Type() string { return "V2ExpiredToken" }
 
+type V2InvalidateRoom struct {
+	RoomID     string
+	SnapshotID int64
+}
+
+func (*V2InvalidateRoom) Type() string { return "V2InvalidateRoom" }
+
 type V2Sub struct {
 	listener Listener
 	receiver V2Listener
@@ -173,6 +181,8 @@ func (v *V2Sub) onMessage(p Payload) {
 		v.receiver.OnDeviceMessages(pl)
 	case *V2ExpiredToken:
 		v.receiver.OnExpiredToken(pl)
+	case *V2InvalidateRoom:
+		v.receiver.OnInvalidateRoom(pl)
 	default:
 		logger.Warn().Str("type", p.Type()).Msg("V2Sub: unhandled payload type")
 	}
