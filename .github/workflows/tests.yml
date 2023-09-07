@@ -2,7 +2,7 @@ name: Tests
 
 on:
     push:
-        branches: ["main"]
+        branches: ["main", "v0.99.9x"]
     pull_request:
 
 permissions:
