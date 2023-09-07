@@ -184,9 +184,9 @@ func (c *CSAPI) DownloadContent(t *testing.T, mxcUri string) ([]byte, string) {
 }
 
 // CreateRoom creates a room with an optional HTTP request body. Fails the test on error. Returns the room ID.
-func (c *CSAPI) CreateRoom(t *testing.T, creationContent interface{}) string {
+func (c *CSAPI) CreateRoom(t *testing.T, reqBody map[string]any) string {
 	t.Helper()
-	res := c.MustDo(t, "POST", []string{"_matrix", "client", "v3", "createRoom"}, creationContent)
+	res := c.MustDo(t, "POST", []string{"_matrix", "client", "v3", "createRoom"}, reqBody)
 	body := ParseJSON(t, res)
 	return GetJSONFieldStr(t, body, "room_id")
 }
