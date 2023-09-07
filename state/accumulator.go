@@ -23,13 +23,13 @@ import (
 // Accumulate function for timeline events. v2 sync must be called with a large enough timeline.limit
 // for this to work!
 type Accumulator struct {
-	db              *sqlx.DB
-	roomsTable      *RoomsTable
-	eventsTable     *EventTable
-	snapshotTable   *SnapshotTable
-	spacesTable     *SpacesTable
-	entityName      string
-	snapshotSizeVec *prometheus.HistogramVec // TODO: Remove, this is temporary to get a feeling how often a new snapshot is created
+	db                     *sqlx.DB
+	roomsTable             *RoomsTable
+	eventsTable            *EventTable
+	snapshotTable          *SnapshotTable
+	spacesTable            *SpacesTable
+	entityName             string
+	snapshotMemberCountVec *prometheus.HistogramVec // TODO: Remove, this is temporary to get a feeling how often a new snapshot is created
 }
 
 func NewAccumulator(db *sqlx.DB) *Accumulator {
@@ -282,9 +282,9 @@ func (a *Accumulator) Initialise(roomID string, state []json.RawMessage) (Initia
 		if err != nil {
 			return fmt.Errorf("failed to insert snapshot: %w", err)
 		}
-		if a.snapshotSizeVec != nil {
+		if a.snapshotMemberCountVec != nil {
 			logger.Trace().Str("room_id", roomID).Int("members", len(memberNIDs)).Msg("Inserted new snapshot")
-			a.snapshotSizeVec.WithLabelValues(roomID).Observe(float64(len(memberNIDs)))
+			a.snapshotMemberCountVec.WithLabelValues(roomID).Observe(float64(len(memberNIDs)))
 		}
 		res.AddedEvents = true
 		latestNID := int64(0)
@@ -487,9 +487,9 @@ func (a *Accumulator) Accumulate(txn *sqlx.Tx, userID, roomID string, prevBatch 
 			if err = a.snapshotTable.Insert(txn, newSnapshot); err != nil {
 				return 0, nil, fmt.Errorf("failed to insert new snapshot: %w", err)
 			}
-			if a.snapshotSizeVec != nil {
+			if a.snapshotMemberCountVec != nil {
 				logger.Trace().Str("room_id", roomID).Int("members", len(memNIDs)).Msg("Inserted new snapshot")
-				a.snapshotSizeVec.WithLabelValues(roomID).Observe(float64(len(memNIDs)))
+				a.snapshotMemberCountVec.WithLabelValues(roomID).Observe(float64(len(memNIDs)))
 			}
 			snapID = newSnapshot.SnapshotID
 		}

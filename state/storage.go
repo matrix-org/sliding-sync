@@ -88,14 +88,14 @@ func NewStorageWithDB(db *sqlx.DB, addPrometheusMetrics bool) *Storage {
 	}
 
 	if addPrometheusMetrics {
-		acc.snapshotSizeVec = prometheus.NewHistogramVec(prometheus.HistogramOpts{
+		acc.snapshotMemberCountVec = prometheus.NewHistogramVec(prometheus.HistogramOpts{
 			Namespace: "sliding_sync",
 			Subsystem: "poller",
 			Name:      "snapshot_size",
 			Help:      "Number of membership events in a snapshot",
 			Buckets:   []float64{100.0, 500.0, 1000.0, 5000.0, 10000.0, 20000.0, 50000.0, 100000.0, 150000.0},
 		}, []string{"room_id"})
-		prometheus.MustRegister(acc.snapshotSizeVec)
+		prometheus.MustRegister(acc.snapshotMemberCountVec)
 	}
 
 	return &Storage{
@@ -975,8 +975,8 @@ func (s *Storage) Teardown() {
 	if err != nil {
 		panic("Storage.Teardown: " + err.Error())
 	}
-	if s.Accumulator.snapshotSizeVec != nil {
-		prometheus.Unregister(s.Accumulator.snapshotSizeVec)
+	if s.Accumulator.snapshotMemberCountVec != nil {
+		prometheus.Unregister(s.Accumulator.snapshotMemberCountVec)
 	}
 }
 
