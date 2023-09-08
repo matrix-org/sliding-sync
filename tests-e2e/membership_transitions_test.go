@@ -1,6 +1,7 @@
 package syncv3_test
 
 import (
+	"fmt"
 	"testing"
 	"time"
 
@@ -401,56 +402,67 @@ func TestLeavingRoomReturnsOneEvent(t *testing.T) {
 	alice := registerNewUser(t)
 	bob := registerNewUser(t)
 	roomName := "It's-a-me-invitio"
-	inviteRoomID := alice.CreateRoom(t, map[string]interface{}{"preset": "private_chat", "name": roomName})
-	t.Logf("TestLeavingRoomReturnsOneEvent room %s", inviteRoomID)
 
-	// sync as bob, we see no invites yet.
-	res := bob.SlidingSync(t, sync3.Request{
-		Lists: map[string]sync3.RequestList{
-			"a": {
-				Ranges: sync3.SliceRanges{{0, 20}},
-				Filters: &sync3.RequestFilters{
-					IsInvite: &boolTrue,
-				},
-			},
-		},
-	})
-	m.MatchResponse(t, res, m.MatchList("a", m.MatchV3Count(0)), m.MatchRoomSubscriptionsStrict(nil))
+	for _, aliceSyncing := range []bool{false, true} {
+		t.Run(fmt.Sprintf("leaving a room returns one leave event (multiple poller=%v)", aliceSyncing), func(t *testing.T) {
+			inviteRoomID := alice.CreateRoom(t, map[string]interface{}{"preset": "private_chat", "name": roomName})
+			t.Logf("TestLeavingRoomReturnsOneEvent room %s", inviteRoomID)
 
-	// now invite bob
-	alice.InviteRoom(t, inviteRoomID, bob.UserID)
-	// sync as bob until we see the room
-	res = bob.SlidingSyncUntilMembership(t, res.Pos, inviteRoomID, bob, "invite")
-	t.Logf("bob is invited")
-
-	// join the room
-	bob.JoinRoom(t, inviteRoomID, []string{})
-	res = bob.SlidingSyncUntilMembership(t, res.Pos, inviteRoomID, bob, "join")
-	t.Logf("bob joined")
-
-	// leave the room again, we should receive exactly one leave response
-	bob.LeaveRoom(t, inviteRoomID)
-	res = bob.SlidingSyncUntilMembership(t, res.Pos, inviteRoomID, bob, "leave")
-
-	if room, ok := res.Rooms[inviteRoomID]; ok {
-		if c := len(room.Timeline); c > 1 {
-			for _, ev := range res.Rooms[inviteRoomID].Timeline {
-				t.Logf("Event: %s", ev)
+			if aliceSyncing {
+				alice.SlidingSync(t, sync3.Request{})
 			}
-			t.Fatalf("expected 1 timeline event, got %d", c)
-		}
-	} else {
-		t.Fatalf("expected room %s in response, but didn't find it", inviteRoomID)
-	}
 
-	res = bob.SlidingSync(t, sync3.Request{}, WithPos(res.Pos))
+			// sync as bob, we see no invites yet.
+			res := bob.SlidingSync(t, sync3.Request{
+				Lists: map[string]sync3.RequestList{
+					"a": {
+						Ranges: sync3.SliceRanges{{0, 20}},
+						Filters: &sync3.RequestFilters{
+							IsInvite: &boolTrue,
+						},
+					},
+				},
+			})
+			m.MatchResponse(t, res, m.MatchList("a", m.MatchV3Count(0)), m.MatchRoomSubscriptionsStrict(nil))
 
-	// this should not happen, as we already send down the leave event
-	if room, ok := res.Rooms[inviteRoomID]; ok {
-		for _, ev := range room.Timeline {
-			t.Logf("Event: %s", ev)
-		}
-		t.Fatalf("expected room not to be in response")
+			// now invite bob
+			alice.InviteRoom(t, inviteRoomID, bob.UserID)
+			// sync as bob until we see the room
+			res = bob.SlidingSyncUntilMembership(t, res.Pos, inviteRoomID, bob, "invite")
+			t.Logf("bob is invited")
+
+			// join the room
+			bob.JoinRoom(t, inviteRoomID, []string{})
+			res = bob.SlidingSyncUntilMembership(t, res.Pos, inviteRoomID, bob, "join")
+			t.Logf("bob joined")
+
+			// leave the room again, we should receive exactly one leave response
+			bob.LeaveRoom(t, inviteRoomID)
+			res = bob.SlidingSyncUntilMembership(t, res.Pos, inviteRoomID, bob, "leave")
+
+			if room, ok := res.Rooms[inviteRoomID]; ok {
+				// If alice is NOT syncing, we run into this failure mode
+				if c := len(room.Timeline); c > 1 {
+					for _, ev := range res.Rooms[inviteRoomID].Timeline {
+						t.Logf("[multiple poller=%v] Event: %s", aliceSyncing, ev)
+					}
+					t.Errorf("[multiple poller=%v] expected 1 timeline event, got %d", aliceSyncing, c)
+				}
+			} else {
+				t.Errorf("[multiple poller=%v] expected room %s in response, but didn't find it", aliceSyncing, inviteRoomID)
+			}
+
+			res = bob.SlidingSync(t, sync3.Request{}, WithPos(res.Pos))
+
+			// this should not happen, as we already send down the leave event
+			// If alice is synching, we run into this failure mode
+			if room, ok := res.Rooms[inviteRoomID]; ok {
+				for _, ev := range room.Timeline {
+					t.Logf("[multiple poller=%v] Event: %s", aliceSyncing, ev)
+				}
+				t.Errorf("[multiple poller=%v] expected room not to be in response", aliceSyncing)
+			}
+		})
 	}
 }
 
