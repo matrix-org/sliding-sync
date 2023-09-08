@@ -387,5 +387,20 @@ func (c *GlobalCache) OnNewEvent(
 }
 
 func (c *GlobalCache) OnInvalidateRoom(ctx context.Context, roomID string) {
-	logger.Warn().Msgf("DMR: invalidate GLOBALLLLLL room %s new snapshot %d", roomID, fromSnapshotID)
+	c.roomIDToMetadataMu.Lock()
+	defer c.roomIDToMetadataMu.Unlock()
+
+	metadata, ok := c.roomIDToMetadata[roomID]
+	if !ok {
+		logger.Warn().Str("room_id", roomID).Msg("OnInvalidateRoom: room not in global cache")
+		return
+	}
+
+	logger.Warn().Any("before", metadata).Msgf("DMR: invalidate GLOBALLLLLL room %s new snapshot %d", roomID)
+	err := c.store.ResetMetadataState(metadata)
+	if err != nil {
+		internal.GetSentryHubFromContextOrDefault(ctx).CaptureException(err)
+		logger.Warn().Err(err).Msg("OnInvalidateRoom: failed to reset metadata")
+	}
+	logger.Warn().Any("after", metadata).Msgf("DMR: invalidate GLOBALLLLLL room %s new snapshot %d", roomID)
 }
