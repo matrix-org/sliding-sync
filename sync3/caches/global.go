@@ -396,11 +396,11 @@ func (c *GlobalCache) OnInvalidateRoom(ctx context.Context, roomID string) {
 		return
 	}
 
-	logger.Warn().Any("before", metadata).Msgf("DMR: invalidate GLOBALLLLLL room %s new snapshot %d", roomID)
+	logger.Warn().Any("before", metadata).Msgf("DMR: invalidate GLOBALLLLLL room %s", roomID)
 	err := c.store.ResetMetadataState(metadata)
 	if err != nil {
 		internal.GetSentryHubFromContextOrDefault(ctx).CaptureException(err)
 		logger.Warn().Err(err).Msg("OnInvalidateRoom: failed to reset metadata")
 	}
-	logger.Warn().Any("after", metadata).Msgf("DMR: invalidate GLOBALLLLLL room %s new snapshot %d", roomID)
+	logger.Warn().Any("after", metadata).Msgf("DMR: invalidate GLOBALLLLLL room %s", roomID)
 }
