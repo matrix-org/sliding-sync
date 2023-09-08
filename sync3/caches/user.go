@@ -314,7 +314,7 @@ func (c *UserCache) LazyLoadTimelines(ctx context.Context, loadPos int64, roomID
 		return c.LazyRoomDataOverride(loadPos, roomIDs, maxTimelineEvents)
 	}
 	result := make(map[string]UserRoomData)
-	roomIDToLatestEvents, err := c.store.LatestEventsInRoomsV2(c.UserID, roomIDs, loadPos, maxTimelineEvents)
+	roomIDToLatestEvents, err := c.store.LatestEventsInRooms(c.UserID, roomIDs, loadPos, maxTimelineEvents)
 	if err != nil {
 		logger.Err(err).Strs("rooms", roomIDs).Msg("failed to get LatestEventsInRooms")
 		internal.GetSentryHubFromContextOrDefault(ctx).CaptureException(err)
