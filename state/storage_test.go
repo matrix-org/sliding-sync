@@ -11,11 +11,12 @@ import (
 	"time"
 
 	"github.com/jmoiron/sqlx"
+	"github.com/tidwall/gjson"
+
 	"github.com/matrix-org/gomatrixserverlib/spec"
 	"github.com/matrix-org/sliding-sync/internal"
 	"github.com/matrix-org/sliding-sync/sqlutil"
 	"github.com/matrix-org/sliding-sync/testutils"
-	"github.com/tidwall/gjson"
 )
 
 func TestStorageRoomStateBeforeAndAfterEventPosition(t *testing.T) {

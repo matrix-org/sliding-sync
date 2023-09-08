@@ -308,7 +308,7 @@ func (c *UserCache) OnRegistered(ctx context.Context) error {
 
 // Load timelines from the database. Uses cached UserRoomData for metadata purposes only.
 func (c *UserCache) LazyLoadTimelines(ctx context.Context, loadPos int64, roomIDs []string, maxTimelineEvents int) map[string]UserRoomData {
-	_, span := internal.StartSpan(ctx, "LazyLoadTimelines")
+	ctx, span := internal.StartSpan(ctx, "LazyLoadTimelines")
 	defer span.End()
 	if c.LazyRoomDataOverride != nil {
 		return c.LazyRoomDataOverride(loadPos, roomIDs, maxTimelineEvents)
