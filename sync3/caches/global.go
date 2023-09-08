@@ -386,6 +386,6 @@ func (c *GlobalCache) OnNewEvent(
 	c.roomIDToMetadata[ed.RoomID] = metadata
 }
 
-func (c *GlobalCache) OnInvalidateRoom(ctx context.Context, roomID string, fromSnapshotID int64) {
+func (c *GlobalCache) OnInvalidateRoom(ctx context.Context, roomID string) {
 	logger.Warn().Msgf("DMR: invalidate GLOBALLLLLL room %s new snapshot %d", roomID, fromSnapshotID)
 }

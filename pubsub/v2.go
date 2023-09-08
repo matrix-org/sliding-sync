@@ -131,8 +131,7 @@ type V2ExpiredToken struct {
 func (*V2ExpiredToken) Type() string { return "V2ExpiredToken" }
 
 type V2InvalidateRoom struct {
-	RoomID     string
-	SnapshotID int64
+	RoomID string
 }
 
 func (*V2InvalidateRoom) Type() string { return "V2InvalidateRoom" }

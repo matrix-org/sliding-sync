@@ -751,6 +751,6 @@ func (u *UserCache) ShouldIgnore(userID string) bool {
 	return ignored
 }
 
-func (u *UserCache) OnInvalidateRoom(ctx context.Context, roomID string, fromSnapshotID int64) {
-	logger.Warn().Msgf("DMR: invalidate USERRRRRRR room %s new snapshot %d", roomID, fromSnapshotID)
+func (u *UserCache) OnInvalidateRoom(ctx context.Context, roomID string) {
+	logger.Warn().Msgf("DMR: invalidate USERRRRRRR room %s new snapshot %d", roomID)
 }

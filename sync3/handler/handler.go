@@ -806,9 +806,9 @@ func (h *SyncLiveHandler) OnInvalidateRoom(p *pubsub.V2InvalidateRoom) {
 	ctx, task := internal.StartTask(context.Background(), "OnInvalidateRoom")
 	defer task.End()
 
-	logger.Warn().Msgf("DMR: invalidate room %s new snapshot %d", p.RoomID, p.SnapshotID)
-	h.GlobalCache.OnInvalidateRoom(ctx, p.RoomID, p.SnapshotID)
-	h.Dispatcher.OnInvalidateRoom(ctx, p.RoomID, p.SnapshotID)
+	logger.Warn().Msgf("DMR: invalidate room %s", p.RoomID)
+	h.GlobalCache.OnInvalidateRoom(ctx, p.RoomID)
+	h.Dispatcher.OnInvalidateRoom(ctx, p.RoomID)
 }
 
 func parseIntFromQuery(u *url.URL, param string) (result int64, err *internal.HandlerError) {
