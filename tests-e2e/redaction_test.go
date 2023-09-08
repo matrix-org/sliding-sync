@@ -81,12 +81,13 @@ func TestRedactingRoomNameIsReflectedInNextSync(t *testing.T) {
 	alice := registerNamedUser(t, "alice")
 
 	t.Log("Alice creates a room and sets a room name.")
-	room := alice.CreateRoom(t, map[string]any{})
-	const naughty = "naughty room for naughty people"
-	const aliasLocalPart = "nice-alias"
-	nameID := alice.SetState(t, room, "m.room.name", "", map[string]any{
-		"name":            naughty,
+	aliasLocalPart := t.Name()
+	room := alice.CreateRoom(t, map[string]any{
 		"room_alias_name": aliasLocalPart,
+	})
+	const naughty = "naughty room for naughty people"
+	nameID := alice.SetState(t, room, "m.room.name", "", map[string]any{
+		"name": naughty,
 	})
 
 	t.Log("Alice sliding syncs, subscribing to that room explicitly.")
