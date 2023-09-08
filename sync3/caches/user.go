@@ -410,7 +410,7 @@ func (c *UserCache) Invites() map[string]UserRoomData {
 // which would cause the transaction ID to be missing from the event. Instead, we always look for txn
 // IDs in the v2 poller, and then set them appropriately at request time.
 func (c *UserCache) AnnotateWithTransactionIDs(ctx context.Context, userID string, deviceID string, roomIDToEvents map[string][]json.RawMessage) map[string][]json.RawMessage {
-	ctx, span := internal.StartSpan(ctx, "AnnotateWithTransactionIDs")
+	_, span := internal.StartSpan(ctx, "AnnotateWithTransactionIDs")
 	defer span.End()
 	var eventIDs []string
 	eventIDToEvent := make(map[string]struct {

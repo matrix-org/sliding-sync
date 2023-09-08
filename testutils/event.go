@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/matrix-org/gomatrixserverlib"
+	"github.com/matrix-org/gomatrixserverlib/spec"
 )
 
 // Common functions between testing.T and testing.B
@@ -47,7 +47,7 @@ type eventMockModifier func(e *eventMock)
 
 func WithTimestamp(ts time.Time) eventMockModifier {
 	return func(e *eventMock) {
-		e.OriginServerTS = int64(gomatrixserverlib.AsTimestamp(ts))
+		e.OriginServerTS = int64(spec.AsTimestamp(ts))
 	}
 }
 
@@ -79,7 +79,7 @@ func NewStateEvent(t TestBenchInterface, evType, stateKey, sender string, conten
 		Sender:         sender,
 		Content:        content,
 		EventID:        generateEventID(t),
-		OriginServerTS: int64(gomatrixserverlib.AsTimestamp(time.Now())),
+		OriginServerTS: int64(spec.AsTimestamp(time.Now())),
 	}
 	for _, m := range modifiers {
 		m(e)
@@ -98,7 +98,7 @@ func NewEvent(t TestBenchInterface, evType, sender string, content interface{}, 
 		Sender:         sender,
 		Content:        content,
 		EventID:        generateEventID(t),
-		OriginServerTS: int64(gomatrixserverlib.AsTimestamp(time.Now())),
+		OriginServerTS: int64(spec.AsTimestamp(time.Now())),
 	}
 	for _, m := range modifiers {
 		m(e)
@@ -132,7 +132,7 @@ func SetTimestamp(t *testing.T, event json.RawMessage, ts time.Time) json.RawMes
 		t.Errorf("Failed to parse eventMock: %s", err)
 		return nil
 	}
-	parsed.OriginServerTS = int64(gomatrixserverlib.AsTimestamp(ts))
+	parsed.OriginServerTS = int64(spec.AsTimestamp(ts))
 	edited, err := json.Marshal(parsed)
 	if err != nil {
 		t.Errorf("Failed to serialise eventMock: %s", err)

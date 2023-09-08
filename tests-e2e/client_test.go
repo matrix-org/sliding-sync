@@ -275,6 +275,15 @@ func (c *CSAPI) SendEventSynced(t *testing.T, roomID string, e Event) string {
 	return eventID
 }
 
+func (c *CSAPI) RedactEvent(t *testing.T, roomID, eventID string) string {
+	c.txnID++
+	res := c.MustDoFunc(t, "PUT", []string{"_matrix", "client", "v3", "rooms", roomID, "redact", eventID, strconv.Itoa(c.txnID)}, WithJSONBody(t, map[string]interface{}{
+		"reason": "who knows",
+	}))
+	body := ParseJSON(t, res)
+	return GetJSONFieldStr(t, body, "event_id")
+}
+
 func (c *CSAPI) SendReceipt(t *testing.T, roomID, eventID, receiptType string) *http.Response {
 	return c.MustDoFunc(t, "POST", []string{"_matrix", "client", "v3", "rooms", roomID, "read_markers"}, WithJSONBody(t, map[string]interface{}{
 		receiptType: eventID,

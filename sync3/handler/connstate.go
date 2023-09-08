@@ -591,6 +591,8 @@ func (s *ConnState) getInitialRoomData(ctx context.Context, roomSub sync3.RoomSu
 	roomToTimeline = s.userCache.AnnotateWithTransactionIDs(ctx, s.userID, s.deviceID, roomToTimeline)
 	rsm := roomSub.RequiredStateMap(s.userID)
 
+	internal.Logf(ctx, "connstate", "getInitialRoomData for %d rooms, RequiredStateMap: %#v", len(roomIDs), rsm)
+
 	// Filter out rooms we are only invited to, as we don't need to fetch the state
 	// since we'll be using the invite_state only.
 	loadRoomIDs := make([]string, 0, len(roomIDs))
@@ -688,6 +690,7 @@ func (s *ConnState) getInitialRoomData(ctx context.Context, roomSub sync3.RoomSu
 }
 
 func (s *ConnState) trackSetupDuration(ctx context.Context, dur time.Duration, isInitial bool) {
+	internal.SetRequestContextSetupDuration(ctx, dur)
 	if s.setupHistogramVec == nil {
 		return
 	}
@@ -696,10 +699,10 @@ func (s *ConnState) trackSetupDuration(ctx context.Context, dur time.Duration, i
 		val = "1"
 	}
 	s.setupHistogramVec.WithLabelValues(val).Observe(float64(dur.Seconds()))
-	internal.SetRequestContextSetupDuration(ctx, dur)
 }
 
 func (s *ConnState) trackProcessDuration(ctx context.Context, dur time.Duration, isInitial bool) {
+	internal.SetRequestContextProcessingDuration(ctx, dur)
 	if s.processHistogramVec == nil {
 		return
 	}
@@ -708,7 +711,6 @@ func (s *ConnState) trackProcessDuration(ctx context.Context, dur time.Duration,
 		val = "1"
 	}
 	s.processHistogramVec.WithLabelValues(val).Observe(float64(dur.Seconds()))
-	internal.SetRequestContextProcessingDuration(ctx, dur)
 }
 
 // Called when the connection is torn down

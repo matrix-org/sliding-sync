@@ -395,7 +395,16 @@ func (h *SyncLiveHandler) setupConnection(req *http.Request, syncReq *sync3.Requ
 
 	pid := sync2.PollerID{UserID: token.UserID, DeviceID: token.DeviceID}
 	log.Trace().Any("pid", pid).Msg("checking poller exists and is running")
-	h.EnsurePoller.EnsurePolling(req.Context(), pid, token.AccessTokenHash)
+	success := h.EnsurePoller.EnsurePolling(req.Context(), pid, token.AccessTokenHash)
+	if !success {
+		log.Error().Msg("EnsurePolling failed, returning 401")
+		// Assumption: the only way that EnsurePolling fails is if the access token is invalid.
+		return req, nil, &internal.HandlerError{
+			StatusCode: http.StatusUnauthorized,
+			ErrCode:    "M_UNKNOWN_TOKEN",
+			Err:        fmt.Errorf("EnsurePolling failed: access token invalid or invalidated"),
+		}
+	}
 	log.Trace().Msg("poller exists and is running")
 	// this may take a while so if the client has given up (e.g timed out) by this point, just stop.
 	// We'll be quicker next time as the poller will already exist.

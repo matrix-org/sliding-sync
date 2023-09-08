@@ -54,10 +54,7 @@ func TestSyncWithNewTokenAfterOldExpires(t *testing.T) {
 	)
 
 	t.Log("From this point forward, the poller should not make any initial sync requests.")
-	v2.SetCheckRequest(func(userID, token string, req *http.Request) {
-		if userID != alice {
-			t.Errorf("Got unexpected poll for %s, expected %s only", userID, alice)
-		}
+	v2.SetCheckRequest(func(token string, req *http.Request) {
 		switch token {
 		case aliceToken1: // this is okay; we should return a token expiry response
 		case aliceToken2: // this is also okay; we should provide a proper response
@@ -149,10 +146,7 @@ func TestSyncWithNewTokenBeforeOldExpires(t *testing.T) {
 	)
 
 	t.Log("From this point forward, the poller should not make any initial sync requests.")
-	v2.SetCheckRequest(func(userID, token string, req *http.Request) {
-		if userID != alice {
-			t.Errorf("Got unexpected poll for %s, expected %s only", userID, alice)
-		}
+	v2.SetCheckRequest(func(token string, req *http.Request) {
 		switch token {
 		case aliceToken1: // either is okay
 		case aliceToken2:

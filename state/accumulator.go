@@ -4,7 +4,9 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+
 	"github.com/matrix-org/sliding-sync/internal"
+	"github.com/prometheus/client_golang/prometheus"
 
 	"github.com/getsentry/sentry-go"
 
@@ -21,12 +23,13 @@ import (
 // Accumulate function for timeline events. v2 sync must be called with a large enough timeline.limit
 // for this to work!
 type Accumulator struct {
-	db            *sqlx.DB
-	roomsTable    *RoomsTable
-	eventsTable   *EventTable
-	snapshotTable *SnapshotTable
-	spacesTable   *SpacesTable
-	entityName    string
+	db                     *sqlx.DB
+	roomsTable             *RoomsTable
+	eventsTable            *EventTable
+	snapshotTable          *SnapshotTable
+	spacesTable            *SpacesTable
+	entityName             string
+	snapshotMemberCountVec *prometheus.HistogramVec // TODO: Remove, this is temporary to get a feeling how often a new snapshot is created
 }
 
 func NewAccumulator(db *sqlx.DB) *Accumulator {
@@ -279,6 +282,10 @@ func (a *Accumulator) Initialise(roomID string, state []json.RawMessage) (Initia
 		if err != nil {
 			return fmt.Errorf("failed to insert snapshot: %w", err)
 		}
+		if a.snapshotMemberCountVec != nil {
+			logger.Trace().Str("room_id", roomID).Int("members", len(memberNIDs)).Msg("Inserted new snapshot")
+			a.snapshotMemberCountVec.WithLabelValues(roomID).Observe(float64(len(memberNIDs)))
+		}
 		res.AddedEvents = true
 		latestNID := int64(0)
 		for _, nid := range otherNIDs {
@@ -398,11 +405,13 @@ func (a *Accumulator) Accumulate(txn *sqlx.Tx, userID, roomID string, prevBatch 
 
 	var latestNID int64
 	newEvents := make([]Event, 0, len(eventIDToNID))
-	for _, ev := range dedupedEvents {
+	redactTheseEventIDs := make(map[string]*Event)
+	for i, ev := range dedupedEvents {
 		nid, ok := eventIDToNID[ev.ID]
 		if ok {
 			ev.NID = int64(nid)
-			if gjson.GetBytes(ev.JSON, "state_key").Exists() {
+			parsedEv := gjson.ParseBytes(ev.JSON)
+			if parsedEv.Get("state_key").Exists() {
 				// XXX: reusing this to mean "it's a state event" as well as "it's part of the state v2 response"
 				// its important that we don't insert 'ev' at this point as this should be False in the DB.
 				ev.IsState = true
@@ -412,8 +421,40 @@ func (a *Accumulator) Accumulate(txn *sqlx.Tx, userID, roomID string, prevBatch 
 			if ev.NID > latestNID {
 				latestNID = ev.NID
 			}
+			// if this is a redaction, try to redact the referenced event (best effort)
+			if !ev.IsState && ev.Type == "m.room.redaction" {
+				// look for top-level redacts then content.redacts (room version 11+)
+				redactsEventID := parsedEv.Get("redacts").Str
+				if redactsEventID == "" {
+					redactsEventID = parsedEv.Get("content.redacts").Str
+				}
+				if redactsEventID != "" {
+					redactTheseEventIDs[redactsEventID] = &dedupedEvents[i]
+				}
+			}
 			newEvents = append(newEvents, ev)
 			timelineNIDs = append(timelineNIDs, ev.NID)
+		}
+	}
+
+	// if we are going to redact things, we need the room version to know the redaction algorithm
+	// so pull it out once now.
+	var roomVersion string
+	if len(redactTheseEventIDs) > 0 {
+		createEventJSON, err := a.eventsTable.SelectCreateEvent(txn, roomID)
+		if err != nil {
+			return 0, nil, fmt.Errorf("SelectCreateEvent: %w", err)
+		}
+		roomVersion = gjson.GetBytes(createEventJSON, "content.room_version").Str
+		if roomVersion == "" {
+			// Defaults to "1" if the key does not exist.
+			roomVersion = "1"
+			logger.Warn().Str("room", roomID).Err(err).Msg(
+				"Redact: no content.room_version in create event, defaulting to v1",
+			)
+		}
+		if err = a.eventsTable.Redact(txn, roomVersion, redactTheseEventIDs); err != nil {
+			return 0, nil, err
 		}
 	}
 
@@ -445,6 +486,10 @@ func (a *Accumulator) Accumulate(txn *sqlx.Tx, userID, roomID string, prevBatch 
 			}
 			if err = a.snapshotTable.Insert(txn, newSnapshot); err != nil {
 				return 0, nil, fmt.Errorf("failed to insert new snapshot: %w", err)
+			}
+			if a.snapshotMemberCountVec != nil {
+				logger.Trace().Str("room_id", roomID).Int("members", len(memNIDs)).Msg("Inserted new snapshot")
+				a.snapshotMemberCountVec.WithLabelValues(roomID).Observe(float64(len(memNIDs)))
 			}
 			snapID = newSnapshot.SnapshotID
 		}

@@ -9,7 +9,6 @@ import (
 	"net/url"
 	"time"
 
-	"github.com/matrix-org/gomatrixserverlib"
 	"github.com/tidwall/gjson"
 )
 
@@ -105,6 +104,9 @@ func (v *HTTPClient) createSyncURL(since string, isFirst, toDeviceOnly bool) str
 		qps += "&since=" + since
 	}
 
+	// Set presence to offline, this potentially reduces CPU load on upstream homeservers
+	qps += "&set_presence=offline"
+
 	// To reduce the likelihood of a gappy v2 sync, ask for a large timeline by default.
 	// Synapse's default is 10; 50 is the maximum allowed, by my reading of
 	// https://github.com/matrix-org/synapse/blob/89a71e73905ffa1c97ae8be27d521cd2ef3f3a0c/synapse/handlers/sync.py#L576-L577
@@ -124,6 +126,8 @@ func (v *HTTPClient) createSyncURL(since string, isFirst, toDeviceOnly bool) str
 	}
 	filter := map[string]interface{}{
 		"room": room,
+		// filter out all presence events (remove this once/if the proxy handles presence)
+		"presence": map[string]interface{}{"not_types": []string{"*"}},
 	}
 	filterJSON, _ := json.Marshal(filter)
 	qps += "&filter=" + url.QueryEscape(string(filterJSON))
@@ -135,7 +139,7 @@ type SyncResponse struct {
 	NextBatch   string         `json:"next_batch"`
 	AccountData EventsResponse `json:"account_data"`
 	Presence    struct {
-		Events []gomatrixserverlib.ClientEvent `json:"events,omitempty"`
+		Events []json.RawMessage `json:"events,omitempty"`
 	} `json:"presence"`
 	Rooms       SyncRoomsResponse `json:"rooms"`
 	ToDevice    EventsResponse    `json:"to_device"`

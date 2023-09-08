@@ -13,10 +13,10 @@ import (
 	"time"
 
 	"github.com/jmoiron/sqlx"
-	"github.com/matrix-org/gomatrixserverlib"
 	"github.com/stretchr/testify/assert"
 	"github.com/tidwall/gjson"
 
+	"github.com/matrix-org/gomatrixserverlib/spec"
 	"github.com/matrix-org/sliding-sync/internal"
 	"github.com/matrix-org/sliding-sync/sqlutil"
 	"github.com/matrix-org/sliding-sync/testutils"
@@ -312,7 +312,7 @@ func TestVisibleEventNIDsBetween(t *testing.T) {
 		t.Fatalf("LatestEventNID: %s", err)
 	}
 
-	baseTimestamp := gomatrixserverlib.Timestamp(1632131678061).Time()
+	baseTimestamp := spec.Timestamp(1632131678061).Time()
 	// Test the examples
 	//                     Stream Positions
 	//           1     2   3    4   5   6   7   8   9   10

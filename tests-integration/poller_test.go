@@ -1,6 +1,7 @@
 package syncv3
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"github.com/jmoiron/sqlx"
@@ -44,14 +45,14 @@ func TestSecondPollerFiltersToDevice(t *testing.T) {
 	deviceBToken := "DEVICE_B_TOKEN"
 	v2.addAccountWithDeviceID(alice, "B", deviceBToken)
 	seenInitialRequest := false
-	v2.CheckRequest = func(userID, token string, req *http.Request) {
-		if userID != alice || token != deviceBToken {
+	v2.SetCheckRequest(func(token string, req *http.Request) {
+		if token != deviceBToken {
 			return
 		}
 		qps := req.URL.Query()
 		since := qps.Get("since")
 		filter := qps.Get("filter")
-		t.Logf("CheckRequest: %v %v since=%v filter=%v", userID, token, since, filter)
+		t.Logf("CheckRequest: %v since=%v filter=%v", token, since, filter)
 		if filter == "" {
 			t.Errorf("expected a filter on all v2 syncs from poller, but got none")
 			return
@@ -88,7 +89,7 @@ func TestSecondPollerFiltersToDevice(t *testing.T) {
 		}
 
 		seenInitialRequest = true
-	}
+	})
 
 	wantMsg := json.RawMessage(`{"type":"f","content":{"f":"b"}}`)
 	v2.queueResponse(deviceBToken, sync2.SyncResponse{
@@ -427,4 +428,36 @@ func TestPollersCanBeResumedAfterExpiry(t *testing.T) {
 	t.Log("Alice should see her account data")
 	m.MatchResponse(t, res, m.MatchAccountData([]json.RawMessage{accdata}, nil))
 
+}
+
+// Regression test for https://github.com/matrix-org/sliding-sync/issues/287#issuecomment-1706522718
+func TestPollerExpiryEnsurePollingRace(t *testing.T) {
+	pqString := testutils.PrepareDBConnectionString()
+	v2 := runTestV2Server(t)
+	defer v2.close()
+	v3 := runTestServer(t, v2, pqString)
+	defer v3.close()
+
+	v2.addAccount(t, alice, aliceToken)
+
+	// Arrange the following:
+	// 1. A request arrives from an unknown token.
+	// 2. The API makes a /whoami lookup for the new token. That returns without error.
+	// 3. The old token expires.
+	// 4. The poller tries to call /sync but finds that the token has expired.
+
+	v2.SetCheckRequest(func(token string, req *http.Request) {
+		if token != aliceToken {
+			t.Fatalf("unexpected poll from %s", token)
+		}
+		// Expire the token before we process the request.
+		t.Log("Alice's token expires.")
+		v2.invalidateTokenImmediately(token)
+	})
+
+	t.Log("Alice makes a sliding sync request with a token that's about to expire.")
+	_, resBytes, status := v3.doV3Request(t, context.Background(), aliceToken, "", sync3.Request{})
+	if status != http.StatusUnauthorized {
+		t.Fatalf("Should have got 401 http response; got %d\n%s", status, resBytes)
+	}
 }

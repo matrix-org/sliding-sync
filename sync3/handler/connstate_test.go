@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/matrix-org/gomatrixserverlib"
+	"github.com/matrix-org/gomatrixserverlib/spec"
 	"github.com/matrix-org/sliding-sync/internal"
 	"github.com/matrix-org/sliding-sync/sync3"
 	"github.com/matrix-org/sliding-sync/sync3/caches"
@@ -37,7 +37,7 @@ func (t *NopTransactionFetcher) TransactionIDForEvents(userID, deviceID string, 
 	return
 }
 
-func newRoomMetadata(roomID string, lastMsgTimestamp gomatrixserverlib.Timestamp) internal.RoomMetadata {
+func newRoomMetadata(roomID string, lastMsgTimestamp spec.Timestamp) internal.RoomMetadata {
 	m := internal.NewRoomMetadata(roomID)
 	m.NameEvent = "Room " + roomID
 	m.LastMessageTimestamp = uint64(lastMsgTimestamp)
@@ -62,11 +62,11 @@ func TestConnStateInitial(t *testing.T) {
 	}
 	userID := "@TestConnStateInitial_alice:localhost"
 	deviceID := "yep"
-	timestampNow := gomatrixserverlib.Timestamp(1632131678061).Time()
+	timestampNow := spec.Timestamp(1632131678061).Time()
 	// initial sort order B, C, A
-	roomA := newRoomMetadata("!a:localhost", gomatrixserverlib.AsTimestamp(timestampNow.Add(-8*time.Second)))
-	roomB := newRoomMetadata("!b:localhost", gomatrixserverlib.AsTimestamp(timestampNow))
-	roomC := newRoomMetadata("!c:localhost", gomatrixserverlib.AsTimestamp(timestampNow.Add(-4*time.Second)))
+	roomA := newRoomMetadata("!a:localhost", spec.AsTimestamp(timestampNow.Add(-8*time.Second)))
+	roomB := newRoomMetadata("!b:localhost", spec.AsTimestamp(timestampNow))
+	roomC := newRoomMetadata("!c:localhost", spec.AsTimestamp(timestampNow.Add(-4*time.Second)))
 	timeline := map[string]json.RawMessage{
 		roomA.RoomID: testutils.NewEvent(t, "m.room.message", userID, map[string]interface{}{"body": "a"}),
 		roomB.RoomID: testutils.NewEvent(t, "m.room.message", userID, map[string]interface{}{"body": "b"}),
@@ -232,7 +232,7 @@ func TestConnStateMultipleRanges(t *testing.T) {
 	}
 	userID := "@TestConnStateMultipleRanges_alice:localhost"
 	deviceID := "yep"
-	timestampNow := gomatrixserverlib.Timestamp(1632131678061)
+	timestampNow := spec.Timestamp(1632131678061)
 	var rooms []*internal.RoomMetadata
 	var roomIDs []string
 	globalCache := caches.NewGlobalCache(nil)
@@ -373,7 +373,7 @@ func TestConnStateMultipleRanges(t *testing.T) {
 	// `    `  `    `
 	// 8,0,1,9,2,3,4,5,6,7 room
 	middleTimestamp := int64((roomIDToRoom[roomIDs[1]].LastMessageTimestamp + roomIDToRoom[roomIDs[2]].LastMessageTimestamp) / 2)
-	newEvent = testutils.NewEvent(t, "unimportant", "me", struct{}{}, testutils.WithTimestamp(gomatrixserverlib.Timestamp(middleTimestamp).Time()))
+	newEvent = testutils.NewEvent(t, "unimportant", "me", struct{}{}, testutils.WithTimestamp(spec.Timestamp(middleTimestamp).Time()))
 	dispatcher.OnNewEvent(context.Background(), roomIDs[9], newEvent, 1)
 	t.Logf("new event %s : %s", roomIDs[9], string(newEvent))
 	res, err = cs.OnIncomingRequest(context.Background(), ConnID, &sync3.Request{
@@ -414,7 +414,7 @@ func TestBumpToOutsideRange(t *testing.T) {
 	}
 	userID := "@TestBumpToOutsideRange_alice:localhost"
 	deviceID := "yep"
-	timestampNow := gomatrixserverlib.Timestamp(1632131678061)
+	timestampNow := spec.Timestamp(1632131678061)
 	roomA := newRoomMetadata("!a:localhost", timestampNow)
 	roomB := newRoomMetadata("!b:localhost", timestampNow-1000)
 	roomC := newRoomMetadata("!c:localhost", timestampNow-2000)
@@ -482,7 +482,7 @@ func TestBumpToOutsideRange(t *testing.T) {
 	})
 
 	// D gets bumped to C's position but it's still outside the range so nothing should happen
-	newEvent := testutils.NewEvent(t, "unimportant", "me", struct{}{}, testutils.WithTimestamp(gomatrixserverlib.Timestamp(roomC.LastMessageTimestamp+2).Time()))
+	newEvent := testutils.NewEvent(t, "unimportant", "me", struct{}{}, testutils.WithTimestamp(spec.Timestamp(roomC.LastMessageTimestamp+2).Time()))
 	dispatcher.OnNewEvent(context.Background(), roomD.RoomID, newEvent, 1)
 
 	// expire the context after 10ms so we don't wait forevar
@@ -511,11 +511,11 @@ func TestConnStateRoomSubscriptions(t *testing.T) {
 	}
 	userID := "@TestConnStateRoomSubscriptions_alice:localhost"
 	deviceID := "yep"
-	timestampNow := gomatrixserverlib.Timestamp(1632131678061)
+	timestampNow := spec.Timestamp(1632131678061)
 	roomA := newRoomMetadata("!a:localhost", timestampNow)
-	roomB := newRoomMetadata("!b:localhost", gomatrixserverlib.Timestamp(timestampNow-1000))
-	roomC := newRoomMetadata("!c:localhost", gomatrixserverlib.Timestamp(timestampNow-2000))
-	roomD := newRoomMetadata("!d:localhost", gomatrixserverlib.Timestamp(timestampNow-3000))
+	roomB := newRoomMetadata("!b:localhost", spec.Timestamp(timestampNow-1000))
+	roomC := newRoomMetadata("!c:localhost", spec.Timestamp(timestampNow-2000))
+	roomD := newRoomMetadata("!d:localhost", spec.Timestamp(timestampNow-3000))
 	roomIDs := []string{roomA.RoomID, roomB.RoomID, roomC.RoomID, roomD.RoomID}
 	globalCache := caches.NewGlobalCache(nil)
 	globalCache.Startup(map[string]internal.RoomMetadata{
@@ -620,7 +620,7 @@ func TestConnStateRoomSubscriptions(t *testing.T) {
 		},
 	})
 	// room D gets a new event but it's so old it doesn't bump to the top of the list
-	newEvent := testutils.NewEvent(t, "unimportant", "me", struct{}{}, testutils.WithTimestamp(gomatrixserverlib.Timestamp(timestampNow-20000).Time()))
+	newEvent := testutils.NewEvent(t, "unimportant", "me", struct{}{}, testutils.WithTimestamp(spec.Timestamp(timestampNow-20000).Time()))
 	dispatcher.OnNewEvent(context.Background(), roomD.RoomID, newEvent, 1)
 	// we should get this message even though it's not in the range because we are subscribed to this room.
 	res, err = cs.OnIncomingRequest(context.Background(), ConnID, &sync3.Request{
