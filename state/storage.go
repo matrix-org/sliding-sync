@@ -818,7 +818,7 @@ func (s *Storage) AllJoinedMembers(txn *sqlx.Tx, tempTableName string) (joinedMe
 	defer rows.Close()
 	joinedMembers = make(map[string][]string)
 	inviteCounts := make(map[string]int)
-	heroNIDs := make(map[string]*circularSlice)
+	heroNIDs := make(map[string]*circularSlice[int64])
 	var stateKey string
 	var membership string
 	var roomID string
@@ -829,7 +829,7 @@ func (s *Storage) AllJoinedMembers(txn *sqlx.Tx, tempTableName string) (joinedMe
 		}
 		heroes := heroNIDs[roomID]
 		if heroes == nil {
-			heroes = &circularSlice{max: 6}
+			heroes = &circularSlice[int64]{max: 6}
 			heroNIDs[roomID] = heroes
 		}
 		switch membership {
@@ -982,13 +982,13 @@ func (s *Storage) Teardown() {
 
 // circularSlice is a slice which can be appended to which will wraparound at `max`.
 // Mostly useful for lazily calculating heroes. The values returned aren't sorted.
-type circularSlice struct {
+type circularSlice[T any] struct {
 	i    int
-	vals []int64
+	vals []T
 	max  int
 }
 
-func (s *circularSlice) append(val int64) {
+func (s *circularSlice[T]) append(val T) {
 	if len(s.vals) < s.max {
 		// populate up to max
 		s.vals = append(s.vals, val)

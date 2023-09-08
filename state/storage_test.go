@@ -854,7 +854,7 @@ func TestCircularSlice(t *testing.T) {
 		},
 	}
 	for _, tc := range testCases {
-		cs := &circularSlice{
+		cs := &circularSlice[int64]{
 			max: tc.max,
 		}
 		for _, val := range tc.appends {
