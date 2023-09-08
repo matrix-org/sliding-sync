@@ -588,59 +588,6 @@ func (s *Storage) LatestEventsInRooms(userID string, roomIDs []string, to int64,
 		return nil, err
 	}
 	result := make(map[string]*LatestEvents, len(roomIDs))
-	err = sqlutil.WithTransaction(s.Accumulator.db, func(txn *sqlx.Tx) error {
-		for roomID, ranges := range roomIDToRanges {
-			var earliestEventNID int64
-			var latestEventNID int64
-			var roomEvents []json.RawMessage
-			// start at the most recent range as we want to return the most recent `limit` events
-			for i := len(ranges) - 1; i >= 0; i-- {
-				if len(roomEvents) >= limit {
-					break
-				}
-				r := ranges[i]
-				// the most recent event will be first
-				events, err := s.EventsTable.SelectLatestEventsBetween(txn, roomID, r[0]-1, r[1], limit)
-				if err != nil {
-					return fmt.Errorf("room %s failed to SelectEventsBetween: %s", roomID, err)
-				}
-				// keep pushing to the front so we end up with A,B,C
-				for _, ev := range events {
-					if latestEventNID == 0 { // set first time and never again
-						latestEventNID = ev.NID
-					}
-					roomEvents = append([]json.RawMessage{ev.JSON}, roomEvents...)
-					earliestEventNID = ev.NID
-					if len(roomEvents) >= limit {
-						break
-					}
-				}
-			}
-			latestEvents := LatestEvents{
-				LatestNID: latestEventNID,
-				Timeline:  roomEvents,
-			}
-			if earliestEventNID != 0 {
-				// the oldest event needs a prev batch token, so find one now
-				prevBatch, err := s.EventsTable.SelectClosestPrevBatch(txn, roomID, earliestEventNID)
-				if err != nil {
-					return fmt.Errorf("failed to select prev_batch for room %s : %s", roomID, err)
-				}
-				latestEvents.PrevBatch = prevBatch
-			}
-			result[roomID] = &latestEvents
-		}
-		return nil
-	})
-	return result, err
-}
-
-func (s *Storage) LatestEventsInRoomsV2(userID string, roomIDs []string, to int64, limit int) (map[string]*LatestEvents, error) {
-	roomIDToRanges, err := s.visibleEventNIDsBetweenForRooms(userID, roomIDs, 0, to)
-	if err != nil {
-		return nil, err
-	}
-	result := make(map[string]*LatestEvents, len(roomIDs))
 
 	queryRoomIDs := make([]string, 0, len(roomIDToRanges))
 	queryStartNIDs := make([]int64, 0, len(roomIDToRanges))
@@ -658,7 +605,7 @@ func (s *Storage) LatestEventsInRoomsV2(userID string, roomIDs []string, to int6
 	}
 
 	err = sqlutil.WithTransaction(s.Accumulator.db, func(txn *sqlx.Tx) error {
-		events, err := s.EventsTable.SelectLatestEventsBetweenV2(txn, queryRoomIDs, queryStartNIDs, queryEndNIDs, limit)
+		events, err := s.EventsTable.SelectLatestEventsBetween(txn, queryRoomIDs, queryStartNIDs, queryEndNIDs, limit)
 		if err != nil {
 			return err
 		}

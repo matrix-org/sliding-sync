@@ -376,17 +376,7 @@ func (t *EventTable) Redact(txn *sqlx.Tx, roomVer string, redacteeEventIDToRedac
 	return nil
 }
 
-func (t *EventTable) SelectLatestEventsBetween(txn *sqlx.Tx, roomID string, lowerExclusive, upperInclusive int64, limit int) ([]Event, error) {
-	var events []Event
-	// do not pull in events which were in the v2 state block
-	err := txn.Select(&events, `SELECT event_nid, event FROM syncv3_events WHERE event_nid > $1 AND event_nid <= $2 AND room_id = $3 AND is_state=FALSE ORDER BY event_nid DESC LIMIT $4`,
-		lowerExclusive, upperInclusive, roomID, limit,
-	)
-	return events, err
-}
-
-// / SELECT prev_batch FROM syncv3_events WHERE prev_batch IS NOT NULL AND room_id=$1 AND event_nid >= $2 LIMIT 1
-func (t *EventTable) SelectLatestEventsBetweenV2(txn *sqlx.Tx, roomIDs []string, startNIDs, endNIDs []int64, limit int) ([]Event, error) {
+func (t *EventTable) SelectLatestEventsBetween(txn *sqlx.Tx, roomIDs []string, startNIDs, endNIDs []int64, limit int) ([]Event, error) {
 	var events []Event
 	// do not pull in events which were in the v2 state block
 	err := txn.Select(&events, `
