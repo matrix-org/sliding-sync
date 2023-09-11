@@ -3,6 +3,7 @@ package syncv3_test
 import (
 	"fmt"
 	"testing"
+	"time"
 
 	"github.com/matrix-org/sliding-sync/sync3"
 	"github.com/matrix-org/sliding-sync/testutils/m"
@@ -77,14 +78,23 @@ func TestRedactionsAreRedactedWherePossible(t *testing.T) {
 
 }
 
-func TestRedactingRoomNameIsReflectedInNextSync(t *testing.T) {
+func TestRedactingRoomStateIsReflectedInNextSync(t *testing.T) {
 	alice := registerNamedUser(t, "alice")
+	bob := registerNamedUser(t, "bob")
 
-	t.Log("Alice creates a room and sets a room name.")
-	aliasLocalPart := t.Name()
+	t.Log("Alice creates a room, then sets a room alias and name.")
 	room := alice.CreateRoom(t, map[string]any{
-		"room_alias_name": aliasLocalPart,
+		"preset": "public_chat",
 	})
+
+	alias := fmt.Sprintf("#%s-%d:%s", t.Name(), time.Now().Unix(), alice.Domain)
+	alice.MustDoFunc(t, "PUT", []string{"_matrix", "client", "v3", "directory", "room", alias},
+		WithJSONBody(t, map[string]any{"room_id": room}),
+	)
+	aliasID := alice.SetState(t, room, "m.room.canonical_alias", "", map[string]any{
+		"alias": alias,
+	})
+
 	const naughty = "naughty room for naughty people"
 	nameID := alice.SetState(t, room, "m.room.name", "", map[string]any{
 		"name": naughty,
@@ -106,19 +116,55 @@ func TestRedactingRoomNameIsReflectedInNextSync(t *testing.T) {
 	redactionID := alice.RedactEvent(t, room, nameID)
 
 	t.Log("Alice syncs until she sees her redaction.")
-	res = alice.SlidingSyncUntil(
-		t,
-		res.Pos,
-		sync3.Request{},
-		m.MatchRoomSubscription(
-			room,
-			MatchRoomTimelineMostRecent(1, []Event{
-				{ID: redactionID},
-			}),
-		),
-	)
+	res = alice.SlidingSyncUntil(t, res.Pos, sync3.Request{}, m.MatchRoomSubscription(
+		room,
+		MatchRoomTimelineMostRecent(1, []Event{{ID: redactionID}}),
+	))
 
-	alias := fmt.Sprintf("#%s:synapse", aliasLocalPart)
 	t.Log("The room name should have been redacted, falling back to the canonical alias.")
 	m.MatchResponse(t, res, m.MatchRoomSubscription(room, m.MatchRoomName(alias)))
+
+	t.Log("Alice sets a room avatar.")
+	avatarURL := alice.UploadContent(t, smallPNG, "avatar.png", "image/png")
+	avatarID := alice.SetState(t, room, "m.room.avatar", "", map[string]interface{}{
+		"url": avatarURL,
+	})
+
+	t.Log("Alice waits to see the avatar.")
+	res = alice.SlidingSyncUntil(t, res.Pos, sync3.Request{}, m.MatchRoomSubscription(room, m.MatchRoomAvatar(avatarURL)))
+
+	t.Log("Alice redacts the avatar.")
+	redactionID = alice.RedactEvent(t, room, avatarID)
+
+	t.Log("Alice sees the avatar revert to blank.")
+	res = alice.SlidingSyncUntil(t, res.Pos, sync3.Request{}, m.MatchRoomSubscription(room, m.MatchRoomUnsetAvatar()))
+
+	t.Log("Bob joins the room, with a custom displayname.")
+	bob.SetDisplayname(t, "bob mortimer")
+	bob.JoinRoom(t, room, nil)
+
+	t.Log("Alice sees Bob join.")
+	res = alice.SlidingSyncUntil(t, res.Pos, sync3.Request{}, m.MatchRoomSubscription(room,
+		MatchRoomTimelineMostRecent(1, []Event{{
+			StateKey: ptr(bob.UserID),
+			Type:     "m.room.member",
+			Content: map[string]any{
+				"membership":  "join",
+				"displayname": "bob mortimer",
+			},
+		}}),
+	))
+
+	t.Log("Alice redacts the alias.")
+	redactionID = alice.RedactEvent(t, room, aliasID)
+
+	t.Log("Alice sees the room name reset to Bob's name.")
+	res = alice.SlidingSyncUntil(t, res.Pos, sync3.Request{}, m.MatchRoomSubscription(room, m.MatchRoomName(
+		fmt.Sprintf("bob mortimer (%s)", bob.UserID),
+	)))
+
+	t.Log("Bob redacts his membership")
+
+	t.Log("Alice sees the room name reset to Bob's username.")
+
 }

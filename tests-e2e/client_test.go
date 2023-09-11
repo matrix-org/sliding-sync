@@ -161,6 +161,16 @@ func (c *CSAPI) UploadContent(t *testing.T, fileBody []byte, fileName string, co
 	return GetJSONFieldStr(t, body, "content_uri")
 }
 
+// Use an empty string to remove a custom displayname.
+func (c *CSAPI) SetDisplayname(t *testing.T, name string) {
+	t.Helper()
+	reqBody := map[string]any{}
+	if name != "" {
+		reqBody["displayname"] = name
+	}
+	c.MustDoFunc(t, "PUT", []string{"_matrix", "client", "v3", "profile", c.UserID, "displayname"}, WithJSONBody(t, reqBody))
+}
+
 // Use an empty string to remove your avatar.
 func (c *CSAPI) SetAvatar(t *testing.T, avatarURL string) {
 	t.Helper()
