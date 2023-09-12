@@ -336,7 +336,7 @@ func (s *Storage) ResetMetadataState(metadata *internal.RoomMetadata) error {
 	metadata.InviteCount = 0
 	metadata.ChildSpaceRooms = make(map[string]struct{})
 
-	for _, ev := range events {
+	for i, ev := range events {
 		switch ev.Type {
 		case "m.room.name":
 			metadata.NameEvent = gjson.GetBytes(ev.JSON, "content.name").Str
@@ -345,8 +345,7 @@ func (s *Storage) ResetMetadataState(metadata *internal.RoomMetadata) error {
 		case "m.room.canonical_alias":
 			metadata.CanonicalAlias = gjson.GetBytes(ev.JSON, "content.alias").Str
 		case "m.room.member":
-			logger.Warn().Any("ev", ev).Msg("DMR:::")
-			heroMemberships.append(&ev)
+			heroMemberships.append(&events[i])
 			switch ev.Membership {
 			case "join":
 				fallthrough
