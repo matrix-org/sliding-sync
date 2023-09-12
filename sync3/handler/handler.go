@@ -806,7 +806,6 @@ func (h *SyncLiveHandler) OnInvalidateRoom(p *pubsub.V2InvalidateRoom) {
 	ctx, task := internal.StartTask(context.Background(), "OnInvalidateRoom")
 	defer task.End()
 
-	h.GlobalCache.OnInvalidateRoom(ctx, p.RoomID)
 	h.Dispatcher.OnInvalidateRoom(ctx, p.RoomID)
 }
 

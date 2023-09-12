@@ -288,13 +288,21 @@ func (d *Dispatcher) notifyListeners(ctx context.Context, ed *caches.EventData, 
 }
 
 func (d *Dispatcher) OnInvalidateRoom(ctx context.Context, roomID string) {
+	// First dispatch to the global cache.
+	receiver, ok := d.userToReceiver[DispatcherAllUsers]
+	if !ok {
+		logger.Error().Msgf("No receiver for global cache")
+	}
+	receiver.OnInvalidateRoom(ctx, roomID)
+
+	// Then dispatch to any users who are joined to that room.
 	joinedUsers, _ := d.jrt.JoinedUsersForRoom(roomID, nil)
 	d.userToReceiverMu.RLock()
 	defer d.userToReceiverMu.RUnlock()
 	for _, userID := range joinedUsers {
-		receiver, ok := d.userToReceiver[userID]
+		receiver, ok = d.userToReceiver[userID]
 		if !ok {
-			logger.Warn().Str("user_id", userID).Msgf("User has no receiver")
+			logger.Error().Str("user_id", userID).Msgf("User has no receiver")
 			continue
 		}
 		receiver.OnInvalidateRoom(ctx, roomID)
