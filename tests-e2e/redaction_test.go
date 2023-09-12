@@ -140,7 +140,8 @@ func TestRedactingRoomStateIsReflectedInNextSync(t *testing.T) {
 	res = alice.SlidingSyncUntil(t, res.Pos, sync3.Request{}, m.MatchRoomSubscription(room, m.MatchRoomUnsetAvatar()))
 
 	t.Log("Bob joins the room, with a custom displayname.")
-	bob.SetDisplayname(t, "bob mortimer")
+	const bobDisplayName = "bob mortimer"
+	bob.SetDisplayname(t, bobDisplayName)
 	bob.JoinRoom(t, room, nil)
 
 	t.Log("Alice sees Bob join.")
@@ -150,21 +151,23 @@ func TestRedactingRoomStateIsReflectedInNextSync(t *testing.T) {
 			Type:     "m.room.member",
 			Content: map[string]any{
 				"membership":  "join",
-				"displayname": "bob mortimer",
+				"displayname": bobDisplayName,
 			},
 		}}),
 	))
+	// Extract Bob's join ID because https://github.com/matrix-org/matrix-spec-proposals/pull/2943 doens't exist grrr
+	timeline := res.Rooms[room].Timeline
+	bobJoinID := gjson.GetBytes(timeline[len(timeline)-1], "event_id").Str
 
 	t.Log("Alice redacts the alias.")
 	redactionID = alice.RedactEvent(t, room, aliasID)
 
-	t.Log("Alice sees the room name reset to Bob's name.")
-	res = alice.SlidingSyncUntil(t, res.Pos, sync3.Request{}, m.MatchRoomSubscription(room, m.MatchRoomName(
-		fmt.Sprintf("bob mortimer (%s)", bob.UserID),
-	)))
+	t.Log("Alice sees the room name reset to Bob's display name.")
+	res = alice.SlidingSyncUntil(t, res.Pos, sync3.Request{}, m.MatchRoomSubscription(room, m.MatchRoomName(bobDisplayName)))
 
 	t.Log("Bob redacts his membership")
+	redactionID = bob.RedactEvent(t, room, bobJoinID)
 
 	t.Log("Alice sees the room name reset to Bob's username.")
-
+	res = alice.SlidingSyncUntil(t, res.Pos, sync3.Request{}, m.MatchRoomSubscription(room, m.MatchRoomName(bob.UserID)))
 }
