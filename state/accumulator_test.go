@@ -3,6 +3,7 @@ package state
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"github.com/matrix-org/sliding-sync/testutils"
 	"reflect"
 	"sort"
@@ -217,6 +218,80 @@ func TestAccumulatorAccumulate(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to Accumulate: %s", err)
 	}
+}
+
+func TestAccumulatorPromptsCacheInvalidation(t *testing.T) {
+	db, close := connectToDB(t)
+	defer close()
+	accumulator := NewAccumulator(db)
+
+	t.Log("Initialise the room state, including a room name.")
+	roomID := fmt.Sprintf("!%s:localhost", t.Name())
+	stateBlock := []json.RawMessage{
+		[]byte(`{"event_id":"$a", "type":"m.room.create", "state_key":"", "content":{"creator":"@me:localhost", "room_version": "10"}}`),
+		[]byte(`{"event_id":"$b", "type":"m.room.member", "state_key":"@me:localhost", "content":{"membership":"join"}}`),
+		[]byte(`{"event_id":"$c", "type":"m.room.join_rules", "state_key":"", "content":{"join_rule":"public"}}`),
+		[]byte(`{"event_id":"$d", "type":"m.room.name", "state_key":"", "content":{"name":"Barry Cryer Appreciation Society"}}`),
+	}
+	_, err := accumulator.Initialise(roomID, stateBlock)
+	if err != nil {
+		t.Fatalf("failed to Initialise accumulator: %s", err)
+	}
+
+	t.Log("Accumulate a second room name, a message, then a third room name.")
+	timeline := []json.RawMessage{
+		[]byte(`{"event_id":"$e", "type":"m.room.name", "state_key":"", "content":{"name":"Jeremy Hardy Appreciation Society"}}`),
+		[]byte(`{"event_id":"$f", "type":"m.room.message", "content": {"body":"Hello, world!", "msgtype":"m.text"}}`),
+		[]byte(`{"event_id":"$g", "type":"m.room.name", "state_key":"", "content":{"name":"Humphrey Lyttelton Appreciation Society"}}`),
+	}
+	var accResult AccumulateResult
+	err = sqlutil.WithTransaction(db, func(txn *sqlx.Tx) error {
+		accResult, err = accumulator.Accumulate(txn, "@dummy:localhost", roomID, "prevBatch", timeline)
+		return err
+	})
+	if err != nil {
+		t.Fatalf("Failed to Accumulate: %s", err)
+	}
+
+	t.Log("We expect 3 new events and no reload required.")
+	assertValue(t, "accResult.NumNew", accResult.NumNew, 3)
+	assertValue(t, "len(accResult.TimelineNIDs)", len(accResult.TimelineNIDs), 3)
+	assertValue(t, "accResult.RequiresReload", accResult.RequiresReload, false)
+
+	t.Log("Redact the old state event and the message.")
+	timeline = []json.RawMessage{
+		[]byte(`{"event_id":"$h", "type":"m.room.redaction", "content":{"redacts":"$e"}}`),
+		[]byte(`{"event_id":"$i", "type":"m.room.redaction", "content":{"redacts":"$f"}}`),
+	}
+	err = sqlutil.WithTransaction(db, func(txn *sqlx.Tx) error {
+		accResult, err = accumulator.Accumulate(txn, "@dummy:localhost", roomID, "prevBatch2", timeline)
+		return err
+	})
+	if err != nil {
+		t.Fatalf("Failed to Accumulate: %s", err)
+	}
+
+	t.Log("We expect 2 new events and no reload required.")
+	assertValue(t, "accResult.NumNew", accResult.NumNew, 2)
+	assertValue(t, "len(accResult.TimelineNIDs)", len(accResult.TimelineNIDs), 2)
+	assertValue(t, "accResult.RequiresReload", accResult.RequiresReload, false)
+
+	t.Log("Redact the latest state event.")
+	timeline = []json.RawMessage{
+		[]byte(`{"event_id":"$j", "type":"m.room.redaction", "content":{"redacts":"$g"}}`),
+	}
+	err = sqlutil.WithTransaction(db, func(txn *sqlx.Tx) error {
+		accResult, err = accumulator.Accumulate(txn, "@dummy:localhost", roomID, "prevBatch3", timeline)
+		return err
+	})
+	if err != nil {
+		t.Fatalf("Failed to Accumulate: %s", err)
+	}
+
+	t.Log("We expect 1 new event and a reload required.")
+	assertValue(t, "accResult.NumNew", accResult.NumNew, 1)
+	assertValue(t, "len(accResult.TimelineNIDs)", len(accResult.TimelineNIDs), 1)
+	assertValue(t, "accResult.RequiresReload", accResult.RequiresReload, true)
 }
 
 func TestAccumulatorMembershipLogs(t *testing.T) {
