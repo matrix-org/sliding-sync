@@ -170,3 +170,45 @@ func TestMultipleConns(t *testing.T) {
 	}}, WithPos(resC.Pos))
 	m.MatchResponse(t, resC, m.MatchList("list", m.MatchV3Count(1), m.MatchV3Ops(m.MatchV3SyncOp(0, 0, []string{roomID}))))
 }
+
+func TestOIDCReuseConnection(t *testing.T) {
+	alice := registerNewUser(t)
+	bob := registerNewUser(t)
+	roomID := alice.CreateRoom(t, map[string]interface{}{"preset": "public_chat"})
+
+	bob.JoinRoom(t, roomID, []string{})
+
+	res := alice.SlidingSync(t, sync3.Request{
+		ConnID: "A",
+		RoomSubscriptions: map[string]sync3.RoomSubscription{
+			roomID: {
+				TimelineLimit: 1,
+			},
+		},
+	})
+
+	// Another SlidingSync to avoid hitting the spam protection
+	res = alice.SlidingSync(t, sync3.Request{ConnID: "A"}, WithPos(res.Pos))
+
+	// this terminates the poller
+	alice.MustDoFunc(t, "POST", []string{"_matrix", "client", "v3", "logout"})
+
+	// Let the logout propagate to the poller
+	time.Sleep(time.Second)
+	position := res.Pos
+
+	// Send a message to the room
+	eventID := bob.SendEventSynced(t, roomID, Event{Type: "m.room.message", Content: map[string]interface{}{"body": "Hello world", "msgtype": "m.text"}})
+
+	// this should return unauthorized, as we've logged out completely
+	httpRes := alice.DoFunc(t, "POST", []string{"_matrix", "client", "unstable", "org.matrix.msc3575", "sync"})
+	if httpRes.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("expected http.StatusUnauthorized, got %d", httpRes.StatusCode)
+	}
+
+	// create a new AccessToken with the same deviceID to simulate a OIDC refresh
+	alice.Login(t, "password", alice.DeviceID)
+	res = alice.SlidingSyncUntilEvent(t, position, sync3.Request{
+		ConnID: "A", // make sure to reuse the connID
+	}, roomID, Event{ID: eventID})
+}
