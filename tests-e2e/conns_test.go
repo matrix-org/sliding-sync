@@ -208,7 +208,8 @@ func TestOIDCReuseConnection(t *testing.T) {
 
 	// create a new AccessToken with the same deviceID to simulate a OIDC refresh
 	alice.Login(t, "password", alice.DeviceID)
-	res = alice.SlidingSyncUntilEvent(t, position, sync3.Request{
+	// Make sure we receive the event on our connection
+	alice.SlidingSyncUntilEvent(t, position, sync3.Request{
 		ConnID: "A", // make sure to reuse the connID
 	}, roomID, Event{ID: eventID})
 }

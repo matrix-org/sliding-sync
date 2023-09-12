@@ -390,7 +390,7 @@ func (h *SyncLiveHandler) setupConnection(req *http.Request, syncReq *sync3.Requ
 			if !conn.Expired() { // if the connection is not expired, we should have a poller running
 				return req, conn, nil
 			}
-			// if the connection is expired, we most likely received a 401 from in the poller
+			// if the connection is expired, we most likely received a 401 in the poller
 			// and terminated the poller loop. Create a new one now below.
 		} else {
 			// conn doesn't exist, we probably nuked it.
