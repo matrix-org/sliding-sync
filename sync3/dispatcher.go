@@ -300,11 +300,9 @@ func (d *Dispatcher) OnInvalidateRoom(ctx context.Context, roomID string) {
 	d.userToReceiverMu.RLock()
 	defer d.userToReceiverMu.RUnlock()
 	for _, userID := range joinedUsers {
-		receiver, ok = d.userToReceiver[userID]
-		if !ok {
-			logger.Error().Str("user_id", userID).Msgf("User has no receiver")
-			continue
+		receiver = d.userToReceiver[userID]
+		if receiver != nil {
+			receiver.OnInvalidateRoom(ctx, roomID)
 		}
-		receiver.OnInvalidateRoom(ctx, roomID)
 	}
 }
