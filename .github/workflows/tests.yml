@@ -45,7 +45,7 @@ jobs:
             - name: Install Go
               uses: actions/setup-go@v4
               with:
-                  go-version: 1.19
+                  go-version: 1.20
 
             - name: Build
               run: go build ./cmd/syncv3
@@ -130,7 +130,7 @@ jobs:
             - name: Install Go
               uses: actions/setup-go@v4
               with:
-                go-version: 1.19
+                go-version: 1.20
 
             - name: Build
               run: go build ./cmd/syncv3
@@ -260,7 +260,7 @@ jobs:
           - name: Install Go
             uses: actions/setup-go@v4
             with:
-              go-version: 1.19
+              go-version: 1.20
 
           # E2E tests with ${{env.PREV_VERSION}}
           - uses: actions/checkout@v3
