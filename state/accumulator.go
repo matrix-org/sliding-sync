@@ -515,10 +515,23 @@ func (a *Accumulator) Accumulate(txn *sqlx.Tx, userID, roomID string, prevBatch 
 	}
 
 	if len(redactTheseEventIDs) > 0 {
-		// TODO: this is going to send out a cache invalidation when someone redacts a
-		// message event, which is unnecessary. Can we get eventsTable.Redact to tell us
-		// if it redacted any state events, and only include a snapID here if so?
-		result.RequiresReload = true
+		// We need to emit a cache invalidation if we have redacted some state in the
+		// current snapshot ID. Note that we run this _after_ persisting any new snapshots.
+		redactedEventIDs := make([]string, 0, len(redactTheseEventIDs))
+		for eventID := range redactTheseEventIDs {
+			redactedEventIDs = append(redactedEventIDs, eventID)
+		}
+		var currentStateRedactions int
+		err = a.db.Get(&currentStateRedactions, `
+			SELECT COUNT(*)
+			FROM syncv3_events
+			    JOIN syncv3_snapshots ON event_nid = ANY (ARRAY_CAT(events, membership_events))
+			WHERE snapshot_id = $1 AND event_id = ANY($2)
+		`, snapID, pq.StringArray(redactedEventIDs))
+		if err != nil {
+			return AccumulateResult{}, err
+		}
+		result.RequiresReload = currentStateRedactions > 0
 	}
 
 	if err = a.spacesTable.HandleSpaceUpdates(txn, newEvents); err != nil {
