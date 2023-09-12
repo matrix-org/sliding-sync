@@ -131,7 +131,7 @@ func (m *ConnMap) getConn(cid ConnID) *Conn {
 }
 
 // Atomically gets or creates a connection with this connection ID. Calls newConn if a new connection is required.
-func (m *ConnMap) CreateConn(cid ConnID, newConnHandler func() ConnHandler) (*Conn, bool) {
+func (m *ConnMap) CreateConn(cid ConnID, containsPos bool, newConnHandler func() ConnHandler) (*Conn, bool) {
 	// atomically check if a conn exists already and nuke it if it exists
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -144,6 +144,10 @@ func (m *ConnMap) CreateConn(cid ConnID, newConnHandler func() ConnHandler) (*Co
 			// for a new connection. Apply an artificial delay here to stop buggy clients from spamming
 			// /sync without a `?pos=` value.
 			time.Sleep(SpamProtectionInterval)
+		} else if containsPos {
+			// we got a genuine existing connection, e.g. an OIDC token expired and the client used a new one
+			conn.expired = false
+			return conn, false
 		}
 		logger.Trace().Str("conn", cid.String()).Bool("spamming", isSpamming).Msg("closing connection due to CreateConn called again")
 		m.closeConn(conn)
@@ -157,12 +161,16 @@ func (m *ConnMap) CreateConn(cid ConnID, newConnHandler func() ConnHandler) (*Co
 	return conn, true
 }
 
-func (m *ConnMap) CloseConnsForDevice(userID, deviceID string) {
-	logger.Trace().Str("user", userID).Str("device", deviceID).Msg("closing connections due to CloseConn()")
+func (m *ConnMap) ExpireConnsForDevice(userID, deviceID string) {
+	logger.Trace().Str("user", userID).Str("device", deviceID).Msg("expire connections due to ExpireConn()")
 	// gather open connections for this user|device
 	connIDs := m.connIDsForDevice(userID, deviceID)
+
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	for _, cid := range connIDs {
-		m.cache.Remove(cid.String()) // this will fire TTL callbacks which calls closeConn
+		c := m.getConn(cid)
+		c.expired = true
 	}
 }
 
