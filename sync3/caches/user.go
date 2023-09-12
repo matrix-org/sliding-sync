@@ -752,5 +752,8 @@ func (u *UserCache) ShouldIgnore(userID string) bool {
 }
 
 func (u *UserCache) OnInvalidateRoom(ctx context.Context, roomID string) {
-	logger.Warn().Msgf("DMR: invalidate USERRRRRRR room %s", roomID)
+	// Nothing for now. In UserRoomData the fields dependant on room state are
+	// IsDM, IsInvite, HasLeft, Invite, CanonicalisedName, ResolvedAvatarURL, Spaces.
+	// Not clear to me if we need to reload these or if we will inherit any changes from
+	// the global cache.
 }

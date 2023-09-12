@@ -318,8 +318,11 @@ func (a *Accumulator) Initialise(roomID string, state []json.RawMessage) (Initia
 }
 
 type AccumulateResult struct {
-	// TODO: is this redundant---identical to len(TimelineNIDs)?
-	NumNew       int
+	// NumNew is the number of events in timeline NIDs that were not previously known
+	// to the proyx.
+	NumNew int
+	// TimelineNIDs is the list of event nids seen in a sync v2 timeline. Some of these
+	// may already be known to the proxy.
 	TimelineNIDs []int64
 	// RequiresReload is set to true when we have accumulated a non-incremental state
 	// change (typically a redaction) that requires consumers to reload the room state

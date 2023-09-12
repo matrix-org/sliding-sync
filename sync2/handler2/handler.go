@@ -301,7 +301,7 @@ func (h *Handler) Accumulate(ctx context.Context, userID, deviceID, roomID, prev
 		return err
 	}
 
-	// TODO: does the ordering of this versus V2Accumulate matter here?
+	// Consumers should reload state before processing new timeline events.
 	if accResult.RequiresReload {
 		h.v2Pub.Notify(pubsub.ChanV2, &pubsub.V2InvalidateRoom{
 			RoomID: roomID,
