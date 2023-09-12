@@ -768,12 +768,20 @@ func (p *poller) parseRoomsResponse(ctx context.Context, res *SyncResponse) erro
 	timelineCalls := 0
 	typingCalls := 0
 	receiptCalls := 0
+	// try to process all rooms, rather than bailing out at the first room which returns an error.
+	// This is CRITICAL if the error returned is an `internal.DataError` as in that case we will
+	// NOT RETRY THE SYNC REQUEST, meaning if we didn't process all the rooms we would lose data.
+	// Currently, Accumulate/Initialise can return DataErrors when a new room is seen without a
+	// create event.
+	// NOTE: we process rooms non-deterministically (ranging over keys in a map).
+	var lastErr error
 	for roomID, roomData := range res.Rooms.Join {
 		if len(roomData.State.Events) > 0 {
 			stateCalls++
 			prependStateEvents, err := p.receiver.Initialise(ctx, roomID, roomData.State.Events)
 			if err != nil {
-				return fmt.Errorf("Initialise[%s]: %w", roomID, err)
+				lastErr = fmt.Errorf("Initialise[%s]: %w", roomID, err)
+				continue
 			}
 			if len(prependStateEvents) > 0 {
 				// The poller has just learned of these state events due to an
@@ -812,7 +820,8 @@ func (p *poller) parseRoomsResponse(ctx context.Context, res *SyncResponse) erro
 		if len(roomData.AccountData.Events) > 0 {
 			err := p.receiver.OnAccountData(ctx, p.userID, roomID, roomData.AccountData.Events)
 			if err != nil {
-				return fmt.Errorf("OnAccountData[%s]: %w", roomID, err)
+				lastErr = fmt.Errorf("OnAccountData[%s]: %w", roomID, err)
+				continue
 			}
 		}
 		if len(roomData.Timeline.Events) > 0 {
@@ -820,7 +829,8 @@ func (p *poller) parseRoomsResponse(ctx context.Context, res *SyncResponse) erro
 			p.trackTimelineSize(len(roomData.Timeline.Events), roomData.Timeline.Limited)
 			err := p.receiver.Accumulate(ctx, p.userID, p.deviceID, roomID, roomData.Timeline.PrevBatch, roomData.Timeline.Events)
 			if err != nil {
-				return fmt.Errorf("Accumulate[%s]: %w", roomID, err)
+				lastErr = fmt.Errorf("Accumulate[%s]: %w", roomID, err)
+				continue
 			}
 		}
 
@@ -830,6 +840,9 @@ func (p *poller) parseRoomsResponse(ctx context.Context, res *SyncResponse) erro
 		if roomData.UnreadNotifications.HighlightCount != nil || roomData.UnreadNotifications.NotificationCount != nil {
 			p.receiver.UpdateUnreadCounts(ctx, roomID, p.userID, roomData.UnreadNotifications.HighlightCount, roomData.UnreadNotifications.NotificationCount)
 		}
+	}
+	if lastErr != nil {
+		return lastErr
 	}
 	for roomID, roomData := range res.Rooms.Leave {
 		if len(roomData.Timeline.Events) > 0 {

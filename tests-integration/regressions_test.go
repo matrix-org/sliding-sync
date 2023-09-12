@@ -2,6 +2,7 @@ package syncv3
 
 import (
 	"encoding/json"
+	"net/http"
 	"testing"
 	"time"
 
@@ -227,4 +228,120 @@ func TestMalformedEventsState(t *testing.T) {
 				}),
 			},
 		}))
+}
+
+// Regression test for https://github.com/matrix-org/sliding-sync/issues/295
+// This test:
+// - injects a good room and a bad room in the v2 response
+// - then injects a good room update if the since token advanced
+// - checks we see all updates
+// In the past, the bad room in the first v2 response caused the proxy to retry and never advance,
+// wedging the poller.
+func TestBadCreateInitialiseDoesntWedgePolling(t *testing.T) {
+	pqString := testutils.PrepareDBConnectionString()
+	// setup code
+	v2 := runTestV2Server(t)
+	v3 := runTestServer(t, v2, pqString)
+	defer v2.close()
+	defer v3.close()
+
+	goodRoom := "!good:localhost"
+	badRoom := "!bad:localhost"
+
+	v2.addAccount(t, alice, aliceToken)
+	// we should see the since token increment, if we see repeats it means
+	// we aren't returning DataErrors when we should be.
+	wantSinces := []string{"", "1", "2"}
+	ch := make(chan bool)
+	v2.checkRequest = func(token string, req *http.Request) {
+		if len(wantSinces) == 0 {
+			return
+		}
+		gotSince := req.URL.Query().Get("since")
+		t.Logf("checkRequest got since=%v", gotSince)
+		want := wantSinces[0]
+		wantSinces = wantSinces[1:]
+		if gotSince != want {
+			t.Errorf("v2.checkRequest since got '%v' want '%v'", gotSince, want)
+		}
+		if len(wantSinces) == 0 {
+			close(ch)
+		}
+	}
+
+	// initial sync, everything fine
+	v2.queueResponse(alice, sync2.SyncResponse{
+		NextBatch: "1",
+		Rooms: sync2.SyncRoomsResponse{
+			Join: map[string]sync2.SyncV2JoinResponse{
+				goodRoom: {
+					Timeline: sync2.TimelineResponse{
+						Events: createRoomState(t, alice, time.Now()),
+					},
+				},
+			},
+		},
+	})
+	aliceRes := v3.mustDoV3Request(t, aliceToken, sync3.Request{
+		Lists: map[string]sync3.RequestList{
+			"a": {
+				Ranges: sync3.SliceRanges{{0, 20}},
+				RoomSubscription: sync3.RoomSubscription{
+					TimelineLimit: 1,
+				},
+			},
+		},
+	})
+	// we should only see 1 room
+	m.MatchResponse(t, aliceRes, m.MatchRoomSubscriptionsStrict(map[string][]m.RoomMatcher{
+		goodRoom: {
+			m.MatchJoinCount(1),
+		},
+	},
+	))
+
+	// now inject a bad room and some extra good event
+	extraGoodEvent := testutils.NewMessageEvent(t, alice, "Extra!", testutils.WithTimestamp(time.Now().Add(time.Second)))
+	v2.queueResponse(alice, sync2.SyncResponse{
+		NextBatch: "2",
+		Rooms: sync2.SyncRoomsResponse{
+			Join: map[string]sync2.SyncV2JoinResponse{
+				goodRoom: {
+					Timeline: sync2.TimelineResponse{
+						Events: []json.RawMessage{extraGoodEvent},
+					},
+				},
+				badRoom: {
+					State: sync2.EventsResponse{
+						// BAD: missing create event
+						Events: createRoomState(t, alice, time.Now())[1:],
+					},
+					Timeline: sync2.TimelineResponse{
+						Events: []json.RawMessage{
+							testutils.NewMessageEvent(t, alice, "Hello World"),
+						},
+					},
+				},
+			},
+		},
+	})
+	v2.waitUntilEmpty(t, alice)
+
+	// we should see the extra good event and not the bad room
+	aliceRes = v3.mustDoV3RequestWithPos(t, aliceToken, aliceRes.Pos, sync3.Request{})
+	// we should only see 1 room
+	m.MatchResponse(t, aliceRes, m.MatchRoomSubscriptionsStrict(map[string][]m.RoomMatcher{
+		goodRoom: {
+			m.MatchRoomTimelineMostRecent(1, []json.RawMessage{extraGoodEvent}),
+		},
+	},
+	))
+
+	// make sure we've seen all the v2 requests
+	select {
+	case <-ch:
+	case <-time.After(time.Second):
+		t.Fatalf("timed out waiting for all v2 requests")
+	}
+
 }
