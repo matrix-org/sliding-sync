@@ -522,7 +522,7 @@ func (a *Accumulator) Accumulate(txn *sqlx.Tx, userID, roomID string, prevBatch 
 			redactedEventIDs = append(redactedEventIDs, eventID)
 		}
 		var currentStateRedactions int
-		err = a.db.Get(&currentStateRedactions, `
+		err = txn.Get(&currentStateRedactions, `
 			SELECT COUNT(*)
 			FROM syncv3_events
 			    JOIN syncv3_snapshots ON event_nid = ANY (ARRAY_CAT(events, membership_events))
