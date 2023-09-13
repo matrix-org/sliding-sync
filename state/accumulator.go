@@ -4,7 +4,6 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
-
 	"github.com/matrix-org/sliding-sync/internal"
 	"github.com/prometheus/client_golang/prometheus"
 
@@ -328,13 +327,13 @@ func (a *Accumulator) Initialise(roomID string, state []json.RawMessage) (Initia
 //     to exist in the database, and the sync stream is already linearised for us.
 //   - Else it creates a new room state snapshot if the timeline contains state events (as this now represents the current state)
 //   - It adds entries to the membership log for membership events.
-func (a *Accumulator) Accumulate(txn *sqlx.Tx, userID, roomID string, prevBatch string, timeline []json.RawMessage) (numNew int, timelineNIDs []int64, err error) {
+func (a *Accumulator) Accumulate(txn *sqlx.Tx, userID, roomID string, timeline internal.TimelineResponse) (numNew int, timelineNIDs []int64, err error) {
 	// The first stage of accumulating events is mostly around validation around what the upstream HS sends us. For accumulation to work correctly
 	// we expect:
 	// - there to be no duplicate events
 	// - if there are new events, they are always new.
 	// Both of these assumptions can be false for different reasons
-	dedupedEvents, err := a.filterAndParseTimelineEvents(txn, roomID, timeline, prevBatch)
+	dedupedEvents, err := a.filterAndParseTimelineEvents(txn, roomID, timeline.Events, timeline.PrevBatch)
 	if err != nil {
 		err = fmt.Errorf("filterTimelineEvents: %w", err)
 		return

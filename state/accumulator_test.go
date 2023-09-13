@@ -3,6 +3,7 @@ package state
 import (
 	"context"
 	"encoding/json"
+	"github.com/matrix-org/sliding-sync/internal"
 	"github.com/matrix-org/sliding-sync/testutils"
 	"reflect"
 	"sort"
@@ -138,7 +139,7 @@ func TestAccumulatorAccumulate(t *testing.T) {
 	var numNew int
 	var latestNIDs []int64
 	err = sqlutil.WithTransaction(accumulator.db, func(txn *sqlx.Tx) error {
-		numNew, latestNIDs, err = accumulator.Accumulate(txn, userID, roomID, "", newEvents)
+		numNew, latestNIDs, err = accumulator.Accumulate(txn, userID, roomID, internal.TimelineResponse{Events: newEvents})
 		return err
 	})
 	if err != nil {
@@ -212,7 +213,7 @@ func TestAccumulatorAccumulate(t *testing.T) {
 
 	// subsequent calls do nothing and are not an error
 	err = sqlutil.WithTransaction(accumulator.db, func(txn *sqlx.Tx) error {
-		_, _, err = accumulator.Accumulate(txn, userID, roomID, "", newEvents)
+		_, _, err = accumulator.Accumulate(txn, userID, roomID, internal.TimelineResponse{Events: newEvents})
 		return err
 	})
 	if err != nil {
@@ -248,7 +249,7 @@ func TestAccumulatorMembershipLogs(t *testing.T) {
 		[]byte(`{"event_id":"` + roomEventIDs[7] + `", "type":"m.room.member", "state_key":"@me:localhost","unsigned":{"prev_content":{"membership":"join", "displayname":"Me"}}, "content":{"membership":"leave"}}`),
 	}
 	err = sqlutil.WithTransaction(accumulator.db, func(txn *sqlx.Tx) error {
-		_, _, err = accumulator.Accumulate(txn, userID, roomID, "", roomEvents)
+		_, _, err = accumulator.Accumulate(txn, userID, roomID, internal.TimelineResponse{Events: roomEvents})
 		return err
 	})
 	if err != nil {
@@ -384,7 +385,7 @@ func TestAccumulatorDupeEvents(t *testing.T) {
 	}
 
 	err = sqlutil.WithTransaction(accumulator.db, func(txn *sqlx.Tx) error {
-		_, _, err = accumulator.Accumulate(txn, userID, roomID, "", joinRoom.Timeline.Events)
+		_, _, err = accumulator.Accumulate(txn, userID, roomID, joinRoom.Timeline)
 		return err
 	})
 	if err != nil {
@@ -584,7 +585,7 @@ func TestAccumulatorConcurrency(t *testing.T) {
 			defer wg.Done()
 			subset := newEvents[:(i + 1)] // i=0 => [1], i=1 => [1,2], etc
 			err := sqlutil.WithTransaction(accumulator.db, func(txn *sqlx.Tx) error {
-				numNew, _, err := accumulator.Accumulate(txn, userID, roomID, "", subset)
+				numNew, _, err := accumulator.Accumulate(txn, userID, roomID, internal.TimelineResponse{Events: subset})
 				totalNumNew += numNew
 				return err
 			})

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/matrix-org/sliding-sync/internal"
 	"io/ioutil"
 	"net/http"
 	"net/url"
@@ -159,22 +160,16 @@ type SyncRoomsResponse struct {
 
 // JoinResponse represents a /sync response for a room which is under the 'join' or 'peek' key.
 type SyncV2JoinResponse struct {
-	State               EventsResponse      `json:"state"`
-	Timeline            TimelineResponse    `json:"timeline"`
-	Ephemeral           EventsResponse      `json:"ephemeral"`
-	AccountData         EventsResponse      `json:"account_data"`
-	UnreadNotifications UnreadNotifications `json:"unread_notifications"`
+	State               EventsResponse            `json:"state"`
+	Timeline            internal.TimelineResponse `json:"timeline"`
+	Ephemeral           EventsResponse            `json:"ephemeral"`
+	AccountData         EventsResponse            `json:"account_data"`
+	UnreadNotifications UnreadNotifications       `json:"unread_notifications"`
 }
 
 type UnreadNotifications struct {
 	HighlightCount    *int `json:"highlight_count,omitempty"`
 	NotificationCount *int `json:"notification_count,omitempty"`
-}
-
-type TimelineResponse struct {
-	Events    []json.RawMessage `json:"events"`
-	Limited   bool              `json:"limited"`
-	PrevBatch string            `json:"prev_batch,omitempty"`
 }
 
 type EventsResponse struct {

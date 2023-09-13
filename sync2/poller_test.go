@@ -782,7 +782,7 @@ func TestPollerResendsOnCallbackError(t *testing.T) {
 				Rooms: SyncRoomsResponse{
 					Join: map[string]SyncV2JoinResponse{
 						"!foo:bar": {
-							Timeline: TimelineResponse{
+							Timeline: internal.TimelineResponse{
 								Events: []json.RawMessage{
 									[]byte(`{"type":"m.room.message","content":{},"sender":"@alice:localhost","event_id":"$222"}`),
 								},
@@ -876,7 +876,7 @@ func TestPollerResendsOnCallbackError(t *testing.T) {
 				Rooms: SyncRoomsResponse{
 					Leave: map[string]SyncV2LeaveResponse{
 						"!foo:bar": {
-							Timeline: TimelineResponse{
+							Timeline: internal.TimelineResponse{
 								Events: []json.RawMessage{
 									[]byte(`{"type":"m.room.member","state_key":"` + pid.UserID + `","content":{"membership":"leave"}}`),
 								},
@@ -984,7 +984,7 @@ func TestPollerDoesNotResendOnDataError(t *testing.T) {
 					Rooms: SyncRoomsResponse{
 						Join: map[string]SyncV2JoinResponse{
 							"!foo:bar": {
-								Timeline: TimelineResponse{
+								Timeline: internal.TimelineResponse{
 									Events: []json.RawMessage{
 										[]byte(`{"type":"m.room.message","content":{},"sender":"@alice:localhost","event_id":"$222"}`),
 									},
@@ -1056,8 +1056,8 @@ type mockDataReceiver struct {
 	updateSinceCalled chan struct{}
 }
 
-func (a *mockDataReceiver) Accumulate(ctx context.Context, userID, deviceID, roomID, prevBatch string, timeline []json.RawMessage) error {
-	a.timelines[roomID] = append(a.timelines[roomID], timeline...)
+func (a *mockDataReceiver) Accumulate(ctx context.Context, userID, deviceID, roomID string, timeline internal.TimelineResponse) error {
+	a.timelines[roomID] = append(a.timelines[roomID], timeline.Events...)
 	return nil
 }
 func (a *mockDataReceiver) Initialise(ctx context.Context, roomID string, state []json.RawMessage) ([]json.RawMessage, error) {
@@ -1097,11 +1097,11 @@ type overrideDataReceiver struct {
 	onExpiredToken      func(ctx context.Context, accessTokenHash, userID, deviceID string)
 }
 
-func (s *overrideDataReceiver) Accumulate(ctx context.Context, userID, deviceID, roomID, prevBatch string, timeline []json.RawMessage) error {
+func (s *overrideDataReceiver) Accumulate(ctx context.Context, userID, deviceID, roomID string, timeline internal.TimelineResponse) error {
 	if s.accumulate == nil {
 		return nil
 	}
-	return s.accumulate(ctx, userID, deviceID, roomID, prevBatch, timeline)
+	return s.accumulate(ctx, userID, deviceID, roomID, timeline.PrevBatch, timeline.Events)
 }
 func (s *overrideDataReceiver) Initialise(ctx context.Context, roomID string, state []json.RawMessage) ([]json.RawMessage, error) {
 	if s.initialise == nil {

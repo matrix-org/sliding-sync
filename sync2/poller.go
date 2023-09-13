@@ -36,7 +36,7 @@ type V2DataReceiver interface {
 	UpdateDeviceSince(ctx context.Context, userID, deviceID, since string)
 	// Accumulate data for this room. This means the timeline section of the v2 response.
 	// Return an error to stop the since token advancing.
-	Accumulate(ctx context.Context, userID, deviceID, roomID, prevBatch string, timeline []json.RawMessage) error // latest pos with event nids of timeline entries
+	Accumulate(ctx context.Context, userID, deviceID, roomID string, timeline internal.TimelineResponse) error // latest pos with event nids of timeline entries
 	// Initialise the room, if it hasn't been already. This means the state section of the v2 response.
 	// If given a state delta from an incremental sync, returns the slice of all state events unknown to the DB.
 	// Return an error to stop the since token advancing.
@@ -310,11 +310,11 @@ func (h *PollerMap) execute() {
 func (h *PollerMap) UpdateDeviceSince(ctx context.Context, userID, deviceID, since string) {
 	h.callbacks.UpdateDeviceSince(ctx, userID, deviceID, since)
 }
-func (h *PollerMap) Accumulate(ctx context.Context, userID, deviceID, roomID, prevBatch string, timeline []json.RawMessage) (err error) {
+func (h *PollerMap) Accumulate(ctx context.Context, userID, deviceID, roomID string, timeline internal.TimelineResponse) (err error) {
 	var wg sync.WaitGroup
 	wg.Add(1)
 	h.executor <- func() {
-		err = h.callbacks.Accumulate(ctx, userID, deviceID, roomID, prevBatch, timeline)
+		err = h.callbacks.Accumulate(ctx, userID, deviceID, roomID, timeline)
 		wg.Done()
 	}
 	wg.Wait()
@@ -818,7 +818,8 @@ func (p *poller) parseRoomsResponse(ctx context.Context, res *SyncResponse) erro
 		if len(roomData.Timeline.Events) > 0 {
 			timelineCalls++
 			p.trackTimelineSize(len(roomData.Timeline.Events), roomData.Timeline.Limited)
-			err := p.receiver.Accumulate(ctx, p.userID, p.deviceID, roomID, roomData.Timeline.PrevBatch, roomData.Timeline.Events)
+
+			err := p.receiver.Accumulate(ctx, p.userID, p.deviceID, roomID, roomData.Timeline)
 			if err != nil {
 				return fmt.Errorf("Accumulate[%s]: %w", roomID, err)
 			}
@@ -834,7 +835,7 @@ func (p *poller) parseRoomsResponse(ctx context.Context, res *SyncResponse) erro
 	for roomID, roomData := range res.Rooms.Leave {
 		if len(roomData.Timeline.Events) > 0 {
 			p.trackTimelineSize(len(roomData.Timeline.Events), roomData.Timeline.Limited)
-			err := p.receiver.Accumulate(ctx, p.userID, p.deviceID, roomID, roomData.Timeline.PrevBatch, roomData.Timeline.Events)
+			err := p.receiver.Accumulate(ctx, p.userID, p.deviceID, roomID, roomData.Timeline)
 			if err != nil {
 				return fmt.Errorf("Accumulate_Leave[%s]: %w", roomID, err)
 			}

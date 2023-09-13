@@ -39,6 +39,8 @@ type Event struct {
 	PrevBatch sql.NullString `db:"prev_batch"`
 	// stripped events will be missing this field
 	JSON []byte `db:"event"`
+	// MissingPrevious is true iff the previous timeline event is not known to the proxy.
+	MissingPrevious bool `db:"missing_previous"`
 }
 
 func (ev *Event) ensureFieldsSetOnEvent() error {
@@ -178,8 +180,10 @@ func (t *EventTable) Insert(txn *sqlx.Tx, events []Event, checkFields bool) (map
 	var eventNID int64
 	for _, chunk := range chunks {
 		rows, err := txn.NamedQuery(`
-		INSERT INTO syncv3_events (event_id, event, event_type, state_key, room_id, membership, prev_batch, is_state)
-        VALUES (:event_id, :event, :event_type, :state_key, :room_id, :membership, :prev_batch, :is_state) ON CONFLICT (event_id) DO NOTHING RETURNING event_id, event_nid`, chunk)
+		INSERT INTO syncv3_events (event_id, event, event_type, state_key, room_id, membership, prev_batch, is_state, missing_previous)
+        VALUES (:event_id, :event, :event_type, :state_key, :room_id, :membership, :prev_batch, :is_state, :missing_previous)
+        ON CONFLICT (event_id) DO NOTHING
+        RETURNING event_id, event_nid`, chunk)
 		if err != nil {
 			return nil, err
 		}

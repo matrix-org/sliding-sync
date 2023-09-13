@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"github.com/matrix-org/sliding-sync/internal"
 	"testing"
 
 	"github.com/matrix-org/sliding-sync/state"
@@ -38,12 +39,12 @@ func TestGlobalCacheLoadState(t *testing.T) {
 		testutils.NewStateEvent(t, "m.room.name", "", alice, map[string]interface{}{"name": "The Room Name"}),
 		testutils.NewStateEvent(t, "m.room.name", "", alice, map[string]interface{}{"name": "The Updated Room Name"}),
 	}
-	_, _, err := store.Accumulate(alice, roomID2, "", eventsRoom2)
+	_, _, err := store.Accumulate(alice, roomID2, internal.TimelineResponse{Events: eventsRoom2})
 	if err != nil {
 		t.Fatalf("Accumulate: %s", err)
 	}
 
-	_, latestNIDs, err := store.Accumulate(alice, roomID, "", events)
+	_, latestNIDs, err := store.Accumulate(alice, roomID, internal.TimelineResponse{Events: events})
 	if err != nil {
 		t.Fatalf("Accumulate: %s", err)
 	}

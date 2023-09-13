@@ -31,7 +31,7 @@ func TestStorageRoomStateBeforeAndAfterEventPosition(t *testing.T) {
 		testutils.NewStateEvent(t, "m.room.join_rules", "", alice, map[string]interface{}{"join_rule": "invite"}),
 		testutils.NewStateEvent(t, "m.room.member", bob, alice, map[string]interface{}{"membership": "invite"}),
 	}
-	_, latestNIDs, err := store.Accumulate(userID, roomID, "", events)
+	_, latestNIDs, err := store.Accumulate(userID, roomID, internal.TimelineResponse{Events: events})
 	if err != nil {
 		t.Fatalf("Accumulate returned error: %s", err)
 	}
@@ -161,7 +161,7 @@ func TestStorageJoinedRoomsAfterPosition(t *testing.T) {
 	var latestNIDs []int64
 	var err error
 	for roomID, eventMap := range roomIDToEventMap {
-		_, latestNIDs, err = store.Accumulate(userID, roomID, "", eventMap)
+		_, latestNIDs, err = store.Accumulate(userID, roomID, internal.TimelineResponse{Events: eventMap})
 		if err != nil {
 			t.Fatalf("Accumulate on %s failed: %s", roomID, err)
 		}
@@ -351,7 +351,7 @@ func TestVisibleEventNIDsBetween(t *testing.T) {
 		},
 	}
 	for _, tl := range timelineInjections {
-		numNew, _, err := store.Accumulate(userID, tl.RoomID, "", tl.Events)
+		numNew, _, err := store.Accumulate(userID, tl.RoomID, internal.TimelineResponse{Events: tl.Events})
 		if err != nil {
 			t.Fatalf("Accumulate on %s failed: %s", tl.RoomID, err)
 		}
@@ -454,7 +454,7 @@ func TestVisibleEventNIDsBetween(t *testing.T) {
 		t.Fatalf("LatestEventNID: %s", err)
 	}
 	for _, tl := range timelineInjections {
-		numNew, _, err := store.Accumulate(userID, tl.RoomID, "", tl.Events)
+		numNew, _, err := store.Accumulate(userID, tl.RoomID, internal.TimelineResponse{Events: tl.Events})
 		if err != nil {
 			t.Fatalf("Accumulate on %s failed: %s", tl.RoomID, err)
 		}
@@ -534,7 +534,7 @@ func TestStorageLatestEventsInRoomsPrevBatch(t *testing.T) {
 	}
 	eventIDs := []string{}
 	for _, timeline := range timelines {
-		_, _, err = store.Accumulate(userID, roomID, timeline.prevBatch, timeline.timeline)
+		_, _, err = store.Accumulate(userID, roomID, internal.TimelineResponse{Events: timeline.timeline, PrevBatch: timeline.prevBatch})
 		if err != nil {
 			t.Fatalf("failed to accumulate: %s", err)
 		}
@@ -776,7 +776,10 @@ func TestAllJoinedMembers(t *testing.T) {
 		}, serialise(tc.InitMemberships)...))
 		assertNoError(t, err)
 
-		_, _, err = store.Accumulate(userID, roomID, "foo", serialise(tc.AccumulateMemberships))
+		_, _, err = store.Accumulate(userID, roomID, internal.TimelineResponse{
+			Events:    serialise(tc.AccumulateMemberships),
+			PrevBatch: "foo",
+		})
 		assertNoError(t, err)
 		testCases[i].RoomID = roomID // remember this for later
 	}

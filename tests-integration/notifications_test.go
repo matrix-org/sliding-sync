@@ -3,6 +3,7 @@ package syncv3
 import (
 	"encoding/json"
 	"fmt"
+	"github.com/matrix-org/sliding-sync/internal"
 	"testing"
 	"time"
 
@@ -80,7 +81,7 @@ func TestNotificationsOnTop(t *testing.T) {
 					UnreadNotifications: sync2.UnreadNotifications{
 						HighlightCount: ptr(1),
 					},
-					Timeline: sync2.TimelineResponse{
+					Timeline: internal.TimelineResponse{
 						Events: []json.RawMessage{
 							bingEvent,
 						},
@@ -105,7 +106,7 @@ func TestNotificationsOnTop(t *testing.T) {
 		Rooms: sync2.SyncRoomsResponse{
 			Join: map[string]sync2.SyncV2JoinResponse{
 				noBingRoomID: {
-					Timeline: sync2.TimelineResponse{
+					Timeline: internal.TimelineResponse{
 						Events: []json.RawMessage{
 							noBingEvent,
 						},
