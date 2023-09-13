@@ -388,9 +388,21 @@ func (t *EventTable) Redact(txn *sqlx.Tx, roomVer string, redacteeEventIDToRedac
 func (t *EventTable) SelectLatestEventsBetween(txn *sqlx.Tx, roomID string, lowerExclusive, upperInclusive int64, limit int) ([]Event, error) {
 	var events []Event
 	// do not pull in events which were in the v2 state block
-	err := txn.Select(&events, `SELECT event_nid, event FROM syncv3_events WHERE event_nid > $1 AND event_nid <= $2 AND room_id = $3 AND is_state=FALSE ORDER BY event_nid DESC LIMIT $4`,
+	err := txn.Select(&events, `SELECT event_nid, event, missing_previous FROM syncv3_events WHERE event_nid > $1 AND event_nid <= $2 AND room_id = $3 AND is_state=FALSE ORDER BY event_nid DESC LIMIT $4`,
 		lowerExclusive, upperInclusive, roomID, limit,
 	)
+	if err != nil {
+		return nil, err
+	}
+
+	// Look to see if there is an event missing its predecessor in the timeline.
+	for i, ev := range events {
+		if ev.MissingPrevious {
+			events = events[:i+1]
+			break
+		}
+	}
+
 	return events, err
 }
 

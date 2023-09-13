@@ -1127,3 +1127,90 @@ func TestEventTableRedactMissingOK(t *testing.T) {
 			}`),
 		}}))
 }
+
+func TestEventTable_SelectLatestEventsBetween_MissingPrevious(t *testing.T) {
+	db, close := connectToDB(t)
+	defer close()
+	table := NewEventTable(db)
+	txn, err := db.Beginx()
+	if err != nil {
+		t.Fatalf("failed to start txn: %s", err)
+	}
+	defer txn.Rollback()
+	roomID := fmt.Sprintf("!%s", t.Name())
+	events := []Event{
+		{ID: "A", MissingPrevious: false},
+		{ID: "B", MissingPrevious: false},
+		{ID: "C", MissingPrevious: false},
+		{ID: "D", MissingPrevious: true},
+		{ID: "E", MissingPrevious: false},
+		{ID: "F", MissingPrevious: false},
+		{ID: "G", MissingPrevious: true},
+		{ID: "H", MissingPrevious: true},
+		{ID: "I", MissingPrevious: false},
+		{ID: "J", MissingPrevious: false},
+	}
+	prefix := "$" + t.Name() + "-"
+	for i := range events {
+		// The method under test doesn't extract IDs and the NIDs are determined at runtime.
+		// It does pull out the event json though, so shove the IDs in there.
+		events[i].JSON = []byte(fmt.Sprintf(`{"event_id": "%s"}`, events[i].ID))
+		// In syncv3_events.event_id, store IDs with some prefix to avoid clashing with other tests.
+		events[i].ID = prefix + events[i].ID
+		events[i].RoomID = roomID
+	}
+	nids, err := table.Insert(txn, events, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	testcases := []struct {
+		FromIDExclusive string
+		ToIDInclusive   string
+		Limit           int
+		ExpectIDs       []string
+	}{
+		{
+			FromIDExclusive: "start",
+			ToIDInclusive:   "C",
+			ExpectIDs:       []string{"C", "B", "A"},
+		},
+		{
+			FromIDExclusive: "start",
+			ToIDInclusive:   "D",
+			ExpectIDs:       []string{"D"},
+		},
+		{
+			FromIDExclusive: "C",
+			ToIDInclusive:   "D",
+			ExpectIDs:       []string{"D"},
+		},
+		{
+			FromIDExclusive: "D",
+			ToIDInclusive:   "E",
+			ExpectIDs:       []string{"E"},
+		},
+		{
+			FromIDExclusive: "E",
+			ToIDInclusive:   "J",
+			ExpectIDs:       []string{"J", "I", "H"},
+		},
+		{
+			FromIDExclusive: "B",
+			ToIDInclusive:   "I",
+			ExpectIDs:       []string{"I", "H"},
+		},
+	}
+
+	for _, tc := range testcases {
+		fetched, err := table.SelectLatestEventsBetween(txn, roomID, nids[prefix+tc.FromIDExclusive], nids[prefix+tc.ToIDInclusive], 10)
+		if err != nil {
+			t.Error(err)
+		}
+		fetchedIDs := make([]string, 0, len(fetched))
+		for _, ev := range fetched {
+			fetchedIDs = append(fetchedIDs, gjson.GetBytes(ev.JSON, "event_id").Str)
+		}
+		assertValue(t, fmt.Sprintf("fetchedIDs (%s, %s] limit 10", tc.FromIDExclusive, tc.ToIDInclusive), fetchedIDs, tc.ExpectIDs)
+	}
+}
