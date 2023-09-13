@@ -7,6 +7,7 @@ import (
 	"net/url"
 	"runtime/trace"
 
+	"go.opentelemetry.io/contrib/propagators/jaeger"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/exporters/otlp/otlptrace"
@@ -144,7 +145,7 @@ func ConfigureOTLP(otlpURL, otlpUser, otlpPass, version string) error {
 	otel.SetTracerProvider(tp)
 	// setup traceparent (TraceContext) handling, and pass through any Baggage
 	otel.SetTextMapPropagator(propagation.NewCompositeTextMapPropagator(
-		propagation.Baggage{}, propagation.TraceContext{},
+		propagation.Baggage{}, propagation.TraceContext{}, jaeger.Jaeger{},
 	))
 	return nil
 }

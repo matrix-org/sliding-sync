@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 	"io/ioutil"
 	"net/http"
 	"net/url"
@@ -21,7 +22,7 @@ type Client interface {
 	// WhoAmI asks the homeserver to lookup the access token using the CSAPI /whoami
 	// endpoint. The response must contain a device ID (meaning that we assume the
 	// homeserver supports Matrix >= 1.1.)
-	WhoAmI(accessToken string) (userID, deviceID string, err error)
+	WhoAmI(ctx context.Context, accessToken string) (userID, deviceID string, err error)
 	DoSyncV2(ctx context.Context, accessToken, since string, isFirst bool, toDeviceOnly bool) (*SyncResponse, int, error)
 }
 
@@ -33,8 +34,8 @@ type HTTPClient struct {
 }
 
 // Return sync2.HTTP401 if this request returns 401
-func (v *HTTPClient) WhoAmI(accessToken string) (string, string, error) {
-	req, err := http.NewRequest("GET", v.DestinationServer+"/_matrix/client/r0/account/whoami", nil)
+func (v *HTTPClient) WhoAmI(ctx context.Context, accessToken string) (string, string, error) {
+	req, err := http.NewRequestWithContext(ctx, "GET", v.DestinationServer+"/_matrix/client/r0/account/whoami", nil)
 	if err != nil {
 		return "", "", err
 	}
@@ -63,7 +64,7 @@ func (v *HTTPClient) WhoAmI(accessToken string) (string, string, error) {
 // or an error. Set isFirst=true on the first sync to force a timeout=0 sync to ensure snapiness.
 func (v *HTTPClient) DoSyncV2(ctx context.Context, accessToken, since string, isFirst, toDeviceOnly bool) (*SyncResponse, int, error) {
 	syncURL := v.createSyncURL(since, isFirst, toDeviceOnly)
-	req, err := http.NewRequest("GET", syncURL, nil)
+	req, err := http.NewRequestWithContext(ctx, "GET", syncURL, nil)
 	req.Header.Set("User-Agent", "sync-v3-proxy-"+ProxyVersion)
 	req.Header.Set("Authorization", "Bearer "+accessToken)
 	if err != nil {
@@ -72,7 +73,8 @@ func (v *HTTPClient) DoSyncV2(ctx context.Context, accessToken, since string, is
 	var res *http.Response
 	if isFirst {
 		longTimeoutClient := &http.Client{
-			Timeout: 30 * time.Minute,
+			Timeout:   30 * time.Minute,
+			Transport: otelhttp.NewTransport(http.DefaultTransport),
 		}
 		res, err = longTimeoutClient.Do(req)
 	} else {
