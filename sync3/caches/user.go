@@ -617,6 +617,7 @@ func (c *UserCache) OnInvite(ctx context.Context, roomID string, inviteStateEven
 
 func (c *UserCache) OnLeftRoom(ctx context.Context, roomID string, leaveEvent json.RawMessage) {
 	urd := c.LoadRoomData(roomID)
+	wasInvite := urd.IsInvite
 	urd.IsInvite = false
 	urd.HasLeft = true
 	urd.Invite = nil
@@ -627,6 +628,15 @@ func (c *UserCache) OnLeftRoom(ctx context.Context, roomID string, leaveEvent js
 
 	ev := gjson.ParseBytes(leaveEvent)
 	stateKey := ev.Get("state_key").Str
+	sender := ev.Get("sender").Str
+	evType := ev.Get("type").Str
+
+	// If the event in question is a kick, we should AlwaysProcess this to make sure the client
+	// knows about the "leave"
+	isKick := false
+	if evType == "m.room.member" && ev.Get("content.membership").Str == "leave" && stateKey != sender {
+		isKick = true
+	}
 
 	up := &RoomEventUpdate{
 		RoomUpdate: &roomUpdateCache{
@@ -639,14 +649,14 @@ func (c *UserCache) OnLeftRoom(ctx context.Context, roomID string, leaveEvent js
 		EventData: &EventData{
 			Event:     leaveEvent,
 			RoomID:    roomID,
-			EventType: ev.Get("type").Str,
+			EventType: evType,
 			StateKey:  &stateKey,
 			Content:   ev.Get("content"),
 			Timestamp: ev.Get("origin_server_ts").Uint(),
-			Sender:    ev.Get("sender").Str,
-			// if this is an invite rejection we need to make sure we tell the client, and not
+			Sender:    sender,
+			// if this is an invite rejection/a kick we need to make sure we tell the client, and not
 			// skip it because of the lack of a NID (this event may not be in the events table)
-			AlwaysProcess: true,
+			AlwaysProcess: wasInvite || isKick,
 		},
 	}
 	c.emitOnRoomUpdate(ctx, up)
