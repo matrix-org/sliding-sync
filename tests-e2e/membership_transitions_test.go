@@ -466,6 +466,72 @@ func TestLeavingRoomReturnsOneEvent(t *testing.T) {
 	}
 }
 
+// Basically the same as above, without joining the room (separate test to make sure
+// we don't already have a poller running for Alice)
+func TestRejectingInviteReturnsOneEvent(t *testing.T) {
+	alice := registerNewUser(t)
+	bob := registerNewUser(t)
+	roomName := "It's-a-me-invitio"
+
+	for _, aliceSyncing := range []bool{false, true} {
+		t.Run(fmt.Sprintf("rejecting an invite returns one leave event (multiple poller=%v)", aliceSyncing), func(t *testing.T) {
+			inviteRoomID := alice.CreateRoom(t, map[string]interface{}{"preset": "private_chat", "name": roomName})
+			t.Logf("TestRejectingInviteReturnsOneEvent room %s", inviteRoomID)
+
+			if aliceSyncing {
+				alice.SlidingSync(t, sync3.Request{})
+			}
+
+			// sync as bob, we see no invites yet.
+			res := bob.SlidingSync(t, sync3.Request{
+				Lists: map[string]sync3.RequestList{
+					"a": {
+						Ranges: sync3.SliceRanges{{0, 20}},
+						Filters: &sync3.RequestFilters{
+							IsInvite: &boolTrue,
+						},
+					},
+				},
+			})
+			m.MatchResponse(t, res, m.MatchList("a", m.MatchV3Count(0)), m.MatchRoomSubscriptionsStrict(nil))
+
+			// now invite bob
+			alice.InviteRoom(t, inviteRoomID, bob.UserID)
+			// sync as bob until we see the room
+			res = bob.SlidingSyncUntilMembership(t, res.Pos, inviteRoomID, bob, "invite")
+			t.Logf("bob is invited")
+
+			// reject the invite, we should receive exactly one leave response
+			bob.LeaveRoom(t, inviteRoomID)
+			res = bob.SlidingSyncUntilMembership(t, res.Pos, inviteRoomID, bob, "leave")
+			t.Logf("bob rejected the invite")
+
+			if room, ok := res.Rooms[inviteRoomID]; ok {
+				// If alice is NOT syncing, we run into this failure mode
+				if c := len(room.Timeline); c > 1 {
+					for _, ev := range res.Rooms[inviteRoomID].Timeline {
+						t.Logf("[multiple poller=%v] Event: %s", aliceSyncing, ev)
+					}
+					t.Errorf("[multiple poller=%v] expected 1 timeline event, got %d", aliceSyncing, c)
+				}
+			} else {
+				t.Errorf("[multiple poller=%v] expected room %s in response, but didn't find it", aliceSyncing, inviteRoomID)
+			}
+
+			res = bob.SlidingSync(t, sync3.Request{}, WithPos(res.Pos))
+
+			// this should not happen, as we already send down the leave event
+			// If alice is synching, we run into this failure mode
+			if room, ok := res.Rooms[inviteRoomID]; ok {
+				for _, ev := range room.Timeline {
+					t.Logf("[multiple poller=%v] Event: %s", aliceSyncing, ev)
+				}
+				t.Errorf("[multiple poller=%v] expected room not to be in response", aliceSyncing)
+			}
+		})
+	}
+}
+
 // test invite/join counts update and are accurate
 func TestMemberCounts(t *testing.T) {
 	alice := registerNewUser(t)
