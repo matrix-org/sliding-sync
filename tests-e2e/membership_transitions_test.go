@@ -455,7 +455,7 @@ func TestLeavingRoomReturnsOneEvent(t *testing.T) {
 			res = bob.SlidingSync(t, sync3.Request{}, WithPos(res.Pos))
 
 			// this should not happen, as we already send down the leave event
-			// If alice is synching, we run into this failure mode
+			// If alice is syncing, we run into this failure mode
 			if room, ok := res.Rooms[inviteRoomID]; ok {
 				for _, ev := range room.Timeline {
 					t.Logf("[multiple poller=%v] Event: %s", aliceSyncing, ev)
@@ -521,7 +521,7 @@ func TestRejectingInviteReturnsOneEvent(t *testing.T) {
 			res = bob.SlidingSync(t, sync3.Request{}, WithPos(res.Pos))
 
 			// this should not happen, as we already send down the leave event
-			// If alice is synching, we run into this failure mode
+			// If alice is syncing, we run into this failure mode
 			if room, ok := res.Rooms[inviteRoomID]; ok {
 				for _, ev := range room.Timeline {
 					t.Logf("[multiple poller=%v] Event: %s", aliceSyncing, ev)
