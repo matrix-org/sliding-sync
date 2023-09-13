@@ -125,8 +125,13 @@ func NewEventTable(db *sqlx.DB) *EventTable {
 		prev_batch TEXT,
 		membership TEXT,
 		is_state BOOLEAN NOT NULL, -- is this event part of the v2 state response?
-		event BYTEA NOT NULL
+		event BYTEA NOT NULL,
+		missing_previous BOOLEAN NOT NULL DEFAULT FALSE
 	);
+
+	COMMENT ON COLUMN syncv3_events.missing_previous IS
+    'True iff the previous timeline event is not known to the proxy.';
+
 	-- index for querying all joined rooms for a given user
 	CREATE INDEX IF NOT EXISTS syncv3_events_type_sk_idx ON syncv3_events(event_type, state_key);
 	-- index for querying membership deltas in particular rooms
