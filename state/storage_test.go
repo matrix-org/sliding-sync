@@ -905,6 +905,7 @@ func assertRoomMetadata(t *testing.T, got, want internal.RoomMetadata) {
 }
 
 func assertValue(t *testing.T, msg string, got, want interface{}) {
+	t.Helper()
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("%s: got %v want %v", msg, got, want)
 	}
