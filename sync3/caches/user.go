@@ -617,7 +617,6 @@ func (c *UserCache) OnInvite(ctx context.Context, roomID string, inviteStateEven
 
 func (c *UserCache) OnLeftRoom(ctx context.Context, roomID string, leaveEvent json.RawMessage) {
 	urd := c.LoadRoomData(roomID)
-	logger.Trace().Msgf("%#v", urd)
 	wasInvite := urd.IsInvite
 	urd.IsInvite = false
 	urd.HasLeft = true
