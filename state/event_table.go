@@ -175,7 +175,7 @@ func (t *EventTable) Insert(txn *sqlx.Tx, events []Event, checkFields bool) (map
 		}
 		events[i].JSON = js
 	}
-	chunks := sqlutil.Chunkify(8, MaxPostgresParameters, EventChunker(events))
+	chunks := sqlutil.Chunkify(9, MaxPostgresParameters, EventChunker(events))
 	var eventID string
 	var eventNID int64
 	for _, chunk := range chunks {
@@ -224,7 +224,7 @@ func (t *EventTable) SelectByNIDs(txn *sqlx.Tx, verifyAll bool, nids []int64) (e
 		wanted = len(nids)
 	}
 	return t.selectAny(txn, wanted, `
-	SELECT event_nid, event_id, event, event_type, state_key, room_id, before_state_snapshot_id, membership, event_replaces_nid FROM syncv3_events
+	SELECT event_nid, event_id, event, event_type, state_key, room_id, before_state_snapshot_id, membership, event_replaces_nid, missing_previous FROM syncv3_events
 	WHERE event_nid = ANY ($1) ORDER BY event_nid ASC;`, pq.Int64Array(nids))
 }
 
@@ -238,7 +238,7 @@ func (t *EventTable) SelectByIDs(txn *sqlx.Tx, verifyAll bool, ids []string) (ev
 		wanted = len(ids)
 	}
 	return t.selectAny(txn, wanted, `
-	SELECT event_nid, event_id, event, event_type, state_key, room_id, before_state_snapshot_id, membership FROM syncv3_events
+	SELECT event_nid, event_id, event, event_type, state_key, room_id, before_state_snapshot_id, membership, missing_previous FROM syncv3_events
 	WHERE event_id = ANY ($1) ORDER BY event_nid ASC;`, pq.StringArray(ids))
 }
 
