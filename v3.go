@@ -21,6 +21,7 @@ import (
 	"github.com/pressly/goose/v3"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/hlog"
+	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 
 	_ "github.com/matrix-org/sliding-sync/state/migrations"
 )
@@ -83,7 +84,8 @@ func Setup(destHomeserver, postgresURI, secret string, opts Opts) (*handler2.Han
 	// Setup shared DB and HTTP client
 	v2Client := &sync2.HTTPClient{
 		Client: &http.Client{
-			Timeout: 5 * time.Minute,
+			Timeout:   5 * time.Minute,
+			Transport: otelhttp.NewTransport(http.DefaultTransport),
 		},
 		DestinationServer: destHomeserver,
 	}

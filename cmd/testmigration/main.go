@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"github.com/matrix-org/sliding-sync/sync2"
 	"os"
 )
@@ -16,6 +17,7 @@ const (
 )
 
 func main() {
+	ctx := context.Background()
 	args := map[string]string{
 		EnvServer:          os.Getenv(EnvServer),
 		EnvDB:              os.Getenv(EnvDB),
@@ -23,7 +25,7 @@ func main() {
 		EnvMigrationCommit: os.Getenv(EnvMigrationCommit),
 	}
 
-	err := sync2.MigrateDeviceIDs(args[EnvServer], args[EnvDB], args[EnvSecret], args[EnvMigrationCommit] != "")
+	err := sync2.MigrateDeviceIDs(ctx, args[EnvServer], args[EnvDB], args[EnvSecret], args[EnvMigrationCommit] != "")
 	if err != nil {
 		panic(err)
 	}

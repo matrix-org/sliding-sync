@@ -327,7 +327,8 @@ func (h *SyncLiveHandler) serve(w http.ResponseWriter, req *http.Request) error 
 // It also sets a v2 sync poll loop going if one didn't exist already for this user.
 // When this function returns, the connection is alive and active.
 func (h *SyncLiveHandler) setupConnection(req *http.Request, syncReq *sync3.Request, containsPos bool) (*http.Request, *sync3.Conn, *internal.HandlerError) {
-	taskCtx, task := internal.StartTask(req.Context(), "setupConnection")
+	ctx, task := internal.StartTask(req.Context(), "setupConnection")
+	req = req.WithContext(ctx)
 	defer task.End()
 	var conn *sync3.Conn
 	// Extract an access token
@@ -346,7 +347,7 @@ func (h *SyncLiveHandler) setupConnection(req *http.Request, syncReq *sync3.Requ
 	if err != nil {
 		if err == sql.ErrNoRows {
 			hlog.FromRequest(req).Info().Msg("Received connection from unknown access token, querying with homeserver")
-			newToken, herr := h.identifyUnknownAccessToken(accessToken, hlog.FromRequest(req))
+			newToken, herr := h.identifyUnknownAccessToken(req.Context(), accessToken, hlog.FromRequest(req))
 			if herr != nil {
 				return req, nil, herr
 			}
@@ -367,7 +368,7 @@ func (h *SyncLiveHandler) setupConnection(req *http.Request, syncReq *sync3.Requ
 		Str("conn", syncReq.ConnID).
 		Logger()
 	internal.SetRequestContextUserID(req.Context(), token.UserID, token.DeviceID)
-	internal.Logf(taskCtx, "setupConnection", "identified access token as user=%s device=%s", token.UserID, token.DeviceID)
+	internal.Logf(req.Context(), "setupConnection", "identified access token as user=%s device=%s", token.UserID, token.DeviceID)
 
 	// Record the fact that we've recieved a request from this token
 	err = h.V2Store.TokensTable.MaybeUpdateLastSeen(token, time.Now())
@@ -444,9 +445,9 @@ func (h *SyncLiveHandler) setupConnection(req *http.Request, syncReq *sync3.Requ
 	return req, conn, nil
 }
 
-func (h *SyncLiveHandler) identifyUnknownAccessToken(accessToken string, logger *zerolog.Logger) (*sync2.Token, *internal.HandlerError) {
+func (h *SyncLiveHandler) identifyUnknownAccessToken(ctx context.Context, accessToken string, logger *zerolog.Logger) (*sync2.Token, *internal.HandlerError) {
 	// We don't recognise the given accessToken. Ask the homeserver who owns it.
-	userID, deviceID, err := h.V2.WhoAmI(accessToken)
+	userID, deviceID, err := h.V2.WhoAmI(ctx, accessToken)
 	if err != nil {
 		if err == sync2.HTTP401 {
 			return nil, &internal.HandlerError{
