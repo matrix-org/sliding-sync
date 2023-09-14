@@ -307,9 +307,9 @@ func (s *Storage) MetadataForAllRooms(txn *sqlx.Tx, tempTableName string, result
 }
 
 // ResetMetadataState updates the given metadata in-place to reflect the current state
-// of the room.
-// TODO: could be brittle. Might be better to just create a new RoomMetadata from scratch
-// and copy over the fields we don't want to reload.
+// of the room. This is only safe to call from the subscriber goroutine; it is not safe
+// to call from the connection goroutines.
+// TODO: could have this create a new RoomMetadata and get the caller to assign it.
 func (s *Storage) ResetMetadataState(metadata *internal.RoomMetadata) error {
 	var events []Event
 	err := s.DB.Select(&events, `
