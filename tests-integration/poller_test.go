@@ -4,12 +4,14 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"github.com/jmoiron/sqlx"
-	"github.com/matrix-org/sliding-sync/sqlutil"
 	"net/http"
 	"os"
+	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/jmoiron/sqlx"
+	"github.com/matrix-org/sliding-sync/sqlutil"
 
 	"github.com/matrix-org/sliding-sync/sync2"
 	"github.com/matrix-org/sliding-sync/sync3"
@@ -415,7 +417,7 @@ func TestPollersCanBeResumedAfterExpiry(t *testing.T) {
 	res := v3.mustDoV3Request(t, aliceToken, sync3.Request{
 		Extensions: extensions.Request{
 			AccountData: &extensions.AccountDataRequest{
-				extensions.Core{
+				Core: extensions.Core{
 					Enabled: &boolTrue,
 				},
 			},
@@ -459,5 +461,77 @@ func TestPollerExpiryEnsurePollingRace(t *testing.T) {
 	_, resBytes, status := v3.doV3Request(t, context.Background(), aliceToken, "", sync3.Request{})
 	if status != http.StatusUnauthorized {
 		t.Fatalf("Should have got 401 http response; got %d\n%s", status, resBytes)
+	}
+}
+
+// Regression test for the bugfix for https://github.com/matrix-org/sliding-sync/issues/287#issuecomment-1706522718
+// Specifically, we could cache the failure and never tell the poller about new tokens, wedging the client(!). This
+// seems to have been due to the following:
+//   - client hits sync for the first time. We /whoami and remember the token->user mapping in TokensTable.
+//   - client syncing + poller syncing, everything happy.
+//   - token expires. OnExpiredToken is sent to EnsurePoller which removes the entry from EnsurePoller and nukes the conns.
+//   - client hits sync, gets 400 M_UNKNOWN_POS due to nuked conns.
+//   - client hits a fresh /sync: for whatever reason, the token is NOT 401d there and then by the /whoami lookup failing.
+//     Maybe failed to remove the token, but don't see any logs to suggest this. Seems to be an OIDC thing.
+//   - EnsurePoller starts a poller, which immediately 401s as the token is expired.
+//   - OnExpiredToken is sent first, which removes the entry in EnsurePoller.
+//   - OnInitialSyncComplete[success=false] is sent after, which MAKES A NEW ENTRY with success=false.
+//   - proxy sends back 401 M_UNKNOWN_TOKEN.
+//   - At this point the proxy is wedged. Any token, no matter how valid they are, will not hit EnsurePoller because
+//     we cached success=false for that (user,device).
+//
+// Traceable in the logs which show spam of this log line without "Poller: v2 poll loop started" interleaved.
+//
+//	12:45:33 ERR EnsurePolling failed, returning 401 conn=encryption device=xx user=@xx:xx.xx
+//
+// To test this failure mode we:
+// - Create Alice and sync her poller.
+// - Expire her token immediately, just like the test TestPollerExpiryEnsurePollingRace
+// - Do another request with a valid new token, this should succeed.
+func TestPollerExpiryEnsurePollingRaceDoesntWedge(t *testing.T) {
+	newToken := "NEW_ALICE_TOKEN"
+	pqString := testutils.PrepareDBConnectionString()
+	v2 := runTestV2Server(t)
+	defer v2.close()
+	v3 := runTestServer(t, v2, pqString)
+	defer v3.close()
+
+	v2.addAccount(t, alice, aliceToken)
+
+	// Arrange the following:
+	// 1. A request arrives from an unknown token.
+	// 2. The API makes a /whoami lookup for the new token. That returns without error.
+	// 3. The old token expires.
+	// 4. The poller tries to call /sync but finds that the token has expired.
+	// NEW 5. Using a "new token" works.
+
+	var gotNewToken atomic.Bool
+	v2.SetCheckRequest(func(token string, req *http.Request) {
+		if token == newToken {
+			t.Log("recv new token")
+			gotNewToken.Store(true)
+			return
+		}
+		if token != aliceToken {
+			t.Fatalf("unexpected poll from %s", token)
+		}
+		// Expire the token before we process the request.
+		t.Log("Alice's token expires.")
+		v2.invalidateTokenImmediately(token)
+	})
+
+	t.Log("Alice makes a sliding sync request with a token that's about to expire.")
+	_, resBytes, status := v3.doV3Request(t, context.Background(), aliceToken, "", sync3.Request{})
+	if status != http.StatusUnauthorized {
+		t.Fatalf("Should have got 401 http response; got %d\n%s", status, resBytes)
+	}
+	// make a new token and use it
+	v2.addAccount(t, alice, newToken)
+	_, resBytes, status = v3.doV3Request(t, context.Background(), newToken, "", sync3.Request{})
+	if status != http.StatusOK {
+		t.Fatalf("Should have got 200 http response; got %d\n%s", status, resBytes)
+	}
+	if !gotNewToken.Load() {
+		t.Fatalf("never saw a v2 poll with the new token")
 	}
 }
