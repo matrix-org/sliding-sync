@@ -155,7 +155,11 @@ func (p *EnsurePoller) OnInitialSyncComplete(payload *pubsub.V2InitialSyncComple
 	ch := pending.ch
 	pending.done = true
 	pending.ch = nil
-	pending.expired = !payload.Success
+	// If for whatever reason we get OnExpiredToken prior to OnInitialSyncComplete, don't forget that
+	// we expired the token i.e expiry latches true.
+	if !pending.expired {
+		pending.expired = !payload.Success
+	}
 	p.pendingPolls[pid] = pending
 	p.calculateNumOutstanding() // decrement total
 	log.Trace().Msg("OnInitialSyncComplete: closing channel")
