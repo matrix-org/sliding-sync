@@ -803,6 +803,13 @@ func (h *SyncLiveHandler) OnExpiredToken(p *pubsub.V2ExpiredToken) {
 	h.ConnMap.CloseConnsForDevice(p.UserID, p.DeviceID)
 }
 
+func (h *SyncLiveHandler) OnInvalidateRoom(p *pubsub.V2InvalidateRoom) {
+	ctx, task := internal.StartTask(context.Background(), "OnInvalidateRoom")
+	defer task.End()
+
+	h.Dispatcher.OnInvalidateRoom(ctx, p.RoomID)
+}
+
 func parseIntFromQuery(u *url.URL, param string) (result int64, err *internal.HandlerError) {
 	queryPos := u.Query().Get(param)
 	if queryPos != "" {

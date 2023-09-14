@@ -306,6 +306,77 @@ func (s *Storage) MetadataForAllRooms(txn *sqlx.Tx, tempTableName string, result
 	return nil
 }
 
+// ResetMetadataState updates the given metadata in-place to reflect the current state
+// of the room. This is only safe to call from the subscriber goroutine; it is not safe
+// to call from the connection goroutines.
+// TODO: could have this create a new RoomMetadata and get the caller to assign it.
+func (s *Storage) ResetMetadataState(metadata *internal.RoomMetadata) error {
+	var events []Event
+	err := s.DB.Select(&events, `
+	WITH snapshot(events, membership_events) AS (
+        SELECT events, membership_events
+        FROM syncv3_snapshots
+            JOIN syncv3_rooms ON snapshot_id = current_snapshot_id
+        WHERE syncv3_rooms.room_id = $1
+    )
+	SELECT event_id, event_type, state_key, event, membership
+	FROM syncv3_events JOIN snapshot ON (
+		event_nid = ANY (ARRAY_CAT(events, membership_events))
+	)
+	WHERE (event_type IN ('m.room.name', 'm.room.avatar', 'm.room.canonical_alias') AND state_key = '')
+	   OR (event_type = 'm.room.member' AND membership IN ('join', '_join', 'invite', '_invite'))
+	ORDER BY event_nid ASC
+	;`, metadata.RoomID)
+	if err != nil {
+		return fmt.Errorf("ResetMetadataState[%s]: %w", metadata.RoomID, err)
+	}
+
+	heroMemberships := circularSlice[*Event]{max: 6}
+	metadata.JoinCount = 0
+	metadata.InviteCount = 0
+	metadata.ChildSpaceRooms = make(map[string]struct{})
+
+	for i, ev := range events {
+		switch ev.Type {
+		case "m.room.name":
+			metadata.NameEvent = gjson.GetBytes(ev.JSON, "content.name").Str
+		case "m.room.avatar":
+			metadata.AvatarEvent = gjson.GetBytes(ev.JSON, "content.avatar_url").Str
+		case "m.room.canonical_alias":
+			metadata.CanonicalAlias = gjson.GetBytes(ev.JSON, "content.alias").Str
+		case "m.room.member":
+			heroMemberships.append(&events[i])
+			switch ev.Membership {
+			case "join":
+				fallthrough
+			case "_join":
+				metadata.JoinCount++
+			case "invite":
+				fallthrough
+			case "_invite":
+				metadata.InviteCount++
+			}
+		case "m.space.child":
+			metadata.ChildSpaceRooms[ev.StateKey] = struct{}{}
+		}
+	}
+
+	metadata.Heroes = make([]internal.Hero, 0, len(heroMemberships.vals))
+	for _, ev := range heroMemberships.vals {
+		parsed := gjson.ParseBytes(ev.JSON)
+		hero := internal.Hero{
+			ID:     ev.StateKey,
+			Name:   parsed.Get("content.displayname").Str,
+			Avatar: parsed.Get("content.avatar_url").Str,
+		}
+		metadata.Heroes = append(metadata.Heroes, hero)
+	}
+
+	// For now, don't bother reloading Encrypted, PredecessorID and UpgradedRoomID.
+	// These shouldn't be changing during a room's lifetime in normal operation.
+	return nil
+}
+
 // Returns all current NOT MEMBERSHIP state events matching the event types given in all rooms. Returns a map of
 // room ID to events in that room.
 func (s *Storage) currentNotMembershipStateEventsInAllRooms(txn *sqlx.Tx, eventTypes []string) (map[string][]Event, error) {
@@ -336,15 +407,15 @@ func (s *Storage) currentNotMembershipStateEventsInAllRooms(txn *sqlx.Tx, eventT
 	return result, nil
 }
 
-func (s *Storage) Accumulate(userID, roomID, prevBatch string, timeline []json.RawMessage) (numNew int, timelineNIDs []int64, err error) {
+func (s *Storage) Accumulate(userID, roomID, prevBatch string, timeline []json.RawMessage) (result AccumulateResult, err error) {
 	if len(timeline) == 0 {
-		return 0, nil, nil
+		return AccumulateResult{}, nil
 	}
 	err = sqlutil.WithTransaction(s.Accumulator.db, func(txn *sqlx.Tx) error {
-		numNew, timelineNIDs, err = s.Accumulator.Accumulate(txn, userID, roomID, prevBatch, timeline)
+		result, err = s.Accumulator.Accumulate(txn, userID, roomID, prevBatch, timeline)
 		return err
 	})
-	return
+	return result, err
 }
 
 func (s *Storage) Initialise(roomID string, state []json.RawMessage) (InitialiseResult, error) {
@@ -818,7 +889,7 @@ func (s *Storage) AllJoinedMembers(txn *sqlx.Tx, tempTableName string) (joinedMe
 	defer rows.Close()
 	joinedMembers = make(map[string][]string)
 	inviteCounts := make(map[string]int)
-	heroNIDs := make(map[string]*circularSlice)
+	heroNIDs := make(map[string]*circularSlice[int64])
 	var stateKey string
 	var membership string
 	var roomID string
@@ -829,7 +900,7 @@ func (s *Storage) AllJoinedMembers(txn *sqlx.Tx, tempTableName string) (joinedMe
 		}
 		heroes := heroNIDs[roomID]
 		if heroes == nil {
-			heroes = &circularSlice{max: 6}
+			heroes = &circularSlice[int64]{max: 6}
 			heroNIDs[roomID] = heroes
 		}
 		switch membership {
@@ -982,13 +1053,13 @@ func (s *Storage) Teardown() {
 
 // circularSlice is a slice which can be appended to which will wraparound at `max`.
 // Mostly useful for lazily calculating heroes. The values returned aren't sorted.
-type circularSlice struct {
+type circularSlice[T any] struct {
 	i    int
-	vals []int64
+	vals []T
 	max  int
 }
 
-func (s *circularSlice) append(val int64) {
+func (s *circularSlice[T]) append(val T) {
 	if len(s.vals) < s.max {
 		// populate up to max
 		s.vals = append(s.vals, val)
