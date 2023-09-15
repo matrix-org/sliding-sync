@@ -626,7 +626,6 @@ func TestHeroesOnMembershipChanges(t *testing.T) {
 		subRoomID := alice.CreateRoom(t, map[string]interface{}{"preset": "public_chat"})
 		bob.JoinRoom(t, subRoomID, []string{})
 
-		// Start without requesting heroes
 		res := alice.SlidingSyncUntil(t, "", sync3.Request{
 			RoomSubscriptions: map[string]sync3.RoomSubscription{
 				subRoomID: {
