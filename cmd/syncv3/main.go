@@ -41,18 +41,19 @@ const (
 	EnvSecret = "SYNCV3_SECRET"
 
 	// Optional fields
-	EnvBindAddr     = "SYNCV3_BINDADDR"
-	EnvTLSCert      = "SYNCV3_TLS_CERT"
-	EnvTLSKey       = "SYNCV3_TLS_KEY"
-	EnvPPROF        = "SYNCV3_PPROF"
-	EnvPrometheus   = "SYNCV3_PROM"
-	EnvDebug        = "SYNCV3_DEBUG"
-	EnvOTLP         = "SYNCV3_OTLP_URL"
-	EnvOTLPUsername = "SYNCV3_OTLP_USERNAME"
-	EnvOTLPPassword = "SYNCV3_OTLP_PASSWORD"
-	EnvSentryDsn    = "SYNCV3_SENTRY_DSN"
-	EnvLogLevel     = "SYNCV3_LOG_LEVEL"
-	EnvMaxConns     = "SYNCV3_MAX_DB_CONN"
+	EnvBindAddr        = "SYNCV3_BINDADDR"
+	EnvTLSCert         = "SYNCV3_TLS_CERT"
+	EnvTLSKey          = "SYNCV3_TLS_KEY"
+	EnvPPROF           = "SYNCV3_PPROF"
+	EnvPrometheus      = "SYNCV3_PROM"
+	EnvDebug           = "SYNCV3_DEBUG"
+	EnvOTLP            = "SYNCV3_OTLP_URL"
+	EnvOTLPUsername    = "SYNCV3_OTLP_USERNAME"
+	EnvOTLPPassword    = "SYNCV3_OTLP_PASSWORD"
+	EnvSentryDsn       = "SYNCV3_SENTRY_DSN"
+	EnvLogLevel        = "SYNCV3_LOG_LEVEL"
+	EnvMaxConns        = "SYNCV3_MAX_DB_CONN"
+	EnvIdleTimeoutSecs = "SYNCV3_DB_IDLE_TIMEOUT_SECS"
 )
 
 var helpMsg = fmt.Sprintf(`
@@ -71,8 +72,9 @@ Environment var
 %s Default: unset. The Sentry DSN to report events to e.g https://sliding-sync@sentry.example.com/123 - if unset does not send sentry events.
 %s  Default: info. The level of verbosity for messages logged. Available values are trace, debug, info, warn, error and fatal
 %s Default: unset. Max database connections to use when communicating with postgres. Unset or 0 means no limit.
+%s Default: 3600. The maximum amount of time a database connection may be idle, in seconds. 0 means no limit.
 `, EnvServer, EnvDB, EnvSecret, EnvBindAddr, EnvTLSCert, EnvTLSKey, EnvPPROF, EnvPrometheus, EnvOTLP, EnvOTLPUsername, EnvOTLPPassword,
-	EnvSentryDsn, EnvLogLevel, EnvMaxConns)
+	EnvSentryDsn, EnvLogLevel, EnvMaxConns, EnvIdleTimeoutSecs)
 
 func defaulting(in, dft string) string {
 	if in == "" {
@@ -92,21 +94,22 @@ func main() {
 	}
 
 	args := map[string]string{
-		EnvServer:       os.Getenv(EnvServer),
-		EnvDB:           os.Getenv(EnvDB),
-		EnvSecret:       os.Getenv(EnvSecret),
-		EnvBindAddr:     defaulting(os.Getenv(EnvBindAddr), "0.0.0.0:8008"),
-		EnvTLSCert:      os.Getenv(EnvTLSCert),
-		EnvTLSKey:       os.Getenv(EnvTLSKey),
-		EnvPPROF:        os.Getenv(EnvPPROF),
-		EnvPrometheus:   os.Getenv(EnvPrometheus),
-		EnvDebug:        os.Getenv(EnvDebug),
-		EnvOTLP:         os.Getenv(EnvOTLP),
-		EnvOTLPUsername: os.Getenv(EnvOTLPUsername),
-		EnvOTLPPassword: os.Getenv(EnvOTLPPassword),
-		EnvSentryDsn:    os.Getenv(EnvSentryDsn),
-		EnvLogLevel:     os.Getenv(EnvLogLevel),
-		EnvMaxConns:     defaulting(os.Getenv(EnvMaxConns), "0"),
+		EnvServer:          os.Getenv(EnvServer),
+		EnvDB:              os.Getenv(EnvDB),
+		EnvSecret:          os.Getenv(EnvSecret),
+		EnvBindAddr:        defaulting(os.Getenv(EnvBindAddr), "0.0.0.0:8008"),
+		EnvTLSCert:         os.Getenv(EnvTLSCert),
+		EnvTLSKey:          os.Getenv(EnvTLSKey),
+		EnvPPROF:           os.Getenv(EnvPPROF),
+		EnvPrometheus:      os.Getenv(EnvPrometheus),
+		EnvDebug:           os.Getenv(EnvDebug),
+		EnvOTLP:            os.Getenv(EnvOTLP),
+		EnvOTLPUsername:    os.Getenv(EnvOTLPUsername),
+		EnvOTLPPassword:    os.Getenv(EnvOTLPPassword),
+		EnvSentryDsn:       os.Getenv(EnvSentryDsn),
+		EnvLogLevel:        os.Getenv(EnvLogLevel),
+		EnvMaxConns:        defaulting(os.Getenv(EnvMaxConns), "0"),
+		EnvIdleTimeoutSecs: defaulting(os.Getenv(EnvIdleTimeoutSecs), "3600"),
 	}
 	requiredEnvVars := []string{EnvServer, EnvDB, EnvSecret, EnvBindAddr}
 	for _, requiredEnvVar := range requiredEnvVars {
@@ -194,10 +197,14 @@ func main() {
 	if err != nil {
 		panic("invalid value for " + EnvMaxConns + ": " + args[EnvMaxConns])
 	}
+	idleTimeSecs, err := strconv.Atoi(args[EnvIdleTimeoutSecs])
+	if err != nil {
+		panic("invalid value for " + EnvIdleTimeoutSecs + ": " + args[EnvIdleTimeoutSecs])
+	}
 	h2, h3 := syncv3.Setup(args[EnvServer], args[EnvDB], args[EnvSecret], syncv3.Opts{
 		AddPrometheusMetrics:  args[EnvPrometheus] != "",
 		DBMaxConns:            maxConnsInt,
-		DBConnMaxIdleTime:     time.Hour,
+		DBConnMaxIdleTime:     time.Duration(idleTimeSecs) * time.Second,
 		MaxTransactionIDDelay: time.Second,
 	})
 
