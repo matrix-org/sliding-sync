@@ -155,19 +155,21 @@ func (m *RoomMetadata) IsSpace() bool {
 }
 
 type Hero struct {
-	ID     string
-	Name   string
-	Avatar string
+	ID     string `json:"user_id"`
+	Name   string `json:"displayname,omitempty"`
+	Avatar string `json:"avatar_url,omitempty"`
 }
 
-func CalculateRoomName(heroInfo *RoomMetadata, maxNumNamesPerRoom int) string {
+// CalculateRoomName calculates the room name. Returns the name and if the name was actually calculated
+// based on room heroes.
+func CalculateRoomName(heroInfo *RoomMetadata, maxNumNamesPerRoom int) (name string, calculated bool) {
 	// If the room has an m.room.name state event with a non-empty name field, use the name given by that field.
 	if heroInfo.NameEvent != "" {
-		return heroInfo.NameEvent
+		return heroInfo.NameEvent, false
 	}
 	// If the room has an m.room.canonical_alias state event with a valid alias field, use the alias given by that field as the name.
 	if heroInfo.CanonicalAlias != "" {
-		return heroInfo.CanonicalAlias
+		return heroInfo.CanonicalAlias, false
 	}
 	// If none of the above conditions are met, a name should be composed based on the members of the room.
 	disambiguatedNames := disambiguate(heroInfo.Heroes)
@@ -178,7 +180,7 @@ func CalculateRoomName(heroInfo *RoomMetadata, maxNumNamesPerRoom int) string {
 	// the client should use the rules BELOW to indicate that the room was empty. For example, "Empty Room (was Alice)",
 	// "Empty Room (was Alice and 1234 others)", or "Empty Room" if there are no heroes.
 	if len(heroInfo.Heroes) == 0 && isAlone {
-		return "Empty Room"
+		return "Empty Room", false
 	}
 
 	// If the number of m.heroes for the room are greater or equal to m.joined_member_count + m.invited_member_count - 1,
@@ -186,13 +188,13 @@ func CalculateRoomName(heroInfo *RoomMetadata, maxNumNamesPerRoom int) string {
 	// and concatenating them.
 	if len(heroInfo.Heroes) >= totalNumOtherUsers {
 		if len(disambiguatedNames) == 1 {
-			return disambiguatedNames[0]
+			return disambiguatedNames[0], true
 		}
 		calculatedRoomName := strings.Join(disambiguatedNames[:len(disambiguatedNames)-1], ", ") + " and " + disambiguatedNames[len(disambiguatedNames)-1]
 		if isAlone {
-			return fmt.Sprintf("Empty Room (was %s)", calculatedRoomName)
+			return fmt.Sprintf("Empty Room (was %s)", calculatedRoomName), true
 		}
-		return calculatedRoomName
+		return calculatedRoomName, true
 	}
 
 	// if we're here then len(heroes) < (joinedCount + invitedCount - 1)
@@ -208,13 +210,13 @@ func CalculateRoomName(heroInfo *RoomMetadata, maxNumNamesPerRoom int) string {
 	// and m.joined_member_count + m.invited_member_count is greater than 1, the client should use the heroes to calculate
 	// display names for the users (disambiguating them if required) and concatenating them alongside a count of the remaining users.
 	if (heroInfo.JoinCount + heroInfo.InviteCount) > 1 {
-		return calculatedRoomName
+		return calculatedRoomName, true
 	}
 
 	// If m.joined_member_count + m.invited_member_count is less than or equal to 1 (indicating the member is alone),
 	// the client should use the rules above to indicate that the room was empty. For example, "Empty Room (was Alice)",
 	// "Empty Room (was Alice and 1234 others)", or "Empty Room" if there are no heroes.
-	return fmt.Sprintf("Empty Room (was %s)", calculatedRoomName)
+	return fmt.Sprintf("Empty Room (was %s)", calculatedRoomName), true
 }
 
 func disambiguate(heroes []Hero) []string {

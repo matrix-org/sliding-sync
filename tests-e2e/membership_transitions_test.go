@@ -532,6 +532,96 @@ func TestRejectingInviteReturnsOneEvent(t *testing.T) {
 	}
 }
 
+// Test to check that room heroes are returned if the membership changes
+func TestHeroesOnMembershipChanges(t *testing.T) {
+	alice := registerNewUser(t)
+	bob := registerNewUser(t)
+	charlie := registerNewUser(t)
+
+	t.Run("nameless room uses heroes to calculate roomname", func(t *testing.T) {
+		// create a room without a name, to ensure we calculate the room name based on
+		// room heroes
+		roomID := alice.CreateRoom(t, map[string]interface{}{"preset": "public_chat"})
+
+		bob.JoinRoom(t, roomID, []string{})
+
+		res := alice.SlidingSyncUntilMembership(t, "", roomID, bob, "join")
+		// we expect to see Bob as a hero
+		if c := len(res.Rooms[roomID].Heroes); c > 1 {
+			t.Errorf("expected 1 room hero, got %d", c)
+		}
+		if gotUserID := res.Rooms[roomID].Heroes[0].ID; gotUserID != bob.UserID {
+			t.Errorf("expected userID %q, got %q", gotUserID, bob.UserID)
+		}
+
+		// Now join with Charlie, the heroes and the room name should change
+		charlie.JoinRoom(t, roomID, []string{})
+		res = alice.SlidingSyncUntilMembership(t, res.Pos, roomID, charlie, "join")
+
+		// we expect to see Bob as a hero
+		if c := len(res.Rooms[roomID].Heroes); c > 2 {
+			t.Errorf("expected 2 room hero, got %d", c)
+		}
+		if gotUserID := res.Rooms[roomID].Heroes[0].ID; gotUserID != bob.UserID {
+			t.Errorf("expected userID %q, got %q", gotUserID, bob.UserID)
+		}
+		if gotUserID := res.Rooms[roomID].Heroes[1].ID; gotUserID != charlie.UserID {
+			t.Errorf("expected userID %q, got %q", gotUserID, charlie.UserID)
+		}
+
+		// Send a message, the heroes shouldn't change
+		msgEv := bob.SendEventSynced(t, roomID, Event{
+			Type:    "m.room.roomID",
+			Content: map[string]interface{}{"body": "Hello world", "msgtype": "m.text"},
+		})
+
+		res = alice.SlidingSyncUntilEventID(t, res.Pos, roomID, msgEv)
+		if len(res.Rooms[roomID].Heroes) > 0 {
+			t.Errorf("expected no change to room heros")
+		}
+
+		// Now leave with Charlie, only Bob should be in the heroes list
+		charlie.LeaveRoom(t, roomID)
+		res = alice.SlidingSyncUntilMembership(t, res.Pos, roomID, charlie, "leave")
+		if c := len(res.Rooms[roomID].Heroes); c > 1 {
+			t.Errorf("expected 1 room hero, got %d", c)
+		}
+		if gotUserID := res.Rooms[roomID].Heroes[0].ID; gotUserID != bob.UserID {
+			t.Errorf("expected userID %q, got %q", gotUserID, bob.UserID)
+		}
+	})
+
+	t.Run("named rooms don't have heroes", func(t *testing.T) {
+		namedRoomID := alice.CreateRoom(t, map[string]interface{}{"preset": "public_chat", "name": "my room without heroes"})
+		// this makes sure that even if bob is joined, we don't return any heroes
+		bob.JoinRoom(t, namedRoomID, []string{})
+
+		res := alice.SlidingSyncUntilMembership(t, "", namedRoomID, bob, "join")
+		if len(res.Rooms[namedRoomID].Heroes) > 0 {
+			t.Errorf("expected no heroes, got %#v", res.Rooms[namedRoomID].Heroes)
+		}
+	})
+
+	t.Run("rooms with aliases don't have heroes", func(t *testing.T) {
+		aliasRoomID := alice.CreateRoom(t, map[string]interface{}{"preset": "public_chat"})
+
+		alias := fmt.Sprintf("#%s-%d:%s", t.Name(), time.Now().Unix(), alice.Domain)
+		alice.MustDoFunc(t, "PUT", []string{"_matrix", "client", "v3", "directory", "room", alias},
+			WithJSONBody(t, map[string]any{"room_id": aliasRoomID}),
+		)
+		alice.SetState(t, aliasRoomID, "m.room.canonical_alias", "", map[string]any{
+			"alias": alias,
+		})
+
+		bob.JoinRoom(t, aliasRoomID, []string{})
+
+		res := alice.SlidingSyncUntilMembership(t, "", aliasRoomID, bob, "join")
+		if len(res.Rooms[aliasRoomID].Heroes) > 0 {
+			t.Errorf("expected no heroes, got %#v", res.Rooms[aliasRoomID].Heroes)
+		}
+	})
+}
+
 // test invite/join counts update and are accurate
 func TestMemberCounts(t *testing.T) {
 	alice := registerNewUser(t)

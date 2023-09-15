@@ -57,6 +57,7 @@ type RequestList struct {
 	SlowGetAllRooms *bool           `json:"slow_get_all_rooms,omitempty"`
 	Deleted         bool            `json:"deleted,omitempty"`
 	BumpEventTypes  []string        `json:"bump_event_types"`
+	Heroes          bool            `json:"heroes"`
 }
 
 func (rl *RequestList) ShouldGetAllRooms() bool {
@@ -517,7 +518,8 @@ func (rf *RequestFilters) Include(r *RoomConnMetadata, finder RoomFinder) bool {
 	if rf.IsInvite != nil && *rf.IsInvite != r.IsInvite {
 		return false
 	}
-	if rf.RoomNameFilter != "" && !strings.Contains(strings.ToLower(internal.CalculateRoomName(&r.RoomMetadata, 5)), strings.ToLower(rf.RoomNameFilter)) {
+	roomName, _ := internal.CalculateRoomName(&r.RoomMetadata, 5)
+	if rf.RoomNameFilter != "" && !strings.Contains(strings.ToLower(roomName), strings.ToLower(rf.RoomNameFilter)) {
 		return false
 	}
 	if len(rf.NotTags) > 0 {
