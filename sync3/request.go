@@ -57,7 +57,6 @@ type RequestList struct {
 	SlowGetAllRooms *bool           `json:"slow_get_all_rooms,omitempty"`
 	Deleted         bool            `json:"deleted,omitempty"`
 	BumpEventTypes  []string        `json:"bump_event_types"`
-	Heroes          bool            `json:"heroes"`
 }
 
 func (rl *RequestList) ShouldGetAllRooms() bool {
@@ -395,12 +394,17 @@ func (r *Request) ApplyDelta(nextReq *Request) (result *Request, delta *RequestD
 		if bumpEventTypes == nil {
 			bumpEventTypes = existingList.BumpEventTypes
 		}
+		heroes := nextList.Heroes
+		if heroes == nil {
+			heroes = existingList.Heroes
+		}
 
 		calculatedLists[listKey] = RequestList{
 			RoomSubscription: RoomSubscription{
 				RequiredState:   reqState,
 				TimelineLimit:   timelineLimit,
 				IncludeOldRooms: includeOldRooms,
+				Heroes:          heroes,
 			},
 			Ranges:          rooms,
 			Sort:            sort,
@@ -565,6 +569,7 @@ type RoomSubscription struct {
 	RequiredState   [][2]string       `json:"required_state"`
 	TimelineLimit   int64             `json:"timeline_limit"`
 	IncludeOldRooms *RoomSubscription `json:"include_old_rooms"`
+	Heroes          *bool             `json:"heroes"`
 }
 
 func (rs RoomSubscription) RequiredStateChanged(other RoomSubscription) bool {
@@ -586,6 +591,10 @@ func (rs RoomSubscription) LazyLoadMembers() bool {
 		}
 	}
 	return false
+}
+
+func (rs RoomSubscription) IncludeHeroes() bool {
+	return rs.Heroes != nil && *rs.Heroes
 }
 
 // Combine this subcription with another, returning a union of both as a copy.

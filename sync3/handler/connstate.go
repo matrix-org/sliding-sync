@@ -680,7 +680,7 @@ func (s *ConnState) getInitialRoomData(ctx context.Context, roomSub sync3.RoomSu
 			PrevBatch:         userRoomData.RequestedLatestEvents.PrevBatch,
 			Timestamp:         maxTs,
 		}
-		if calculated {
+		if roomSub.IncludeHeroes() && calculated {
 			room.Heroes = metadata.Heroes
 		}
 		rooms[roomID] = room

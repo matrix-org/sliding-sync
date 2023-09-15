@@ -262,7 +262,8 @@ func (s *connStateLive) processLiveUpdate(ctx context.Context, up caches.Update,
 				roomName, calculated := internal.CalculateRoomName(metadata, 5) // TODO: customisable?
 
 				thisRoom.Name = roomName
-				if calculated {
+
+				if s.roomSubscriptions[roomUpdate.RoomID()].IncludeHeroes() && calculated {
 					thisRoom.Heroes = metadata.Heroes
 				}
 			}

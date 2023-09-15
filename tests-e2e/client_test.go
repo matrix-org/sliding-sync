@@ -695,6 +695,7 @@ func (c *CSAPI) SlidingSyncUntilMembership(t *testing.T, pos string, roomID stri
 			RoomSubscriptions: map[string]sync3.RoomSubscription{
 				roomID: {
 					TimelineLimit: 10,
+					Heroes:        &boolTrue,
 				},
 			},
 		}, func(r *sync3.Response) error {
@@ -713,6 +714,7 @@ func (c *CSAPI) SlidingSyncUntilMembership(t *testing.T, pos string, roomID stri
 		RoomSubscriptions: map[string]sync3.RoomSubscription{
 			roomID: {
 				TimelineLimit: 10,
+				Heroes:        &boolTrue,
 			},
 		},
 	}, func(r *sync3.Response) error {
