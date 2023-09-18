@@ -263,7 +263,7 @@ func (s *connStateLive) processLiveUpdate(ctx context.Context, up caches.Update,
 
 				thisRoom.Name = roomName
 
-				if s.roomSubscriptions[roomUpdate.RoomID()].IncludeHeroes() && calculated {
+				if calculated && s.shouldIncludeHeroes(roomUpdate.RoomID()) {
 					thisRoom.Heroes = metadata.Heroes
 				}
 			}
@@ -443,4 +443,21 @@ func (s *connStateLive) resort(
 		}
 	}
 	return ops, hasUpdates
+}
+
+// shouldIncludeHeroes returns whether the given roomID is in a list or direct
+// subscription which should return heroes.
+func (s *connStateLive) shouldIncludeHeroes(roomID string) bool {
+	roomIDsToLists := s.lists.ListsByVisibleRoomIDs(s.muxedReq.Lists)
+	subscriptionInclude := s.roomSubscriptions[roomID].IncludeHeroes()
+	listInclude := false
+	for _, listKey := range roomIDsToLists[roomID] {
+		// check if this list should include heroes
+		if !s.muxedReq.Lists[listKey].IncludeHeroes() {
+			continue
+		}
+		listInclude = true
+		break
+	}
+	return subscriptionInclude || listInclude
 }
