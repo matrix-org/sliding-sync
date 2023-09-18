@@ -143,7 +143,7 @@ func TestExpireTokens(t *testing.T) {
 
 	var token *Token
 	err := sqlutil.WithTransaction(db, func(txn *sqlx.Tx) (err error) {
-		token, err = tokens.Insert(txn, accessToken, "@bob:builders.com", "device", time.Time{})
+		token, err = tokens.Insert(txn, accessToken, "@bob:builders.com", "device", time.Now())
 		if err != nil {
 			t.Fatalf("Failed to Insert token: %s", err)
 		}
@@ -171,10 +171,21 @@ func TestExpireTokens(t *testing.T) {
 		t.Fatalf("Token is not expired")
 	}
 
+	t.Logf("%#v", token)
+
 	t.Log("Does not return an error if the hash can not be found")
 	err = tokens.Expire("idontexist")
 	if err != nil {
 		t.Fatalf("Expected no error for non-existent hash, got %s", err)
+	}
+
+	t.Log("Deletes expired tokens")
+	deleted, err := tokens.deleteExpiredTokensAfter(time.Nanosecond)
+	if err != nil {
+		t.Fatalf("Expected no error for non-existent hash, got %s", err)
+	}
+	if deleted == 0 {
+		t.Fatalf("expected to delete at least one token, but didn't")
 	}
 }
 

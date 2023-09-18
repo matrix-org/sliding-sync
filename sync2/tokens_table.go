@@ -52,10 +52,24 @@ func NewTokensTable(db *sqlx.DB, secret string) *TokensTable {
 	hash := sha256.New()
 	hash.Write([]byte(secret))
 
-	return &TokensTable{
+	t := &TokensTable{
 		db:     db,
 		key256: hash.Sum(nil),
 	}
+
+	var deleteExpiredTokens func()
+	deleteExpiredTokens = func() {
+		deleted, err := t.deleteExpiredTokensAfter(30 * 24 * time.Hour)
+		if err != nil {
+			logger.Warn().Err(err).Msg("failed to delete expired tokens")
+			return
+		}
+		logger.Trace().Int64("deleted", deleted).Msg("deleted expired tokens")
+		time.AfterFunc(time.Hour, deleteExpiredTokens)
+	}
+	time.AfterFunc(time.Hour, deleteExpiredTokens)
+
+	return t
 }
 
 func (t *TokensTable) encrypt(token string) string {
@@ -280,4 +294,19 @@ func (t *TokensTable) Expire(accessTokenHash string) error {
 		logger.Warn().Msgf("Tokens.Expire: expected to expire one token, but actually expired %d", ra)
 	}
 	return nil
+}
+
+func (t *TokensTable) deleteExpiredTokensAfter(duration time.Duration) (expired int64, err error) {
+	result, err := t.db.Exec(
+		`DELETE FROM syncv3_sync2_tokens WHERE expired AND last_seen <= $1`,
+		time.Now().Add(-duration),
+	)
+	if err != nil {
+		return 0, err
+	}
+	ra, err := result.RowsAffected()
+	if err != nil {
+		return 0, err
+	}
+	return ra, nil
 }

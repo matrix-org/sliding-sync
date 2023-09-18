@@ -360,6 +360,16 @@ func (h *SyncLiveHandler) setupConnection(req *http.Request, syncReq *sync3.Requ
 			}
 		}
 	}
+	// We know about this token, but is expired, let the client know to refresh their token.
+	if token.Expired {
+		return req, nil, &internal.HandlerError{
+			StatusCode: http.StatusUnauthorized,
+			ErrCode:    "M_UNKNOWN_TOKEN",
+			// not exactly /whoami, but would be if we didn't keep the expired state
+			Err: fmt.Errorf("/whoami returned HTTP 401"),
+		}
+	}
+
 	req = req.WithContext(internal.SetAttributeOnContext(req.Context(), internal.OTLPTagUserID, token.UserID))
 	req = req.WithContext(internal.SetAttributeOnContext(req.Context(), internal.OTLPTagDeviceID, token.DeviceID))
 	log := hlog.FromRequest(req).With().
