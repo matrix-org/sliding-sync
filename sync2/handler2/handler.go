@@ -194,7 +194,7 @@ func (h *Handler) OnTerminated(ctx context.Context, pollerID sync2.PollerID) {
 }
 
 func (h *Handler) OnExpiredToken(ctx context.Context, accessTokenHash, userID, deviceID string) {
-	err := h.v2Store.TokensTable.Delete(accessTokenHash)
+	err := h.v2Store.TokensTable.Expire(accessTokenHash)
 	if err != nil {
 		logger.Err(err).Str("user", userID).Str("device", deviceID).Str("access_token_hash", accessTokenHash).Msg("V2: failed to expire token")
 		internal.GetSentryHubFromContextOrDefault(ctx).CaptureException(err)

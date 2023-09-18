@@ -7,10 +7,11 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
-	"github.com/jmoiron/sqlx"
 	"io"
 	"strings"
 	"time"
+
+	"github.com/jmoiron/sqlx"
 )
 
 type Token struct {
@@ -19,6 +20,7 @@ type Token struct {
 	AccessTokenEncrypted string    `db:"token_encrypted"`
 	UserID               string    `db:"user_id"`
 	DeviceID             string    `db:"device_id"`
+	Expired              bool      `db:"expired"`
 	LastSeen             time.Time `db:"last_seen"`
 }
 
@@ -42,6 +44,7 @@ func NewTokensTable(db *sqlx.DB, secret string) *TokensTable {
 		-- TODO: FK constraints to devices table?
 		user_id TEXT NOT NULL,
 		device_id TEXT NOT NULL,
+		expired BOOL NOT NULL DEFAULT FALSE,
 		last_seen TIMESTAMP WITH TIME ZONE NOT NULL
 	);`)
 
@@ -119,7 +122,7 @@ func (t *TokensTable) Token(plaintextToken string) (*Token, error) {
 	var token Token
 	err := t.db.Get(
 		&token,
-		`SELECT token_encrypted, user_id, device_id, last_seen FROM syncv3_sync2_tokens WHERE token_hash=$1`,
+		`SELECT token_encrypted, user_id, device_id, expired, last_seen FROM syncv3_sync2_tokens WHERE token_hash=$1`,
 		tokenHash,
 	)
 	if err != nil {
@@ -152,7 +155,7 @@ func (t *TokensTable) TokenForEachDevice(txn *sqlx.Tx) (tokens []TokenForPoller,
 	err = sqlx.Select(
 		db,
 		&tokens,
-		`SELECT DISTINCT ON (user_id, device_id) token_encrypted, user_id, device_id, last_seen, since
+		`SELECT DISTINCT ON (user_id, device_id) token_encrypted, user_id, device_id, expired, last_seen, since
 		FROM syncv3_sync2_tokens JOIN syncv3_sync2_devices USING (user_id, device_id)
 		ORDER BY user_id, device_id, last_seen DESC
 	`)
@@ -222,7 +225,7 @@ func (t *TokensTable) GetTokenAndSince(userID, deviceID, tokenHash string) (acce
 	var encToken, gotUserID, gotDeviceID string
 	query := `SELECT token_encrypted, since, user_id, device_id
 	FROM syncv3_sync2_tokens JOIN syncv3_sync2_devices USING (user_id, device_id)
-	WHERE token_hash = $1;`
+	WHERE token_hash = $1 AND NOT expired;`
 	err = t.db.QueryRow(query, tokenHash).Scan(&encToken, &since, &gotUserID, &gotDeviceID)
 	if err != nil {
 		return
@@ -255,6 +258,26 @@ func (t *TokensTable) Delete(accessTokenHash string) error {
 	}
 	if ra != 1 {
 		logger.Warn().Msgf("Tokens.Delete: expected to delete one token, but actually deleted %d", ra)
+	}
+	return nil
+}
+
+// Expire sets the expired flag for the given hash. If no token exists with the
+// given hash, a warning is logged but no error is returned.
+func (t *TokensTable) Expire(accessTokenHash string) error {
+	result, err := t.db.Exec(
+		`UPDATE syncv3_sync2_tokens SET expired=TRUE WHERE token_hash = $1`,
+		accessTokenHash,
+	)
+	if err != nil {
+		return err
+	}
+	ra, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if ra != 1 {
+		logger.Warn().Msgf("Tokens.Expire: expected to expire one token, but actually expired %d", ra)
 	}
 	return nil
 }

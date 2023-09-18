@@ -1,10 +1,11 @@
 package sync2
 
 import (
-	"github.com/jmoiron/sqlx"
-	"github.com/matrix-org/sliding-sync/sqlutil"
 	"testing"
 	"time"
+
+	"github.com/jmoiron/sqlx"
+	"github.com/matrix-org/sliding-sync/sqlutil"
 )
 
 // Sanity check that different tokens have different hashes
@@ -128,7 +129,52 @@ func TestDeletingTokens(t *testing.T) {
 	t.Log("We should no longer be able to fetch this token.")
 	token, err = tokens.Token(accessToken)
 	if token != nil || err == nil {
-		t.Fatalf("Fetching token after deletion did not fail: got %s, %s", token, err)
+		t.Fatalf("Fetching token after deletion did not fail: got %v, %s", token, err)
+	}
+}
+
+func TestExpireTokens(t *testing.T) {
+	db, close := connectToDB(t)
+	defer close()
+	tokens := NewTokensTable(db, "my_secret")
+
+	t.Log("Insert a new token from Alice.")
+	accessToken := "mytoken"
+
+	var token *Token
+	err := sqlutil.WithTransaction(db, func(txn *sqlx.Tx) (err error) {
+		token, err = tokens.Insert(txn, accessToken, "@bob:builders.com", "device", time.Time{})
+		if err != nil {
+			t.Fatalf("Failed to Insert token: %s", err)
+		}
+		return nil
+	})
+	t.Log("We should be able to fetch this token without error.")
+	_, err = tokens.Token(accessToken)
+	if err != nil {
+		t.Fatalf("Failed to fetch token: %s", err)
+	}
+
+	t.Log("Expire the token")
+	err = tokens.Expire(token.AccessTokenHash)
+
+	if err != nil {
+		t.Fatalf("Failed to delete token: %s", err)
+	}
+
+	t.Log("We should still be able to fetch this token.")
+	token, err = tokens.Token(accessToken)
+	if err != nil {
+		t.Fatalf("Fetching token after expiriation failedl: %s", err)
+	}
+	if !token.Expired {
+		t.Fatalf("Token is not expired")
+	}
+
+	t.Log("Does not return an error if the hash can not be found")
+	err = tokens.Expire("idontexist")
+	if err != nil {
+		t.Fatalf("Expected no error for non-existent hash, got %s", err)
 	}
 }
 
