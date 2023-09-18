@@ -159,19 +159,17 @@ func TestExpireTokens(t *testing.T) {
 	err = tokens.Expire(token.AccessTokenHash)
 
 	if err != nil {
-		t.Fatalf("Failed to delete token: %s", err)
+		t.Fatalf("Failed to expire token: %s", err)
 	}
 
 	t.Log("We should still be able to fetch this token.")
 	token, err = tokens.Token(accessToken)
 	if err != nil {
-		t.Fatalf("Fetching token after expiriation failedl: %s", err)
+		t.Fatalf("Fetching token after expiriation failed: %s", err)
 	}
 	if !token.Expired {
 		t.Fatalf("Token is not expired")
 	}
-
-	t.Logf("%#v", token)
 
 	t.Log("Does not return an error if the hash can not be found")
 	err = tokens.Expire("idontexist")
@@ -182,7 +180,7 @@ func TestExpireTokens(t *testing.T) {
 	t.Log("Deletes expired tokens")
 	deleted, err := tokens.deleteExpiredTokensAfter(time.Nanosecond)
 	if err != nil {
-		t.Fatalf("Expected no error for non-existent hash, got %s", err)
+		t.Fatalf("Expected no error when deleting expired tokens, got %s", err)
 	}
 	if deleted == 0 {
 		t.Fatalf("expected to delete at least one token, but didn't")
