@@ -569,7 +569,7 @@ type RoomSubscription struct {
 	RequiredState   [][2]string       `json:"required_state"`
 	TimelineLimit   int64             `json:"timeline_limit"`
 	IncludeOldRooms *RoomSubscription `json:"include_old_rooms"`
-	Heroes          *bool             `json:"heroes"`
+	Heroes          *bool             `json:"include_heroes"`
 }
 
 func (rs RoomSubscription) RequiredStateChanged(other RoomSubscription) bool {
