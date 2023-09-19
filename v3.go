@@ -15,15 +15,13 @@ import (
 	"github.com/matrix-org/sliding-sync/internal"
 	"github.com/matrix-org/sliding-sync/pubsub"
 	"github.com/matrix-org/sliding-sync/state"
+	_ "github.com/matrix-org/sliding-sync/state/migrations"
 	"github.com/matrix-org/sliding-sync/sync2"
 	"github.com/matrix-org/sliding-sync/sync2/handler2"
 	"github.com/matrix-org/sliding-sync/sync3/handler"
 	"github.com/pressly/goose/v3"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/hlog"
-	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
-
-	_ "github.com/matrix-org/sliding-sync/state/migrations"
 )
 
 //go:embed state/migrations/*
@@ -51,6 +49,11 @@ type Opts struct {
 
 	DBMaxConns        int
 	DBConnMaxIdleTime time.Duration
+
+	// HTTPTimeout is used for "normal" HTTP requests
+	HTTPTimeout time.Duration
+	// HTTPLongTimeout is used for initial sync requests
+	HTTPLongTimeout time.Duration
 }
 
 type server struct {
@@ -82,13 +85,7 @@ func allowCORS(next http.Handler) http.HandlerFunc {
 // Setup the proxy
 func Setup(destHomeserver, postgresURI, secret string, opts Opts) (*handler2.Handler, http.Handler) {
 	// Setup shared DB and HTTP client
-	v2Client := &sync2.HTTPClient{
-		Client: &http.Client{
-			Timeout:   5 * time.Minute,
-			Transport: otelhttp.NewTransport(http.DefaultTransport),
-		},
-		DestinationServer: destHomeserver,
-	}
+	v2Client := sync2.NewHTTPClient(opts.HTTPTimeout, opts.HTTPLongTimeout, destHomeserver)
 	db, err := sqlx.Open("postgres", postgresURI)
 	if err != nil {
 		sentry.CaptureException(err)

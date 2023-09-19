@@ -42,19 +42,21 @@ const (
 	EnvSecret = "SYNCV3_SECRET"
 
 	// Optional fields
-	EnvBindAddr        = "SYNCV3_BINDADDR"
-	EnvTLSCert         = "SYNCV3_TLS_CERT"
-	EnvTLSKey          = "SYNCV3_TLS_KEY"
-	EnvPPROF           = "SYNCV3_PPROF"
-	EnvPrometheus      = "SYNCV3_PROM"
-	EnvDebug           = "SYNCV3_DEBUG"
-	EnvOTLP            = "SYNCV3_OTLP_URL"
-	EnvOTLPUsername    = "SYNCV3_OTLP_USERNAME"
-	EnvOTLPPassword    = "SYNCV3_OTLP_PASSWORD"
-	EnvSentryDsn       = "SYNCV3_SENTRY_DSN"
-	EnvLogLevel        = "SYNCV3_LOG_LEVEL"
-	EnvMaxConns        = "SYNCV3_MAX_DB_CONN"
-	EnvIdleTimeoutSecs = "SYNCV3_DB_IDLE_TIMEOUT_SECS"
+	EnvBindAddr               = "SYNCV3_BINDADDR"
+	EnvTLSCert                = "SYNCV3_TLS_CERT"
+	EnvTLSKey                 = "SYNCV3_TLS_KEY"
+	EnvPPROF                  = "SYNCV3_PPROF"
+	EnvPrometheus             = "SYNCV3_PROM"
+	EnvDebug                  = "SYNCV3_DEBUG"
+	EnvOTLP                   = "SYNCV3_OTLP_URL"
+	EnvOTLPUsername           = "SYNCV3_OTLP_USERNAME"
+	EnvOTLPPassword           = "SYNCV3_OTLP_PASSWORD"
+	EnvSentryDsn              = "SYNCV3_SENTRY_DSN"
+	EnvLogLevel               = "SYNCV3_LOG_LEVEL"
+	EnvMaxConns               = "SYNCV3_MAX_DB_CONN"
+	EnvIdleTimeoutSecs        = "SYNCV3_DB_IDLE_TIMEOUT_SECS"
+	EnvHTTPTimeoutSecs        = "SYNCV3_HTTP_TIMEOUT_SECS"
+	EnvHTTPInitialTimeoutSecs = "SYNCV3_HTTP_INITIAL_TIMEOUT_SECS"
 )
 
 var helpMsg = fmt.Sprintf(`
@@ -74,8 +76,10 @@ Environment var
 %s  Default: info. The level of verbosity for messages logged. Available values are trace, debug, info, warn, error and fatal
 %s Default: unset. Max database connections to use when communicating with postgres. Unset or 0 means no limit.
 %s Default: 3600. The maximum amount of time a database connection may be idle, in seconds. 0 means no limit.
+%s Default: 300. The timeout in seconds for normal HTTP requests.
+%s Default: 1800. The timeout in seconds for initial sync requests.
 `, EnvServer, EnvDB, EnvSecret, EnvBindAddr, EnvTLSCert, EnvTLSKey, EnvPPROF, EnvPrometheus, EnvOTLP, EnvOTLPUsername, EnvOTLPPassword,
-	EnvSentryDsn, EnvLogLevel, EnvMaxConns, EnvIdleTimeoutSecs)
+	EnvSentryDsn, EnvLogLevel, EnvMaxConns, EnvIdleTimeoutSecs, EnvHTTPTimeoutSecs, EnvHTTPInitialTimeoutSecs)
 
 func defaulting(in, dft string) string {
 	if in == "" {
@@ -96,22 +100,24 @@ func main() {
 	}
 
 	args := map[string]string{
-		EnvServer:          os.Getenv(EnvServer),
-		EnvDB:              os.Getenv(EnvDB),
-		EnvSecret:          os.Getenv(EnvSecret),
-		EnvBindAddr:        defaulting(os.Getenv(EnvBindAddr), "0.0.0.0:8008"),
-		EnvTLSCert:         os.Getenv(EnvTLSCert),
-		EnvTLSKey:          os.Getenv(EnvTLSKey),
-		EnvPPROF:           os.Getenv(EnvPPROF),
-		EnvPrometheus:      os.Getenv(EnvPrometheus),
-		EnvDebug:           os.Getenv(EnvDebug),
-		EnvOTLP:            os.Getenv(EnvOTLP),
-		EnvOTLPUsername:    os.Getenv(EnvOTLPUsername),
-		EnvOTLPPassword:    os.Getenv(EnvOTLPPassword),
-		EnvSentryDsn:       os.Getenv(EnvSentryDsn),
-		EnvLogLevel:        os.Getenv(EnvLogLevel),
-		EnvMaxConns:        defaulting(os.Getenv(EnvMaxConns), "0"),
-		EnvIdleTimeoutSecs: defaulting(os.Getenv(EnvIdleTimeoutSecs), "3600"),
+		EnvServer:                 os.Getenv(EnvServer),
+		EnvDB:                     os.Getenv(EnvDB),
+		EnvSecret:                 os.Getenv(EnvSecret),
+		EnvBindAddr:               defaulting(os.Getenv(EnvBindAddr), "0.0.0.0:8008"),
+		EnvTLSCert:                os.Getenv(EnvTLSCert),
+		EnvTLSKey:                 os.Getenv(EnvTLSKey),
+		EnvPPROF:                  os.Getenv(EnvPPROF),
+		EnvPrometheus:             os.Getenv(EnvPrometheus),
+		EnvDebug:                  os.Getenv(EnvDebug),
+		EnvOTLP:                   os.Getenv(EnvOTLP),
+		EnvOTLPUsername:           os.Getenv(EnvOTLPUsername),
+		EnvOTLPPassword:           os.Getenv(EnvOTLPPassword),
+		EnvSentryDsn:              os.Getenv(EnvSentryDsn),
+		EnvLogLevel:               os.Getenv(EnvLogLevel),
+		EnvMaxConns:               defaulting(os.Getenv(EnvMaxConns), "0"),
+		EnvIdleTimeoutSecs:        defaulting(os.Getenv(EnvIdleTimeoutSecs), "3600"),
+		EnvHTTPTimeoutSecs:        defaulting(os.Getenv(EnvIdleTimeoutSecs), "300"),
+		EnvHTTPInitialTimeoutSecs: defaulting(os.Getenv(EnvHTTPInitialTimeoutSecs), "1800"),
 	}
 	requiredEnvVars := []string{EnvServer, EnvDB, EnvSecret, EnvBindAddr}
 	for _, requiredEnvVar := range requiredEnvVars {
@@ -203,11 +209,21 @@ func main() {
 	if err != nil {
 		panic("invalid value for " + EnvIdleTimeoutSecs + ": " + args[EnvIdleTimeoutSecs])
 	}
+	httpTimeoutSecs, err := strconv.Atoi(args[EnvHTTPTimeoutSecs])
+	if err != nil {
+		panic("invalid value for " + EnvHTTPTimeoutSecs + ": " + args[EnvHTTPTimeoutSecs])
+	}
+	httpLongTimeoutSecs, err := strconv.Atoi(args[EnvHTTPInitialTimeoutSecs])
+	if err != nil {
+		panic("invalid value for " + EnvHTTPInitialTimeoutSecs + ": " + args[EnvHTTPInitialTimeoutSecs])
+	}
 	h2, h3 := syncv3.Setup(args[EnvServer], args[EnvDB], args[EnvSecret], syncv3.Opts{
 		AddPrometheusMetrics:  args[EnvPrometheus] != "",
 		DBMaxConns:            maxConnsInt,
 		DBConnMaxIdleTime:     time.Duration(idleTimeSecs) * time.Second,
 		MaxTransactionIDDelay: time.Second,
+		HTTPTimeout:           time.Duration(httpTimeoutSecs) * time.Second,
+		HTTPLongTimeout:       time.Duration(httpLongTimeoutSecs) * time.Second,
 	})
 
 	go h2.StartV2Pollers()

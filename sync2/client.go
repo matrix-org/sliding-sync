@@ -4,11 +4,12 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 	"io/ioutil"
 	"net/http"
 	"net/url"
 	"time"
+
+	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 
 	"github.com/tidwall/gjson"
 )
@@ -30,7 +31,22 @@ type Client interface {
 // One client can be shared among many users.
 type HTTPClient struct {
 	Client            *http.Client
+	LongTimeoutClient *http.Client
 	DestinationServer string
+}
+
+func NewHTTPClient(shortTimeout, longTimeout time.Duration, destHomeServer string) *HTTPClient {
+	return &HTTPClient{
+		LongTimeoutClient: &http.Client{
+			Timeout:   longTimeout,
+			Transport: otelhttp.NewTransport(http.DefaultTransport),
+		},
+		Client: &http.Client{
+			Timeout:   shortTimeout,
+			Transport: otelhttp.NewTransport(http.DefaultTransport),
+		},
+		DestinationServer: destHomeServer,
+	}
 }
 
 // Return sync2.HTTP401 if this request returns 401
@@ -72,11 +88,7 @@ func (v *HTTPClient) DoSyncV2(ctx context.Context, accessToken, since string, is
 	}
 	var res *http.Response
 	if isFirst {
-		longTimeoutClient := &http.Client{
-			Timeout:   30 * time.Minute,
-			Transport: otelhttp.NewTransport(http.DefaultTransport),
-		}
-		res, err = longTimeoutClient.Do(req)
+		res, err = v.LongTimeoutClient.Do(req)
 	} else {
 		res, err = v.Client.Do(req)
 	}
