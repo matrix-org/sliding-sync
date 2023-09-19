@@ -1,11 +1,13 @@
 package sync2
 
 import (
+	"context"
 	"crypto/sha256"
 	"fmt"
 	"github.com/getsentry/sentry-go"
 	"github.com/jmoiron/sqlx"
 	"github.com/matrix-org/sliding-sync/sqlutil"
+	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 	"net/http"
 	"time"
 )
@@ -16,10 +18,11 @@ import (
 // a no-op.
 //
 // This code will be removed in a future version of the proxy.
-func MigrateDeviceIDs(destHomeserver, postgresURI, secret string, commit bool) error {
+func MigrateDeviceIDs(ctx context.Context, destHomeserver, postgresURI, secret string, commit bool) error {
 	whoamiClient := &HTTPClient{
 		Client: &http.Client{
-			Timeout: 5 * time.Minute,
+			Timeout:   5 * time.Minute,
+			Transport: otelhttp.NewTransport(http.DefaultTransport),
 		},
 		DestinationServer: destHomeserver,
 	}
@@ -53,7 +56,7 @@ func MigrateDeviceIDs(destHomeserver, postgresURI, secret string, commit bool) e
 			return
 		}
 
-		err = runMigration(txn, secret, whoamiClient)
+		err = runMigration(ctx, txn, secret, whoamiClient)
 		if err != nil {
 			return
 		}
@@ -159,7 +162,7 @@ type oldDevice struct {
 	Since                string `db:"since"`
 }
 
-func runMigration(txn *sqlx.Tx, secret string, whoamiClient Client) error {
+func runMigration(ctx context.Context, txn *sqlx.Tx, secret string, whoamiClient Client) error {
 	logger.Info().Msg("Loading old-style devices into memory")
 	var devices []oldDevice
 	err := txn.Select(
@@ -192,7 +195,7 @@ func runMigration(txn *sqlx.Tx, secret string, whoamiClient Client) error {
 			"%4d/%4d migrating device %s %s",
 			i+1, len(devices), userID, device.AccessTokenHash,
 		)
-		err = migrateDevice(txn, whoamiClient, &device)
+		err = migrateDevice(ctx, txn, whoamiClient, &device)
 		if err != nil {
 			logger.Err(err).Msgf("runMigration: failed to migrate device %s", device.AccessTokenHash)
 			numErrors++
@@ -205,8 +208,8 @@ func runMigration(txn *sqlx.Tx, secret string, whoamiClient Client) error {
 	return nil
 }
 
-func migrateDevice(txn *sqlx.Tx, whoamiClient Client, device *oldDevice) (err error) {
-	gotUserID, gotDeviceID, err := whoamiClient.WhoAmI(device.AccessToken)
+func migrateDevice(ctx context.Context, txn *sqlx.Tx, whoamiClient Client, device *oldDevice) (err error) {
+	gotUserID, gotDeviceID, err := whoamiClient.WhoAmI(ctx, device.AccessToken)
 	if err == HTTP401 {
 		userID := device.UserID
 		if userID == "" {

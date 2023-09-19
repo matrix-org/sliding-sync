@@ -16,8 +16,8 @@ import (
 type pendingInfo struct {
 	// done is set to true when the EnsurePolling request received a response.
 	done bool
-	// success is true when done is true and EnsurePolling succeeded; otherwise false.
-	success bool
+	// expired is true when the token is expired. Any 'done'ness should be ignored for expired tokens.
+	expired bool
 	// ch is a dummy channel which never receives any data. A call to
 	// EnsurePoller.OnInitialSyncComplete will close the channel (unblocking any
 	// EnsurePoller.EnsurePolling calls which are waiting on it) and then set the ch
@@ -58,19 +58,31 @@ func NewEnsurePoller(notifier pubsub.Notifier, enablePrometheus bool) *EnsurePol
 }
 
 // EnsurePolling blocks until the V2InitialSyncComplete response is received for this device. It is
-// the caller's responsibility to call OnInitialSyncComplete when new events arrive. Returns the Success field from the
-// V2InitialSyncComplete response, which is true iff there is an active poller.
+// the caller's responsibility to call OnInitialSyncComplete when new events arrive. Returns whether
+// or not the token is expired
 func (p *EnsurePoller) EnsurePolling(ctx context.Context, pid sync2.PollerID, tokenHash string) bool {
 	ctx, region := internal.StartSpan(ctx, "EnsurePolling")
 	defer region.End()
 	p.mu.Lock()
-	// do we need to wait?
-	if p.pendingPolls[pid].done {
+	// do we need to wait? Expired devices ALWAYS need a fresh poll
+	expired := p.pendingPolls[pid].expired
+	if !expired && p.pendingPolls[pid].done {
 		internal.Logf(ctx, "EnsurePolling", "user %s device %s already done", pid.UserID, pid.DeviceID)
-		success := p.pendingPolls[pid].success
 		p.mu.Unlock()
-		return success
+		return expired // always false
 	}
+
+	// either we have expired or we haven't expired and are still waiting on the initial sync.
+	// If we have expired, nuke the pid from the map now so we will use the same code path as a fresh device sync
+	if expired {
+		// close any existing channel
+		if p.pendingPolls[pid].ch != nil {
+			close(p.pendingPolls[pid].ch)
+		}
+		delete(p.pendingPolls, pid)
+		// at this point, ch == nil so we will do an initial sync
+	}
+
 	// have we called EnsurePolling for this user/device before?
 	ch := p.pendingPolls[pid].ch
 	if ch != nil {
@@ -84,9 +96,9 @@ func (p *EnsurePoller) EnsurePolling(ctx context.Context, pid sync2.PollerID, to
 		<-ch
 		r2.End()
 		p.mu.Lock()
-		success := p.pendingPolls[pid].success
+		expired := p.pendingPolls[pid].expired
 		p.mu.Unlock()
-		return success
+		return expired
 	}
 	// Make a channel to wait until we have done an initial sync
 	ch = make(chan struct{})
@@ -110,9 +122,9 @@ func (p *EnsurePoller) EnsurePolling(ctx context.Context, pid sync2.PollerID, to
 	r2.End()
 
 	p.mu.Lock()
-	success := p.pendingPolls[pid].success
+	expired = p.pendingPolls[pid].expired
 	p.mu.Unlock()
-	return success
+	return expired
 }
 
 func (p *EnsurePoller) OnInitialSyncComplete(payload *pubsub.V2InitialSyncComplete) {
@@ -129,7 +141,7 @@ func (p *EnsurePoller) OnInitialSyncComplete(payload *pubsub.V2InitialSyncComple
 		log.Trace().Msg("OnInitialSyncComplete: we weren't waiting for this")
 		p.pendingPolls[pid] = pendingInfo{
 			done:    true,
-			success: payload.Success,
+			expired: !payload.Success,
 		}
 		return
 	}
@@ -143,7 +155,11 @@ func (p *EnsurePoller) OnInitialSyncComplete(payload *pubsub.V2InitialSyncComple
 	ch := pending.ch
 	pending.done = true
 	pending.ch = nil
-	pending.success = payload.Success
+	// If for whatever reason we get OnExpiredToken prior to OnInitialSyncComplete, don't forget that
+	// we expired the token i.e expiry latches true.
+	if !pending.expired {
+		pending.expired = !payload.Success
+	}
 	p.pendingPolls[pid] = pending
 	p.calculateNumOutstanding() // decrement total
 	log.Trace().Msg("OnInitialSyncComplete: closing channel")
@@ -159,10 +175,12 @@ func (p *EnsurePoller) OnExpiredToken(payload *pubsub.V2ExpiredToken) {
 		// We weren't tracking the state of this poller, so we have nothing to clean up.
 		return
 	}
-	if pending.ch != nil {
-		close(pending.ch)
-	}
-	delete(p.pendingPolls, pid)
+	pending.expired = true
+	p.pendingPolls[pid] = pending
+
+	// We used to delete the entry from the map at this point to force the next
+	// EnsurePolling call to do a fresh EnsurePolling request, but now we do that
+	// by signalling via the expired flag.
 }
 
 func (p *EnsurePoller) Teardown() {

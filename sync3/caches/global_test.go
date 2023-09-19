@@ -39,16 +39,16 @@ func TestGlobalCacheLoadState(t *testing.T) {
 		testutils.NewStateEvent(t, "m.room.name", "", alice, map[string]interface{}{"name": "The Room Name"}),
 		testutils.NewStateEvent(t, "m.room.name", "", alice, map[string]interface{}{"name": "The Updated Room Name"}),
 	}
-	_, _, err := store.Accumulate(alice, roomID2, internal.TimelineResponse{Events: eventsRoom2})
+	_, err := store.Accumulate(alice, roomID2, internal.TimelineResponse{Events: eventsRoom2})
 	if err != nil {
 		t.Fatalf("Accumulate: %s", err)
 	}
 
-	_, latestNIDs, err := store.Accumulate(alice, roomID, internal.TimelineResponse{Events: events})
+	accResult, err := store.Accumulate(alice, roomID, internal.TimelineResponse{Events: events})
 	if err != nil {
 		t.Fatalf("Accumulate: %s", err)
 	}
-	latest := latestNIDs[len(latestNIDs)-1]
+	latest := accResult.TimelineNIDs[len(accResult.TimelineNIDs)-1]
 	globalCache := caches.NewGlobalCache(store)
 	testCases := []struct {
 		name                  string

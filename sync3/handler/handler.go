@@ -327,7 +327,8 @@ func (h *SyncLiveHandler) serve(w http.ResponseWriter, req *http.Request) error 
 // It also sets a v2 sync poll loop going if one didn't exist already for this user.
 // When this function returns, the connection is alive and active.
 func (h *SyncLiveHandler) setupConnection(req *http.Request, syncReq *sync3.Request, containsPos bool) (*http.Request, *sync3.Conn, *internal.HandlerError) {
-	taskCtx, task := internal.StartTask(req.Context(), "setupConnection")
+	ctx, task := internal.StartTask(req.Context(), "setupConnection")
+	req = req.WithContext(ctx)
 	defer task.End()
 	var conn *sync3.Conn
 	// Extract an access token
@@ -346,7 +347,7 @@ func (h *SyncLiveHandler) setupConnection(req *http.Request, syncReq *sync3.Requ
 	if err != nil {
 		if err == sql.ErrNoRows {
 			hlog.FromRequest(req).Info().Msg("Received connection from unknown access token, querying with homeserver")
-			newToken, herr := h.identifyUnknownAccessToken(accessToken, hlog.FromRequest(req))
+			newToken, herr := h.identifyUnknownAccessToken(req.Context(), accessToken, hlog.FromRequest(req))
 			if herr != nil {
 				return req, nil, herr
 			}
@@ -367,7 +368,7 @@ func (h *SyncLiveHandler) setupConnection(req *http.Request, syncReq *sync3.Requ
 		Str("conn", syncReq.ConnID).
 		Logger()
 	internal.SetRequestContextUserID(req.Context(), token.UserID, token.DeviceID)
-	internal.Logf(taskCtx, "setupConnection", "identified access token as user=%s device=%s", token.UserID, token.DeviceID)
+	internal.Logf(req.Context(), "setupConnection", "identified access token as user=%s device=%s", token.UserID, token.DeviceID)
 
 	// Record the fact that we've recieved a request from this token
 	err = h.V2Store.TokensTable.MaybeUpdateLastSeen(token, time.Now())
@@ -395,8 +396,8 @@ func (h *SyncLiveHandler) setupConnection(req *http.Request, syncReq *sync3.Requ
 
 	pid := sync2.PollerID{UserID: token.UserID, DeviceID: token.DeviceID}
 	log.Trace().Any("pid", pid).Msg("checking poller exists and is running")
-	success := h.EnsurePoller.EnsurePolling(req.Context(), pid, token.AccessTokenHash)
-	if !success {
+	expiredToken := h.EnsurePoller.EnsurePolling(req.Context(), pid, token.AccessTokenHash)
+	if expiredToken {
 		log.Error().Msg("EnsurePolling failed, returning 401")
 		// Assumption: the only way that EnsurePolling fails is if the access token is invalid.
 		return req, nil, &internal.HandlerError{
@@ -444,9 +445,9 @@ func (h *SyncLiveHandler) setupConnection(req *http.Request, syncReq *sync3.Requ
 	return req, conn, nil
 }
 
-func (h *SyncLiveHandler) identifyUnknownAccessToken(accessToken string, logger *zerolog.Logger) (*sync2.Token, *internal.HandlerError) {
+func (h *SyncLiveHandler) identifyUnknownAccessToken(ctx context.Context, accessToken string, logger *zerolog.Logger) (*sync2.Token, *internal.HandlerError) {
 	// We don't recognise the given accessToken. Ask the homeserver who owns it.
-	userID, deviceID, err := h.V2.WhoAmI(accessToken)
+	userID, deviceID, err := h.V2.WhoAmI(ctx, accessToken)
 	if err != nil {
 		if err == sync2.HTTP401 {
 			return nil, &internal.HandlerError{
@@ -800,6 +801,13 @@ func (h *SyncLiveHandler) OnAccountData(p *pubsub.V2AccountData) {
 func (h *SyncLiveHandler) OnExpiredToken(p *pubsub.V2ExpiredToken) {
 	h.EnsurePoller.OnExpiredToken(p)
 	h.ConnMap.CloseConnsForDevice(p.UserID, p.DeviceID)
+}
+
+func (h *SyncLiveHandler) OnInvalidateRoom(p *pubsub.V2InvalidateRoom) {
+	ctx, task := internal.StartTask(context.Background(), "OnInvalidateRoom")
+	defer task.End()
+
+	h.Dispatcher.OnInvalidateRoom(ctx, p.RoomID)
 }
 
 func parseIntFromQuery(u *url.URL, param string) (result int64, err *internal.HandlerError) {

@@ -220,7 +220,9 @@ func registerNamedUser(t *testing.T, localpartPrefix string) *CSAPI {
 	}
 
 	client.UserID, client.AccessToken, client.DeviceID = client.RegisterUser(t, localpart, "password")
-	client.Localpart = strings.Split(client.UserID, ":")[0][1:]
+	parts := strings.Split(client.UserID, ":")
+	client.Localpart = parts[0][1:]
+	client.Domain = strings.Split(client.UserID, ":")[1]
 	return client
 }
 
