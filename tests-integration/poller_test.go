@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"github.com/jmoiron/sqlx"
-	"github.com/matrix-org/sliding-sync/internal"
 	"github.com/matrix-org/sliding-sync/sqlutil"
 	"net/http"
 	"os"
@@ -179,7 +178,7 @@ func TestPollerHandlesUnknownStateEventsOnIncrementalSync(t *testing.T) {
 					State: sync2.EventsResponse{
 						Events: []json.RawMessage{nameEvent, powerLevelsEvent},
 					},
-					Timeline: internal.TimelineResponse{
+					Timeline: sync2.TimelineResponse{
 						Events:    []json.RawMessage{messageEvent},
 						Limited:   true,
 						PrevBatch: "batchymcbatchface",
@@ -304,7 +303,7 @@ func TestPollerUpdatesRoomMemberTrackerOnGappySyncStateBlock(t *testing.T) {
 					State: sync2.EventsResponse{
 						Events: []json.RawMessage{bobLeave},
 					},
-					Timeline: internal.TimelineResponse{
+					Timeline: sync2.TimelineResponse{
 						Events:    []json.RawMessage{aliceMessage},
 						Limited:   true,
 						PrevBatch: "batchymcbatchface",

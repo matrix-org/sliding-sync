@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"github.com/matrix-org/sliding-sync/internal"
+	"github.com/matrix-org/sliding-sync/sync2"
 	"github.com/prometheus/client_golang/prometheus"
 
 	"github.com/getsentry/sentry-go"
@@ -340,7 +341,7 @@ type AccumulateResult struct {
 //     to exist in the database, and the sync stream is already linearised for us.
 //   - Else it creates a new room state snapshot if the timeline contains state events (as this now represents the current state)
 //   - It adds entries to the membership log for membership events.
-func (a *Accumulator) Accumulate(txn *sqlx.Tx, userID, roomID string, timeline internal.TimelineResponse) (AccumulateResult, error) {
+func (a *Accumulator) Accumulate(txn *sqlx.Tx, userID, roomID string, timeline sync2.TimelineResponse) (AccumulateResult, error) {
 	// The first stage of accumulating events is mostly around validation around what the upstream HS sends us. For accumulation to work correctly
 	// we expect:
 	// - there to be no duplicate events
@@ -564,7 +565,7 @@ func (a *Accumulator) Accumulate(txn *sqlx.Tx, userID, roomID string, timeline i
 
 // - parses it and returns Event structs.
 // - removes duplicate events: this is just a bug which has been seen on Synapse on matrix.org
-func parseAndDeduplicateTimelineEvents(roomID string, timeline internal.TimelineResponse) []Event {
+func parseAndDeduplicateTimelineEvents(roomID string, timeline sync2.TimelineResponse) []Event {
 	dedupedEvents := make([]Event, 0, len(timeline.Events))
 	seenEvents := make(map[string]struct{})
 	for i, rawEvent := range timeline.Events {

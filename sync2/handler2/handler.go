@@ -262,7 +262,7 @@ func (h *Handler) OnBulkDeviceDataUpdate(payload *pubsub.V2DeviceData) {
 	h.v2Pub.Notify(pubsub.ChanV2, payload)
 }
 
-func (h *Handler) Accumulate(ctx context.Context, userID, deviceID, roomID string, timeline internal.TimelineResponse) error {
+func (h *Handler) Accumulate(ctx context.Context, userID, deviceID, roomID string, timeline sync2.TimelineResponse) error {
 	// Remember any transaction IDs that may be unique to this user
 	eventIDsWithTxns := make([]string, 0, len(timeline.Events))     // in timeline order
 	eventIDToTxnID := make(map[string]string, len(timeline.Events)) // event_id -> txn_id

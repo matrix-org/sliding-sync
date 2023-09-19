@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"github.com/matrix-org/sliding-sync/internal"
 	"github.com/matrix-org/sliding-sync/testutils"
 	"reflect"
 	"sort"
@@ -139,7 +138,7 @@ func TestAccumulatorAccumulate(t *testing.T) {
 	}
 	var result AccumulateResult
 	err = sqlutil.WithTransaction(accumulator.db, func(txn *sqlx.Tx) error {
-		result, err = accumulator.Accumulate(txn, userID, roomID, internal.TimelineResponse{Events: newEvents})
+		result, err = accumulator.Accumulate(txn, userID, roomID, sync2.TimelineResponse{Events: newEvents})
 		return err
 	})
 	if err != nil {
@@ -213,7 +212,7 @@ func TestAccumulatorAccumulate(t *testing.T) {
 
 	// subsequent calls do nothing and are not an error
 	err = sqlutil.WithTransaction(accumulator.db, func(txn *sqlx.Tx) error {
-		_, err = accumulator.Accumulate(txn, userID, roomID, internal.TimelineResponse{Events: newEvents})
+		_, err = accumulator.Accumulate(txn, userID, roomID, sync2.TimelineResponse{Events: newEvents})
 		return err
 	})
 	if err != nil {
@@ -323,7 +322,7 @@ func TestAccumulatorMembershipLogs(t *testing.T) {
 		[]byte(`{"event_id":"` + roomEventIDs[7] + `", "type":"m.room.member", "state_key":"@me:localhost","unsigned":{"prev_content":{"membership":"join", "displayname":"Me"}}, "content":{"membership":"leave"}}`),
 	}
 	err = sqlutil.WithTransaction(accumulator.db, func(txn *sqlx.Tx) error {
-		_, err = accumulator.Accumulate(txn, userID, roomID, internal.TimelineResponse{Events: roomEvents})
+		_, err = accumulator.Accumulate(txn, userID, roomID, sync2.TimelineResponse{Events: roomEvents})
 		return err
 	})
 	if err != nil {
@@ -659,7 +658,7 @@ func TestAccumulatorConcurrency(t *testing.T) {
 			defer wg.Done()
 			subset := newEvents[:(i + 1)] // i=0 => [1], i=1 => [1,2], etc
 			err := sqlutil.WithTransaction(accumulator.db, func(txn *sqlx.Tx) error {
-				result, err := accumulator.Accumulate(txn, userID, roomID, internal.TimelineResponse{Events: subset})
+				result, err := accumulator.Accumulate(txn, userID, roomID, sync2.TimelineResponse{Events: subset})
 				totalNumNew += result.NumNew
 				return err
 			})
@@ -793,7 +792,7 @@ func TestAccumulatorMissingPreviousMarkers(t *testing.T) {
 
 	for _, step := range steps {
 		t.Log(step.Desc)
-		timeline := internal.TimelineResponse{
+		timeline := sync2.TimelineResponse{
 			Events:  step.Events,
 			Limited: step.Limited,
 		}

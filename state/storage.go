@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/matrix-org/sliding-sync/sync2"
 	"os"
 	"strings"
 
@@ -384,7 +385,7 @@ func (s *Storage) currentNotMembershipStateEventsInAllRooms(txn *sqlx.Tx, eventT
 		`SELECT syncv3_events.room_id, syncv3_events.event_type, syncv3_events.state_key, syncv3_events.event FROM syncv3_events
 		WHERE syncv3_events.event_type IN (?)
 		AND syncv3_events.event_nid IN (
-			SELECT unnest(events) FROM syncv3_snapshots WHERE syncv3_snapshots.snapshot_id IN (SELECT current_snapshot_id FROM syncv3_rooms)
+			SELECT UNNEST(events) FROM syncv3_snapshots WHERE syncv3_snapshots.snapshot_id IN (SELECT current_snapshot_id FROM syncv3_rooms)
 		)`,
 		eventTypes,
 	)
@@ -407,7 +408,7 @@ func (s *Storage) currentNotMembershipStateEventsInAllRooms(txn *sqlx.Tx, eventT
 	return result, nil
 }
 
-func (s *Storage) Accumulate(userID, roomID string, timeline internal.TimelineResponse) (result AccumulateResult, err error) {
+func (s *Storage) Accumulate(userID, roomID string, timeline sync2.TimelineResponse) (result AccumulateResult, err error) {
 	if len(timeline.Events) == 0 {
 		return AccumulateResult{}, nil
 	}
@@ -880,7 +881,7 @@ func (s *Storage) AllJoinedMembers(txn *sqlx.Tx, tempTableName string) (joinedMe
 	// Unclear if this is the first 5 *most recent* (backwards) or forwards. For now we'll use the most recent
 	// ones, and select 6 of them so we can always use 5 no matter who is requesting the room name.
 	rows, err := txn.Query(
-		`SELECT membership_nid, room_id, state_key, membership from ` + tempTableName + ` INNER JOIN syncv3_events
+		`SELECT membership_nid, room_id, state_key, membership FROM ` + tempTableName + ` INNER JOIN syncv3_events
 		on membership_nid = event_nid WHERE membership='join' OR membership='_join' OR membership='invite' OR membership='_invite' ORDER BY event_nid ASC`,
 	)
 	if err != nil {

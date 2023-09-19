@@ -2,7 +2,6 @@ package syncv3
 
 import (
 	"encoding/json"
-	"github.com/matrix-org/sliding-sync/internal"
 	"sort"
 	"testing"
 	"time"
@@ -120,7 +119,7 @@ func (r *testRig) SetupV2RoomsForUser(t *testing.T, v2UserID string, f FlushEnum
 				State: sync2.EventsResponse{
 					Events: stateBlock,
 				},
-				Timeline: internal.TimelineResponse{
+				Timeline: sync2.TimelineResponse{
 					Events: timeline,
 				},
 			}

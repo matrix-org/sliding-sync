@@ -782,7 +782,7 @@ func TestPollerResendsOnCallbackError(t *testing.T) {
 				Rooms: SyncRoomsResponse{
 					Join: map[string]SyncV2JoinResponse{
 						"!foo:bar": {
-							Timeline: internal.TimelineResponse{
+							Timeline: TimelineResponse{
 								Events: []json.RawMessage{
 									[]byte(`{"type":"m.room.message","content":{},"sender":"@alice:localhost","event_id":"$222"}`),
 								},
@@ -876,7 +876,7 @@ func TestPollerResendsOnCallbackError(t *testing.T) {
 				Rooms: SyncRoomsResponse{
 					Leave: map[string]SyncV2LeaveResponse{
 						"!foo:bar": {
-							Timeline: internal.TimelineResponse{
+							Timeline: TimelineResponse{
 								Events: []json.RawMessage{
 									[]byte(`{"type":"m.room.member","state_key":"` + pid.UserID + `","content":{"membership":"leave"}}`),
 								},
@@ -984,7 +984,7 @@ func TestPollerDoesNotResendOnDataError(t *testing.T) {
 					Rooms: SyncRoomsResponse{
 						Join: map[string]SyncV2JoinResponse{
 							"!foo:bar": {
-								Timeline: internal.TimelineResponse{
+								Timeline: TimelineResponse{
 									Events: []json.RawMessage{
 										[]byte(`{"type":"m.room.message","content":{},"sender":"@alice:localhost","event_id":"$222"}`),
 									},
@@ -1056,7 +1056,7 @@ type mockDataReceiver struct {
 	updateSinceCalled chan struct{}
 }
 
-func (a *mockDataReceiver) Accumulate(ctx context.Context, userID, deviceID, roomID string, timeline internal.TimelineResponse) error {
+func (a *mockDataReceiver) Accumulate(ctx context.Context, userID, deviceID, roomID string, timeline TimelineResponse) error {
 	a.timelines[roomID] = append(a.timelines[roomID], timeline.Events...)
 	return nil
 }
@@ -1097,7 +1097,7 @@ type overrideDataReceiver struct {
 	onExpiredToken      func(ctx context.Context, accessTokenHash, userID, deviceID string)
 }
 
-func (s *overrideDataReceiver) Accumulate(ctx context.Context, userID, deviceID, roomID string, timeline internal.TimelineResponse) error {
+func (s *overrideDataReceiver) Accumulate(ctx context.Context, userID, deviceID, roomID string, timeline TimelineResponse) error {
 	if s.accumulate == nil {
 		return nil
 	}

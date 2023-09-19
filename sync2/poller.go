@@ -36,7 +36,7 @@ type V2DataReceiver interface {
 	UpdateDeviceSince(ctx context.Context, userID, deviceID, since string)
 	// Accumulate data for this room. This means the timeline section of the v2 response.
 	// Return an error to stop the since token advancing.
-	Accumulate(ctx context.Context, userID, deviceID, roomID string, timeline internal.TimelineResponse) error // latest pos with event nids of timeline entries
+	Accumulate(ctx context.Context, userID, deviceID, roomID string, timeline TimelineResponse) error // latest pos with event nids of timeline entries
 	// Initialise the room, if it hasn't been already. This means the state section of the v2 response.
 	// If given a state delta from an incremental sync, returns the slice of all state events unknown to the DB.
 	// Return an error to stop the since token advancing.
@@ -310,7 +310,7 @@ func (h *PollerMap) execute() {
 func (h *PollerMap) UpdateDeviceSince(ctx context.Context, userID, deviceID, since string) {
 	h.callbacks.UpdateDeviceSince(ctx, userID, deviceID, since)
 }
-func (h *PollerMap) Accumulate(ctx context.Context, userID, deviceID, roomID string, timeline internal.TimelineResponse) (err error) {
+func (h *PollerMap) Accumulate(ctx context.Context, userID, deviceID, roomID string, timeline TimelineResponse) (err error) {
 	var wg sync.WaitGroup
 	wg.Add(1)
 	h.executor <- func() {

@@ -2,7 +2,6 @@ package syncv3
 
 import (
 	"encoding/json"
-	"github.com/matrix-org/sliding-sync/internal"
 	"testing"
 	"time"
 
@@ -208,7 +207,7 @@ func TestFiltersInvite(t *testing.T) {
 					State: sync2.EventsResponse{
 						Events: createRoomState(t, "@creator:other", time.Now()),
 					},
-					Timeline: internal.TimelineResponse{
+					Timeline: sync2.TimelineResponse{
 						Events: []json.RawMessage{testutils.NewJoinEvent(t, alice)},
 					},
 				},

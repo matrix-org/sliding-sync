@@ -5,7 +5,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"github.com/matrix-org/sliding-sync/internal"
 	"io/ioutil"
 	"log"
 	"net/http"
@@ -472,7 +471,7 @@ func v2JoinTimeline(joinEvents ...roomEvents) map[string]sync2.SyncV2JoinRespons
 	result := make(map[string]sync2.SyncV2JoinResponse)
 	for _, re := range joinEvents {
 		var data sync2.SyncV2JoinResponse
-		data.Timeline = internal.TimelineResponse{
+		data.Timeline = sync2.TimelineResponse{
 			Events: re.events,
 		}
 		if re.state != nil {

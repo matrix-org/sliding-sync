@@ -2,7 +2,6 @@ package syncv3
 
 import (
 	"encoding/json"
-	"github.com/matrix-org/sliding-sync/internal"
 	"testing"
 	"time"
 
@@ -419,7 +418,7 @@ func TestExtensionAccountData(t *testing.T) {
 		Rooms: sync2.SyncRoomsResponse{
 			Join: map[string]sync2.SyncV2JoinResponse{
 				roomA: {
-					Timeline: internal.TimelineResponse{
+					Timeline: sync2.TimelineResponse{
 						Events: createRoomState(t, alice, time.Now()),
 					},
 					AccountData: sync2.EventsResponse{
@@ -427,7 +426,7 @@ func TestExtensionAccountData(t *testing.T) {
 					},
 				},
 				roomB: {
-					Timeline: internal.TimelineResponse{
+					Timeline: sync2.TimelineResponse{
 						Events: createRoomState(t, alice, time.Now().Add(-1*time.Minute)),
 					},
 					AccountData: sync2.EventsResponse{
@@ -435,7 +434,7 @@ func TestExtensionAccountData(t *testing.T) {
 					},
 				},
 				roomC: {
-					Timeline: internal.TimelineResponse{
+					Timeline: sync2.TimelineResponse{
 						Events: createRoomState(t, alice, time.Now().Add(-2*time.Minute)),
 					},
 					AccountData: sync2.EventsResponse{
@@ -633,7 +632,7 @@ func TestTypingMultiplePoller(t *testing.T) {
 					State: sync2.EventsResponse{
 						Events: roomState,
 					},
-					Timeline: internal.TimelineResponse{
+					Timeline: sync2.TimelineResponse{
 						Events: []json.RawMessage{joinEv},
 					},
 					Ephemeral: sync2.EventsResponse{
@@ -652,7 +651,7 @@ func TestTypingMultiplePoller(t *testing.T) {
 					State: sync2.EventsResponse{
 						Events: roomState,
 					},
-					Timeline: internal.TimelineResponse{
+					Timeline: sync2.TimelineResponse{
 						Events: []json.RawMessage{joinEv},
 					},
 					Ephemeral: sync2.EventsResponse{
@@ -709,7 +708,7 @@ func TestTypingMultiplePoller(t *testing.T) {
 					State: sync2.EventsResponse{
 						Events: roomState,
 					},
-					Timeline: internal.TimelineResponse{
+					Timeline: sync2.TimelineResponse{
 						Events: []json.RawMessage{joinEv},
 					},
 					Ephemeral: sync2.EventsResponse{
@@ -730,7 +729,7 @@ func TestTypingMultiplePoller(t *testing.T) {
 					State: sync2.EventsResponse{
 						Events: roomState,
 					},
-					Timeline: internal.TimelineResponse{
+					Timeline: sync2.TimelineResponse{
 						Events: []json.RawMessage{joinEv},
 					},
 					Ephemeral: sync2.EventsResponse{

@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/matrix-org/sliding-sync/sync2"
 	"reflect"
 	"sort"
 	"testing"
@@ -31,7 +32,7 @@ func TestStorageRoomStateBeforeAndAfterEventPosition(t *testing.T) {
 		testutils.NewStateEvent(t, "m.room.join_rules", "", alice, map[string]interface{}{"join_rule": "invite"}),
 		testutils.NewStateEvent(t, "m.room.member", bob, alice, map[string]interface{}{"membership": "invite"}),
 	}
-	accResult, err := store.Accumulate(userID, roomID, internal.TimelineResponse{Events: events})
+	accResult, err := store.Accumulate(userID, roomID, sync2.TimelineResponse{Events: events})
 	if err != nil {
 		t.Fatalf("Accumulate returned error: %s", err)
 	}
@@ -160,7 +161,7 @@ func TestStorageJoinedRoomsAfterPosition(t *testing.T) {
 	var latestPos int64
 	var err error
 	for roomID, eventMap := range roomIDToEventMap {
-		accResult, err := store.Accumulate(userID, roomID, internal.TimelineResponse{Events: eventMap})
+		accResult, err := store.Accumulate(userID, roomID, sync2.TimelineResponse{Events: eventMap})
 		if err != nil {
 			t.Fatalf("Accumulate on %s failed: %s", roomID, err)
 		}
@@ -350,7 +351,7 @@ func TestVisibleEventNIDsBetween(t *testing.T) {
 		},
 	}
 	for _, tl := range timelineInjections {
-		accResult, err := store.Accumulate(userID, tl.RoomID, internal.TimelineResponse{Events: tl.Events})
+		accResult, err := store.Accumulate(userID, tl.RoomID, sync2.TimelineResponse{Events: tl.Events})
 		if err != nil {
 			t.Fatalf("Accumulate on %s failed: %s", tl.RoomID, err)
 		}
@@ -453,7 +454,7 @@ func TestVisibleEventNIDsBetween(t *testing.T) {
 		t.Fatalf("LatestEventNID: %s", err)
 	}
 	for _, tl := range timelineInjections {
-		accResult, err := store.Accumulate(userID, tl.RoomID, internal.TimelineResponse{Events: tl.Events})
+		accResult, err := store.Accumulate(userID, tl.RoomID, sync2.TimelineResponse{Events: tl.Events})
 		if err != nil {
 			t.Fatalf("Accumulate on %s failed: %s", tl.RoomID, err)
 		}
@@ -533,7 +534,7 @@ func TestStorageLatestEventsInRoomsPrevBatch(t *testing.T) {
 	}
 	eventIDs := []string{}
 	for _, timeline := range timelines {
-		_, err = store.Accumulate(userID, roomID, internal.TimelineResponse{Events: timeline.timeline, PrevBatch: timeline.prevBatch})
+		_, err = store.Accumulate(userID, roomID, sync2.TimelineResponse{Events: timeline.timeline, PrevBatch: timeline.prevBatch})
 		if err != nil {
 			t.Fatalf("failed to accumulate: %s", err)
 		}
@@ -775,7 +776,7 @@ func TestAllJoinedMembers(t *testing.T) {
 		}, serialise(tc.InitMemberships)...))
 		assertNoError(t, err)
 
-		_, err = store.Accumulate(userID, roomID, internal.TimelineResponse{
+		_, err = store.Accumulate(userID, roomID, sync2.TimelineResponse{
 			Events:    serialise(tc.AccumulateMemberships),
 			PrevBatch: "foo",
 		})
