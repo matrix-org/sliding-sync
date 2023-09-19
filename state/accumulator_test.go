@@ -709,12 +709,19 @@ func TestAccumulatorMissingPreviousMarkers(t *testing.T) {
 		t.Fatalf("failed to Initialise accumulator: %s", err)
 	}
 
+	// We're going to repeatedly Accumulate different timelines and check the number
+	// of new events, plus the "missing previous" field in the DB.
 	steps := []struct {
-		Desc            string
-		Events          []json.RawMessage
-		Limited         bool
-		NumNew          int
-		CheckDesc       string
+		Desc string
+		// Inputs: a sync2.TimelineResponse struct.
+		Events  []json.RawMessage
+		Limited bool
+
+		// CheckDesc is a brief description of our expectations.
+		CheckDesc string
+		// NumNew is the expected value of the NumNew field in the AccumulateResult.
+		NumNew int
+		// MissingPrevious is a map from timeline event IDs to the missing_previous bool expected in the DB.
 		MissingPrevious map[string]bool
 	}{
 		{

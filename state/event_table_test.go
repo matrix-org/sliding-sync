@@ -1138,15 +1138,16 @@ func TestEventTable_SelectLatestEventsBetween_MissingPrevious(t *testing.T) {
 	}
 	defer txn.Rollback()
 	roomID := fmt.Sprintf("!%s", t.Name())
+	// Event IDs ending with `-gap` have MissingPrevious: true.
 	events := []Event{
 		{ID: "A", MissingPrevious: false},
 		{ID: "B", MissingPrevious: false},
 		{ID: "C", MissingPrevious: false},
-		{ID: "D", MissingPrevious: true},
+		{ID: "D-gap", MissingPrevious: true},
 		{ID: "E", MissingPrevious: false},
 		{ID: "F", MissingPrevious: false},
-		{ID: "G", MissingPrevious: true},
-		{ID: "H", MissingPrevious: true},
+		{ID: "G-gap", MissingPrevious: true},
+		{ID: "H-gap", MissingPrevious: true},
 		{ID: "I", MissingPrevious: false},
 		{ID: "J", MissingPrevious: false},
 	}
@@ -1165,52 +1166,59 @@ func TestEventTable_SelectLatestEventsBetween_MissingPrevious(t *testing.T) {
 	}
 
 	testcases := []struct {
+		Desc            string
 		FromIDExclusive string
 		ToIDInclusive   string
-		Limit           int
 		ExpectIDs       []string
 	}{
 		{
+			Desc:            "has no gaps - should omit nothing",
 			FromIDExclusive: "start",
 			ToIDInclusive:   "C",
 			ExpectIDs:       []string{"C", "B", "A"},
 		},
 		{
+			Desc:            "ends with missing_previous - should include the end only",
 			FromIDExclusive: "start",
-			ToIDInclusive:   "D",
-			ExpectIDs:       []string{"D"},
+			ToIDInclusive:   "D-gap",
+			ExpectIDs:       []string{"D-gap"},
 		},
 		{
+			Desc:            "single event, ends with missing_previous - should include the end only",
 			FromIDExclusive: "C",
-			ToIDInclusive:   "D",
-			ExpectIDs:       []string{"D"},
+			ToIDInclusive:   "D-gap",
+			ExpectIDs:       []string{"D-gap"},
 		},
 		{
-			FromIDExclusive: "D",
+			Desc:            "single event, start is missing_previous - should include the end only",
+			FromIDExclusive: "D-gap",
 			ToIDInclusive:   "E",
 			ExpectIDs:       []string{"E"},
 		},
 		{
+			Desc:            "covers two consecutive gaps - should include events from the second gap onwards.",
 			FromIDExclusive: "E",
 			ToIDInclusive:   "J",
-			ExpectIDs:       []string{"J", "I", "H"},
+			ExpectIDs:       []string{"J", "I", "H-gap"},
 		},
 		{
+			Desc:            "covers three gaps, the latter two consecutive - should only return from the second gap onwards",
 			FromIDExclusive: "B",
 			ToIDInclusive:   "I",
-			ExpectIDs:       []string{"I", "H"},
+			ExpectIDs:       []string{"I", "H-gap"},
 		},
 	}
 
 	for _, tc := range testcases {
+		// We're using the notation (X, Y] for a half-open interval excluding X but including Y.
+		idRange := fmt.Sprintf("(%s, %s]", tc.FromIDExclusive, tc.ToIDInclusive)
+		t.Log(idRange + " " + tc.Desc)
 		fetched, err := table.SelectLatestEventsBetween(txn, roomID, nids[prefix+tc.FromIDExclusive], nids[prefix+tc.ToIDInclusive], 10)
-		if err != nil {
-			t.Error(err)
-		}
+		assertNoError(t, err)
 		fetchedIDs := make([]string, 0, len(fetched))
 		for _, ev := range fetched {
 			fetchedIDs = append(fetchedIDs, gjson.GetBytes(ev.JSON, "event_id").Str)
 		}
-		assertValue(t, fmt.Sprintf("fetchedIDs (%s, %s] limit 10", tc.FromIDExclusive, tc.ToIDInclusive), fetchedIDs, tc.ExpectIDs)
+		assertValue(t, "fetchedIDs "+idRange+" limit 10", fetchedIDs, tc.ExpectIDs)
 	}
 }
