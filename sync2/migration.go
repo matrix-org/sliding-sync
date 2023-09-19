@@ -4,12 +4,11 @@ import (
 	"context"
 	"crypto/sha256"
 	"fmt"
+	"time"
+
 	"github.com/getsentry/sentry-go"
 	"github.com/jmoiron/sqlx"
 	"github.com/matrix-org/sliding-sync/sqlutil"
-	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
-	"net/http"
-	"time"
 )
 
 // MigrateDeviceIDs performs a one-off DB migration from the old device ids (hash of
@@ -19,13 +18,7 @@ import (
 //
 // This code will be removed in a future version of the proxy.
 func MigrateDeviceIDs(ctx context.Context, destHomeserver, postgresURI, secret string, commit bool) error {
-	whoamiClient := &HTTPClient{
-		Client: &http.Client{
-			Timeout:   5 * time.Minute,
-			Transport: otelhttp.NewTransport(http.DefaultTransport),
-		},
-		DestinationServer: destHomeserver,
-	}
+	whoamiClient := NewHTTPClient(5*time.Minute, 30*time.Minute, destHomeserver)
 	db, err := sqlx.Open("postgres", postgresURI)
 	if err != nil {
 		sentry.CaptureException(err)
