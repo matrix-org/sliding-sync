@@ -11,7 +11,8 @@ func TestCalculateRoomName(t *testing.T) {
 		invitedCount       int
 		maxNumNamesPerRoom int
 
-		wantRoomName string
+		wantRoomName   string
+		wantCalculated bool
 	}{
 		// Room name takes precedence
 		{
@@ -65,7 +66,8 @@ func TestCalculateRoomName(t *testing.T) {
 					Name: "Bob",
 				},
 			},
-			wantRoomName: "Alice, Bob and 3 others",
+			wantRoomName:   "Alice, Bob and 3 others",
+			wantCalculated: true,
 		},
 		// Small group chat
 		{
@@ -86,7 +88,8 @@ func TestCalculateRoomName(t *testing.T) {
 					Name: "Charlie",
 				},
 			},
-			wantRoomName: "Alice, Bob and Charlie",
+			wantRoomName:   "Alice, Bob and Charlie",
+			wantCalculated: true,
 		},
 		// DM room
 		{
@@ -99,7 +102,8 @@ func TestCalculateRoomName(t *testing.T) {
 					Name: "Alice",
 				},
 			},
-			wantRoomName: "Alice",
+			wantRoomName:   "Alice",
+			wantCalculated: true,
 		},
 		// 3-way room
 		{
@@ -116,7 +120,8 @@ func TestCalculateRoomName(t *testing.T) {
 					Name: "Bob",
 				},
 			},
-			wantRoomName: "Alice and Bob",
+			wantRoomName:   "Alice and Bob",
+			wantCalculated: true,
 		},
 		// 3-way room, one person invited with no display name
 		{
@@ -132,7 +137,8 @@ func TestCalculateRoomName(t *testing.T) {
 					ID: "@bob:localhost",
 				},
 			},
-			wantRoomName: "Alice and @bob:localhost",
+			wantRoomName:   "Alice and @bob:localhost",
+			wantCalculated: true,
 		},
 		// 3-way room, no display names
 		{
@@ -147,7 +153,8 @@ func TestCalculateRoomName(t *testing.T) {
 					ID: "@bob:localhost",
 				},
 			},
-			wantRoomName: "@alice:localhost and @bob:localhost",
+			wantRoomName:   "@alice:localhost and @bob:localhost",
+			wantCalculated: true,
 		},
 		// disambiguation all
 		{
@@ -168,7 +175,8 @@ func TestCalculateRoomName(t *testing.T) {
 					Name: "Alice",
 				},
 			},
-			wantRoomName: "Alice (@alice:localhost), Alice (@bob:localhost), Alice (@charlie:localhost) and 6 others",
+			wantRoomName:   "Alice (@alice:localhost), Alice (@bob:localhost), Alice (@charlie:localhost) and 6 others",
+			wantCalculated: true,
 		},
 		// disambiguation some
 		{
@@ -189,7 +197,8 @@ func TestCalculateRoomName(t *testing.T) {
 					Name: "Alice",
 				},
 			},
-			wantRoomName: "Alice (@alice:localhost), Bob, Alice (@charlie:localhost) and 6 others",
+			wantRoomName:   "Alice (@alice:localhost), Bob, Alice (@charlie:localhost) and 6 others",
+			wantCalculated: true,
 		},
 		// disambiguation, faking user IDs as display names
 		{
@@ -205,7 +214,8 @@ func TestCalculateRoomName(t *testing.T) {
 					ID: "@alice:localhost",
 				},
 			},
-			wantRoomName: "@alice:localhost (@evil:localhost) and @alice:localhost (@alice:localhost)",
+			wantRoomName:   "@alice:localhost (@evil:localhost) and @alice:localhost (@alice:localhost)",
+			wantCalculated: true,
 		},
 		// left room
 		{
@@ -222,7 +232,8 @@ func TestCalculateRoomName(t *testing.T) {
 					Name: "Bob",
 				},
 			},
-			wantRoomName: "Empty Room (was Alice and Bob)",
+			wantRoomName:   "Empty Room (was Alice and Bob)",
+			wantCalculated: true,
 		},
 		// empty room
 		{
@@ -235,7 +246,7 @@ func TestCalculateRoomName(t *testing.T) {
 	}
 
 	for _, tc := range testCases {
-		gotName := CalculateRoomName(&RoomMetadata{
+		gotName, gotCalculated := CalculateRoomName(&RoomMetadata{
 			NameEvent:      tc.roomName,
 			CanonicalAlias: tc.canonicalAlias,
 			Heroes:         tc.heroes,
@@ -244,6 +255,9 @@ func TestCalculateRoomName(t *testing.T) {
 		}, tc.maxNumNamesPerRoom)
 		if gotName != tc.wantRoomName {
 			t.Errorf("got %s want %s for test case: %+v", gotName, tc.wantRoomName, tc)
+		}
+		if gotCalculated != tc.wantCalculated {
+			t.Errorf("got %v want %v for test case: %+v", gotCalculated, tc.wantCalculated, tc)
 		}
 	}
 }
