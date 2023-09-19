@@ -52,24 +52,10 @@ func NewTokensTable(db *sqlx.DB, secret string) *TokensTable {
 	hash := sha256.New()
 	hash.Write([]byte(secret))
 
-	t := &TokensTable{
+	return &TokensTable{
 		db:     db,
 		key256: hash.Sum(nil),
 	}
-
-	var deleteExpiredTokens func()
-	deleteExpiredTokens = func() {
-		deleted, err := t.deleteExpiredTokensAfter(30 * 24 * time.Hour)
-		if err != nil {
-			logger.Warn().Err(err).Msg("failed to delete expired tokens")
-			return
-		}
-		logger.Trace().Int64("deleted", deleted).Msg("deleted expired tokens")
-		time.AfterFunc(time.Hour, deleteExpiredTokens)
-	}
-	time.AfterFunc(time.Hour, deleteExpiredTokens)
-
-	return t
 }
 
 func (t *TokensTable) encrypt(token string) string {
@@ -253,27 +239,6 @@ func (t *TokensTable) GetTokenAndSince(userID, deviceID, tokenHash string) (acce
 	}
 	accessToken, err = t.decrypt(encToken)
 	return
-}
-
-// Delete looks up a token by its hash and deletes the row. If no token exists with the
-// given hash, a warning is logged but no error is returned.
-func (t *TokensTable) Delete(accessTokenHash string) error {
-	result, err := t.db.Exec(
-		`DELETE FROM syncv3_sync2_tokens WHERE token_hash = $1`,
-		accessTokenHash,
-	)
-	if err != nil {
-		return err
-	}
-
-	ra, err := result.RowsAffected()
-	if err != nil {
-		return err
-	}
-	if ra != 1 {
-		logger.Warn().Msgf("Tokens.Delete: expected to delete one token, but actually deleted %d", ra)
-	}
-	return nil
 }
 
 // Expire sets the expired flag for the given hash. If no token exists with the

@@ -17,7 +17,13 @@ import (
 
 	"github.com/getsentry/sentry-go"
 	"github.com/jmoiron/sqlx"
+
 	"github.com/matrix-org/sliding-sync/sqlutil"
+
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/rs/zerolog"
+	"github.com/rs/zerolog/hlog"
+	"github.com/rs/zerolog/log"
 
 	"github.com/matrix-org/sliding-sync/internal"
 	"github.com/matrix-org/sliding-sync/pubsub"
@@ -26,10 +32,6 @@ import (
 	"github.com/matrix-org/sliding-sync/sync3"
 	"github.com/matrix-org/sliding-sync/sync3/caches"
 	"github.com/matrix-org/sliding-sync/sync3/extensions"
-	"github.com/prometheus/client_golang/prometheus"
-	"github.com/rs/zerolog"
-	"github.com/rs/zerolog/hlog"
-	"github.com/rs/zerolog/log"
 )
 
 const DefaultSessionID = "default"
@@ -365,8 +367,7 @@ func (h *SyncLiveHandler) setupConnection(req *http.Request, syncReq *sync3.Requ
 		return req, nil, &internal.HandlerError{
 			StatusCode: http.StatusUnauthorized,
 			ErrCode:    "M_UNKNOWN_TOKEN",
-			// not exactly /whoami, but would be if we didn't keep the expired state
-			Err: fmt.Errorf("/whoami returned HTTP 401"),
+			Err:        fmt.Errorf("token marked as expired"),
 		}
 	}
 

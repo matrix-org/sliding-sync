@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/jmoiron/sqlx"
+
 	"github.com/matrix-org/sliding-sync/sqlutil"
 )
 
@@ -97,42 +98,6 @@ func TestTokensTable(t *testing.T) {
 	})
 }
 
-func TestDeletingTokens(t *testing.T) {
-	db, close := connectToDB(t)
-	defer close()
-	tokens := NewTokensTable(db, "my_secret")
-
-	t.Log("Insert a new token from Alice.")
-	accessToken := "mytoken"
-
-	var token *Token
-	err := sqlutil.WithTransaction(db, func(txn *sqlx.Tx) (err error) {
-		token, err = tokens.Insert(txn, accessToken, "@bob:builders.com", "device", time.Time{})
-		if err != nil {
-			t.Fatalf("Failed to Insert token: %s", err)
-		}
-		return nil
-	})
-	t.Log("We should be able to fetch this token without error.")
-	_, err = tokens.Token(accessToken)
-	if err != nil {
-		t.Fatalf("Failed to fetch token: %s", err)
-	}
-
-	t.Log("Delete the token")
-	err = tokens.Delete(token.AccessTokenHash)
-
-	if err != nil {
-		t.Fatalf("Failed to delete token: %s", err)
-	}
-
-	t.Log("We should no longer be able to fetch this token.")
-	token, err = tokens.Token(accessToken)
-	if token != nil || err == nil {
-		t.Fatalf("Fetching token after deletion did not fail: got %v, %s", token, err)
-	}
-}
-
 func TestExpireTokens(t *testing.T) {
 	db, close := connectToDB(t)
 	defer close()
@@ -150,9 +115,12 @@ func TestExpireTokens(t *testing.T) {
 		return nil
 	})
 	t.Log("We should be able to fetch this token without error.")
-	_, err = tokens.Token(accessToken)
+	token, err = tokens.Token(accessToken)
 	if err != nil {
 		t.Fatalf("Failed to fetch token: %s", err)
+	}
+	if token.Expired {
+		t.Fatalf("expected token to be not expired, but it was")
 	}
 
 	t.Log("Expire the token")
@@ -177,8 +145,17 @@ func TestExpireTokens(t *testing.T) {
 		t.Fatalf("Expected no error for non-existent hash, got %s", err)
 	}
 
+	t.Log("Does not delete expired tokens if not old enough")
+	deleted, err := tokens.deleteExpiredTokensAfter(time.Hour)
+	if err != nil {
+		t.Fatalf("Expected no error when deleting expired tokens, got %s", err)
+	}
+	if deleted > 0 {
+		t.Fatalf("expected not to delete anything, but deleted %d tokens", deleted)
+	}
+
 	t.Log("Deletes expired tokens")
-	deleted, err := tokens.deleteExpiredTokensAfter(time.Nanosecond)
+	deleted, err = tokens.deleteExpiredTokensAfter(time.Nanosecond)
 	if err != nil {
 		t.Fatalf("Expected no error when deleting expired tokens, got %s", err)
 	}

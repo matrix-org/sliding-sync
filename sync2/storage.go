@@ -2,6 +2,7 @@ package sync2
 
 import (
 	"os"
+	"time"
 
 	"github.com/getsentry/sentry-go"
 	"github.com/jmoiron/sqlx"
@@ -42,4 +43,20 @@ func (s *Storage) Teardown() {
 	if err != nil {
 		panic("V2Storage.Teardown: " + err.Error())
 	}
+}
+
+// StartDeleteExpiredTokenTicker starts a go routine which
+// periodically (1h) checks for expired tokens to delete.
+func (s *Storage) StartDeleteExpiredTokenTicker(duration time.Duration) {
+	ticker := time.NewTicker(duration)
+	go func() {
+		for range ticker.C {
+			deleted, err := s.TokensTable.deleteExpiredTokensAfter(30 * 24 * time.Hour)
+			if err != nil {
+				logger.Warn().Err(err).Msg("failed to delete expired tokens")
+			} else {
+				logger.Trace().Int64("deleted", deleted).Msg("deleted expired tokens")
+			}
+		}
+	}()
 }
