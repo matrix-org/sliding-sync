@@ -31,11 +31,11 @@ func TestStorageRoomStateBeforeAndAfterEventPosition(t *testing.T) {
 		testutils.NewStateEvent(t, "m.room.join_rules", "", alice, map[string]interface{}{"join_rule": "invite"}),
 		testutils.NewStateEvent(t, "m.room.member", bob, alice, map[string]interface{}{"membership": "invite"}),
 	}
-	_, latestNIDs, err := store.Accumulate(userID, roomID, "", events)
+	accResult, err := store.Accumulate(userID, roomID, "", events)
 	if err != nil {
 		t.Fatalf("Accumulate returned error: %s", err)
 	}
-	latest := latestNIDs[len(latestNIDs)-1]
+	latest := accResult.TimelineNIDs[len(accResult.TimelineNIDs)-1]
 
 	testCases := []struct {
 		name       string
@@ -158,14 +158,13 @@ func TestStorageJoinedRoomsAfterPosition(t *testing.T) {
 		},
 	}
 	var latestPos int64
-	var latestNIDs []int64
 	var err error
 	for roomID, eventMap := range roomIDToEventMap {
-		_, latestNIDs, err = store.Accumulate(userID, roomID, "", eventMap)
+		accResult, err := store.Accumulate(userID, roomID, "", eventMap)
 		if err != nil {
 			t.Fatalf("Accumulate on %s failed: %s", roomID, err)
 		}
-		latestPos = latestNIDs[len(latestNIDs)-1]
+		latestPos = accResult.TimelineNIDs[len(accResult.TimelineNIDs)-1]
 	}
 	aliceJoinTimingsByRoomID, err := store.JoinedRoomsAfterPosition(alice, latestPos)
 	if err != nil {
@@ -351,11 +350,11 @@ func TestVisibleEventNIDsBetween(t *testing.T) {
 		},
 	}
 	for _, tl := range timelineInjections {
-		numNew, _, err := store.Accumulate(userID, tl.RoomID, "", tl.Events)
+		accResult, err := store.Accumulate(userID, tl.RoomID, "", tl.Events)
 		if err != nil {
 			t.Fatalf("Accumulate on %s failed: %s", tl.RoomID, err)
 		}
-		t.Logf("%s added %d new events", tl.RoomID, numNew)
+		t.Logf("%s added %d new events", tl.RoomID, accResult.NumNew)
 	}
 	latestPos, err := store.LatestEventNID()
 	if err != nil {
@@ -454,11 +453,11 @@ func TestVisibleEventNIDsBetween(t *testing.T) {
 		t.Fatalf("LatestEventNID: %s", err)
 	}
 	for _, tl := range timelineInjections {
-		numNew, _, err := store.Accumulate(userID, tl.RoomID, "", tl.Events)
+		accResult, err := store.Accumulate(userID, tl.RoomID, "", tl.Events)
 		if err != nil {
 			t.Fatalf("Accumulate on %s failed: %s", tl.RoomID, err)
 		}
-		t.Logf("%s added %d new events", tl.RoomID, numNew)
+		t.Logf("%s added %d new events", tl.RoomID, accResult.NumNew)
 	}
 	latestPos, err = store.LatestEventNID()
 	if err != nil {
@@ -534,7 +533,7 @@ func TestStorageLatestEventsInRoomsPrevBatch(t *testing.T) {
 	}
 	eventIDs := []string{}
 	for _, timeline := range timelines {
-		_, _, err = store.Accumulate(userID, roomID, timeline.prevBatch, timeline.timeline)
+		_, err := store.Accumulate(userID, roomID, timeline.prevBatch, timeline.timeline)
 		if err != nil {
 			t.Fatalf("failed to accumulate: %s", err)
 		}
@@ -776,7 +775,7 @@ func TestAllJoinedMembers(t *testing.T) {
 		}, serialise(tc.InitMemberships)...))
 		assertNoError(t, err)
 
-		_, _, err = store.Accumulate(userID, roomID, "foo", serialise(tc.AccumulateMemberships))
+		_, err = store.Accumulate(userID, roomID, "foo", serialise(tc.AccumulateMemberships))
 		assertNoError(t, err)
 		testCases[i].RoomID = roomID // remember this for later
 	}
@@ -855,7 +854,7 @@ func TestCircularSlice(t *testing.T) {
 		},
 	}
 	for _, tc := range testCases {
-		cs := &circularSlice{
+		cs := &circularSlice[int64]{
 			max: tc.max,
 		}
 		for _, val := range tc.appends {

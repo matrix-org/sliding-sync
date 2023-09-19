@@ -294,19 +294,26 @@ func (h *Handler) Accumulate(ctx context.Context, userID, deviceID, roomID, prev
 	}
 
 	// Insert new events
-	numNew, latestNIDs, err := h.Store.Accumulate(userID, roomID, prevBatch, timeline)
+	accResult, err := h.Store.Accumulate(userID, roomID, prevBatch, timeline)
 	if err != nil {
 		logger.Err(err).Int("timeline", len(timeline)).Str("room", roomID).Msg("V2: failed to accumulate room")
 		internal.GetSentryHubFromContextOrDefault(ctx).CaptureException(err)
 		return err
 	}
 
+	// Consumers should reload state before processing new timeline events.
+	if accResult.RequiresReload {
+		h.v2Pub.Notify(pubsub.ChanV2, &pubsub.V2InvalidateRoom{
+			RoomID: roomID,
+		})
+	}
+
 	// We've updated the database. Now tell any pubsub listeners what we learned.
-	if numNew != 0 {
+	if accResult.NumNew != 0 {
 		h.v2Pub.Notify(pubsub.ChanV2, &pubsub.V2Accumulate{
 			RoomID:    roomID,
 			PrevBatch: prevBatch,
-			EventNIDs: latestNIDs,
+			EventNIDs: accResult.TimelineNIDs,
 		})
 	}
 

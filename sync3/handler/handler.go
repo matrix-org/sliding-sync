@@ -396,8 +396,8 @@ func (h *SyncLiveHandler) setupConnection(req *http.Request, syncReq *sync3.Requ
 
 	pid := sync2.PollerID{UserID: token.UserID, DeviceID: token.DeviceID}
 	log.Trace().Any("pid", pid).Msg("checking poller exists and is running")
-	success := h.EnsurePoller.EnsurePolling(req.Context(), pid, token.AccessTokenHash)
-	if !success {
+	expiredToken := h.EnsurePoller.EnsurePolling(req.Context(), pid, token.AccessTokenHash)
+	if expiredToken {
 		log.Error().Msg("EnsurePolling failed, returning 401")
 		// Assumption: the only way that EnsurePolling fails is if the access token is invalid.
 		return req, nil, &internal.HandlerError{
@@ -801,6 +801,13 @@ func (h *SyncLiveHandler) OnAccountData(p *pubsub.V2AccountData) {
 func (h *SyncLiveHandler) OnExpiredToken(p *pubsub.V2ExpiredToken) {
 	h.EnsurePoller.OnExpiredToken(p)
 	h.ConnMap.CloseConnsForDevice(p.UserID, p.DeviceID)
+}
+
+func (h *SyncLiveHandler) OnInvalidateRoom(p *pubsub.V2InvalidateRoom) {
+	ctx, task := internal.StartTask(context.Background(), "OnInvalidateRoom")
+	defer task.End()
+
+	h.Dispatcher.OnInvalidateRoom(ctx, p.RoomID)
 }
 
 func parseIntFromQuery(u *url.URL, param string) (result int64, err *internal.HandlerError) {

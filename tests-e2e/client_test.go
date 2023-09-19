@@ -132,6 +132,7 @@ type SyncReq struct {
 type CSAPI struct {
 	UserID      string
 	Localpart   string
+	Domain      string
 	AccessToken string
 	DeviceID    string
 	AvatarURL   string
@@ -160,6 +161,16 @@ func (c *CSAPI) UploadContent(t *testing.T, fileBody []byte, fileName string, co
 	return GetJSONFieldStr(t, body, "content_uri")
 }
 
+// Use an empty string to remove a custom displayname.
+func (c *CSAPI) SetDisplayname(t *testing.T, name string) {
+	t.Helper()
+	reqBody := map[string]any{}
+	if name != "" {
+		reqBody["displayname"] = name
+	}
+	c.MustDoFunc(t, "PUT", []string{"_matrix", "client", "v3", "profile", c.UserID, "displayname"}, WithJSONBody(t, reqBody))
+}
+
 // Use an empty string to remove your avatar.
 func (c *CSAPI) SetAvatar(t *testing.T, avatarURL string) {
 	t.Helper()
@@ -184,9 +195,9 @@ func (c *CSAPI) DownloadContent(t *testing.T, mxcUri string) ([]byte, string) {
 }
 
 // CreateRoom creates a room with an optional HTTP request body. Fails the test on error. Returns the room ID.
-func (c *CSAPI) CreateRoom(t *testing.T, creationContent interface{}) string {
+func (c *CSAPI) CreateRoom(t *testing.T, reqBody map[string]any) string {
 	t.Helper()
-	res := c.MustDo(t, "POST", []string{"_matrix", "client", "v3", "createRoom"}, creationContent)
+	res := c.MustDo(t, "POST", []string{"_matrix", "client", "v3", "createRoom"}, reqBody)
 	body := ParseJSON(t, res)
 	return GetJSONFieldStr(t, body, "room_id")
 }
