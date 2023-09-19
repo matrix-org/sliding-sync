@@ -534,3 +534,68 @@ func TestPollerExpiryEnsurePollingRaceDoesntWedge(t *testing.T) {
 		t.Fatalf("never saw a v2 poll with the new token")
 	}
 }
+
+func TestTimelineStopsLoadingWhenMissingPrevious(t *testing.T) {
+	pqString := testutils.PrepareDBConnectionString()
+	v2 := runTestV2Server(t)
+	v3 := runTestServer(t, v2, pqString)
+	defer v2.close()
+	defer v3.close()
+
+	const roomID = "!unimportant"
+
+	t.Log("Alice creates a room.")
+	v2.addAccount(t, alice, aliceToken)
+	v2.queueResponse(aliceToken, sync2.SyncResponse{
+		Rooms: sync2.SyncRoomsResponse{
+			Join: v2JoinTimeline(roomEvents{
+				roomID: "!unimportant",
+				events: createRoomState(t, alice, time.Now()),
+			}),
+		},
+	})
+
+	t.Log("Alice syncs, starting a poller.")
+	res := v3.mustDoV3Request(t, aliceToken, sync3.Request{
+		RoomSubscriptions: map[string]sync3.RoomSubscription{
+			roomID: {
+				TimelineLimit: 10,
+			},
+		},
+	})
+
+	t.Log("Her response includes the room she created..")
+	m.MatchResponse(t, res, m.MatchRoomSubscription(roomID))
+
+	t.Log("Alice's poller receives a gappy sync with a timeline event.")
+	msgAfterGap := testutils.NewMessageEvent(t, alice, "school's out for summer")
+	v2.queueResponse(aliceToken, sync2.SyncResponse{
+		Rooms: sync2.SyncRoomsResponse{
+			Join: map[string]sync2.SyncV2JoinResponse{
+				roomID: {
+					Timeline: sync2.TimelineResponse{
+						Events:    []json.RawMessage{msgAfterGap},
+						Limited:   true,
+						PrevBatch: "dummyPrevBath",
+					},
+				},
+			},
+		},
+	})
+	v2.waitUntilEmpty(t, aliceToken)
+
+	t.Log("Alice makes a new connection and syncs, requesting the last 10 timeline events.")
+	res = v3.mustDoV3Request(t, aliceToken, sync3.Request{
+		ConnID: "conn2",
+		RoomSubscriptions: map[string]sync3.RoomSubscription{
+			roomID: {
+				TimelineLimit: 10,
+			},
+		},
+	})
+
+	t.Log("The response's timeline should only include the event after the gap.")
+	m.MatchResponse(t, res, m.MatchRoomSubscription(roomID,
+		m.MatchRoomTimeline([]json.RawMessage{msgAfterGap}),
+	))
+}
