@@ -1,7 +1,6 @@
 package main
 
 import (
-	"context"
 	"flag"
 	"fmt"
 	"log"
@@ -85,7 +84,6 @@ func defaulting(in, dft string) string {
 }
 
 func main() {
-	ctx := context.Background()
 	fmt.Printf("Sync v3 [%s] (%s)\n", version, GitCommit)
 	sync2.ProxyVersion = version
 	syncv3.Version = fmt.Sprintf("%s (%s)", version, GitCommit)
@@ -188,11 +186,6 @@ func main() {
 		default:
 			zerolog.SetGlobalLevel(zerolog.InfoLevel)
 		}
-	}
-
-	err := sync2.MigrateDeviceIDs(ctx, args[EnvServer], args[EnvDB], args[EnvSecret], true)
-	if err != nil {
-		panic(err)
 	}
 
 	maxConnsInt, err := strconv.Atoi(args[EnvMaxConns])
