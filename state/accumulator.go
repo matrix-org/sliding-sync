@@ -347,13 +347,13 @@ func (a *Accumulator) Accumulate(txn *sqlx.Tx, userID, roomID string, timeline s
 	// - there to be no duplicate events
 	// - if there are new events, they are always new.
 	// Both of these assumptions can be false for different reasons
-	dedupedEvents := parseAndDeduplicateTimelineEvents(roomID, timeline)
-	filteredEvents, err := a.filterToNewTimelineEvents(txn, dedupedEvents)
+	incomingEvents := parseAndDeduplicateTimelineEvents(roomID, timeline)
+	newEvents, err := a.filterToNewTimelineEvents(txn, incomingEvents)
 	if err != nil {
 		err = fmt.Errorf("filterTimelineEvents: %w", err)
 		return AccumulateResult{}, err
 	}
-	if len(filteredEvents) == 0 {
+	if len(newEvents) == 0 {
 		return AccumulateResult{}, nil // nothing to do
 	}
 
@@ -369,8 +369,8 @@ func (a *Accumulator) Accumulate(txn *sqlx.Tx, userID, roomID string, timeline s
 	//
 	// However we can't distinguish between cases (A) and (B) and must assume the worst.
 	if timeline.Limited {
-		firstTimelineEventUnknown := filteredEvents[0].ID == dedupedEvents[0].ID
-		dedupedEvents[0].MissingPrevious = firstTimelineEventUnknown
+		firstTimelineEventUnknown := newEvents[0].ID == incomingEvents[0].ID
+		incomingEvents[0].MissingPrevious = firstTimelineEventUnknown
 	}
 
 	// Given a timeline of [E1, E2, S3, E4, S5, S6, E7] (E=message event, S=state event)
@@ -395,27 +395,27 @@ func (a *Accumulator) Accumulate(txn *sqlx.Tx, userID, roomID string, timeline s
 	// timeline, often leaves after an invite rejection. Ignoring these ensures we
 	// don't create a false (e.g. lacking m.room.create) record of the room state.
 	if snapID == 0 {
-		if len(filteredEvents) > 0 && filteredEvents[0].Type == "m.room.create" && filteredEvents[0].StateKey == "" {
+		if len(newEvents) > 0 && newEvents[0].Type == "m.room.create" && newEvents[0].StateKey == "" {
 			// All okay, continue on.
 		} else {
 			// Bail out and complain loudly.
 			const msg = "Accumulator: skipping processing of timeline, as no snapshot exists"
 			logger.Warn().
-				Str("event_id", filteredEvents[0].ID).
-				Str("event_type", filteredEvents[0].Type).
-				Str("event_state_key", filteredEvents[0].StateKey).
+				Str("event_id", newEvents[0].ID).
+				Str("event_type", newEvents[0].Type).
+				Str("event_state_key", newEvents[0].StateKey).
 				Str("room_id", roomID).
 				Str("user_id", userID).
-				Int("len_timeline", len(filteredEvents)).
+				Int("len_timeline", len(newEvents)).
 				Msg(msg)
 			sentry.WithScope(func(scope *sentry.Scope) {
 				scope.SetUser(sentry.User{ID: userID})
 				scope.SetContext(internal.SentryCtxKey, map[string]interface{}{
-					"event_id":        filteredEvents[0].ID,
-					"event_type":      filteredEvents[0].Type,
-					"event_state_key": filteredEvents[0].StateKey,
+					"event_id":        newEvents[0].ID,
+					"event_type":      newEvents[0].Type,
+					"event_state_key": newEvents[0].StateKey,
 					"room_id":         roomID,
-					"len_timeline":    len(filteredEvents),
+					"len_timeline":    len(newEvents),
 				})
 				sentry.CaptureMessage(msg)
 			})
@@ -423,7 +423,7 @@ func (a *Accumulator) Accumulate(txn *sqlx.Tx, userID, roomID string, timeline s
 		}
 	}
 
-	eventIDToNID, err := a.eventsTable.Insert(txn, filteredEvents, false)
+	eventIDToNID, err := a.eventsTable.Insert(txn, newEvents, false)
 	if err != nil {
 		return AccumulateResult{}, err
 	}
@@ -437,9 +437,9 @@ func (a *Accumulator) Accumulate(txn *sqlx.Tx, userID, roomID string, timeline s
 	}
 
 	var latestNID int64
-	newEvents := make([]Event, 0, len(eventIDToNID))
+	newEventsByID := make([]Event, 0, len(eventIDToNID))
 	redactTheseEventIDs := make(map[string]*Event)
-	for i, ev := range filteredEvents {
+	for i, ev := range newEvents {
 		nid, ok := eventIDToNID[ev.ID]
 		if ok {
 			ev.NID = int64(nid)
@@ -462,10 +462,10 @@ func (a *Accumulator) Accumulate(txn *sqlx.Tx, userID, roomID string, timeline s
 					redactsEventID = parsedEv.Get("content.redacts").Str
 				}
 				if redactsEventID != "" {
-					redactTheseEventIDs[redactsEventID] = &filteredEvents[i]
+					redactTheseEventIDs[redactsEventID] = &newEvents[i]
 				}
 			}
-			newEvents = append(newEvents, ev)
+			newEventsByID = append(newEventsByID, ev)
 			result.TimelineNIDs = append(result.TimelineNIDs, ev.NID)
 		}
 	}
@@ -491,7 +491,7 @@ func (a *Accumulator) Accumulate(txn *sqlx.Tx, userID, roomID string, timeline s
 		}
 	}
 
-	for _, ev := range newEvents {
+	for _, ev := range newEventsByID {
 		var replacesNID int64
 		// the snapshot ID we assign to this event is unaffected by whether /this/ event is state or not,
 		// as this is the before snapshot ID.
@@ -551,12 +551,12 @@ func (a *Accumulator) Accumulate(txn *sqlx.Tx, userID, roomID string, timeline s
 		result.RequiresReload = currentStateRedactions > 0
 	}
 
-	if err = a.spacesTable.HandleSpaceUpdates(txn, newEvents); err != nil {
+	if err = a.spacesTable.HandleSpaceUpdates(txn, newEventsByID); err != nil {
 		return AccumulateResult{}, fmt.Errorf("HandleSpaceUpdates: %s", err)
 	}
 
 	// the last fetched snapshot ID is the current one
-	info := a.roomInfoDelta(roomID, newEvents)
+	info := a.roomInfoDelta(roomID, newEventsByID)
 	if err = a.roomsTable.Upsert(txn, info, snapID, latestNID); err != nil {
 		return AccumulateResult{}, fmt.Errorf("failed to UpdateCurrentSnapshotID to %d: %w", snapID, err)
 	}
