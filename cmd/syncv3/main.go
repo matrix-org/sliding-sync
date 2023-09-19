@@ -114,7 +114,7 @@ func main() {
 		EnvLogLevel:               os.Getenv(EnvLogLevel),
 		EnvMaxConns:               defaulting(os.Getenv(EnvMaxConns), "0"),
 		EnvIdleTimeoutSecs:        defaulting(os.Getenv(EnvIdleTimeoutSecs), "3600"),
-		EnvHTTPTimeoutSecs:        defaulting(os.Getenv(EnvIdleTimeoutSecs), "300"),
+		EnvHTTPTimeoutSecs:        defaulting(os.Getenv(EnvHTTPTimeoutSecs), "300"),
 		EnvHTTPInitialTimeoutSecs: defaulting(os.Getenv(EnvHTTPInitialTimeoutSecs), "1800"),
 	}
 	requiredEnvVars := []string{EnvServer, EnvDB, EnvSecret, EnvBindAddr}
