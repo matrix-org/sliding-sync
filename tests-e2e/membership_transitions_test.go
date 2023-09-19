@@ -668,6 +668,7 @@ func TestHeroesOnMembershipChanges(t *testing.T) {
 		res := alice.SlidingSyncUntil(t, "", sync3.Request{
 			Lists: map[string]sync3.RequestList{
 				"all_rooms": {
+					Ranges: sync3.SliceRanges{{0, 20}},
 					RoomSubscription: sync3.RoomSubscription{
 						Heroes:        &boolTrue,
 						TimelineLimit: 10,
