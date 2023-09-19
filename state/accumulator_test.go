@@ -246,7 +246,7 @@ func TestAccumulatorPromptsCacheInvalidation(t *testing.T) {
 	}
 	var accResult AccumulateResult
 	err = sqlutil.WithTransaction(db, func(txn *sqlx.Tx) error {
-		accResult, err = accumulator.Accumulate(txn, "@dummy:localhost", roomID, "prevBatch", timeline)
+		accResult, err = accumulator.Accumulate(txn, "@dummy:localhost", roomID, sync2.TimelineResponse{Events: timeline, PrevBatch: "prevBatch"})
 		return err
 	})
 	if err != nil {
@@ -264,7 +264,7 @@ func TestAccumulatorPromptsCacheInvalidation(t *testing.T) {
 		[]byte(`{"event_id":"$i", "type":"m.room.redaction", "content":{"redacts":"$f"}}`),
 	}
 	err = sqlutil.WithTransaction(db, func(txn *sqlx.Tx) error {
-		accResult, err = accumulator.Accumulate(txn, "@dummy:localhost", roomID, "prevBatch2", timeline)
+		accResult, err = accumulator.Accumulate(txn, "@dummy:localhost", roomID, sync2.TimelineResponse{Events: timeline, PrevBatch: "prevBatch2"})
 		return err
 	})
 	if err != nil {
@@ -281,7 +281,7 @@ func TestAccumulatorPromptsCacheInvalidation(t *testing.T) {
 		[]byte(`{"event_id":"$j", "type":"m.room.redaction", "content":{"redacts":"$g"}}`),
 	}
 	err = sqlutil.WithTransaction(db, func(txn *sqlx.Tx) error {
-		accResult, err = accumulator.Accumulate(txn, "@dummy:localhost", roomID, "prevBatch3", timeline)
+		accResult, err = accumulator.Accumulate(txn, "@dummy:localhost", roomID, sync2.TimelineResponse{Events: timeline, PrevBatch: "prevBatch3"})
 		return err
 	})
 	if err != nil {
@@ -797,11 +797,11 @@ func TestAccumulatorMissingPreviousMarkers(t *testing.T) {
 			Limited: step.Limited,
 		}
 
-		numNew, _, err := accumulator.Accumulate(txn, userID, roomID, timeline)
+		accResult, err := accumulator.Accumulate(txn, userID, roomID, timeline)
 		if err != nil {
 			t.Fatalf("failed to Accumulate: %s", err)
 		}
-		assertValue(t, "numNew", numNew, step.NumNew)
+		assertValue(t, "numNew", accResult.NumNew, step.NumNew)
 
 		t.Log(step.CheckDesc)
 		checkIDs := make([]string, 0, len(step.MissingPrevious))
