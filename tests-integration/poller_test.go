@@ -4,12 +4,13 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"github.com/jmoiron/sqlx"
-	"github.com/matrix-org/sliding-sync/sqlutil"
 	"net/http"
 	"os"
 	"testing"
 	"time"
+
+	"github.com/jmoiron/sqlx"
+	"github.com/matrix-org/sliding-sync/sqlutil"
 
 	"github.com/matrix-org/sliding-sync/sync2"
 	"github.com/matrix-org/sliding-sync/sync3"
@@ -415,7 +416,7 @@ func TestPollersCanBeResumedAfterExpiry(t *testing.T) {
 	res := v3.mustDoV3Request(t, aliceToken, sync3.Request{
 		Extensions: extensions.Request{
 			AccountData: &extensions.AccountDataRequest{
-				extensions.Core{
+				Core: extensions.Core{
 					Enabled: &boolTrue,
 				},
 			},

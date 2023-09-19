@@ -680,10 +680,7 @@ func shouldRetry(retryErr error) bool {
 	}
 	// we retry on all errors EXCEPT DataError as this indicates that retrying won't help
 	var de *internal.DataError
-	if errors.As(retryErr, &de) {
-		return false
-	}
-	return true
+	return !errors.As(retryErr, &de)
 }
 
 func (p *poller) parseToDeviceMessages(ctx context.Context, res *SyncResponse) error {
