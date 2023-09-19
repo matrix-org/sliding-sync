@@ -394,12 +394,17 @@ func (r *Request) ApplyDelta(nextReq *Request) (result *Request, delta *RequestD
 		if bumpEventTypes == nil {
 			bumpEventTypes = existingList.BumpEventTypes
 		}
+		heroes := nextList.Heroes
+		if heroes == nil {
+			heroes = existingList.Heroes
+		}
 
 		calculatedLists[listKey] = RequestList{
 			RoomSubscription: RoomSubscription{
 				RequiredState:   reqState,
 				TimelineLimit:   timelineLimit,
 				IncludeOldRooms: includeOldRooms,
+				Heroes:          heroes,
 			},
 			Ranges:          rooms,
 			Sort:            sort,
@@ -517,7 +522,8 @@ func (rf *RequestFilters) Include(r *RoomConnMetadata, finder RoomFinder) bool {
 	if rf.IsInvite != nil && *rf.IsInvite != r.IsInvite {
 		return false
 	}
-	if rf.RoomNameFilter != "" && !strings.Contains(strings.ToLower(internal.CalculateRoomName(&r.RoomMetadata, 5)), strings.ToLower(rf.RoomNameFilter)) {
+	roomName, _ := internal.CalculateRoomName(&r.RoomMetadata, 5)
+	if rf.RoomNameFilter != "" && !strings.Contains(strings.ToLower(roomName), strings.ToLower(rf.RoomNameFilter)) {
 		return false
 	}
 	if len(rf.NotTags) > 0 {
@@ -563,6 +569,7 @@ type RoomSubscription struct {
 	RequiredState   [][2]string       `json:"required_state"`
 	TimelineLimit   int64             `json:"timeline_limit"`
 	IncludeOldRooms *RoomSubscription `json:"include_old_rooms"`
+	Heroes          *bool             `json:"include_heroes"`
 }
 
 func (rs RoomSubscription) RequiredStateChanged(other RoomSubscription) bool {
@@ -584,6 +591,10 @@ func (rs RoomSubscription) LazyLoadMembers() bool {
 		}
 	}
 	return false
+}
+
+func (rs RoomSubscription) IncludeHeroes() bool {
+	return rs.Heroes != nil && *rs.Heroes
 }
 
 // Combine this subcription with another, returning a union of both as a copy.

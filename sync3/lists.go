@@ -70,8 +70,9 @@ func (s *InternalRequestLists) SetRoom(r RoomConnMetadata) (delta RoomDelta) {
 		delta.RoomNameChanged = !existing.SameRoomName(&r.RoomMetadata)
 		if delta.RoomNameChanged {
 			// update the canonical name to allow room name sorting to continue to work
+			roomName, _ := internal.CalculateRoomName(&r.RoomMetadata, 5)
 			r.CanonicalisedName = strings.ToLower(
-				strings.Trim(internal.CalculateRoomName(&r.RoomMetadata, 5), "#!():_@"),
+				strings.Trim(roomName, "#!():_@"),
 			)
 		} else {
 			// XXX: during TestConnectionTimeoutNotReset there is some situation where
@@ -109,8 +110,9 @@ func (s *InternalRequestLists) SetRoom(r RoomConnMetadata) (delta RoomDelta) {
 		}
 	} else {
 		// set the canonical name to allow room name sorting to work
+		roomName, _ := internal.CalculateRoomName(&r.RoomMetadata, 5)
 		r.CanonicalisedName = strings.ToLower(
-			strings.Trim(internal.CalculateRoomName(&r.RoomMetadata, 5), "#!():_@"),
+			strings.Trim(roomName, "#!():_@"),
 		)
 		r.ResolvedAvatarURL = internal.CalculateAvatar(&r.RoomMetadata)
 		// We'll automatically use the LastInterestedEventTimestamps provided by the
