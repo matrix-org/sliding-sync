@@ -11,6 +11,7 @@ import (
 type Room struct {
 	Name              string            `json:"name,omitempty"`
 	AvatarChange      AvatarChange      `json:"avatar,omitempty"`
+	Heroes            []internal.Hero   `json:"heroes,omitempty"`
 	RequiredState     []json.RawMessage `json:"required_state,omitempty"`
 	Timeline          []json.RawMessage `json:"timeline,omitempty"`
 	InviteState       []json.RawMessage `json:"invite_state,omitempty"`

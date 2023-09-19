@@ -664,8 +664,9 @@ func (s *ConnState) getInitialRoomData(ctx context.Context, roomSub sync3.RoomSu
 			}
 		}
 
-		rooms[roomID] = sync3.Room{
-			Name:              internal.CalculateRoomName(metadata, 5), // TODO: customisable?
+		roomName, calculated := internal.CalculateRoomName(metadata, 5) // TODO: customisable?
+		room := sync3.Room{
+			Name:              roomName,
 			AvatarChange:      sync3.NewAvatarChange(internal.CalculateAvatar(metadata)),
 			NotificationCount: int64(userRoomData.NotificationCount),
 			HighlightCount:    int64(userRoomData.HighlightCount),
@@ -679,6 +680,10 @@ func (s *ConnState) getInitialRoomData(ctx context.Context, roomSub sync3.RoomSu
 			PrevBatch:         userRoomData.RequestedLatestEvents.PrevBatch,
 			Timestamp:         maxTs,
 		}
+		if roomSub.IncludeHeroes() && calculated {
+			room.Heroes = metadata.Heroes
+		}
+		rooms[roomID] = room
 	}
 
 	if rsm.IsLazyLoading() {

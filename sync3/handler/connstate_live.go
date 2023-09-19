@@ -259,7 +259,13 @@ func (s *connStateLive) processLiveUpdate(ctx context.Context, up caches.Update,
 			if delta.RoomNameChanged {
 				metadata := roomUpdate.GlobalRoomMetadata()
 				metadata.RemoveHero(s.userID)
-				thisRoom.Name = internal.CalculateRoomName(metadata, 5) // TODO: customisable?
+				roomName, calculated := internal.CalculateRoomName(metadata, 5) // TODO: customisable?
+
+				thisRoom.Name = roomName
+
+				if calculated && s.shouldIncludeHeroes(roomUpdate.RoomID()) {
+					thisRoom.Heroes = metadata.Heroes
+				}
 			}
 			if delta.RoomAvatarChanged {
 				metadata := roomUpdate.GlobalRoomMetadata()
@@ -437,4 +443,21 @@ func (s *connStateLive) resort(
 		}
 	}
 	return ops, hasUpdates
+}
+
+// shouldIncludeHeroes returns whether the given roomID is in a list or direct
+// subscription which should return heroes.
+func (s *connStateLive) shouldIncludeHeroes(roomID string) bool {
+	if s.roomSubscriptions[roomID].IncludeHeroes() {
+		return true
+	}
+	roomIDsToLists := s.lists.ListsByVisibleRoomIDs(s.muxedReq.Lists)
+	for _, listKey := range roomIDsToLists[roomID] {
+		// check if this list should include heroes
+		if !s.muxedReq.Lists[listKey].IncludeHeroes() {
+			continue
+		}
+		return true
+	}
+	return false
 }
