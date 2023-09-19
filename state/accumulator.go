@@ -357,17 +357,13 @@ func (a *Accumulator) Accumulate(txn *sqlx.Tx, userID, roomID string, timeline s
 		return AccumulateResult{}, nil // nothing to do
 	}
 
-	// If this timeline was limited and we don't recognise its first event E3, mark it
+	// If this timeline was limited and we don't recognise its first event E, mark it
 	// as not knowing its previous timeline event.
 	//
-	// We _may_ actually know the previous event. E.g. if the previous poll ends in E1
-	// and we see a limited sync starting with E3, the "gap" may have already been
-	// filled in by other pollers.
-	//
-	//  A:  E1 persisted, E2 omitted and unknown, E3 unknown       (missing previous)
-	//  B:  E1 persisted, E2 omitted and   known, E3 unknown   (not missing previous)
-	//
-	// However we can't distinguish between cases (A) and (B) and must assume the worst.
+	// NB: some other poller may have already learned about E from a non-limited sync.
+	// If so, E will be present in the DB and marked as not missing_previous. This will
+	// remain the case as the upsert of E to the events table has ON CONFLICT DO
+	// NOTHING.
 	if timeline.Limited {
 		firstTimelineEventUnknown := newEvents[0].ID == incomingEvents[0].ID
 		incomingEvents[0].MissingPrevious = firstTimelineEventUnknown
