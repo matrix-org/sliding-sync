@@ -448,16 +448,16 @@ func (s *connStateLive) resort(
 // shouldIncludeHeroes returns whether the given roomID is in a list or direct
 // subscription which should return heroes.
 func (s *connStateLive) shouldIncludeHeroes(roomID string) bool {
+	if s.roomSubscriptions[roomID].IncludeHeroes() {
+		return true
+	}
 	roomIDsToLists := s.lists.ListsByVisibleRoomIDs(s.muxedReq.Lists)
-	subscriptionInclude := s.roomSubscriptions[roomID].IncludeHeroes()
-	listInclude := false
 	for _, listKey := range roomIDsToLists[roomID] {
 		// check if this list should include heroes
 		if !s.muxedReq.Lists[listKey].IncludeHeroes() {
 			continue
 		}
-		listInclude = true
-		break
+		return true
 	}
-	return subscriptionInclude || listInclude
+	return false
 }

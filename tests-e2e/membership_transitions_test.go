@@ -5,9 +5,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/tidwall/gjson"
+
 	"github.com/matrix-org/sliding-sync/sync3"
 	"github.com/matrix-org/sliding-sync/testutils/m"
-	"github.com/tidwall/gjson"
 )
 
 func TestRoomStateTransitions(t *testing.T) {
@@ -656,6 +657,46 @@ func TestHeroesOnMembershipChanges(t *testing.T) {
 			t.Errorf("expected 1 room hero, got %d", c)
 		}
 		if gotUserID := res.Rooms[subRoomID].Heroes[0].ID; gotUserID != bob.UserID {
+			t.Errorf("expected userID %q, got %q", gotUserID, bob.UserID)
+		}
+	})
+
+	t.Run("can set heroes=true in lists", func(t *testing.T) {
+		listRoomID := alice.CreateRoom(t, map[string]interface{}{"preset": "public_chat"})
+		bob.JoinRoom(t, listRoomID, []string{})
+
+		res := alice.SlidingSyncUntil(t, "", sync3.Request{
+			Lists: map[string]sync3.RequestList{
+				"all_rooms": {
+					RoomSubscription: sync3.RoomSubscription{
+						Heroes:        &boolTrue,
+						TimelineLimit: 10,
+					},
+				},
+			},
+		}, func(response *sync3.Response) error {
+			r, ok := response.Rooms[listRoomID]
+			if !ok {
+				return fmt.Errorf("room %q not in response", listRoomID)
+			}
+			// wait for bob to be joined
+			for _, ev := range r.Timeline {
+				if gjson.GetBytes(ev, "type").Str != "m.room.member" {
+					continue
+				}
+				if gjson.GetBytes(ev, "state_key").Str != bob.UserID {
+					continue
+				}
+				if gjson.GetBytes(ev, "content.membership").Str == "join" {
+					return nil
+				}
+			}
+			return fmt.Errorf("%s is not joined to room %q", bob.UserID, listRoomID)
+		})
+		if c := len(res.Rooms[listRoomID].Heroes); c > 1 {
+			t.Errorf("expected 1 room hero, got %d", c)
+		}
+		if gotUserID := res.Rooms[listRoomID].Heroes[0].ID; gotUserID != bob.UserID {
 			t.Errorf("expected userID %q, got %q", gotUserID, bob.UserID)
 		}
 	})
