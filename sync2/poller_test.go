@@ -1206,8 +1206,8 @@ type mockDataReceiver struct {
 	updateSinceCalled chan struct{}
 }
 
-func (a *mockDataReceiver) Accumulate(ctx context.Context, userID, deviceID, roomID, prevBatch string, timeline []json.RawMessage) error {
-	a.timelines[roomID] = append(a.timelines[roomID], timeline...)
+func (a *mockDataReceiver) Accumulate(ctx context.Context, userID, deviceID, roomID string, timeline TimelineResponse) error {
+	a.timelines[roomID] = append(a.timelines[roomID], timeline.Events...)
 	return nil
 }
 func (a *mockDataReceiver) Initialise(ctx context.Context, roomID string, state []json.RawMessage) ([]json.RawMessage, error) {
@@ -1247,11 +1247,11 @@ type overrideDataReceiver struct {
 	onExpiredToken      func(ctx context.Context, accessTokenHash, userID, deviceID string)
 }
 
-func (s *overrideDataReceiver) Accumulate(ctx context.Context, userID, deviceID, roomID, prevBatch string, timeline []json.RawMessage) error {
+func (s *overrideDataReceiver) Accumulate(ctx context.Context, userID, deviceID, roomID string, timeline TimelineResponse) error {
 	if s.accumulate == nil {
 		return nil
 	}
-	return s.accumulate(ctx, userID, deviceID, roomID, prevBatch, timeline)
+	return s.accumulate(ctx, userID, deviceID, roomID, timeline.PrevBatch, timeline.Events)
 }
 func (s *overrideDataReceiver) Initialise(ctx context.Context, roomID string, state []json.RawMessage) ([]json.RawMessage, error) {
 	if s.initialise == nil {

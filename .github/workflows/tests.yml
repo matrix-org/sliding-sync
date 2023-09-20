@@ -92,6 +92,9 @@ jobs:
           matrix:
             # test with unlimited + 1 + 2 max db conns. If we end up double transacting in the tests anywhere, conn=1 tests will fail.
             max_db_conns: [0,1,2]
+        # If the server fails to start, we'll wait for GHA to cancel the job after 6 hours.
+        # Ensure we fail sooner than that to avoid clogging up GHA runners.
+        timeout-minutes: 30
         services:
             synapse:
                 # Custom image built from https://github.com/matrix-org/synapse/tree/v1.72.0/docker/complement with a dummy /complement/ca set
@@ -221,6 +224,10 @@ jobs:
 
         env:
           PREV_VERSION: "v0.99.4"
+
+        # If the server fails to start, we'll wait for GHA to cancel the job after 6 hours.
+        # Ensure we fail sooner than that to avoid clogging up GHA runners.
+        timeout-minutes: 30
 
       # Service containers to run with `container-job`
         services:

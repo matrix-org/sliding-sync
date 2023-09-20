@@ -39,6 +39,8 @@ type Event struct {
 	PrevBatch sql.NullString `db:"prev_batch"`
 	// stripped events will be missing this field
 	JSON []byte `db:"event"`
+	// MissingPrevious is true iff the previous timeline event is not known to the proxy.
+	MissingPrevious bool `db:"missing_previous"`
 }
 
 func (ev *Event) ensureFieldsSetOnEvent() error {
@@ -125,8 +127,12 @@ func NewEventTable(db *sqlx.DB) *EventTable {
 		prev_batch TEXT,
 		membership TEXT,
 		is_state BOOLEAN NOT NULL, -- is this event part of the v2 state response?
-		event BYTEA NOT NULL
+		event BYTEA NOT NULL,
+		-- True iff this event was seen at the start of the timeline in a limited sync
+		-- (i.e. the preceding timeline event was not known to the proxy).
+		missing_previous BOOLEAN NOT NULL DEFAULT FALSE
 	);
+
 	-- index for querying all joined rooms for a given user
 	CREATE INDEX IF NOT EXISTS syncv3_events_type_sk_idx ON syncv3_events(event_type, state_key);
 	-- index for querying membership deltas in particular rooms
@@ -168,13 +174,15 @@ func (t *EventTable) Insert(txn *sqlx.Tx, events []Event, checkFields bool) (map
 		}
 		events[i].JSON = js
 	}
-	chunks := sqlutil.Chunkify(8, MaxPostgresParameters, EventChunker(events))
+	chunks := sqlutil.Chunkify(9, MaxPostgresParameters, EventChunker(events))
 	var eventID string
 	var eventNID int64
 	for _, chunk := range chunks {
 		rows, err := txn.NamedQuery(`
-		INSERT INTO syncv3_events (event_id, event, event_type, state_key, room_id, membership, prev_batch, is_state)
-        VALUES (:event_id, :event, :event_type, :state_key, :room_id, :membership, :prev_batch, :is_state) ON CONFLICT (event_id) DO NOTHING RETURNING event_id, event_nid`, chunk)
+		INSERT INTO syncv3_events (event_id, event, event_type, state_key, room_id, membership, prev_batch, is_state, missing_previous)
+        VALUES (:event_id, :event, :event_type, :state_key, :room_id, :membership, :prev_batch, :is_state, :missing_previous)
+        ON CONFLICT (event_id) DO NOTHING
+        RETURNING event_id, event_nid`, chunk)
 		if err != nil {
 			return nil, err
 		}
@@ -215,7 +223,7 @@ func (t *EventTable) SelectByNIDs(txn *sqlx.Tx, verifyAll bool, nids []int64) (e
 		wanted = len(nids)
 	}
 	return t.selectAny(txn, wanted, `
-	SELECT event_nid, event_id, event, event_type, state_key, room_id, before_state_snapshot_id, membership, event_replaces_nid FROM syncv3_events
+	SELECT event_nid, event_id, event, event_type, state_key, room_id, before_state_snapshot_id, membership, event_replaces_nid, missing_previous FROM syncv3_events
 	WHERE event_nid = ANY ($1) ORDER BY event_nid ASC;`, pq.Int64Array(nids))
 }
 
@@ -229,7 +237,7 @@ func (t *EventTable) SelectByIDs(txn *sqlx.Tx, verifyAll bool, ids []string) (ev
 		wanted = len(ids)
 	}
 	return t.selectAny(txn, wanted, `
-	SELECT event_nid, event_id, event, event_type, state_key, room_id, before_state_snapshot_id, membership FROM syncv3_events
+	SELECT event_nid, event_id, event, event_type, state_key, room_id, before_state_snapshot_id, membership, missing_previous FROM syncv3_events
 	WHERE event_id = ANY ($1) ORDER BY event_nid ASC;`, pq.StringArray(ids))
 }
 
@@ -379,9 +387,22 @@ func (t *EventTable) Redact(txn *sqlx.Tx, roomVer string, redacteeEventIDToRedac
 func (t *EventTable) SelectLatestEventsBetween(txn *sqlx.Tx, roomID string, lowerExclusive, upperInclusive int64, limit int) ([]Event, error) {
 	var events []Event
 	// do not pull in events which were in the v2 state block
-	err := txn.Select(&events, `SELECT event_nid, event FROM syncv3_events WHERE event_nid > $1 AND event_nid <= $2 AND room_id = $3 AND is_state=FALSE ORDER BY event_nid DESC LIMIT $4`,
+	err := txn.Select(&events, `SELECT event_nid, event, missing_previous FROM syncv3_events WHERE event_nid > $1 AND event_nid <= $2 AND room_id = $3 AND is_state=FALSE ORDER BY event_nid DESC LIMIT $4`,
 		lowerExclusive, upperInclusive, roomID, limit,
 	)
+	if err != nil {
+		return nil, err
+	}
+
+	// Look to see if there is an event missing its predecessor in the timeline.
+	// Note: events[0] is the newest event, as the query is ORDERed BY event_nid DESC.
+	for i, ev := range events {
+		if ev.MissingPrevious {
+			events = events[:i+1]
+			break
+		}
+	}
+
 	return events, err
 }
 

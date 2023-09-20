@@ -4,8 +4,8 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
-
 	"github.com/matrix-org/sliding-sync/internal"
+	"github.com/matrix-org/sliding-sync/sync2"
 	"github.com/prometheus/client_golang/prometheus"
 
 	"github.com/getsentry/sentry-go"
@@ -342,19 +342,32 @@ type AccumulateResult struct {
 //     to exist in the database, and the sync stream is already linearised for us.
 //   - Else it creates a new room state snapshot if the timeline contains state events (as this now represents the current state)
 //   - It adds entries to the membership log for membership events.
-func (a *Accumulator) Accumulate(txn *sqlx.Tx, userID, roomID string, prevBatch string, timeline []json.RawMessage) (AccumulateResult, error) {
+func (a *Accumulator) Accumulate(txn *sqlx.Tx, userID, roomID string, timeline sync2.TimelineResponse) (AccumulateResult, error) {
 	// The first stage of accumulating events is mostly around validation around what the upstream HS sends us. For accumulation to work correctly
 	// we expect:
 	// - there to be no duplicate events
 	// - if there are new events, they are always new.
 	// Both of these assumptions can be false for different reasons
-	dedupedEvents, err := a.filterAndParseTimelineEvents(txn, roomID, timeline, prevBatch)
+	incomingEvents := parseAndDeduplicateTimelineEvents(roomID, timeline)
+	newEvents, err := a.filterToNewTimelineEvents(txn, incomingEvents)
 	if err != nil {
 		err = fmt.Errorf("filterTimelineEvents: %w", err)
 		return AccumulateResult{}, err
 	}
-	if len(dedupedEvents) == 0 {
+	if len(newEvents) == 0 {
 		return AccumulateResult{}, nil // nothing to do
+	}
+
+	// If this timeline was limited and we don't recognise its first event E, mark it
+	// as not knowing its previous timeline event.
+	//
+	// NB: some other poller may have already learned about E from a non-limited sync.
+	// If so, E will be present in the DB and marked as not missing_previous. This will
+	// remain the case as the upsert of E to the events table has ON CONFLICT DO
+	// NOTHING.
+	if timeline.Limited {
+		firstTimelineEventUnknown := newEvents[0].ID == incomingEvents[0].ID
+		incomingEvents[0].MissingPrevious = firstTimelineEventUnknown
 	}
 
 	// Given a timeline of [E1, E2, S3, E4, S5, S6, E7] (E=message event, S=state event)
@@ -379,27 +392,27 @@ func (a *Accumulator) Accumulate(txn *sqlx.Tx, userID, roomID string, prevBatch 
 	// timeline, often leaves after an invite rejection. Ignoring these ensures we
 	// don't create a false (e.g. lacking m.room.create) record of the room state.
 	if snapID == 0 {
-		if len(dedupedEvents) > 0 && dedupedEvents[0].Type == "m.room.create" && dedupedEvents[0].StateKey == "" {
+		if len(newEvents) > 0 && newEvents[0].Type == "m.room.create" && newEvents[0].StateKey == "" {
 			// All okay, continue on.
 		} else {
 			// Bail out and complain loudly.
 			const msg = "Accumulator: skipping processing of timeline, as no snapshot exists"
 			logger.Warn().
-				Str("event_id", dedupedEvents[0].ID).
-				Str("event_type", dedupedEvents[0].Type).
-				Str("event_state_key", dedupedEvents[0].StateKey).
+				Str("event_id", newEvents[0].ID).
+				Str("event_type", newEvents[0].Type).
+				Str("event_state_key", newEvents[0].StateKey).
 				Str("room_id", roomID).
 				Str("user_id", userID).
-				Int("len_timeline", len(dedupedEvents)).
+				Int("len_timeline", len(newEvents)).
 				Msg(msg)
 			sentry.WithScope(func(scope *sentry.Scope) {
 				scope.SetUser(sentry.User{ID: userID})
 				scope.SetContext(internal.SentryCtxKey, map[string]interface{}{
-					"event_id":        dedupedEvents[0].ID,
-					"event_type":      dedupedEvents[0].Type,
-					"event_state_key": dedupedEvents[0].StateKey,
+					"event_id":        newEvents[0].ID,
+					"event_type":      newEvents[0].Type,
+					"event_state_key": newEvents[0].StateKey,
 					"room_id":         roomID,
-					"len_timeline":    len(dedupedEvents),
+					"len_timeline":    len(newEvents),
 				})
 				sentry.CaptureMessage(msg)
 			})
@@ -409,7 +422,7 @@ func (a *Accumulator) Accumulate(txn *sqlx.Tx, userID, roomID string, prevBatch 
 		}
 	}
 
-	eventIDToNID, err := a.eventsTable.Insert(txn, dedupedEvents, false)
+	eventIDToNID, err := a.eventsTable.Insert(txn, newEvents, false)
 	if err != nil {
 		return AccumulateResult{}, err
 	}
@@ -423,9 +436,9 @@ func (a *Accumulator) Accumulate(txn *sqlx.Tx, userID, roomID string, prevBatch 
 	}
 
 	var latestNID int64
-	newEvents := make([]Event, 0, len(eventIDToNID))
+	newEventsByID := make([]Event, 0, len(eventIDToNID))
 	redactTheseEventIDs := make(map[string]*Event)
-	for i, ev := range dedupedEvents {
+	for i, ev := range newEvents {
 		nid, ok := eventIDToNID[ev.ID]
 		if ok {
 			ev.NID = int64(nid)
@@ -448,10 +461,10 @@ func (a *Accumulator) Accumulate(txn *sqlx.Tx, userID, roomID string, prevBatch 
 					redactsEventID = parsedEv.Get("content.redacts").Str
 				}
 				if redactsEventID != "" {
-					redactTheseEventIDs[redactsEventID] = &dedupedEvents[i]
+					redactTheseEventIDs[redactsEventID] = &newEvents[i]
 				}
 			}
-			newEvents = append(newEvents, ev)
+			newEventsByID = append(newEventsByID, ev)
 			result.TimelineNIDs = append(result.TimelineNIDs, ev.NID)
 		}
 	}
@@ -477,7 +490,7 @@ func (a *Accumulator) Accumulate(txn *sqlx.Tx, userID, roomID string, prevBatch 
 		}
 	}
 
-	for _, ev := range newEvents {
+	for _, ev := range newEventsByID {
 		var replacesNID int64
 		// the snapshot ID we assign to this event is unaffected by whether /this/ event is state or not,
 		// as this is the before snapshot ID.
@@ -537,56 +550,57 @@ func (a *Accumulator) Accumulate(txn *sqlx.Tx, userID, roomID string, prevBatch 
 		result.RequiresReload = currentStateRedactions > 0
 	}
 
-	if err = a.spacesTable.HandleSpaceUpdates(txn, newEvents); err != nil {
+	if err = a.spacesTable.HandleSpaceUpdates(txn, newEventsByID); err != nil {
 		return AccumulateResult{}, fmt.Errorf("HandleSpaceUpdates: %s", err)
 	}
 
 	// the last fetched snapshot ID is the current one
-	info := a.roomInfoDelta(roomID, newEvents)
+	info := a.roomInfoDelta(roomID, newEventsByID)
 	if err = a.roomsTable.Upsert(txn, info, snapID, latestNID); err != nil {
 		return AccumulateResult{}, fmt.Errorf("failed to UpdateCurrentSnapshotID to %d: %w", snapID, err)
 	}
 	return result, nil
 }
 
-// filterAndParseTimelineEvents takes a raw timeline array from sync v2 and applies sanity to it:
-// - removes duplicate events: this is just a bug which has been seen on Synapse on matrix.org
-// - removes old events: this is an edge case when joining rooms over federation, see https://github.com/matrix-org/sliding-sync/issues/192
 // - parses it and returns Event structs.
-// - check which events are unknown. If all events are known, filter them all out.
-func (a *Accumulator) filterAndParseTimelineEvents(txn *sqlx.Tx, roomID string, timeline []json.RawMessage, prevBatch string) ([]Event, error) {
-	// Check for duplicates which can happen in the real world when joining
-	// Matrix HQ on Synapse, as well as when you join rooms for the first time over federation.
-	dedupedEvents := make([]Event, 0, len(timeline))
+// - removes duplicate events: this is just a bug which has been seen on Synapse on matrix.org
+func parseAndDeduplicateTimelineEvents(roomID string, timeline sync2.TimelineResponse) []Event {
+	dedupedEvents := make([]Event, 0, len(timeline.Events))
 	seenEvents := make(map[string]struct{})
-	for i := range timeline {
+	for i, rawEvent := range timeline.Events {
 		e := Event{
-			JSON:   timeline[i],
+			JSON:   rawEvent,
 			RoomID: roomID,
 		}
 		if err := e.ensureFieldsSetOnEvent(); err != nil {
 			logger.Warn().Str("event_id", e.ID).Str("room_id", roomID).Err(err).Msg(
-				"Accumulator.filterAndParseTimelineEvents: failed to parse event, ignoring",
+				"Accumulator.filterToNewTimelineEvents: failed to parse event, ignoring",
 			)
 			continue
 		}
 		if _, ok := seenEvents[e.ID]; ok {
 			logger.Warn().Str("event_id", e.ID).Str("room_id", roomID).Msg(
-				"Accumulator.filterAndParseTimelineEvents: seen the same event ID twice, ignoring",
+				"Accumulator.filterToNewTimelineEvents: seen the same event ID twice, ignoring",
 			)
 			continue
 		}
-		if i == 0 && prevBatch != "" {
+		if i == 0 && timeline.PrevBatch != "" {
 			// tag the first timeline event with the prev batch token
 			e.PrevBatch = sql.NullString{
-				String: prevBatch,
+				String: timeline.PrevBatch,
 				Valid:  true,
 			}
 		}
 		dedupedEvents = append(dedupedEvents, e)
 		seenEvents[e.ID] = struct{}{}
 	}
+	return dedupedEvents
+}
 
+// filterToNewTimelineEvents takes a raw timeline array from sync v2 and applies sanity to it:
+// - removes old events: this is an edge case when joining rooms over federation, see https://github.com/matrix-org/sliding-sync/issues/192
+// - check which events are unknown. If all events are known, filter them all out.
+func (a *Accumulator) filterToNewTimelineEvents(txn *sqlx.Tx, dedupedEvents []Event) ([]Event, error) {
 	// if we only have a single timeline event we cannot determine if it is old or not, as we rely on already seen events
 	// being after (higher index) than it.
 	if len(dedupedEvents) <= 1 {
@@ -596,13 +610,13 @@ func (a *Accumulator) filterAndParseTimelineEvents(txn *sqlx.Tx, roomID string, 
 	// Figure out which of these events are unseen and hence brand new live events.
 	// In some cases, we may have unseen OLD events - see https://github.com/matrix-org/sliding-sync/issues/192
 	// in which case we need to drop those events.
-	dedupedEventIDs := make([]string, 0, len(seenEvents))
-	for evID := range seenEvents {
-		dedupedEventIDs = append(dedupedEventIDs, evID)
+	dedupedEventIDs := make([]string, 0, len(dedupedEvents))
+	for _, ev := range dedupedEvents {
+		dedupedEventIDs = append(dedupedEventIDs, ev.ID)
 	}
 	unknownEventIDs, err := a.eventsTable.SelectUnknownEventIDs(txn, dedupedEventIDs)
 	if err != nil {
-		return nil, fmt.Errorf("filterAndParseTimelineEvents: failed to SelectUnknownEventIDs: %w", err)
+		return nil, fmt.Errorf("filterToNewTimelineEvents: failed to SelectUnknownEventIDs: %w", err)
 	}
 
 	if len(unknownEventIDs) == 0 {

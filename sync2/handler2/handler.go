@@ -262,14 +262,14 @@ func (h *Handler) OnBulkDeviceDataUpdate(payload *pubsub.V2DeviceData) {
 	h.v2Pub.Notify(pubsub.ChanV2, payload)
 }
 
-func (h *Handler) Accumulate(ctx context.Context, userID, deviceID, roomID, prevBatch string, timeline []json.RawMessage) error {
+func (h *Handler) Accumulate(ctx context.Context, userID, deviceID, roomID string, timeline sync2.TimelineResponse) error {
 	// Remember any transaction IDs that may be unique to this user
-	eventIDsWithTxns := make([]string, 0, len(timeline))     // in timeline order
-	eventIDToTxnID := make(map[string]string, len(timeline)) // event_id -> txn_id
+	eventIDsWithTxns := make([]string, 0, len(timeline.Events))     // in timeline order
+	eventIDToTxnID := make(map[string]string, len(timeline.Events)) // event_id -> txn_id
 	// Also remember events which were sent by this user but lack a transaction ID.
-	eventIDsLackingTxns := make([]string, 0, len(timeline))
+	eventIDsLackingTxns := make([]string, 0, len(timeline.Events))
 
-	for _, e := range timeline {
+	for _, e := range timeline.Events {
 		parsed := gjson.ParseBytes(e)
 		eventID := parsed.Get("event_id").Str
 
@@ -294,9 +294,9 @@ func (h *Handler) Accumulate(ctx context.Context, userID, deviceID, roomID, prev
 	}
 
 	// Insert new events
-	accResult, err := h.Store.Accumulate(userID, roomID, prevBatch, timeline)
+	accResult, err := h.Store.Accumulate(userID, roomID, timeline)
 	if err != nil {
-		logger.Err(err).Int("timeline", len(timeline)).Str("room", roomID).Msg("V2: failed to accumulate room")
+		logger.Err(err).Int("timeline", len(timeline.Events)).Str("room", roomID).Msg("V2: failed to accumulate room")
 		internal.GetSentryHubFromContextOrDefault(ctx).CaptureException(err)
 		return err
 	}
@@ -312,7 +312,7 @@ func (h *Handler) Accumulate(ctx context.Context, userID, deviceID, roomID, prev
 	if accResult.NumNew != 0 {
 		h.v2Pub.Notify(pubsub.ChanV2, &pubsub.V2Accumulate{
 			RoomID:    roomID,
-			PrevBatch: prevBatch,
+			PrevBatch: timeline.PrevBatch,
 			EventNIDs: accResult.TimelineNIDs,
 		})
 	}
@@ -330,7 +330,7 @@ func (h *Handler) Accumulate(ctx context.Context, userID, deviceID, roomID, prev
 		})
 		if err != nil {
 			logger.Err(err).
-				Int("timeline", len(timeline)).
+				Int("timeline", len(timeline.Events)).
 				Int("num_transaction_ids", len(eventIDsWithTxns)).
 				Int("num_missing_transaction_ids", len(eventIDsLackingTxns)).
 				Str("room", roomID).

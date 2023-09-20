@@ -138,7 +138,7 @@ func TestAccumulatorAccumulate(t *testing.T) {
 	}
 	var result AccumulateResult
 	err = sqlutil.WithTransaction(accumulator.db, func(txn *sqlx.Tx) error {
-		result, err = accumulator.Accumulate(txn, userID, roomID, "", newEvents)
+		result, err = accumulator.Accumulate(txn, userID, roomID, sync2.TimelineResponse{Events: newEvents})
 		return err
 	})
 	if err != nil {
@@ -212,7 +212,7 @@ func TestAccumulatorAccumulate(t *testing.T) {
 
 	// subsequent calls do nothing and are not an error
 	err = sqlutil.WithTransaction(accumulator.db, func(txn *sqlx.Tx) error {
-		_, err = accumulator.Accumulate(txn, userID, roomID, "", newEvents)
+		_, err = accumulator.Accumulate(txn, userID, roomID, sync2.TimelineResponse{Events: newEvents})
 		return err
 	})
 	if err != nil {
@@ -246,7 +246,7 @@ func TestAccumulatorPromptsCacheInvalidation(t *testing.T) {
 	}
 	var accResult AccumulateResult
 	err = sqlutil.WithTransaction(db, func(txn *sqlx.Tx) error {
-		accResult, err = accumulator.Accumulate(txn, "@dummy:localhost", roomID, "prevBatch", timeline)
+		accResult, err = accumulator.Accumulate(txn, "@dummy:localhost", roomID, sync2.TimelineResponse{Events: timeline, PrevBatch: "prevBatch"})
 		return err
 	})
 	if err != nil {
@@ -264,7 +264,7 @@ func TestAccumulatorPromptsCacheInvalidation(t *testing.T) {
 		[]byte(`{"event_id":"$i", "type":"m.room.redaction", "content":{"redacts":"$f"}}`),
 	}
 	err = sqlutil.WithTransaction(db, func(txn *sqlx.Tx) error {
-		accResult, err = accumulator.Accumulate(txn, "@dummy:localhost", roomID, "prevBatch2", timeline)
+		accResult, err = accumulator.Accumulate(txn, "@dummy:localhost", roomID, sync2.TimelineResponse{Events: timeline, PrevBatch: "prevBatch2"})
 		return err
 	})
 	if err != nil {
@@ -281,7 +281,7 @@ func TestAccumulatorPromptsCacheInvalidation(t *testing.T) {
 		[]byte(`{"event_id":"$j", "type":"m.room.redaction", "content":{"redacts":"$g"}}`),
 	}
 	err = sqlutil.WithTransaction(db, func(txn *sqlx.Tx) error {
-		accResult, err = accumulator.Accumulate(txn, "@dummy:localhost", roomID, "prevBatch3", timeline)
+		accResult, err = accumulator.Accumulate(txn, "@dummy:localhost", roomID, sync2.TimelineResponse{Events: timeline, PrevBatch: "prevBatch3"})
 		return err
 	})
 	if err != nil {
@@ -322,7 +322,7 @@ func TestAccumulatorMembershipLogs(t *testing.T) {
 		[]byte(`{"event_id":"` + roomEventIDs[7] + `", "type":"m.room.member", "state_key":"@me:localhost","unsigned":{"prev_content":{"membership":"join", "displayname":"Me"}}, "content":{"membership":"leave"}}`),
 	}
 	err = sqlutil.WithTransaction(accumulator.db, func(txn *sqlx.Tx) error {
-		_, err = accumulator.Accumulate(txn, userID, roomID, "", roomEvents)
+		_, err = accumulator.Accumulate(txn, userID, roomID, sync2.TimelineResponse{Events: roomEvents})
 		return err
 	})
 	if err != nil {
@@ -458,7 +458,7 @@ func TestAccumulatorDupeEvents(t *testing.T) {
 	}
 
 	err = sqlutil.WithTransaction(accumulator.db, func(txn *sqlx.Tx) error {
-		_, err = accumulator.Accumulate(txn, userID, roomID, "", joinRoom.Timeline.Events)
+		_, err = accumulator.Accumulate(txn, userID, roomID, joinRoom.Timeline)
 		return err
 	})
 	if err != nil {
@@ -658,7 +658,7 @@ func TestAccumulatorConcurrency(t *testing.T) {
 			defer wg.Done()
 			subset := newEvents[:(i + 1)] // i=0 => [1], i=1 => [1,2], etc
 			err := sqlutil.WithTransaction(accumulator.db, func(txn *sqlx.Tx) error {
-				result, err := accumulator.Accumulate(txn, userID, roomID, "", subset)
+				result, err := accumulator.Accumulate(txn, userID, roomID, sync2.TimelineResponse{Events: subset})
 				totalNumNew += result.NumNew
 				return err
 			})
@@ -689,6 +689,147 @@ func TestAccumulatorConcurrency(t *testing.T) {
 	if roomName != "5" {
 		t.Fatalf("got room name %s want '5'", roomName)
 	}
+}
+
+// Sanity-check the accumulator's logic for inserting missing_previous markers.
+func TestAccumulatorMissingPreviousMarkers(t *testing.T) {
+	db, close := connectToDB(t)
+	defer close()
+	accumulator := NewAccumulator(db)
+
+	t.Log("Initialise a room.")
+	roomID := fmt.Sprintf("!%s:localhost", t.Name())
+	initialEvents := []json.RawMessage{
+		[]byte(`{"event_id":"$state-A", "type":"m.room.create", "state_key":"", "content":{"creator":"@me:localhost"}}`),
+		[]byte(`{"event_id":"$state-B", "type":"m.room.member", "state_key":"@me:localhost", "content":{"membership":"join"}}`),
+		[]byte(`{"event_id":"$state-C", "type":"m.room.join_rules", "state_key":"", "content":{"join_rule":"public"}}`),
+	}
+	_, err := accumulator.Initialise(roomID, initialEvents)
+	if err != nil {
+		t.Fatalf("failed to Initialise accumulator: %s", err)
+	}
+
+	// We're going to repeatedly Accumulate different timelines and check the number
+	// of new events, plus the "missing previous" field in the DB.
+	steps := []struct {
+		Desc string
+		// Inputs: a sync2.TimelineResponse struct.
+		Events  []json.RawMessage
+		Limited bool
+
+		// CheckDesc is a brief description of our expectations.
+		CheckDesc string
+		// NumNew is the expected value of the NumNew field in the AccumulateResult.
+		NumNew int
+		// MissingPrevious is a map from timeline event IDs to the missing_previous bool expected in the DB.
+		MissingPrevious map[string]bool
+	}{
+		{
+			Desc: "non-limited timeline with one event (D)",
+			Events: []json.RawMessage{
+				[]byte(`{"event_id":"$msg-D", "type":"m.room.message", "content": {"msgtype": "m.text", "body": "Hello, world!"}}`),
+			},
+			Limited:         false,
+			NumNew:          1,
+			CheckDesc:       "(D) should not be marked as missing_previous.",
+			MissingPrevious: map[string]bool{"$msg-D": false},
+		},
+		{
+			Desc: "limited timeline with one unknown event (E)",
+			Events: []json.RawMessage{
+				[]byte(`{"event_id":"$msg-E", "type":"m.room.message", "content": {"msgtype": "m.text", "body": "Hello, world!"}}`),
+			},
+			Limited:         true,
+			NumNew:          1,
+			CheckDesc:       "(E) should be marked as missing_previous.",
+			MissingPrevious: map[string]bool{"$msg-E": true},
+		},
+		{
+			Desc: "limited timeline with two events: the first known but missing previous (E), the second unknown (F)",
+			Events: []json.RawMessage{
+				[]byte(`{"event_id":"$msg-E", "type":"m.room.message", "content": {"msgtype": "m.text", "body": "Hello, world!"}}`),
+				[]byte(`{"event_id":"$msg-F", "type":"m.room.message", "content": {"msgtype": "m.text", "body": "Hello, world!"}}`),
+			},
+			Limited:         true,
+			NumNew:          1,
+			CheckDesc:       "(E) should still be marked as missing_previous; (F) should not.",
+			MissingPrevious: map[string]bool{"$msg-E": true, "$msg-F": false},
+		},
+		{
+			Desc: "limited timeline with one event, known and not missing previous (F)",
+			Events: []json.RawMessage{
+				[]byte(`{"event_id":"$msg-F", "type":"m.room.message", "content": {"msgtype": "m.text", "body": "Hello, world!"}}`),
+			},
+			Limited:         true,
+			NumNew:          0,
+			CheckDesc:       "(F) should still be marked as not missing_previous.",
+			MissingPrevious: map[string]bool{"$msg-F": false},
+		},
+		{
+			Desc: "the whole timeline [D, E, F], not limited)",
+			Events: []json.RawMessage{
+				[]byte(`{"event_id":"$msg-D", "type":"m.room.message", "content": {"msgtype": "m.text", "body": "Hello, world!"}}`),
+				[]byte(`{"event_id":"$msg-E", "type":"m.room.message", "content": {"msgtype": "m.text", "body": "Hello, world!"}}`),
+				[]byte(`{"event_id":"$msg-F", "type":"m.room.message", "content": {"msgtype": "m.text", "body": "Hello, world!"}}`),
+			},
+			Limited:         false,
+			NumNew:          0,
+			CheckDesc:       "(D), (E) and (F) should have no changes to missing_previous.",
+			MissingPrevious: map[string]bool{"$msg-D": false, "$msg-E": true, "$msg-F": false},
+		},
+		{
+			Desc: "the whole timeline [D, E, F], limited)",
+			Events: []json.RawMessage{
+				[]byte(`{"event_id":"$msg-D", "type":"m.room.message", "content": {"msgtype": "m.text", "body": "Hello, world!"}}`),
+				[]byte(`{"event_id":"$msg-E", "type":"m.room.message", "content": {"msgtype": "m.text", "body": "Hello, world!"}}`),
+				[]byte(`{"event_id":"$msg-F", "type":"m.room.message", "content": {"msgtype": "m.text", "body": "Hello, world!"}}`),
+			},
+			Limited:         true,
+			NumNew:          0,
+			CheckDesc:       "(D), (E) and (F) should have no changes to missing_previous.",
+			MissingPrevious: map[string]bool{"$msg-D": false, "$msg-E": true, "$msg-F": false},
+		},
+	}
+
+	txn, err := db.Beginx()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer txn.Rollback()
+
+	for _, step := range steps {
+		t.Log(step.Desc)
+		timeline := sync2.TimelineResponse{
+			Events:  step.Events,
+			Limited: step.Limited,
+		}
+
+		accResult, err := accumulator.Accumulate(txn, userID, roomID, timeline)
+		if err != nil {
+			t.Fatalf("failed to Accumulate: %s", err)
+		}
+		assertValue(t, "numNew", accResult.NumNew, step.NumNew)
+
+		t.Log(step.CheckDesc)
+		checkIDs := make([]string, 0, len(step.MissingPrevious))
+		for checkID := range step.MissingPrevious {
+			checkIDs = append(checkIDs, checkID)
+		}
+		fetchedEvents, err := accumulator.eventsTable.SelectByIDs(txn, false, checkIDs)
+		if err != nil {
+			t.Fatal(err)
+		}
+		assertValue(t, "len(fetchedEvents)", len(fetchedEvents), len(checkIDs))
+		for _, inserted := range fetchedEvents {
+			wantMissingPrevious, ok := step.MissingPrevious[inserted.ID]
+			if !ok {
+				t.Errorf("fetched %s from the DB, but it wasn't requested", inserted.ID)
+			}
+			assertValue(t, fmt.Sprintf("insertedEvents[%s].MissingPrevious", inserted.ID), inserted.MissingPrevious, wantMissingPrevious)
+		}
+
+	}
+
 }
 
 func currentSnapshotNIDs(t *testing.T, snapshotTable *SnapshotTable, roomID string) []int64 {
