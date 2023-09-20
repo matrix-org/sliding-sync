@@ -128,7 +128,8 @@ func NewEventTable(db *sqlx.DB) *EventTable {
 		membership TEXT,
 		is_state BOOLEAN NOT NULL, -- is this event part of the v2 state response?
 		event BYTEA NOT NULL,
-		-- True iff the previous timeline event is not known to the proxy.
+		-- True iff this event was seen at the start of the timeline in a limited sync
+		-- (i.e. the preceding timeline event was not known to the proxy).
 		missing_previous BOOLEAN NOT NULL DEFAULT FALSE
 	);
 

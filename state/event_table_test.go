@@ -1169,7 +1169,9 @@ func TestEventTable_SelectLatestEventsBetween_MissingPrevious(t *testing.T) {
 		Desc            string
 		FromIDExclusive string
 		ToIDInclusive   string
-		ExpectIDs       []string
+		// NB: ExpectIDs is ordered from newest to oldest. Surprising, but this is what
+		// SelectLatestEventsBetween returns.
+		ExpectIDs []string
 	}{
 		{
 			Desc:            "has no gaps - should omit nothing",
