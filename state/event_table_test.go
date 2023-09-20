@@ -1140,16 +1140,19 @@ func TestEventTable_SelectLatestEventsBetween_MissingPrevious(t *testing.T) {
 	roomID := fmt.Sprintf("!%s", t.Name())
 	// Event IDs ending with `-gap` have MissingPrevious: true.
 	events := []Event{
-		{ID: "A", MissingPrevious: false},
-		{ID: "B", MissingPrevious: false},
-		{ID: "C", MissingPrevious: false},
-		{ID: "D-gap", MissingPrevious: true},
-		{ID: "E", MissingPrevious: false},
-		{ID: "F", MissingPrevious: false},
-		{ID: "G-gap", MissingPrevious: true},
-		{ID: "H-gap", MissingPrevious: true},
-		{ID: "I", MissingPrevious: false},
-		{ID: "J", MissingPrevious: false},
+		{ID: "chunk1-event1", MissingPrevious: false},
+		{ID: "chunk1-event2", MissingPrevious: false},
+		{ID: "chunk1-event3", MissingPrevious: false},
+		// GAP
+		{ID: "chunk2-event1", MissingPrevious: true},
+		{ID: "chunk2-event2", MissingPrevious: false},
+		{ID: "chunk2-event3", MissingPrevious: false},
+		// GAP
+		{ID: "chunk3-event1", MissingPrevious: true},
+		// GAP
+		{ID: "chunk4-event1", MissingPrevious: true},
+		{ID: "chunk4-event2", MissingPrevious: false},
+		{ID: "chunk4-event3", MissingPrevious: false},
 	}
 	prefix := "$" + t.Name() + "-"
 	for i := range events {
@@ -1176,38 +1179,38 @@ func TestEventTable_SelectLatestEventsBetween_MissingPrevious(t *testing.T) {
 		{
 			Desc:            "has no gaps - should omit nothing",
 			FromIDExclusive: "start",
-			ToIDInclusive:   "C",
-			ExpectIDs:       []string{"C", "B", "A"},
+			ToIDInclusive:   "chunk1-event3",
+			ExpectIDs:       []string{"chunk1-event3", "chunk1-event2", "chunk1-event1"},
 		},
 		{
 			Desc:            "ends with missing_previous - should include the end only",
 			FromIDExclusive: "start",
-			ToIDInclusive:   "D-gap",
-			ExpectIDs:       []string{"D-gap"},
+			ToIDInclusive:   "chunk2-event1",
+			ExpectIDs:       []string{"chunk2-event1"},
 		},
 		{
 			Desc:            "single event, ends with missing_previous - should include the end only",
-			FromIDExclusive: "C",
-			ToIDInclusive:   "D-gap",
-			ExpectIDs:       []string{"D-gap"},
+			FromIDExclusive: "chunk1-event3",
+			ToIDInclusive:   "chunk2-event1",
+			ExpectIDs:       []string{"chunk2-event1"},
 		},
 		{
 			Desc:            "single event, start is missing_previous - should include the end only",
-			FromIDExclusive: "D-gap",
-			ToIDInclusive:   "E",
-			ExpectIDs:       []string{"E"},
+			FromIDExclusive: "chunk2-event1",
+			ToIDInclusive:   "chunk2-event2",
+			ExpectIDs:       []string{"chunk2-event2"},
 		},
 		{
 			Desc:            "covers two consecutive gaps - should include events from the second gap onwards.",
-			FromIDExclusive: "E",
-			ToIDInclusive:   "J",
-			ExpectIDs:       []string{"J", "I", "H-gap"},
+			FromIDExclusive: "chunk2-event2",
+			ToIDInclusive:   "chunk4-event3",
+			ExpectIDs:       []string{"chunk4-event3", "chunk4-event2", "chunk4-event1"},
 		},
 		{
 			Desc:            "covers three gaps, the latter two consecutive - should only return from the second gap onwards",
-			FromIDExclusive: "B",
-			ToIDInclusive:   "I",
-			ExpectIDs:       []string{"I", "H-gap"},
+			FromIDExclusive: "chunk1-event2",
+			ToIDInclusive:   "chunk4-event2",
+			ExpectIDs:       []string{"chunk4-event2", "chunk4-event1"},
 		},
 	}
 
