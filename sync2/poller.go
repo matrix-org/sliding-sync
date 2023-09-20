@@ -680,10 +680,7 @@ func shouldRetry(retryErr error) bool {
 	}
 	// we retry on all errors EXCEPT DataError as this indicates that retrying won't help
 	var de *internal.DataError
-	if errors.As(retryErr, &de) {
-		return false
-	}
-	return true
+	return !errors.As(retryErr, &de)
 }
 
 func (p *poller) parseToDeviceMessages(ctx context.Context, res *SyncResponse) error {
@@ -768,12 +765,20 @@ func (p *poller) parseRoomsResponse(ctx context.Context, res *SyncResponse) erro
 	timelineCalls := 0
 	typingCalls := 0
 	receiptCalls := 0
+	// try to process all rooms, rather than bailing out at the first room which returns an error.
+	// This is CRITICAL if the error returned is an `internal.DataError` as in that case we will
+	// NOT RETRY THE SYNC REQUEST, meaning if we didn't process all the rooms we would lose data.
+	// Currently, Accumulate/Initialise can return DataErrors when a new room is seen without a
+	// create event.
+	// NOTE: we process rooms non-deterministically (ranging over keys in a map).
+	var lastErrs []error
 	for roomID, roomData := range res.Rooms.Join {
 		if len(roomData.State.Events) > 0 {
 			stateCalls++
 			prependStateEvents, err := p.receiver.Initialise(ctx, roomID, roomData.State.Events)
 			if err != nil {
-				return fmt.Errorf("Initialise[%s]: %w", roomID, err)
+				lastErrs = append(lastErrs, fmt.Errorf("Initialise[%s]: %w", roomID, err))
+				continue
 			}
 			if len(prependStateEvents) > 0 {
 				// The poller has just learned of these state events due to an
@@ -812,7 +817,8 @@ func (p *poller) parseRoomsResponse(ctx context.Context, res *SyncResponse) erro
 		if len(roomData.AccountData.Events) > 0 {
 			err := p.receiver.OnAccountData(ctx, p.userID, roomID, roomData.AccountData.Events)
 			if err != nil {
-				return fmt.Errorf("OnAccountData[%s]: %w", roomID, err)
+				lastErrs = append(lastErrs, fmt.Errorf("OnAccountData[%s]: %w", roomID, err))
+				continue
 			}
 		}
 		if len(roomData.Timeline.Events) > 0 {
@@ -820,7 +826,8 @@ func (p *poller) parseRoomsResponse(ctx context.Context, res *SyncResponse) erro
 			p.trackTimelineSize(len(roomData.Timeline.Events), roomData.Timeline.Limited)
 			err := p.receiver.Accumulate(ctx, p.userID, p.deviceID, roomID, roomData.Timeline.PrevBatch, roomData.Timeline.Events)
 			if err != nil {
-				return fmt.Errorf("Accumulate[%s]: %w", roomID, err)
+				lastErrs = append(lastErrs, fmt.Errorf("Accumulate[%s]: %w", roomID, err))
+				continue
 			}
 		}
 
@@ -836,7 +843,8 @@ func (p *poller) parseRoomsResponse(ctx context.Context, res *SyncResponse) erro
 			p.trackTimelineSize(len(roomData.Timeline.Events), roomData.Timeline.Limited)
 			err := p.receiver.Accumulate(ctx, p.userID, p.deviceID, roomID, roomData.Timeline.PrevBatch, roomData.Timeline.Events)
 			if err != nil {
-				return fmt.Errorf("Accumulate_Leave[%s]: %w", roomID, err)
+				lastErrs = append(lastErrs, fmt.Errorf("Accumulate_Leave[%s]: %w", roomID, err))
+				continue
 			}
 		}
 		// Pass the leave event directly to OnLeftRoom. We need to do this _in addition_ to calling Accumulate to handle
@@ -852,14 +860,15 @@ func (p *poller) parseRoomsResponse(ctx context.Context, res *SyncResponse) erro
 		if leaveEvent != nil {
 			err := p.receiver.OnLeftRoom(ctx, p.userID, roomID, leaveEvent)
 			if err != nil {
-				return fmt.Errorf("OnLeftRoom[%s]: %w", roomID, err)
+				lastErrs = append(lastErrs, fmt.Errorf("OnLeftRoom[%s]: %w", roomID, err))
+				continue
 			}
 		}
 	}
 	for roomID, roomData := range res.Rooms.Invite {
 		err := p.receiver.OnInvite(ctx, p.userID, roomID, roomData.InviteState.Events)
 		if err != nil {
-			return fmt.Errorf("OnInvite[%s]: %w", roomID, err)
+			lastErrs = append(lastErrs, fmt.Errorf("OnInvite[%s]: %w", roomID, err))
 		}
 	}
 
@@ -868,7 +877,33 @@ func (p *poller) parseRoomsResponse(ctx context.Context, res *SyncResponse) erro
 	p.totalTimelineCalls += timelineCalls
 	p.totalTyping += typingCalls
 	p.totalInvites += len(res.Rooms.Invite)
-	return nil
+	if len(lastErrs) == 0 {
+		return nil
+	}
+	if len(lastErrs) == 1 {
+		return lastErrs[0]
+	}
+	// there are 2 classes of error:
+	// - non-retriable errors (aka internal.DataError)
+	// - retriable errors (transient DB connection failures, etc)
+	// If we have ANY retriable error they need to take priority over the non-retriable error else we will lose data.
+	// E.g in the case where a single sync response has room A with bad data (so wants to skip over it) and room B
+	// with good data but the DB got pulled momentarily, we want to retry and NOT advance the since token else we will
+	// lose the events in room B.
+	// To implement this, we _strip out_ any data errors and return that. If they are all data errors then we just return them.
+	var retriableOnlyErrs []error
+	for _, e := range lastErrs {
+		e := e
+		if shouldRetry(e) {
+			retriableOnlyErrs = append(retriableOnlyErrs, e)
+		}
+	}
+	// return retriable errors as a priority over unretriable
+	if len(retriableOnlyErrs) > 0 {
+		return errors.Join(retriableOnlyErrs...)
+	}
+	// we only have unretriable errors, so return them
+	return errors.Join(lastErrs...)
 }
 
 func (p *poller) maybeLogStats(force bool) {

@@ -238,7 +238,8 @@ func (a *Accumulator) Initialise(roomID string, state []json.RawMessage) (Initia
 				Str("room_id", roomID).
 				Int("len_state", len(events)).
 				Msg(errMsg)
-			return fmt.Errorf(errMsg)
+			// the HS gave us bad data so there's no point retrying => return DataError
+			return internal.NewDataError(errMsg)
 		}
 
 		// Insert the events.
@@ -402,6 +403,8 @@ func (a *Accumulator) Accumulate(txn *sqlx.Tx, userID, roomID string, prevBatch 
 				})
 				sentry.CaptureMessage(msg)
 			})
+			// the HS gave us bad data so there's no point retrying
+			// by not returning an error, we are telling the poller it is fine to not retry this request.
 			return AccumulateResult{}, nil
 		}
 	}

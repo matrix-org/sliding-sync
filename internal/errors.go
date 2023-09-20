@@ -128,6 +128,6 @@ func (e *DataError) Error() string {
 
 func NewDataError(msg string, args ...interface{}) error {
 	return &DataError{
-		msg: fmt.Sprintf(msg, args...),
+		msg: fmt.Sprintf("DataError: "+msg, args...),
 	}
 }

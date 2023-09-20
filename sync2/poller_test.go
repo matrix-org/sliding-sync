@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/matrix-org/sliding-sync/internal"
+	"github.com/matrix-org/sliding-sync/testutils"
 	"github.com/rs/zerolog"
 )
 
@@ -1012,6 +1013,155 @@ func TestPollerDoesNotResendOnDataError(t *testing.T) {
 		t.Errorf("timed out waiting for repeated polling")
 	}
 	poller.Terminate()
+}
+
+// The purpose of this test is to make sure we don't incorrectly skip retrying when a v2 response has many errors,
+// some of which are retriable and some of which are not.
+func TestPollerResendsOnDataErrorWithOtherErrors(t *testing.T) {
+	pid := PollerID{UserID: "@TestPollerResendsOnDataErrorWithOtherErrors:localhost", DeviceID: "FOOBAR"}
+	dontRetryRoomID := "!dont-retry:localhost"
+	// make a receiver which will return a DataError when Accumulate is called
+	receiver := &overrideDataReceiver{
+		accumulate: func(ctx context.Context, userID, deviceID, roomID, prevBatch string, timeline []json.RawMessage) error {
+			if roomID == dontRetryRoomID {
+				return internal.NewDataError("accumulate this is a test: %v", 42)
+			}
+			return fmt.Errorf("accumulate retriable error")
+		},
+		onAccountData: func(ctx context.Context, userID, roomID string, events []json.RawMessage) error {
+			return fmt.Errorf("onAccountData retriable error")
+		},
+		onLeftRoom: func(ctx context.Context, userID, roomID string, leaveEvent json.RawMessage) error {
+			return internal.NewDataError("onLeftRoom this is a test: %v", 42)
+		},
+	}
+	poller := newPoller(pid, "Authorization: hello world", nil, receiver, zerolog.New(os.Stderr), false)
+	testCases := []struct {
+		name      string
+		res       SyncResponse
+		wantRetry bool
+	}{
+		{
+			name: "single unretriable error",
+			res: SyncResponse{
+				NextBatch: "2",
+				Rooms: SyncRoomsResponse{
+					Join: map[string]SyncV2JoinResponse{
+						dontRetryRoomID: {
+							Timeline: TimelineResponse{
+								Events: []json.RawMessage{
+									testutils.NewMessageEvent(t, pid.UserID, "Don't Retry Me!"),
+								},
+							},
+						},
+					},
+				},
+			},
+			wantRetry: false,
+		},
+		{
+			name: "single retriable error",
+			res: SyncResponse{
+				NextBatch: "2",
+				Rooms: SyncRoomsResponse{
+					Join: map[string]SyncV2JoinResponse{
+						"!retry:localhost": {
+							AccountData: EventsResponse{
+								Events: []json.RawMessage{
+									testutils.NewAccountData(t, "m.retry", map[string]interface{}{}),
+								},
+							},
+						},
+					},
+				},
+			},
+			wantRetry: true,
+		},
+		{
+			name: "1 retriable error, 1 unretriable error",
+			res: SyncResponse{
+				NextBatch: "2",
+				Rooms: SyncRoomsResponse{
+					Join: map[string]SyncV2JoinResponse{
+						"!retry:localhost": {
+							AccountData: EventsResponse{
+								Events: []json.RawMessage{
+									testutils.NewAccountData(t, "m.retry", map[string]interface{}{}),
+								},
+							},
+						},
+						dontRetryRoomID: {
+							Timeline: TimelineResponse{
+								Events: []json.RawMessage{
+									testutils.NewMessageEvent(t, pid.UserID, "Don't Retry Me!"),
+								},
+							},
+						},
+					},
+				},
+			},
+			wantRetry: true,
+		},
+		{
+			name: "2 unretriable errors",
+			res: SyncResponse{
+				NextBatch: "2",
+				Rooms: SyncRoomsResponse{
+					Join: map[string]SyncV2JoinResponse{
+						dontRetryRoomID: {
+							Timeline: TimelineResponse{
+								Events: []json.RawMessage{
+									testutils.NewMessageEvent(t, pid.UserID, "Don't Retry Me!"),
+								},
+							},
+						},
+					},
+					Leave: map[string]SyncV2LeaveResponse{
+						dontRetryRoomID: {
+							Timeline: TimelineResponse{
+								Events: []json.RawMessage{
+									testutils.NewMessageEvent(t, pid.UserID, "Don't Retry Me!"),
+								},
+							},
+						},
+					},
+				},
+			},
+			wantRetry: false,
+		},
+		{
+			// sanity to make sure the 2x unretriable are both independently unretriable
+			name: "another 1 unretriable error",
+			res: SyncResponse{
+				NextBatch: "2",
+				Rooms: SyncRoomsResponse{
+					Leave: map[string]SyncV2LeaveResponse{
+						dontRetryRoomID: {
+							Timeline: TimelineResponse{
+								Events: []json.RawMessage{
+									testutils.NewMessageEvent(t, pid.UserID, "Don't Retry Me!"),
+								},
+							},
+						},
+					},
+				},
+			},
+			wantRetry: false,
+		},
+	}
+	// rather than set up the entire loop and machinery, just directly call parseRoomsResponse with various failure modes
+	for _, tc := range testCases {
+		err := poller.parseRoomsResponse(context.Background(), &tc.res)
+		if err == nil {
+			t.Errorf("%s: got no error", tc.name)
+			continue
+		}
+		t.Logf(tc.name, err)
+		got := shouldRetry(err)
+		if got != tc.wantRetry {
+			t.Errorf("%s: got retry %v want %v", tc.name, got, tc.wantRetry)
+		}
+	}
 }
 
 func waitForInitialSync(t *testing.T, poller *poller) {
