@@ -10,10 +10,16 @@ SYNCV3_PID=$!
 trap "kill $SYNCV3_PID" EXIT
 
 # wait for the server to be listening, we want this endpoint to 404 instead of connrefused
+attempts=0
 until [ \
   "$(curl -s -w '%{http_code}' -o /dev/null "http://localhost:8844/idonotexist")" \
   -eq 404 ]
 do
+  ((attempts++))
+  if [ "$attempts" -gt 60 ]; then
+    echo "Server did not start after $attempts seconds" > /dev/stderr
+    exit 1
+  fi
   echo 'Waiting for server to start...'
   sleep 1
 done
