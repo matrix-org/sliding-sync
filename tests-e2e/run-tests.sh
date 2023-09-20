@@ -21,7 +21,7 @@ do
   fi
   echo "Waiting (total ${attempts}s) for server to start..."
   sleep 1
-  ((attempts++))
+  attempts=$((attempts+1))
 done
 
 go test "$@"
