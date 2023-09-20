@@ -576,7 +576,7 @@ func TestTimelineStopsLoadingWhenMissingPrevious(t *testing.T) {
 					Timeline: sync2.TimelineResponse{
 						Events:    []json.RawMessage{msgAfterGap},
 						Limited:   true,
-						PrevBatch: "dummyPrevBath",
+						PrevBatch: "dummyPrevBatch",
 					},
 				},
 			},
@@ -597,5 +597,6 @@ func TestTimelineStopsLoadingWhenMissingPrevious(t *testing.T) {
 	t.Log("The response's timeline should only include the event after the gap.")
 	m.MatchResponse(t, res, m.MatchRoomSubscription(roomID,
 		m.MatchRoomTimeline([]json.RawMessage{msgAfterGap}),
+		m.MatchRoomPrevBatch("dummyPrevBatch"),
 	))
 }
