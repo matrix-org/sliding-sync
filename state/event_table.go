@@ -116,7 +116,7 @@ func NewEventTable(db *sqlx.DB) *EventTable {
 	db.MustExec(`
 	CREATE SEQUENCE IF NOT EXISTS syncv3_event_nids_seq;
 	CREATE TABLE IF NOT EXISTS syncv3_events (
-		event_nid BIGINT PRIMARY KEY NOT NULL DEFAULT NEXTVAL('syncv3_event_nids_seq'),
+		event_nid BIGINT PRIMARY KEY NOT NULL DEFAULT nextval('syncv3_event_nids_seq'),
 		event_id TEXT NOT NULL UNIQUE,
 		before_state_snapshot_id BIGINT NOT NULL DEFAULT 0,
 		-- which nid gets replaced in the snapshot with event_nid
@@ -147,7 +147,7 @@ func NewEventTable(db *sqlx.DB) *EventTable {
 func (t *EventTable) SelectHighestNID() (highest int64, err error) {
 	var result sql.NullInt64
 	err = t.db.QueryRow(
-		`SELECT MAX(event_nid) AS e FROM syncv3_events`,
+		`SELECT MAX(event_nid) as e FROM syncv3_events`,
 	).Scan(&result)
 	if result.Valid {
 		highest = result.Int64
@@ -287,7 +287,7 @@ func (t *EventTable) SelectUnknownEventIDs(txn *sqlx.Tx, maybeUnknownEventIDs []
 	// array entries. But I don't think that's guaranteed. Return an (unordered) set
 	// out of paranoia.
 	queryStr := `
-	WITH maybe_unknown_events(event_id) AS (SELECT UNNEST($1::text[]))
+	WITH maybe_unknown_events(event_id) AS (SELECT unnest($1::text[]))
 	SELECT event_id
 	FROM maybe_unknown_events LEFT JOIN syncv3_events USING(event_id)
 	WHERE event_nid IS NULL;`
@@ -317,7 +317,7 @@ func (t *EventTable) LatestEventInRooms(txn *sqlx.Tx, roomIDs []string, highestN
 	err = txn.Select(
 		&events,
 		`SELECT event_nid, room_id, event_replaces_nid, before_state_snapshot_id, event_type, state_key, event FROM syncv3_events
-		WHERE event_nid IN (SELECT MAX(event_nid) FROM syncv3_events WHERE event_nid <= $1 AND room_id = ANY($2) GROUP BY room_id)`,
+		WHERE event_nid IN (SELECT max(event_nid) FROM syncv3_events WHERE event_nid <= $1 AND room_id = ANY($2) GROUP BY room_id)`,
 		highestNID, pq.StringArray(roomIDs),
 	)
 	if err == sql.ErrNoRows {
@@ -332,7 +332,7 @@ func (t *EventTable) LatestEventNIDInRooms(txn *sqlx.Tx, roomIDs []string, highe
 	err = txn.Select(
 		&events,
 		`SELECT event_nid, room_id FROM syncv3_events
-		WHERE event_nid IN (SELECT MAX(event_nid) FROM syncv3_events WHERE event_nid <= $1 AND room_id = ANY($2) GROUP BY room_id)`,
+		WHERE event_nid IN (SELECT max(event_nid) FROM syncv3_events WHERE event_nid <= $1 AND room_id = ANY($2) GROUP BY room_id)`,
 		highestNID, pq.StringArray(roomIDs),
 	)
 	if err == sql.ErrNoRows {
@@ -418,7 +418,7 @@ func (t *EventTable) selectLatestEventByTypeInAllRooms(txn *sqlx.Tx) ([]Event, e
 	//   rows can be directly read. Assuming a mostly-static set of event types, reads
 	//   are then linear in the number of rooms.
 	rows, err := txn.Query(
-		`SELECT room_id, event_nid, event FROM syncv3_events WHERE event_nid IN (SELECT MAX(event_nid) FROM syncv3_events GROUP BY room_id, event_type)`,
+		`SELECT room_id, event_nid, event FROM syncv3_events WHERE event_nid in (SELECT MAX(event_nid) FROM syncv3_events GROUP BY room_id, event_type)`,
 	)
 	if err != nil {
 		return nil, err
