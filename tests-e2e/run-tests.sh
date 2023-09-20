@@ -15,13 +15,13 @@ until [ \
   "$(curl -s -w '%{http_code}' -o /dev/null "http://localhost:8844/idonotexist")" \
   -eq 404 ]
 do
-  ((attempts++))
   if [ "$attempts" -gt 60 ]; then
-    echo "Server did not start after $attempts seconds" > /dev/stderr
+    echo "Server did not start after $attempts seconds"
     exit 1
   fi
-  echo 'Waiting for server to start...'
+  echo "Waiting (total ${attempts}s) for server to start..."
   sleep 1
+  ((attempts++))
 done
 
 go test "$@"
