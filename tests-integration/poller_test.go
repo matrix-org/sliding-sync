@@ -334,7 +334,7 @@ func TestPollersCanBeResumedAfterExpiry(t *testing.T) {
 	v2 := runTestV2Server(t)
 	defer v2.close()
 	const aliceDevice = "alice_phone"
-	const aliceDevice2 = "alice_phone_ne2"
+	const aliceDevice2 = "alice_phone_new"
 	const bobDevice = "bob_desktop"
 	aliceNewToken := "ALICE_BEARER_TOKEN_2"
 	v2.addAccountWithDeviceID(alice, aliceDevice, aliceToken)
