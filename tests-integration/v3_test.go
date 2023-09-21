@@ -42,6 +42,8 @@ const (
 	aliceToken = "ALICE_BEARER_TOKEN"
 	bob        = "@bob:localhost"
 	bobToken   = "BOB_BEARER_TOKEN"
+	chris      = "@chris:localhost"
+	chrisToken = "CHRIS_BEARER_TOKEN"
 )
 
 var (

@@ -600,3 +600,210 @@ func TestTimelineStopsLoadingWhenMissingPrevious(t *testing.T) {
 		m.MatchRoomPrevBatch("dummyPrevBatch"),
 	))
 }
+
+// The "prepend state events" mechanism added in
+// https://github.com/matrix-org/sliding-sync/pull/71 ensured that the proxy
+// communicated state events in "gappy syncs" to users. But it did so via Accumulate,
+// which made one snapshot for each state event. This was not an accurate model of the
+// room's history (the state block comes in no particular order) and had awful
+// performance for large gappy states.
+//
+// We now want to handle these in Initialise, making a single snapshot for the state
+// block. This test ensures that is the case. The logic is very similar to the e2e test
+// TestGappyState.
+func TestGappyStateDoesNotAccumulateTheStateBlock(t *testing.T) {
+	pqString := testutils.PrepareDBConnectionString()
+	v2 := runTestV2Server(t)
+	defer v2.close()
+	v3 := runTestServer(t, v2, pqString)
+	defer v3.close()
+
+	v2.addAccount(t, alice, aliceToken)
+	v2.addAccount(t, bob, bobToken)
+
+	t.Log("Alice creates a room, sets its name and sends a message.")
+	const roomID = "!unimportant"
+	name1 := testutils.NewStateEvent(t, "m.room.name", "", alice, map[string]any{
+		"name": "wonderland",
+	})
+	msg1 := testutils.NewMessageEvent(t, alice, "0118 999 881 999 119 7253")
+
+	joinTimeline := v2JoinTimeline(roomEvents{
+		roomID: roomID,
+		events: append(
+			createRoomState(t, alice, time.Now()),
+			name1,
+			msg1,
+		),
+	})
+	v2.queueResponse(aliceToken, sync2.SyncResponse{
+		Rooms: sync2.SyncRoomsResponse{
+			Join: joinTimeline,
+		},
+	})
+
+	t.Log("Alice sliding syncs with a huge timeline limit, subscribing to the room she just created.")
+	res := v3.mustDoV3Request(t, aliceToken, sync3.Request{
+		RoomSubscriptions: map[string]sync3.RoomSubscription{
+			roomID: {TimelineLimit: 100},
+		},
+	})
+
+	t.Log("Alice sees the room with the expected name, with the name event and message at the end of the timeline.")
+	m.MatchResponse(t, res, m.MatchRoomSubscription(roomID,
+		m.MatchRoomName("wonderland"),
+		m.MatchRoomTimelineMostRecent(2, []json.RawMessage{name1, msg1}),
+	))
+
+	t.Log("Alice's poller receives a gappy sync, including a room name change, bob joining, and two messages.")
+	stateBlock := make([]json.RawMessage, 0)
+	for i := 0; i < 10; i++ {
+		statePiece := testutils.NewStateEvent(t, "com.example.custom", fmt.Sprintf("%d", i), alice, map[string]any{})
+		stateBlock = append(stateBlock, statePiece)
+	}
+	name2 := testutils.NewStateEvent(t, "m.room.name", "", alice, map[string]any{
+		"name": "not wonderland",
+	})
+	bobJoin := testutils.NewJoinEvent(t, bob)
+	stateBlock = append(stateBlock, name2, bobJoin)
+
+	msg2 := testutils.NewMessageEvent(t, alice, "Good morning!")
+	msg3 := testutils.NewMessageEvent(t, alice, "That's a nice tnetennba.")
+	v2.queueResponse(aliceToken, sync2.SyncResponse{
+		Rooms: sync2.SyncRoomsResponse{
+			Join: map[string]sync2.SyncV2JoinResponse{
+				roomID: {
+					State: sync2.EventsResponse{
+						Events: stateBlock,
+					},
+					Timeline: sync2.TimelineResponse{
+						Events:    []json.RawMessage{msg2, msg3},
+						Limited:   true,
+						PrevBatch: "dummyPrevBatch",
+					},
+				},
+			},
+		},
+	})
+	v2.waitUntilEmpty(t, aliceToken)
+
+	t.Log("Alice should see the two most recent message in the timeline only. The room name should change too.")
+	res = v3.mustDoV3RequestWithPos(t, aliceToken, res.Pos, sync3.Request{})
+	m.MatchResponse(t, res, m.MatchRoomSubscription(roomID,
+		m.MatchRoomName("not wonderland"),
+		// In particular, we shouldn't see state here because it's not part of the timeline.
+		// Nor should we see msg1, as that comes before a gap.
+		m.MatchRoomTimeline([]json.RawMessage{msg2, msg3}),
+	))
+}
+
+func TestClientsSeeMembershipTransitionsInGappyPolls(t *testing.T) {
+	pqString := testutils.PrepareDBConnectionString()
+	v2 := runTestV2Server(t)
+	defer v2.close()
+	v3 := runTestServer(t, v2, pqString)
+	defer v3.close()
+
+	const roomID = "!unimportant"
+
+                                         // before gap -> after gap
+	v2.addAccount(t, alice, aliceToken)  // join       -> join
+	v2.addAccount(t, bob, bobToken)      // invite     -> join
+	v2.addAccount(t, chris, chrisToken)  // <none>     -> join
+
+	t.Log("Queue up an empty poller response for Chris, so the proxy considers him to be polling.")
+	v2.queueResponse(chrisToken, sync2.SyncResponse{
+		NextBatch: "chris1",
+	})
+	chrisRes := v3.mustDoV3Request(t, chrisToken, sync3.Request{})
+	v2.waitUntilEmpty(t, chrisToken)
+
+	initialEvents := append(
+		createRoomState(t, alice, time.Now()),
+		testutils.NewStateEvent(t, "m.room.member", bob, alice, map[string]any{"membership": "invite"}),
+	)
+	t.Log("Alice creates a room. Bob is invited, but Chris isn't.")
+	v2.queueResponse(aliceToken, sync2.SyncResponse{
+		Rooms: sync2.SyncRoomsResponse{
+			Join: v2JoinTimeline(roomEvents{
+				roomID: roomID,
+				events: initialEvents,
+			}),
+		},
+		NextBatch: "alice1",
+	})
+
+	t.Log("Alice sliding syncs and sees herself joined to the room.")
+	aliceRes := v3.mustDoV3Request(t, aliceToken, sync3.Request{
+		RoomSubscriptions: map[string]sync3.RoomSubscription{
+			roomID: {TimelineLimit: 20},
+		},
+	})
+	m.MatchResponse(t, aliceRes, m.MatchRoomSubscription(roomID,
+		m.MatchJoinCount(1),
+		m.MatchInviteCount(1)),
+	)
+
+	t.Log("Bob's poller sees his invite.")
+	v2.queueResponse(bobToken, sync2.SyncResponse{
+		Rooms: sync2.SyncRoomsResponse{
+			Invite: map[string]sync2.SyncV2InviteResponse{
+				roomID: {
+					InviteState: sync2.EventsResponse{
+						Events: initialEvents,
+					},
+				},
+			}},
+		NextBatch: "bob1",
+	})
+
+	t.Log("Bob sliding syncs sees himself invited to the room.")
+	bobRes := v3.mustDoV3Request(t, bobToken, sync3.Request{
+		Lists: map[string]sync3.RequestList{
+			"a": {
+				Ranges: sync3.SliceRanges{{0, 10}},
+			},
+		},
+	})
+	m.MatchResponse(t, bobRes, m.MatchRoomSubscription(roomID, m.MatchInviteCount(1)))
+
+	t.Log("Alice's poller gets a gappy sync response in which Bob joins, Chris joins, and Alice sends a message.")
+	aliceMsg := testutils.NewMessageEvent(t, alice, "hellooooooooo")
+	v2.queueResponse(aliceToken, sync2.SyncResponse{
+		NextBatch: "alice2",
+		Rooms: sync2.SyncRoomsResponse{
+			Join: map[string]sync2.SyncV2JoinResponse{
+				roomID: {
+					State: sync2.EventsResponse{
+						Events: []json.RawMessage{
+							testutils.NewStateEvent(t, "m.room.member", bob, bob, map[string]any{"membership": "join"}),
+							testutils.NewStateEvent(t, "m.room.member", chris, chris, map[string]any{"membership": "join"}),
+						},
+					},
+					Timeline: sync2.TimelineResponse{
+						Events:  []json.RawMessage{aliceMsg},
+						Limited: true,
+					},
+				},
+			},
+		},
+	})
+	v2.waitUntilEmpty(t, aliceToken)
+
+	t.Log("Bob syncs. He should see himself as having joined the room, and see Alice's message.")
+	bobRes = v3.mustDoV3RequestWithPos(t, bobToken, bobRes.Pos, sync3.Request{})
+	m.MatchResponse(t, bobRes, m.MatchRoomSubscription(roomID,
+		m.MatchJoinCount(3),
+		m.MatchInviteCount(0),
+		m.MatchRoomTimeline([]json.RawMessage{aliceMsg}),
+	))
+
+	t.Log("Ditto for Chris.")
+	chrisRes = v3.mustDoV3RequestWithPos(t, chrisToken, chrisRes.Pos, sync3.Request{})
+	m.MatchResponse(t, chrisRes, m.MatchRoomSubscription(roomID,
+		m.MatchJoinCount(3),
+		m.MatchInviteCount(0),
+		m.MatchRoomTimeline([]json.RawMessage{aliceMsg}),
+	))
+
+}
