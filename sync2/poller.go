@@ -222,19 +222,25 @@ func (h *PollerMap) DeviceIDs(userID string) []string {
 
 func (h *PollerMap) ExpirePollers(pids []PollerID) int {
 	h.pollerMu.Lock()
-	defer h.pollerMu.Unlock()
 	numTerminated := 0
+	var pollersToTerminate []*poller
 	for _, pid := range pids {
 		p, ok := h.Pollers[pid]
 		if !ok || p.terminated.Load() {
 			continue
 		}
+		pollersToTerminate = append(pollersToTerminate, p)
+	}
+	h.pollerMu.Unlock()
+	// now terminate the pollers.
+	for _, p := range pollersToTerminate {
 		p.Terminate()
 		// Ensure that we won't recreate this poller on startup. If it reappears later,
 		// we'll make another EnsurePolling call which will recreate the poller.
 		h.callbacks.OnExpiredToken(context.Background(), hashToken(p.accessToken), p.userID, p.deviceID)
 		numTerminated++
 	}
+
 	return numTerminated
 }
 
