@@ -770,8 +770,8 @@ func TestPollerResendsOnCallbackError(t *testing.T) {
 			// generate a receiver which errors for the right callback
 			generateReceiver: func() V2DataReceiver {
 				return &overrideDataReceiver{
-					initialise: func(ctx context.Context, roomID string, state []json.RawMessage) ([]json.RawMessage, error) {
-						return nil, fmt.Errorf("initialise error")
+					initialise: func(ctx context.Context, roomID string, state []json.RawMessage) error {
+						return fmt.Errorf("initialise error")
 					},
 				}
 			},
@@ -1210,7 +1210,7 @@ func (a *mockDataReceiver) Accumulate(ctx context.Context, userID, deviceID, roo
 	a.timelines[roomID] = append(a.timelines[roomID], timeline.Events...)
 	return nil
 }
-func (a *mockDataReceiver) Initialise(ctx context.Context, roomID string, state []json.RawMessage) ([]json.RawMessage, error) {
+func (a *mockDataReceiver) Initialise(ctx context.Context, roomID string, state []json.RawMessage) error {
 	a.states[roomID] = state
 	if a.incomingProcess != nil {
 		a.incomingProcess <- struct{}{}
@@ -1220,7 +1220,7 @@ func (a *mockDataReceiver) Initialise(ctx context.Context, roomID string, state 
 	}
 	// The return value is a list of unknown state events to be prepended to the room
 	// timeline. Untested here---return nil for now.
-	return nil, nil
+	return nil
 }
 func (s *mockDataReceiver) UpdateDeviceSince(ctx context.Context, userID, deviceID, since string) {
 	s.mu.Lock()
@@ -1233,7 +1233,7 @@ func (s *mockDataReceiver) UpdateDeviceSince(ctx context.Context, userID, device
 
 type overrideDataReceiver struct {
 	accumulate          func(ctx context.Context, userID, deviceID, roomID, prevBatch string, timeline []json.RawMessage) error
-	initialise          func(ctx context.Context, roomID string, state []json.RawMessage) ([]json.RawMessage, error)
+	initialise          func(ctx context.Context, roomID string, state []json.RawMessage) error
 	setTyping           func(ctx context.Context, pollerID PollerID, roomID string, ephEvent json.RawMessage)
 	updateDeviceSince   func(ctx context.Context, userID, deviceID, since string)
 	addToDeviceMessages func(ctx context.Context, userID, deviceID string, msgs []json.RawMessage) error
@@ -1253,9 +1253,9 @@ func (s *overrideDataReceiver) Accumulate(ctx context.Context, userID, deviceID,
 	}
 	return s.accumulate(ctx, userID, deviceID, roomID, timeline.PrevBatch, timeline.Events)
 }
-func (s *overrideDataReceiver) Initialise(ctx context.Context, roomID string, state []json.RawMessage) ([]json.RawMessage, error) {
+func (s *overrideDataReceiver) Initialise(ctx context.Context, roomID string, state []json.RawMessage) error {
 	if s.initialise == nil {
-		return nil, nil
+		return nil
 	}
 	return s.initialise(ctx, roomID, state)
 }

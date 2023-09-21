@@ -369,12 +369,12 @@ func (h *Handler) Accumulate(ctx context.Context, userID, deviceID, roomID strin
 	return nil
 }
 
-func (h *Handler) Initialise(ctx context.Context, roomID string, state []json.RawMessage) ([]json.RawMessage, error) {
+func (h *Handler) Initialise(ctx context.Context, roomID string, state []json.RawMessage) error {
 	res, err := h.Store.Initialise(roomID, state)
 	if err != nil {
 		logger.Err(err).Int("state", len(state)).Str("room", roomID).Msg("V2: failed to initialise room")
 		internal.GetSentryHubFromContextOrDefault(ctx).CaptureException(err)
-		return nil, err
+		return err
 	}
 	if res.AddedEvents {
 		h.v2Pub.Notify(pubsub.ChanV2, &pubsub.V2Initialise{
@@ -382,7 +382,7 @@ func (h *Handler) Initialise(ctx context.Context, roomID string, state []json.Ra
 			SnapshotNID: res.SnapshotID,
 		})
 	}
-	return res.PrependTimelineEvents, nil
+	return nil
 }
 
 func (h *Handler) SetTyping(ctx context.Context, pollerID sync2.PollerID, roomID string, ephEvent json.RawMessage) {
