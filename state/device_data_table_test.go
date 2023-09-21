@@ -7,10 +7,11 @@ import (
 	"github.com/matrix-org/sliding-sync/internal"
 )
 
+// Like assertValue, but this inserts newlines between got and want.
 func assertVal(t *testing.T, msg string, got, want interface{}) {
 	t.Helper()
 	if !reflect.DeepEqual(got, want) {
-		t.Errorf("%s: got\n%#v want\n%#v", msg, got, want)
+		t.Errorf("%s: got\n%#v\nwant\n%#v", msg, got, want)
 	}
 }
 

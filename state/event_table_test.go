@@ -1127,3 +1127,103 @@ func TestEventTableRedactMissingOK(t *testing.T) {
 			}`),
 		}}))
 }
+
+func TestEventTable_SelectLatestEventsBetween_MissingPrevious(t *testing.T) {
+	db, close := connectToDB(t)
+	defer close()
+	table := NewEventTable(db)
+	txn, err := db.Beginx()
+	if err != nil {
+		t.Fatalf("failed to start txn: %s", err)
+	}
+	defer txn.Rollback()
+	roomID := fmt.Sprintf("!%s", t.Name())
+	// Event IDs ending with `-gap` have MissingPrevious: true.
+	events := []Event{
+		{ID: "chunk1-event1", MissingPrevious: false},
+		{ID: "chunk1-event2", MissingPrevious: false},
+		{ID: "chunk1-event3", MissingPrevious: false},
+		// GAP
+		{ID: "chunk2-event1", MissingPrevious: true},
+		{ID: "chunk2-event2", MissingPrevious: false},
+		{ID: "chunk2-event3", MissingPrevious: false},
+		// GAP
+		{ID: "chunk3-event1", MissingPrevious: true},
+		// GAP
+		{ID: "chunk4-event1", MissingPrevious: true},
+		{ID: "chunk4-event2", MissingPrevious: false},
+		{ID: "chunk4-event3", MissingPrevious: false},
+	}
+	prefix := "$" + t.Name() + "-"
+	for i := range events {
+		// The method under test doesn't extract IDs and the NIDs are determined at runtime.
+		// It does pull out the event json though, so shove the IDs in there.
+		events[i].JSON = []byte(fmt.Sprintf(`{"event_id": "%s"}`, events[i].ID))
+		// In syncv3_events.event_id, store IDs with some prefix to avoid clashing with other tests.
+		events[i].ID = prefix + events[i].ID
+		events[i].RoomID = roomID
+	}
+	nids, err := table.Insert(txn, events, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	testcases := []struct {
+		Desc            string
+		FromIDExclusive string
+		ToIDInclusive   string
+		// NB: ExpectIDs is ordered from newest to oldest. Surprising, but this is what
+		// SelectLatestEventsBetween returns.
+		ExpectIDs []string
+	}{
+		{
+			Desc:            "has no gaps - should omit nothing",
+			FromIDExclusive: "start",
+			ToIDInclusive:   "chunk1-event3",
+			ExpectIDs:       []string{"chunk1-event3", "chunk1-event2", "chunk1-event1"},
+		},
+		{
+			Desc:            "ends with missing_previous - should include the end only",
+			FromIDExclusive: "start",
+			ToIDInclusive:   "chunk2-event1",
+			ExpectIDs:       []string{"chunk2-event1"},
+		},
+		{
+			Desc:            "single event, ends with missing_previous - should include the end only",
+			FromIDExclusive: "chunk1-event3",
+			ToIDInclusive:   "chunk2-event1",
+			ExpectIDs:       []string{"chunk2-event1"},
+		},
+		{
+			Desc:            "single event, start is missing_previous - should include the end only",
+			FromIDExclusive: "chunk2-event1",
+			ToIDInclusive:   "chunk2-event2",
+			ExpectIDs:       []string{"chunk2-event2"},
+		},
+		{
+			Desc:            "covers two consecutive gaps - should include events from the second gap onwards.",
+			FromIDExclusive: "chunk2-event2",
+			ToIDInclusive:   "chunk4-event3",
+			ExpectIDs:       []string{"chunk4-event3", "chunk4-event2", "chunk4-event1"},
+		},
+		{
+			Desc:            "covers three gaps, the latter two consecutive - should only return from the second gap onwards",
+			FromIDExclusive: "chunk1-event2",
+			ToIDInclusive:   "chunk4-event2",
+			ExpectIDs:       []string{"chunk4-event2", "chunk4-event1"},
+		},
+	}
+
+	for _, tc := range testcases {
+		// We're using the notation (X, Y] for a half-open interval excluding X but including Y.
+		idRange := fmt.Sprintf("(%s, %s]", tc.FromIDExclusive, tc.ToIDInclusive)
+		t.Log(idRange + " " + tc.Desc)
+		fetched, err := table.SelectLatestEventsBetween(txn, roomID, nids[prefix+tc.FromIDExclusive], nids[prefix+tc.ToIDInclusive], 10)
+		assertNoError(t, err)
+		fetchedIDs := make([]string, 0, len(fetched))
+		for _, ev := range fetched {
+			fetchedIDs = append(fetchedIDs, gjson.GetBytes(ev.JSON, "event_id").Str)
+		}
+		assertValue(t, "fetchedIDs "+idRange+" limit 10", fetchedIDs, tc.ExpectIDs)
+	}
+}

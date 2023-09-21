@@ -1,6 +1,6 @@
 module github.com/matrix-org/sliding-sync
 
-go 1.18
+go 1.20
 
 require (
 	github.com/ReneKroon/ttlcache/v2 v2.8.1
