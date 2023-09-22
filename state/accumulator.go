@@ -160,10 +160,12 @@ type InitialiseResult struct {
 //  1. Capture the current snapshot ID, possibly zero. If it is zero, ensure that the
 //      state block contains a `create event`.
 //
-//  2. Insert the events and determine if the state block alters the current state of
-//     the room from the proxy's POV. This is the case iff some event in the state block
-//     is unknown to the proxy. (We choose to ignore the possibility that a poller is
-//     slow and gives us e.g. a subset of current room state.)
+//  2. Insert the events. If there are no newly inserted events, bail. If there are new
+//     events, then the state block has definitely changed. Note: we ignore cases where
+//     the state has only changed to a known subset of state events (i.e in the case of
+//     state resets, slow pollers) as it is impossible to then reconcile that state with
+//     any new events, as any "catchup" state will be ignored due to the events already
+//     existing.
 //
 //  3. Fetch the current state of the room, as a map from (type, state_key) to event.
 //     If there is no existing state snapshot, this map is the empty map.
@@ -188,7 +190,7 @@ func (a *Accumulator) Initialise(roomID string, state []json.RawMessage) (Initia
 		if err != nil {
 			return fmt.Errorf("error fetching snapshot id for room %s: %w", roomID, err)
 		}
-		// We don't have a snapshot for this room. Parse the events first.
+		// Start by parsing the events in the state block.
 		events := make([]Event, len(state))
 		for i := range events {
 			events[i] = Event{
