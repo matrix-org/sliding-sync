@@ -35,9 +35,8 @@ func TestAccumulatorInitialise(t *testing.T) {
 	if err != nil {
 		t.Fatalf("falied to Initialise accumulator: %s", err)
 	}
-	if !res.AddedEvents {
-		t.Fatalf("didn't add events, wanted it to")
-	}
+	assertValue(t, "res.AddedEvents", res.AddedEvents, true)
+	assertValue(t, "res.ReplacedExistingSnapshot", res.ReplacedExistingSnapshot, false)
 
 	txn, err := accumulator.db.Beginx()
 	if err != nil {
@@ -46,21 +45,21 @@ func TestAccumulatorInitialise(t *testing.T) {
 	defer txn.Rollback()
 
 	// There should be one snapshot on the current state
-	snapID, err := accumulator.roomsTable.CurrentAfterSnapshotID(txn, roomID)
+	snapID1, err := accumulator.roomsTable.CurrentAfterSnapshotID(txn, roomID)
 	if err != nil {
 		t.Fatalf("failed to select current snapshot: %s", err)
 	}
-	if snapID == 0 {
+	if snapID1 == 0 {
 		t.Fatalf("Initialise did not store a current snapshot")
 	}
-	if snapID != res.SnapshotID {
-		t.Fatalf("Initialise returned wrong snapshot ID, got %v want %v", res.SnapshotID, snapID)
+	if snapID1 != res.SnapshotID {
+		t.Fatalf("Initialise returned wrong snapshot ID, got %v want %v", res.SnapshotID, snapID1)
 	}
 
 	// this snapshot should have 1 member event and 2 other events in it
-	row, err := accumulator.snapshotTable.Select(txn, snapID)
+	row, err := accumulator.snapshotTable.Select(txn, snapID1)
 	if err != nil {
-		t.Fatalf("failed to select snapshot %d: %s", snapID, err)
+		t.Fatalf("failed to select snapshot %d: %s", snapID1, err)
 	}
 	if len(row.MembershipEvents) != 1 {
 		t.Fatalf("got %d membership events, want %d in current state snapshot", len(row.MembershipEvents), 1)
@@ -87,7 +86,7 @@ func TestAccumulatorInitialise(t *testing.T) {
 		}
 	}
 
-	// Subsequent calls do nothing and are not an error
+	// Subsequent calls with the same set of the events do nothing and are not an error.
 	res, err = accumulator.Initialise(roomID, roomEvents)
 	if err != nil {
 		t.Fatalf("falied to Initialise accumulator: %s", err)
@@ -95,6 +94,37 @@ func TestAccumulatorInitialise(t *testing.T) {
 	if res.AddedEvents {
 		t.Fatalf("added events when it shouldn't have")
 	}
+
+	// Subsequent calls with a subset of events do nothing and are not an error
+	res, err = accumulator.Initialise(roomID, roomEvents[:2])
+	if err != nil {
+		t.Fatalf("falied to Initialise accumulator: %s", err)
+	}
+	if res.AddedEvents {
+		t.Fatalf("added events when it shouldn't have")
+	}
+
+	// Subsequent calls with at least one new event expand or replace existing state.
+	// C, D, E
+	roomEvents2 := append(roomEvents[2:3],
+		[]byte(`{"event_id":"D", "type":"m.room.topic", "state_key":"", "content":{"topic":"Dr Rick Dagless MD"}}`),
+		[]byte(`{"event_id":"E", "type":"m.room.member", "state_key":"@me:localhost", "content":{"membership":"join", "displayname": "Garth""}}`),
+	)
+	res, err = accumulator.Initialise(roomID, roomEvents2)
+	assertNoError(t, err)
+	assertValue(t, "res.AddedEvents", res.AddedEvents, true)
+	assertValue(t, "res.ReplacedExistingSnapshot", res.ReplacedExistingSnapshot, true)
+
+	snapID2, err := accumulator.roomsTable.CurrentAfterSnapshotID(txn, roomID)
+	assertNoError(t, err)
+	if snapID2 == snapID1 || snapID2 == 0 {
+		t.Errorf("Expected snapID2 (%d) to be neither snapID1 (%d) nor 0", snapID2, snapID1)
+	}
+
+	row, err = accumulator.snapshotTable.Select(txn, snapID2)
+	assertNoError(t, err)
+	assertValue(t, "len(row.MembershipEvents)", len(row.MembershipEvents), 1)
+	assertValue(t, "len(row.OtherEvents)", len(row.OtherEvents), 3)
 }
 
 // Test that an unknown room shouldn't initialise if given state without a create event.
