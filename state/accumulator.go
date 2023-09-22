@@ -142,11 +142,6 @@ type InitialiseResult struct {
 	// SnapshotID is the ID of the snapshot which incorporates all added events.
 	// It has no meaning if AddedEvents is False.
 	SnapshotID int64
-	// PrependTimelineEvents is empty if the room was not initialised prior to this call.
-	// Otherwise, it is an order-preserving subset of the `state` argument to Initialise
-	// containing all events that were not persisted prior to the Initialise call. These
-	// should be prepended to the room timeline by the caller.
-	PrependTimelineEvents []json.RawMessage
 }
 
 // Initialise processes the state block of a V2 sync response for a particular room. If
