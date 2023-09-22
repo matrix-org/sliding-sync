@@ -619,6 +619,7 @@ func TestGappyStateDoesNotAccumulateTheStateBlock(t *testing.T) {
 	defer v3.close()
 
 	v2.addAccount(t, alice, aliceToken)
+	v2.addAccount(t, bob, bobToken)
 
 	t.Log("Alice creates a room, sets its name and sends a message.")
 	const roomID = "!unimportant"
@@ -654,7 +655,7 @@ func TestGappyStateDoesNotAccumulateTheStateBlock(t *testing.T) {
 		m.MatchRoomTimelineMostRecent(2, []json.RawMessage{name1, msg1}),
 	))
 
-	t.Log("Alice's poller receives a gappy sync, including a room name change and two messages.")
+	t.Log("Alice's poller receives a gappy sync, including a room name change, bob joining, and two messages.")
 	stateBlock := make([]json.RawMessage, 0)
 	for i := 0; i < 10; i++ {
 		statePiece := testutils.NewStateEvent(t, "com.example.custom", fmt.Sprintf("%d", i), alice, map[string]any{})
@@ -663,7 +664,8 @@ func TestGappyStateDoesNotAccumulateTheStateBlock(t *testing.T) {
 	name2 := testutils.NewStateEvent(t, "m.room.name", "", alice, map[string]any{
 		"name": "not wonderland",
 	})
-	stateBlock = append(stateBlock, name2)
+	bobJoin := testutils.NewJoinEvent(t, bob)
+	stateBlock = append(stateBlock, name2, bobJoin)
 
 	msg2 := testutils.NewMessageEvent(t, alice, "Good morning!")
 	msg3 := testutils.NewMessageEvent(t, alice, "That's a nice tnetennba.")
@@ -693,4 +695,88 @@ func TestGappyStateDoesNotAccumulateTheStateBlock(t *testing.T) {
 		// Nor should we see msg1, as that comes before a gap.
 		m.MatchRoomTimeline([]json.RawMessage{msg2, msg3}),
 	))
+}
+
+func TestJoinedRoomTrackerUpdatedAfterGappyState(t *testing.T) {
+	pqString := testutils.PrepareDBConnectionString()
+	v2 := runTestV2Server(t)
+	defer v2.close()
+	v3 := runTestServer(t, v2, pqString)
+	defer v3.close()
+
+	const roomID = "!unimportant"
+
+	v2.addAccount(t, alice, aliceToken)
+	v2.addAccount(t, bob, bobToken)
+	v2.addAccount(t, chris, chrisToken)
+
+	t.Log("Queue up an empty poller response for Bob and Chris, so the proxy considers them to be polling.")
+	v2.queueResponse(bobToken, sync2.SyncResponse{})
+	v2.queueResponse(chrisToken, sync2.SyncResponse{})
+
+	bobRes := v3.mustDoV3Request(t, bobToken, sync3.Request{})
+	_ = v3.mustDoV3Request(t, chrisToken, sync3.Request{})
+
+	v2.waitUntilEmpty(t, bobToken)
+	v2.waitUntilEmpty(t, chrisToken)
+
+	initialEvents := append(
+		createRoomState(t, alice, time.Now()),
+		testutils.NewStateEvent(t, "m.room.member", bob, alice, map[string]any{"membership": "invite"}),
+	)
+	t.Log("Alice creates a room. Bob is invited, but Chris isn't.")
+	v2.queueResponse(aliceToken, sync2.SyncResponse{
+		Rooms: sync2.SyncRoomsResponse{
+			Join: v2JoinTimeline(roomEvents{
+				roomID: roomID,
+				events: initialEvents,
+			}),
+		},
+		NextBatch: "alice1",
+	})
+
+	t.Log("Alice sliding syncs and sees herself joined to the room.")
+	aliceRes := v3.mustDoV3Request(t, aliceToken, sync3.Request{
+		RoomSubscriptions: map[string]sync3.RoomSubscription{
+			roomID: {TimelineLimit: 20},
+		},
+	})
+	m.MatchResponse(t, aliceRes, m.MatchRoomSubscription(roomID,
+		m.MatchJoinCount(1),
+		m.MatchInviteCount(1)),
+	)
+
+	t.Log("Bob sees himself invited to the room.")
+	bobRes = v3.mustDoV3RequestWithPos(t, bobToken, bobRes.Pos, sync3.Request{
+		Lists: map[string]sync3.RequestList{
+			"a": {
+				Ranges: sync3.SliceRanges{{0, 10}},
+				Filters: &sync3.RequestFilters{
+					IsInvite: &boolTrue,
+				},
+			},
+		},
+	})
+	m.MatchResponse(t, bobRes, m.MatchRoomSubscription(roomID))
+
+	t.Log("Alice's poller gets a gappy sync response in which Bob joins and Alice sends a message.")
+	v2.queueResponse(aliceToken, sync2.SyncResponse{
+		NextBatch: "alice2",
+		Rooms: sync2.SyncRoomsResponse{
+			Join: map[string]sync2.SyncV2JoinResponse{
+				roomID: {
+					State: sync2.EventsResponse{
+						Events: []json.RawMessage{
+							testutils.NewStateEvent(t, "m.room.member", bob, bob, map[string]any{"membership": "join"}),
+						},
+					},
+					Timeline: sync2.TimelineResponse{
+						Events:  []json.RawMessage{testutils.NewMessageEvent(t, alice, "hellooooooooo")},
+						Limited: true,
+					},
+				},
+			},
+		},
+	})
+	v2.waitUntilEmpty(t, aliceToken)
 }
