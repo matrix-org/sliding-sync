@@ -153,7 +153,7 @@ type InitialiseResult struct {
 //  0. Ensure the state block is not empty.
 //
 //  1. Capture the current snapshot ID, possibly zero. If it is zero, ensure that the
-//      state block contains a `create event`.
+//     state block contains a `create event`.
 //
 //  2. Insert the events. If there are no newly inserted events, bail. If there are new
 //     events, then the state block has definitely changed. Note: we ignore cases where
@@ -164,21 +164,27 @@ type InitialiseResult struct {
 //
 //  3. Fetch the current state of the room, as a map from (type, state_key) to event.
 //     If there is no existing state snapshot, this map is the empty map.
-//
 //     If the state hasn't altered, bail.
 //
-//  4. Create new snapshot.
-//      Update the map from (3) with the events in  in `state`.  (There must be similar logic already in A ccumulate for this?)
-//      Store the snapshot. Mark the room's current state as being this snapshot.
+//  4. Create new snapshot. Update the map from (3) with the events in `state`.
+//     (There is similar logic for this in Accumulate.)
+//     Store the snapshot. Mark the room's current state as being this snapshot.
 //
-// 5. If the starting snapshot ID was not zero, emit a cache invalidation payload.
+//  5. Any other processing of the new state events.
+//
+//  6. Return an "AddedEvents" bool (if true, emit an Initialise payload) and a
+//     "ReplacedSnapshot" bool (if true, emit a cache invalidation payload).
 
 func (a *Accumulator) Initialise(roomID string, state []json.RawMessage) (InitialiseResult, error) {
 	var res InitialiseResult
+
+	// 0. Ensure the state block is not empty.
 	if len(state) == 0 {
 		return res, nil
 	}
 	err := sqlutil.WithTransaction(a.db, func(txn *sqlx.Tx) error {
+		// 1. Capture the current snapshot ID, checking for a create event if this is our first snapshot.
+
 		// Attempt to short-circuit. This has to be done inside a transaction to make sure
 		// we don't race with multiple calls to Initialise with the same room ID.
 		snapshotID, err := a.roomsTable.CurrentAfterSnapshotID(txn, roomID)
@@ -206,7 +212,7 @@ func (a *Accumulator) Initialise(roomID string, state []json.RawMessage) (Initia
 			}
 		}
 
-		// Insert the events and determine which ones are new.
+		// 2. Insert the events and determine which ones are new.
 		newEventIDToNID, err := a.eventsTable.Insert(txn, events, false)
 		if err != nil {
 			return fmt.Errorf("failed to insert events: %w", err)
@@ -219,10 +225,11 @@ func (a *Accumulator) Initialise(roomID string, state []json.RawMessage) (Initia
 				logger.Error().Str("room_id", roomID).Msg(errMsg)
 				sentry.CaptureException(fmt.Errorf(errMsg))
 			}
-			// Otherwise we do have a current snapshot and there are no new events in
-			// the state block. We assume that the room state has not changed. (This
-			// could wrong if there was a state rollback or reset. But sync v2 doesn't
-			// communicate those, so there's no point trying to account for this.)
+			// Note: we otherwise ignore cases where the state has only changed to a
+			// known subset of state events (i.e in the case of state resets, slow
+			// pollers) as it is impossible to then reconcile that state with
+			// any new events, as any "catchup" state will be ignored due to the events
+			// already existing.
 			return nil
 		}
 		newEvents := make([]Event, 0, len(newEventIDToNID))
@@ -234,7 +241,7 @@ func (a *Accumulator) Initialise(roomID string, state []json.RawMessage) (Initia
 			}
 		}
 
-		// Fetch the current state of the room.
+		// 3. Fetch the current state of the room.
 		var currentState stateMap
 		if snapshotID > 0 {
 			currentState, err = a.stateMapAtSnapshot(txn, snapshotID)
@@ -247,6 +254,8 @@ func (a *Accumulator) Initialise(roomID string, state []json.RawMessage) (Initia
 				Other:       make(map[[2]string]int64, len(events)),
 			}
 		}
+
+		// 4. Update the map from (3) with the new events to create a new snapshot.
 		for _, ev := range newEvents {
 			currentState.Ingest(ev)
 		}
@@ -264,7 +273,8 @@ func (a *Accumulator) Initialise(roomID string, state []json.RawMessage) (Initia
 			logger.Trace().Str("room_id", roomID).Int("members", len(memberNIDs)).Msg("Inserted new snapshot")
 			a.snapshotMemberCountVec.WithLabelValues(roomID).Observe(float64(len(memberNIDs)))
 		}
-		res.AddedEvents = true
+
+		// 5. Any other processing of new state events.
 		latestNID := int64(0)
 		for _, nid := range otherNIDs {
 			if nid > latestNID {
@@ -290,7 +300,13 @@ func (a *Accumulator) Initialise(roomID string, state []json.RawMessage) (Initia
 
 		// Set the snapshot ID as the current state
 		res.SnapshotID = snapshot.SnapshotID
-		return a.roomsTable.Upsert(txn, info, snapshot.SnapshotID, latestNID)
+		err = a.roomsTable.Upsert(txn, info, snapshot.SnapshotID, latestNID)
+		if err != nil {
+			return err
+		}
+
+		// 6. Tell the caller what happened, so they know what payloads to emit.
+		res.AddedEvents = true
 	})
 	return res, err
 }
