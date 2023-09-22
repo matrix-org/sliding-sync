@@ -377,7 +377,11 @@ func (h *Handler) Initialise(ctx context.Context, roomID string, state []json.Ra
 		internal.GetSentryHubFromContextOrDefault(ctx).CaptureException(err)
 		return err
 	}
-	if res.AddedEvents {
+	if res.ReplacedExistingSnapshot {
+		h.v2Pub.Notify(pubsub.ChanV2, &pubsub.V2InvalidateRoom{
+			RoomID: roomID,
+		})
+	} else if res.AddedEvents {
 		h.v2Pub.Notify(pubsub.ChanV2, &pubsub.V2Initialise{
 			RoomID:      roomID,
 			SnapshotNID: res.SnapshotID,
