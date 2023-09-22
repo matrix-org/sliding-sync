@@ -145,9 +145,9 @@ func TestAccumulatorInitialiseBadInputs(t *testing.T) {
 func TestAccumulatorAccumulate(t *testing.T) {
 	roomID := "!TestAccumulatorAccumulate:localhost"
 	roomEvents := []json.RawMessage{
-		[]byte(`{"event_id":"D", "type":"m.room.create", "state_key":"", "content":{"creator":"@me:localhost"}}`),
-		[]byte(`{"event_id":"E", "type":"m.room.member", "state_key":"@me:localhost", "content":{"membership":"join"}}`),
-		[]byte(`{"event_id":"F", "type":"m.room.join_rules", "state_key":"", "content":{"join_rule":"public"}}`),
+		[]byte(`{"event_id":"G", "type":"m.room.create", "state_key":"", "content":{"creator":"@me:localhost"}}`),
+		[]byte(`{"event_id":"H", "type":"m.room.member", "state_key":"@me:localhost", "content":{"membership":"join"}}`),
+		[]byte(`{"event_id":"I", "type":"m.room.join_rules", "state_key":"", "content":{"join_rule":"public"}}`),
 	}
 	db, close := connectToDB(t)
 	defer close()
@@ -160,11 +160,11 @@ func TestAccumulatorAccumulate(t *testing.T) {
 	// accumulate new state makes a new snapshot and removes the old snapshot
 	newEvents := []json.RawMessage{
 		// non-state event does nothing
-		[]byte(`{"event_id":"G", "type":"m.room.message","content":{"body":"Hello World","msgtype":"m.text"}}`),
+		[]byte(`{"event_id":"J", "type":"m.room.message","content":{"body":"Hello World","msgtype":"m.text"}}`),
 		// join_rules should clobber the one from initialise
-		[]byte(`{"event_id":"H", "type":"m.room.join_rules", "state_key":"", "content":{"join_rule":"public"}}`),
+		[]byte(`{"event_id":"K", "type":"m.room.join_rules", "state_key":"", "content":{"join_rule":"public"}}`),
 		// new state event should be added to the snapshot
-		[]byte(`{"event_id":"I", "type":"m.room.history_visibility", "state_key":"", "content":{"visibility":"public"}}`),
+		[]byte(`{"event_id":"L", "type":"m.room.history_visibility", "state_key":"", "content":{"visibility":"public"}}`),
 	}
 	var result AccumulateResult
 	err = sqlutil.WithTransaction(accumulator.db, func(txn *sqlx.Tx) error {
