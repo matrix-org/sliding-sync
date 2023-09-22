@@ -160,6 +160,7 @@ func (h *Handler) StartV2Pollers() {
 				if err != nil {
 					logger.Err(err).Str("user_id", t.UserID).Str("device_id", t.DeviceID).Msg("Failed to start poller")
 				}
+				h.updateMetrics()
 				h.v2Pub.Notify(pubsub.ChanV2, &pubsub.V2InitialSyncComplete{
 					UserID:   t.UserID,
 					DeviceID: t.DeviceID,
@@ -170,7 +171,6 @@ func (h *Handler) StartV2Pollers() {
 	}
 	wg.Wait()
 	logger.Info().Msg("StartV2Pollers finished")
-	h.updateMetrics()
 	h.startPollerExpiryTicker()
 }
 
