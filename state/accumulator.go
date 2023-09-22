@@ -165,13 +165,13 @@ type InitialiseResult struct {
 //     is unknown to the proxy. (We choose to ignore the possibility that a poller is
 //     slow and gives us e.g. a subset of current room state.)
 //
-//  2. Fetch the current state of the room, as a map from (type, state_key) to event.
+//  3. Fetch the current state of the room, as a map from (type, state_key) to event.
 //     If there is no existing state snapshot, this map is the empty map.
 //
 //     If the state hasn't altered, bail.
 //
 //  4. Create new snapshot.
-//      Update the map from (2) with the events in  in `state`.  (There must be similar logic already in A ccumulate for this?)
+//      Update the map from (3) with the events in  in `state`.  (There must be similar logic already in A ccumulate for this?)
 //      Store the snapshot. Mark the room's current state as being this snapshot.
 //
 // 5. If the starting snapshot ID was not zero, emit a cache invalidation payload.
