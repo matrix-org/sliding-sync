@@ -1,6 +1,7 @@
 package slidingsync
 
 import (
+	"context"
 	"embed"
 	"encoding/json"
 	"fmt"
@@ -86,6 +87,13 @@ func allowCORS(next http.Handler) http.HandlerFunc {
 func Setup(destHomeserver, postgresURI, secret string, opts Opts) (*handler2.Handler, http.Handler) {
 	// Setup shared DB and HTTP client
 	v2Client := sync2.NewHTTPClient(opts.HTTPTimeout, opts.HTTPLongTimeout, destHomeserver)
+
+	// Sanity check that we can contact the upstream homeserver.
+	_, err := v2Client.Versions(context.Background())
+	if err != nil {
+		logger.Warn().Err(err).Str("dest", destHomeserver).Msg("Could not contact upstream homeserver. Is SYNCV3_SERVER set correctly?")
+	}
+
 	db, err := sqlx.Open("postgres", postgresURI)
 	if err != nil {
 		sentry.CaptureException(err)
