@@ -20,6 +20,9 @@ var ProxyVersion = ""
 var HTTP401 error = fmt.Errorf("HTTP 401")
 
 type Client interface {
+	// Versions fetches and parses the list of Matrix versions that the homeserver
+	// advertises itself as supporting.
+	Versions(ctx context.Context) (version []string, err error)
 	// WhoAmI asks the homeserver to lookup the access token using the CSAPI /whoami
 	// endpoint. The response must contain a device ID (meaning that we assume the
 	// homeserver supports Matrix >= 1.1.)
@@ -47,6 +50,34 @@ func NewHTTPClient(shortTimeout, longTimeout time.Duration, destHomeServer strin
 		},
 		DestinationServer: destHomeServer,
 	}
+}
+
+func (v *HTTPClient) Versions(ctx context.Context) ([]string, error) {
+	req, err := http.NewRequestWithContext(ctx, "GET", v.DestinationServer+"/_matrix/client/versions", nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("User-Agent", "sync-v3-proxy-"+ProxyVersion)
+	res, err := v.Client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	if res.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("/versions returned HTTP %d", res.StatusCode)
+	}
+	defer res.Body.Close()
+	body, err := ioutil.ReadAll(res.Body)
+	if err != nil {
+		return nil, err
+	}
+	var parsedRes struct {
+		Result []string `json:"versions"`
+	}
+	err = json.Unmarshal(body, &parsedRes)
+	if err != nil {
+		return nil, fmt.Errorf("could not parse /versions response: %w", err)
+	}
+	return parsedRes.Result, nil
 }
 
 // Return sync2.HTTP401 if this request returns 401
