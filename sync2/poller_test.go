@@ -1188,6 +1188,9 @@ type mockClient struct {
 	fn func(authHeader, since string) (*SyncResponse, int, error)
 }
 
+func (c *mockClient) Versions(ctx context.Context) ([]string, error) {
+	return []string{"v1.1"}, nil
+}
 func (c *mockClient) DoSyncV2(ctx context.Context, authHeader, since string, isFirst, toDeviceOnly bool) (*SyncResponse, int, error) {
 	return c.fn(authHeader, since)
 }
