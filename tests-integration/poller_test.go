@@ -697,7 +697,7 @@ func TestGappyStateDoesNotAccumulateTheStateBlock(t *testing.T) {
 	))
 }
 
-func TestJoinedRoomTrackerUpdatedAfterGappyState(t *testing.T) {
+func TestJoinedRoomsTrackerUpdatedAfterGappyState(t *testing.T) {
 	pqString := testutils.PrepareDBConnectionString()
 	v2 := runTestV2Server(t)
 	defer v2.close()
@@ -710,14 +710,11 @@ func TestJoinedRoomTrackerUpdatedAfterGappyState(t *testing.T) {
 	v2.addAccount(t, bob, bobToken)
 	v2.addAccount(t, chris, chrisToken)
 
-	t.Log("Queue up an empty poller response for Bob and Chris, so the proxy considers them to be polling.")
-	v2.queueResponse(bobToken, sync2.SyncResponse{})
-	v2.queueResponse(chrisToken, sync2.SyncResponse{})
-
-	bobRes := v3.mustDoV3Request(t, bobToken, sync3.Request{})
+	t.Log("Queue up an empty poller response for Chris, so the proxy considers them to be polling.")
+	v2.queueResponse(chrisToken, sync2.SyncResponse{
+		NextBatch: "chris1",
+	})
 	_ = v3.mustDoV3Request(t, chrisToken, sync3.Request{})
-
-	v2.waitUntilEmpty(t, bobToken)
 	v2.waitUntilEmpty(t, chrisToken)
 
 	initialEvents := append(
@@ -746,18 +743,28 @@ func TestJoinedRoomTrackerUpdatedAfterGappyState(t *testing.T) {
 		m.MatchInviteCount(1)),
 	)
 
-	t.Log("Bob sees himself invited to the room.")
-	bobRes = v3.mustDoV3RequestWithPos(t, bobToken, bobRes.Pos, sync3.Request{
+	t.Log("Bob's poller sees his invite.")
+	v2.queueResponse(bobToken, sync2.SyncResponse{
+		Rooms: sync2.SyncRoomsResponse{
+			Invite: map[string]sync2.SyncV2InviteResponse{
+				roomID: {
+					InviteState: sync2.EventsResponse{
+						Events: initialEvents,
+					},
+				},
+			}},
+		NextBatch: "bob1",
+	})
+
+	t.Log("Bob sliding syncs sees himself invited to the room.")
+	bobRes := v3.mustDoV3Request(t, bobToken, sync3.Request{
 		Lists: map[string]sync3.RequestList{
 			"a": {
 				Ranges: sync3.SliceRanges{{0, 10}},
-				Filters: &sync3.RequestFilters{
-					IsInvite: &boolTrue,
-				},
 			},
 		},
 	})
-	m.MatchResponse(t, bobRes, m.MatchRoomSubscription(roomID))
+	m.MatchResponse(t, bobRes, m.MatchRoomSubscription(roomID, m.MatchInviteCount(1)))
 
 	t.Log("Alice's poller gets a gappy sync response in which Bob joins and Alice sends a message.")
 	v2.queueResponse(aliceToken, sync2.SyncResponse{
@@ -779,4 +786,8 @@ func TestJoinedRoomTrackerUpdatedAfterGappyState(t *testing.T) {
 		},
 	})
 	v2.waitUntilEmpty(t, aliceToken)
+
+	t.Log("Bob syncs. He should see himself as having joined the room.")
+	bobRes = v3.mustDoV3RequestWithPos(t, bobToken, bobRes.Pos, sync3.Request{})
+	m.MatchResponse(t, bobRes, m.MatchRoomSubscription(roomID, m.MatchJoinCount(2), m.MatchInviteCount(0)))
 }
