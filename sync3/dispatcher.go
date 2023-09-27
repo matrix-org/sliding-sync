@@ -287,7 +287,7 @@ func (d *Dispatcher) notifyListeners(ctx context.Context, ed *caches.EventData, 
 	}
 }
 
-func (d *Dispatcher) OnInvalidateRoom(ctx context.Context, roomID string) {
+func (d *Dispatcher) OnInvalidateRoom(ctx context.Context, roomID string, joined, invited []string) {
 	// First dispatch to the global cache.
 	receiver, ok := d.userToReceiver[DispatcherAllUsers]
 	if !ok {
@@ -295,7 +295,10 @@ func (d *Dispatcher) OnInvalidateRoom(ctx context.Context, roomID string) {
 	}
 	receiver.OnInvalidateRoom(ctx, roomID)
 
+	d.jrt.ReloadMembershipsForRoom(roomID, joined, invited)
+
 	// Then dispatch to any users who are joined to that room.
+	// XXX: the caller has to update the JoinedRoomTracker before calling this function
 	joinedUsers, _ := d.jrt.JoinedUsersForRoom(roomID, nil)
 	d.userToReceiverMu.RLock()
 	defer d.userToReceiverMu.RUnlock()

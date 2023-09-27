@@ -184,3 +184,29 @@ func (t *JoinedRoomsTracker) NumInvitedUsersForRoom(roomID string) int {
 	defer t.mu.RUnlock()
 	return len(t.roomIDToInvitedUsers[roomID])
 }
+
+func (t *JoinedRoomsTracker) ReloadMembershipsForRoom(roomID string, joined, invited []string) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+
+	for _, userID := range joined {
+		addToSet(t.roomIDToJoinedUsers, roomID, userID)
+		addToSet(t.userIDToJoinedRooms, userID, roomID)
+		delete(t.roomIDToInvitedUsers[roomID], userID)
+	}
+
+	for _, userID := range invited {
+		delete(t.roomIDToJoinedUsers[roomID], userID)
+		delete(t.userIDToJoinedRooms[userID], roomID)
+		addToSet(t.roomIDToInvitedUsers, roomID, userID)
+	}
+}
+
+func addToSet(mapOfSets map[string]set, key string, element string) {
+	s, exists := mapOfSets[key]
+	if !exists {
+		s = make(set)
+		mapOfSets[key] = make(set)
+	}
+	s[element] = struct{}{}
+}
