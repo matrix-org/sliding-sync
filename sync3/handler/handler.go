@@ -807,7 +807,28 @@ func (h *SyncLiveHandler) OnInvalidateRoom(p *pubsub.V2InvalidateRoom) {
 	ctx, task := internal.StartTask(context.Background(), "OnInvalidateRoom")
 	defer task.End()
 
-	h.Dispatcher.OnInvalidateRoom(ctx, p.RoomID)
+	joins, invites, leaves, err := h.Storage.FetchMemberships(p.RoomID)
+	if err != nil {
+		hub := internal.GetSentryHubFromContextOrDefault(ctx)
+		hub.WithScope(func(scope *sentry.Scope) {
+			scope.SetContext(internal.SentryCtxKey, map[string]any{
+				"room_id": p.RoomID,
+			})
+			hub.CaptureException(err)
+		})
+		logger.Err(err).
+			Str("room_id", p.RoomID).
+			Msg("Failed to fetch members after cache invalidation")
+	}
+
+	joinEventDatas := make(map[string]*caches.EventData, len(joins))
+	for userID, event := range joins {
+		ed := caches.NewEventData(event.JSON, p.RoomID, event.NID)
+		ed.AlwaysProcess = true
+		joinEventDatas[userID] = ed
+	}
+
+	h.Dispatcher.OnInvalidateRoom(ctx, p.RoomID, joinEventDatas, invites, leaves)
 }
 
 func parseIntFromQuery(u *url.URL, param string) (result int64, err *internal.HandlerError) {

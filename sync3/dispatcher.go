@@ -23,7 +23,6 @@ type Receiver interface {
 	OnNewEvent(ctx context.Context, event *caches.EventData)
 	OnReceipt(ctx context.Context, receipt internal.Receipt)
 	OnEphemeralEvent(ctx context.Context, roomID string, ephEvent json.RawMessage)
-	OnInvalidateRoom(ctx context.Context, roomID string)
 	// OnRegistered is called after a successful call to Dispatcher.Register
 	OnRegistered(ctx context.Context) error
 }
@@ -264,22 +263,80 @@ func (d *Dispatcher) notifyListeners(ctx context.Context, ed *caches.EventData, 
 	}
 }
 
-func (d *Dispatcher) OnInvalidateRoom(ctx context.Context, roomID string) {
+func (d *Dispatcher) OnInvalidateRoom(
+	ctx context.Context,
+	roomID string,
+	joins map[string]*caches.EventData,
+	invites map[string][]json.RawMessage,
+	leaves map[string]json.RawMessage,
+) {
+	// XXX: This is all a messy hack and doesn't feel very satisfying. Other than
+	//      fetching the userCaches, the dispatcher isn't doing very much for us here.
+
 	// First dispatch to the global cache.
-	receiver, ok := d.userToReceiver[DispatcherAllUsers]
-	if !ok {
+	receiver := d.userToReceiver[DispatcherAllUsers]
+	gc := receiver.(*caches.GlobalCache)
+	if gc == nil {
 		logger.Error().Msgf("No receiver for global cache")
+		return
 	}
-	receiver.OnInvalidateRoom(ctx, roomID)
+	gc.OnInvalidateRoom(ctx, roomID)
+
+	// Reset the joined room tracker.
+	d.jrt.ReloadMembershipsForRoom(roomID, internal.Keys(joins), internal.Keys(invites))
 
 	// Then dispatch to any users who are joined to that room.
-	joinedUsers, _ := d.jrt.JoinedUsersForRoom(roomID, nil)
+	// Invalidation is currently triggered by a state change or a redaction.
+	//
+	// Ensure we update the following fields on UserRoomData:
+	//
+	//  * IsInvite and HasLeave: can be altered by state changes
+	//  * Invite: May need to remove this if we're no longer invited after a state change,
+	//            but shouldn't alter otherwise
+	//  * JoinTiming: can change if our membership has changed.
+	//
+	// Do this by fetching current membership and calling the appropriate callback.
+
+	// We should, but don't currently update these fields:
+	//
+	//  * Spaces: can grow or shrink if m.space.parent state events have changed.
+	//    Also, if this room is a space and its m.space.child state events have changed,
+	//    we would  need to update other rooms' Spaces maps.
+
+	// We ignore the following fields because invalidation cannot change them:
+	//
+	// * IsDM: can't be affected by either of the invalidation causes.
+	// * NotificationCount and HighlightCount: might be altered by redactions... but we
+	//       don't have enough info to compute counts, so ignore these.
+	// * CanonicalisedName and ResolvedAvatarURL: not tracked by the UserCache, these
+	//       are updated after global metadata changes in SetRoom.
+	// * Tags: account data can't be changed by the invalidation triggers.
+
 	d.userToReceiverMu.RLock()
 	defer d.userToReceiverMu.RUnlock()
-	for _, userID := range joinedUsers {
+
+	// TODO: if there is a state reset, users can leave without having a leave event.
+	// We would still need to mark those users as having left their rooms.
+	for userID, leaveEvent := range leaves {
+		receiver = d.userToReceiver[userID]
+		uc := receiver.(*caches.UserCache)
+		if uc != nil {
+			uc.OnLeftRoom(ctx, roomID, leaveEvent)
+		}
+	}
+
+	for userID, inviteState := range invites {
+		receiver = d.userToReceiver[userID]
+		uc := receiver.(*caches.UserCache)
+		if uc != nil {
+			uc.OnInvite(ctx, roomID, inviteState)
+		}
+	}
+
+	for userID, joinData := range joins {
 		receiver = d.userToReceiver[userID]
 		if receiver != nil {
-			receiver.OnInvalidateRoom(ctx, roomID)
+			receiver.OnNewEvent(ctx, joinData)
 		}
 	}
 }
