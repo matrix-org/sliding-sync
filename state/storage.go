@@ -378,6 +378,43 @@ func (s *Storage) ResetMetadataState(metadata *internal.RoomMetadata) error {
 	return nil
 }
 
+// TODO: there is a very similar query in ResetMetadataState which also selects events
+// events row for memberships. It is a shame to have to do this twice---can we query
+// once and pass the data around?
+func (s *Storage) FetchJoinedAndInvited(roomID string) (joined, invited []string, err error) {
+	var memberships []Event
+	err = s.DB.Select(&memberships, `
+	WITH snapshot(membership_nids) AS (
+        SELECT membership_events
+        FROM syncv3_snapshots
+            JOIN syncv3_rooms ON snapshot_id = current_snapshot_id
+        WHERE syncv3_rooms.room_id = $1
+	)
+	SELECT state_key, membership
+	FROM syncv3_events JOIN snapshot ON (
+		event_nid = ANY( membership_nids )
+	)
+	WHERE membership IN ('join', '_join', 'invite', '_invite')
+	`, roomID)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	for _, membership := range memberships {
+		switch membership.Membership {
+		case "_join":
+			fallthrough
+		case "join":
+			joined = append(joined, membership.StateKey)
+		case "_invite":
+			fallthrough
+		case "invite":
+			invited = append(invited, membership.StateKey)
+		}
+	}
+	return
+}
+
 // Returns all current NOT MEMBERSHIP state events matching the event types given in all rooms. Returns a map of
 // room ID to events in that room.
 func (s *Storage) currentNotMembershipStateEventsInAllRooms(txn *sqlx.Tx, eventTypes []string) (map[string][]Event, error) {

@@ -807,7 +807,7 @@ func (h *SyncLiveHandler) OnInvalidateRoom(p *pubsub.V2InvalidateRoom) {
 	ctx, task := internal.StartTask(context.Background(), "OnInvalidateRoom")
 	defer task.End()
 
-	joined, invited, err := fetchJoinedAndInvited(h.Storage.DB, p.RoomID)
+	joined, invited, err := h.Storage.FetchJoinedAndInvited(p.RoomID)
 	if err != nil {
 		hub := internal.GetSentryHubFromContextOrDefault(ctx)
 		hub.WithScope(func(scope *sentry.Scope) {
@@ -822,44 +822,6 @@ func (h *SyncLiveHandler) OnInvalidateRoom(p *pubsub.V2InvalidateRoom) {
 	}
 
 	h.Dispatcher.OnInvalidateRoom(ctx, p.RoomID, joined, invited)
-}
-
-// TODO: move this to Storage
-func fetchJoinedAndInvited(db *sqlx.DB, roomID string) (joined, invited []string, err error) {
-	var memberships []struct {
-		UserID     string `db:"state_key"`
-		Membership string `db:"membership"`
-	}
-	err = db.Select(&memberships, `
-	WITH snapshot(membership_nids) AS (
-        SELECT membership_events
-        FROM syncv3_snapshots
-            JOIN syncv3_rooms ON snapshot_id = current_snapshot_id
-        WHERE syncv3_rooms.room_id = $1
-	)
-	SELECT state_key, membership
-	FROM syncv3_events JOIN snapshot ON (
-		event_nid = ANY( membership_nids )
-	)
-	WHERE membership IN ('join', '_join', 'invite', '_invite')
-	`, roomID)
-	if err != nil {
-		return nil, nil, err
-	}
-
-	for _, membership := range memberships {
-		switch membership.Membership {
-		case "_join":
-			fallthrough
-		case "join":
-			joined = append(joined, membership.UserID)
-		case "_invite":
-			fallthrough
-		case "invite":
-			invited = append(invited, membership.UserID)
-		}
-	}
-	return
 }
 
 func parseIntFromQuery(u *url.URL, param string) (result int64, err *internal.HandlerError) {
