@@ -167,6 +167,15 @@ jobs:
                   ./tests-e2e/test-e2e-server.log
                 if-no-files-found: error
     element_web:
+        # Cypress seems consistently unable to connect to its browser:
+        #
+        #    Still waiting to connect to Chrome, retrying in 1 second (attempt 18/62)
+        #    read ECONNRESET
+        #    Error: read ECONNRESET
+        #      at TCP.onStreamRead (node:internal/stream_base_commons:217:20)
+        #
+        # Disable this job for now---it's not useful at present.
+        if: false
         runs-on: ubuntu-latest
         steps:
             - uses: actions/checkout@v3
