@@ -710,11 +710,11 @@ func TestJoinedRoomsTrackerUpdatedAfterGappyState(t *testing.T) {
 	v2.addAccount(t, bob, bobToken)
 	v2.addAccount(t, chris, chrisToken)
 
-	t.Log("Queue up an empty poller response for Chris, so the proxy considers them to be polling.")
+	t.Log("Queue up an empty poller response for Chris, so the proxy considers him to be polling.")
 	v2.queueResponse(chrisToken, sync2.SyncResponse{
 		NextBatch: "chris1",
 	})
-	_ = v3.mustDoV3Request(t, chrisToken, sync3.Request{})
+	chrisRes := v3.mustDoV3Request(t, chrisToken, sync3.Request{})
 	v2.waitUntilEmpty(t, chrisToken)
 
 	initialEvents := append(
@@ -766,7 +766,8 @@ func TestJoinedRoomsTrackerUpdatedAfterGappyState(t *testing.T) {
 	})
 	m.MatchResponse(t, bobRes, m.MatchRoomSubscription(roomID, m.MatchInviteCount(1)))
 
-	t.Log("Alice's poller gets a gappy sync response in which Bob joins and Alice sends a message.")
+	t.Log("Alice's poller gets a gappy sync response in which Bob joins, Chris joins, and Alice sends a message.")
+	aliceMsg := testutils.NewMessageEvent(t, alice, "hellooooooooo")
 	v2.queueResponse(aliceToken, sync2.SyncResponse{
 		NextBatch: "alice2",
 		Rooms: sync2.SyncRoomsResponse{
@@ -775,10 +776,11 @@ func TestJoinedRoomsTrackerUpdatedAfterGappyState(t *testing.T) {
 					State: sync2.EventsResponse{
 						Events: []json.RawMessage{
 							testutils.NewStateEvent(t, "m.room.member", bob, bob, map[string]any{"membership": "join"}),
+							testutils.NewStateEvent(t, "m.room.member", chris, chris, map[string]any{"membership": "join"}),
 						},
 					},
 					Timeline: sync2.TimelineResponse{
-						Events:  []json.RawMessage{testutils.NewMessageEvent(t, alice, "hellooooooooo")},
+						Events:  []json.RawMessage{aliceMsg},
 						Limited: true,
 					},
 				},
@@ -787,7 +789,20 @@ func TestJoinedRoomsTrackerUpdatedAfterGappyState(t *testing.T) {
 	})
 	v2.waitUntilEmpty(t, aliceToken)
 
-	t.Log("Bob syncs. He should see himself as having joined the room.")
+	t.Log("Bob syncs. He should see himself as having joined the room, and see Alice's message.")
 	bobRes = v3.mustDoV3RequestWithPos(t, bobToken, bobRes.Pos, sync3.Request{})
-	m.MatchResponse(t, bobRes, m.MatchRoomSubscription(roomID, m.MatchJoinCount(2), m.MatchInviteCount(0)))
+	m.MatchResponse(t, bobRes, m.MatchRoomSubscription(roomID,
+		m.MatchJoinCount(3),
+		m.MatchInviteCount(0),
+		m.MatchRoomTimeline([]json.RawMessage{aliceMsg}),
+	))
+
+	t.Log("Ditto for Chris.")
+	chrisRes = v3.mustDoV3RequestWithPos(t, chrisToken, chrisRes.Pos, sync3.Request{})
+	m.MatchResponse(t, chrisRes, m.MatchRoomSubscription(roomID,
+		m.MatchJoinCount(3),
+		m.MatchInviteCount(0),
+		m.MatchRoomTimeline([]json.RawMessage{aliceMsg}),
+	))
+
 }
