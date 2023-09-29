@@ -307,37 +307,54 @@ func (s *Storage) MetadataForAllRooms(txn *sqlx.Tx, tempTableName string, result
 	return nil
 }
 
-// ResetMetadataState updates the given metadata in-place to reflect the current state
-// of the room. This is only safe to call from the subscriber goroutine; it is not safe
-// to call from the connection goroutines.
-// TODO: could have this create a new RoomMetadata and get the caller to assign it.
-func (s *Storage) ResetMetadataState(metadata *internal.RoomMetadata) error {
-	var events []Event
-	err := s.DB.Select(&events, `
-	WITH snapshot(events, membership_events) AS (
-        SELECT events, membership_events
-        FROM syncv3_snapshots
-            JOIN syncv3_rooms ON snapshot_id = current_snapshot_id
-        WHERE syncv3_rooms.room_id = $1
-    )
-	SELECT event_id, event_type, state_key, event, membership
-	FROM syncv3_events JOIN snapshot ON (
-		event_nid = ANY (ARRAY_CAT(events, membership_events))
-	)
-	WHERE (event_type IN ('m.room.name', 'm.room.avatar', 'm.room.canonical_alias') AND state_key = '')
-	   OR (event_type = 'm.room.member' AND membership IN ('join', '_join', 'invite', '_invite'))
-	ORDER BY event_nid ASC
-	;`, metadata.RoomID)
+// FetchRoomMetadata is Like AllJoinedMembers and MetadataForAllRooms combined, but just
+// for a single room.
+func (s *Storage) FetchRoomMetadata(roomID string) (*internal.RoomMetadata, error) {
+	var stateEvents []Event
+	var latestEvents []Event
+	var roomInfo RoomInfo
+	err := sqlutil.WithTransaction(s.DB, func(txn *sqlx.Tx) error {
+		err := txn.Select(&stateEvents, `
+			WITH snapshot(events, membership_events) AS (
+				SELECT events, membership_events
+				FROM syncv3_snapshots
+					JOIN syncv3_rooms ON snapshot_id = current_snapshot_id
+				WHERE syncv3_rooms.room_id = $1
+			)
+			SELECT event_id, event_type, state_key, event, membership
+			FROM syncv3_events JOIN snapshot ON (
+				event_nid = ANY (ARRAY_CAT(events, membership_events))
+			)
+			WHERE (event_type IN ('m.room.name', 'm.room.avatar', 'm.room.canonical_alias') AND state_key = '')
+			   OR (event_type = 'm.room.member' AND membership IN ('join', '_join', 'invite', '_invite'))
+			ORDER BY event_nid ASC
+		;`, roomID)
+		if err != nil {
+			return err
+		}
+
+		latestEvents, err = s.Accumulator.eventsTable.selectLatestEventByTypeInAllRooms(txn)
+		if err != nil {
+			return err
+		}
+
+		roomInfo, err = s.Accumulator.roomsTable.SelectRoomInfo(txn, roomID)
+		if err != nil {
+			return err
+		}
+		return nil
+	})
 	if err != nil {
-		return fmt.Errorf("ResetMetadataState[%s]: %w", metadata.RoomID, err)
+		return nil, fmt.Errorf("ResetMetadataState[%s]: %w", roomID, err)
 	}
 
+	metadata := internal.NewRoomMetadata(roomID)
+
+	// First, set fields by sweeping over state events.
 	heroMemberships := circularSlice[*Event]{max: 6}
-	metadata.JoinCount = 0
-	metadata.InviteCount = 0
 	metadata.ChildSpaceRooms = make(map[string]struct{})
 
-	for i, ev := range events {
+	for i, ev := range stateEvents {
 		switch ev.Type {
 		case "m.room.name":
 			metadata.NameEvent = gjson.GetBytes(ev.JSON, "content.name").Str
@@ -346,7 +363,7 @@ func (s *Storage) ResetMetadataState(metadata *internal.RoomMetadata) error {
 		case "m.room.canonical_alias":
 			metadata.CanonicalAlias = gjson.GetBytes(ev.JSON, "content.alias").Str
 		case "m.room.member":
-			heroMemberships.append(&events[i])
+			heroMemberships.append(&stateEvents[i])
 			switch ev.Membership {
 			case "join":
 				fallthrough
@@ -373,13 +390,31 @@ func (s *Storage) ResetMetadataState(metadata *internal.RoomMetadata) error {
 		metadata.Heroes = append(metadata.Heroes, hero)
 	}
 
-	// For now, don't bother reloading Encrypted, PredecessorID and UpgradedRoomID.
-	// These shouldn't be changing during a room's lifetime in normal operation.
-	return nil
+	// Second, set fields based on the latest events query.
+	for _, ev := range latestEvents {
+		parsed := gjson.ParseBytes(ev.JSON)
+		ts := parsed.Get("origin_server_ts").Uint()
+		if ts > metadata.LastMessageTimestamp {
+			metadata.LastMessageTimestamp = ts
+		}
+		metadata.LatestEventsByType[parsed.Get("type").Str] = internal.EventMetadata{
+			NID:       ev.NID,
+			Timestamp: ts,
+		}
+	}
+
+	// Lastly, set fields based on the RoomInfo struct/query.
+	metadata.Encrypted = roomInfo.IsEncrypted
+	metadata.PredecessorRoomID = roomInfo.PredecessorRoomID
+	metadata.UpgradedRoomID = roomInfo.UpgradedRoomID
+	metadata.RoomType = roomInfo.Type
+
+	// Don't care about the TypingEvent field.
+	return metadata, nil
 }
 
-// TODO: there is a very similar query in ResetMetadataState which also selects events
-// events row for memberships. It is a shame to have to do this twice---can we query
+// TODO: there is a very similar query in FetchRoomMetadata which also selects events
+// rows for their memberships. It is a shame to have to do this twice---can we query
 // once and pass the data around?
 func (s *Storage) FetchJoinedAndInvited(roomID string) (joined, invited []string, err error) {
 	var memberships []Event

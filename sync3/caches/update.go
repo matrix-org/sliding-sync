@@ -18,6 +18,14 @@ type RoomUpdate interface {
 	UserRoomMetadata() *UserRoomData
 }
 
+type RoomCacheInvalidationUpdate struct {
+	RoomUpdate
+}
+
+func (u *RoomCacheInvalidationUpdate) Type() string {
+	return fmt.Sprintf("RoomCacheInvalidationUpdate[%s]", u.RoomID())
+}
+
 // RoomEventUpdate corresponds to a single event seen in a joined room's timeline under sync v2.
 type RoomEventUpdate struct {
 	RoomUpdate

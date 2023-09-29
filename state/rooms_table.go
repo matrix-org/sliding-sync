@@ -40,6 +40,15 @@ func (t *RoomsTable) SelectRoomInfos(txn *sqlx.Tx) (infos []RoomInfo, err error)
 	return
 }
 
+func (t *RoomsTable) SelectRoomInfo(txn *sqlx.Tx, roomID string) (info RoomInfo, err error) {
+	err = txn.Get(&info, `
+		SELECT room_id, is_encrypted, upgraded_room_id, predecessor_room_id, type
+		FROM syncv3_rooms
+		WHERE room_id = $1
+	`, roomID)
+	return
+}
+
 func (t *RoomsTable) Upsert(txn *sqlx.Tx, info RoomInfo, snapshotID, latestNID int64) (err error) {
 	// This is a bit of a wonky query to ensure that you cannot set is_encrypted=false after it has been
 	// set to true.

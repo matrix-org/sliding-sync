@@ -761,9 +761,17 @@ func (u *UserCache) ShouldIgnore(userID string) bool {
 	return ignored
 }
 
-func (u *UserCache) OnInvalidateRoom(ctx context.Context, roomID string) {
+func (u *UserCache) OnInvalidateRoom(ctx context.Context, metadata *internal.RoomMetadata) {
+	urd := u.LoadRoomData(metadata.RoomID)
 	// Nothing for now. In UserRoomData the fields dependant on room state are
 	// IsDM, IsInvite, HasLeft, Invite, CanonicalisedName, ResolvedAvatarURL, Spaces.
 	// Not clear to me if we need to reload these or if we will inherit any changes from
 	// the global cache.
+	u.emitOnRoomUpdate(ctx, &RoomCacheInvalidationUpdate{
+		RoomUpdate: &roomUpdateCache{
+			roomID:         metadata.RoomID,
+			globalRoomData: metadata,
+			userRoomData:   &urd,
+		},
+	})
 }

@@ -3,6 +3,7 @@ package caches
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"os"
 	"sort"
 	"sync"
@@ -386,19 +387,14 @@ func (c *GlobalCache) OnNewEvent(
 	c.roomIDToMetadata[ed.RoomID] = metadata
 }
 
-func (c *GlobalCache) OnInvalidateRoom(ctx context.Context, roomID string) {
+func (c *GlobalCache) ReloadRoom(roomID string) (*internal.RoomMetadata, error) {
 	c.roomIDToMetadataMu.Lock()
 	defer c.roomIDToMetadataMu.Unlock()
 
-	metadata, ok := c.roomIDToMetadata[roomID]
-	if !ok {
-		logger.Warn().Str("room_id", roomID).Msg("OnInvalidateRoom: room not in global cache")
-		return
-	}
-
-	err := c.store.ResetMetadataState(metadata)
+	metadata, err := c.store.FetchRoomMetadata(roomID)
 	if err != nil {
-		internal.GetSentryHubFromContextOrDefault(ctx).CaptureException(err)
-		logger.Warn().Err(err).Msg("OnInvalidateRoom: failed to reset metadata")
+		return nil, fmt.Errorf("Failed to FetchRoomMetadata: %w", err)
 	}
+	c.roomIDToMetadata[roomID] = metadata
+	return metadata, nil
 }

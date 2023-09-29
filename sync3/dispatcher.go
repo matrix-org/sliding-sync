@@ -24,7 +24,6 @@ type Receiver interface {
 	OnNewEvent(ctx context.Context, event *caches.EventData)
 	OnReceipt(ctx context.Context, receipt internal.Receipt)
 	OnEphemeralEvent(ctx context.Context, roomID string, ephEvent json.RawMessage)
-	OnInvalidateRoom(ctx context.Context, roomID string)
 	// OnRegistered is called after a successful call to Dispatcher.Register
 	OnRegistered(ctx context.Context) error
 }
@@ -287,15 +286,9 @@ func (d *Dispatcher) notifyListeners(ctx context.Context, ed *caches.EventData, 
 	}
 }
 
-func (d *Dispatcher) OnInvalidateRoom(ctx context.Context, roomID string, joined, invited []string) {
-	// First dispatch to the global cache.
-	receiver, ok := d.userToReceiver[DispatcherAllUsers]
-	if !ok {
-		logger.Error().Msgf("No receiver for global cache")
-	}
-	receiver.OnInvalidateRoom(ctx, roomID)
-
-	left := d.jrt.ReloadMembershipsForRoom(roomID, joined, invited)
+func (d *Dispatcher) OnInvalidateRoom(ctx context.Context, metadata *internal.RoomMetadata, joined, invited []string) {
+	// First update the JoinedRoomsTracker.
+	left := d.jrt.ReloadMembershipsForRoom(metadata.RoomID, joined, invited)
 
 	// Then dispatch to any users who are joined to that room.
 	d.userToReceiverMu.RLock()
@@ -303,9 +296,9 @@ func (d *Dispatcher) OnInvalidateRoom(ctx context.Context, roomID string, joined
 
 	pokeUsers := func(users []string) {
 		for _, userID := range users {
-			receiver = d.userToReceiver[userID]
-			if receiver != nil {
-				receiver.OnInvalidateRoom(ctx, roomID)
+			uc := d.userToReceiver[userID].(*caches.UserCache)
+			if uc != nil {
+				uc.OnInvalidateRoom(ctx, metadata)
 			}
 		}
 	}

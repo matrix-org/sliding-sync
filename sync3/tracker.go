@@ -199,7 +199,6 @@ func (t *JoinedRoomsTracker) ReloadMembershipsForRoom(roomID string, joined, inv
 	}
 
 	t.mu.Lock()
-	defer t.mu.Unlock()
 
 	// 1. Overwrite the room's memberships with the given arguments.
 	oldJoined := t.roomIDToJoinedUsers[roomID]
@@ -228,6 +227,8 @@ func (t *JoinedRoomsTracker) ReloadMembershipsForRoom(roomID string, joined, inv
 			}
 		}
 	}
+
+	t.mu.Unlock()
 
 	// 4. Scan the old invited list for users who have left.
 	for userID := range oldInvited {

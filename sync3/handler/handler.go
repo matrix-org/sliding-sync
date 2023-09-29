@@ -807,22 +807,31 @@ func (h *SyncLiveHandler) OnInvalidateRoom(p *pubsub.V2InvalidateRoom) {
 	ctx, task := internal.StartTask(context.Background(), "OnInvalidateRoom")
 	defer task.End()
 
+	hub := internal.GetSentryHubFromContextOrDefault(ctx)
+	hub.ConfigureScope(func(scope *sentry.Scope) {
+		scope.SetContext(internal.SentryCtxKey, map[string]any{
+			"room_id": p.RoomID,
+		})
+	})
+
 	// TODO: the only consumer actually wants a set---could make this return a set directly?
 	joined, invited, err := h.Storage.FetchJoinedAndInvited(p.RoomID)
 	if err != nil {
-		hub := internal.GetSentryHubFromContextOrDefault(ctx)
-		hub.WithScope(func(scope *sentry.Scope) {
-			scope.SetContext(internal.SentryCtxKey, map[string]any{
-				"room_id": p.RoomID,
-			})
-			hub.CaptureException(err)
-		})
+		hub.CaptureException(err)
 		logger.Err(err).
 			Str("room_id", p.RoomID).
 			Msg("Failed to fetch joined and invited members after cache invalidation")
+		return
 	}
 
-	h.Dispatcher.OnInvalidateRoom(ctx, p.RoomID, joined, invited)
+	metadata, err := h.GlobalCache.ReloadRoom(p.RoomID)
+	if err != nil {
+		hub.CaptureException(err)
+		logger.Err(err).Str("room_id", p.RoomID).Msg("Failed to fetch metadata after cache invalidation")
+		return
+	}
+
+	h.Dispatcher.OnInvalidateRoom(ctx, metadata, joined, invited)
 }
 
 func parseIntFromQuery(u *url.URL, param string) (result int64, err *internal.HandlerError) {
