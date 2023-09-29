@@ -82,6 +82,45 @@ func TestTrackerStartup(t *testing.T) {
 	assertInt(t, jrt.NumInvitedUsersForRoom(roomC), 0)
 }
 
+func TestTrackerReload(t *testing.T) {
+	roomA := "!a"
+	roomB := "!b"
+	roomC := "!c"
+	alice := "@alice"
+	bob := "@bob"
+	chris := "@chris"
+	jrt := NewJoinedRoomsTracker()
+	jrt.Startup(map[string][]string{
+		roomA: {alice, bob},
+		roomB: {bob},
+		roomC: {alice},
+	})
+
+	t.Log("Chris joins room C.")
+	jrt.ReloadMembershipsForRoom(roomC, []string{alice, chris}, nil)
+	members, _ := jrt.JoinedUsersForRoom(roomC, nil)
+	assertEqualSlices(t, "roomC joined members", members, []string{alice, chris})
+	assertEqualSlices(t, "alice's rooms", jrt.JoinedRoomsForUser(alice), []string{roomA, roomC})
+	assertEqualSlices(t, "chris's rooms", jrt.JoinedRoomsForUser(chris), []string{roomC})
+	assertInt(t, jrt.NumInvitedUsersForRoom(roomC), 0)
+
+	t.Log("Bob leaves room B.")
+	jrt.ReloadMembershipsForRoom(roomB, nil, nil)
+	members, _ = jrt.JoinedUsersForRoom(roomB, nil)
+	assertEqualSlices(t, "roomB joined members", members, nil)
+	assertEqualSlices(t, "bob's rooms", jrt.JoinedRoomsForUser(bob), []string{roomA})
+	assertInt(t, jrt.NumInvitedUsersForRoom(roomB), 0)
+
+	t.Log("Chris joins room A. Alice and Bob leave it, but Chris reinvites Bob.")
+	jrt.ReloadMembershipsForRoom(roomA, []string{chris}, []string{bob})
+	members, _ = jrt.JoinedUsersForRoom(roomA, nil)
+	assertEqualSlices(t, "roomA joined members", members, []string{chris})
+	assertEqualSlices(t, "alice's rooms", jrt.JoinedRoomsForUser(alice), []string{roomC})
+	assertEqualSlices(t, "bob's rooms", jrt.JoinedRoomsForUser(bob), nil)
+	assertEqualSlices(t, "chris's rooms", jrt.JoinedRoomsForUser(chris), []string{roomA, roomC})
+	assertInt(t, jrt.NumInvitedUsersForRoom(roomA), 1)
+}
+
 func assertBool(t *testing.T, msg string, got, want bool) {
 	t.Helper()
 	if got != want {

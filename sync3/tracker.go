@@ -186,27 +186,37 @@ func (t *JoinedRoomsTracker) NumInvitedUsersForRoom(roomID string) int {
 }
 
 func (t *JoinedRoomsTracker) ReloadMembershipsForRoom(roomID string, joined, invited []string) {
+	joinedSet := make(set, len(joined))
+	invitedSet := make(set, len(invited))
+	for _, member := range joined {
+		joinedSet[member] = struct{}{}
+	}
+	for _, member := range invited {
+		invitedSet[member] = struct{}{}
+	}
+
 	t.mu.Lock()
 	defer t.mu.Unlock()
 
+	// 1. Overwrite the room's memberships with the given arguments.
+	oldJoined := t.roomIDToJoinedUsers[roomID]
+	t.roomIDToJoinedUsers[roomID] = joinedSet
+	t.roomIDToInvitedUsers[roomID] = invitedSet
+
+	// 2. Mark the joined users as being joined to this room.
 	for _, userID := range joined {
-		addToSet(t.roomIDToJoinedUsers, roomID, userID)
-		addToSet(t.userIDToJoinedRooms, userID, roomID)
-		delete(t.roomIDToInvitedUsers[roomID], userID)
+		_, userAlreadyTracked := t.userIDToJoinedRooms[userID]
+		if !userAlreadyTracked {
+			t.userIDToJoinedRooms[userID] = make(set)
+		}
+		t.userIDToJoinedRooms[userID][roomID] = struct{}{}
 	}
 
-	for _, userID := range invited {
-		delete(t.roomIDToJoinedUsers[roomID], userID)
-		delete(t.userIDToJoinedRooms[userID], roomID)
-		addToSet(t.roomIDToInvitedUsers, roomID, userID)
+	// 3. Mark those who are no longer joined as no longer being joined to this room.
+	for userID := range oldJoined {
+		_, stillJoined := joinedSet[userID]
+		if !stillJoined {
+			delete(t.userIDToJoinedRooms[userID], roomID)
+		}
 	}
-}
-
-func addToSet(mapOfSets map[string]set, key string, element string) {
-	s, exists := mapOfSets[key]
-	if !exists {
-		s = make(set)
-		mapOfSets[key] = make(set)
-	}
-	s[element] = struct{}{}
 }

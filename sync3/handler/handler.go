@@ -807,6 +807,7 @@ func (h *SyncLiveHandler) OnInvalidateRoom(p *pubsub.V2InvalidateRoom) {
 	ctx, task := internal.StartTask(context.Background(), "OnInvalidateRoom")
 	defer task.End()
 
+	// TODO: the only consumer actually wants a set---could make this return a set directly?
 	joined, invited, err := h.Storage.FetchJoinedAndInvited(p.RoomID)
 	if err != nil {
 		hub := internal.GetSentryHubFromContextOrDefault(ctx)
