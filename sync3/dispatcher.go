@@ -295,17 +295,21 @@ func (d *Dispatcher) OnInvalidateRoom(ctx context.Context, roomID string, joined
 	}
 	receiver.OnInvalidateRoom(ctx, roomID)
 
-	d.jrt.ReloadMembershipsForRoom(roomID, joined, invited)
+	left := d.jrt.ReloadMembershipsForRoom(roomID, joined, invited)
 
 	// Then dispatch to any users who are joined to that room.
-	// XXX: the caller has to update the JoinedRoomTracker before calling this function
-	joinedUsers, _ := d.jrt.JoinedUsersForRoom(roomID, nil)
 	d.userToReceiverMu.RLock()
 	defer d.userToReceiverMu.RUnlock()
-	for _, userID := range joinedUsers {
-		receiver = d.userToReceiver[userID]
-		if receiver != nil {
-			receiver.OnInvalidateRoom(ctx, roomID)
+
+	pokeUsers := func(users []string) {
+		for _, userID := range users {
+			receiver = d.userToReceiver[userID]
+			if receiver != nil {
+				receiver.OnInvalidateRoom(ctx, roomID)
+			}
 		}
 	}
+	pokeUsers(joined)
+	pokeUsers(invited)
+	pokeUsers(left)
 }

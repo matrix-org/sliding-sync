@@ -185,14 +185,17 @@ func (t *JoinedRoomsTracker) NumInvitedUsersForRoom(roomID string) int {
 	return len(t.roomIDToInvitedUsers[roomID])
 }
 
-func (t *JoinedRoomsTracker) ReloadMembershipsForRoom(roomID string, joined, invited []string) {
-	joinedSet := make(set, len(joined))
-	invitedSet := make(set, len(invited))
+// ReloadMembershipsForRoom overwrites the JoinedRoomsTracker state for one room to the
+// given list of joined and invited users. It returns the list of users who were joined
+// or invited prior to this call, but are no longer joined nor invited.
+func (t *JoinedRoomsTracker) ReloadMembershipsForRoom(roomID string, joined, invited []string) (left []string) {
+	newJoined := make(set, len(joined))
+	newInvited := make(set, len(invited))
 	for _, member := range joined {
-		joinedSet[member] = struct{}{}
+		newJoined[member] = struct{}{}
 	}
 	for _, member := range invited {
-		invitedSet[member] = struct{}{}
+		newInvited[member] = struct{}{}
 	}
 
 	t.mu.Lock()
@@ -200,11 +203,12 @@ func (t *JoinedRoomsTracker) ReloadMembershipsForRoom(roomID string, joined, inv
 
 	// 1. Overwrite the room's memberships with the given arguments.
 	oldJoined := t.roomIDToJoinedUsers[roomID]
-	t.roomIDToJoinedUsers[roomID] = joinedSet
-	t.roomIDToInvitedUsers[roomID] = invitedSet
+	oldInvited := t.roomIDToInvitedUsers[roomID]
+	t.roomIDToJoinedUsers[roomID] = newJoined
+	t.roomIDToInvitedUsers[roomID] = newInvited
 
 	// 2. Mark the joined users as being joined to this room.
-	for _, userID := range joined {
+	for userID := range newJoined {
 		_, userAlreadyTracked := t.userIDToJoinedRooms[userID]
 		if !userAlreadyTracked {
 			t.userIDToJoinedRooms[userID] = make(set)
@@ -212,11 +216,29 @@ func (t *JoinedRoomsTracker) ReloadMembershipsForRoom(roomID string, joined, inv
 		t.userIDToJoinedRooms[userID][roomID] = struct{}{}
 	}
 
-	// 3. Mark those who are no longer joined as no longer being joined to this room.
+	// 3. Scan the old joined list for users who are no longer joined, and mark them as such.
+	//    Also scan for those who have left (i.e. were joined and have not been reinvited).
 	for userID := range oldJoined {
-		_, stillJoined := joinedSet[userID]
+		_, stillJoined := newJoined[userID]
 		if !stillJoined {
 			delete(t.userIDToJoinedRooms[userID], roomID)
+			_, nowInvited := newInvited[userID]
+			if !nowInvited {
+				left = append(left, userID)
+			}
 		}
 	}
+
+	// 4. Scan the old invited list for users who have left.
+	for userID := range oldInvited {
+		_, stillInvited := newInvited[userID]
+		if !stillInvited {
+			_, nowJoined := newJoined[userID]
+			if !nowJoined {
+				left = append(left, userID)
+			}
+		}
+	}
+
+	return
 }
