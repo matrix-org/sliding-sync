@@ -4,13 +4,13 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"github.com/matrix-org/sliding-sync/sync2"
 	"os"
 	"strings"
 
+	"github.com/matrix-org/sliding-sync/sync2"
+
 	"github.com/getsentry/sentry-go"
 	"github.com/lib/pq"
-	"github.com/prometheus/client_golang/prometheus"
 
 	"github.com/jmoiron/sqlx"
 	"github.com/matrix-org/sliding-sync/internal"
@@ -86,17 +86,6 @@ func NewStorageWithDB(db *sqlx.DB, addPrometheusMetrics bool) *Storage {
 		snapshotTable: NewSnapshotsTable(db),
 		spacesTable:   NewSpacesTable(db),
 		entityName:    "server",
-	}
-
-	if addPrometheusMetrics {
-		acc.snapshotMemberCountVec = prometheus.NewHistogramVec(prometheus.HistogramOpts{
-			Namespace: "sliding_sync",
-			Subsystem: "poller",
-			Name:      "snapshot_size",
-			Help:      "Number of membership events in a snapshot",
-			Buckets:   []float64{100.0, 500.0, 1000.0, 5000.0, 10000.0, 20000.0, 50000.0, 100000.0, 150000.0},
-		}, []string{"room_id"})
-		prometheus.MustRegister(acc.snapshotMemberCountVec)
 	}
 
 	return &Storage{
@@ -1118,9 +1107,6 @@ func (s *Storage) Teardown() {
 	err := s.Accumulator.db.Close()
 	if err != nil {
 		panic("Storage.Teardown: " + err.Error())
-	}
-	if s.Accumulator.snapshotMemberCountVec != nil {
-		prometheus.Unregister(s.Accumulator.snapshotMemberCountVec)
 	}
 }
 

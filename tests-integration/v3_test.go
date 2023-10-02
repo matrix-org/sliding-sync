@@ -245,6 +245,10 @@ func runTestV2Server(t testutils.TestBenchInterface) *testV2Server {
 		timeToWaitForV2Response: time.Second,
 	}
 	r := mux.NewRouter()
+	r.HandleFunc("/_matrix/client/versions", func(w http.ResponseWriter, req *http.Request) {
+		w.WriteHeader(200)
+		w.Write([]byte(`{"versions": ["v1.1"]}`))
+	})
 	r.HandleFunc("/_matrix/client/r0/account/whoami", func(w http.ResponseWriter, req *http.Request) {
 		token := strings.TrimPrefix(req.Header.Get("Authorization"), "Bearer ")
 		userID := server.userID(token)

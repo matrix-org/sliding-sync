@@ -4,9 +4,9 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+
 	"github.com/matrix-org/sliding-sync/internal"
 	"github.com/matrix-org/sliding-sync/sync2"
-	"github.com/prometheus/client_golang/prometheus"
 
 	"github.com/getsentry/sentry-go"
 
@@ -23,13 +23,12 @@ import (
 // Accumulate function for timeline events. v2 sync must be called with a large enough timeline.limit
 // for this to work!
 type Accumulator struct {
-	db                     *sqlx.DB
-	roomsTable             *RoomsTable
-	eventsTable            *EventTable
-	snapshotTable          *SnapshotTable
-	spacesTable            *SpacesTable
-	entityName             string
-	snapshotMemberCountVec *prometheus.HistogramVec // TODO: Remove, this is temporary to get a feeling how often a new snapshot is created
+	db            *sqlx.DB
+	roomsTable    *RoomsTable
+	eventsTable   *EventTable
+	snapshotTable *SnapshotTable
+	spacesTable   *SpacesTable
+	entityName    string
 }
 
 func NewAccumulator(db *sqlx.DB) *Accumulator {
@@ -273,12 +272,7 @@ func (a *Accumulator) Initialise(roomID string, state []json.RawMessage) (Initia
 		if err != nil {
 			return fmt.Errorf("failed to insert snapshot: %w", err)
 		}
-		if a.snapshotMemberCountVec != nil {
-			logger.Trace().Str("room_id", roomID).Int("members", len(memberNIDs)).Msg("Inserted new snapshot")
-			a.snapshotMemberCountVec.WithLabelValues(roomID).Observe(float64(len(memberNIDs)))
-		}
-
-		// 5. Any other processing of new state events.
+		res.AddedEvents = true
 		latestNID := int64(0)
 		for _, nid := range otherNIDs {
 			if nid > latestNID {
@@ -517,10 +511,6 @@ func (a *Accumulator) Accumulate(txn *sqlx.Tx, userID, roomID string, timeline s
 			}
 			if err = a.snapshotTable.Insert(txn, newSnapshot); err != nil {
 				return AccumulateResult{}, fmt.Errorf("failed to insert new snapshot: %w", err)
-			}
-			if a.snapshotMemberCountVec != nil {
-				logger.Trace().Str("room_id", roomID).Int("members", len(memNIDs)).Msg("Inserted new snapshot")
-				a.snapshotMemberCountVec.WithLabelValues(roomID).Observe(float64(len(memNIDs)))
 			}
 			snapID = newSnapshot.SnapshotID
 		}
