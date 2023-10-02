@@ -181,18 +181,18 @@ type UserCacheListener interface {
 // Tracks data specific to a given user. Specifically, this is the map of room ID to UserRoomData.
 // This data is user-scoped, not global or connection scoped.
 type UserCache struct {
-	LazyRoomDataOverride func(loadPos int64, roomIDs []string, maxTimelineEvents int) map[string]UserRoomData
-	UserID               string
-	roomToData           map[string]UserRoomData
-	roomToDataMu         *sync.RWMutex
-	listeners            map[int]UserCacheListener
-	listenersMu          *sync.RWMutex
-	id                   int
-	store                *state.Storage
-	globalCache          *GlobalCache
-	txnIDs               TransactionIDFetcher
-	ignoredUsers         map[string]struct{}
-	ignoredUsersMu       *sync.RWMutex
+	LazyLoadTimelinesOverride func(loadPos int64, roomIDs []string, maxTimelineEvents int) map[string]state.LatestEvents
+	UserID                    string
+	roomToData                map[string]UserRoomData
+	roomToDataMu              *sync.RWMutex
+	listeners                 map[int]UserCacheListener
+	listenersMu               *sync.RWMutex
+	id                        int
+	store                     *state.Storage
+	globalCache               *GlobalCache
+	txnIDs                    TransactionIDFetcher
+	ignoredUsers              map[string]struct{}
+	ignoredUsersMu            *sync.RWMutex
 }
 
 func NewUserCache(userID string, globalCache *GlobalCache, store *state.Storage, txnIDs TransactionIDFetcher) *UserCache {
@@ -306,34 +306,29 @@ func (c *UserCache) OnRegistered(ctx context.Context) error {
 	return nil
 }
 
-// Load timelines from the database. Uses cached UserRoomData for metadata purposes only.
-func (c *UserCache) LazyLoadTimelines(ctx context.Context, loadPos int64, roomIDs []string, maxTimelineEvents int) map[string]UserRoomData {
+// LazyLoadTimelines loads up to `maxTimelineEvents` from the database, plus other
+// timeline-related data. Events from senders ignored by this user are dropped.
+// Returns nil on error.
+func (c *UserCache) LazyLoadTimelines(ctx context.Context, loadPos int64, roomIDs []string, maxTimelineEvents int) map[string]state.LatestEvents {
 	_, span := internal.StartSpan(ctx, "LazyLoadTimelines")
 	defer span.End()
-	if c.LazyRoomDataOverride != nil {
-		return c.LazyRoomDataOverride(loadPos, roomIDs, maxTimelineEvents)
+	if c.LazyLoadTimelinesOverride != nil {
+		return c.LazyLoadTimelinesOverride(loadPos, roomIDs, maxTimelineEvents)
 	}
-	result := make(map[string]UserRoomData)
+	result := make(map[string]state.LatestEvents)
 	roomIDToLatestEvents, err := c.store.LatestEventsInRooms(c.UserID, roomIDs, loadPos, maxTimelineEvents)
 	if err != nil {
 		logger.Err(err).Strs("rooms", roomIDs).Msg("failed to get LatestEventsInRooms")
 		internal.GetSentryHubFromContextOrDefault(ctx).CaptureException(err)
 		return nil
 	}
-	c.roomToDataMu.Lock()
 	for _, requestedRoomID := range roomIDs {
 		latestEvents := roomIDToLatestEvents[requestedRoomID]
-		urd, ok := c.roomToData[requestedRoomID]
-		if !ok {
-			urd = NewUserRoomData()
-		}
 		if latestEvents != nil {
 			latestEvents.DiscardIgnoredMessages(c.ShouldIgnore)
-			urd.RequestedLatestEvents = *latestEvents
+			result[requestedRoomID] = *latestEvents
 		}
-		result[requestedRoomID] = urd
 	}
-	c.roomToDataMu.Unlock()
 	return result
 }
 

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/matrix-org/sliding-sync/state"
 	"reflect"
 	"testing"
 	"time"
@@ -44,12 +45,12 @@ func newRoomMetadata(roomID string, lastMsgTimestamp spec.Timestamp) internal.Ro
 	return *m
 }
 
-func mockLazyRoomOverride(loadPos int64, roomIDs []string, maxTimelineEvents int) map[string]caches.UserRoomData {
-	result := make(map[string]caches.UserRoomData)
+func mockLazyRoomOverride(loadPos int64, roomIDs []string, maxTimelineEvents int) map[string]state.LatestEvents {
+	result := make(map[string]state.LatestEvents)
 	for _, roomID := range roomIDs {
-		u := caches.NewUserRoomData()
-		u.RequestedLatestEvents.Timeline = []json.RawMessage{[]byte(`{}`)}
-		result[roomID] = u
+		result[roomID] = state.LatestEvents{
+			Timeline: []json.RawMessage{[]byte(`{}`)},
+		}
 	}
 	return result
 }
@@ -98,12 +99,12 @@ func TestConnStateInitial(t *testing.T) {
 	userCache := caches.NewUserCache(userID, globalCache, nil, &NopTransactionFetcher{})
 	dispatcher.Register(context.Background(), userCache.UserID, userCache)
 	dispatcher.Register(context.Background(), sync3.DispatcherAllUsers, globalCache)
-	userCache.LazyRoomDataOverride = func(loadPos int64, roomIDs []string, maxTimelineEvents int) map[string]caches.UserRoomData {
-		result := make(map[string]caches.UserRoomData)
+	userCache.LazyLoadTimelinesOverride = func(loadPos int64, roomIDs []string, maxTimelineEvents int) map[string]state.LatestEvents {
+		result := make(map[string]state.LatestEvents)
 		for _, roomID := range roomIDs {
-			u := caches.NewUserRoomData()
-			u.RequestedLatestEvents.Timeline = []json.RawMessage{timeline[roomID]}
-			result[roomID] = u
+			result[roomID] = state.LatestEvents{
+				Timeline: []json.RawMessage{timeline[roomID]},
+			}
 		}
 		return result
 	}
@@ -269,7 +270,7 @@ func TestConnStateMultipleRanges(t *testing.T) {
 		return 1, roomMetadata, joinTimings, nil, nil
 	}
 	userCache := caches.NewUserCache(userID, globalCache, nil, &NopTransactionFetcher{})
-	userCache.LazyRoomDataOverride = mockLazyRoomOverride
+	userCache.LazyLoadTimelinesOverride = mockLazyRoomOverride
 	dispatcher.Register(context.Background(), userCache.UserID, userCache)
 	dispatcher.Register(context.Background(), sync3.DispatcherAllUsers, globalCache)
 	cs := NewConnState(userID, deviceID, userCache, globalCache, &NopExtensionHandler{}, &NopJoinTracker{}, nil, nil, 1000, 0)
@@ -448,7 +449,7 @@ func TestBumpToOutsideRange(t *testing.T) {
 
 	}
 	userCache := caches.NewUserCache(userID, globalCache, nil, &NopTransactionFetcher{})
-	userCache.LazyRoomDataOverride = mockLazyRoomOverride
+	userCache.LazyLoadTimelinesOverride = mockLazyRoomOverride
 	dispatcher.Register(context.Background(), userCache.UserID, userCache)
 	dispatcher.Register(context.Background(), sync3.DispatcherAllUsers, globalCache)
 	cs := NewConnState(userID, deviceID, userCache, globalCache, &NopExtensionHandler{}, &NopJoinTracker{}, nil, nil, 1000, 0)
@@ -551,12 +552,12 @@ func TestConnStateRoomSubscriptions(t *testing.T) {
 			}, nil, nil
 	}
 	userCache := caches.NewUserCache(userID, globalCache, nil, &NopTransactionFetcher{})
-	userCache.LazyRoomDataOverride = func(loadPos int64, roomIDs []string, maxTimelineEvents int) map[string]caches.UserRoomData {
-		result := make(map[string]caches.UserRoomData)
+	userCache.LazyLoadTimelinesOverride = func(loadPos int64, roomIDs []string, maxTimelineEvents int) map[string]state.LatestEvents {
+		result := make(map[string]state.LatestEvents)
 		for _, roomID := range roomIDs {
-			u := caches.NewUserRoomData()
-			u.RequestedLatestEvents.Timeline = []json.RawMessage{timeline[roomID]}
-			result[roomID] = u
+			result[roomID] = state.LatestEvents{
+				Timeline: []json.RawMessage{timeline[roomID]},
+			}
 		}
 		return result
 	}
