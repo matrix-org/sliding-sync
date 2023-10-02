@@ -296,7 +296,11 @@ func (d *Dispatcher) OnInvalidateRoom(ctx context.Context, metadata *internal.Ro
 
 	pokeUsers := func(users []string) {
 		for _, userID := range users {
-			uc := d.userToReceiver[userID].(*caches.UserCache)
+			rec := d.userToReceiver[userID]
+			if rec == nil {
+				continue
+			}
+			uc := rec.(*caches.UserCache)
 			if uc != nil {
 				uc.OnInvalidateRoom(ctx, metadata)
 			}
