@@ -566,17 +566,11 @@ func (s *ConnState) getInitialRoomData(ctx context.Context, roomSub sync3.RoomSu
 	roomToUsersInTimeline := make(map[string][]string, len(roomIDToUserRoomData))
 	roomToTimeline := make(map[string][]json.RawMessage)
 	for roomID, urd := range roomIDToUserRoomData {
-		set := make(map[string]struct{})
+		senders := make(map[string]struct{})
 		for _, ev := range urd.RequestedLatestEvents.Timeline {
-			set[gjson.GetBytes(ev, "sender").Str] = struct{}{}
+			senders[gjson.GetBytes(ev, "sender").Str] = struct{}{}
 		}
-		userIDs := make([]string, len(set))
-		i := 0
-		for userID := range set {
-			userIDs[i] = userID
-			i++
-		}
-		roomToUsersInTimeline[roomID] = userIDs
+		roomToUsersInTimeline[roomID] = keys(senders)
 		roomToTimeline[roomID] = urd.RequestedLatestEvents.Timeline
 		// remember what we just loaded so if we see these events down the live stream we know to ignore them.
 		// This means that requesting a direct room subscription causes the connection to jump ahead to whatever
