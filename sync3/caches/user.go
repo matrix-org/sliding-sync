@@ -42,10 +42,6 @@ type UserRoomData struct {
 	HighlightCount    int
 	Invite            *InviteData
 
-	// this field is set by LazyLoadTimelines and is per-function call, and is not persisted in-memory.
-	// The zero value of this safe to use (0 latest nid, no prev batch, no timeline).
-	RequestedLatestEvents state.LatestEvents
-
 	// TODO: should CanonicalisedName really be in RoomConMetadata? It's only set in SetRoom AFAICS
 	CanonicalisedName string // stripped leading symbols like #, all in lower case
 	// Set of spaces this room is a part of, from the perspective of this user. This is NOT global room data
