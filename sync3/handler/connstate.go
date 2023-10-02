@@ -554,6 +554,8 @@ func (s *ConnState) lazyLoadTypingMembers(ctx context.Context, response *sync3.R
 func (s *ConnState) getInitialRoomData(ctx context.Context, roomSub sync3.RoomSubscription, bumpEventTypes []string, roomIDs ...string) map[string]sync3.Room {
 	ctx, span := internal.StartSpan(ctx, "getInitialRoomData")
 	defer span.End()
+
+	// 0. Load room metadata and timelines.
 	// We want to grab the user room data and the room metadata for each room ID. We use the globally
 	// highest NID we've seen to act as an anchor for the request. This anchor does not guarantee that
 	// events returned here have already been seen - the position is not globally ordered - so because
@@ -562,7 +564,8 @@ func (s *ConnState) getInitialRoomData(ctx context.Context, roomSub sync3.RoomSu
 	// response to this call to assign new load positions for each room.
 	roomIDToUserRoomData := s.userCache.LazyLoadTimelines(ctx, s.anchorLoadPosition, roomIDs, int(roomSub.TimelineLimit))
 	roomMetadatas := s.globalCache.LoadRooms(ctx, roomIDs...)
-	// prepare lazy loading data structures, txn IDs
+
+	// 1. Prepare lazy loading data structures, txn IDs.
 	roomToUsersInTimeline := make(map[string][]string, len(roomIDToUserRoomData))
 	roomToTimeline := make(map[string][]json.RawMessage)
 	for roomID, urd := range roomIDToUserRoomData {
@@ -582,7 +585,14 @@ func (s *ConnState) getInitialRoomData(ctx context.Context, roomSub sync3.RoomSu
 		s.loadPositions[roomID] = urd.RequestedLatestEvents.LatestNID
 	}
 	roomToTimeline = s.userCache.AnnotateWithTransactionIDs(ctx, s.userID, s.deviceID, roomToTimeline)
+
+	// 2. Load required state events.
 	rsm := roomSub.RequiredStateMap(s.userID)
+	if rsm.IsLazyLoading() {
+		for roomID, userIDs := range roomToUsersInTimeline {
+			s.lazyCache.Add(roomID, userIDs...)
+		}
+	}
 
 	internal.Logf(ctx, "connstate", "getInitialRoomData for %d rooms, RequiredStateMap: %#v", len(roomIDs), rsm)
 
@@ -604,6 +614,7 @@ func (s *ConnState) getInitialRoomData(ctx context.Context, roomSub sync3.RoomSu
 		roomIDToState = make(map[string][]json.RawMessage)
 	}
 
+	// 3. Build sync3.Room structs to return to clients.
 	rooms := make(map[string]sync3.Room, len(roomIDs))
 	for _, roomID := range roomIDs {
 		userRoomData, ok := roomIDToUserRoomData[roomID]
@@ -681,11 +692,6 @@ func (s *ConnState) getInitialRoomData(ctx context.Context, roomSub sync3.RoomSu
 		rooms[roomID] = room
 	}
 
-	if rsm.IsLazyLoading() {
-		for roomID, userIDs := range roomToUsersInTimeline {
-			s.lazyCache.Add(roomID, userIDs...)
-		}
-	}
 	return rooms
 }
 
