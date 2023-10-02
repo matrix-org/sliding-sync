@@ -554,7 +554,6 @@ func (s *ConnState) lazyLoadTypingMembers(ctx context.Context, response *sync3.R
 func (s *ConnState) getInitialRoomData(ctx context.Context, roomSub sync3.RoomSubscription, bumpEventTypes []string, roomIDs ...string) map[string]sync3.Room {
 	ctx, span := internal.StartSpan(ctx, "getInitialRoomData")
 	defer span.End()
-	rooms := make(map[string]sync3.Room, len(roomIDs))
 	// We want to grab the user room data and the room metadata for each room ID. We use the globally
 	// highest NID we've seen to act as an anchor for the request. This anchor does not guarantee that
 	// events returned here have already been seen - the position is not globally ordered - so because
@@ -610,6 +609,8 @@ func (s *ConnState) getInitialRoomData(ctx context.Context, roomSub sync3.RoomSu
 	if roomIDToState == nil { // e.g no required_state
 		roomIDToState = make(map[string][]json.RawMessage)
 	}
+
+	rooms := make(map[string]sync3.Room, len(roomIDs))
 	for _, roomID := range roomIDs {
 		userRoomData, ok := roomIDToUserRoomData[roomID]
 		if !ok {
