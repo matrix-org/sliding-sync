@@ -777,7 +777,7 @@ func clampSliceRangeToListSize(ctx context.Context, r [2]int64, totalRooms int64
 	}
 }
 
-// Returns a slice containing copies of the keys of the given map, in no particular
+// keys returns a slice containing copies of the keys of the given map, in no particular
 // order.
 func keys[K comparable, V any](m map[K]V) []K {
 	if m == nil {
