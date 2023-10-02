@@ -347,6 +347,21 @@ func (c *UserCache) LoadRoomData(roomID string) UserRoomData {
 	return data
 }
 
+// LoadRooms is a batch version of LoadRoomData. Returns a map keyed by roomID.
+func (c *UserCache) LoadRooms(roomIDs ...string) map[string]UserRoomData {
+	result := make(map[string]UserRoomData, len(roomIDs))
+	c.roomToDataMu.RLock()
+	defer c.roomToDataMu.RUnlock()
+	for _, roomID := range roomIDs {
+		data, ok := c.roomToData[roomID]
+		if !ok {
+			data = NewUserRoomData()
+		}
+		result[roomID] = data
+	}
+	return result
+}
+
 type roomUpdateCache struct {
 	roomID string
 	// globalRoomData is a snapshot of the global metadata for this room immediately
