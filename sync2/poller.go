@@ -552,6 +552,14 @@ func (p *poller) poll(ctx context.Context, s *pollLoopState) error {
 		p.totalNumPolls.Inc()
 	}
 	if s.failCount > 0 {
+		if s.failCount > 1000 {
+			// 3s * 1000 = 3000s = 50 minutes
+			errMsg := "poller: access token has failed >1000 times to /sync, terminating loop"
+			p.logger.Warn().Msg(errMsg)
+			p.receiver.OnExpiredToken(ctx, hashToken(p.accessToken), p.userID, p.deviceID)
+			p.Terminate()
+			return fmt.Errorf(errMsg)
+		}
 		// don't backoff when doing v2 syncs because the response is only in the cache for a short
 		// period of time (on massive accounts on matrix.org) such that if you wait 2,4,8min between
 		// requests it might force the server to do the work all over again :(

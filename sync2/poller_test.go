@@ -553,6 +553,42 @@ func mustEqualSince(t *testing.T, gotSince, expectedSince string) {
 	}
 }
 
+func TestPollerGivesUpEventually(t *testing.T) {
+	deviceID := "FOOBAR"
+	hasPolledSuccessfully := make(chan struct{})
+	accumulator, client := newMocks(func(authHeader, since string) (*SyncResponse, int, error) {
+		return nil, 524, fmt.Errorf("gateway timeout")
+	})
+	timeSleep = func(d time.Duration) {
+		// actually sleep to make sure async actions can happen if any
+		time.Sleep(1 * time.Microsecond)
+	}
+	defer func() { // reset the value after the test runs
+		timeSleep = time.Sleep
+	}()
+	var wg sync.WaitGroup
+	wg.Add(1)
+	poller := newPoller(PollerID{UserID: "@alice:localhost", DeviceID: deviceID}, "Authorization: hello world", client, accumulator, zerolog.New(os.Stderr), false)
+	go func() {
+		defer wg.Done()
+		poller.Poll("")
+	}()
+	go func() {
+		poller.WaitUntilInitialSync()
+		close(hasPolledSuccessfully)
+	}()
+	wg.Wait()
+	select {
+	case <-hasPolledSuccessfully:
+	case <-time.After(100 * time.Millisecond):
+		break
+	}
+	// poller should be in the terminated state
+	if !poller.terminated.Load() {
+		t.Errorf("poller was not terminated")
+	}
+}
+
 // Tests that the poller backs off in 2,4,8,etc second increments to a variety of errors
 func TestPollerBackoff(t *testing.T) {
 	deviceID := "FOOBAR"
