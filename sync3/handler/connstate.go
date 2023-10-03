@@ -554,31 +554,28 @@ func (s *ConnState) lazyLoadTypingMembers(ctx context.Context, response *sync3.R
 func (s *ConnState) getInitialRoomData(ctx context.Context, roomSub sync3.RoomSubscription, bumpEventTypes []string, roomIDs ...string) map[string]sync3.Room {
 	ctx, span := internal.StartSpan(ctx, "getInitialRoomData")
 	defer span.End()
-	rooms := make(map[string]sync3.Room, len(roomIDs))
+
+	// 0. Load room metadata and timelines.
 	// We want to grab the user room data and the room metadata for each room ID. We use the globally
 	// highest NID we've seen to act as an anchor for the request. This anchor does not guarantee that
 	// events returned here have already been seen - the position is not globally ordered - so because
 	// room A has a position of 6 and B has 7 (so the highest is 7) does not mean that this connection
 	// has seen 6, as concurrent room updates cause A and B to race. This is why we then go through the
 	// response to this call to assign new load positions for each room.
-	roomIDToUserRoomData := s.userCache.LazyLoadTimelines(ctx, s.anchorLoadPosition, roomIDs, int(roomSub.TimelineLimit))
 	roomMetadatas := s.globalCache.LoadRooms(ctx, roomIDs...)
-	// prepare lazy loading data structures, txn IDs
-	roomToUsersInTimeline := make(map[string][]string, len(roomIDToUserRoomData))
+	userRoomDatas := s.userCache.LoadRooms(roomIDs...)
+	timelines := s.userCache.LazyLoadTimelines(ctx, s.anchorLoadPosition, roomIDs, int(roomSub.TimelineLimit))
+
+	// 1. Prepare lazy loading data structures, txn IDs.
+	roomToUsersInTimeline := make(map[string][]string, len(timelines))
 	roomToTimeline := make(map[string][]json.RawMessage)
-	for roomID, urd := range roomIDToUserRoomData {
-		set := make(map[string]struct{})
-		for _, ev := range urd.RequestedLatestEvents.Timeline {
-			set[gjson.GetBytes(ev, "sender").Str] = struct{}{}
+	for roomID, latestEvents := range timelines {
+		senders := make(map[string]struct{})
+		for _, ev := range latestEvents.Timeline {
+			senders[gjson.GetBytes(ev, "sender").Str] = struct{}{}
 		}
-		userIDs := make([]string, len(set))
-		i := 0
-		for userID := range set {
-			userIDs[i] = userID
-			i++
-		}
-		roomToUsersInTimeline[roomID] = userIDs
-		roomToTimeline[roomID] = urd.RequestedLatestEvents.Timeline
+		roomToUsersInTimeline[roomID] = keys(senders)
+		roomToTimeline[roomID] = latestEvents.Timeline
 		// remember what we just loaded so if we see these events down the live stream we know to ignore them.
 		// This means that requesting a direct room subscription causes the connection to jump ahead to whatever
 		// is in the database at the time of the call, rather than gradually converging by consuming live data.
@@ -586,10 +583,17 @@ func (s *ConnState) getInitialRoomData(ctx context.Context, roomSub sync3.RoomSu
 		// room state is also pinned to the load position here, else you could see weird things in individual
 		// responses such as an updated room.name without the associated m.room.name event (though this will
 		// come through on the next request -> it converges to the right state so it isn't critical).
-		s.loadPositions[roomID] = urd.RequestedLatestEvents.LatestNID
+		s.loadPositions[roomID] = latestEvents.LatestNID
 	}
 	roomToTimeline = s.userCache.AnnotateWithTransactionIDs(ctx, s.userID, s.deviceID, roomToTimeline)
+
+	// 2. Load required state events.
 	rsm := roomSub.RequiredStateMap(s.userID)
+	if rsm.IsLazyLoading() {
+		for roomID, userIDs := range roomToUsersInTimeline {
+			s.lazyCache.Add(roomID, userIDs...)
+		}
+	}
 
 	internal.Logf(ctx, "connstate", "getInitialRoomData for %d rooms, RequiredStateMap: %#v", len(roomIDs), rsm)
 
@@ -597,7 +601,7 @@ func (s *ConnState) getInitialRoomData(ctx context.Context, roomSub sync3.RoomSu
 	// since we'll be using the invite_state only.
 	loadRoomIDs := make([]string, 0, len(roomIDs))
 	for _, roomID := range roomIDs {
-		userRoomData, ok := roomIDToUserRoomData[roomID]
+		userRoomData, ok := userRoomDatas[roomID]
 		if !ok || !userRoomData.IsInvite {
 			loadRoomIDs = append(loadRoomIDs, roomID)
 		}
@@ -610,8 +614,11 @@ func (s *ConnState) getInitialRoomData(ctx context.Context, roomSub sync3.RoomSu
 	if roomIDToState == nil { // e.g no required_state
 		roomIDToState = make(map[string][]json.RawMessage)
 	}
+
+	// 3. Build sync3.Room structs to return to clients.
+	rooms := make(map[string]sync3.Room, len(roomIDs))
 	for _, roomID := range roomIDs {
-		userRoomData, ok := roomIDToUserRoomData[roomID]
+		userRoomData, ok := userRoomDatas[roomID]
 		if !ok {
 			userRoomData = caches.NewUserRoomData()
 		}
@@ -677,7 +684,7 @@ func (s *ConnState) getInitialRoomData(ctx context.Context, roomSub sync3.RoomSu
 			IsDM:              userRoomData.IsDM,
 			JoinedCount:       metadata.JoinCount,
 			InvitedCount:      &metadata.InviteCount,
-			PrevBatch:         userRoomData.RequestedLatestEvents.PrevBatch,
+			PrevBatch:         timelines[roomID].PrevBatch,
 			Timestamp:         maxTs,
 		}
 		if roomSub.IncludeHeroes() && calculated {
@@ -686,11 +693,6 @@ func (s *ConnState) getInitialRoomData(ctx context.Context, roomSub sync3.RoomSu
 		rooms[roomID] = room
 	}
 
-	if rsm.IsLazyLoading() {
-		for roomID, userIDs := range roomToUsersInTimeline {
-			s.lazyCache.Add(roomID, userIDs...)
-		}
-	}
 	return rooms
 }
 
@@ -782,7 +784,7 @@ func clampSliceRangeToListSize(ctx context.Context, r [2]int64, totalRooms int64
 	}
 }
 
-// Returns a slice containing copies of the keys of the given map, in no particular
+// keys returns a slice containing copies of the keys of the given map, in no particular
 // order.
 func keys[K comparable, V any](m map[K]V) []K {
 	if m == nil {
