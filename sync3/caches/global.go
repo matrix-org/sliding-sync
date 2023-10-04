@@ -55,6 +55,28 @@ type EventData struct {
 	ForceInitial bool
 }
 
+func NewEventData(event json.RawMessage, roomID string, latestPos int64) *EventData {
+	// parse the event to pull out fields we care about
+	var stateKey *string
+	ev := gjson.ParseBytes(event)
+	if sk := ev.Get("state_key"); sk.Exists() {
+		stateKey = &sk.Str
+	}
+	eventType := ev.Get("type").Str
+
+	return &EventData{
+		Event:         event,
+		RoomID:        roomID,
+		EventType:     eventType,
+		StateKey:      stateKey,
+		Content:       ev.Get("content"),
+		NID:           latestPos,
+		Timestamp:     ev.Get("origin_server_ts").Uint(),
+		Sender:        ev.Get("sender").Str,
+		TransactionID: ev.Get("unsigned.transaction_id").Str,
+	}
+}
+
 var logger = zerolog.New(os.Stdout).With().Timestamp().Logger().Output(zerolog.ConsoleWriter{
 	Out:        os.Stderr,
 	TimeFormat: "15:04:05",

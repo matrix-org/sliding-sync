@@ -9,7 +9,6 @@ import (
 	"github.com/matrix-org/sliding-sync/internal"
 	"github.com/matrix-org/sliding-sync/sync3/caches"
 	"github.com/rs/zerolog"
-	"github.com/tidwall/gjson"
 )
 
 var logger = zerolog.New(os.Stdout).With().Timestamp().Logger().Output(zerolog.ConsoleWriter{
@@ -78,28 +77,6 @@ func (d *Dispatcher) ReceiverForUser(userID string) Receiver {
 	return d.userToReceiver[userID]
 }
 
-func (d *Dispatcher) newEventData(event json.RawMessage, roomID string, latestPos int64) *caches.EventData {
-	// parse the event to pull out fields we care about
-	var stateKey *string
-	ev := gjson.ParseBytes(event)
-	if sk := ev.Get("state_key"); sk.Exists() {
-		stateKey = &sk.Str
-	}
-	eventType := ev.Get("type").Str
-
-	return &caches.EventData{
-		Event:         event,
-		RoomID:        roomID,
-		EventType:     eventType,
-		StateKey:      stateKey,
-		Content:       ev.Get("content"),
-		NID:           latestPos,
-		Timestamp:     ev.Get("origin_server_ts").Uint(),
-		Sender:        ev.Get("sender").Str,
-		TransactionID: ev.Get("unsigned.transaction_id").Str,
-	}
-}
-
 // Called by v2 pollers when we receive an initial state block. Very similar to OnNewEvents but
 // done in bulk for speed.
 func (d *Dispatcher) OnNewInitialRoomState(ctx context.Context, roomID string, state []json.RawMessage) {
@@ -117,7 +94,7 @@ func (d *Dispatcher) OnNewInitialRoomState(ctx context.Context, roomID string, s
 	eventDatas := make([]*caches.EventData, len(state))
 	var joined, invited []string
 	for i, event := range state {
-		ed := d.newEventData(event, roomID, 0)
+		ed := caches.NewEventData(event, roomID, 0)
 		eventDatas[i] = ed
 		if ed.EventType == "m.room.member" && ed.StateKey != nil {
 			membership := ed.Content.Get("membership").Str
@@ -153,7 +130,7 @@ func (d *Dispatcher) OnNewInitialRoomState(ctx context.Context, roomID string, s
 func (d *Dispatcher) OnNewEvent(
 	ctx context.Context, roomID string, event json.RawMessage, nid int64,
 ) {
-	ed := d.newEventData(event, roomID, nid)
+	ed := caches.NewEventData(event, roomID, nid)
 
 	// update the tracker
 	targetUser := ""
