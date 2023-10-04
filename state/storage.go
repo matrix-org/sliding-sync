@@ -367,6 +367,58 @@ func (s *Storage) ResetMetadataState(metadata *internal.RoomMetadata) error {
 	return nil
 }
 
+// TODO: there is a very similar query in ResetMetadataState which also selects events
+// events row for memberships. It is a shame to have to do this twice---can we query
+// once and pass the data around?
+func (s *Storage) FetchMemberships(roomID string) (
+	joins map[string]Event,
+	invites map[string][]json.RawMessage,
+	leaves map[string]json.RawMessage,
+	err error,
+) {
+	var events []Event
+	err = s.DB.Select(&events, `
+	WITH snapshot(membership_nids) AS (
+        SELECT membership_events
+        FROM syncv3_snapshots
+            JOIN syncv3_rooms ON snapshot_id = current_snapshot_id
+        WHERE syncv3_rooms.room_id = $1
+	)
+	SELECT event_nid, event_type, state_key, membership, is_state, before_state_snapshot_id, event_replaces_nid, event_id, room_id, prev_batch, missing_previous
+	FROM syncv3_events JOIN snapshot ON (
+		event_nid = ANY( membership_nids )
+	)
+	WHERE membership NOT IN ('invite', '_invite')
+	`, roomID)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+
+	joins = make(map[string]Event, len(events))
+	leaves = make(map[string]json.RawMessage, len(events))
+
+	for _, e := range events {
+		switch e.Membership {
+		case "_join":
+			fallthrough
+		case "join":
+			joins[e.StateKey] = e
+		case "_invite":
+			fallthrough
+		case "invite":
+			// should not happen!
+		default:
+			leaves[e.StateKey] = e.JSON
+		}
+	}
+
+	invites, err = s.InvitesTable.SelectInviteStateInRoom(roomID)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	return
+}
+
 // Returns all current NOT MEMBERSHIP state events matching the event types given in all rooms. Returns a map of
 // room ID to events in that room.
 func (s *Storage) currentNotMembershipStateEventsInAllRooms(txn *sqlx.Tx, eventTypes []string) (map[string][]Event, error) {

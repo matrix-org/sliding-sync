@@ -3,7 +3,6 @@ package state
 import (
 	"database/sql"
 	"encoding/json"
-
 	"github.com/jmoiron/sqlx"
 )
 
@@ -72,6 +71,31 @@ func (t *InvitesTable) SelectInviteState(userID, roomID string) (inviteState []j
 		return nil, err
 	}
 	return inviteState, nil
+}
+
+func (t *InvitesTable) SelectInviteStateInRoom(roomID string) (map[string][]json.RawMessage, error) {
+	var rows []struct {
+		State  json.RawMessage `db:"invite_state"`
+		UserID string          `db:"user_id"`
+	}
+	err := t.db.Select(&rows, `
+		SELECT invite_state, user_id
+		FROM syncv3_invites
+		WHERE room_id=$1
+	`, roomID)
+	if err != nil {
+		return nil, err
+	}
+
+	result := make(map[string][]json.RawMessage, len(rows))
+	for _, row := range rows {
+		var inviteState []json.RawMessage
+		if err := json.Unmarshal(row.State, &inviteState); err != nil {
+			return nil, err
+		}
+		result[row.UserID] = inviteState
+	}
+	return result, nil
 }
 
 // Select all invites for this user. Returns a map of room ID to invite_state (json array).
