@@ -28,6 +28,7 @@ type Accumulator struct {
 	eventsTable   *EventTable
 	snapshotTable *SnapshotTable
 	spacesTable   *SpacesTable
+	invitesTable  *InvitesTable
 	entityName    string
 }
 
@@ -38,6 +39,7 @@ func NewAccumulator(db *sqlx.DB) *Accumulator {
 		eventsTable:   NewEventTable(db),
 		snapshotTable: NewSnapshotsTable(db),
 		spacesTable:   NewSpacesTable(db),
+		invitesTable:  NewInvitesTable(db),
 		entityName:    "server",
 	}
 }
