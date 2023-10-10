@@ -6,7 +6,7 @@ func Keys[K comparable, V any](m map[K]V) []K {
 	if m == nil {
 		return nil
 	}
-	output := make([]K, len(m))
+	output := make([]K, 0, len(m))
 	for key := range m {
 		output = append(output, key)
 	}
