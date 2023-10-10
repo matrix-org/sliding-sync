@@ -386,7 +386,7 @@ func (s *Storage) FetchMemberships(roomID string) (
             JOIN syncv3_rooms ON snapshot_id = current_snapshot_id
         WHERE syncv3_rooms.room_id = $1
 	)
-	SELECT event_nid, event_type, state_key, membership, is_state, before_state_snapshot_id, event_replaces_nid, event_id, room_id, prev_batch, missing_previous
+	SELECT event, event_nid, room_id, state_key, membership
 	FROM syncv3_events JOIN snapshot ON (
 		event_nid = ANY( membership_nids )
 	)
