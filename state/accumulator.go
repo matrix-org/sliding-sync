@@ -297,6 +297,10 @@ func (a *Accumulator) Initialise(roomID string, state []json.RawMessage) (Initia
 			}
 		}
 
+		if err = a.invitesTable.RemoveSupersededInvites(txn, roomID, events); err != nil {
+			return fmt.Errorf("RemoveSupersededInvites: %w", err)
+		}
+
 		if err = a.spacesTable.HandleSpaceUpdates(txn, events); err != nil {
 			return fmt.Errorf("HandleSpaceUpdates: %s", err)
 		}
@@ -543,6 +547,10 @@ func (a *Accumulator) Accumulate(txn *sqlx.Tx, userID, roomID string, timeline s
 			return AccumulateResult{}, err
 		}
 		result.RequiresReload = currentStateRedactions > 0
+	}
+
+	if err = a.invitesTable.RemoveSupersededInvites(txn, roomID, postInsertEvents); err != nil {
+		return AccumulateResult{}, fmt.Errorf("RemoveSupersededInvites: %w", err)
 	}
 
 	if err = a.spacesTable.HandleSpaceUpdates(txn, postInsertEvents); err != nil {
