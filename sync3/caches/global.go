@@ -345,15 +345,6 @@ func (c *GlobalCache) OnNewEvent(
 					// remove this user as a hero
 					metadata.RemoveHero(*ed.StateKey)
 				}
-
-				if membership == "join" && eventJSON.Get("unsigned.prev_content.membership").Str == "invite" {
-					// invite -> join, retire any outstanding invites
-					err := c.store.InvitesTable.RemoveInvite(*ed.StateKey, ed.RoomID)
-					if err != nil {
-						logger.Err(err).Str("user", *ed.StateKey).Str("room", ed.RoomID).Msg("failed to remove accepted invite")
-						internal.GetSentryHubFromContextOrDefault(ctx).CaptureException(err)
-					}
-				}
 			}
 			if len(metadata.Heroes) < 6 && (membership == "join" || membership == "invite") {
 				// try to find the existing hero e.g they changed their display name
