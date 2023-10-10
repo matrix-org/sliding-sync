@@ -2,6 +2,8 @@ package state
 
 import (
 	"encoding/json"
+	"github.com/jmoiron/sqlx"
+	"github.com/matrix-org/sliding-sync/sqlutil"
 	"reflect"
 	"testing"
 )
@@ -125,6 +127,155 @@ func TestInviteTable(t *testing.T) {
 	// Retire no-ones invite, no-ops
 	if err = table.RemoveInvite("no one", roomA); err != nil {
 		t.Fatalf("failed to RemoveInvite: %s", err)
+	}
+}
+
+func TestInviteTable_RemoveSupersededInvites(t *testing.T) {
+	db, close := connectToDB(t)
+	defer close()
+
+	alice := "@alice:localhost"
+	bob := "@bob:localhost"
+	roomA := "!a:localhost"
+	roomB := "!b:localhost"
+	inviteState := []json.RawMessage{[]byte(`{"foo":"bar"}`)}
+
+	table := NewInvitesTable(db)
+	t.Log("Invite Alice and Bob to both rooms.")
+
+	// Add some invites
+	if err := table.InsertInvite(alice, roomA, inviteState); err != nil {
+		t.Fatalf("failed to InsertInvite: %s", err)
+	}
+	if err := table.InsertInvite(bob, roomA, inviteState); err != nil {
+		t.Fatalf("failed to InsertInvite: %s", err)
+	}
+	if err := table.InsertInvite(alice, roomB, inviteState); err != nil {
+		t.Fatalf("failed to InsertInvite: %s", err)
+	}
+	if err := table.InsertInvite(bob, roomB, inviteState); err != nil {
+		t.Fatalf("failed to InsertInvite: %s", err)
+	}
+
+	t.Log("Alice joins room A. Remove her superseded invite.")
+	newEvents := []Event{
+		{
+			Type:       "m.room.member",
+			StateKey:   alice,
+			Membership: "join",
+			RoomID:     roomA,
+		},
+	}
+	err := sqlutil.WithTransaction(db, func(txn *sqlx.Tx) error {
+		return table.RemoveSupersededInvites(txn, roomA, newEvents)
+	})
+	if err != nil {
+		t.Fatalf("failed to RemoveSupersededInvites: %s", err)
+	}
+
+	t.Log("Alice should still be invited to room B.")
+	assertInvites(t, table, alice, map[string][]json.RawMessage{roomB: inviteState})
+	t.Log("Bob should still be invited to rooms A and B.")
+	assertInvites(t, table, bob, map[string][]json.RawMessage{roomA: inviteState, roomB: inviteState})
+
+	t.Log("Bob declines his invitation to room B.")
+	newEvents = []Event{
+		{
+			Type:       "m.room.member",
+			StateKey:   bob,
+			Membership: "leave",
+			RoomID:     roomB,
+		},
+	}
+	err = sqlutil.WithTransaction(db, func(txn *sqlx.Tx) error {
+		return table.RemoveSupersededInvites(txn, roomB, newEvents)
+	})
+	if err != nil {
+		t.Fatalf("failed to RemoveSupersededInvites: %s", err)
+	}
+
+	t.Log("Alice should still be invited to room B.")
+	assertInvites(t, table, alice, map[string][]json.RawMessage{roomB: inviteState})
+	t.Log("Bob should still be invited to room A.")
+	assertInvites(t, table, bob, map[string][]json.RawMessage{roomA: inviteState})
+
+	// Now try multiple membership changes in one call.
+	t.Log("Alice joins, changes profile, leaves and is re-invited to room B.")
+	newEvents = []Event{
+		{
+			Type:       "m.room.member",
+			StateKey:   alice,
+			Membership: "join",
+			RoomID:     roomB,
+		},
+		{
+			Type:       "m.room.member",
+			StateKey:   alice,
+			Membership: "_join",
+			RoomID:     roomB,
+		},
+		{
+			Type:       "m.room.member",
+			StateKey:   alice,
+			Membership: "leave",
+			RoomID:     roomB,
+		},
+		{
+			Type:       "m.room.member",
+			StateKey:   alice,
+			Membership: "invite",
+			RoomID:     roomB,
+		},
+	}
+
+	err = sqlutil.WithTransaction(db, func(txn *sqlx.Tx) error {
+		return table.RemoveSupersededInvites(txn, roomB, newEvents)
+	})
+	if err != nil {
+		t.Fatalf("failed to RemoveSupersededInvites: %s", err)
+	}
+
+	t.Log("Alice should still be invited to room B.")
+	assertInvites(t, table, alice, map[string][]json.RawMessage{roomB: inviteState})
+
+	t.Log("Bob declines, is reinvited to and joins room A.")
+	newEvents = []Event{
+		{
+			Type:       "m.room.member",
+			StateKey:   bob,
+			Membership: "leave",
+			RoomID:     roomA,
+		},
+		{
+			Type:       "m.room.member",
+			StateKey:   bob,
+			Membership: "invite",
+			RoomID:     roomA,
+		},
+		{
+			Type:       "m.room.member",
+			StateKey:   bob,
+			Membership: "join",
+			RoomID:     roomA,
+		},
+	}
+
+	err = sqlutil.WithTransaction(db, func(txn *sqlx.Tx) error {
+		return table.RemoveSupersededInvites(txn, roomA, newEvents)
+	})
+	if err != nil {
+		t.Fatalf("failed to RemoveSupersededInvites: %s", err)
+	}
+	assertInvites(t, table, bob, map[string][]json.RawMessage{})
+}
+
+func assertInvites(t *testing.T, table *InvitesTable, user string, expected map[string][]json.RawMessage) {
+	invites, err := table.SelectAllInvitesForUser(user)
+	if err != nil {
+		t.Fatalf("failed to SelectAllInvitesForUser: %s", err)
+	}
+	if !reflect.DeepEqual(invites, expected) {
+		t.Fatalf("got %v invites, want %v", invites, expected)
 	}
 }
 
