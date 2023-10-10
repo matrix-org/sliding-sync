@@ -287,6 +287,8 @@ func (a *Accumulator) Initialise(roomID string, state []json.RawMessage) (Initia
 			}
 		}
 
+		// also call the new invites table function here.
+
 		if err = a.spacesTable.HandleSpaceUpdates(txn, events); err != nil {
 			return fmt.Errorf("HandleSpaceUpdates: %s", err)
 		}
@@ -540,6 +542,9 @@ func (a *Accumulator) Accumulate(txn *sqlx.Tx, userID, roomID string, timeline s
 		}
 		result.RequiresReload = currentStateRedactions > 0
 	}
+
+	// new function on the invites table which accepts newEventsByID and removes any
+	// invites for the users if their end result state is not invite.
 
 	if err = a.spacesTable.HandleSpaceUpdates(txn, newEventsByID); err != nil {
 		return AccumulateResult{}, fmt.Errorf("HandleSpaceUpdates: %s", err)
