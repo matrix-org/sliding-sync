@@ -715,7 +715,13 @@ func TestClientsSeeMembershipTransitionsInGappyPolls(t *testing.T) {
 	v2.queueResponse(chrisToken, sync2.SyncResponse{
 		NextBatch: "chris1",
 	})
-	chrisRes := v3.mustDoV3Request(t, chrisToken, sync3.Request{})
+	chrisRes := v3.mustDoV3Request(t, chrisToken, sync3.Request{
+		Lists: map[string]sync3.RequestList{
+			"a": {
+				Ranges: sync3.SliceRanges{{0, 10}},
+			},
+		},
+	})
 	v2.waitUntilEmpty(t, chrisToken)
 
 	initialEvents := append(
@@ -776,8 +782,12 @@ func TestClientsSeeMembershipTransitionsInGappyPolls(t *testing.T) {
 				roomID: {
 					State: sync2.EventsResponse{
 						Events: []json.RawMessage{
-							testutils.NewStateEvent(t, "m.room.member", bob, bob, map[string]any{"membership": "join"}),
-							testutils.NewStateEvent(t, "m.room.member", chris, chris, map[string]any{"membership": "join"}),
+							testutils.NewJoinEvent(t, bob, testutils.WithUnsigned(map[string]interface{}{
+								"prev_content": map[string]string{
+									"membership": "invite",
+								},
+							})),
+							testutils.NewJoinEvent(t, chris),
 						},
 					},
 					Timeline: sync2.TimelineResponse{
