@@ -29,7 +29,7 @@ var (
 
 func setTimeSinceValue(val time.Duration) {
 	timeSinceMu.Lock()
-	timeSinceValue = time.Minute * 2
+	timeSinceValue = val
 	timeSinceMu.Unlock()
 }
 func init() {
