@@ -19,8 +19,8 @@ func TestAccountDataRespectsExtensionScope(t *testing.T) {
 	// Want at least one test of the initial sync behaviour (which hits `ProcessInitial`)
 	// separate to the incremental sync behaviour (hits `AppendLive`)
 	t.Log("Alice creates rooms 1 and 2.")
-	room1 := alice.CreateRoom(t, map[string]interface{}{"preset": "public_chat", "name": "room 1"})
-	room2 := alice.CreateRoom(t, map[string]interface{}{"preset": "public_chat", "name": "room 2"})
+	room1 := alice.MustCreateRoom(t, map[string]interface{}{"preset": "public_chat", "name": "room 1"})
+	room2 := alice.MustCreateRoom(t, map[string]interface{}{"preset": "public_chat", "name": "room 2"})
 	t.Logf("room1=%s room2=%s", room1, room2)
 
 	t.Log("Alice uploads account data for both rooms, plus global account data.")
@@ -216,7 +216,7 @@ func TestAccountDataDoesntDupe(t *testing.T) {
 // sync response with bytes.Equal.
 func putGlobalAccountData(t *testing.T, client *CSAPI, eventType string, content map[string]interface{}) json.RawMessage {
 	t.Helper()
-	client.SetGlobalAccountData(t, eventType, content)
+	client.MustSetGlobalAccountData(t, eventType, content)
 	serialised := testutils.NewAccountData(t, eventType, content)
 	return serialised
 }
@@ -224,7 +224,7 @@ func putGlobalAccountData(t *testing.T, client *CSAPI, eventType string, content
 // putRoomAccountData is like putGlobalAccountData, but for room-specific account data.
 func putRoomAccountData(t *testing.T, client *CSAPI, roomID, eventType string, content map[string]interface{}) json.RawMessage {
 	t.Helper()
-	client.SetRoomAccountData(t, roomID, eventType, content)
+	client.MustSetRoomAccountData(t, roomID, eventType, content)
 	serialised := testutils.NewAccountData(t, eventType, content)
 	return serialised
 }

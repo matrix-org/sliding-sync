@@ -4,6 +4,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/matrix-org/complement/b"
+	"github.com/matrix-org/complement/client"
 	"github.com/matrix-org/sliding-sync/sync3"
 	"github.com/matrix-org/sliding-sync/testutils/m"
 )
@@ -21,46 +23,46 @@ import (
 //	spaces[A,B] => B,C,E
 func TestSpacesFilter(t *testing.T) {
 	alice := registerNewUser(t)
-	parentA := alice.CreateRoom(t, map[string]interface{}{
+	parentA := alice.MustCreateRoom(t, map[string]interface{}{
 		"preset": "public_chat",
 		"creation_content": map[string]string{
 			"type": "m.space",
 		},
 	})
-	parentD := alice.CreateRoom(t, map[string]interface{}{
+	parentD := alice.MustCreateRoom(t, map[string]interface{}{
 		"preset": "public_chat",
 		"creation_content": map[string]string{
 			"type": "m.space",
 		},
 	})
-	roomB := alice.CreateRoom(t, map[string]interface{}{
+	roomB := alice.MustCreateRoom(t, map[string]interface{}{
 		"preset": "public_chat",
 	})
-	roomC := alice.CreateRoom(t, map[string]interface{}{
+	roomC := alice.MustCreateRoom(t, map[string]interface{}{
 		"preset": "public_chat",
 	})
-	roomE := alice.CreateRoom(t, map[string]interface{}{
+	roomE := alice.MustCreateRoom(t, map[string]interface{}{
 		"preset": "public_chat",
 	})
-	roomF := alice.CreateRoom(t, map[string]interface{}{
+	roomF := alice.MustCreateRoom(t, map[string]interface{}{
 		"preset": "public_chat",
 	})
 	t.Logf("A: %s B: %s C: %s D: %s E: %s F: %s", parentA, roomB, roomC, parentD, roomE, roomF)
-	alice.SendEventSynced(t, parentA, Event{
+	alice.SendEventSynced(t, parentA, b.Event{
 		Type:     "m.space.child",
 		StateKey: &roomB,
 		Content: map[string]interface{}{
 			"via": []string{"example.com"},
 		},
 	})
-	alice.SendEventSynced(t, parentA, Event{
+	alice.SendEventSynced(t, parentA, b.Event{
 		Type:     "m.space.child",
 		StateKey: &roomC,
 		Content: map[string]interface{}{
 			"via": []string{"example.com"},
 		},
 	})
-	alice.SendEventSynced(t, parentD, Event{
+	alice.SendEventSynced(t, parentD, b.Event{
 		Type:     "m.space.child",
 		StateKey: &roomE,
 		Content: map[string]interface{}{
@@ -71,7 +73,7 @@ func TestSpacesFilter(t *testing.T) {
 
 	doSpacesListRequest := func(spaces []string, pos *string, listMatchers ...m.ListMatcher) *sync3.Response {
 		t.Helper()
-		var opts []RequestOpt
+		var opts []client.RequestOpt
 		if pos != nil {
 			opts = append(opts, WithPos(*pos))
 		}
@@ -116,7 +118,7 @@ func TestSpacesFilter(t *testing.T) {
 	}
 
 	// now move F into D and re-query D
-	alice.SendEventSynced(t, parentD, Event{
+	alice.SendEventSynced(t, parentD, b.Event{
 		Type:     "m.space.child",
 		StateKey: &roomF,
 		Content: map[string]interface{}{
@@ -127,7 +129,7 @@ func TestSpacesFilter(t *testing.T) {
 	doInitialSpacesListRequest([]string{parentD}, []string{roomF, roomE})
 
 	// now remove B and re-query A
-	alice.SendEventSynced(t, parentA, Event{
+	alice.SendEventSynced(t, parentA, b.Event{
 		Type:     "m.space.child",
 		StateKey: &roomB,
 		Content:  map[string]interface{}{},
@@ -136,7 +138,7 @@ func TestSpacesFilter(t *testing.T) {
 	res := doInitialSpacesListRequest([]string{parentA}, []string{roomC})
 
 	// now live stream an update to ensure it gets added
-	alice.SendEventSynced(t, parentA, Event{
+	alice.SendEventSynced(t, parentA, b.Event{
 		Type:     "m.space.child",
 		StateKey: &roomB,
 		Content: map[string]interface{}{
@@ -165,14 +167,14 @@ func TestSpacesFilter(t *testing.T) {
 func TestSpacesFilterInvite(t *testing.T) {
 	alice := registerNewUser(t)
 	bob := registerNewUser(t)
-	spaceRoomID := alice.CreateRoom(t, map[string]interface{}{
+	spaceRoomID := alice.MustCreateRoom(t, map[string]interface{}{
 		"preset": "public_chat",
 		"name":   "Space Room",
 		"creation_content": map[string]string{
 			"type": "m.space",
 		},
 	})
-	normalRoomID := alice.CreateRoom(t, map[string]interface{}{
+	normalRoomID := alice.MustCreateRoom(t, map[string]interface{}{
 		"preset": "public_chat",
 		"name":   "Normal Room",
 	})
@@ -205,7 +207,7 @@ func TestAddingUnknownChildToSpace(t *testing.T) {
 	bob := registerNewUser(t)
 
 	t.Log("Alice creates a space and invites Bob.")
-	parentID := alice.CreateRoom(t, map[string]interface{}{
+	parentID := alice.MustCreateRoom(t, map[string]interface{}{
 		"type":   "m.space",
 		"invite": []string{bob.UserID},
 	})
@@ -226,9 +228,13 @@ func TestAddingUnknownChildToSpace(t *testing.T) {
 	})
 
 	t.Log("Alice creates a room and marks it as a child of the space.")
-	childID := alice.CreateRoom(t, map[string]interface{}{"preset": "public_chat"})
-	childEventID := alice.SetState(t, parentID, "m.space.child", childID, map[string]interface{}{
-		"via": []string{"localhost"},
+	childID := alice.MustCreateRoom(t, map[string]interface{}{"preset": "public_chat"})
+	childEventID := alice.Unsafe_SendEventUnsynced(t, parentID, b.Event{
+		Type:     "m.space.child",
+		StateKey: ptr(childID),
+		Content: map[string]interface{}{
+			"via": []string{"localhost"},
+		},
 	})
 
 	t.Log("Bob syncs until he sees the m.space.child event in the space.")

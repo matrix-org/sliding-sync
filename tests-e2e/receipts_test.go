@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/matrix-org/complement/b"
 	"github.com/matrix-org/sliding-sync/sync3"
 	"github.com/matrix-org/sliding-sync/sync3/extensions"
 	"github.com/matrix-org/sliding-sync/testutils/m"
@@ -14,11 +15,11 @@ import (
 func TestReceipts(t *testing.T) {
 	alice := registerNewUser(t)
 	bob := registerNewUser(t)
-	roomID := alice.CreateRoom(t, map[string]interface{}{
+	roomID := alice.MustCreateRoom(t, map[string]interface{}{
 		"preset": "public_chat",
 	})
 	bob.JoinRoom(t, roomID, nil)
-	eventID := alice.SendEventSynced(t, roomID, Event{
+	eventID := alice.SendEventSynced(t, roomID, b.Event{
 		Type: "m.room.message",
 		Content: map[string]interface{}{
 			"msgtype": "m.text",
@@ -73,13 +74,13 @@ func TestReceiptsLazy(t *testing.T) {
 	alice := registerNewUser(t)
 	bob := registerNewUser(t)
 	charlie := registerNewUser(t)
-	roomID := alice.CreateRoom(t, map[string]interface{}{
+	roomID := alice.MustCreateRoom(t, map[string]interface{}{
 		"preset": "public_chat",
 	})
 	bob.JoinRoom(t, roomID, nil)
 	charlie.JoinRoom(t, roomID, nil)
 	alice.SlidingSync(t, sync3.Request{}) // proxy begins tracking
-	eventID := alice.SendEventSynced(t, roomID, Event{
+	eventID := alice.SendEventSynced(t, roomID, b.Event{
 		Type: "m.room.message",
 		Content: map[string]interface{}{
 			"msgtype": "m.text",
@@ -94,7 +95,7 @@ func TestReceiptsLazy(t *testing.T) {
 	// alice sends 5 new events, bob and alice ACK the last event
 	var fifthEventID string
 	for i := 0; i < 5; i++ {
-		fifthEventID = alice.SendEventSynced(t, roomID, Event{
+		fifthEventID = alice.SendEventSynced(t, roomID, b.Event{
 			Type: "m.room.message",
 			Content: map[string]interface{}{
 				"msgtype": "m.text",
@@ -108,7 +109,7 @@ func TestReceiptsLazy(t *testing.T) {
 	// alice sends another 5 events and ACKs nothing
 	var lastEventID string
 	for i := 0; i < 5; i++ {
-		lastEventID = alice.SendEventSynced(t, roomID, Event{
+		lastEventID = alice.SendEventSynced(t, roomID, b.Event{
 			Type: "m.room.message",
 			Content: map[string]interface{}{
 				"msgtype": "m.text",
@@ -171,12 +172,12 @@ func TestReceiptsLazy(t *testing.T) {
 func TestReceiptsPrivate(t *testing.T) {
 	alice := registerNewUser(t)
 	bob := registerNewUser(t)
-	roomID := alice.CreateRoom(t, map[string]interface{}{
+	roomID := alice.MustCreateRoom(t, map[string]interface{}{
 		"preset": "public_chat",
 	})
 	bob.JoinRoom(t, roomID, nil)
 
-	eventID := alice.SendEventSynced(t, roomID, Event{
+	eventID := alice.SendEventSynced(t, roomID, b.Event{
 		Type: "m.room.message",
 		Content: map[string]interface{}{
 			"msgtype": "m.text",
@@ -231,10 +232,10 @@ func TestReceiptsRespectsExtensionScope(t *testing.T) {
 	var syncResp *sync3.Response
 
 	t.Log("Alice creates four rooms.")
-	room1 := alice.CreateRoom(t, map[string]interface{}{"preset": "public_chat", "name": "room 1"})
-	room2 := alice.CreateRoom(t, map[string]interface{}{"preset": "public_chat", "name": "room 2"})
-	room3 := alice.CreateRoom(t, map[string]interface{}{"preset": "public_chat", "name": "room 3"})
-	room4 := alice.CreateRoom(t, map[string]interface{}{"preset": "public_chat", "name": "room 4"})
+	room1 := alice.MustCreateRoom(t, map[string]interface{}{"preset": "public_chat", "name": "room 1"})
+	room2 := alice.MustCreateRoom(t, map[string]interface{}{"preset": "public_chat", "name": "room 2"})
+	room3 := alice.MustCreateRoom(t, map[string]interface{}{"preset": "public_chat", "name": "room 3"})
+	room4 := alice.MustCreateRoom(t, map[string]interface{}{"preset": "public_chat", "name": "room 4"})
 	t.Logf("room1=%s room2=%s room3=%s room4=%s", room1, room2, room3, room4)
 
 	t.Log("Bob joins those rooms.")
@@ -244,7 +245,7 @@ func TestReceiptsRespectsExtensionScope(t *testing.T) {
 	bob.JoinRoom(t, room4, nil)
 
 	t.Log("Alice posts a message to each room")
-	messageEvent := Event{
+	messageEvent := b.Event{
 		Type: "m.room.message",
 		Content: map[string]interface{}{
 			"msgtype": "m.text",
@@ -323,8 +324,8 @@ func TestReceiptsOnRoomsOnly(t *testing.T) {
 	bob := registerNamedUser(t, "bob")
 
 	t.Log("Alice creates two rooms.")
-	room1 := alice.CreateRoom(t, map[string]interface{}{"preset": "public_chat", "name": "room 1"})
-	room2 := alice.CreateRoom(t, map[string]interface{}{"preset": "public_chat", "name": "room 2"})
+	room1 := alice.MustCreateRoom(t, map[string]interface{}{"preset": "public_chat", "name": "room 1"})
+	room2 := alice.MustCreateRoom(t, map[string]interface{}{"preset": "public_chat", "name": "room 2"})
 	t.Logf("room1=%s room2=%s", room1, room2)
 
 	t.Log("Bob joins those rooms.")
@@ -332,7 +333,7 @@ func TestReceiptsOnRoomsOnly(t *testing.T) {
 	bob.JoinRoom(t, room2, nil)
 
 	t.Log("Alice posts a message to each room")
-	messageEvent := Event{
+	messageEvent := b.Event{
 		Type: "m.room.message",
 		Content: map[string]interface{}{
 			"msgtype": "m.text",

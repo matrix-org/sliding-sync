@@ -3,7 +3,6 @@ package syncv3_test
 import (
 	"encoding/json"
 	"fmt"
-	"net/url"
 	"os"
 	"reflect"
 	"sort"
@@ -12,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/matrix-org/complement/client"
 	"github.com/matrix-org/sliding-sync/sync3"
 	"github.com/matrix-org/sliding-sync/testutils/m"
 	"github.com/tidwall/gjson"
@@ -31,13 +31,6 @@ func TestMain(m *testing.M) {
 	fmt.Println("proxy located at", proxyBaseURL)
 	exitCode := m.Run()
 	os.Exit(exitCode)
-}
-
-func WithPos(pos string) RequestOpt {
-	return WithQueries(url.Values{
-		"pos":     []string{pos},
-		"timeout": []string{"500"}, // 0.5s
-	})
 }
 
 func assertEventsEqual(t *testing.T, wantList []Event, gotList []json.RawMessage) {
@@ -212,11 +205,13 @@ func registerNewUser(t *testing.T) *CSAPI {
 func registerNamedUser(t *testing.T, localpartPrefix string) *CSAPI {
 	// create user
 	localpart := fmt.Sprintf("%s-%d-%d", localpartPrefix, time.Now().Unix(), atomic.AddUint64(&userCounter, 1))
-	httpClient := NewLoggedClient(t, "localhost", nil)
+	httpClient := client.NewLoggedClient(t, "localhost", nil)
 	client := &CSAPI{
-		Client:           httpClient,
-		BaseURL:          homeserverBaseURL,
-		SyncUntilTimeout: 3 * time.Second,
+		CSAPI: &client.CSAPI{
+			Client:           httpClient,
+			BaseURL:          homeserverBaseURL,
+			SyncUntilTimeout: 3 * time.Second,
+		},
 	}
 
 	client.UserID, client.AccessToken, client.DeviceID = client.RegisterUser(t, localpart, "password")
