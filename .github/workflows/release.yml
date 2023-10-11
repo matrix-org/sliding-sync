@@ -9,6 +9,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
+        os: ["linux"]
         arch: ["amd64", "arm64"]
     steps:
       - uses: actions/checkout@v4
@@ -18,6 +19,7 @@ jobs:
       - run: mkdir build
       - run: go build -o build/syncv3_linux_${{ matrix.arch }} ./cmd/syncv3
         env:
+          GOOS: ${{ matrix.os }}
           GOARCH: ${{ matrix.arch }}
       - uses: softprops/action-gh-release@de2c0eb89ae2a093876385947365aca7b0e5f844 # v1
         with:
