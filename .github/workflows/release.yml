@@ -28,6 +28,7 @@ jobs:
           path: build/syncv3_${{ matrix.os }}_${{ matrix.arch }}
 
   create-release:
+    needs: ["build"]
     runs-on: ubuntu-latest
     steps:
       - name: "Fetch all binaries"
