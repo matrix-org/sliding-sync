@@ -1,0 +1,25 @@
+name: "Build and attach binary to release"
+on:
+  release:
+    types: ["created"]
+permissions:
+  contents: write  # to upload the binaries to the release
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        arch: ["amd64", "arm64"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v4
+        with:
+          go-version: "1.20"
+      - run: mkdir build
+      - run: go build ./cmd/syncv3 -o build/syncv3_linux_${{ matrix.arch }}
+        env:
+          GOARCH: ${{ matrix.arch }}
+      - uses: softprops/action-gh-release@de2c0eb89ae2a093876385947365aca7b0e5f844 # v1
+        with:
+          files: build/syncv3_linux_${{ matrix.arch }}
+          fail_on_unmatched_files: true
