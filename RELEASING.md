@@ -1,7 +1,13 @@
 0. Ensure that CI passes against the commit you want to release.
 1. Tag that release. The tag name should start with `v`. Push it to GitHub.
-2. GitHub should see tag and trigger [a GHA workflow](https://github.com/matrix-org/sliding-sync/actions/workflows/release.yml). It should: 
-   - build binaries,
-   - create a draft release for this tag, and
+2. After the tag is pushed, Github will see the tag and trigger [a GHA workflow](https://github.com/matrix-org/sliding-sync/actions/workflows/docker.yml). It should
+   - build docker images,
+   - publish them to [the project's container repository](https://github.com/matrix-org/sliding-sync/pkgs/container/sliding-sync),
+   - and also run some [third-party vulnerability scanner](https://github.com/matrix-org/sliding-sync/blob/97b21d4d9ea2c151ac5535a46ad9930c5a2a7f32/.github/workflows/docker.yml#L66-L76), for some reason.
+3. GitHub should also trigger [a second GHA workflow](https://github.com/matrix-org/sliding-sync/actions/workflows/release.yml), which: 
+   - builds binaries,
+   - creates a draft release for this tag, and
    - uploads the binaries as artifacts to this release.
-3. Go to https://github.com/matrix-org/sliding-sync/releases/ to find your release. Check that the binaries are attached successfully. Write release notes. When you're happy, publish.
+4. Go to https://github.com/matrix-org/sliding-sync/releases/ to find your release. **Edit it in place** (do not create a new release). Check that the binaries are attached successfully. Write release notes. When you're happy, publish.
+
+That's it. Relax, take a deep breath, pat yourself on the back, then move on with your life.
