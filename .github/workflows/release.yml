@@ -1,0 +1,41 @@
+name: "Create draft release with binaries after tag"
+on:
+  push:
+    tags: ["v*"]
+permissions:
+  contents: write  # to upload the binaries to the release
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        os: ["linux"]
+        arch: ["amd64", "arm64"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v4
+        with:
+          go-version: "1.20"
+      - run: mkdir build
+      - run: go build -trimpath -o build/syncv3_${{ matrix.os }}_${{ matrix.arch }} ./cmd/syncv3
+        env:
+          GOOS: ${{ matrix.os }}
+          GOARCH: ${{ matrix.arch }}
+      - name: "Upload binary as artifact"
+        uses: actions/upload-artifact@v3
+        with:
+          name: build
+          path: build/syncv3_${{ matrix.os }}_${{ matrix.arch }}
+
+  create-release:
+    needs: ["build"]
+    runs-on: ubuntu-latest
+    steps:
+      - name: "Fetch all binaries"
+        uses: actions/download-artifact@v3
+      - name: "Create release"
+        uses: softprops/action-gh-release@de2c0eb89ae2a093876385947365aca7b0e5f844 # v1
+        with:
+          files: build/*
+          draft: True
+          fail_on_unmatched_files: true

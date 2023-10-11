@@ -3,6 +3,8 @@ package state
 import (
 	"database/sql"
 	"encoding/json"
+
+	"github.com/lib/pq"
 	"github.com/jmoiron/sqlx"
 )
 
@@ -13,14 +15,17 @@ import (
 //     correctly when the user joined the room.
 //   - The user could read room data in the room without being joined to the room e.g could pull
 //     `required_state` and `timeline` as they would be authorised by the invite to see this data.
+//
 // Instead, we now completely split out invites from the normal event flow. This fixes the issues
 // outlined above but introduce more problems:
 //   - How do you sort the invite with rooms?
 //   - How do you calculate the room name when you lack heroes?
+//
 // For now, we say that invites:
 //   - are treated as a highlightable event for the purposes of sorting by highlight count.
 //   - are given the timestamp of when the invite arrived.
 //   - calculate the room name on a best-effort basis given the lack of heroes (same as element-web).
+//
 // When an invite is rejected, it appears in the `leave` section which then causes the invite to be
 // removed from this table.
 type InvitesTable struct {
@@ -43,6 +48,44 @@ func NewInvitesTable(db *sqlx.DB) *InvitesTable {
 
 func (t *InvitesTable) RemoveInvite(userID, roomID string) error {
 	_, err := t.db.Exec(`DELETE FROM syncv3_invites WHERE user_id = $1 AND room_id = $2`, userID, roomID)
+	return err
+}
+
+// RemoveSupersededInvites accepts a list of events in the given room. The events should
+// either
+//   - contain at most one membership event per user, or else
+//   - be in timeline order (most recent last)
+//
+// (corresponding to an Accumulate and an Initialise call, respectively).
+//
+// The events are scanned in order for membership changes, to determine the "final"
+// memberships. Users who final membership is not "invite" have their outstanding
+// invites to this room deleted.
+func (t *InvitesTable) RemoveSupersededInvites(txn *sqlx.Tx, roomID string, newEvents []Event) error {
+	memberships := map[string]string{} // user ID -> memberships
+	for _, ev := range newEvents {
+		if ev.Type != "m.room.member" {
+			continue
+		}
+		memberships[ev.StateKey] = ev.Membership
+	}
+
+	var usersToRemove []string
+	for userID, membership := range memberships {
+		if membership != "invite" && membership != "_invite" {
+			usersToRemove = append(usersToRemove, userID)
+		}
+	}
+
+	if len(usersToRemove) == 0 {
+		return nil
+	}
+
+	_, err := txn.Exec(`
+		DELETE FROM syncv3_invites
+		WHERE user_id = ANY($1) AND room_id = $2
+	`, pq.StringArray(usersToRemove), roomID)
+
 	return err
 }
 

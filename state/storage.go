@@ -85,6 +85,7 @@ func NewStorageWithDB(db *sqlx.DB, addPrometheusMetrics bool) *Storage {
 		eventsTable:   NewEventTable(db),
 		snapshotTable: NewSnapshotsTable(db),
 		spacesTable:   NewSpacesTable(db),
+		invitesTable:  NewInvitesTable(db),
 		entityName:    "server",
 	}
 
@@ -94,7 +95,7 @@ func NewStorageWithDB(db *sqlx.DB, addPrometheusMetrics bool) *Storage {
 		UnreadTable:       NewUnreadTable(db),
 		EventsTable:       acc.eventsTable,
 		AccountDataTable:  NewAccountDataTable(db),
-		InvitesTable:      NewInvitesTable(db),
+		InvitesTable:      acc.invitesTable,
 		TransactionsTable: NewTransactionsTable(db),
 		DeviceDataTable:   NewDeviceDataTable(db),
 		ReceiptTable:      NewReceiptTable(db),
