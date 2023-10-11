@@ -28,6 +28,7 @@ type Accumulator struct {
 	eventsTable   *EventTable
 	snapshotTable *SnapshotTable
 	spacesTable   *SpacesTable
+	invitesTable  *InvitesTable
 	entityName    string
 }
 
@@ -38,6 +39,7 @@ func NewAccumulator(db *sqlx.DB) *Accumulator {
 		eventsTable:   NewEventTable(db),
 		snapshotTable: NewSnapshotsTable(db),
 		spacesTable:   NewSpacesTable(db),
+		invitesTable:  NewInvitesTable(db),
 		entityName:    "server",
 	}
 }
@@ -295,6 +297,10 @@ func (a *Accumulator) Initialise(roomID string, state []json.RawMessage) (Initia
 			}
 		}
 
+		if err = a.invitesTable.RemoveSupersededInvites(txn, roomID, events); err != nil {
+			return fmt.Errorf("RemoveSupersededInvites: %w", err)
+		}
+
 		if err = a.spacesTable.HandleSpaceUpdates(txn, events); err != nil {
 			return fmt.Errorf("HandleSpaceUpdates: %s", err)
 		}
@@ -431,7 +437,9 @@ func (a *Accumulator) Accumulate(txn *sqlx.Tx, userID, roomID string, timeline s
 	}
 
 	var latestNID int64
-	newEventsByID := make([]Event, 0, len(eventIDToNID))
+	// postInsertEvents matches newEvents, but a) it has NIDs, and b) state events have
+	// the IsState field hacked to true so we don't insert them into the timeline.
+	postInsertEvents := make([]Event, 0, len(eventIDToNID))
 	redactTheseEventIDs := make(map[string]*Event)
 	for i, ev := range newEvents {
 		nid, ok := eventIDToNID[ev.ID]
@@ -459,7 +467,7 @@ func (a *Accumulator) Accumulate(txn *sqlx.Tx, userID, roomID string, timeline s
 					redactTheseEventIDs[redactsEventID] = &newEvents[i]
 				}
 			}
-			newEventsByID = append(newEventsByID, ev)
+			postInsertEvents = append(postInsertEvents, ev)
 			result.TimelineNIDs = append(result.TimelineNIDs, ev.NID)
 		}
 	}
@@ -485,7 +493,7 @@ func (a *Accumulator) Accumulate(txn *sqlx.Tx, userID, roomID string, timeline s
 		}
 	}
 
-	for _, ev := range newEventsByID {
+	for _, ev := range postInsertEvents {
 		var replacesNID int64
 		// the snapshot ID we assign to this event is unaffected by whether /this/ event is state or not,
 		// as this is the before snapshot ID.
@@ -541,12 +549,16 @@ func (a *Accumulator) Accumulate(txn *sqlx.Tx, userID, roomID string, timeline s
 		result.RequiresReload = currentStateRedactions > 0
 	}
 
-	if err = a.spacesTable.HandleSpaceUpdates(txn, newEventsByID); err != nil {
+	if err = a.invitesTable.RemoveSupersededInvites(txn, roomID, postInsertEvents); err != nil {
+		return AccumulateResult{}, fmt.Errorf("RemoveSupersededInvites: %w", err)
+	}
+
+	if err = a.spacesTable.HandleSpaceUpdates(txn, postInsertEvents); err != nil {
 		return AccumulateResult{}, fmt.Errorf("HandleSpaceUpdates: %s", err)
 	}
 
 	// the last fetched snapshot ID is the current one
-	info := a.roomInfoDelta(roomID, newEventsByID)
+	info := a.roomInfoDelta(roomID, postInsertEvents)
 	if err = a.roomsTable.Upsert(txn, info, snapID, latestNID); err != nil {
 		return AccumulateResult{}, fmt.Errorf("failed to UpdateCurrentSnapshotID to %d: %w", snapID, err)
 	}
