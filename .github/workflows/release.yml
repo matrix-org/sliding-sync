@@ -24,7 +24,7 @@ jobs:
       - name: "Upload binary as artifact"
         uses: actions/upload-artifact@v3
         with:
-          name: ${{ matrix.os }}-${{ matrix.arch }}
+          name: build
           path: build/syncv3_${{ matrix.os }}_${{ matrix.arch }}
 
   create-release:
