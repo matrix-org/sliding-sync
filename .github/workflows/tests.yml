@@ -144,6 +144,9 @@ jobs:
                 # Note: constrained to `packages:read` only at the top of the file
                 token: ${{ secrets.GITHUB_TOKEN }}
 
+            - name: Install libolm
+              run: sudo apt-get update && sudo apt-get install -y libolm3 libolm-dev
+
             - name: Run end-to-end tests
               run: |
                 set -euo pipefail
