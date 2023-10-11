@@ -18,6 +18,31 @@ import (
 
 const initialSinceToken = "0"
 
+// monkey patch out time.Since with a test controlled value.
+// This is done in the init block so we can make sure we swap it out BEFORE any pollers
+// start. If we wait until pollers exist, we get data races. This includes pollers in tests
+// which don't use timeSince, hence the init block.
+var (
+	timeSinceMu    sync.Mutex
+	timeSinceValue = time.Duration(0) // 0 means use the real impl
+)
+
+func setTimeSinceValue(val time.Duration) {
+	timeSinceMu.Lock()
+	timeSinceValue = val
+	timeSinceMu.Unlock()
+}
+func init() {
+	timeSince = func(t time.Time) time.Duration {
+		timeSinceMu.Lock()
+		defer timeSinceMu.Unlock()
+		if timeSinceValue == 0 {
+			return time.Since(t)
+		}
+		return timeSinceValue
+	}
+}
+
 // Tests that EnsurePolling works in the happy case
 func TestPollerMapEnsurePolling(t *testing.T) {
 	nextSince := "next"
@@ -528,9 +553,8 @@ func TestPollerPollUpdateDeviceSincePeriodically(t *testing.T) {
 	wantSinceFromSync = next
 
 	// 4. ... some time has passed, this triggers the 1min limit
-	timeSince = func(d time.Time) time.Duration {
-		return time.Minute * 2
-	}
+	setTimeSinceValue(time.Minute * 2)
+	defer setTimeSinceValue(0) // reset
 	next = "10"
 	syncResponses <- &SyncResponse{NextBatch: next}
 	mustEqualSince(t, <-syncCalledWithSince, wantSinceFromSync)
