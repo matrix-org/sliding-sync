@@ -77,6 +77,10 @@ func (t *InvitesTable) RemoveSupersededInvites(txn *sqlx.Tx, roomID string, newE
 		}
 	}
 
+	if len(usersToRemove) == 0 {
+		return nil
+	}
+
 	_, err := txn.Exec(`
 		DELETE FROM syncv3_invites
 		WHERE user_id = ANY($1) AND room_id = $2
