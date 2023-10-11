@@ -8,6 +8,11 @@
    - builds binaries,
    - creates a draft release for this tag, and
    - uploads the binaries as artifacts to this release.
-4. Go to https://github.com/matrix-org/sliding-sync/releases/ to find your release. **Edit it in place** (do not create a new release). Check that the binaries are attached successfully. Write release notes. When you're happy, publish.
+4. Go to https://github.com/matrix-org/sliding-sync/releases/ to find your release. 
+   - **Edit it in place** (do not create a new release).
+   - Check that the binaries are attached successfully.
+   - Write release notes.
+   - Wait for the docker build to finish. This takes ~10 minutes; check the GHA workflow and the (check [packages repo](https://github.com/matrix-org/sliding-sync/pkgs/container/sliding-sync)).
+   - Publish when you're happy with the release notes.
 
 That's it. Relax, take a deep breath, pat yourself on the back, then move on with your life.
