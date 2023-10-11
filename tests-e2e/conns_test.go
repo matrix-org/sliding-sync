@@ -5,12 +5,10 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"net/url"
 	"testing"
 	"time"
 
 	"github.com/matrix-org/complement/b"
-	"github.com/matrix-org/complement/client"
 	"github.com/matrix-org/sliding-sync/sync3"
 	"github.com/matrix-org/sliding-sync/testutils/m"
 )
@@ -34,29 +32,25 @@ func TestInvalidTokenReturnsMUnknownTokenError(t *testing.T) {
 
 	var invalidResponses []*http.Response
 	// using the same token now returns a 401 with M_UNKNOWN_TOKEN
-	httpRes := alice.Do(t, "POST", []string{"_matrix", "client", "unstable", "org.matrix.msc3575", "sync"}, client.WithQueries(url.Values{
-		"timeout": []string{"500"},
-	}), client.WithJSONBody(t, sync3.Request{
+	httpRes := alice.DoSlidingSync(t, sync3.Request{
 		ConnID: "A",
 		RoomSubscriptions: map[string]sync3.RoomSubscription{
 			roomID: {
 				TimelineLimit: 1,
 			},
 		},
-	}))
+	})
 	invalidResponses = append(invalidResponses, httpRes)
 	// using a bogus access token returns a 401 with M_UNKNOWN_TOKEN
 	alice.AccessToken = "flibble_wibble"
-	httpRes = alice.Do(t, "POST", []string{"_matrix", "client", "unstable", "org.matrix.msc3575", "sync"}, client.WithQueries(url.Values{
-		"timeout": []string{"500"},
-	}), client.WithJSONBody(t, sync3.Request{
+	httpRes = alice.DoSlidingSync(t, sync3.Request{
 		ConnID: "A",
 		RoomSubscriptions: map[string]sync3.RoomSubscription{
 			roomID: {
 				TimelineLimit: 1,
 			},
 		},
-	}))
+	})
 	invalidResponses = append(invalidResponses, httpRes)
 
 	for i, httpRes := range invalidResponses {

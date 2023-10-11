@@ -295,6 +295,9 @@ jobs:
           - name: Build ${{env.PREV_VERSION}}
             run: go build ./cmd/syncv3
 
+          - name: Install libolm
+            run: sudo apt-get update && sudo apt-get install -y libolm3 libolm-dev
+
           - name: Run end-to-end tests
             run: |
               set -euo pipefail

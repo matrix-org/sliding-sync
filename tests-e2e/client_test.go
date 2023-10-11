@@ -43,8 +43,19 @@ type CSAPI struct {
 	AvatarURL string
 }
 
-// SlidingSync performs a single sliding sync request
+// SlidingSync performs a single sliding sync request. Fails on non 2xx
 func (c *CSAPI) SlidingSync(t *testing.T, data sync3.Request, opts ...client.RequestOpt) (resBody *sync3.Response) {
+	t.Helper()
+	res := c.DoSlidingSync(t, data, opts...)
+	body := client.ParseJSON(t, res)
+	if err := json.Unmarshal(body, &resBody); err != nil {
+		t.Fatalf("failed to unmarshal response: %v", err)
+	}
+	return
+}
+
+// DoSlidingSync is the same as SlidingSync but returns the raw HTTP response. Succeeds on any status code.
+func (c *CSAPI) DoSlidingSync(t *testing.T, data sync3.Request, opts ...client.RequestOpt) (res *http.Response) {
 	t.Helper()
 	if len(opts) == 0 {
 		opts = append(opts, client.WithQueries(url.Values{
@@ -55,12 +66,7 @@ func (c *CSAPI) SlidingSync(t *testing.T, data sync3.Request, opts ...client.Req
 	// copy the CSAPI struct and tweak the base URL so we talk to the proxy not synapse
 	csapi := *c.CSAPI
 	csapi.BaseURL = proxyBaseURL
-	res := csapi.MustDo(t, "POST", []string{"_matrix", "client", "unstable", "org.matrix.msc3575", "sync"}, opts...)
-	body := client.ParseJSON(t, res)
-	if err := json.Unmarshal(body, &resBody); err != nil {
-		t.Fatalf("failed to unmarshal response: %v", err)
-	}
-	return
+	return csapi.Do(t, "POST", []string{"_matrix", "client", "unstable", "org.matrix.msc3575", "sync"}, opts...)
 }
 
 func (c *CSAPI) SlidingSyncUntilEventID(t *testing.T, pos string, roomID string, eventID string) (res *sync3.Response) {
