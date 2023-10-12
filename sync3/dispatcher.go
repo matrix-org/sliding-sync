@@ -319,6 +319,9 @@ func (d *Dispatcher) OnInvalidateRoom(
 	// We would still need to mark those users as having left their rooms.
 	for userID, leaveEvent := range leaves {
 		receiver = d.userToReceiver[userID]
+		if receiver == nil {
+			continue
+		}
 		uc := receiver.(*caches.UserCache)
 		if uc != nil {
 			uc.OnLeftRoom(ctx, roomID, leaveEvent)
@@ -327,6 +330,9 @@ func (d *Dispatcher) OnInvalidateRoom(
 
 	for userID, inviteState := range invites {
 		receiver = d.userToReceiver[userID]
+		if receiver == nil {
+			continue
+		}
 		uc := receiver.(*caches.UserCache)
 		if uc != nil {
 			uc.OnInvite(ctx, roomID, inviteState)
@@ -335,6 +341,9 @@ func (d *Dispatcher) OnInvalidateRoom(
 
 	for userID, joinData := range joins {
 		receiver = d.userToReceiver[userID]
+		if receiver == nil {
+			continue
+		}
 		if receiver != nil {
 			receiver.OnNewEvent(ctx, joinData)
 		}
