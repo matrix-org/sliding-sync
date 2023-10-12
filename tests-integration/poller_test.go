@@ -706,10 +706,10 @@ func TestClientsSeeMembershipTransitionsInGappyPolls(t *testing.T) {
 
 	const roomID = "!unimportant"
 
-                                         // before gap -> after gap
-	v2.addAccount(t, alice, aliceToken)  // join       -> join
-	v2.addAccount(t, bob, bobToken)      // invite     -> join
-	v2.addAccount(t, chris, chrisToken)  // <none>     -> join
+	//                                     before gap -> after gap
+	v2.addAccount(t, alice, aliceToken) // join       -> join
+	v2.addAccount(t, bob, bobToken)     // invite     -> join
+	v2.addAccount(t, chris, chrisToken) // <none>     -> join
 
 	t.Log("Queue up an empty poller response for Chris, so the proxy considers him to be polling.")
 	v2.queueResponse(chrisToken, sync2.SyncResponse{
@@ -732,8 +732,9 @@ func TestClientsSeeMembershipTransitionsInGappyPolls(t *testing.T) {
 	v2.queueResponse(aliceToken, sync2.SyncResponse{
 		Rooms: sync2.SyncRoomsResponse{
 			Join: v2JoinTimeline(roomEvents{
-				roomID: roomID,
-				events: initialEvents,
+				roomID:    roomID,
+				events:    initialEvents,
+				prevBatch: "prevBatch1",
 			}),
 		},
 		NextBatch: "alice1",
@@ -775,6 +776,12 @@ func TestClientsSeeMembershipTransitionsInGappyPolls(t *testing.T) {
 
 	t.Log("Alice's poller gets a gappy sync response in which Bob joins, Chris joins, and Alice sends a message.")
 	aliceMsg := testutils.NewMessageEvent(t, alice, "hellooooooooo")
+	bobJoin := testutils.NewJoinEvent(t, bob, testutils.WithUnsigned(map[string]interface{}{
+		"prev_content": map[string]string{
+			"membership": "invite",
+		},
+	}))
+	chrisJoin := testutils.NewJoinEvent(t, chris)
 	v2.queueResponse(aliceToken, sync2.SyncResponse{
 		NextBatch: "alice2",
 		Rooms: sync2.SyncRoomsResponse{
@@ -782,17 +789,14 @@ func TestClientsSeeMembershipTransitionsInGappyPolls(t *testing.T) {
 				roomID: {
 					State: sync2.EventsResponse{
 						Events: []json.RawMessage{
-							testutils.NewJoinEvent(t, bob, testutils.WithUnsigned(map[string]interface{}{
-								"prev_content": map[string]string{
-									"membership": "invite",
-								},
-							})),
-							testutils.NewJoinEvent(t, chris),
+							bobJoin,
+							chrisJoin,
 						},
 					},
 					Timeline: sync2.TimelineResponse{
-						Events:  []json.RawMessage{aliceMsg},
-						Limited: true,
+						Events:    []json.RawMessage{aliceMsg},
+						Limited:   true,
+						PrevBatch: "prevBatch2",
 					},
 				},
 			},
@@ -801,11 +805,15 @@ func TestClientsSeeMembershipTransitionsInGappyPolls(t *testing.T) {
 	v2.waitUntilEmpty(t, aliceToken)
 
 	t.Log("Bob syncs. He should see himself as having joined the room, and see Alice's message.")
+	// XXX: Bob seeing his own join event feels a bit naughty. If you've joined in the gap,
+	//      we don't know where that should appear in the timeline. But it's good-enough for now,
+	//      and it may be useful for clients to show the join as an interstitial.
 	bobRes = v3.mustDoV3RequestWithPos(t, bobToken, bobRes.Pos, sync3.Request{})
 	m.MatchResponse(t, bobRes, m.MatchRoomSubscription(roomID,
 		m.MatchJoinCount(3),
 		m.MatchInviteCount(0),
-		m.MatchRoomTimeline([]json.RawMessage{aliceMsg}),
+		m.MatchRoomPrevBatch("prevBatch2"),
+		m.MatchRoomTimeline([]json.RawMessage{bobJoin, aliceMsg}),
 	))
 
 	t.Log("Ditto for Chris.")
@@ -813,7 +821,8 @@ func TestClientsSeeMembershipTransitionsInGappyPolls(t *testing.T) {
 	m.MatchResponse(t, chrisRes, m.MatchRoomSubscription(roomID,
 		m.MatchJoinCount(3),
 		m.MatchInviteCount(0),
-		m.MatchRoomTimeline([]json.RawMessage{aliceMsg}),
+		m.MatchRoomPrevBatch("prevBatch2"),
+		m.MatchRoomTimeline([]json.RawMessage{chrisJoin, aliceMsg}),
 	))
 
 }
