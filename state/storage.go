@@ -387,7 +387,7 @@ func (s *Storage) FetchMemberships(roomID string) (
             JOIN syncv3_rooms ON snapshot_id = current_snapshot_id
         WHERE syncv3_rooms.room_id = $1
 	)
-	SELECT event, event_nid, room_id, state_key, membership
+	SELECT event, event_nid, room_id, state_key, membership, prev_batch, missing_previous
 	FROM syncv3_events JOIN snapshot ON (
 		event_nid = ANY( membership_nids )
 	)
@@ -483,19 +483,15 @@ func (s *Storage) EventNIDs(eventNIDs []int64) ([]json.RawMessage, error) {
 	return e, nil
 }
 
-func (s *Storage) StateSnapshot(snapID int64) (state []json.RawMessage, err error) {
+func (s *Storage) StateSnapshot(snapID int64) (state []Event, err error) {
 	err = sqlutil.WithTransaction(s.Accumulator.db, func(txn *sqlx.Tx) error {
 		snapshotRow, err := s.Accumulator.snapshotTable.Select(txn, snapID)
 		if err != nil {
 			return err
 		}
-		events, err := s.Accumulator.eventsTable.SelectByNIDs(txn, true, append(snapshotRow.MembershipEvents, snapshotRow.OtherEvents...))
+		state, err = s.Accumulator.eventsTable.SelectByNIDs(txn, true, append(snapshotRow.MembershipEvents, snapshotRow.OtherEvents...))
 		if err != nil {
 			return fmt.Errorf("failed to select state snapshot %v: %s", snapID, err)
-		}
-		state = make([]json.RawMessage, len(events))
-		for i := range events {
-			state[i] = events[i].JSON
 		}
 		return nil
 	})

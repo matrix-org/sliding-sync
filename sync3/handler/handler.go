@@ -635,8 +635,8 @@ func (h *SyncLiveHandler) OnInitialSyncComplete(p *pubsub.V2InitialSyncComplete)
 func (h *SyncLiveHandler) Accumulate(p *pubsub.V2Accumulate) {
 	ctx, task := internal.StartTask(context.Background(), "Accumulate")
 	defer task.End()
-	// note: events is sorted in ascending NID order, event if p.EventNIDs isn't.
-	events, err := h.Storage.EventNIDs(p.EventNIDs)
+	// note: events is sorted in ascending NID order, even if p.EventNIDs isn't.
+	events, err := h.Storage.EventsTable.SelectByNIDs(nil, true, p.EventNIDs)
 	if err != nil {
 		logger.Err(err).Str("room", p.RoomID).Msg("Accumulate: failed to EventNIDs")
 		internal.GetSentryHubFromContextOrDefault(ctx).CaptureException(err)
@@ -823,8 +823,9 @@ func (h *SyncLiveHandler) OnInvalidateRoom(p *pubsub.V2InvalidateRoom) {
 
 	joinEventDatas := make(map[string]*caches.EventData, len(joins))
 	for userID, event := range joins {
-		ed := caches.NewEventData(event.JSON, p.RoomID, event.NID)
-		ed.AlwaysProcess = true
+		// This isn't a bonafide timeline event. Use NID 0 to ensure we don't treat this
+		// as a timeline event when preparing sync responses.
+		ed := caches.NewEventData(event.JSON, p.RoomID, 0)
 		joinEventDatas[userID] = ed
 	}
 

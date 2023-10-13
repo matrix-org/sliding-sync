@@ -53,6 +53,11 @@ type EventData struct {
 	// Flag set when this event should force the room contents to be resent e.g
 	// state res, initial join, etc
 	ForceInitial bool
+
+	// ForcePrevBatch is nonempty when the proxy doesn't know the timeline event immediately
+	// prior to this one. Its value is the prevBatch for this event. If set, this token MUST
+	// be sent to sync3 clients (or else there'll be a gap in their timeline).
+	ForcePrevBatch string
 }
 
 func NewEventData(event json.RawMessage, roomID string, latestPos int64) *EventData {

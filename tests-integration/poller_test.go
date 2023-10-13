@@ -775,7 +775,10 @@ func TestClientsSeeMembershipTransitionsInGappyPolls(t *testing.T) {
 	m.MatchResponse(t, bobRes, m.MatchRoomSubscription(roomID, m.MatchInviteCount(1)))
 
 	t.Log("Alice's poller gets a gappy sync response in which Bob joins, Chris joins, and Alice sends a message.")
-	aliceMsg := testutils.NewMessageEvent(t, alice, "hellooooooooo")
+	aliceMsgs := make([]json.RawMessage, 10)
+	for i := range aliceMsgs {
+		aliceMsgs[i] = testutils.NewMessageEvent(t, alice, fmt.Sprintf("hello %d", i))
+	}
 	bobJoin := testutils.NewJoinEvent(t, bob, testutils.WithUnsigned(map[string]interface{}{
 		"prev_content": map[string]string{
 			"membership": "invite",
@@ -794,7 +797,7 @@ func TestClientsSeeMembershipTransitionsInGappyPolls(t *testing.T) {
 						},
 					},
 					Timeline: sync2.TimelineResponse{
-						Events:    []json.RawMessage{aliceMsg},
+						Events:    aliceMsgs,
 						Limited:   true,
 						PrevBatch: "prevBatch2",
 					},
@@ -813,7 +816,7 @@ func TestClientsSeeMembershipTransitionsInGappyPolls(t *testing.T) {
 		m.MatchJoinCount(3),
 		m.MatchInviteCount(0),
 		m.MatchRoomPrevBatch("prevBatch2"),
-		m.MatchRoomTimeline([]json.RawMessage{bobJoin, aliceMsg}),
+		m.MatchRoomTimeline(aliceMsgs),
 	))
 
 	t.Log("Ditto for Chris.")
@@ -822,7 +825,10 @@ func TestClientsSeeMembershipTransitionsInGappyPolls(t *testing.T) {
 		m.MatchJoinCount(3),
 		m.MatchInviteCount(0),
 		m.MatchRoomPrevBatch("prevBatch2"),
-		m.MatchRoomTimeline([]json.RawMessage{chrisJoin, aliceMsg}),
+		m.MatchRoomTimeline(aliceMsgs),
 	))
-
 }
+
+// leave during a gap
+// invite during a gap
+// timeline of ~10 events

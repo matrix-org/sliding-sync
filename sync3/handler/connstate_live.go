@@ -234,6 +234,13 @@ func (s *connStateLive) processLiveUpdate(ctx context.Context, up caches.Update,
 				roomIDtoTimeline := s.userCache.AnnotateWithTransactionIDs(ctx, s.userID, s.deviceID, map[string][]json.RawMessage{
 					roomEventUpdate.RoomID(): {roomEventUpdate.EventData.Event},
 				})
+				// Normally live events don't need a prevBatch because they follow up
+				// from a previous sync response with a prevBatch. BUT after a gappy poll
+				// where the user has joined a room, the first time they see a timeline event
+				// for this room is here. So we need to provide them a prevBatch token.
+				if roomEventUpdate.EventData.ForcePrevBatch != "" {
+					r.PrevBatch = roomEventUpdate.EventData.ForcePrevBatch
+				}
 				r.Timeline = append(r.Timeline, roomIDtoTimeline[roomEventUpdate.RoomID()]...)
 				roomID := roomEventUpdate.RoomID()
 				sender := roomEventUpdate.EventData.Sender

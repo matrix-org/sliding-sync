@@ -3,6 +3,7 @@ package sync3
 import (
 	"context"
 	"encoding/json"
+	"github.com/matrix-org/sliding-sync/state"
 	"os"
 	"sync"
 
@@ -78,7 +79,7 @@ func (d *Dispatcher) ReceiverForUser(userID string) Receiver {
 
 // Called by v2 pollers when we receive an initial state block. Very similar to OnNewEvents but
 // done in bulk for speed.
-func (d *Dispatcher) OnNewInitialRoomState(ctx context.Context, roomID string, state []json.RawMessage) {
+func (d *Dispatcher) OnNewInitialRoomState(ctx context.Context, roomID string, state []state.Event) {
 	// sanity check
 	if _, jc := d.jrt.JoinedUsersForRoom(roomID, nil); jc > 0 {
 		logger.Warn().Int("join_count", jc).Str("room", roomID).Int("num_state", len(state)).Msg(
@@ -93,7 +94,7 @@ func (d *Dispatcher) OnNewInitialRoomState(ctx context.Context, roomID string, s
 	eventDatas := make([]*caches.EventData, len(state))
 	var joined, invited []string
 	for i, event := range state {
-		ed := caches.NewEventData(event, roomID, 0)
+		ed := caches.NewEventData(event.JSON, roomID, 0)
 		eventDatas[i] = ed
 		if ed.EventType == "m.room.member" && ed.StateKey != nil {
 			membership := ed.Content.Get("membership").Str
@@ -127,9 +128,14 @@ func (d *Dispatcher) OnNewInitialRoomState(ctx context.Context, roomID string, s
 }
 
 func (d *Dispatcher) OnNewEvent(
-	ctx context.Context, roomID string, event json.RawMessage, nid int64,
+	ctx context.Context, roomID string, event state.Event, nid int64,
 ) {
-	ed := caches.NewEventData(event, roomID, nid)
+	ed := caches.NewEventData(event.JSON, roomID, nid)
+	if event.MissingPrevious {
+		internal.AssertWithContext(ctx, "If MissingPrevious, PrevBatch MUST be nonnull", event.PrevBatch.Valid)
+		internal.AssertWithContext(ctx, "If MissingPrevious, PrevBatch MUST be nonempty", event.PrevBatch.String != "")
+		ed.ForcePrevBatch = event.PrevBatch.String
+	}
 
 	// update the tracker
 	targetUser := ""
