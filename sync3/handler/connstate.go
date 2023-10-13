@@ -171,7 +171,7 @@ func (s *ConnState) load(ctx context.Context, req *sync3.Request) error {
 
 // OnIncomingRequest is guaranteed to be called sequentially (it's protected by a mutex in conn.go)
 func (s *ConnState) OnIncomingRequest(ctx context.Context, cid sync3.ConnID, req *sync3.Request, isInitial bool, start time.Time) (*sync3.Response, error) {
-	if s.anchorLoadPosition <= 0 {
+	if s.anchorLoadPosition < 0 {
 		// load() needs no ctx so drop it
 		_, region := internal.StartSpan(ctx, "load")
 		err := s.load(ctx, req)
