@@ -3,17 +3,21 @@ package syncv3_test
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/url"
 	"testing"
 
+	"github.com/matrix-org/complement/b"
+	"github.com/matrix-org/complement/client"
+	"github.com/matrix-org/complement/must"
 	"github.com/matrix-org/sliding-sync/sync3"
 )
 
 func TestPrevBatch(t *testing.T) {
-	client := registerNewUser(t)
+	cli := registerNewUser(t)
 
 	// create room
-	roomID := client.CreateRoom(t, map[string]interface{}{})
+	roomID := cli.MustCreateRoom(t, map[string]interface{}{})
 	var timeline []Event
 	// send messages
 	for i := 0; i < 30; i++ {
@@ -24,12 +28,15 @@ func TestPrevBatch(t *testing.T) {
 				"msgtype": "m.text",
 			},
 		}
-		ev.ID = client.SendEventSynced(t, roomID, ev)
+		ev.ID = cli.SendEventSynced(t, roomID, b.Event{
+			Type:    ev.Type,
+			Content: ev.Content,
+		})
 		timeline = append(timeline, ev)
 	}
 
 	// hit proxy
-	res := client.SlidingSync(t, sync3.Request{
+	res := cli.SlidingSync(t, sync3.Request{
 		Lists: map[string]sync3.RequestList{
 			"a": {
 				Ranges: sync3.SliceRanges{[2]int64{0, 10}},
@@ -49,13 +56,22 @@ func TestPrevBatch(t *testing.T) {
 	assertEventsEqual(t, []Event{timeline[len(timeline)-1]}, room.Timeline)
 
 	// hit /messages with prev_batch token
-	msgRes := client.MustDoFunc(t, "GET", []string{"_matrix", "client", "v3", "rooms", roomID, "messages"}, WithQueries(url.Values{
+	msgRes := cli.MustDo(t, "GET", []string{"_matrix", "client", "v3", "rooms", roomID, "messages"}, client.WithQueries(url.Values{
 		"dir":   []string{"b"},
 		"from":  []string{room.PrevBatch},
 		"limit": []string{"10"},
 	}))
+	body, err := io.ReadAll(msgRes.Body)
+	msgRes.Body.Close()
+	must.NotError(t, "failed to read response body", err)
+
+	type MessagesBatch struct {
+		Chunk []json.RawMessage `json:"chunk"`
+		Start string            `json:"start"`
+		End   string            `json:"end"`
+	}
 	var msgBody MessagesBatch
-	if err := json.Unmarshal(ParseJSON(t, msgRes), &msgBody); err != nil {
+	if err := json.Unmarshal(body, &msgBody); err != nil {
 		t.Fatalf("failed to unmarshal /messages response: %v", err)
 	}
 	// reverse it

@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"testing"
 
+	"github.com/matrix-org/complement/b"
+	"github.com/matrix-org/complement/client"
 	"github.com/matrix-org/sliding-sync/sync3"
 	"github.com/matrix-org/sliding-sync/testutils/m"
 )
@@ -26,7 +28,7 @@ func TestSecurityLiveStreamEventLeftLeak(t *testing.T) {
 	eve := registerNewUser(t)
 
 	// Alice and Eve in the room
-	roomID := alice.CreateRoom(t, map[string]interface{}{
+	roomID := alice.MustCreateRoom(t, map[string]interface{}{
 		"preset": "public_chat",
 	})
 	eve.JoinRoom(t, roomID, nil)
@@ -62,12 +64,12 @@ func TestSecurityLiveStreamEventLeftLeak(t *testing.T) {
 	)))
 
 	// kick Eve
-	alice.MustDoFunc(t, "POST", []string{"_matrix", "client", "v3", "rooms", roomID, "kick"}, WithJSONBody(t, map[string]interface{}{
+	alice.MustDo(t, "POST", []string{"_matrix", "client", "v3", "rooms", roomID, "kick"}, client.WithJSONBody(t, map[string]interface{}{
 		"user_id": eve.UserID,
 	}))
 
 	// send message as Alice, note it shouldn't go down Eve's v2 stream
-	sensitiveEventID := alice.SendEventSynced(t, roomID, Event{
+	sensitiveEventID := alice.SendEventSynced(t, roomID, b.Event{
 		Type:     "m.room.name",
 		StateKey: ptr(""),
 		Content: map[string]interface{}{
@@ -157,12 +159,12 @@ func TestSecurityRoomSubscriptionLeak(t *testing.T) {
 	eve := registerNewUser(t)
 
 	// Alice in the room
-	alicePrivateRoomID := alice.CreateRoom(t, map[string]interface{}{
+	alicePrivateRoomID := alice.MustCreateRoom(t, map[string]interface{}{
 		"preset": "private_chat",
 	})
 
 	// Eve is in an unrelated room
-	eveUnrelatedRoomID := eve.CreateRoom(t, map[string]interface{}{
+	eveUnrelatedRoomID := eve.MustCreateRoom(t, map[string]interface{}{
 		"preset": "private_chat",
 	})
 
@@ -194,7 +196,7 @@ func TestSecurityRoomSubscriptionLeak(t *testing.T) {
 	}))
 
 	// Assert that live updates still don't feed through to Eve
-	alice.SendEventSynced(t, alicePrivateRoomID, Event{
+	alice.SendEventSynced(t, alicePrivateRoomID, b.Event{
 		Type:     "m.room.name",
 		StateKey: ptr(""),
 		Content: map[string]interface{}{
@@ -226,16 +228,16 @@ func TestSecuritySpaceDataLeak(t *testing.T) {
 	alice := registerNewUser(t)
 	eve := registerNewUser(t)
 
-	roomA := alice.CreateRoom(t, map[string]interface{}{
+	roomA := alice.MustCreateRoom(t, map[string]interface{}{
 		"preset": "public_chat",
 		"creation_content": map[string]string{
 			"type": "m.space",
 		},
 	})
-	roomB := alice.CreateRoom(t, map[string]interface{}{
+	roomB := alice.MustCreateRoom(t, map[string]interface{}{
 		"preset": "private_chat",
 	})
-	alice.SendEventSynced(t, roomA, Event{
+	alice.SendEventSynced(t, roomA, b.Event{
 		Type:     "m.space.child",
 		StateKey: &roomB,
 		Content: map[string]interface{}{
@@ -273,17 +275,17 @@ func TestSecuritySpaceMetadataLeak(t *testing.T) {
 	alice := registerNewUser(t)
 	eve := registerNewUser(t)
 
-	roomA := alice.CreateRoom(t, map[string]interface{}{
+	roomA := alice.MustCreateRoom(t, map[string]interface{}{
 		"preset": "public_chat",
 		"creation_content": map[string]string{
 			"type": "m.space",
 		},
 	})
-	roomB := alice.CreateRoom(t, map[string]interface{}{
+	roomB := alice.MustCreateRoom(t, map[string]interface{}{
 		"preset": "public_chat",
 	})
 	// Alice has a space A -> B
-	alice.SendEventSynced(t, roomA, Event{
+	alice.SendEventSynced(t, roomA, b.Event{
 		Type:     "m.space.child",
 		StateKey: &roomB,
 		Content: map[string]interface{}{
@@ -294,14 +296,14 @@ func TestSecuritySpaceMetadataLeak(t *testing.T) {
 	alice.SlidingSync(t, sync3.Request{})
 
 	// now Eve also has a space... C -> B
-	roomC := eve.CreateRoom(t, map[string]interface{}{
+	roomC := eve.MustCreateRoom(t, map[string]interface{}{
 		"preset": "public_chat",
 		"creation_content": map[string]string{
 			"type": "m.space",
 		},
 	})
 	eve.JoinRoom(t, roomB, nil)
-	eve.SendEventSynced(t, roomC, Event{
+	eve.SendEventSynced(t, roomC, b.Event{
 		Type:     "m.space.child",
 		StateKey: &roomB,
 		Content: map[string]interface{}{

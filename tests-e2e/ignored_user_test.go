@@ -2,9 +2,11 @@ package syncv3_test
 
 import (
 	"fmt"
+	"testing"
+
+	"github.com/matrix-org/complement/b"
 	"github.com/matrix-org/sliding-sync/sync3"
 	"github.com/matrix-org/sliding-sync/testutils/m"
-	"testing"
 )
 
 func TestInvitesFromIgnoredUsersOmitted(t *testing.T) {
@@ -13,16 +15,16 @@ func TestInvitesFromIgnoredUsersOmitted(t *testing.T) {
 	nigel := registerNamedUser(t, "nigel")
 
 	t.Log("Nigel create two public rooms. Bob joins both.")
-	room1 := nigel.CreateRoom(t, map[string]any{"preset": "public_chat", "name": "room 1"})
-	room2 := nigel.CreateRoom(t, map[string]any{"preset": "public_chat", "name": "room 2"})
+	room1 := nigel.MustCreateRoom(t, map[string]any{"preset": "public_chat", "name": "room 1"})
+	room2 := nigel.MustCreateRoom(t, map[string]any{"preset": "public_chat", "name": "room 2"})
 	bob.JoinRoom(t, room1, nil)
 	bob.JoinRoom(t, room2, nil)
 
 	t.Log("Alice makes a room for dumping sentinel messages.")
-	aliceRoom := alice.CreateRoom(t, map[string]any{"preset": "private_chat"})
+	aliceRoom := alice.MustCreateRoom(t, map[string]any{"preset": "private_chat"})
 
 	t.Log("Alice ignores Nigel.")
-	alice.SetGlobalAccountData(t, "m.ignored_user_list", map[string]any{
+	alice.MustSetGlobalAccountData(t, "m.ignored_user_list", map[string]any{
 		"ignored_users": map[string]any{
 			nigel.UserID: map[string]any{},
 		},
@@ -35,7 +37,7 @@ func TestInvitesFromIgnoredUsersOmitted(t *testing.T) {
 	bob.SlidingSyncUntilMembership(t, "", room1, alice, "invite")
 
 	t.Log("Alice sends a sentinel message in her private room.")
-	sentinel := alice.SendEventSynced(t, aliceRoom, Event{
+	sentinel := alice.SendEventSynced(t, aliceRoom, b.Event{
 		Type: "m.room.message",
 		Content: map[string]any{
 			"body":    "Hello, world!",
@@ -69,7 +71,7 @@ func TestInvitesFromIgnoredUsersOmitted(t *testing.T) {
 	bob.SlidingSyncUntilMembership(t, "", room1, alice, "invite")
 
 	t.Log("Alice sends a sentinel message in her private room.")
-	sentinel = alice.SendEventSynced(t, aliceRoom, Event{
+	sentinel = alice.SendEventSynced(t, aliceRoom, b.Event{
 		Type: "m.room.message",
 		Content: map[string]any{
 			"body":    "Hello, world, again",

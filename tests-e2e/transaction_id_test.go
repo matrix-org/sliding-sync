@@ -5,23 +5,24 @@ import (
 	"fmt"
 	"testing"
 
+	"github.com/matrix-org/complement/client"
 	"github.com/matrix-org/sliding-sync/sync3"
 	"github.com/matrix-org/sliding-sync/testutils/m"
 )
 
 func TestTransactionIDsAppear(t *testing.T) {
-	client := registerNewUser(t)
-	roomID := client.CreateRoom(t, map[string]interface{}{})
-	sendRes := client.MustDoFunc(t, "PUT", []string{"_matrix", "client", "v3", "rooms", roomID, "send", "m.room.message", "foobar"},
-		WithJSONBody(t, map[string]interface{}{
+	c := registerNewUser(t)
+	roomID := c.MustCreateRoom(t, map[string]interface{}{})
+	sendRes := c.MustDo(t, "PUT", []string{"_matrix", "client", "v3", "rooms", roomID, "send", "m.room.message", "foobar"},
+		client.WithJSONBody(t, map[string]interface{}{
 			"msgtype": "m.text",
 			"body":    "Hello World!",
 		}))
-	body := ParseJSON(t, sendRes)
-	eventID := GetJSONFieldStr(t, body, "event_id")
+	body := client.ParseJSON(t, sendRes)
+	eventID := client.GetJSONFieldStr(t, body, "event_id")
 
 	// ensure initial syncs include the txn id
-	res := client.SlidingSync(t, sync3.Request{
+	res := c.SlidingSync(t, sync3.Request{
 		Lists: map[string]sync3.RequestList{
 			"a": {
 				Ranges:           [][2]int64{{0, 10}},
@@ -40,15 +41,15 @@ func TestTransactionIDsAppear(t *testing.T) {
 	}))
 
 	// now live stream another event and ensure that too has a txn ID
-	sendRes = client.MustDoFunc(t, "PUT", []string{"_matrix", "client", "v3", "rooms", roomID, "send", "m.room.message", "foobar2"},
-		WithJSONBody(t, map[string]interface{}{
+	sendRes = c.MustDo(t, "PUT", []string{"_matrix", "client", "v3", "rooms", roomID, "send", "m.room.message", "foobar2"},
+		client.WithJSONBody(t, map[string]interface{}{
 			"msgtype": "m.text",
 			"body":    "Hello World 2!",
 		}))
-	body = ParseJSON(t, sendRes)
-	eventID = GetJSONFieldStr(t, body, "event_id")
+	body = client.ParseJSON(t, sendRes)
+	eventID = client.GetJSONFieldStr(t, body, "event_id")
 
-	res = client.SlidingSyncUntilEvent(t, res.Pos, sync3.Request{}, roomID, Event{ID: eventID})
+	res = c.SlidingSyncUntilEvent(t, res.Pos, sync3.Request{}, roomID, Event{ID: eventID})
 	m.MatchResponse(t, res, m.MatchRoomSubscriptionsStrict(map[string][]m.RoomMatcher{
 		roomID: {
 			matchTransactionID(t, eventID, "foobar2"),
@@ -64,7 +65,7 @@ func TestTransactionIDsAppearWithMultiplePollers(t *testing.T) {
 	alice := registerNamedUser(t, "alice")
 
 	t.Log("Alice creates a room and syncs until she sees it.")
-	roomID := alice.CreateRoom(t, map[string]interface{}{})
+	roomID := alice.MustCreateRoom(t, map[string]interface{}{})
 	res := alice.SlidingSync(t, sync3.Request{
 		Lists: map[string]sync3.RequestList{
 			"a": {
@@ -95,13 +96,13 @@ func TestTransactionIDsAppearWithMultiplePollers(t *testing.T) {
 
 	t.Log("Alice sends a message with a transaction ID.")
 	const txnID = "foobar"
-	sendRes := alice.MustDoFunc(t, "PUT", []string{"_matrix", "client", "v3", "rooms", roomID, "send", "m.room.message", txnID},
-		WithJSONBody(t, map[string]interface{}{
+	sendRes := alice.MustDo(t, "PUT", []string{"_matrix", "client", "v3", "rooms", roomID, "send", "m.room.message", txnID},
+		client.WithJSONBody(t, map[string]interface{}{
 			"msgtype": "m.text",
 			"body":    "Hello, world!",
 		}))
-	body := ParseJSON(t, sendRes)
-	eventID := GetJSONFieldStr(t, body, "event_id")
+	body := client.ParseJSON(t, sendRes)
+	eventID := client.GetJSONFieldStr(t, body, "event_id")
 
 	t.Log("Alice syncs on her main devices until she sees her message.")
 	res = alice.SlidingSyncUntilEventID(t, res.Pos, roomID, eventID)

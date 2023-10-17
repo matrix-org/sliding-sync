@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/matrix-org/complement/b"
 	"github.com/matrix-org/sliding-sync/sync3"
 	"github.com/matrix-org/sliding-sync/sync3/extensions"
 	"github.com/matrix-org/sliding-sync/testutils/m"
@@ -17,7 +18,7 @@ import (
 func TestTyping(t *testing.T) {
 	alice := registerNewUser(t)
 	bob := registerNewUser(t)
-	roomID := alice.CreateRoom(t, map[string]interface{}{
+	roomID := alice.MustCreateRoom(t, map[string]interface{}{
 		"preset": "public_chat",
 	})
 	bob.JoinRoom(t, roomID, nil)
@@ -65,7 +66,7 @@ func TestTyping(t *testing.T) {
 	m.MatchResponse(t, res, m.MatchTyping(roomID, []string{bob.UserID, alice.UserID}))
 
 	// make sure if you type in a room not returned in the window it does not go through
-	roomID2 := alice.CreateRoom(t, map[string]interface{}{
+	roomID2 := alice.MustCreateRoom(t, map[string]interface{}{
 		"preset": "public_chat",
 	})
 	bob.JoinRoom(t, roomID2, nil)
@@ -108,7 +109,7 @@ func TestTyping(t *testing.T) {
 func TestTypingNoUpdate(t *testing.T) {
 	alice := registerNewUser(t)
 	bob := registerNewUser(t)
-	roomID := alice.CreateRoom(t, map[string]interface{}{
+	roomID := alice.MustCreateRoom(t, map[string]interface{}{
 		"preset": "public_chat",
 	})
 	bob.JoinRoom(t, roomID, nil)
@@ -136,19 +137,19 @@ func TestTypingNoUpdate(t *testing.T) {
 func TestTypingLazyLoad(t *testing.T) {
 	alice := registerNewUser(t)
 	bob := registerNewUser(t)
-	roomID := alice.CreateRoom(t, map[string]interface{}{
+	roomID := alice.MustCreateRoom(t, map[string]interface{}{
 		"preset": "public_chat",
 	})
 	bob.JoinRoom(t, roomID, nil)
 
-	alice.SendEventSynced(t, roomID, Event{
+	alice.SendEventSynced(t, roomID, b.Event{
 		Type: "m.room.message",
 		Content: map[string]interface{}{
 			"body":    "hello world!",
 			"msgtype": "m.text",
 		},
 	})
-	alice.SendEventSynced(t, roomID, Event{
+	alice.SendEventSynced(t, roomID, b.Event{
 		Type: "m.room.message",
 		Content: map[string]interface{}{
 			"body":    "hello world!",
@@ -202,8 +203,8 @@ func TestTypingRespectsExtensionScope(t *testing.T) {
 	// separate to the incremental sync behaviour (hits `AppendLive`)
 	t.Run("Can limit by room in an initial sync", func(t *testing.T) {
 		t.Log("Alice creates rooms 1 and 2. Bob joins both.")
-		room1 := alice.CreateRoom(t, map[string]interface{}{"preset": "public_chat", "name": "room 1"})
-		room2 := alice.CreateRoom(t, map[string]interface{}{"preset": "public_chat", "name": "room 2"})
+		room1 := alice.MustCreateRoom(t, map[string]interface{}{"preset": "public_chat", "name": "room 1"})
+		room2 := alice.MustCreateRoom(t, map[string]interface{}{"preset": "public_chat", "name": "room 2"})
 		bob.JoinRoom(t, room1, nil)
 		bob.JoinRoom(t, room2, nil)
 		t.Logf("room1=%s room2=%s", room1, room2)
@@ -244,8 +245,8 @@ func TestTypingRespectsExtensionScope(t *testing.T) {
 
 	t.Run("Can limit by list in an incremental sync", func(t *testing.T) {
 		t.Log("Alice creates rooms 3 and 4. Bob joins both.")
-		room3 := alice.CreateRoom(t, map[string]interface{}{"preset": "public_chat", "name": "room 3"})
-		room4 := alice.CreateRoom(t, map[string]interface{}{"preset": "public_chat", "name": "room 4"})
+		room3 := alice.MustCreateRoom(t, map[string]interface{}{"preset": "public_chat", "name": "room 3"})
+		room4 := alice.MustCreateRoom(t, map[string]interface{}{"preset": "public_chat", "name": "room 4"})
 		bob.JoinRoom(t, room3, nil)
 		bob.JoinRoom(t, room4, nil)
 		t.Logf("room3=%s room4=%s", room3, room4)
@@ -300,7 +301,7 @@ func TestTypingRespectsExtensionScopeWithOmittedFields(t *testing.T) {
 	t.Log("Alice creates four rooms. Bob joins each one.")
 	rooms := make([]string, 4)
 	for i := 0; i < len(rooms); i++ {
-		rooms[i] = alice.CreateRoom(t, map[string]interface{}{"preset": "public_chat", "name": fmt.Sprintf("room %d", i)})
+		rooms[i] = alice.MustCreateRoom(t, map[string]interface{}{"preset": "public_chat", "name": fmt.Sprintf("room %d", i)})
 		bob.JoinRoom(t, rooms[i], nil)
 	}
 	t.Logf("rooms = %v", rooms)
@@ -356,7 +357,7 @@ func TestTypingRespectsExtensionScopeWithOmittedFields(t *testing.T) {
 	}
 	t.Log("Bob sends a sentinel message.")
 	// Use room 2 because Alice explicitly subscribes to it
-	bobMsg := bob.SendEventSynced(t, rooms[2], Event{
+	bobMsg := bob.SendEventSynced(t, rooms[2], b.Event{
 		Type: "m.room.message",
 		Content: map[string]interface{}{
 			"msgtype": "m.text",
@@ -388,14 +389,13 @@ func TestTypingRespectsExtensionScopeWithOmittedFields(t *testing.T) {
 		bob.SendTyping(t, room, true, 5000)
 	}
 	t.Log("Bob sends a sentinel message.")
-	bobMsg = bob.SendEventSynced(t, rooms[2], Event{
+	bobMsg = bob.SendEventSynced(t, rooms[2], b.Event{
 		Type: "m.room.message",
 		Content: map[string]interface{}{
 			"msgtype": "m.text",
 			"body":    "Hello, world again!",
 		},
 	})
-
 
 	t.Log("Alice now requests typing notifications in all windows, and explicitly in rooms 0 and 3.")
 	t.Log("Alice incremental syncs until she sees Bob's latest sentinel. She should see no ops.")

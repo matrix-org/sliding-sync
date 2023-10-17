@@ -5,17 +5,17 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"net/url"
 	"testing"
 	"time"
 
+	"github.com/matrix-org/complement/b"
 	"github.com/matrix-org/sliding-sync/sync3"
 	"github.com/matrix-org/sliding-sync/testutils/m"
 )
 
 func TestInvalidTokenReturnsMUnknownTokenError(t *testing.T) {
 	alice := registerNewUser(t)
-	roomID := alice.CreateRoom(t, map[string]interface{}{})
+	roomID := alice.MustCreateRoom(t, map[string]interface{}{})
 	// normal sliding sync
 	alice.SlidingSync(t, sync3.Request{
 		ConnID: "A",
@@ -26,35 +26,31 @@ func TestInvalidTokenReturnsMUnknownTokenError(t *testing.T) {
 		},
 	})
 	// invalidate the access token
-	alice.MustDoFunc(t, "POST", []string{"_matrix", "client", "v3", "logout"})
+	alice.MustDo(t, "POST", []string{"_matrix", "client", "v3", "logout"})
 	// let the proxy realise the token is expired and tell downstream
 	time.Sleep(time.Second)
 
 	var invalidResponses []*http.Response
 	// using the same token now returns a 401 with M_UNKNOWN_TOKEN
-	httpRes := alice.DoFunc(t, "POST", []string{"_matrix", "client", "unstable", "org.matrix.msc3575", "sync"}, WithQueries(url.Values{
-		"timeout": []string{"500"},
-	}), WithJSONBody(t, sync3.Request{
+	httpRes := alice.DoSlidingSync(t, sync3.Request{
 		ConnID: "A",
 		RoomSubscriptions: map[string]sync3.RoomSubscription{
 			roomID: {
 				TimelineLimit: 1,
 			},
 		},
-	}))
+	})
 	invalidResponses = append(invalidResponses, httpRes)
 	// using a bogus access token returns a 401 with M_UNKNOWN_TOKEN
 	alice.AccessToken = "flibble_wibble"
-	httpRes = alice.DoFunc(t, "POST", []string{"_matrix", "client", "unstable", "org.matrix.msc3575", "sync"}, WithQueries(url.Values{
-		"timeout": []string{"500"},
-	}), WithJSONBody(t, sync3.Request{
+	httpRes = alice.DoSlidingSync(t, sync3.Request{
 		ConnID: "A",
 		RoomSubscriptions: map[string]sync3.RoomSubscription{
 			roomID: {
 				TimelineLimit: 1,
 			},
 		},
-	}))
+	})
 	invalidResponses = append(invalidResponses, httpRes)
 
 	for i, httpRes := range invalidResponses {
@@ -84,7 +80,7 @@ func TestInvalidTokenReturnsMUnknownTokenError(t *testing.T) {
 // Test that you can have multiple connections with the same device, and they work independently.
 func TestMultipleConns(t *testing.T) {
 	alice := registerNewUser(t)
-	roomID := alice.CreateRoom(t, map[string]interface{}{})
+	roomID := alice.MustCreateRoom(t, map[string]interface{}{})
 
 	resA := alice.SlidingSync(t, sync3.Request{
 		ConnID: "A",
@@ -111,7 +107,7 @@ func TestMultipleConns(t *testing.T) {
 		},
 	})
 
-	eventID := alice.SendEventSynced(t, roomID, Event{
+	eventID := alice.SendEventSynced(t, roomID, b.Event{
 		Type:     "m.room.name",
 		StateKey: ptr(""),
 		Content:  map[string]interface{}{"name": "pub"},

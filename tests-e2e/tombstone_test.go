@@ -6,6 +6,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/matrix-org/complement/b"
+	"github.com/matrix-org/complement/client"
 	"github.com/matrix-org/sliding-sync/sync3"
 	"github.com/matrix-org/sliding-sync/testutils/m"
 	"github.com/tidwall/gjson"
@@ -14,7 +16,7 @@ import (
 // tests that if we upgrade a room it is removed from the list. If we request old rooms it should be included.
 func TestIncludeOldRooms(t *testing.T) {
 	client := registerNewUser(t)
-	roomID := client.CreateRoom(t, map[string]interface{}{})
+	roomID := client.MustCreateRoom(t, map[string]interface{}{})
 
 	res := client.SlidingSync(t, sync3.Request{
 		Lists: map[string]sync3.RequestList{
@@ -158,23 +160,23 @@ func TestIncludeOldRoomsLongChain(t *testing.T) {
 	// seed the server with this client, we need to do this so the proxy has timeline history to
 	// return so we can assert events appear in the right rooms
 	res := client.SlidingSync(t, sync3.Request{})
-	roomA := client.CreateRoom(t, map[string]interface{}{})
-	client.SendEventSynced(t, roomA, Event{
+	roomA := client.MustCreateRoom(t, map[string]interface{}{})
+	client.SendEventSynced(t, roomA, b.Event{
 		Type:    "m.room.message",
 		Content: map[string]interface{}{"body": "A", "msgtype": "m.text"},
 	})
 	roomB := upgradeRoom(t, client, roomA)
-	eventB := client.SendEventSynced(t, roomB, Event{
+	eventB := client.SendEventSynced(t, roomB, b.Event{
 		Type:    "m.room.message",
 		Content: map[string]interface{}{"body": "B", "msgtype": "m.text"},
 	})
 	roomC := upgradeRoom(t, client, roomB)
-	client.SendEventSynced(t, roomC, Event{
+	client.SendEventSynced(t, roomC, b.Event{
 		Type:    "m.room.message",
 		Content: map[string]interface{}{"body": "C", "msgtype": "m.text"},
 	})
 	roomD := upgradeRoom(t, client, roomC)
-	eventD := client.SendEventSynced(t, roomD, Event{
+	eventD := client.SendEventSynced(t, roomD, b.Event{
 		Type:    "m.room.message",
 		Content: map[string]interface{}{"body": "D", "msgtype": "m.text"},
 	})
@@ -266,7 +268,7 @@ func TestIncludeOldRoomsLongChain(t *testing.T) {
 // test that if you have a list version and direct sub version of include_old_rooms, they get unioned correctly.
 func TestIncludeOldRoomsSubscriptionUnion(t *testing.T) {
 	client := registerNewUser(t)
-	roomA := client.CreateRoom(t, map[string]interface{}{})
+	roomA := client.MustCreateRoom(t, map[string]interface{}{})
 	roomB := upgradeRoom(t, client, roomA)
 
 	// should union to timeline_limit=2, req_state=create+member+tombstone
@@ -322,8 +324,8 @@ func TestIncludeOldRoomsSubscriptionUnion(t *testing.T) {
 	}))
 }
 
-func upgradeRoom(t *testing.T, client *CSAPI, roomID string) (newRoomID string) {
-	upgradeRes := client.MustDoFunc(t, "POST", []string{"_matrix", "client", "v3", "rooms", roomID, "upgrade"}, WithJSONBody(t, map[string]interface{}{
+func upgradeRoom(t *testing.T, c *CSAPI, roomID string) (newRoomID string) {
+	upgradeRes := c.MustDo(t, "POST", []string{"_matrix", "client", "v3", "rooms", roomID, "upgrade"}, client.WithJSONBody(t, map[string]interface{}{
 		"new_version": "9",
 	}))
 	var body map[string]interface{}

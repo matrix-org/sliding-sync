@@ -5,6 +5,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/matrix-org/complement/b"
+	"github.com/matrix-org/complement/client"
 	"github.com/matrix-org/sliding-sync/sync3"
 	"github.com/matrix-org/sliding-sync/testutils/m"
 	"github.com/tidwall/gjson"
@@ -12,9 +14,9 @@ import (
 
 func TestRedactionsAreRedactedWherePossible(t *testing.T) {
 	alice := registerNamedUser(t, "alice")
-	room := alice.CreateRoom(t, map[string]any{"preset": "public_chat"})
+	room := alice.MustCreateRoom(t, map[string]any{"preset": "public_chat"})
 
-	eventID := alice.SendEventSynced(t, room, Event{
+	eventID := alice.SendEventSynced(t, room, b.Event{
 		Type: "m.room.message",
 		Content: map[string]interface{}{
 			"msgtype": "m.text",
@@ -40,7 +42,7 @@ func TestRedactionsAreRedactedWherePossible(t *testing.T) {
 	}))
 
 	// redact the event
-	redactionEventID := alice.RedactEvent(t, room, eventID)
+	redactionEventID := alice.MustSendRedaction(t, room, map[string]interface{}{}, eventID)
 
 	// see the redaction
 	alice.SlidingSyncUntilEventID(t, res.Pos, room, redactionEventID)
@@ -83,21 +85,29 @@ func TestRedactingRoomStateIsReflectedInNextSync(t *testing.T) {
 	bob := registerNamedUser(t, "bob")
 
 	t.Log("Alice creates a room, then sets a room alias and name.")
-	room := alice.CreateRoom(t, map[string]any{
+	room := alice.MustCreateRoom(t, map[string]any{
 		"preset": "public_chat",
 	})
 
 	alias := fmt.Sprintf("#%s-%d:%s", t.Name(), time.Now().Unix(), alice.Domain)
-	alice.MustDoFunc(t, "PUT", []string{"_matrix", "client", "v3", "directory", "room", alias},
-		WithJSONBody(t, map[string]any{"room_id": room}),
+	alice.MustDo(t, "PUT", []string{"_matrix", "client", "v3", "directory", "room", alias},
+		client.WithJSONBody(t, map[string]any{"room_id": room}),
 	)
-	aliasID := alice.SetState(t, room, "m.room.canonical_alias", "", map[string]any{
-		"alias": alias,
+	aliasID := alice.Unsafe_SendEventUnsynced(t, room, b.Event{
+		Type:     "m.room.canonical_alias",
+		StateKey: ptr(""),
+		Content: map[string]interface{}{
+			"alias": alias,
+		},
 	})
 
 	const naughty = "naughty room for naughty people"
-	nameID := alice.SetState(t, room, "m.room.name", "", map[string]any{
-		"name": naughty,
+	nameID := alice.Unsafe_SendEventUnsynced(t, room, b.Event{
+		Type:     "m.room.name",
+		StateKey: ptr(""),
+		Content: map[string]interface{}{
+			"name": naughty,
+		},
 	})
 
 	t.Log("Alice sliding syncs, subscribing to that room explicitly.")
@@ -113,7 +123,7 @@ func TestRedactingRoomStateIsReflectedInNextSync(t *testing.T) {
 	m.MatchResponse(t, res, m.MatchRoomSubscription(room, m.MatchRoomName(naughty)))
 
 	t.Log("Alice redacts the room name.")
-	redactionID := alice.RedactEvent(t, room, nameID)
+	redactionID := alice.MustSendRedaction(t, room, map[string]interface{}{}, nameID)
 
 	t.Log("Alice syncs until she sees her redaction.")
 	res = alice.SlidingSyncUntil(t, res.Pos, sync3.Request{}, m.MatchRoomSubscription(
@@ -126,15 +136,19 @@ func TestRedactingRoomStateIsReflectedInNextSync(t *testing.T) {
 
 	t.Log("Alice sets a room avatar.")
 	avatarURL := alice.UploadContent(t, smallPNG, "avatar.png", "image/png")
-	avatarID := alice.SetState(t, room, "m.room.avatar", "", map[string]interface{}{
-		"url": avatarURL,
+	avatarID := alice.Unsafe_SendEventUnsynced(t, room, b.Event{
+		Type:     "m.room.avatar",
+		StateKey: ptr(""),
+		Content: map[string]interface{}{
+			"url": avatarURL,
+		},
 	})
 
 	t.Log("Alice waits to see the avatar.")
 	res = alice.SlidingSyncUntil(t, res.Pos, sync3.Request{}, m.MatchRoomSubscription(room, m.MatchRoomAvatar(avatarURL)))
 
 	t.Log("Alice redacts the avatar.")
-	redactionID = alice.RedactEvent(t, room, avatarID)
+	redactionID = alice.MustSendRedaction(t, room, map[string]interface{}{}, avatarID)
 
 	t.Log("Alice sees the avatar revert to blank.")
 	res = alice.SlidingSyncUntil(t, res.Pos, sync3.Request{}, m.MatchRoomSubscription(room, m.MatchRoomUnsetAvatar()))
@@ -160,13 +174,13 @@ func TestRedactingRoomStateIsReflectedInNextSync(t *testing.T) {
 	bobJoinID := gjson.GetBytes(timeline[len(timeline)-1], "event_id").Str
 
 	t.Log("Alice redacts the alias.")
-	redactionID = alice.RedactEvent(t, room, aliasID)
+	redactionID = alice.MustSendRedaction(t, room, map[string]interface{}{}, aliasID)
 
 	t.Log("Alice sees the room name reset to Bob's display name.")
 	res = alice.SlidingSyncUntil(t, res.Pos, sync3.Request{}, m.MatchRoomSubscription(room, m.MatchRoomName(bobDisplayName)))
 
 	t.Log("Bob redacts his membership")
-	redactionID = bob.RedactEvent(t, room, bobJoinID)
+	redactionID = bob.MustSendRedaction(t, room, map[string]interface{}{}, bobJoinID)
 
 	t.Log("Alice sees the room name reset to Bob's username.")
 	res = alice.SlidingSyncUntil(t, res.Pos, sync3.Request{}, m.MatchRoomSubscription(room, m.MatchRoomName(bob.UserID)))
