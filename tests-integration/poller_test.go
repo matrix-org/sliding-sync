@@ -860,10 +860,52 @@ func TestClientsSeeMembershipTransitionsInGappyPolls(t *testing.T) {
 		return
 	}
 
+	aliceGetsGappyPoll := func(t *testing.T, tc testcase) {
+		t.Logf("Alice's poller gets a gappy sync response. Bob's membership is now %s, and Alice has sent 10 messages.", tc.afterMembership)
+		aliceMsgs := make([]json.RawMessage, 10)
+		for i := range aliceMsgs {
+			aliceMsgs[i] = testutils.NewMessageEvent(t, alice, fmt.Sprintf("hello %d", i))
+		}
+
+		var newMembership json.RawMessage
+		switch tc.afterMembership {
+		case "invite":
+			t.Log("Bob is invited.")
+			newMembership = testutils.NewStateEvent(t, "m.room.member", tc.bob, alice, map[string]any{"membership": "invite"})
+		case "join":
+			t.Log("Bob joins the room.")
+			newMembership = testutils.NewStateEvent(t, "m.room.member", tc.bob, tc.bob, map[string]any{"membership": "join"})
+		case "leave":
+			t.Log("Bob is pre-emptively kicked.")
+			newMembership = testutils.NewStateEvent(t, "m.room.member", tc.bob, alice, map[string]any{"membership": "leave"})
+		case "ban":
+			t.Log("Bob is banned.")
+			newMembership = testutils.NewStateEvent(t, "m.room.member", tc.bob, alice, map[string]any{"membership": "ban"})
+		default:
+			panic(fmt.Errorf("unknown afterMembership %s", tc.beforeMembership))
+		}
+
+		v2.queueResponse(aliceToken, sync2.SyncResponse{
+			NextBatch: "alice2",
+			Rooms: sync2.SyncRoomsResponse{
+				Join: map[string]sync2.SyncV2JoinResponse{
+					tc.roomID: {
+						State: sync2.EventsResponse{
+							Events: []json.RawMessage{newMembership},
+						},
+						Timeline: sync2.TimelineResponse{
+							Events:    aliceMsgs,
+							Limited:   true,
+							PrevBatch: "prevBatch2",
+						},
+					},
+				},
+			},
+		})
+	}
+
 	for _, tc := range tcs {
 		t.Run(tc.desc, func(t *testing.T) {
-			// Setup.
-
 			// Register Bob and have Alice set up the initial state.
 			bobRes := setup(t, tc)
 
@@ -894,41 +936,12 @@ func TestClientsSeeMembershipTransitionsInGappyPolls(t *testing.T) {
 					panic(fmt.Errorf("unknown beforeMembership %s", tc.beforeMembership))
 				}
 			}
+
+			aliceGetsGappyPoll(t, tc)
+
 		})
 	}
 
-	//t.Log("Alice's poller gets a gappy sync response in which Simon joins, Chris joins, and Alice sends a message.")
-	//aliceMsgs := make([]json.RawMessage, 10)
-	//for i := range aliceMsgs {
-	//	aliceMsgs[i] = testutils.NewMessageEvent(t, alice, fmt.Sprintf("hello %d", i))
-	//}
-	//simonJoin := testutils.NewJoinEvent(t, simon, testutils.WithUnsigned(map[string]interface{}{
-	//	"prev_content": map[string]string{
-	//		"membership": "invite",
-	//	},
-	//}))
-	//chrisJoin := testutils.NewJoinEvent(t, chris)
-	//v2.queueResponse(aliceToken, sync2.SyncResponse{
-	//	NextBatch: "alice2",
-	//	Rooms: sync2.SyncRoomsResponse{
-	//		Join: map[string]sync2.SyncV2JoinResponse{
-	//			roomID: {
-	//				State: sync2.EventsResponse{
-	//					Events: []json.RawMessage{
-	//						simonJoin,
-	//						chrisJoin,
-	//					},
-	//				},
-	//				Timeline: sync2.TimelineResponse{
-	//					Events:    aliceMsgs,
-	//					Limited:   true,
-	//					PrevBatch: "prevBatch2",
-	//				},
-	//			},
-	//		},
-	//	},
-	//})
-	//v2.waitUntilEmpty(t, aliceToken)
 	//
 	//t.Log("Simon syncs. He should see himself as having joined the room, and see Alice's message.")
 	//// XXX: Simon seeing his own join event feels a bit naughty. If you've joined in the gap,
