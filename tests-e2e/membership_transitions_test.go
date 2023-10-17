@@ -802,3 +802,61 @@ func TestMemberCounts(t *testing.T) {
 		},
 	}))
 }
+
+func TestPreemptiveBanIsNotLeaked(t *testing.T) {
+	alice := registerNamedUser(t, "alice")
+	nigel := registerNamedUser(t, "nigel")
+
+	t.Log("Alice creates a public room and a DM with Nigel.")
+	public := alice.MustCreateRoom(t, map[string]interface{}{"preset": "public_chat"})
+	dm := alice.MustCreateRoom(t, map[string]interface{}{"preset": "private_chat", "invite": []string{nigel.UserID}})
+
+	t.Log("Nigel joins the DM")
+	nigel.JoinRoom(t, dm, nil)
+
+	t.Log("Alice sends a sentinel message into the DM.")
+	dmSentinel := alice.SendEventSynced(t, dm, b.Event{
+		Type:    "m.room.message",
+		Content: map[string]interface{}{"body": "sentinel, sentinel, where have you been?", "msgtype": "m.text"},
+	})
+
+	t.Log("Nigel does an initial sliding sync.")
+	nigelRes := nigel.SlidingSync(t, sync3.Request{
+		Lists: map[string]sync3.RequestList{
+			"a": {
+				RoomSubscription: sync3.RoomSubscription{
+					TimelineLimit: 20,
+				},
+				Ranges: sync3.SliceRanges{{0, 10}},
+			},
+		},
+	})
+	t.Log("Nigel sees the sentinel.")
+	m.MatchResponse(t, nigelRes, m.MatchRoomSubscription(dm, MatchRoomTimelineMostRecent(1, []Event{{ID: dmSentinel}})))
+
+	t.Log("Alice pre-emptively bans Nigel from the public room.")
+	alice.MustDo(t, "POST", []string{"_matrix", "client", "v3", "rooms", public, "ban"},
+		client.WithJSONBody(t, map[string]any{"user_id": nigel.UserID}))
+
+	t.Log("Alice sliding syncs until she sees the ban.")
+	alice.SlidingSyncUntilMembership(t, "", public, nigel, "ban")
+
+	t.Log("Alice sends a second sentinel in Nigel's DM.")
+	dmSentinel2 := alice.SendEventSynced(t, dm, b.Event{
+		Type:    "m.room.message",
+		Content: map[string]interface{}{"body": "sentinel 2 placeholder boogaloo", "msgtype": "m.text"},
+	})
+
+	t.Log("Nigel syncs until he sees the second sentinel. He should NOT see his ban event.")
+
+	nigelRes = nigel.SlidingSyncUntil(t, nigelRes.Pos, sync3.Request{}, func(response *sync3.Response) error {
+		seenPublicRoom := m.MatchRoomSubscription(public)
+		if seenPublicRoom(response) == nil {
+			t.Errorf("Nigel had a room subscription for the public room, but shouldn't have.")
+			m.LogResponse(t)(response)
+			t.FailNow()
+		}
+		seenSentinel := m.MatchRoomSubscription(dm, MatchRoomTimelineMostRecent(1, []Event{{ID: dmSentinel2}}))
+		return seenSentinel(response)
+	})
+}
