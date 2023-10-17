@@ -1,6 +1,7 @@
 package sync3
 
 import (
+	"fmt"
 	"sort"
 	"testing"
 )
@@ -119,6 +120,63 @@ func TestTrackerReload(t *testing.T) {
 	assertEqualSlices(t, "bob's rooms", jrt.JoinedRoomsForUser(bob), nil)
 	assertEqualSlices(t, "chris's rooms", jrt.JoinedRoomsForUser(chris), []string{roomA, roomC})
 	assertInt(t, jrt.NumInvitedUsersForRoom(roomA), 1)
+}
+
+func TestJoinedRoomsTracker_UserLeftRoom_ReturnValue(t *testing.T) {
+	alice := "@alice"
+	bob := "@bob"
+
+	// Tell the tracker that alice left various rooms. Assert its return value is sensible.
+
+	tcs := []struct {
+		id             string
+		joined         []string
+		invited        []string
+		expectedResult bool
+	}{
+		{
+			id:             "!a",
+			joined:         []string{alice, bob},
+			invited:        nil,
+			expectedResult: true,
+		},
+		{
+			id:             "!b",
+			joined:         []string{alice},
+			invited:        nil,
+			expectedResult: true,
+		},
+		{
+			id:             "!c",
+			joined:         []string{bob},
+			invited:        nil,
+			expectedResult: false,
+		},
+		{
+			id:             "!d",
+			joined:         nil,
+			invited:        nil,
+			expectedResult: false,
+		},
+		{
+			id:             "!e",
+			joined:         nil,
+			invited:        []string{alice},
+			expectedResult: true,
+		},
+	}
+
+	jrt := NewJoinedRoomsTracker()
+	for _, tc := range tcs {
+		jrt.UsersJoinedRoom(tc.joined, tc.id)
+		jrt.UsersInvitedToRoom(tc.invited, tc.id)
+	}
+
+	// Tell the tracker that Alice left every room. Check the return value is sensible.
+	for _, tc := range tcs {
+		wasJoinedOrInvited := jrt.UserLeftRoom(alice, tc.id)
+		assertBool(t, fmt.Sprintf("wasJoinedOrInvited[%s]", tc.id), wasJoinedOrInvited, tc.expectedResult)
+	}
 }
 
 func assertBool(t *testing.T, msg string, got, want bool) {

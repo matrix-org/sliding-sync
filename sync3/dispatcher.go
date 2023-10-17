@@ -141,6 +141,7 @@ func (d *Dispatcher) OnNewEvent(
 	targetUser := ""
 	membership := ""
 	shouldForceInitial := false
+	leaveAfterJoinOrInvite := false
 	if ed.EventType == "m.room.member" && ed.StateKey != nil {
 		targetUser = *ed.StateKey
 		membership = ed.Content.Get("membership").Str
@@ -155,7 +156,7 @@ func (d *Dispatcher) OnNewEvent(
 		case "ban":
 			fallthrough
 		case "leave":
-			d.jrt.UserLeftRoom(targetUser, ed.RoomID)
+			leaveAfterJoinOrInvite = d.jrt.UserLeftRoom(targetUser, ed.RoomID)
 		}
 		ed.InviteCount = d.jrt.NumInvitedUsersForRoom(ed.RoomID)
 	}
@@ -168,6 +169,11 @@ func (d *Dispatcher) OnNewEvent(
 		return d.ReceiverForUser(userID) != nil
 	})
 	ed.JoinCount = joinCount
+	if leaveAfterJoinOrInvite {
+		// Only tell the target user about a leave if they were previously aware of the
+		// room. This prevents us from leaking pre-emptive bans.
+		userIDs = append(userIDs, targetUser)
+	}
 	d.notifyListeners(ctx, ed, userIDs, targetUser, shouldForceInitial, membership)
 }
 
@@ -238,33 +244,16 @@ func (d *Dispatcher) notifyListeners(ctx context.Context, ed *caches.EventData, 
 	}
 
 	// per-user listeners
-	notifiedTarget := false
 	for _, userID := range userIDs {
 		l := d.userToReceiver[userID]
 		if l != nil {
 			edd := *ed
 			if targetUser == userID {
-				notifiedTarget = true
 				if shouldForceInitial {
 					edd.ForceInitial = true
 				}
 			}
 			l.OnNewEvent(ctx, &edd)
-		}
-	}
-	if targetUser != "" && !notifiedTarget { // e.g invites/leaves where you aren't joined yet but need to know about it
-		// We expect invites to come down the invitee's poller, which triggers OnInvite code paths and
-		// not normal event codepaths. We need the separate code path to ensure invite stripped state
-		// is sent to the conn and not live data. Hence, if we get the invite event early from a different
-		// connection, do not send it to the target, as they must wait for the invite on their poller.
-		if membership != "invite" {
-			if shouldForceInitial {
-				ed.ForceInitial = true
-			}
-			l := d.userToReceiver[targetUser]
-			if l != nil {
-				l.OnNewEvent(ctx, ed)
-			}
 		}
 	}
 }

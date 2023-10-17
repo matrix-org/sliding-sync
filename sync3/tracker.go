@@ -115,19 +115,28 @@ func (t *JoinedRoomsTracker) UsersJoinedRoom(userIDs []string, roomID string) bo
 }
 
 // UserLeftRoom marks the given user as having left the given room.
-func (t *JoinedRoomsTracker) UserLeftRoom(userID, roomID string) {
+// Returns true if this user _was_ joined or invited to the room before this call,
+// and false otherwise.
+func (t *JoinedRoomsTracker) UserLeftRoom(userID, roomID string) bool {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	joinedRooms := t.userIDToJoinedRooms[userID]
-	delete(joinedRooms, roomID)
 	joinedUsers := t.roomIDToJoinedUsers[roomID]
-	delete(joinedUsers, userID)
 	invitedUsers := t.roomIDToInvitedUsers[roomID]
+
+	_, wasJoined := joinedUsers[userID]
+	_, wasInvited := invitedUsers[userID]
+
+	delete(joinedRooms, roomID)
+	delete(joinedUsers, userID)
 	delete(invitedUsers, userID)
 	t.userIDToJoinedRooms[userID] = joinedRooms
 	t.roomIDToJoinedUsers[roomID] = joinedUsers
 	t.roomIDToInvitedUsers[roomID] = invitedUsers
+
+	return wasJoined || wasInvited
 }
+
 func (t *JoinedRoomsTracker) JoinedRoomsForUser(userID string) []string {
 	t.mu.RLock()
 	defer t.mu.RUnlock()
