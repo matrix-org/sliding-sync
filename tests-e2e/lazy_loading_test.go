@@ -3,6 +3,7 @@ package syncv3_test
 import (
 	"testing"
 
+	"github.com/matrix-org/complement/b"
 	"github.com/matrix-org/sliding-sync/sync3"
 	"github.com/matrix-org/sliding-sync/testutils/m"
 )
@@ -14,12 +15,12 @@ func TestLazyLoading(t *testing.T) {
 	sentinel := registerNewUser(t) // dummy user to ensure that the proxy has processed sent events
 
 	// all 3 join the room and say something
-	roomID := alice.CreateRoom(t, map[string]interface{}{"preset": "public_chat"})
+	roomID := alice.MustCreateRoom(t, map[string]interface{}{"preset": "public_chat"})
 	bob.JoinRoom(t, roomID, nil)
 	charlie.JoinRoom(t, roomID, nil)
 	sentinel.JoinRoom(t, roomID, nil)
 
-	alice.SendEventSynced(t, roomID, Event{
+	alice.SendEventSynced(t, roomID, b.Event{
 		Type: "m.room.message",
 		Content: map[string]interface{}{
 			"body":    "Hello world",
@@ -27,7 +28,7 @@ func TestLazyLoading(t *testing.T) {
 		},
 	})
 
-	bob.SendEventSynced(t, roomID, Event{
+	bob.SendEventSynced(t, roomID, b.Event{
 		Type: "m.room.message",
 		Content: map[string]interface{}{
 			"body":    "Hello world",
@@ -35,7 +36,7 @@ func TestLazyLoading(t *testing.T) {
 		},
 	})
 
-	lastEventID := charlie.SendEventSynced(t, roomID, Event{
+	lastEventID := charlie.SendEventSynced(t, roomID, b.Event{
 		Type: "m.room.message",
 		Content: map[string]interface{}{
 			"body":    "Hello world",
@@ -142,7 +143,7 @@ func TestLazyLoading(t *testing.T) {
 	}))
 
 	// alice now sends a message
-	aliceEventID := alice.SendEventSynced(t, roomID, Event{Type: "m.room.message", Content: map[string]interface{}{"body": "hello", "msgtype": "m.text"}})
+	aliceEventID := alice.SendEventSynced(t, roomID, b.Event{Type: "m.room.message", Content: map[string]interface{}{"body": "hello", "msgtype": "m.text"}})
 	sentinel.SlidingSyncUntilEventID(t, "", roomID, aliceEventID)
 
 	// bob, who didn't previously get alice's m.room.member event, should now see this
@@ -161,7 +162,7 @@ func TestLazyLoading(t *testing.T) {
 	}))
 
 	// alice sends another message
-	aliceEventID2 := alice.SendEventSynced(t, roomID, Event{Type: "m.room.message", Content: map[string]interface{}{"body": "hello2", "msgtype": "m.text"}})
+	aliceEventID2 := alice.SendEventSynced(t, roomID, b.Event{Type: "m.room.message", Content: map[string]interface{}{"body": "hello2", "msgtype": "m.text"}})
 	sentinel.SlidingSyncUntilEventID(t, "", roomID, aliceEventID2)
 
 	// bob, who had just got alice's m.room.member event, shouldn't see it again.

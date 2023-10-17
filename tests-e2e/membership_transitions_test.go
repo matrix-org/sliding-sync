@@ -5,6 +5,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/matrix-org/complement/b"
+	"github.com/matrix-org/complement/client"
 	"github.com/matrix-org/sliding-sync/sync3"
 	"github.com/matrix-org/sliding-sync/testutils/m"
 	"github.com/tidwall/gjson"
@@ -15,19 +17,19 @@ func TestRoomStateTransitions(t *testing.T) {
 	bob := registerNewUser(t)
 
 	// make 4 rooms and set bob's membership state in each to a different value.
-	joinRoomID := alice.CreateRoom(t, map[string]interface{}{"preset": "public_chat"})
+	joinRoomID := alice.MustCreateRoom(t, map[string]interface{}{"preset": "public_chat"})
 	bob.JoinRoom(t, joinRoomID, nil)
-	kickRoomID := alice.CreateRoom(t, map[string]interface{}{"preset": "public_chat"})
+	kickRoomID := alice.MustCreateRoom(t, map[string]interface{}{"preset": "public_chat"})
 	bob.JoinRoom(t, kickRoomID, nil)
-	alice.MustDoFunc(t, "POST", []string{"_matrix", "client", "v3", "rooms", kickRoomID, "kick"}, WithJSONBody(t, map[string]interface{}{
+	alice.MustDo(t, "POST", []string{"_matrix", "client", "v3", "rooms", kickRoomID, "kick"}, client.WithJSONBody(t, map[string]interface{}{
 		"user_id": bob.UserID,
 	}))
-	banRoomID := alice.CreateRoom(t, map[string]interface{}{"preset": "public_chat"})
+	banRoomID := alice.MustCreateRoom(t, map[string]interface{}{"preset": "public_chat"})
 	bob.JoinRoom(t, banRoomID, nil)
-	alice.MustDoFunc(t, "POST", []string{"_matrix", "client", "v3", "rooms", banRoomID, "ban"}, WithJSONBody(t, map[string]interface{}{
+	alice.MustDo(t, "POST", []string{"_matrix", "client", "v3", "rooms", banRoomID, "ban"}, client.WithJSONBody(t, map[string]interface{}{
 		"user_id": bob.UserID,
 	}))
-	inviteRoomID := alice.CreateRoom(t, map[string]interface{}{"preset": "public_chat"})
+	inviteRoomID := alice.MustCreateRoom(t, map[string]interface{}{"preset": "public_chat"})
 	alice.InviteRoom(t, inviteRoomID, bob.UserID)
 
 	// seed the proxy with Alice data
@@ -134,9 +136,9 @@ func TestInviteRejection(t *testing.T) {
 
 	// ensure that invite state correctly propagates. One room will already be in 'invite' state
 	// prior to the first proxy sync, whereas the 2nd will transition.
-	firstInviteRoomID := alice.CreateRoom(t, map[string]interface{}{"preset": "private_chat", "name": "First"})
+	firstInviteRoomID := alice.MustCreateRoom(t, map[string]interface{}{"preset": "private_chat", "name": "First"})
 	alice.InviteRoom(t, firstInviteRoomID, bob.UserID)
-	secondInviteRoomID := alice.CreateRoom(t, map[string]interface{}{"preset": "private_chat", "name": "Second"})
+	secondInviteRoomID := alice.MustCreateRoom(t, map[string]interface{}{"preset": "private_chat", "name": "Second"})
 	t.Logf("TestInviteRejection first %s second %s", firstInviteRoomID, secondInviteRoomID)
 
 	// sync as bob, we should see 1 invite
@@ -169,10 +171,10 @@ func TestInviteRejection(t *testing.T) {
 		},
 	}))
 
-	_, since := bob.MustSync(t, SyncReq{})
+	_, since := bob.MustSync(t, client.SyncReq{})
 	// now invite bob
 	alice.InviteRoom(t, secondInviteRoomID, bob.UserID)
-	since = bob.MustSyncUntil(t, SyncReq{Since: since}, SyncInvitedTo(bob.UserID, secondInviteRoomID))
+	since = bob.MustSyncUntil(t, client.SyncReq{Since: since}, client.SyncInvitedTo(bob.UserID, secondInviteRoomID))
 
 	res = bob.SlidingSync(t, sync3.Request{
 		Lists: map[string]sync3.RequestList{
@@ -203,7 +205,7 @@ func TestInviteRejection(t *testing.T) {
 
 	bob.LeaveRoom(t, firstInviteRoomID)
 	bob.LeaveRoom(t, secondInviteRoomID)
-	bob.MustSyncUntil(t, SyncReq{Since: since}, SyncLeftFrom(bob.UserID, secondInviteRoomID))
+	bob.MustSyncUntil(t, client.SyncReq{Since: since}, client.SyncLeftFrom(bob.UserID, secondInviteRoomID))
 	// TODO: proxy needs to have processed this event enough for it to be waiting for us
 	time.Sleep(100 * time.Millisecond)
 
@@ -241,9 +243,9 @@ func TestInviteAcceptance(t *testing.T) {
 	// ensure that invite state correctly propagates. One room will already be in 'invite' state
 	// prior to the first proxy sync, whereas the 2nd will transition.
 	t.Logf("Alice creates two rooms and invites Bob to the first.")
-	firstInviteRoomID := alice.CreateRoom(t, map[string]interface{}{"preset": "private_chat", "name": "First"})
+	firstInviteRoomID := alice.MustCreateRoom(t, map[string]interface{}{"preset": "private_chat", "name": "First"})
 	alice.InviteRoom(t, firstInviteRoomID, bob.UserID)
-	secondInviteRoomID := alice.CreateRoom(t, map[string]interface{}{"preset": "private_chat", "name": "Second"})
+	secondInviteRoomID := alice.MustCreateRoom(t, map[string]interface{}{"preset": "private_chat", "name": "Second"})
 	t.Logf("first %s second %s", firstInviteRoomID, secondInviteRoomID)
 
 	t.Log("Sync as Bob, requesting invites only. He should see 1 invite")
@@ -353,7 +355,7 @@ func TestInviteRejectionTwice(t *testing.T) {
 	alice := registerNewUser(t)
 	bob := registerNewUser(t)
 	roomName := "It's-a-me-invitio"
-	inviteRoomID := alice.CreateRoom(t, map[string]interface{}{"preset": "private_chat", "name": roomName})
+	inviteRoomID := alice.MustCreateRoom(t, map[string]interface{}{"preset": "private_chat", "name": roomName})
 	t.Logf("TestInviteRejectionTwice room %s", inviteRoomID)
 
 	// sync as bob, we see no invites yet.
@@ -406,7 +408,7 @@ func TestLeavingRoomReturnsOneEvent(t *testing.T) {
 
 	for _, aliceSyncing := range []bool{false, true} {
 		t.Run(fmt.Sprintf("leaving a room returns one leave event (multiple poller=%v)", aliceSyncing), func(t *testing.T) {
-			inviteRoomID := alice.CreateRoom(t, map[string]interface{}{"preset": "private_chat", "name": roomName})
+			inviteRoomID := alice.MustCreateRoom(t, map[string]interface{}{"preset": "private_chat", "name": roomName})
 			t.Logf("TestLeavingRoomReturnsOneEvent room %s", inviteRoomID)
 
 			if aliceSyncing {
@@ -476,7 +478,7 @@ func TestRejectingInviteReturnsOneEvent(t *testing.T) {
 
 	for _, aliceSyncing := range []bool{false, true} {
 		t.Run(fmt.Sprintf("rejecting an invite returns one leave event (multiple poller=%v)", aliceSyncing), func(t *testing.T) {
-			inviteRoomID := alice.CreateRoom(t, map[string]interface{}{"preset": "private_chat", "name": roomName})
+			inviteRoomID := alice.MustCreateRoom(t, map[string]interface{}{"preset": "private_chat", "name": roomName})
 			t.Logf("TestRejectingInviteReturnsOneEvent room %s", inviteRoomID)
 
 			if aliceSyncing {
@@ -542,7 +544,7 @@ func TestHeroesOnMembershipChanges(t *testing.T) {
 	t.Run("nameless room uses heroes to calculate roomname", func(t *testing.T) {
 		// create a room without a name, to ensure we calculate the room name based on
 		// room heroes
-		roomID := alice.CreateRoom(t, map[string]interface{}{"preset": "public_chat"})
+		roomID := alice.MustCreateRoom(t, map[string]interface{}{"preset": "public_chat"})
 
 		bob.JoinRoom(t, roomID, []string{})
 
@@ -571,7 +573,7 @@ func TestHeroesOnMembershipChanges(t *testing.T) {
 		}
 
 		// Send a message, the heroes shouldn't change
-		msgEv := bob.SendEventSynced(t, roomID, Event{
+		msgEv := bob.SendEventSynced(t, roomID, b.Event{
 			Type:    "m.room.roomID",
 			Content: map[string]interface{}{"body": "Hello world", "msgtype": "m.text"},
 		})
@@ -593,7 +595,7 @@ func TestHeroesOnMembershipChanges(t *testing.T) {
 	})
 
 	t.Run("named rooms don't have heroes", func(t *testing.T) {
-		namedRoomID := alice.CreateRoom(t, map[string]interface{}{"preset": "public_chat", "name": "my room without heroes"})
+		namedRoomID := alice.MustCreateRoom(t, map[string]interface{}{"preset": "public_chat", "name": "my room without heroes"})
 		// this makes sure that even if bob is joined, we don't return any heroes
 		bob.JoinRoom(t, namedRoomID, []string{})
 
@@ -604,14 +606,18 @@ func TestHeroesOnMembershipChanges(t *testing.T) {
 	})
 
 	t.Run("rooms with aliases don't have heroes", func(t *testing.T) {
-		aliasRoomID := alice.CreateRoom(t, map[string]interface{}{"preset": "public_chat"})
+		aliasRoomID := alice.MustCreateRoom(t, map[string]interface{}{"preset": "public_chat"})
 
 		alias := fmt.Sprintf("#%s-%d:%s", t.Name(), time.Now().Unix(), alice.Domain)
-		alice.MustDoFunc(t, "PUT", []string{"_matrix", "client", "v3", "directory", "room", alias},
-			WithJSONBody(t, map[string]any{"room_id": aliasRoomID}),
+		alice.MustDo(t, "PUT", []string{"_matrix", "client", "v3", "directory", "room", alias},
+			client.WithJSONBody(t, map[string]any{"room_id": aliasRoomID}),
 		)
-		alice.SetState(t, aliasRoomID, "m.room.canonical_alias", "", map[string]any{
-			"alias": alias,
+		alice.Unsafe_SendEventUnsynced(t, aliasRoomID, b.Event{
+			Type:     "m.room.canonical_alias",
+			StateKey: ptr(""),
+			Content: map[string]any{
+				"alias": alias,
+			},
 		})
 
 		bob.JoinRoom(t, aliasRoomID, []string{})
@@ -623,7 +629,7 @@ func TestHeroesOnMembershipChanges(t *testing.T) {
 	})
 
 	t.Run("can set heroes=true on room subscriptions", func(t *testing.T) {
-		subRoomID := alice.CreateRoom(t, map[string]interface{}{"preset": "public_chat"})
+		subRoomID := alice.MustCreateRoom(t, map[string]interface{}{"preset": "public_chat"})
 		bob.JoinRoom(t, subRoomID, []string{})
 
 		res := alice.SlidingSyncUntilMembership(t, "", subRoomID, bob, "join")
@@ -636,7 +642,7 @@ func TestHeroesOnMembershipChanges(t *testing.T) {
 	})
 
 	t.Run("can set heroes=true in lists", func(t *testing.T) {
-		listRoomID := alice.CreateRoom(t, map[string]interface{}{"preset": "public_chat"})
+		listRoomID := alice.MustCreateRoom(t, map[string]interface{}{"preset": "public_chat"})
 		bob.JoinRoom(t, listRoomID, []string{})
 
 		res := alice.SlidingSyncUntil(t, "", sync3.Request{
@@ -683,9 +689,9 @@ func TestMemberCounts(t *testing.T) {
 	bob := registerNewUser(t)
 	charlie := registerNewUser(t)
 
-	firstRoomID := alice.CreateRoom(t, map[string]interface{}{"preset": "public_chat", "name": "First"})
+	firstRoomID := alice.MustCreateRoom(t, map[string]interface{}{"preset": "public_chat", "name": "First"})
 	alice.InviteRoom(t, firstRoomID, bob.UserID)
-	secondRoomID := alice.CreateRoom(t, map[string]interface{}{"preset": "public_chat", "name": "Second"})
+	secondRoomID := alice.MustCreateRoom(t, map[string]interface{}{"preset": "public_chat", "name": "Second"})
 	alice.InviteRoom(t, secondRoomID, bob.UserID)
 	charlie.JoinRoom(t, secondRoomID, nil)
 	t.Logf("first %s second %s", firstRoomID, secondRoomID)
@@ -758,7 +764,7 @@ func TestMemberCounts(t *testing.T) {
 	}))
 
 	// sending a message shouldn't update the count as it wastes bandwidth
-	charlie.SendEventSynced(t, secondRoomID, Event{
+	charlie.SendEventSynced(t, secondRoomID, b.Event{
 		Type:    "m.room.message",
 		Content: map[string]interface{}{"body": "ping", "msgtype": "m.text"},
 	})
@@ -779,7 +785,7 @@ func TestMemberCounts(t *testing.T) {
 
 	// leaving a room should update the count
 	charlie.LeaveRoom(t, secondRoomID)
-	bob.MustSyncUntil(t, SyncReq{}, SyncLeftFrom(charlie.UserID, secondRoomID))
+	bob.MustSyncUntil(t, client.SyncReq{}, client.SyncLeftFrom(charlie.UserID, secondRoomID))
 
 	res = bob.SlidingSync(t, sync3.Request{
 		Lists: map[string]sync3.RequestList{

@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"testing"
 
+	"github.com/matrix-org/complement/b"
+	"github.com/matrix-org/complement/client"
 	"github.com/matrix-org/sliding-sync/sync3"
 	"github.com/matrix-org/sliding-sync/testutils/m"
 )
@@ -11,11 +13,11 @@ import (
 func TestUnreadCountsUpdate(t *testing.T) {
 	alice := registerNewUser(t)
 	bob := registerNewUser(t)
-	roomID := alice.CreateRoom(t, map[string]interface{}{
+	roomID := alice.MustCreateRoom(t, map[string]interface{}{
 		"preset": "public_chat",
 	})
 	bob.JoinRoom(t, roomID, nil)
-	eventID := bob.SendEventSynced(t, roomID, Event{
+	eventID := bob.SendEventSynced(t, roomID, b.Event{
 		Type: "m.room.message",
 		Content: map[string]interface{}{
 			"msgtype": "m.text",
@@ -35,7 +37,7 @@ func TestUnreadCountsUpdate(t *testing.T) {
 			m.MatchRoomNotificationCount(1),
 		},
 	}))
-	alice.MustDoFunc(t, "POST", []string{"_matrix", "client", "v3", "rooms", roomID, "read_markers"}, WithJSONBody(t, map[string]interface{}{
+	alice.MustDo(t, "POST", []string{"_matrix", "client", "v3", "rooms", roomID, "read_markers"}, client.WithJSONBody(t, map[string]interface{}{
 		"m.fully_read": eventID,
 		"m.read":       eventID,
 	}))

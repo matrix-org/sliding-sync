@@ -2,11 +2,13 @@ package syncv3_test
 
 import (
 	"fmt"
-	"github.com/matrix-org/sliding-sync/sync3/extensions"
-	"github.com/tidwall/gjson"
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/matrix-org/complement/b"
+	"github.com/matrix-org/sliding-sync/sync3/extensions"
+	"github.com/tidwall/gjson"
 
 	"github.com/matrix-org/sliding-sync/sync3"
 	"github.com/matrix-org/sliding-sync/testutils/m"
@@ -20,13 +22,13 @@ func TestMultipleLists(t *testing.T) {
 	var encryptedRoomIDs []string
 	var unencryptedRoomIDs []string
 	for i := 0; i < 10; i++ {
-		unencryptedRoomID := alice.CreateRoom(t, map[string]interface{}{
+		unencryptedRoomID := alice.MustCreateRoom(t, map[string]interface{}{
 			"preset": "public_chat",
 		})
 		unencryptedRoomIDs = append([]string{unencryptedRoomID}, unencryptedRoomIDs...) // push in array
-		encryptedRoomID := alice.CreateRoom(t, map[string]interface{}{
+		encryptedRoomID := alice.MustCreateRoom(t, map[string]interface{}{
 			"preset": "public_chat",
-			"initial_state": []Event{
+			"initial_state": []b.Event{
 				NewEncryptionEvent(),
 			},
 		})
@@ -164,11 +166,11 @@ func TestMultipleListsDMUpdate(t *testing.T) {
 	// make 5 group rooms and make 5 DMs rooms. Room 0 is most recent to ease checks
 	for i := 0; i < 5; i++ {
 		dmUserID := fmt.Sprintf("@dm_%d:synapse", i) // TODO: domain brittle
-		groupRoomID := alice.CreateRoom(t, map[string]interface{}{
+		groupRoomID := alice.MustCreateRoom(t, map[string]interface{}{
 			"preset": "public_chat",
 		})
 		groupRoomIDs = append([]string{groupRoomID}, groupRoomIDs...) // push in array
-		dmRoomID := alice.CreateRoom(t, map[string]interface{}{
+		dmRoomID := alice.MustCreateRoom(t, map[string]interface{}{
 			"preset":    "trusted_private_chat",
 			"is_direct": true,
 			"invite":    []string{dmUserID},
@@ -178,7 +180,7 @@ func TestMultipleListsDMUpdate(t *testing.T) {
 		time.Sleep(time.Millisecond) // ensure timestamp changes
 	}
 	// set the account data
-	alice.SetGlobalAccountData(t, "m.direct", dmContent)
+	alice.MustSetGlobalAccountData(t, "m.direct", dmContent)
 
 	// request 2 lists, one set DM, one set no DM
 	res := alice.SlidingSync(t, sync3.Request{
@@ -222,7 +224,7 @@ func TestMultipleListsDMUpdate(t *testing.T) {
 	}))
 
 	// now bring the last DM room to the top with a notif
-	pingEventID := alice.SendEventSynced(t, dmRoomIDs[len(dmRoomIDs)-1], Event{
+	pingEventID := alice.SendEventSynced(t, dmRoomIDs[len(dmRoomIDs)-1], b.Event{
 		Type:    "m.room.message",
 		Content: map[string]interface{}{"body": "ping", "msgtype": "m.text"},
 	})
@@ -269,7 +271,7 @@ func TestNewListMidConnection(t *testing.T) {
 	var roomIDs []string
 	// make rooms
 	for i := 0; i < 4; i++ {
-		roomID := alice.CreateRoom(t, map[string]interface{}{
+		roomID := alice.MustCreateRoom(t, map[string]interface{}{
 			"preset": "public_chat",
 		})
 		roomIDs = append([]string{roomID}, roomIDs...) // push in array
@@ -319,7 +321,7 @@ func TestMultipleOverlappingLists(t *testing.T) {
 			"preset": "private_chat",
 		}
 		if isEncrypted {
-			createContent["initial_state"] = []Event{
+			createContent["initial_state"] = []b.Event{
 				NewEncryptionEvent(),
 			}
 		}
@@ -327,7 +329,7 @@ func TestMultipleOverlappingLists(t *testing.T) {
 			createContent["is_direct"] = true
 			createContent["invite"] = []string{dmUserID}
 		}
-		roomID := alice.CreateRoom(t, createContent)
+		roomID := alice.MustCreateRoom(t, createContent)
 		time.Sleep(time.Millisecond)
 		if isDM {
 			var roomIDs []string
@@ -346,7 +348,7 @@ func TestMultipleOverlappingLists(t *testing.T) {
 	// set the account data
 	t.Logf("DM rooms: %v", dmRoomIDs)
 	t.Logf("Encrypted rooms: %v", encryptedRoomIDs)
-	alice.SetGlobalAccountData(t, "m.direct", dmContent)
+	alice.MustSetGlobalAccountData(t, "m.direct", dmContent)
 
 	// seed the proxy: so we can get timeline correctly as it uses limit:1 initially.
 	alice.SlidingSync(t, sync3.Request{})
@@ -357,7 +359,7 @@ func TestMultipleOverlappingLists(t *testing.T) {
 	// - This ping message (always)
 	roomToEventID := make(map[string]string, len(allRoomIDs))
 	for i := len(allRoomIDs) - 1; i >= 0; i-- {
-		roomToEventID[allRoomIDs[i]] = alice.SendEventSynced(t, allRoomIDs[i], Event{
+		roomToEventID[allRoomIDs[i]] = alice.SendEventSynced(t, allRoomIDs[i], b.Event{
 			Type:    "m.room.message",
 			Content: map[string]interface{}{"body": "ping", "msgtype": "m.text"},
 		})
@@ -539,7 +541,7 @@ func TestNot500OnNewRooms(t *testing.T) {
 			},
 		},
 	})
-	alice.CreateRoom(t, map[string]interface{}{"preset": "public_chat"})
+	alice.MustCreateRoom(t, map[string]interface{}{"preset": "public_chat"})
 	alice.SlidingSync(t, sync3.Request{
 		Lists: map[string]sync3.RequestList{
 			"a": {
@@ -556,7 +558,7 @@ func TestNot500OnNewRooms(t *testing.T) {
 			},
 		},
 	}, WithPos(res.Pos))
-	alice.CreateRoom(t, map[string]interface{}{"preset": "public_chat"})
+	alice.MustCreateRoom(t, map[string]interface{}{"preset": "public_chat"})
 	// should not 500
 	alice.SlidingSync(t, sync3.Request{
 		Lists: map[string]sync3.RequestList{
@@ -594,7 +596,7 @@ func TestNewRoomNameCalculations(t *testing.T) {
 		go func() {
 			for i := range ch {
 				roomName := fmt.Sprintf("room %d", i)
-				roomID := alice.CreateRoom(t, map[string]interface{}{"preset": "public_chat", "name": roomName})
+				roomID := alice.MustCreateRoom(t, map[string]interface{}{"preset": "public_chat", "name": roomName})
 				roomIDToName.Store(roomID, roomName)
 			}
 		}()
@@ -698,7 +700,7 @@ func TestChangeSortOrder(t *testing.T) {
 	}
 
 	for i, name := range roomNames {
-		roomIDs[i] = alice.CreateRoom(t, map[string]interface{}{
+		roomIDs[i] = alice.MustCreateRoom(t, map[string]interface{}{
 			"name": name,
 		})
 		// we cannot guarantee we will see the right state yet, so just keep track of the room names
@@ -739,7 +741,7 @@ func TestShrinkRange(t *testing.T) {
 	var roomIDs []string // most recent first
 	for i := 0; i < 10; i++ {
 		time.Sleep(time.Millisecond) // ensure creation timestamp changes
-		roomIDs = append([]string{alice.CreateRoom(t, map[string]interface{}{
+		roomIDs = append([]string{alice.MustCreateRoom(t, map[string]interface{}{
 			"preset": "public_chat",
 			"name":   fmt.Sprintf("Room %d", i),
 		})}, roomIDs...)
@@ -775,7 +777,7 @@ func TestExpandRange(t *testing.T) {
 	var roomIDs []string // most recent first
 	for i := 0; i < 10; i++ {
 		time.Sleep(time.Millisecond) // ensure creation timestamp changes
-		roomIDs = append([]string{alice.CreateRoom(t, map[string]interface{}{
+		roomIDs = append([]string{alice.MustCreateRoom(t, map[string]interface{}{
 			"preset": "public_chat",
 			"name":   fmt.Sprintf("Room %d", i),
 		})}, roomIDs...)
@@ -809,7 +811,7 @@ func TestMultipleSameList(t *testing.T) {
 	var roomIDs []string // most recent first
 	for i := 0; i < 16; i++ {
 		time.Sleep(time.Millisecond) // ensure creation timestamp changes
-		roomIDs = append([]string{alice.CreateRoom(t, map[string]interface{}{
+		roomIDs = append([]string{alice.MustCreateRoom(t, map[string]interface{}{
 			"preset": "public_chat",
 			"name":   fmt.Sprintf("Room %d", i),
 		})}, roomIDs...)
@@ -865,14 +867,14 @@ func TestBumpEventTypesHandling(t *testing.T) {
 	charlie := registerNamedUser(t, "charlie")
 
 	t.Log("Alice creates two rooms")
-	room1 := alice.CreateRoom(
+	room1 := alice.MustCreateRoom(
 		t,
 		map[string]interface{}{
 			"preset": "public_chat",
 			"name":   "room1",
 		},
 	)
-	room2 := alice.CreateRoom(
+	room2 := alice.MustCreateRoom(
 		t,
 		map[string]interface{}{
 			"preset": "public_chat",
@@ -885,14 +887,14 @@ func TestBumpEventTypesHandling(t *testing.T) {
 	bob.JoinRoom(t, room2, nil)
 
 	t.Log("Bob sends a message in room 2 then room 1.")
-	bob.SendEventSynced(t, room2, Event{
+	bob.SendEventSynced(t, room2, b.Event{
 		Type: "m.room.message",
 		Content: map[string]interface{}{
 			"body":    "Hi room 2",
 			"msgtype": "m.text",
 		},
 	})
-	bob.SendEventSynced(t, room1, Event{
+	bob.SendEventSynced(t, room1, b.Event{
 		Type: "m.room.message",
 		Content: map[string]interface{}{
 			"body":    "Hello world",
@@ -1017,18 +1019,18 @@ func TestBumpEventTypesInOverlappingLists(t *testing.T) {
 	bob := registerNamedUser(t, "bob")
 
 	t.Log("Alice creates four rooms")
-	room1 := alice.CreateRoom(t, map[string]interface{}{"preset": "public_chat", "name": "room1"})
-	room2 := alice.CreateRoom(t, map[string]interface{}{"preset": "public_chat", "name": "room2"})
-	room3 := alice.CreateRoom(t, map[string]interface{}{"preset": "public_chat", "name": "room3"})
-	room4 := alice.CreateRoom(t, map[string]interface{}{"preset": "public_chat", "name": "room4"})
+	room1 := alice.MustCreateRoom(t, map[string]interface{}{"preset": "public_chat", "name": "room1"})
+	room2 := alice.MustCreateRoom(t, map[string]interface{}{"preset": "public_chat", "name": "room2"})
+	room3 := alice.MustCreateRoom(t, map[string]interface{}{"preset": "public_chat", "name": "room3"})
+	room4 := alice.MustCreateRoom(t, map[string]interface{}{"preset": "public_chat", "name": "room4"})
 
 	t.Log("Alice writes a message in all four rooms.")
 	// Note: all lists bump on messages, so this will ensure the recency order is sensible.
 	helloWorld := map[string]interface{}{"body": "Hello world", "msgtype": "m.text"}
-	alice.SendEventUnsynced(t, room1, Event{Type: "m.room.message", Content: helloWorld})
-	alice.SendEventUnsynced(t, room2, Event{Type: "m.room.message", Content: helloWorld})
-	alice.SendEventUnsynced(t, room3, Event{Type: "m.room.message", Content: helloWorld})
-	alice.SendEventSynced(t, room4, Event{Type: "m.room.message", Content: helloWorld})
+	alice.Unsafe_SendEventUnsynced(t, room1, b.Event{Type: "m.room.message", Content: helloWorld})
+	alice.Unsafe_SendEventUnsynced(t, room2, b.Event{Type: "m.room.message", Content: helloWorld})
+	alice.Unsafe_SendEventUnsynced(t, room3, b.Event{Type: "m.room.message", Content: helloWorld})
+	alice.SendEventSynced(t, room4, b.Event{Type: "m.room.message", Content: helloWorld})
 
 	t.Log("Alice requests a sync with three lists: one bumping on messages, a second bumping on messages and memberships, and a third bumping on all events.")
 	const listMsg = "message"
@@ -1093,7 +1095,11 @@ func TestBumpEventTypesInOverlappingLists(t *testing.T) {
 	}))
 
 	t.Log("Alice sets a room topic in room 3, and syncs until she sees the topic.")
-	topicEventID := alice.SetState(t, room3, "m.room.topic", "", map[string]interface{}{"topic": "spicy meatballs"})
+	topicEventID := alice.Unsafe_SendEventUnsynced(t, room3, b.Event{
+		Type:     "m.room.topic",
+		StateKey: ptr(""),
+		Content:  map[string]interface{}{"topic": "spicy meatballs"},
+	})
 	res = alice.SlidingSyncUntilEventID(t, res.Pos, room3, topicEventID)
 
 	t.Logf("Alice sees room3 bump in the %s list only", listAll)
@@ -1104,7 +1110,7 @@ func TestBumpEventTypesInOverlappingLists(t *testing.T) {
 	}))
 
 	t.Logf("Alice sends a message in room 2, and syncs until she sees it.")
-	msgEventID := alice.SendEventUnsynced(t, room2, Event{Type: "m.room.message", Content: helloWorld})
+	msgEventID := alice.Unsafe_SendEventUnsynced(t, room2, b.Event{Type: "m.room.message", Content: helloWorld})
 	res = alice.SlidingSyncUntilEventID(t, res.Pos, room2, msgEventID)
 
 	t.Logf("Alice sees room2 bump in all lists")
@@ -1121,25 +1127,33 @@ func TestBumpEventTypesDoesntLeakOnNewConnAfterJoin(t *testing.T) {
 	bob := registerNamedUser(t, "bob")
 
 	t.Log("Alice creates a room and sends a secret state event.")
-	room1 := alice.CreateRoom(
+	room1 := alice.MustCreateRoom(
 		t,
 		map[string]interface{}{
 			"preset": "public_chat",
 			"name":   "room1",
 		},
 	)
-	alice.SetState(t, room1, "secret", "", map[string]interface{}{})
+	alice.Unsafe_SendEventUnsynced(t, room1, b.Event{
+		Type:     "secret",
+		StateKey: ptr(""),
+		Content:  map[string]interface{}{},
+	})
 
 	t.Log("Bob creates a room and sends a secret state event.")
 	time.Sleep(1 * time.Millisecond)
-	room2 := bob.CreateRoom(
+	room2 := bob.MustCreateRoom(
 		t,
 		map[string]interface{}{
 			"preset": "public_chat",
 			"name":   "room1",
 		},
 	)
-	bob.SetState(t, room2, "secret", "", map[string]interface{}{})
+	bob.Unsafe_SendEventUnsynced(t, room2, b.Event{
+		Type:     "secret",
+		StateKey: ptr(""),
+		Content:  map[string]interface{}{},
+	})
 
 	t.Log("Alice invites Bob, who accepts.")
 	alice.InviteRoom(t, room1, bob.UserID)
@@ -1184,25 +1198,33 @@ func TestBumpEventTypesDoesntLeakOnNewConnAfterInvite(t *testing.T) {
 	bob := registerNamedUser(t, "bob")
 
 	t.Log("Alice creates a room and sends a secret state event.")
-	room1 := alice.CreateRoom(
+	room1 := alice.MustCreateRoom(
 		t,
 		map[string]interface{}{
 			"preset": "public_chat",
 			"name":   "room1",
 		},
 	)
-	alice.SetState(t, room1, "secret", "", map[string]interface{}{})
+	alice.Unsafe_SendEventUnsynced(t, room1, b.Event{
+		Type:     "secret",
+		StateKey: ptr(""),
+		Content:  map[string]interface{}{},
+	})
 
 	t.Log("Bob creates a room and sends a secret state event.")
 	time.Sleep(1 * time.Millisecond)
-	room2 := bob.CreateRoom(
+	room2 := bob.MustCreateRoom(
 		t,
 		map[string]interface{}{
 			"preset": "public_chat",
 			"name":   "room1",
 		},
 	)
-	bob.SetState(t, room2, "secret", "", map[string]interface{}{})
+	bob.Unsafe_SendEventUnsynced(t, room2, b.Event{
+		Type:     "secret",
+		StateKey: ptr(""),
+		Content:  map[string]interface{}{},
+	})
 
 	t.Log("Alice invites Bob, who does not respond.")
 	alice.InviteRoom(t, room1, bob.UserID)
@@ -1245,9 +1267,9 @@ func TestRangeOutsideTotalRooms(t *testing.T) {
 	alice := registerNewUser(t)
 
 	t.Log("Alice makes three public rooms.")
-	room0 := alice.CreateRoom(t, map[string]interface{}{"preset": "public_chat", "name": "A"})
-	room1 := alice.CreateRoom(t, map[string]interface{}{"preset": "public_chat", "name": "B"})
-	room2 := alice.CreateRoom(t, map[string]interface{}{"preset": "public_chat", "name": "C"})
+	room0 := alice.MustCreateRoom(t, map[string]interface{}{"preset": "public_chat", "name": "A"})
+	room1 := alice.MustCreateRoom(t, map[string]interface{}{"preset": "public_chat", "name": "B"})
+	room2 := alice.MustCreateRoom(t, map[string]interface{}{"preset": "public_chat", "name": "C"})
 
 	t.Log("Alice initial syncs, requesting room ranges [0, 1] and [8, 9]")
 	syncRes := alice.SlidingSync(t, sync3.Request{
@@ -1331,24 +1353,24 @@ func TestAvatarFieldInRoomResponse(t *testing.T) {
 	chris.SetAvatar(t, chrisAvatar)
 
 	t.Log("Alice makes a public room, a DM with herself, a DM with Bob, a DM with Chris, and a group-DM with Bob and Chris.")
-	public := alice.CreateRoom(t, map[string]interface{}{"preset": "public_chat"})
+	public := alice.MustCreateRoom(t, map[string]interface{}{"preset": "public_chat"})
 	// TODO: you can create a DM with yourself e.g. as below. It probably ought to have
 	//       your own face as an avatar.
-	// dmAlice := alice.CreateRoom(t, map[string]interface{}{
+	// dmAlice := alice.MustCreateRoom(t, map[string]interface{}{
 	//  "preset":    "trusted_private_chat",
 	// 	"is_direct": true,
 	//  })
-	dmBob := alice.CreateRoom(t, map[string]interface{}{
+	dmBob := alice.MustCreateRoom(t, map[string]interface{}{
 		"preset":    "trusted_private_chat",
 		"is_direct": true,
 		"invite":    []string{bob.UserID},
 	})
-	dmChris := alice.CreateRoom(t, map[string]interface{}{
+	dmChris := alice.MustCreateRoom(t, map[string]interface{}{
 		"preset":    "trusted_private_chat",
 		"is_direct": true,
 		"invite":    []string{chris.UserID},
 	})
-	dmBobChris := alice.CreateRoom(t, map[string]interface{}{
+	dmBobChris := alice.MustCreateRoom(t, map[string]interface{}{
 		"preset":    "trusted_private_chat",
 		"is_direct": true,
 		"invite":    []string{bob.UserID, chris.UserID},
@@ -1380,7 +1402,7 @@ func TestAvatarFieldInRoomResponse(t *testing.T) {
 
 	t.Run("Avatar not resent on message", func(t *testing.T) {
 		t.Log("Bob sends a sentinel message.")
-		sentinel := bob.SendEventSynced(t, dmBob, Event{
+		sentinel := bob.SendEventSynced(t, dmBob, b.Event{
 			Type: "m.room.message",
 			Content: map[string]interface{}{
 				"body":    "Hello world",
@@ -1497,8 +1519,12 @@ func TestAvatarFieldInRoomResponse(t *testing.T) {
 	t.Run("Explicit avatar propagates in non-DM room", func(t *testing.T) {
 		t.Log("Alice sets an avatar for the public room.")
 		publicAvatar := uploadAvatar(alice, "public.png")
-		alice.SetState(t, public, "m.room.avatar", "", map[string]interface{}{
-			"url": publicAvatar,
+		alice.Unsafe_SendEventUnsynced(t, public, b.Event{
+			Type:     "m.room.avatar",
+			StateKey: ptr(""),
+			Content: map[string]interface{}{
+				"url": publicAvatar,
+			},
 		})
 		t.Log("Alice syncs until she sees that avatar.")
 		res = alice.SlidingSyncUntil(
@@ -1512,8 +1538,12 @@ func TestAvatarFieldInRoomResponse(t *testing.T) {
 
 		t.Log("Alice changes the avatar for the public room.")
 		publicAvatar2 := uploadAvatar(alice, "public2.png")
-		alice.SetState(t, public, "m.room.avatar", "", map[string]interface{}{
-			"url": publicAvatar2,
+		alice.Unsafe_SendEventUnsynced(t, public, b.Event{
+			Type:     "m.room.avatar",
+			StateKey: ptr(""),
+			Content: map[string]interface{}{
+				"url": publicAvatar2,
+			},
 		})
 		t.Log("Alice syncs until she sees that avatar.")
 		res = alice.SlidingSyncUntil(
@@ -1526,7 +1556,11 @@ func TestAvatarFieldInRoomResponse(t *testing.T) {
 		)
 
 		t.Log("Alice removes the avatar for the public room.")
-		alice.SetState(t, public, "m.room.avatar", "", map[string]interface{}{})
+		alice.Unsafe_SendEventUnsynced(t, public, b.Event{
+			Type:     "m.room.avatar",
+			StateKey: ptr(""),
+			Content:  map[string]interface{}{},
+		})
 		t.Log("Alice syncs until she sees that avatar vanish.")
 		res = alice.SlidingSyncUntil(
 			t,
@@ -1559,8 +1593,12 @@ func TestAvatarFieldInRoomResponse(t *testing.T) {
 
 		t.Log("Chris gives their DM a bespoke avatar.")
 		dmAvatar := uploadAvatar(chris, "dm.png")
-		chris.SetState(t, dmChris, "m.room.avatar", "", map[string]interface{}{
-			"url": dmAvatar,
+		chris.Unsafe_SendEventUnsynced(t, dmChris, b.Event{
+			Type:     "m.room.avatar",
+			StateKey: ptr(""),
+			Content: map[string]interface{}{
+				"url": dmAvatar,
+			},
 		})
 
 		t.Log("Alice syncs until she sees that avatar.")
@@ -1586,15 +1624,23 @@ func TestAvatarFieldInRoomResponse(t *testing.T) {
 
 		t.Log("Chris updates the DM's avatar.")
 		dmAvatar2 := uploadAvatar(chris, "dm2.png")
-		chris.SetState(t, dmChris, "m.room.avatar", "", map[string]interface{}{
-			"url": dmAvatar2,
+		chris.Unsafe_SendEventUnsynced(t, dmChris, b.Event{
+			Type:     "m.room.avatar",
+			StateKey: ptr(""),
+			Content: map[string]interface{}{
+				"url": dmAvatar2,
+			},
 		})
 
 		t.Log("Alice syncs until she sees that avatar.")
 		res = alice.SlidingSyncUntil(t, res.Pos, sync3.Request{}, m.MatchRoomSubscription(dmChris, m.MatchRoomAvatar(dmAvatar2)))
 
 		t.Log("Chris removes the DM's avatar.")
-		chris.SetState(t, dmChris, "m.room.avatar", "", map[string]interface{}{})
+		chris.Unsafe_SendEventUnsynced(t, dmChris, b.Event{
+			Type:     "m.room.avatar",
+			StateKey: ptr(""),
+			Content:  map[string]interface{}{},
+		})
 
 		t.Log("Alice syncs until the DM avatar returns to Chris's most recent avatar.")
 		res = alice.SlidingSyncUntil(t, res.Pos, sync3.Request{}, m.MatchRoomSubscription(dmChris, m.MatchRoomAvatar(chris.AvatarURL)))
@@ -1603,7 +1649,7 @@ func TestAvatarFieldInRoomResponse(t *testing.T) {
 	t.Run("Changing DM flag", func(t *testing.T) {
 		t.Skip("TODO: unimplemented")
 		t.Log("Alice clears the DM flag on Bob's room.")
-		alice.SetGlobalAccountData(t, "m.direct", map[string]interface{}{
+		alice.MustSetGlobalAccountData(t, "m.direct", map[string]interface{}{
 			"content": map[string][]string{
 				bob.UserID:   {}, // no dmBob here
 				chris.UserID: {dmChris, dmBobChris},
@@ -1636,7 +1682,7 @@ func TestAvatarFieldInRoomResponse(t *testing.T) {
 		}))
 
 		t.Log("Alice sets the DM flag on Bob's room.")
-		alice.SetGlobalAccountData(t, "m.direct", map[string]interface{}{
+		alice.MustSetGlobalAccountData(t, "m.direct", map[string]interface{}{
 			"content": map[string][]string{
 				bob.UserID:   {dmBob}, // dmBob reinstated
 				chris.UserID: {dmChris, dmBobChris},
@@ -1672,7 +1718,7 @@ func TestAvatarFieldInRoomResponse(t *testing.T) {
 
 	t.Run("See avatar when invited", func(t *testing.T) {
 		t.Log("Chris invites Alice to a DM.")
-		dmInvited := chris.CreateRoom(t, map[string]interface{}{
+		dmInvited := chris.MustCreateRoom(t, map[string]interface{}{
 			"preset":    "trusted_private_chat",
 			"is_direct": true,
 			"invite":    []string{alice.UserID},

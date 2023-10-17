@@ -4,6 +4,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/matrix-org/complement/b"
 	"github.com/matrix-org/sliding-sync/sync3"
 	"github.com/matrix-org/sliding-sync/testutils/m"
 )
@@ -13,7 +14,7 @@ func TestTimestamp(t *testing.T) {
 	bob := registerNewUser(t)
 	charlie := registerNewUser(t)
 
-	roomID := alice.CreateRoom(t, map[string]interface{}{
+	roomID := alice.MustCreateRoom(t, map[string]interface{}{
 		"preset": "public_chat",
 	})
 
@@ -67,7 +68,7 @@ func TestTimestamp(t *testing.T) {
 	// Send an event which should NOT bump Bobs timestamp, because it is not listed it
 	// any BumpEventTypes
 	emptyStateKey := ""
-	eventID := alice.SendEventSynced(t, roomID, Event{
+	eventID := alice.SendEventSynced(t, roomID, b.Event{
 		Type:     "m.room.topic",
 		StateKey: &emptyStateKey,
 		Content: map[string]interface{}{
@@ -85,7 +86,7 @@ func TestTimestamp(t *testing.T) {
 	expectedTs = gotTs
 
 	// Now send a message which bumps the timestamp in myFirstList
-	eventID = alice.SendEventSynced(t, roomID, Event{
+	eventID = alice.SendEventSynced(t, roomID, b.Event{
 		Type: "m.room.message",
 		Content: map[string]interface{}{
 			"msgtype": "m.text",
@@ -102,7 +103,7 @@ func TestTimestamp(t *testing.T) {
 	expectedTs = gotTs
 
 	// Now send a message which bumps the timestamp in mySecondList
-	eventID = alice.SendEventSynced(t, roomID, Event{
+	eventID = alice.SendEventSynced(t, roomID, b.Event{
 		Type: "m.reaction",
 		Content: map[string]interface{}{
 			"m.relates.to": map[string]interface{}{
@@ -122,7 +123,7 @@ func TestTimestamp(t *testing.T) {
 	expectedTs = bobTimestampReaction
 
 	// Send another event which should NOT bump Bobs timestamp
-	eventID = alice.SendEventSynced(t, roomID, Event{
+	eventID = alice.SendEventSynced(t, roomID, b.Event{
 		Type:     "m.room.name",
 		StateKey: &emptyStateKey,
 		Content: map[string]interface{}{

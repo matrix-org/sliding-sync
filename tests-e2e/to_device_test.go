@@ -17,7 +17,11 @@ import (
 func TestToDeviceDeliveryInitialLogin(t *testing.T) {
 	alice := registerNewUser(t)
 	bob := registerNewUser(t)
-	bob.SendToDevice(t, "m.dummy", alice.UserID, alice.DeviceID, map[string]interface{}{})
+	bob.SendToDeviceMessages(t, "m.dummy", map[string]map[string]map[string]interface{}{
+		alice.UserID: map[string]map[string]interface{}{
+			alice.DeviceID: map[string]interface{}{},
+		},
+	})
 	// loop until we see the event
 	loopUntilToDeviceEvent(t, alice, nil, "", "m.dummy", bob.UserID)
 }
@@ -33,7 +37,11 @@ func TestToDeviceDeliveryStream(t *testing.T) {
 			},
 		},
 	})
-	bob.SendToDevice(t, "m.dummy", alice.UserID, alice.DeviceID, map[string]interface{}{})
+	bob.SendToDeviceMessages(t, "m.dummy", map[string]map[string]map[string]interface{}{
+		alice.UserID: map[string]map[string]interface{}{
+			alice.DeviceID: map[string]interface{}{},
+		},
+	})
 
 	// loop until we see the event
 	loopUntilToDeviceEvent(t, alice, res, res.Extensions.ToDevice.NextBatch, "m.dummy", bob.UserID)
@@ -52,7 +60,11 @@ func TestToDeviceDeliveryReconnect(t *testing.T) {
 			},
 		},
 	})
-	bob.SendToDevice(t, "m.dummy", alice.UserID, alice.DeviceID, map[string]interface{}{})
+	bob.SendToDeviceMessages(t, "m.dummy", map[string]map[string]map[string]interface{}{
+		alice.UserID: map[string]map[string]interface{}{
+			alice.DeviceID: map[string]interface{}{},
+		},
+	})
 	// loop until we see the event
 	loopUntilToDeviceEvent(t, alice, nil, "", "m.dummy", bob.UserID)
 }
@@ -65,18 +77,30 @@ func TestToDeviceDropStaleKeyRequestsInitial(t *testing.T) {
 	// send a few dummy messages, cancelling each other
 	for i := 0; i < sendMessages; i++ {
 		reqID := util.RandomString(8)
-		bob.SendToDevice(t, "m.room_key_request", alice.UserID, alice.DeviceID, map[string]interface{}{
-			"request_id":           reqID,
-			"action":               "request",
-			"requesting_device_id": "mydevice",
+		bob.SendToDeviceMessages(t, "m.room_key_request", map[string]map[string]map[string]interface{}{
+			alice.UserID: map[string]map[string]interface{}{
+				alice.DeviceID: map[string]interface{}{
+					"request_id":           reqID,
+					"action":               "request",
+					"requesting_device_id": "mydevice",
+				},
+			},
 		})
-		bob.SendToDevice(t, "m.room_key_request", alice.UserID, alice.DeviceID, map[string]interface{}{
-			"request_id":           reqID,
-			"action":               "request_cancellation",
-			"requesting_device_id": "mydevice",
+		bob.SendToDeviceMessages(t, "m.room_key_request", map[string]map[string]map[string]interface{}{
+			alice.UserID: map[string]map[string]interface{}{
+				alice.DeviceID: map[string]interface{}{
+					"request_id":           reqID,
+					"action":               "request_cancellation",
+					"requesting_device_id": "mydevice",
+				},
+			},
 		})
 	}
-	bob.SendToDevice(t, "sentinel", alice.UserID, alice.DeviceID, map[string]interface{}{})
+	bob.SendToDeviceMessages(t, "sentinel", map[string]map[string]map[string]interface{}{
+		alice.UserID: map[string]map[string]interface{}{
+			alice.DeviceID: map[string]interface{}{},
+		},
+	})
 	// Loop until we have the sentinel event, the rest should cancel out.
 	gotMessages, _ := loopUntilToDeviceEvent(t, alice, nil, "", "sentinel", bob.UserID)
 	wantCount := 1
@@ -89,10 +113,14 @@ func TestToDeviceDropStaleKeyRequestsStreamNoDelete(t *testing.T) {
 	alice := registerNewUser(t)
 	bob := registerNewUser(t)
 
-	bob.SendToDevice(t, "m.room_key_request", alice.UserID, alice.DeviceID, map[string]interface{}{
-		"request_id":           "A",
-		"action":               "request",
-		"requesting_device_id": "mydevice",
+	bob.SendToDeviceMessages(t, "m.room_key_request", map[string]map[string]map[string]interface{}{
+		alice.UserID: map[string]map[string]interface{}{
+			alice.DeviceID: map[string]interface{}{
+				"request_id":           "A",
+				"action":               "request",
+				"requesting_device_id": "mydevice",
+			},
+		},
 	})
 	msgs1, res := loopUntilToDeviceEvent(t, alice, nil, "", "m.room_key_request", bob.UserID)
 	if len(msgs1) != 1 {
@@ -100,10 +128,14 @@ func TestToDeviceDropStaleKeyRequestsStreamNoDelete(t *testing.T) {
 	}
 
 	// now send a cancellation: we should not delete the cancellation
-	bob.SendToDevice(t, "m.room_key_request", alice.UserID, alice.DeviceID, map[string]interface{}{
-		"request_id":           "A",
-		"action":               "request_cancellation",
-		"requesting_device_id": "mydevice",
+	bob.SendToDeviceMessages(t, "m.room_key_request", map[string]map[string]map[string]interface{}{
+		alice.UserID: map[string]map[string]interface{}{
+			alice.DeviceID: map[string]interface{}{
+				"request_id":           "A",
+				"action":               "request_cancellation",
+				"requesting_device_id": "mydevice",
+			},
+		},
 	})
 	time.Sleep(100 * time.Millisecond)
 	msgs2, _ := loopUntilToDeviceEvent(t, alice, res, res.Extensions.ToDevice.NextBatch, "m.room_key_request", bob.UserID)
