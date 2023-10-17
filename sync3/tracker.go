@@ -217,8 +217,7 @@ func (t *JoinedRoomsTracker) ReloadMembershipsForRoom(roomID string, joined, inv
 
 	// 2. Mark the joined users as being joined to this room.
 	for userID := range newJoined {
-		_, userAlreadyTracked := t.userIDToJoinedRooms[userID]
-		if !userAlreadyTracked {
+		if t.userIDToJoinedRooms[userID] == nil {
 			t.userIDToJoinedRooms[userID] = make(set)
 		}
 		t.userIDToJoinedRooms[userID][roomID] = struct{}{}
