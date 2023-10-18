@@ -954,15 +954,6 @@ func TestClientsSeeMembershipTransitionsInGappyPolls(t *testing.T) {
 	//	m.MatchRoomPrevBatch("prevBatch2"),
 	//	m.MatchRoomTimeline(aliceMsgs),
 	//))
-	//
-	//t.Log("Ditto for Chris.")
-	//chrisRes = v3.mustDoV3RequestWithPos(t, chrisToken, chrisRes.Pos, sync3.Request{})
-	//m.MatchResponse(t, chrisRes, m.MatchRoomSubscription(roomID,
-	//	m.MatchJoinCount(3),
-	//	m.MatchInviteCount(0),
-	//	m.MatchRoomPrevBatch("prevBatch2"),
-	//	m.MatchRoomTimeline(aliceMsgs),
-	//))
 }
 
 // the two existing join transitions without having an existing connection.
