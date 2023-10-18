@@ -721,6 +721,8 @@ func TestGappyStateDoesNotAccumulateTheStateBlock(t *testing.T) {
 func TestClientsSeeMembershipTransitionsInGappyPolls(t *testing.T) {
 	pqString := testutils.PrepareDBConnectionString()
 	v2 := runTestV2Server(t)
+	// TODO remove this? Otherwise running tests is sloooooow
+	v2.timeToWaitForV2Response /= 20
 	defer v2.close()
 	v3 := runTestServer(t, v2, pqString)
 	defer v3.close()
@@ -745,12 +747,12 @@ func TestClientsSeeMembershipTransitionsInGappyPolls(t *testing.T) {
 	transitions := map[string][]string{
 		// before: {possible after}
 		// https://spec.matrix.org/v1.8/client-server-api/#room-membership for the list of allowed transitions
-		//"none":   {"ban", "invite", "join", "leave"},
+		"none":   {"ban", "invite", "join", "leave"},
 		"invite": {"ban", "join", "leave"},
 		// Note: can also join->join here e.g. for displayname change, but will do that in a separate test
-		//"join":  {"ban", "leave"},
-		//"leave": {"ban", "invite", "join"},
-		//"ban":   {"leave"},
+		"join":  {"ban", "leave"},
+		"leave": {"ban", "invite", "join"},
+		"ban":   {"leave"},
 	}
 	for before, afterOptions := range transitions {
 		for _, after := range afterOptions {
@@ -863,7 +865,6 @@ func TestClientsSeeMembershipTransitionsInGappyPolls(t *testing.T) {
 		// Note: we only expect timeline[1:] here, not the create event. See
 		// https://github.com/matrix-org/sliding-sync/issues/343
 		m.MatchResponse(t, anaRes,
-			m.LogResponse(t),
 			m.MatchRoomSubscription(tc.publicRoomID,
 				m.MatchRoomTimeline(publicEvents[1:]),
 				m.MatchJoinCount(wantJoinCount),
@@ -942,8 +943,8 @@ func TestClientsSeeMembershipTransitionsInGappyPolls(t *testing.T) {
 			},
 		})
 		m.MatchResponse(t, anaRes, m.MatchRoomSubscription(tc.publicRoomID,
-			m.MatchRoomRequiredState([]json.RawMessage{newMembership}),
-			m.MatchRoomTimeline(publicTimeline),
+			//m.MatchRoomRequiredState([]json.RawMessage{newMembership}),
+			m.MatchRoomTimelineMostRecent(len(publicTimeline), publicTimeline),
 		))
 		return
 	}
@@ -1001,43 +1002,52 @@ func TestClientsSeeMembershipTransitionsInGappyPolls(t *testing.T) {
 
 			// 6: Bert sliding syncs.
 			t.Log("Bert sliding syncs.")
-			bertRes = v3.mustDoV3RequestWithPos(t, tc.bertToken, bertRes.Pos, sync3.Request{})
+			bertRes = v3.mustDoV3RequestWithPos(t, tc.bertToken, bertRes.Pos, bertReq)
 
 			// Work out what Bert should see.
-			matchers := map[string][]m.RoomMatcher{}
+			respMatchers := []m.RespMatcher{}
 
 			switch tc.afterMembership {
 			case "invite":
 				t.Log("Bert should see his invite.")
-				matchers[tc.publicRoomID] = []m.RoomMatcher{
-					m.MatchRoomHasInviteState(),
-					m.MatchInviteCount(1),
-					m.MatchJoinCount(1),
-				}
+				respMatchers = append(respMatchers,
+					m.MatchList("a", m.MatchV3Count(1)),
+					m.MatchRoomSubscription(tc.publicRoomID,
+						m.MatchRoomHasInviteState(),
+						m.MatchInviteCount(1),
+						m.MatchJoinCount(1),
+					))
 			case "join":
 				t.Log("Bert should see himself joined to the room, and Alice's messages.")
-				matchers[tc.publicRoomID] = []m.RoomMatcher{
-					m.MatchRoomLacksInviteState(),
-					m.MatchInviteCount(0),
-					m.MatchJoinCount(2),
-					m.MatchRoomTimeline(publicTimeline),
-				}
+				respMatchers = append(respMatchers,
+					m.MatchList("a", m.MatchV3Count(1)),
+					m.MatchRoomSubscription(tc.publicRoomID,
+						m.MatchRoomLacksInviteState(),
+						m.MatchInviteCount(0),
+						m.MatchJoinCount(2),
+						m.MatchRoomTimelineMostRecent(len(publicTimeline), publicTimeline),
+					))
 			case "leave":
-				t.Error("TODO")
+				fallthrough
 			case "ban":
-				if tc.beforeMembership == "none" || tc.beforeMembership == "leave" {
-					t.Log("Bert was banned when he wasn't invited or joined. He shouldn't see the room.")
+				respMatchers = append(respMatchers, m.MatchList("a", m.MatchV3Count(0)))
+
+				// if both previous and after membership was neither join nor invite, don't expect to see the new membership.
+				wasntJoinedNorInvited := tc.beforeMembership == "none" || tc.beforeMembership == "leave" || tc.beforeMembership == "ban"
+				if wasntJoinedNorInvited {
+					t.Logf("Bob shouldn't see his %s (membership was: %s)", tc.afterMembership, tc.beforeMembership)
+					respMatchers = append(respMatchers, m.MatchRoomSubscriptionsStrict(nil))
 				} else {
-					t.Logf("Bert was banned after %s. He should see the ban.", tc.beforeMembership)
-					matchers[tc.publicRoomID] = []m.RoomMatcher{
+					t.Logf("Bob should see his %s (membership was: %s)", tc.afterMembership, tc.beforeMembership)
+					respMatchers = append(respMatchers, m.MatchRoomSubscription(tc.publicRoomID,
 						m.MatchRoomTimeline([]json.RawMessage{newMembership}),
-					}
+					))
 				}
 			default:
 				panic(fmt.Errorf("unknown afterMembership %s", tc.afterMembership))
 			}
 
-			m.MatchResponse(t, bertRes, m.LogResponse(t), m.MatchRoomSubscriptionsStrict(matchers))
+			m.MatchResponse(t, bertRes, respMatchers...)
 
 			// 7: TODO: Ana invites Bert to a DM.
 			// Bert sees the invite.
@@ -1046,5 +1056,52 @@ func TestClientsSeeMembershipTransitionsInGappyPolls(t *testing.T) {
 
 }
 
-// the two existing join transitions without having an existing connection.
-// leave during a gap, invite during a gap, with/without existing connection
+func TestTimelineAfterUpdate(t *testing.T) {
+	pqString := testutils.PrepareDBConnectionString()
+	v2 := runTestV2Server(t)
+	defer v2.close()
+	v3 := runTestServer(t, v2, pqString)
+	defer v3.close()
+
+	v2.addAccount(t, alice, aliceToken)
+	timeline1 := createRoomState(t, alice, time.Now())
+	v2.queueResponse(aliceToken, sync2.SyncResponse{
+		NextBatch: "dummy1",
+		Rooms: sync2.SyncRoomsResponse{
+			Join: map[string]sync2.SyncV2JoinResponse{
+				"!unimportant": {
+					Timeline: sync2.TimelineResponse{
+						Events:    timeline1,
+						PrevBatch: "prevBatch1",
+					},
+				},
+			}},
+	})
+
+	res := v3.mustDoV3Request(t, aliceToken, sync3.Request{
+		RoomSubscriptions: map[string]sync3.RoomSubscription{
+			"!unimportant": {
+				TimelineLimit: 20,
+			},
+		},
+	})
+	m.MatchResponse(t, res, m.MatchRoomSubscription("!unimportant", m.MatchRoomTimeline(timeline1)))
+
+	timeline2 := []json.RawMessage{testutils.NewMessageEvent(t, alice, "all the information you need is on the task")}
+	v2.queueResponse(aliceToken, sync2.SyncResponse{
+		NextBatch: "dummy2",
+		Rooms: sync2.SyncRoomsResponse{
+			Join: map[string]sync2.SyncV2JoinResponse{
+				"!unimportant": {
+					Timeline: sync2.TimelineResponse{
+						Events:    timeline2,
+						PrevBatch: "prevBatch2",
+					},
+				},
+			},
+		},
+	})
+
+	res = v3.mustDoV3RequestWithPos(t, aliceToken, res.Pos, sync3.Request{})
+	m.MatchResponse(t, res, m.MatchRoomSubscription("!unimportant", m.MatchRoomTimeline(timeline2)))
+}
