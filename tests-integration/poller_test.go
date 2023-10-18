@@ -943,7 +943,7 @@ func TestClientsSeeMembershipTransitionsInGappyPolls(t *testing.T) {
 			},
 		})
 		m.MatchResponse(t, anaRes, m.MatchRoomSubscription(tc.publicRoomID,
-			//m.MatchRoomRequiredState([]json.RawMessage{newMembership}),
+			m.MatchRoomRequiredState([]json.RawMessage{newMembership}),
 			m.MatchRoomTimelineMostRecent(len(publicTimeline), publicTimeline),
 		))
 		return
