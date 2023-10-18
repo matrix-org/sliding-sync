@@ -3,6 +3,7 @@ package m
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"reflect"
 	"sort"
@@ -275,10 +276,15 @@ func MatchRoomSubscription(roomID string, matchers ...RoomMatcher) RespMatcher {
 		if !ok {
 			return fmt.Errorf("MatchRoomSubscription[%s]: want sub but it was missing", roomID)
 		}
+		errs := make([]error, 0, len(matchers))
 		for _, m := range matchers {
 			if err := m(room); err != nil {
-				return fmt.Errorf("MatchRoomSubscription[%s]: %s", roomID, err)
+				errs = append(errs, fmt.Errorf("%s: %s", roomID, err))
 			}
+		}
+
+		if len(errs) > 0 {
+			return fmt.Errorf("MatchRoomSubscription: %d errors:\n%w", len(errs), errors.Join(errs...))
 		}
 		return nil
 	}
