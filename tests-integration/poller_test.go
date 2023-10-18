@@ -1047,8 +1047,39 @@ func TestClientsSeeMembershipTransitionsInGappyPolls(t *testing.T) {
 
 			m.MatchResponse(t, bertRes, respMatchers...)
 
-			// 7: TODO: Ana invites Bert to a DM.
-			// Bert sees the invite.
+			// 7: Ana invites Bert to a DM. He accepts.
+			// This is a sentinel which proves the proxy has processed the gappy poll
+			// properly in the situations where there's nothing for Bert to see in his
+			// second sync, e.g. ban -> leave (an unban).
+			t.Log("Ana invites Bert to a DM. He accepts.")
+			bertDMJoin := testutils.NewJoinEvent(t, tc.bert)
+			dmTimeline := append(
+				createRoomState(t, tc.ana, time.Now()),
+				testutils.NewStateEvent(t, "m.room.member", tc.bert, tc.ana, map[string]any{"membership": "invite"}),
+				bertDMJoin,
+			)
+			v2.queueResponse(tc.anaToken, sync2.SyncResponse{
+				NextBatch: "ana3",
+				Rooms: sync2.SyncRoomsResponse{
+					Join: map[string]sync2.SyncV2JoinResponse{
+						tc.dmRoomID: {
+							Timeline: sync2.TimelineResponse{
+								Events:    dmTimeline,
+								PrevBatch: "anaDM",
+							},
+						},
+					},
+				},
+			})
+			v2.waitUntilEmpty(t, tc.anaToken)
+
+			t.Log("Bert sliding syncs")
+			bertRes = v3.mustDoV3RequestWithPos(t, tc.bertToken, bertRes.Pos, bertReq)
+
+			t.Log("Bert sees his join to the DM.")
+			m.MatchResponse(t, bertRes, m.MatchRoomSubscriptionsStrict(map[string][]m.RoomMatcher{
+				tc.dmRoomID: {m.MatchRoomLacksInviteState(), m.MatchRoomTimelineMostRecent(1, []json.RawMessage{bertDMJoin})},
+			}))
 		})
 	}
 
