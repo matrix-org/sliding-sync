@@ -965,9 +965,7 @@ func TestClientsSeeMembershipTransitionsInGappyPolls(t *testing.T) {
 				bertRes = v3.mustDoV3RequestWithPos(t, tc.bertToken, bertRes.Pos, bertReq)
 
 				// Bert will see the entire history of these rooms, so there shouldn't be any prev batch tokens.
-				expectedSubscriptions := map[string][]m.RoomMatcher{
-					//tc.dmRoomID: {m.MatchRoomPrevBatch("")},
-				}
+				expectedSubscriptions := map[string][]m.RoomMatcher{}
 				switch tc.beforeMembership {
 				case "invite":
 					t.Log("Bert sees his invite.")
