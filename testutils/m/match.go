@@ -154,6 +154,24 @@ func MatchRoomInviteState(events []json.RawMessage) RoomMatcher {
 	}
 }
 
+func MatchRoomHasInviteState() RoomMatcher {
+	return func(r sync3.Room) error {
+		if len(r.InviteState) == 0 {
+			return fmt.Errorf("missing or empty invite state, expected at least one piece of invite state")
+		}
+		return nil
+	}
+}
+
+func MatchRoomLacksInviteState() RoomMatcher {
+	return func(r sync3.Room) error {
+		if len(r.InviteState) > 0 {
+			return fmt.Errorf("invite state present, but expected no invite state")
+		}
+		return nil
+	}
+}
+
 // Similar to MatchRoomTimeline but takes the last n events of `events` and only checks with the last
 // n events of the timeline.
 func MatchRoomTimelineMostRecent(n int, events []json.RawMessage) RoomMatcher {
