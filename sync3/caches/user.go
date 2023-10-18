@@ -305,8 +305,10 @@ func (c *UserCache) OnRegistered(ctx context.Context) error {
 	return nil
 }
 
-// LazyLoadTimelines loads up to `maxTimelineEvents` from the database, plus other
-// timeline-related data. Events from senders ignored by this user are dropped.
+// LazyLoadTimelines loads the most recent timeline events (up to `maxTimelineEvents`)
+// for each of the given rooms from the database (plus other timeline-related data).
+// Only events with NID <= loadPos are returned.
+// Events from senders ignored by this user are dropped.
 // Returns nil on error.
 func (c *UserCache) LazyLoadTimelines(ctx context.Context, loadPos int64, roomIDs []string, maxTimelineEvents int) map[string]state.LatestEvents {
 	_, span := internal.StartSpan(ctx, "LazyLoadTimelines")

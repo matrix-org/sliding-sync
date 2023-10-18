@@ -694,6 +694,11 @@ func (s *Storage) RoomStateAfterEventPosition(ctx context.Context, roomIDs []str
 	return
 }
 
+// LatestEventsInRooms returns the most recent events
+// - in the given rooms
+// - that the user has permission to see
+// - with NIDs <= `to`.
+// Up to `limit` events are chosen per room.
 func (s *Storage) LatestEventsInRooms(userID string, roomIDs []string, to int64, limit int) (map[string]*LatestEvents, error) {
 	roomIDToRanges, err := s.visibleEventNIDsBetweenForRooms(userID, roomIDs, 0, to)
 	if err != nil {
@@ -747,6 +752,9 @@ func (s *Storage) LatestEventsInRooms(userID string, roomIDs []string, to int64,
 	return result, err
 }
 
+// visibleEventNIDsBetweenForRooms determines which events a given user has permission to see.
+// It accepts a nid range [from, to]. For each given room, it calculates the NID ranges
+// [A1, B1], [A2, B2], ... within [from, to] in which the user has permission to see events.
 func (s *Storage) visibleEventNIDsBetweenForRooms(userID string, roomIDs []string, from, to int64) (map[string][][2]int64, error) {
 	// load *THESE* joined rooms for this user at from (inclusive)
 	var membershipEvents []Event
