@@ -25,6 +25,6 @@ func assertSlice(t *testing.T, got, want []string) {
 	sort.Slice(want, func(i, j int) bool { return want[i] < want[j] })
 
 	if !reflect.DeepEqual(got, want) {
-		t.Errorf("After sorting, got %v ubt expected %v", got, want)
+		t.Errorf("After sorting, got %v but expected %v", got, want)
 	}
 }
