@@ -19,9 +19,7 @@ func TestDeadInviteCleanup(t *testing.T) {
 	defer close()
 	store := state.NewStorageWithDB(db, false)
 
-	// Alice and Bob have invites to rooms X and Y.
-	// Chris has an invite to room Z.
-	t.Log("Alice is joined to room X; Bob to room Y. Chris isn't joined to any rooms.")
+	t.Log("Alice and Bob both have invites to rooms X and Y. Chris has an invite to room Z.")
 	_, err := store.DB.Exec(`
 		INSERT INTO syncv3_invites(user_id, room_id, invite_state)
 		VALUES ('@alice:test', '!x', '[]'),
