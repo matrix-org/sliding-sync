@@ -60,11 +60,11 @@ func NewRoomMetadata(roomID string) *RoomMetadata {
 	}
 }
 
-// CopyHeroes returns a version of the current RoomMetadata whose Heroes field is
-// a brand-new copy of the original Heroes. The return value's Heroes field can be
+// DeepCopy returns a version of the current RoomMetadata whose Heroes+LatestEventsByType fields are
+// brand-new copies. The return value's Heroes field can be
 // safely modified by the caller, but it is NOT safe for the caller to modify any other
 // fields.
-func (m *RoomMetadata) CopyHeroes() *RoomMetadata {
+func (m *RoomMetadata) DeepCopy() *RoomMetadata {
 	newMetadata := *m
 
 	// XXX: We're doing this because we end up calling RemoveHero() to omit the
@@ -80,9 +80,21 @@ func (m *RoomMetadata) CopyHeroes() *RoomMetadata {
 	newMetadata.Heroes = make([]Hero, len(m.Heroes))
 	copy(newMetadata.Heroes, m.Heroes)
 
-	// ⚠️ NB: there are other pointer fields (e.g. PredecessorRoomID *string) or
-	// and pointer-backed fields (e.g. LatestEventsByType map[string]EventMetadata)
-	// which are not deepcopied here.
+	// copy LatestEventsByType else we risk concurrent map r/w when the connection
+	// reads this map and updates write to it.
+	newMetadata.LatestEventsByType = make(map[string]EventMetadata)
+	for k, v := range m.LatestEventsByType {
+		newMetadata.LatestEventsByType[k] = v
+	}
+
+	newMetadata.ChildSpaceRooms = make(map[string]struct{})
+	for k, v := range m.ChildSpaceRooms {
+		newMetadata.ChildSpaceRooms[k] = v
+	}
+
+	// ⚠️ NB: there are other pointer fields (e.g. PredecessorRoomID *string)
+	// and pointer-backed fields which are not deepcopied here, because they do not
+	// change.
 	return &newMetadata
 }
 

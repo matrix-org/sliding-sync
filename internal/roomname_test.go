@@ -272,7 +272,7 @@ func TestCopyHeroes(t *testing.T) {
 		{ID: chris},
 	}}
 
-	m2 := m1.CopyHeroes()
+	m2 := m1.DeepCopy()
 	// Uncomment this to see why CopyHeroes is necessary!
 	//m2 := m1
 
