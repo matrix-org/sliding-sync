@@ -54,6 +54,7 @@ type UserRoomData struct {
 	// avatar (if any) as specified in their membership event in that room.
 	ResolvedAvatarURL string
 
+	// Spaces is the set of room IDs of spaces that this room is part of.
 	Spaces map[string]struct{}
 	// Map of tag to order float.
 	// See https://spec.matrix.org/latest/client-server-api/#room-tagging
@@ -192,6 +193,8 @@ type UserCache struct {
 }
 
 func NewUserCache(userID string, globalCache *GlobalCache, store *state.Storage, txnIDs TransactionIDFetcher) *UserCache {
+	// see SyncLiveHandler.userCache for the initialisation proper, which works by
+	// firing off a bunch of OnBlahBlah callbacks.
 	uc := &UserCache{
 		UserID:         userID,
 		roomToDataMu:   &sync.RWMutex{},
@@ -302,8 +305,10 @@ func (c *UserCache) OnRegistered(ctx context.Context) error {
 	return nil
 }
 
-// LazyLoadTimelines loads up to `maxTimelineEvents` from the database, plus other
-// timeline-related data. Events from senders ignored by this user are dropped.
+// LazyLoadTimelines loads the most recent timeline events (up to `maxTimelineEvents`)
+// for each of the given rooms from the database (plus other timeline-related data).
+// Only events with NID <= loadPos are returned.
+// Events from senders ignored by this user are dropped.
 // Returns nil on error.
 func (c *UserCache) LazyLoadTimelines(ctx context.Context, loadPos int64, roomIDs []string, maxTimelineEvents int) map[string]state.LatestEvents {
 	_, span := internal.StartSpan(ctx, "LazyLoadTimelines")

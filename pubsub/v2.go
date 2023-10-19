@@ -130,6 +130,7 @@ type V2ExpiredToken struct {
 
 func (*V2ExpiredToken) Type() string { return "V2ExpiredToken" }
 
+// V2InvalidateRoom is emitted after a non-incremental state change to a room.
 type V2InvalidateRoom struct {
 	RoomID string
 }
