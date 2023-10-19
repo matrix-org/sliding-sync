@@ -1085,6 +1085,7 @@ func TestClientsSeeMembershipTransitionsInGappyPolls(t *testing.T) {
 
 }
 
+// This is a minimal version of the test above to work out wtf is going on.
 func TestTimelineAfterRequestingStateAfterGappyPoll(t *testing.T) {
 	pqString := testutils.PrepareDBConnectionString()
 	v2 := runTestV2Server(t)
