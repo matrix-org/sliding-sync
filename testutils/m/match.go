@@ -3,6 +3,7 @@ package m
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"reflect"
 	"sort"
@@ -154,6 +155,24 @@ func MatchRoomInviteState(events []json.RawMessage) RoomMatcher {
 	}
 }
 
+func MatchRoomHasInviteState() RoomMatcher {
+	return func(r sync3.Room) error {
+		if len(r.InviteState) == 0 {
+			return fmt.Errorf("missing or empty invite state, expected at least one piece of invite state")
+		}
+		return nil
+	}
+}
+
+func MatchRoomLacksInviteState() RoomMatcher {
+	return func(r sync3.Room) error {
+		if len(r.InviteState) > 0 {
+			return fmt.Errorf("invite state present, but expected no invite state")
+		}
+		return nil
+	}
+}
+
 // Similar to MatchRoomTimeline but takes the last n events of `events` and only checks with the last
 // n events of the timeline.
 func MatchRoomTimelineMostRecent(n int, events []json.RawMessage) RoomMatcher {
@@ -257,10 +276,17 @@ func MatchRoomSubscription(roomID string, matchers ...RoomMatcher) RespMatcher {
 		if !ok {
 			return fmt.Errorf("MatchRoomSubscription[%s]: want sub but it was missing", roomID)
 		}
+		errs := make([]error, 0, len(matchers))
 		for _, m := range matchers {
 			if err := m(room); err != nil {
-				return fmt.Errorf("MatchRoomSubscription[%s]: %s", roomID, err)
+				errs = append(errs, err)
 			}
+		}
+
+		if len(errs) > 1 {
+			return fmt.Errorf("MatchRoomSubscription[%s]: %d errors:\n%w", roomID, len(errs), errors.Join(errs...))
+		} else if len(errs) == 1 {
+			return fmt.Errorf("MatchRoomSubscription[%s]: %w", roomID, errs[0])
 		}
 		return nil
 	}
@@ -672,6 +698,7 @@ func MatchNoRoomAccountData(roomIDs []string) RespMatcher {
 // the given sync response to the test log. This is useful when debugging a test.
 func LogResponse(t *testing.T) RespMatcher {
 	return func(res *sync3.Response) error {
+		t.Helper()
 		dump, _ := json.MarshalIndent(res, "", "    ")
 		t.Logf("Response was: %s", dump)
 		return nil
@@ -681,6 +708,7 @@ func LogResponse(t *testing.T) RespMatcher {
 // LogRooms is like LogResponse, but only logs the rooms section of the response.
 func LogRooms(t *testing.T) RespMatcher {
 	return func(res *sync3.Response) error {
+		t.Helper()
 		dump, _ := json.MarshalIndent(res.Rooms, "", "    ")
 		t.Logf("Response rooms were: %s", dump)
 		return nil
@@ -734,12 +762,21 @@ const AnsiResetForeground = "\x1b[39m"
 
 func MatchResponse(t *testing.T, res *sync3.Response, matchers ...RespMatcher) {
 	t.Helper()
+	errs := []error{}
 	for _, m := range matchers {
 		err := m(res)
 		if err != nil {
-			b, _ := json.MarshalIndent(res, "", "    ")
-			t.Errorf("%vMatchResponse: %s\n%s%v", AnsiRedForeground, err, string(b), AnsiResetForeground)
+			errs = append(errs, fmt.Errorf("%v%s%v", AnsiRedForeground, err, AnsiResetForeground))
 		}
+	}
+
+	if len(errs) > 0 {
+		if len(errs) == 1 {
+			t.Errorf("%vMatchResponse: %s", AnsiRedForeground, errs[0])
+		} else {
+			t.Errorf("%vMatchResponse: there were %d errors\n%s", AnsiRedForeground, len(errs), errors.Join(errs...))
+		}
+		LogResponse(t)(res)
 	}
 }
 
