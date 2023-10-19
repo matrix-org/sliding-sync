@@ -231,7 +231,7 @@ func (s *ConnState) onIncomingRequest(reqCtx context.Context, req *sync3.Request
 		RoomIDToTimeline:   response.RoomIDsToTimelineEventIDs(),
 		IsInitial:          isInitial,
 		RoomIDsToLists:     s.lists.ListsByVisibleRoomIDs(s.muxedReq.Lists),
-		AllSubscribedRooms: keys(s.roomSubscriptions),
+		AllSubscribedRooms: internal.Keys(s.roomSubscriptions),
 		AllLists:           s.muxedReq.ListKeys(),
 	})
 	region.End()
@@ -574,7 +574,7 @@ func (s *ConnState) getInitialRoomData(ctx context.Context, roomSub sync3.RoomSu
 		for _, ev := range latestEvents.Timeline {
 			senders[gjson.GetBytes(ev, "sender").Str] = struct{}{}
 		}
-		roomToUsersInTimeline[roomID] = keys(senders)
+		roomToUsersInTimeline[roomID] = internal.Keys(senders)
 		roomToTimeline[roomID] = latestEvents.Timeline
 		// remember what we just loaded so if we see these events down the live stream we know to ignore them.
 		// This means that requesting a direct room subscription causes the connection to jump ahead to whatever
@@ -782,17 +782,4 @@ func clampSliceRangeToListSize(ctx context.Context, r [2]int64, totalRooms int64
 	} else {
 		return [2]int64{r[0], lastIndexWithRoom}
 	}
-}
-
-// keys returns a slice containing copies of the keys of the given map, in no particular
-// order.
-func keys[K comparable, V any](m map[K]V) []K {
-	if m == nil {
-		return nil
-	}
-	output := make([]K, len(m))
-	for key := range m {
-		output = append(output, key)
-	}
-	return output
 }
