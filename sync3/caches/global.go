@@ -154,7 +154,7 @@ func (c *GlobalCache) copyRoom(roomID string) *internal.RoomMetadata {
 		logger.Warn().Str("room", roomID).Msg("GlobalCache.LoadRoom: no metadata for this room, returning stub")
 		return internal.NewRoomMetadata(roomID)
 	}
-	return sr.CopyHeroes()
+	return sr.DeepCopy()
 }
 
 // LoadJoinedRooms loads all current joined room metadata for the user given, together
