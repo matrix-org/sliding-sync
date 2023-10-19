@@ -122,7 +122,7 @@ func (s *connStateLive) processUpdate(ctx context.Context, update caches.Update,
 		UserID:             s.userID,
 		DeviceID:           s.deviceID,
 		RoomIDsToLists:     roomIDsToLists,
-		AllSubscribedRooms: keys(s.roomSubscriptions),
+		AllSubscribedRooms: internal.Keys(s.roomSubscriptions),
 		AllLists:           s.muxedReq.ListKeys(),
 	})
 }
