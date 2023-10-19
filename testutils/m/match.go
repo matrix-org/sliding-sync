@@ -3,6 +3,7 @@ package m
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"reflect"
 	"sort"
@@ -149,6 +150,24 @@ func MatchRoomInviteState(events []json.RawMessage) RoomMatcher {
 			if !found {
 				return fmt.Errorf("required state want event %v but it does not exist", string(want))
 			}
+		}
+		return nil
+	}
+}
+
+func MatchRoomHasInviteState() RoomMatcher {
+	return func(r sync3.Room) error {
+		if len(r.InviteState) == 0 {
+			return fmt.Errorf("missing or empty invite state, expected at least one piece of invite state")
+		}
+		return nil
+	}
+}
+
+func MatchRoomLacksInviteState() RoomMatcher {
+	return func(r sync3.Room) error {
+		if len(r.InviteState) > 0 {
+			return fmt.Errorf("invite state present, but expected no invite state")
 		}
 		return nil
 	}
@@ -672,6 +691,7 @@ func MatchNoRoomAccountData(roomIDs []string) RespMatcher {
 // the given sync response to the test log. This is useful when debugging a test.
 func LogResponse(t *testing.T) RespMatcher {
 	return func(res *sync3.Response) error {
+		t.Helper()
 		dump, _ := json.MarshalIndent(res, "", "    ")
 		t.Logf("Response was: %s", dump)
 		return nil
@@ -681,6 +701,7 @@ func LogResponse(t *testing.T) RespMatcher {
 // LogRooms is like LogResponse, but only logs the rooms section of the response.
 func LogRooms(t *testing.T) RespMatcher {
 	return func(res *sync3.Response) error {
+		t.Helper()
 		dump, _ := json.MarshalIndent(res.Rooms, "", "    ")
 		t.Logf("Response rooms were: %s", dump)
 		return nil
