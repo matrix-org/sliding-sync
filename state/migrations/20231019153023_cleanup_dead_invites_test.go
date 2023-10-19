@@ -97,7 +97,7 @@ func TestDeadInviteCleanup(t *testing.T) {
 	if err != nil {
 		t.Error(err)
 	}
-	assertInvites(t, "alice,", aliceInvites, map[string][]json.RawMessage{
+	assertInvites(t, "alice", aliceInvites, map[string][]json.RawMessage{
 		"!y": emptyInviteState,
 	})
 
@@ -105,7 +105,7 @@ func TestDeadInviteCleanup(t *testing.T) {
 	if err != nil {
 		t.Error(err)
 	}
-	assertInvites(t, "bob,", bobInvites, map[string][]json.RawMessage{
+	assertInvites(t, "bob", bobInvites, map[string][]json.RawMessage{
 		"!x": emptyInviteState,
 	})
 
@@ -113,7 +113,7 @@ func TestDeadInviteCleanup(t *testing.T) {
 	if err != nil {
 		t.Error(err)
 	}
-	assertInvites(t, "chris,", chrisInvites, map[string][]json.RawMessage{
+	assertInvites(t, "chris", chrisInvites, map[string][]json.RawMessage{
 		"!z": emptyInviteState,
 	})
 
