@@ -344,7 +344,7 @@ func (s *connStateLive) processGlobalUpdates(ctx context.Context, builder *Rooms
 			}
 		}
 
-		metadata := rup.GlobalRoomMetadata().CopyHeroes()
+		metadata := rup.GlobalRoomMetadata().DeepCopy()
 		metadata.RemoveHero(s.userID)
 		// TODO: if we change a room from being a DM to not being a DM, we should call
 		// SetRoom and recalculate avatars. To do that we'd need to
