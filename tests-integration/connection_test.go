@@ -253,6 +253,7 @@ func TestConnectionTimeoutNotReset(t *testing.T) {
 	}
 	req.SetTimeoutMSecs(1000) // 1s
 	// inject 4 events 500ms apart - if we reset the timeout each time then we will return late
+	done := make(chan struct{})
 	go func() {
 		time.Sleep(10 * time.Millisecond)
 		ticker := time.NewTicker(500 * time.Millisecond)
@@ -277,6 +278,7 @@ func TestConnectionTimeoutNotReset(t *testing.T) {
 			})
 			i++
 		}
+		done <- struct{}{}
 	}()
 	startTime := time.Now()
 	res = v3.mustDoV3RequestWithPos(t, aliceToken, res.Pos, req)
@@ -286,6 +288,8 @@ func TestConnectionTimeoutNotReset(t *testing.T) {
 	}
 	m.MatchResponse(t, res, m.MatchList("a", m.MatchV3Count(2)), m.MatchNoV3Ops())
 
+	// Wait for all the responses before closing the v2 server.
+	<-done
 }
 
 // Test that the txn_id is echoed back
