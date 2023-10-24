@@ -62,6 +62,9 @@ type Conn struct {
 	mu                         *sync.Mutex
 	cancelOutstandingRequest   func()
 	cancelOutstandingRequestMu *sync.Mutex
+
+	// If we think this session is expired, e.g. due to the poller receiving HTTP 401
+	expired bool
 }
 
 func NewConn(connID ConnID, h ConnHandler) *Conn {
@@ -75,6 +78,10 @@ func NewConn(connID ConnID, h ConnHandler) *Conn {
 
 func (c *Conn) Alive() bool {
 	return c.handler.Alive()
+}
+
+func (c *Conn) Expired() bool {
+	return c.expired
 }
 
 func (c *Conn) OnUpdate(ctx context.Context, update caches.Update) {

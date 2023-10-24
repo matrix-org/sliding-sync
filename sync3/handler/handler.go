@@ -387,11 +387,16 @@ func (h *SyncLiveHandler) setupConnection(req *http.Request, syncReq *sync3.Requ
 		// Lookup the connection
 		conn = h.ConnMap.Conn(connID)
 		if conn != nil {
-			log.Trace().Str("conn", conn.ConnID.String()).Msg("reusing conn")
-			return req, conn, nil
+			log.Trace().Str("conn", conn.ConnID.String()).Bool("expired", conn.Expired()).Str("requested_pos", req.URL.Query().Get("pos")).Msg("reusing conn")
+			if !conn.Expired() { // if the connection is not expired, we should have a poller running
+				return req, conn, nil
+			}
+			// if the connection is expired, we most likely received a 401 in the poller
+			// and terminated the poller loop. Create a new one now below.
+		} else {
+			// conn doesn't exist, we probably nuked it.
+			return req, nil, internal.ExpiredSessionError()
 		}
-		// conn doesn't exist, we probably nuked it.
-		return req, nil, internal.ExpiredSessionError()
 	}
 
 	pid := sync2.PollerID{UserID: token.UserID, DeviceID: token.DeviceID}
@@ -434,7 +439,7 @@ func (h *SyncLiveHandler) setupConnection(req *http.Request, syncReq *sync3.Requ
 	// because we *either* do the existing check *or* make a new conn. It's important for CreateConn
 	// to check for an existing connection though, as it's possible for the client to call /sync
 	// twice for a new connection.
-	conn, created := h.ConnMap.CreateConn(connID, func() sync3.ConnHandler {
+	conn, created := h.ConnMap.CreateConn(connID, containsPos, func() sync3.ConnHandler {
 		return NewConnState(token.UserID, token.DeviceID, userCache, h.GlobalCache, h.Extensions, h.Dispatcher, h.setupHistVec, h.histVec, h.maxPendingEventUpdates, h.maxTransactionIDDelay)
 	})
 	if created {
@@ -800,7 +805,7 @@ func (h *SyncLiveHandler) OnAccountData(p *pubsub.V2AccountData) {
 
 func (h *SyncLiveHandler) OnExpiredToken(p *pubsub.V2ExpiredToken) {
 	h.EnsurePoller.OnExpiredToken(p)
-	h.ConnMap.CloseConnsForDevice(p.UserID, p.DeviceID)
+	h.ConnMap.ExpireConnsForDevice(p.UserID, p.DeviceID)
 }
 
 func (h *SyncLiveHandler) OnInvalidateRoom(p *pubsub.V2InvalidateRoom) {
