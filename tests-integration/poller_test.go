@@ -1102,6 +1102,18 @@ func TestTimelineAfterRequestingStateAfterGappyPoll(t *testing.T) {
 
 	t.Log("alice creates a public room.")
 	timeline1 := createRoomState(t, alice, time.Now())
+	var aliceMembership json.RawMessage
+	for _, ev := range timeline1 {
+		parsed := gjson.ParseBytes(ev)
+		if parsed.Get("type").Str == "m.room.member" && parsed.Get("state_key").Str == alice {
+			aliceMembership = ev
+			break
+		}
+	}
+	if len(aliceMembership) == 0 {
+		t.Fatal("Initial timeline did not have a membership for Alice")
+	}
+
 	v2.queueResponse(aliceToken, sync2.SyncResponse{
 		Rooms: sync2.SyncRoomsResponse{
 			Join: map[string]sync2.SyncV2JoinResponse{
@@ -1116,10 +1128,13 @@ func TestTimelineAfterRequestingStateAfterGappyPoll(t *testing.T) {
 		NextBatch: "aliceSync1",
 	})
 
-	t.Log("alice sliding syncs.")
+	t.Log("alice sliding syncs, requesting all memberships in state.")
 	aliceRes := v3.mustDoV3Request(t, aliceToken, sync3.Request{
 		RoomSubscriptions: map[string]sync3.RoomSubscription{
-			roomID: {TimelineLimit: 20},
+			roomID: {
+				TimelineLimit: 20,
+				RequiredState: [][2]string{{"m.room.member", "*"}},
+			},
 		},
 	})
 
@@ -1128,7 +1143,9 @@ func TestTimelineAfterRequestingStateAfterGappyPoll(t *testing.T) {
 	// https://github.com/matrix-org/sliding-sync/issues/343
 	m.MatchResponse(t, aliceRes,
 		m.LogResponse(t),
-		m.MatchRoomSubscription(roomID, m.MatchRoomTimeline(timeline1[1:])),
+		m.MatchRoomSubscription(roomID,
+			m.MatchRoomRequiredState([]json.RawMessage{aliceMembership}),
+			m.MatchRoomTimeline(timeline1[1:])),
 	)
 
 	t.Logf("Alice's poller gets a gappy sync response for the public room. bob's membership is now join, and alice has sent 10 messages.")
@@ -1137,7 +1154,7 @@ func TestTimelineAfterRequestingStateAfterGappyPoll(t *testing.T) {
 		timeline2[i] = testutils.NewMessageEvent(t, alice, fmt.Sprintf("hello %d", i))
 	}
 
-	newMembership := testutils.NewJoinEvent(t, bob)
+	bobMembership := testutils.NewJoinEvent(t, bob)
 
 	v2.queueResponse(aliceToken, sync2.SyncResponse{
 		NextBatch: "alice2",
@@ -1145,7 +1162,7 @@ func TestTimelineAfterRequestingStateAfterGappyPoll(t *testing.T) {
 			Join: map[string]sync2.SyncV2JoinResponse{
 				roomID: {
 					State: sync2.EventsResponse{
-						Events: []json.RawMessage{newMembership},
+						Events: []json.RawMessage{bobMembership},
 					},
 					Timeline: sync2.TimelineResponse{
 						Events:    timeline2,
@@ -1158,17 +1175,10 @@ func TestTimelineAfterRequestingStateAfterGappyPoll(t *testing.T) {
 	})
 	v2.waitUntilEmpty(t, aliceToken)
 
-	t.Log("alice syncs, requesting Bob's membership. She sees it, and her new timeline.")
-	aliceRes = v3.mustDoV3RequestWithPos(t, aliceToken, aliceRes.Pos, sync3.Request{
-		RoomSubscriptions: map[string]sync3.RoomSubscription{
-			roomID: {
-				TimelineLimit: 20,
-				RequiredState: [][2]string{{"m.room.member", bob}},
-			},
-		},
-	})
+	t.Log("alice syncs. She sees Bob's membership, and her new timeline.")
+	aliceRes = v3.mustDoV3RequestWithPos(t, aliceToken, aliceRes.Pos, sync3.Request{})
 	m.MatchResponse(t, aliceRes, m.MatchRoomSubscription(roomID,
-		m.MatchRoomRequiredState([]json.RawMessage{newMembership}),
+		m.MatchRoomRequiredState([]json.RawMessage{aliceMembership, bobMembership}),
 		m.MatchRoomTimeline(timeline2),
 	))
 }
