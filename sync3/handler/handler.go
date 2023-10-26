@@ -249,7 +249,9 @@ func (h *SyncLiveHandler) serve(w http.ResponseWriter, req *http.Request) error 
 		}
 	}
 
-	req, conn, herr := h.setupConnection(req, &requestBody, req.URL.Query().Get("pos") != "")
+	cancelCtx, cancel := context.WithCancel(req.Context())
+	req = req.WithContext(cancelCtx)
+	req, conn, herr := h.setupConnection(req, cancel, &requestBody, req.URL.Query().Get("pos") != "")
 	if herr != nil {
 		logErrorOrWarning("failed to get or create Conn", herr)
 		return herr
@@ -326,7 +328,7 @@ func (h *SyncLiveHandler) serve(w http.ResponseWriter, req *http.Request) error 
 // setupConnection associates this request with an existing connection or makes a new connection.
 // It also sets a v2 sync poll loop going if one didn't exist already for this user.
 // When this function returns, the connection is alive and active.
-func (h *SyncLiveHandler) setupConnection(req *http.Request, syncReq *sync3.Request, containsPos bool) (*http.Request, *sync3.Conn, *internal.HandlerError) {
+func (h *SyncLiveHandler) setupConnection(req *http.Request, cancel context.CancelFunc, syncReq *sync3.Request, containsPos bool) (*http.Request, *sync3.Conn, *internal.HandlerError) {
 	ctx, task := internal.StartTask(req.Context(), "setupConnection")
 	req = req.WithContext(ctx)
 	defer task.End()
@@ -386,6 +388,7 @@ func (h *SyncLiveHandler) setupConnection(req *http.Request, syncReq *sync3.Requ
 	if containsPos {
 		// Lookup the connection
 		conn = h.ConnMap.Conn(connID)
+		conn.SetCancelCallback(cancel)
 		if conn != nil {
 			log.Trace().Str("conn", conn.ConnID.String()).Msg("reusing conn")
 			return req, conn, nil
@@ -434,7 +437,7 @@ func (h *SyncLiveHandler) setupConnection(req *http.Request, syncReq *sync3.Requ
 	// because we *either* do the existing check *or* make a new conn. It's important for CreateConn
 	// to check for an existing connection though, as it's possible for the client to call /sync
 	// twice for a new connection.
-	conn, created := h.ConnMap.CreateConn(connID, func() sync3.ConnHandler {
+	conn, created := h.ConnMap.CreateConn(connID, cancel, func() sync3.ConnHandler {
 		return NewConnState(token.UserID, token.DeviceID, userCache, h.GlobalCache, h.Extensions, h.Dispatcher, h.setupHistVec, h.histVec, h.maxPendingEventUpdates, h.maxTransactionIDDelay)
 	})
 	if created {

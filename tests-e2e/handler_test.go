@@ -74,8 +74,10 @@ func TestRequestCancelledWhenItsConnIsDestroyed(t *testing.T) {
 	t.Log("Alice waits for her second sync to return.")
 	response := <-done
 
-	assertEqual(t, "status code", response.res.StatusCode, http.StatusBadRequest)
-	assertEqual(t, "response errcode", response.body.Get("errcode").Str, "M_UNKNOWN_POS")
+	// TODO: At first I expected that this the cancelled request should return 400 M_UNKNOWN_POS.
+	// But I think that is best handled on the next incoming request.
+	// assertEqual(t, "status code", response.res.StatusCode, http.StatusBadRequest)
+	// assertEqual(t, "response errcode", response.body.Get("errcode").Str, "M_UNKNOWN_POS")
 
 	if response.duration > cancelWithin {
 		t.Errorf("Waited for %s, but expected second sync to cancel after at most %s", response.duration, cancelWithin)

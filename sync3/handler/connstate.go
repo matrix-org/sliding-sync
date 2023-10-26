@@ -23,8 +23,9 @@ type ConnState struct {
 	userID   string
 	deviceID string
 	// the only thing that can touch these data structures is the conn goroutine
-	muxedReq *sync3.Request
-	lists    *sync3.InternalRequestLists
+	muxedReq        *sync3.Request
+	cancelLatestReq context.CancelFunc
+	lists           *sync3.InternalRequestLists
 
 	// Confirmed room subscriptions. Entries in this list have been checked for things like
 	// "is the user joined to this room?" whereas subscriptions in muxedReq are untrusted.
@@ -723,6 +724,8 @@ func (s *ConnState) trackProcessDuration(ctx context.Context, dur time.Duration,
 // Called when the connection is torn down
 func (s *ConnState) Destroy() {
 	s.userCache.Unsubscribe(s.userCacheID)
+	logger.Debug().Str("user_id", s.userID).Str("device_id", s.deviceID).Msg("cancelling any in-flight requests")
+	s.cancelLatestReq()
 }
 
 func (s *ConnState) Alive() bool {
@@ -762,6 +765,10 @@ func (s *ConnState) OnRoomUpdate(ctx context.Context, up caches.RoomUpdate) {
 
 func (s *ConnState) PublishEventsUpTo(roomID string, nid int64) {
 	s.txnIDWaiter.PublishUpToNID(roomID, nid)
+}
+
+func (s *ConnState) SetCancelCallback(cancel context.CancelFunc) {
+	s.cancelLatestReq = cancel
 }
 
 // clampSliceRangeToListSize helps us to send client-friendly SYNC and INVALIDATE ranges.
