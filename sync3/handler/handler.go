@@ -388,8 +388,8 @@ func (h *SyncLiveHandler) setupConnection(req *http.Request, cancel context.Canc
 	if containsPos {
 		// Lookup the connection
 		conn = h.ConnMap.Conn(connID)
-		conn.SetCancelCallback(cancel)
 		if conn != nil {
+			conn.SetCancelCallback(cancel)
 			log.Trace().Str("conn", conn.ConnID.String()).Msg("reusing conn")
 			return req, conn, nil
 		}
