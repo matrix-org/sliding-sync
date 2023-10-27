@@ -35,6 +35,7 @@ type ConnHandler interface {
 	PublishEventsUpTo(roomID string, nid int64)
 	Destroy()
 	Alive() bool
+	SetCancelCallback(cancel context.CancelFunc)
 }
 
 // Conn is an abstraction of a long-poll connection. It automatically handles the position values
@@ -244,4 +245,8 @@ func (c *Conn) OnIncomingRequest(ctx context.Context, req *Request, start time.T
 
 	// return the oldest value
 	return nextUnACKedResponse, nil
+}
+
+func (c *Conn) SetCancelCallback(cancel context.CancelFunc) {
+	c.handler.SetCancelCallback(cancel)
 }

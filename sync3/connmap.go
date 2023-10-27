@@ -1,6 +1,7 @@
 package sync3
 
 import (
+	"context"
 	"sync"
 	"time"
 
@@ -131,7 +132,7 @@ func (m *ConnMap) getConn(cid ConnID) *Conn {
 }
 
 // Atomically gets or creates a connection with this connection ID. Calls newConn if a new connection is required.
-func (m *ConnMap) CreateConn(cid ConnID, newConnHandler func() ConnHandler) (*Conn, bool) {
+func (m *ConnMap) CreateConn(cid ConnID, cancel context.CancelFunc, newConnHandler func() ConnHandler) (*Conn, bool) {
 	// atomically check if a conn exists already and nuke it if it exists
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -149,6 +150,7 @@ func (m *ConnMap) CreateConn(cid ConnID, newConnHandler func() ConnHandler) (*Co
 		m.closeConn(conn)
 	}
 	h := newConnHandler()
+	h.SetCancelCallback(cancel)
 	conn = NewConn(cid, h)
 	m.cache.Set(cid.String(), conn)
 	m.connIDToConn[cid.String()] = conn
