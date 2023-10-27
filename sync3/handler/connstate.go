@@ -725,7 +725,9 @@ func (s *ConnState) trackProcessDuration(ctx context.Context, dur time.Duration,
 func (s *ConnState) Destroy() {
 	s.userCache.Unsubscribe(s.userCacheID)
 	logger.Debug().Str("user_id", s.userID).Str("device_id", s.deviceID).Msg("cancelling any in-flight requests")
-	s.cancelLatestReq()
+	if s.cancelLatestReq != nil {
+		s.cancelLatestReq()
+	}
 }
 
 func (s *ConnState) Alive() bool {
