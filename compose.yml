@@ -1,0 +1,35 @@
+version: "3.5"
+
+networks:
+  sliding-sync:
+
+services:
+  slidingsync:
+    image: ghcr.io/matrix-org/sliding-sync
+    container_name: slidingsync
+    environment:
+      - SYNCV3_SERVER=https://matrix-client.matrix.org
+      - SYNCV3_SECRET=  #use `openssl rand -hex 32` to generate a secret to paste here
+      - SYNCV3_BINDADDR=:8009
+      - SYNCV3_DB=user=syncv3 dbname=syncv3 sslmode=disable host=slidingsync-postgres password=sliding-sync-v3
+    depends_on:
+      - slidingsync-postgres
+    networks:
+      - sliding-sync
+    ports:
+      - "8009:8009"
+    restart: unless-stopped
+
+  slidingsync-postgres:
+    image: "postgres:13"
+    restart: always
+    stop_signal: SIGINT
+    environment:
+      - POSTGRES_INITDB_ARGS=--data-checksums
+      - POSTGRES_DB=syncv3
+      - POSTGRES_USER=syncv3
+      - POSTGRES_PASSWORD=sliding-sync-v3
+    volumes:
+      - ./storage/postgres:/var/lib/postgresql/data
+    networks:
+      - sliding-sync
