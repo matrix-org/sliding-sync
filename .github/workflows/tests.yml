@@ -97,8 +97,8 @@ jobs:
         timeout-minutes: 30
         services:
             synapse:
-                # Custom image built from https://github.com/matrix-org/synapse/tree/v1.72.0/docker/complement with a dummy /complement/ca set
-                image: ghcr.io/matrix-org/synapse-service:v1.72.0
+                # Custom image built from https://github.com/matrix-org/synapse/tree/v1.94.0/docker/complement with a dummy /complement/ca set
+                image: ghcr.io/matrix-org/synapse-service:v1.94.0
                 env:
                     SYNAPSE_COMPLEMENT_DATABASE: sqlite
                     SERVER_NAME: synapse
@@ -244,8 +244,8 @@ jobs:
       # Service containers to run with `container-job`
         services:
           synapse:
-            # Custom image built from https://github.com/matrix-org/synapse/tree/v1.72.0/docker/complement with a dummy /complement/ca set
-            image: ghcr.io/matrix-org/synapse-service:v1.72.0
+            # Custom image built from https://github.com/matrix-org/synapse/tree/v1.94.0/docker/complement with a dummy /complement/ca set
+            image: ghcr.io/matrix-org/synapse-service:v1.94.0
             env:
               SYNAPSE_COMPLEMENT_DATABASE: sqlite
               SERVER_NAME: synapse

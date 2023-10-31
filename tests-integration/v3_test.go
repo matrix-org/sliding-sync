@@ -209,7 +209,13 @@ func (s *testV2Server) nextResponse(userID, token string) *sync2.SyncResponse {
 		cond.Broadcast()
 	}
 	select {
-	case data := <-ch:
+	case data, stillOpen := <-ch:
+		if !stillOpen {
+			if !testutils.Quiet {
+				log.Printf("testV2Server: closing, returning null to %s %s", userID, token)
+			}
+			return nil
+		}
 		if !testutils.Quiet {
 			log.Printf(
 				"testV2Server: nextResponse %s %s returning data: [invite=%d,join=%d,leave=%d]",
@@ -230,6 +236,11 @@ func (s *testV2Server) url() string {
 }
 
 func (s *testV2Server) close() {
+	s.mu.Lock()
+	for _, ch := range s.queues {
+		close(ch)
+	}
+	s.mu.Unlock()
 	s.srv.Close()
 }
 
