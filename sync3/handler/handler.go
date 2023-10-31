@@ -63,6 +63,11 @@ type SyncLiveHandler struct {
 	setupHistVec *prometheus.HistogramVec
 	histVec      *prometheus.HistogramVec
 	slowReqs     prometheus.Counter
+	// destroyedConns is the number of connections that have been destoryed after
+	// a room invalidation payload.
+	// TODO: could make this a CounterVec labelled by reason, to track expiry due
+	//       to update buffer filling, expiry due to inactivity, etc.
+	destroyedConns prometheus.Counter
 }
 
 func NewSync3Handler(
@@ -139,6 +144,9 @@ func (h *SyncLiveHandler) Teardown() {
 	if h.slowReqs != nil {
 		prometheus.Unregister(h.slowReqs)
 	}
+	if h.destroyedConns != nil {
+		prometheus.Unregister(h.destroyedConns)
+	}
 }
 
 func (h *SyncLiveHandler) addPrometheusMetrics() {
@@ -162,9 +170,17 @@ func (h *SyncLiveHandler) addPrometheusMetrics() {
 		Name:      "slow_requests",
 		Help:      "Counter of slow (>=50s) requests, initial or otherwise.",
 	})
+	h.destroyedConns = prometheus.NewCounter(prometheus.CounterOpts{
+		Namespace: "sliding_sync",
+		Subsystem: "api",
+		Name:      "destroyed_conns",
+		Help:      "Counter of conns that were destroyed.",
+	})
+
 	prometheus.MustRegister(h.setupHistVec)
 	prometheus.MustRegister(h.histVec)
 	prometheus.MustRegister(h.slowReqs)
+	prometheus.MustRegister(h.destroyedConns)
 }
 
 func (h *SyncLiveHandler) ServeHTTP(w http.ResponseWriter, req *http.Request) {
@@ -846,8 +862,12 @@ func (h *SyncLiveHandler) OnInvalidateRoom(p *pubsub.V2InvalidateRoom) {
 	}
 
 	// 4. Destroy involved users' connections.
+	var destroyed int
 	for _, userID := range involvedUsers {
-		h.ConnMap.CloseConnsForUser(userID)
+		destroyed += h.ConnMap.CloseConnsForUser(userID)
+	}
+	if h.destroyedConns != nil {
+		h.destroyedConns.Add(float64(destroyed))
 	}
 }
 
