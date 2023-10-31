@@ -789,6 +789,9 @@ func (p *poller) parseRoomsResponse(ctx context.Context, res *SyncResponse) erro
 	for roomID, roomData := range res.Rooms.Join {
 		if len(roomData.State.Events) > 0 {
 			stateCalls++
+			if roomData.Timeline.Limited {
+				p.trackGappyStateSize(len(roomData.State.Events))
+			}
 			err := p.receiver.Initialise(ctx, roomID, roomData.State.Events)
 			if err != nil {
 				lastErrs = append(lastErrs, fmt.Errorf("Initialise[%s]: %w", roomID, err))
