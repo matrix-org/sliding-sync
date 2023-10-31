@@ -820,6 +820,9 @@ func (h *SyncLiveHandler) OnExpiredToken(p *pubsub.V2ExpiredToken) {
 }
 
 func (h *SyncLiveHandler) OnInvalidateRoom(p *pubsub.V2InvalidateRoom) {
+	// TODO: if was called due to a redaction, the membership state hasn't changed and
+	//       we don't need to nuke connections. Would need a flag on the payload (or
+	//       a separate payload) for this.
 	ctx, task := internal.StartTask(context.Background(), "OnInvalidateRoom")
 	defer task.End()
 
