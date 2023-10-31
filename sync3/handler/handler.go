@@ -807,7 +807,23 @@ func (h *SyncLiveHandler) OnInvalidateRoom(p *pubsub.V2InvalidateRoom) {
 	ctx, task := internal.StartTask(context.Background(), "OnInvalidateRoom")
 	defer task.End()
 
+	// 1. Reload the global cache.
+	h.GlobalCache.OnInvalidateRoom(ctx, p.RoomID)
+
+	// Work out who is affected.
 	joins, invites, leaves, err := h.Storage.FetchMemberships(p.RoomID)
+	involvedUsers := make([]string, 0, len(joins)+len(invites)+len(leaves))
+	for userID := range joins {
+		involvedUsers = append(involvedUsers, userID)
+	}
+	for userID := range invites {
+		involvedUsers = append(involvedUsers, userID)
+	}
+	for userID := range leaves {
+		involvedUsers = append(involvedUsers, userID)
+	}
+
+	// 2. Reload the joined-room tracker.
 	if err != nil {
 		hub := internal.GetSentryHubFromContextOrDefault(ctx)
 		hub.WithScope(func(scope *sentry.Scope) {
@@ -821,15 +837,18 @@ func (h *SyncLiveHandler) OnInvalidateRoom(p *pubsub.V2InvalidateRoom) {
 			Msg("Failed to fetch members after cache invalidation")
 	}
 
-	joinEventDatas := make(map[string]*caches.EventData, len(joins))
-	for userID, event := range joins {
-		// This isn't a bonafide timeline event. Use NID 0 to ensure we don't treat this
-		// as a timeline event when preparing sync responses.
-		ed := caches.NewEventData(event.JSON, p.RoomID, 0)
-		joinEventDatas[userID] = ed
+	h.Dispatcher.OnInvalidateRoom(p.RoomID, internal.Keys(joins), internal.Keys(invites))
+
+	// 3. Destroy involved users' caches.
+	for _, userID := range involvedUsers {
+		h.Dispatcher.Unregister(userID)
+		h.userCaches.Delete(userID)
 	}
 
-	h.Dispatcher.OnInvalidateRoom(ctx, p.RoomID, joinEventDatas, invites, leaves)
+	// 4. Destroy involved users' connections.
+	for _, userID := range involvedUsers {
+		h.ConnMap.CloseConnsForUser(userID)
+	}
 }
 
 func parseIntFromQuery(u *url.URL, param string) (result int64, err *internal.HandlerError) {
