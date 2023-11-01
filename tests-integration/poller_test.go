@@ -699,20 +699,18 @@ func TestGappyStateDoesNotAccumulateTheStateBlock(t *testing.T) {
 
 // Right, this has turned out to be very involved. This test has three varying
 // parameters:
-//
-// - Bert's initial membership (in 3 below),
-// - his final membership in (5), and
-// - whether his sync in (6) is initial or long-polling ("live").
+//   - Bert's initial membership (in 3 below),
+//   - his final membership in (5), and
+//   - whether his sync in (6) is initial or long-polling ("live").
 //
 // The test:
-//
-// 1. Registers two users Ana and Bert.
-// 2. Has Ana create a public room.
-// 3. Sets an initial membership for Bert in that room.
-// 4. Sliding syncs for Bert, if he will live-sync in (6) below.
-// 5. Gives Ana's poller a gappy poll in which Bert's membership changes.
-// 6. Has Bert do a sliding sync.
-// 7. Ana invites Bert to a DM.
+//  1. Registers two users Ana and Bert.
+//  2. Has Ana create a public room.
+//  3. Sets an initial membership for Bert in that room.
+//  4. Sliding syncs for Bert, if he will live-sync in (6) below.
+//  5. Gives Ana's poller a gappy poll in which Bert's membership changes.
+//  6. Has Bert do a sliding sync.
+//  7. Ana invites Bert to a DM.
 //
 // We perform the following assertions:
 //   - After (3), Ana sees her membership, Bert's initial membership, appropriate
@@ -733,6 +731,9 @@ func TestGappyStateDoesNotAccumulateTheStateBlock(t *testing.T) {
 //   - Step (7) serves as a sentinel to prove that the proxy has processed (5) in the
 //     case where there is nothing for Bert to see in (6), e.g. a preemptive ban or
 //     an unban during the gap.
+//   - Testing all the membership transitions is likely overkill. But it was useful
+//     for finding edge cases in the proxy's assumptions at first, before we decided to
+//     nuke conns and userCaches and start from scratch.
 func TestClientsSeeMembershipTransitionsInGappyPolls(t *testing.T) {
 	pqString := testutils.PrepareDBConnectionString()
 	v2 := runTestV2Server(t)
@@ -1138,7 +1139,6 @@ func TestClientsSeeMembershipTransitionsInGappyPolls(t *testing.T) {
 			}))
 		})
 	}
-
 }
 
 // This is a minimal version of the test above, which is helpful for debugging (because
