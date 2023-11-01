@@ -1080,18 +1080,10 @@ func TestClientsSeeMembershipTransitionsInGappyPolls(t *testing.T) {
 				fallthrough
 			case "ban":
 				respMatchers = append(respMatchers, m.MatchList("a", m.MatchV3Count(0)))
-
-				// if both previous and after membership was neither join nor invite, don't expect to see the new membership.
-				wasntJoinedNorInvited := tc.beforeMembership == "none" || tc.beforeMembership == "leave" || tc.beforeMembership == "ban"
-				if wasntJoinedNorInvited {
-					t.Logf("Bob shouldn't see his %s (membership was: %s)", tc.afterMembership, tc.beforeMembership)
-					respMatchers = append(respMatchers, m.MatchRoomSubscriptionsStrict(nil))
-				} else {
-					t.Logf("Bob should see his %s (membership was: %s)", tc.afterMembership, tc.beforeMembership)
-					respMatchers = append(respMatchers, m.MatchRoomSubscription(tc.publicRoomID,
-						m.MatchRoomTimeline([]json.RawMessage{newMembership}),
-					))
-				}
+				// Any prior connection has been closed by the server, so Bert won't see
+				// a transition here.
+				t.Logf("Bob shouldn't see his %s (membership was: %s)", tc.afterMembership, tc.beforeMembership)
+				respMatchers = append(respMatchers, m.MatchRoomSubscriptionsStrict(nil))
 			default:
 				panic(fmt.Errorf("unknown afterMembership %s", tc.afterMembership))
 			}
