@@ -807,14 +807,14 @@ func TestClientsSeeMembershipTransitionsInGappyPolls(t *testing.T) {
 		},
 	}
 
-	setup := func(t *testing.T, tc testcase) (anaMembership json.RawMessage, anaRes *sync3.Response) {
+	setup := func(t *testing.T, tc testcase) (publicEvents []json.RawMessage, anaMembership json.RawMessage, anaRes *sync3.Response) {
 		// 1. Register two users Ana and Bert.
 		v2.addAccount(t, tc.ana, tc.anaToken)
 		v2.addAccount(t, tc.bert, tc.bertToken)
 
 		// 2. Have Ana create a public room.
 		t.Log("Ana creates a public room.")
-		publicEvents := createRoomState(t, tc.ana, time.Now())
+		publicEvents = createRoomState(t, tc.ana, time.Now())
 		for _, ev := range publicEvents {
 			parsed := gjson.ParseBytes(ev)
 			if parsed.Get("type").Str == "m.room.member" && parsed.Get("state_key").Str == tc.ana {
@@ -893,28 +893,6 @@ func TestClientsSeeMembershipTransitionsInGappyPolls(t *testing.T) {
 			),
 		)
 
-		// Ensure the proxy considers Bert to already be polling. In particular, if Bert
-		// is initially invited, make sure his poller sees the invite.
-		if tc.beforeMembership == "invite" {
-			t.Log("Bert's poller sees his invite.")
-			v2.queueResponse(tc.bertToken, sync2.SyncResponse{
-				Rooms: sync2.SyncRoomsResponse{
-					Invite: map[string]sync2.SyncV2InviteResponse{
-						tc.publicRoomID: {
-							InviteState: sync2.EventsResponse{
-								// TODO:  this really ought to be stripped state events
-								Events: publicEvents,
-							},
-						},
-					}},
-				NextBatch: tc.bert + "_invite",
-			})
-		} else {
-			t.Log("Queue up an empty poller response for Bert, so the proxy considers him to be polling.")
-			v2.queueResponse(tc.bertToken, sync2.SyncResponse{
-				NextBatch: tc.bert + "_empty_sync",
-			})
-		}
 		return
 	}
 
@@ -995,12 +973,39 @@ func TestClientsSeeMembershipTransitionsInGappyPolls(t *testing.T) {
 	for _, tc := range tcs {
 		t.Run(tc.id, func(t *testing.T) {
 			// 1--3: Register users, create public room, set Bert's membership.
-			anaMembership, anaRes := setup(t, tc)
+			publicEvents, anaMembership, anaRes := setup(t, tc)
 			defer func() {
 				// Cleanup these users once we're done with them. This helps stop log spam when debugging.
 				v2.invalidateTokenImmediately(tc.anaToken)
 				v2.invalidateTokenImmediately(tc.bertToken)
 			}()
+
+			// Ensure the proxy considers Bert to already be polling. In particular, if
+			// Bert is initially invited, make sure his poller sees the invite.
+			if tc.beforeMembership == "invite" {
+				t.Log("Bert's poller sees his invite.")
+				v2.queueResponse(tc.bertToken, sync2.SyncResponse{
+					Rooms: sync2.SyncRoomsResponse{
+						Invite: map[string]sync2.SyncV2InviteResponse{
+							tc.publicRoomID: {
+								InviteState: sync2.EventsResponse{
+									// TODO:  this really ought to be stripped state events
+									Events: publicEvents,
+								},
+							},
+						}},
+					NextBatch: tc.bert + "_invite",
+				})
+			} else {
+				t.Log("Queue up an empty poller response for Bert.")
+				v2.queueResponse(tc.bertToken, sync2.SyncResponse{
+					NextBatch: tc.bert + "_empty_sync",
+				})
+			}
+			t.Log("Bert makes a dummy request with a different connection ID, to ensure his poller has started.")
+			v3.mustDoV3Request(t, tc.bertToken, sync3.Request{
+				ConnID: "bert-dummy-donn",
+			})
 
 			var bertRes *sync3.Response
 			// 4: sliding sync for Bert, if he will live-sync in (6) below.
@@ -1043,11 +1048,18 @@ func TestClientsSeeMembershipTransitionsInGappyPolls(t *testing.T) {
 			newMembership, publicTimeline := gappyPoll(t, tc, anaMembership, anaRes)
 
 			// 6: Bert sliding syncs.
-			wasInvolvedInRoom := tc.beforeMembership == "join" || tc.beforeMembership == "invite"
-			if wasInvolvedInRoom && tc.viaLiveUpdate {
-				t.Log("Bert makes an incremental sliding sync.")
-				_, respBytes, statusCode := v3.doV3Request(t, context.Background(), tc.bertToken, bertRes.Pos, ssRequest)
-				assertUnknownPos(t, respBytes, statusCode)
+			if tc.viaLiveUpdate {
+				wasInvolvedInRoom := tc.beforeMembership == "join" || tc.beforeMembership == "invite"
+				if wasInvolvedInRoom {
+					t.Log("Bert makes an incremental sliding sync.")
+					_, respBytes, statusCode := v3.doV3Request(t, context.Background(), tc.bertToken, bertRes.Pos, ssRequest)
+					assertUnknownPos(t, respBytes, statusCode)
+				}
+			} else {
+				t.Log("Queue up an empty poller response for Bert. so the proxy will consider him to be polling.")
+				v2.queueResponse(tc.bertToken, sync2.SyncResponse{
+					NextBatch: tc.bert + "_empty_sync",
+				})
 			}
 
 			t.Log("Bert makes new sliding sync connection.")
