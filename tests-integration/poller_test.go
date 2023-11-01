@@ -1044,11 +1044,12 @@ func TestClientsSeeMembershipTransitionsInGappyPolls(t *testing.T) {
 
 			// 6: Bert sliding syncs.
 			if tc.viaLiveUpdate {
-				t.Log("Bert makes an incremental sliding syncs.")
-				bertRes = v3.mustDoV3RequestWithPos(t, tc.bertToken, bertRes.Pos, ssRequest)
-			} else {
-				bertRes = v3.mustDoV3Request(t, tc.bertToken, ssRequest)
+				t.Log("Bert makes an incremental sliding sync.")
+				_, respBytes, statusCode := v3.doV3Request(t, context.Background(), tc.bertToken, bertRes.Pos, ssRequest)
+				assertUnknownPos(t, respBytes, statusCode)
 			}
+
+			bertRes = v3.mustDoV3Request(t, tc.bertToken, ssRequest)
 
 			// Work out what Bert should see.
 			respMatchers := []m.RespMatcher{}
