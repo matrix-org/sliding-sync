@@ -803,6 +803,14 @@ func (h *SyncLiveHandler) OnExpiredToken(p *pubsub.V2ExpiredToken) {
 	h.ConnMap.CloseConnsForDevice(p.UserID, p.DeviceID)
 }
 
+func (h *SyncLiveHandler) OnStateRedaction(p *pubsub.V2StateRedaction) {
+	// We only need to reload the global metadata here: mercifully, there isn't anything
+	// in the user cache that needs to be reloaded after state gets redacted.
+	ctx, task := internal.StartTask(context.Background(), "OnStateRedaction")
+	defer task.End()
+	h.GlobalCache.OnInvalidateRoom(ctx, p.RoomID)
+}
+
 func (h *SyncLiveHandler) OnInvalidateRoom(p *pubsub.V2InvalidateRoom) {
 	ctx, task := internal.StartTask(context.Background(), "OnInvalidateRoom")
 	defer task.End()
