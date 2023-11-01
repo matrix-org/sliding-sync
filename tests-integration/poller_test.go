@@ -1072,6 +1072,7 @@ func TestClientsSeeMembershipTransitionsInGappyPolls(t *testing.T) {
 					m.MatchList("a", m.MatchV3Count(1)),
 					m.MatchRoomSubscription(tc.publicRoomID,
 						m.MatchRoomLacksInviteState(),
+						m.MatchRoomRequiredState([]json.RawMessage{anaMembership, newMembership}),
 						m.MatchInviteCount(0),
 						m.MatchJoinCount(2),
 						m.MatchRoomTimelineMostRecent(len(publicTimeline), publicTimeline),
