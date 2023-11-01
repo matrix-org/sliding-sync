@@ -1043,12 +1043,14 @@ func TestClientsSeeMembershipTransitionsInGappyPolls(t *testing.T) {
 			newMembership, publicTimeline := gappyPoll(t, tc, anaMembership, anaRes)
 
 			// 6: Bert sliding syncs.
-			if tc.viaLiveUpdate {
+			wasInvolvedInRoom := tc.beforeMembership == "join" || tc.beforeMembership == "invite"
+			if wasInvolvedInRoom && tc.viaLiveUpdate {
 				t.Log("Bert makes an incremental sliding sync.")
 				_, respBytes, statusCode := v3.doV3Request(t, context.Background(), tc.bertToken, bertRes.Pos, ssRequest)
 				assertUnknownPos(t, respBytes, statusCode)
 			}
 
+			t.Log("Bert makes new sliding sync connection.")
 			bertRes = v3.mustDoV3Request(t, tc.bertToken, ssRequest)
 
 			// Work out what Bert should see.
