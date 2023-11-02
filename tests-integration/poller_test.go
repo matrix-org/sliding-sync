@@ -1088,6 +1088,7 @@ func TestClientsSeeMembershipTransitionsInGappyPolls(t *testing.T) {
 						m.MatchInviteCount(0),
 						m.MatchJoinCount(2),
 						m.MatchRoomTimelineMostRecent(len(publicTimeline), publicTimeline),
+						m.MatchRoomPrevBatch("anaPublicPrevBatch2"),
 					))
 			case "leave":
 				fallthrough
