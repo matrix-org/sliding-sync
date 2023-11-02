@@ -843,15 +843,9 @@ func (h *SyncLiveHandler) OnInvalidateRoom(p *pubsub.V2InvalidateRoom) {
 	// Work out who is affected.
 	joins, invites, leaves, err := h.Storage.FetchMemberships(p.RoomID)
 	involvedUsers := make([]string, 0, len(joins)+len(invites)+len(leaves))
-	for userID := range joins {
-		involvedUsers = append(involvedUsers, userID)
-	}
-	for userID := range invites {
-		involvedUsers = append(involvedUsers, userID)
-	}
-	for userID := range leaves {
-		involvedUsers = append(involvedUsers, userID)
-	}
+	involvedUsers = append(involvedUsers, joins...)
+	involvedUsers = append(involvedUsers, invites...)
+	involvedUsers = append(involvedUsers, leaves...)
 
 	// 2. Reload the joined-room tracker.
 	if err != nil {
@@ -867,7 +861,7 @@ func (h *SyncLiveHandler) OnInvalidateRoom(p *pubsub.V2InvalidateRoom) {
 			Msg("Failed to fetch members after cache invalidation")
 	}
 
-	h.Dispatcher.OnInvalidateRoom(p.RoomID, internal.Keys(joins), internal.Keys(invites))
+	h.Dispatcher.OnInvalidateRoom(p.RoomID, joins, invites)
 
 	// 3. Destroy involved users' caches.
 	for _, userID := range involvedUsers {
