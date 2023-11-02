@@ -195,8 +195,7 @@ func (t *JoinedRoomsTracker) NumInvitedUsersForRoom(roomID string) int {
 }
 
 // ReloadMembershipsForRoom overwrites the JoinedRoomsTracker state for one room to the
-// given list of joined and invited users. It returns the list of users who were joined
-// or invited prior to this call, but are no longer joined nor invited.
+// given list of joined and invited users.
 func (t *JoinedRoomsTracker) ReloadMembershipsForRoom(roomID string, joined, invited []string) {
 	newJoined := make(set, len(joined))
 	newInvited := make(set, len(invited))
@@ -230,6 +229,4 @@ func (t *JoinedRoomsTracker) ReloadMembershipsForRoom(roomID string, joined, inv
 			delete(t.userIDToJoinedRooms[userID], roomID)
 		}
 	}
-
-	return
 }

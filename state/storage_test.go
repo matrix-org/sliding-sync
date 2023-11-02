@@ -875,6 +875,49 @@ func TestCircularSlice(t *testing.T) {
 
 }
 
+func TestStorage_FetchMemberships(t *testing.T) {
+	assertNoError(t, cleanDB(t))
+	store := NewStorage(postgresConnectionString)
+	defer store.Teardown()
+
+	events := []json.RawMessage{
+		testutils.NewStateEvent(t, "m.room.create", "", "@alice:test", map[string]any{}),
+		testutils.NewStateEvent(t, "m.room.member", "@alice:test", "@alice:test", map[string]any{"membership": "join"}),
+		testutils.NewStateEvent(t, "m.room.member", "@brian:test", "@alice:test", map[string]any{"membership": "invite"}),
+		testutils.NewStateEvent(t, "m.room.member", "@chris:test", "@chris:test", map[string]any{"membership": "leave"}),
+		testutils.NewStateEvent(t, "m.room.member", "@david:test", "@alice:test", map[string]any{"membership": "ban"}),
+		testutils.NewStateEvent(t, "m.room.member", "@erika:test", "@erika:test", map[string]any{"membership": "join"}),
+		testutils.NewStateEvent(t, "m.room.member", "@frank:test", "@erika:test", map[string]any{"membership": "invite"}),
+		testutils.NewStateEvent(t, "m.room.member", "@glory:test", "@glory:test", map[string]any{"membership": "leave"}),
+		testutils.NewStateEvent(t, "m.room.member", "@helen:test", "@alice:test", map[string]any{"membership": "ban"}),
+	}
+
+	const roomID = "!unimportant"
+	err := sqlutil.WithTransaction(store.DB, func(txn *sqlx.Tx) (err error) {
+		_, err = store.Accumulator.Initialise(roomID, events)
+		return err
+	})
+	assertNoError(t, err)
+
+	joins, invites, leaves, err := store.FetchMemberships(roomID)
+	assertNoError(t, err)
+
+	// Do not assume an order from the DB.
+	sort.Slice(joins, func(i, j int) bool {
+		return joins[i] < joins[j]
+	})
+	sort.Slice(invites, func(i, j int) bool {
+		return invites[i] < invites[j]
+	})
+	sort.Slice(leaves, func(i, j int) bool {
+		return leaves[i] < leaves[j]
+	})
+
+	assertValue(t, "joins", joins, []string{"@alice:test", "@erika:test"})
+	assertValue(t, "invites", invites, []string{"@brian:test", "@frank:test"})
+	assertValue(t, "joins", leaves, []string{"@chris:test", "@david:test", "@glory:test", "@helen:test"})
+}
+
 func cleanDB(t *testing.T) error {
 	// make a fresh DB which is unpolluted from other tests
 	db, close := connectToDB(t)
