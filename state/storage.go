@@ -368,6 +368,57 @@ func (s *Storage) ResetMetadataState(metadata *internal.RoomMetadata) error {
 	return nil
 }
 
+// FetchMemberships looks up the latest snapshot for the given room and determines the
+// latest membership events in the room. Returns
+//   - the list of joined members,
+//   - the list of invited members, and then
+//   - the list of all other memberships. (This is called "leaves", but includes bans. It
+//     also includes knocks, but the proxy doesn't support those.)
+//
+// Each lists' members are arranged in no particular order.
+//
+// TODO: there is a very similar query in ResetMetadataState which also selects events
+// events row for memberships. It is a shame to have to do this twice---can we query
+// once and pass the data around?
+func (s *Storage) FetchMemberships(roomID string) (joins, invites, leaves []string, err error) {
+	var events []Event
+	err = s.DB.Select(&events, `
+	WITH snapshot(membership_nids) AS (
+        SELECT membership_events
+        FROM syncv3_snapshots
+            JOIN syncv3_rooms ON snapshot_id = current_snapshot_id
+        WHERE syncv3_rooms.room_id = $1
+	)
+	SELECT state_key, membership
+	FROM syncv3_events JOIN snapshot ON (
+		event_nid = ANY( membership_nids )
+	)
+	`, roomID)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+
+	joins = make([]string, 0, len(events))
+	invites = make([]string, 0, len(events))
+	leaves = make([]string, 0, len(events))
+
+	for _, e := range events {
+		switch e.Membership {
+		case "_join":
+			fallthrough
+		case "join":
+			joins = append(joins, e.StateKey)
+		case "_invite":
+			fallthrough
+		case "invite":
+			invites = append(invites, e.StateKey)
+		default:
+			leaves = append(leaves, e.StateKey)
+		}
+	}
+	return
+}
+
 // Returns all current NOT MEMBERSHIP state events matching the event types given in all rooms. Returns a map of
 // room ID to events in that room.
 func (s *Storage) currentNotMembershipStateEventsInAllRooms(txn *sqlx.Tx, eventTypes []string) (map[string][]Event, error) {
