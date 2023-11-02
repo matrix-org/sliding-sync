@@ -25,6 +25,7 @@ type V2Listener interface {
 	OnDeviceMessages(p *V2DeviceMessages)
 	OnExpiredToken(p *V2ExpiredToken)
 	OnInvalidateRoom(p *V2InvalidateRoom)
+	OnStateRedaction(p *V2StateRedaction)
 }
 
 type V2Initialise struct {
@@ -130,7 +131,17 @@ type V2ExpiredToken struct {
 
 func (*V2ExpiredToken) Type() string { return "V2ExpiredToken" }
 
-// V2InvalidateRoom is emitted after a non-incremental state change to a room.
+// V2StateRedaction is emitted when a timeline is seen that contains one or more
+// redaction events targeting a piece of room state. The redaction will be emitted
+// before its corresponding V2Accumulate payload is emitted.
+type V2StateRedaction struct {
+	RoomID string
+}
+
+func (*V2StateRedaction) Type() string { return "V2StateRedaction" }
+
+// V2InvalidateRoom is emitted after a non-incremental state change to a room, in place
+// of a V2Initialise payload.
 type V2InvalidateRoom struct {
 	RoomID string
 }
@@ -183,6 +194,8 @@ func (v *V2Sub) onMessage(p Payload) {
 		v.receiver.OnExpiredToken(pl)
 	case *V2InvalidateRoom:
 		v.receiver.OnInvalidateRoom(pl)
+	case *V2StateRedaction:
+		v.receiver.OnStateRedaction(pl)
 	default:
 		logger.Warn().Str("type", p.Type()).Msg("V2Sub: unhandled payload type")
 	}
