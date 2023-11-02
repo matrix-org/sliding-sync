@@ -286,7 +286,7 @@ func TestAccumulatorPromptsCacheInvalidation(t *testing.T) {
 	t.Log("We expect 3 new events and no reload required.")
 	assertValue(t, "accResult.NumNew", accResult.NumNew, 3)
 	assertValue(t, "len(accResult.TimelineNIDs)", len(accResult.TimelineNIDs), 3)
-	assertValue(t, "accResult.RequiresReload", accResult.RequiresReload, false)
+	assertValue(t, "accResult.IncludesStateRedaction", accResult.IncludesStateRedaction, false)
 
 	t.Log("Redact the old state event and the message.")
 	timeline = []json.RawMessage{
@@ -304,7 +304,7 @@ func TestAccumulatorPromptsCacheInvalidation(t *testing.T) {
 	t.Log("We expect 2 new events and no reload required.")
 	assertValue(t, "accResult.NumNew", accResult.NumNew, 2)
 	assertValue(t, "len(accResult.TimelineNIDs)", len(accResult.TimelineNIDs), 2)
-	assertValue(t, "accResult.RequiresReload", accResult.RequiresReload, false)
+	assertValue(t, "accResult.IncludesStateRedaction", accResult.IncludesStateRedaction, false)
 
 	t.Log("Redact the latest state event.")
 	timeline = []json.RawMessage{
@@ -321,7 +321,7 @@ func TestAccumulatorPromptsCacheInvalidation(t *testing.T) {
 	t.Log("We expect 1 new event and a reload required.")
 	assertValue(t, "accResult.NumNew", accResult.NumNew, 1)
 	assertValue(t, "len(accResult.TimelineNIDs)", len(accResult.TimelineNIDs), 1)
-	assertValue(t, "accResult.RequiresReload", accResult.RequiresReload, true)
+	assertValue(t, "accResult.IncludesStateRedaction", accResult.IncludesStateRedaction, true)
 }
 
 func TestAccumulatorMembershipLogs(t *testing.T) {

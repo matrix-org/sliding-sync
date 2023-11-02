@@ -302,9 +302,9 @@ func (h *Handler) Accumulate(ctx context.Context, userID, deviceID, roomID strin
 		return err
 	}
 
-	// Consumers should reload state before processing new timeline events.
-	if accResult.RequiresReload {
-		h.v2Pub.Notify(pubsub.ChanV2, &pubsub.V2InvalidateRoom{
+	// Consumers should reload state content before processing new timeline events.
+	if accResult.IncludesStateRedaction {
+		h.v2Pub.Notify(pubsub.ChanV2, &pubsub.V2StateRedaction{
 			RoomID: roomID,
 		})
 	}

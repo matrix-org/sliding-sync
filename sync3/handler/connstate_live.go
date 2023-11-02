@@ -73,7 +73,7 @@ func (s *connStateLive) liveUpdate(
 		log.Trace().Str("dur", timeLeftToWait.String()).Msg("liveUpdate: no response data yet; blocking")
 		select {
 		case <-ctx.Done(): // client has given up
-			log.Trace().Msg("liveUpdate: client gave up")
+			log.Trace().Msg("liveUpdate: client gave up, or we killed the connection")
 			internal.Logf(ctx, "liveUpdate", "context cancelled")
 			return
 		case <-time.After(timeLeftToWait): // we've timed out

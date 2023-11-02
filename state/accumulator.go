@@ -326,10 +326,9 @@ type AccumulateResult struct {
 	// TimelineNIDs is the list of event nids seen in a sync v2 timeline. Some of these
 	// may already be known to the proxy.
 	TimelineNIDs []int64
-	// RequiresReload is set to true when we have accumulated a non-incremental state
-	// change (typically a redaction) that requires consumers to reload the room state
-	// from the latest snapshot.
-	RequiresReload bool
+	// IncludesStateRedaction is set to true when we have accumulated a redaction to a
+	// piece of room state.
+	IncludesStateRedaction bool
 }
 
 // Accumulate internal state from a user's sync response. The timeline order MUST be in the order
@@ -546,7 +545,7 @@ func (a *Accumulator) Accumulate(txn *sqlx.Tx, userID, roomID string, timeline s
 		if err != nil {
 			return AccumulateResult{}, err
 		}
-		result.RequiresReload = currentStateRedactions > 0
+		result.IncludesStateRedaction = currentStateRedactions > 0
 	}
 
 	if err = a.invitesTable.RemoveSupersededInvites(txn, roomID, postInsertEvents); err != nil {
