@@ -1004,7 +1004,7 @@ func TestClientsSeeMembershipTransitionsInGappyPolls(t *testing.T) {
 			}
 			t.Log("Bert makes a dummy request with a different connection ID, to ensure his poller has started.")
 			v3.mustDoV3Request(t, tc.bertToken, sync3.Request{
-				ConnID: "bert-dummy-donn",
+				ConnID: "bert-dummy-conn",
 			})
 
 			var bertRes *sync3.Response
