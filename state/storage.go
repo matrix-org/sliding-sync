@@ -371,7 +371,8 @@ func (s *Storage) ResetMetadataState(metadata *internal.RoomMetadata) error {
 }
 
 // FetchMemberships looks up the latest snapshot for the given room and determines the
-// latest membership events in the room.
+//
+// Each lists' members are arranged in no particular order.
 //
 // TODO: there is a very similar query in ResetMetadataState which also selects events
 // events row for memberships. It is a shame to have to do this twice---can we query
@@ -394,9 +395,9 @@ func (s *Storage) FetchMemberships(roomID string) (joins, invites, leaves []stri
 		return nil, nil, nil, err
 	}
 
-	joins = make([]string, len(events))
-	invites = make([]string, len(events))
-	leaves = make([]string, len(events))
+	joins = make([]string, 0, len(events))
+	invites = make([]string, 0, len(events))
+	leaves = make([]string, 0, len(events))
 
 	for _, e := range events {
 		switch e.Membership {
