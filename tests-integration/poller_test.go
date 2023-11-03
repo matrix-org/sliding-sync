@@ -119,18 +119,14 @@ func TestSecondPollerFiltersToDevice(t *testing.T) {
 	m.MatchResponse(t, res, m.MatchToDeviceMessages([]json.RawMessage{wantMsg}))
 }
 
-// Test that the poller makes a best-effort attempt to integrate state seen in a
-// v2 sync state block. Our strategy for doing so is to prepend any unknown state events
-// to the start of the v2 sync response's timeline, which should then be visible to
-// sync v3 clients as ordinary state events in the room timeline.
 func TestPollerHandlesUnknownStateEventsOnIncrementalSync(t *testing.T) {
-	// FIXME: this should resolve once we update downstream caches
-	t.Skip("We will never see the name/PL event in the timeline with the new code due to those events being part of the state block.")
 	pqString := testutils.PrepareDBConnectionString()
 	v2 := runTestV2Server(t)
 	v3 := runTestServer(t, v2, pqString)
 	defer v2.close()
 	defer v3.close()
+
+	t.Log("Alice creates a room.")
 	v2.addAccount(t, alice, aliceToken)
 	const roomID = "!unimportant"
 	v2.queueResponse(aliceToken, sync2.SyncResponse{
@@ -141,18 +137,21 @@ func TestPollerHandlesUnknownStateEventsOnIncrementalSync(t *testing.T) {
 			}),
 		},
 	})
-	res := v3.mustDoV3Request(t, aliceToken, sync3.Request{
+	t.Log("Alice sliding syncs, explicitly requesting power levels.")
+	aliceReq := sync3.Request{
 		Lists: map[string]sync3.RequestList{
 			"a": {
 				Ranges: [][2]int64{{0, 20}},
 				RoomSubscription: sync3.RoomSubscription{
 					TimelineLimit: 10,
+					RequiredState: [][2]string{{"m.room.power_levels", ""}},
 				},
 			},
 		},
-	})
+	}
+	res := v3.mustDoV3Request(t, aliceToken, aliceReq)
 
-	t.Log("The poller receives a gappy incremental sync response with a state block. The power levels and room name have changed.")
+	t.Log("Alice's poller receives a gappy poll with a state block. The power levels and room name have changed.")
 	nameEvent := testutils.NewStateEvent(
 		t,
 		"m.room.name",
@@ -187,37 +186,26 @@ func TestPollerHandlesUnknownStateEventsOnIncrementalSync(t *testing.T) {
 			},
 		},
 	})
+	v2.waitUntilEmpty(t, aliceToken)
 
-	res = v3.mustDoV3RequestWithPos(t, aliceToken, res.Pos, sync3.Request{})
-	m.MatchResponse(
-		t,
-		res,
-		m.MatchRoomSubscription(
-			roomID,
-			func(r sync3.Room) error {
-				// syncv2 doesn't assign any meaning to the order of events in a state
-				// block, so check for both possibilities
-				nameFirst := m.MatchRoomTimeline([]json.RawMessage{nameEvent, powerLevelsEvent, messageEvent})
-				powerLevelsFirst := m.MatchRoomTimeline([]json.RawMessage{powerLevelsEvent, nameEvent, messageEvent})
-				if nameFirst(r) != nil && powerLevelsFirst(r) != nil {
-					return fmt.Errorf("did not see state before message")
-				}
-				return nil
-			},
-			m.MatchRoomName("banana"),
-		),
-	)
+	t.Log("Alice incremental sliding syncs.")
+	_, respBytes, statusCode := v3.doV3Request(t, context.Background(), aliceToken, res.Pos, sync3.Request{})
+	t.Log("The server should have closed the long-polling session.")
+	assertUnknownPos(t, respBytes, statusCode)
+
+	t.Log("Alice sliding syncs from scratch.")
+	res = v3.mustDoV3Request(t, aliceToken, aliceReq)
+	t.Log("Alice sees the new room name and power levels.")
+	m.MatchResponse(t, res, m.MatchRoomSubscription(roomID,
+		m.MatchRoomRequiredState([]json.RawMessage{powerLevelsEvent}),
+		m.MatchRoomName("banana"),
+	))
 }
 
 // Similar to TestPollerHandlesUnknownStateEventsOnIncrementalSync. Here we are testing
 // that if Alice's poller sees Bob leave in a state block, the events seen in that
 // timeline are not visible to Bob.
 func TestPollerUpdatesRoomMemberTrackerOnGappySyncStateBlock(t *testing.T) {
-	// the room state should update to make bob no longer be a member, which should update downstream caches
-	// DO WE SEND THESE GAPPY STATES TO THE CLIENT? It's NOT part of the timeline, but we need to let the client
-	// know somehow? I think the best case here would be to invalidate that _room_ (if that were possible in the API)
-	// to force the client to resync the state.
-	t.Skip("figure out what the valid thing to do here is")
 	pqString := testutils.PrepareDBConnectionString()
 	v2 := runTestV2Server(t)
 	v3 := runTestServer(t, v2, pqString)
@@ -312,15 +300,21 @@ func TestPollerUpdatesRoomMemberTrackerOnGappySyncStateBlock(t *testing.T) {
 			},
 		},
 	})
+	v2.waitUntilEmpty(t, aliceToken)
 
 	t.Log("Bob makes an incremental sliding sync request.")
-	bobRes = v3.mustDoV3RequestWithPos(t, bobToken, bobRes.Pos, sync3.Request{})
-	t.Log("He should see his leave event in the room timeline.")
+	_, respBytes, statusCode := v3.doV3Request(t, context.Background(), bobToken, bobRes.Pos, sync3.Request{})
+	assertUnknownPos(t, respBytes, statusCode)
+
+	t.Log("Bob makes a new sliding sync session.")
+	bobRes = v3.mustDoV3Request(t, bobToken, syncRequest)
+
+	t.Log("He shouldn't see any evidence of the room.")
 	m.MatchResponse(
 		t,
 		bobRes,
-		m.MatchList("a", m.MatchV3Count(1)),
-		m.MatchRoomSubscription(roomID, m.MatchRoomTimelineMostRecent(1, []json.RawMessage{bobLeave})),
+		m.MatchList("a", m.MatchV3Count(0)),
+		m.MatchRoomSubscriptionsStrict(nil),
 	)
 }
 
