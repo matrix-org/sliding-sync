@@ -3,9 +3,9 @@ package state
 import (
 	"database/sql"
 	"encoding/json"
+	"github.com/lib/pq"
 
 	"github.com/jmoiron/sqlx"
-	"github.com/lib/pq"
 )
 
 // InvitesTable stores invites for each user.
