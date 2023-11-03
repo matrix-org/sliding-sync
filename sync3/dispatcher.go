@@ -24,7 +24,6 @@ type Receiver interface {
 	OnNewEvent(ctx context.Context, event *caches.EventData)
 	OnReceipt(ctx context.Context, receipt internal.Receipt)
 	OnEphemeralEvent(ctx context.Context, roomID string, ephEvent json.RawMessage)
-	OnInvalidateRoom(ctx context.Context, roomID string)
 	// OnRegistered is called after a successful call to Dispatcher.Register
 	OnRegistered(ctx context.Context) error
 }
