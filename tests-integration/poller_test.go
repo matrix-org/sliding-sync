@@ -594,3 +594,668 @@ func TestTimelineStopsLoadingWhenMissingPrevious(t *testing.T) {
 		m.MatchRoomPrevBatch("dummyPrevBatch"),
 	))
 }
+
+// The "prepend state events" mechanism added in
+// https://github.com/matrix-org/sliding-sync/pull/71 ensured that the proxy
+// communicated state events in "gappy syncs" to users. But it did so via Accumulate,
+// which made one snapshot for each state event. This was not an accurate model of the
+// room's history (the state block comes in no particular order) and had awful
+// performance for large gappy states.
+//
+// We now want to handle these in Initialise, making a single snapshot for the state
+// block. This test ensures that is the case. The logic is very similar to the e2e test
+// TestGappyState.
+func TestGappyStateDoesNotAccumulateTheStateBlock(t *testing.T) {
+	pqString := testutils.PrepareDBConnectionString()
+	v2 := runTestV2Server(t)
+	defer v2.close()
+	v3 := runTestServer(t, v2, pqString)
+	defer v3.close()
+
+	v2.addAccount(t, alice, aliceToken)
+	v2.addAccount(t, bob, bobToken)
+
+	t.Log("Alice creates a room, sets its name and sends a message.")
+	const roomID = "!unimportant"
+	name1 := testutils.NewStateEvent(t, "m.room.name", "", alice, map[string]any{
+		"name": "wonderland",
+	})
+	msg1 := testutils.NewMessageEvent(t, alice, "0118 999 881 999 119 7253")
+
+	joinTimeline := v2JoinTimeline(roomEvents{
+		roomID: roomID,
+		events: append(
+			createRoomState(t, alice, time.Now()),
+			name1,
+			msg1,
+		),
+	})
+	v2.queueResponse(aliceToken, sync2.SyncResponse{
+		Rooms: sync2.SyncRoomsResponse{
+			Join: joinTimeline,
+		},
+	})
+
+	t.Log("Alice sliding syncs with a huge timeline limit, subscribing to the room she just created.")
+	aliceReq := sync3.Request{
+		RoomSubscriptions: map[string]sync3.RoomSubscription{
+			roomID: {TimelineLimit: 100},
+		},
+	}
+	res := v3.mustDoV3Request(t, aliceToken, aliceReq)
+
+	t.Log("Alice sees the room with the expected name, with the name event and message at the end of the timeline.")
+	m.MatchResponse(t, res, m.MatchRoomSubscription(roomID,
+		m.MatchRoomName("wonderland"),
+		m.MatchRoomTimelineMostRecent(2, []json.RawMessage{name1, msg1}),
+	))
+
+	t.Log("Alice's poller receives a gappy sync, including a room name change, bob joining, and two messages.")
+	stateBlock := make([]json.RawMessage, 0)
+	for i := 0; i < 10; i++ {
+		statePiece := testutils.NewStateEvent(t, "com.example.custom", fmt.Sprintf("%d", i), alice, map[string]any{})
+		stateBlock = append(stateBlock, statePiece)
+	}
+	name2 := testutils.NewStateEvent(t, "m.room.name", "", alice, map[string]any{
+		"name": "not wonderland",
+	})
+	bobJoin := testutils.NewJoinEvent(t, bob)
+	stateBlock = append(stateBlock, name2, bobJoin)
+
+	msg2 := testutils.NewMessageEvent(t, alice, "Good morning!")
+	msg3 := testutils.NewMessageEvent(t, alice, "That's a nice tnetennba.")
+	v2.queueResponse(aliceToken, sync2.SyncResponse{
+		Rooms: sync2.SyncRoomsResponse{
+			Join: map[string]sync2.SyncV2JoinResponse{
+				roomID: {
+					State: sync2.EventsResponse{
+						Events: stateBlock,
+					},
+					Timeline: sync2.TimelineResponse{
+						Events:    []json.RawMessage{msg2, msg3},
+						Limited:   true,
+						PrevBatch: "dummyPrevBatch",
+					},
+				},
+			},
+		},
+	})
+	v2.waitUntilEmpty(t, aliceToken)
+
+	t.Log("Alice syncs. The server should close her long-polling session.")
+	_, respBytes, statusCode := v3.doV3Request(t, context.Background(), aliceToken, res.Pos, sync3.Request{})
+	assertUnknownPos(t, respBytes, statusCode)
+
+	t.Log("Alice sliding syncs from scratch. She should see the two most recent message in the timeline only. The room name should have changed too.")
+	res = v3.mustDoV3Request(t, aliceToken, aliceReq)
+	m.MatchResponse(t, res, m.MatchRoomSubscription(roomID,
+		m.MatchRoomName("not wonderland"),
+		// In particular, we shouldn't see state here because it's not part of the timeline.
+		// Nor should we see msg1, as that comes before a gap.
+		m.MatchRoomTimeline([]json.RawMessage{msg2, msg3}),
+	))
+}
+
+// Right, this has turned out to be very involved. This test has three varying
+// parameters:
+//   - Bert's initial membership (in 3 below),
+//   - his final membership in (5), and
+//   - whether his sync in (6) is initial or long-polling ("live").
+//
+// The test:
+//  1. Registers two users Ana and Bert.
+//  2. Has Ana create a public room.
+//  3. Sets an initial membership for Bert in that room.
+//  4. Sliding syncs for Bert, if he will live-sync in (6) below.
+//  5. Gives Ana's poller a gappy poll in which Bert's membership changes.
+//  6. Has Bert do a sliding sync.
+//  7. Ana invites Bert to a DM.
+//
+// We perform the following assertions:
+//   - After (3), Ana sees her membership, Bert's initial membership, appropriate
+//     join and invite counts, and an appropriate timeline.
+//   - If applicable: after (4), Bert sees his initial membership.
+//   - After (5), Ana's connection is closed. When opening a new one, she sees her
+//     membership, Bert's new membership, and the post-gap timeline.
+//   - After (6), Bert's connection is closed if he was expecting a live update.
+//   - After (6), Bert sees his new membership (if there is anything to see).
+//   - After (7), Bert sees the DM invite.
+//
+// Remarks:
+//   - Use a per-test Ana and Bert here so we don't clash with the global constants
+//     alice and bob.
+//   - We're feeding all this information in via Ana's poller to check that stuff
+//     propagates from her poller to Bert's client. However, when Bob's membership is
+//     "invite" we need to directly send the invite to his poller.
+//   - Step (7) serves as a sentinel to prove that the proxy has processed (5) in the
+//     case where there is nothing for Bert to see in (6), e.g. a preemptive ban or
+//     an unban during the gap.
+//   - Testing all the membership transitions is likely overkill. But it was useful
+//     for finding edge cases in the proxy's assumptions at first, before we decided to
+//     nuke conns and userCaches and start from scratch.
+func TestClientsSeeMembershipTransitionsInGappyPolls(t *testing.T) {
+	pqString := testutils.PrepareDBConnectionString()
+	v2 := runTestV2Server(t)
+	// TODO remove this? Otherwise running tests is sloooooow
+	v2.timeToWaitForV2Response /= 20
+	defer v2.close()
+	v3 := runTestServer(t, v2, pqString)
+	defer v3.close()
+
+	type testcase struct {
+		// Inputs
+		beforeMembership string
+		afterMembership  string
+		viaLiveUpdate    bool
+		// Scratch space
+		id           string
+		ana          string
+		anaToken     string
+		bert         string
+		bertToken    string
+		publicRoomID string // room that will receive gappy state
+		dmRoomID     string // DM between ana and bert, used to send a sentinel message
+	}
+
+	var tcs []testcase
+
+	transitions := map[string][]string{
+		// before: {possible after}
+		// https://spec.matrix.org/v1.8/client-server-api/#room-membership for the list of allowed transitions
+		"none":   {"ban", "invite", "join", "leave"},
+		"invite": {"ban", "join", "leave"},
+		// Note: can also join->join here e.g. for displayname change, but will do that in a separate test
+		"join":  {"ban", "leave"},
+		"leave": {"ban", "invite", "join"},
+		"ban":   {"leave"},
+	}
+	for before, afterOptions := range transitions {
+		for _, after := range afterOptions {
+			for _, live := range []bool{true, false} {
+				idStr := fmt.Sprintf("%s-%s", before, after)
+				if live {
+					idStr += "-live"
+				}
+
+				tc := testcase{
+					beforeMembership: before,
+					afterMembership:  after,
+					viaLiveUpdate:    live,
+					id:               idStr,
+					publicRoomID:     fmt.Sprintf("!%s-public", idStr),
+					dmRoomID:         fmt.Sprintf("!%s-dm", idStr),
+					// Using ana and bert to stop myself from pulling in package-level constants alice and bob
+					ana:  fmt.Sprintf("@ana-%s:localhost", idStr),
+					bert: fmt.Sprintf("@bert-%s:localhost", idStr),
+				}
+				tc.anaToken = tc.ana + "_token"
+				tc.bertToken = tc.bert + "_token"
+				tcs = append(tcs, tc)
+			}
+		}
+	}
+
+	ssRequest := sync3.Request{
+		Lists: map[string]sync3.RequestList{
+			"a": {
+				Ranges: sync3.SliceRanges{{0, 10}},
+				RoomSubscription: sync3.RoomSubscription{
+					RequiredState: [][2]string{{"m.room.member", "*"}},
+					TimelineLimit: 20,
+				},
+			},
+		},
+	}
+
+	setup := func(t *testing.T, tc testcase) (publicEvents []json.RawMessage, anaMembership json.RawMessage, anaRes *sync3.Response) {
+		// 1. Register two users Ana and Bert.
+		v2.addAccount(t, tc.ana, tc.anaToken)
+		v2.addAccount(t, tc.bert, tc.bertToken)
+
+		// 2. Have Ana create a public room.
+		t.Log("Ana creates a public room.")
+		publicEvents = createRoomState(t, tc.ana, time.Now())
+		for _, ev := range publicEvents {
+			parsed := gjson.ParseBytes(ev)
+			if parsed.Get("type").Str == "m.room.member" && parsed.Get("state_key").Str == tc.ana {
+				anaMembership = ev
+				break
+			}
+		}
+
+		// 3. Set an initial membership for Bert.
+		var wantJoinCount int
+		var wantInviteCount int
+		var bertMembership json.RawMessage
+
+		switch tc.beforeMembership {
+		case "none":
+			t.Log("Bert has no membership in the room.")
+			wantJoinCount = 1
+			wantInviteCount = 0
+		case "invite":
+			t.Log("Bert is invited.")
+			bertMembership = testutils.NewStateEvent(t, "m.room.member", tc.bert, tc.ana, map[string]any{"membership": "invite"})
+			wantJoinCount = 1
+			wantInviteCount = 1
+		case "join":
+			t.Log("Bert joins the room.")
+			bertMembership = testutils.NewJoinEvent(t, tc.bert)
+			wantJoinCount = 2
+			wantInviteCount = 0
+		case "leave":
+			t.Log("Bert is pre-emptively kicked.")
+			bertMembership = testutils.NewStateEvent(t, "m.room.member", tc.bert, tc.ana, map[string]any{"membership": "leave"})
+			wantJoinCount = 1
+			wantInviteCount = 0
+		case "ban":
+			t.Log("Bert is banned.")
+			bertMembership = testutils.NewStateEvent(t, "m.room.member", tc.bert, tc.ana, map[string]any{"membership": "ban"})
+			wantJoinCount = 1
+			wantInviteCount = 0
+		default:
+			panic(fmt.Errorf("unknown beforeMembership %s", tc.beforeMembership))
+		}
+		if len(bertMembership) > 0 {
+			publicEvents = append(publicEvents, bertMembership)
+		}
+
+		t.Log("Ana's poller sees the public room for the first time.")
+		v2.queueResponse(tc.anaToken, sync2.SyncResponse{
+			Rooms: sync2.SyncRoomsResponse{
+				Join: map[string]sync2.SyncV2JoinResponse{
+					tc.publicRoomID: {
+						Timeline: sync2.TimelineResponse{
+							Events:    publicEvents,
+							PrevBatch: "anaPublicPrevBatch1",
+						},
+					},
+				},
+			},
+			NextBatch: "anaSync1",
+		})
+
+		t.Log("Ana sliding syncs, requesting all room members.")
+		anaRes = v3.mustDoV3Request(t, tc.anaToken, ssRequest)
+		t.Log("She sees herself joined to both rooms, with appropriate timelines and counts.")
+		// Note: we only expect timeline[1:] here, not the create event. See
+		// https://github.com/matrix-org/sliding-sync/issues/343
+		expectedMembers := []json.RawMessage{anaMembership}
+		if len(bertMembership) > 0 {
+			expectedMembers = append(expectedMembers, bertMembership)
+		}
+		m.MatchResponse(t, anaRes,
+			m.MatchRoomSubscription(tc.publicRoomID,
+				m.MatchRoomTimeline(publicEvents[1:]),
+				m.MatchRoomRequiredState(expectedMembers),
+				m.MatchJoinCount(wantJoinCount),
+				m.MatchInviteCount(wantInviteCount),
+			),
+		)
+
+		return
+	}
+
+	gappyPoll := func(t *testing.T, tc testcase, anaMembership json.RawMessage, anaRes *sync3.Response) (newMembership json.RawMessage, publicTimeline []json.RawMessage) {
+		t.Logf("Ana's poller gets a gappy sync response for the public room. Bert's membership is now %s, and Ana has sent 10 messages.", tc.afterMembership)
+		publicTimeline = make([]json.RawMessage, 10)
+		for i := range publicTimeline {
+			publicTimeline[i] = testutils.NewMessageEvent(t, tc.ana, fmt.Sprintf("hello %d", i))
+		}
+
+		switch tc.afterMembership {
+		case "invite":
+			newMembership = testutils.NewStateEvent(t, "m.room.member", tc.bert, tc.ana, map[string]any{"membership": "invite"})
+		case "join":
+			newMembership = testutils.NewJoinEvent(t, tc.bert)
+		case "leave":
+			newMembership = testutils.NewStateEvent(t, "m.room.member", tc.bert, tc.ana, map[string]any{"membership": "leave"})
+		case "ban":
+			newMembership = testutils.NewStateEvent(t, "m.room.member", tc.bert, tc.ana, map[string]any{"membership": "ban"})
+		default:
+			panic(fmt.Errorf("unknown afterMembership %s", tc.afterMembership))
+		}
+
+		v2.queueResponse(tc.anaToken, sync2.SyncResponse{
+			NextBatch: "ana2",
+			Rooms: sync2.SyncRoomsResponse{
+				Join: map[string]sync2.SyncV2JoinResponse{
+					tc.publicRoomID: {
+						State: sync2.EventsResponse{
+							Events: []json.RawMessage{newMembership},
+						},
+						Timeline: sync2.TimelineResponse{
+							Events:    publicTimeline,
+							Limited:   true,
+							PrevBatch: "anaPublicPrevBatch2",
+						},
+					},
+				},
+			},
+		})
+		v2.waitUntilEmpty(t, tc.anaToken)
+
+		if tc.afterMembership == "invite" {
+			t.Log("Bert's poller sees his invite.")
+			v2.queueResponse(tc.bertToken, sync2.SyncResponse{
+				Rooms: sync2.SyncRoomsResponse{
+					Invite: map[string]sync2.SyncV2InviteResponse{
+						tc.publicRoomID: {
+							InviteState: sync2.EventsResponse{
+								// TODO:  this really ought to be stripped state events
+								Events: []json.RawMessage{anaMembership, newMembership},
+							},
+						},
+					}},
+				NextBatch: tc.bert + "_invite",
+			})
+		}
+
+		t.Log("Ana syncs.")
+		_, respBytes, statusCode := v3.doV3Request(t, context.Background(), tc.anaToken, anaRes.Pos, sync3.Request{})
+
+		t.Log("Her long-polling session has been closed by the server.")
+		assertUnknownPos(t, respBytes, statusCode)
+
+		t.Log("Ana syncs again from scratch.")
+		anaRes = v3.mustDoV3Request(t, tc.anaToken, ssRequest)
+
+		t.Log("She sees both her and Bob's membership, and the timeline from the gappy poll.")
+		// Note: we don't expect to see the pre-gap timeline, here because we stop at
+		// the first gap we see in the timeline.
+		m.MatchResponse(t, anaRes, m.MatchRoomSubscription(tc.publicRoomID,
+			m.MatchRoomRequiredState([]json.RawMessage{anaMembership, newMembership}),
+			m.MatchRoomTimeline(publicTimeline),
+		))
+		return
+	}
+
+	for _, tc := range tcs {
+		t.Run(tc.id, func(t *testing.T) {
+			// 1--3: Register users, create public room, set Bert's membership.
+			publicEvents, anaMembership, anaRes := setup(t, tc)
+			defer func() {
+				// Cleanup these users once we're done with them. This helps stop log spam when debugging.
+				v2.invalidateTokenImmediately(tc.anaToken)
+				v2.invalidateTokenImmediately(tc.bertToken)
+			}()
+
+			// Ensure the proxy considers Bert to already be polling. In particular, if
+			// Bert is initially invited, make sure his poller sees the invite.
+			if tc.beforeMembership == "invite" {
+				t.Log("Bert's poller sees his invite.")
+				v2.queueResponse(tc.bertToken, sync2.SyncResponse{
+					Rooms: sync2.SyncRoomsResponse{
+						Invite: map[string]sync2.SyncV2InviteResponse{
+							tc.publicRoomID: {
+								InviteState: sync2.EventsResponse{
+									// TODO:  this really ought to be stripped state events
+									Events: publicEvents,
+								},
+							},
+						}},
+					NextBatch: tc.bert + "_invite",
+				})
+			} else {
+				t.Log("Queue up an empty poller response for Bert.")
+				v2.queueResponse(tc.bertToken, sync2.SyncResponse{
+					NextBatch: tc.bert + "_empty_sync",
+				})
+			}
+			t.Log("Bert makes a dummy request with a different connection ID, to ensure his poller has started.")
+			v3.mustDoV3Request(t, tc.bertToken, sync3.Request{
+				ConnID: "bert-dummy-conn",
+			})
+
+			var bertRes *sync3.Response
+			// 4: sliding sync for Bert, if he will live-sync in (6) below.
+			if tc.viaLiveUpdate {
+				t.Log("Bert sliding syncs.")
+				bertRes = v3.mustDoV3Request(t, tc.bertToken, ssRequest)
+
+				// Bert will see the entire history of these rooms, so there shouldn't be any prev batch tokens.
+				expectedSubscriptions := map[string][]m.RoomMatcher{}
+				switch tc.beforeMembership {
+				case "invite":
+					t.Log("Bert sees his invite.")
+					expectedSubscriptions[tc.publicRoomID] = []m.RoomMatcher{
+						m.MatchRoomHasInviteState(),
+						m.MatchInviteCount(1),
+						m.MatchJoinCount(1),
+						m.MatchRoomPrevBatch(""),
+					}
+				case "join":
+					t.Log("Bert sees his join.")
+					expectedSubscriptions[tc.publicRoomID] = []m.RoomMatcher{
+						m.MatchRoomLacksInviteState(),
+						m.MatchInviteCount(0),
+						m.MatchJoinCount(2),
+						m.MatchRoomPrevBatch(""),
+					}
+				case "none":
+					fallthrough
+				case "leave":
+					fallthrough
+				case "ban":
+					t.Log("Bert does not see the room.")
+				default:
+					panic(fmt.Errorf("unknown beforeMembership %s", tc.beforeMembership))
+				}
+				m.MatchResponse(t, bertRes, m.MatchRoomSubscriptionsStrict(expectedSubscriptions))
+			}
+
+			// 5: Ana receives a gappy poll, plus a sentinel in her DM with Bert.
+			newMembership, publicTimeline := gappyPoll(t, tc, anaMembership, anaRes)
+
+			// 6: Bert sliding syncs.
+			if tc.viaLiveUpdate {
+				wasInvolvedInRoom := tc.beforeMembership == "join" || tc.beforeMembership == "invite"
+				if wasInvolvedInRoom {
+					t.Log("Bert makes an incremental sliding sync.")
+					_, respBytes, statusCode := v3.doV3Request(t, context.Background(), tc.bertToken, bertRes.Pos, ssRequest)
+					assertUnknownPos(t, respBytes, statusCode)
+				}
+			} else {
+				t.Log("Queue up an empty poller response for Bert. so the proxy will consider him to be polling.")
+				v2.queueResponse(tc.bertToken, sync2.SyncResponse{
+					NextBatch: tc.bert + "_empty_sync",
+				})
+			}
+
+			t.Log("Bert makes new sliding sync connection.")
+			bertRes = v3.mustDoV3Request(t, tc.bertToken, ssRequest)
+
+			// Work out what Bert should see.
+			respMatchers := []m.RespMatcher{}
+
+			switch tc.afterMembership {
+			case "invite":
+				t.Log("Bert should see his invite.")
+				respMatchers = append(respMatchers,
+					m.MatchList("a", m.MatchV3Count(1)),
+					m.MatchRoomSubscription(tc.publicRoomID,
+						m.MatchRoomHasInviteState(),
+						m.MatchInviteCount(1),
+						m.MatchJoinCount(1),
+					))
+			case "join":
+				t.Log("Bert should see himself joined to the room, and Alice's messages.")
+				respMatchers = append(respMatchers,
+					m.MatchList("a", m.MatchV3Count(1)),
+					m.MatchRoomSubscription(tc.publicRoomID,
+						m.MatchRoomLacksInviteState(),
+						m.MatchRoomRequiredState([]json.RawMessage{anaMembership, newMembership}),
+						m.MatchInviteCount(0),
+						m.MatchJoinCount(2),
+						m.MatchRoomTimelineMostRecent(len(publicTimeline), publicTimeline),
+						m.MatchRoomPrevBatch("anaPublicPrevBatch2"),
+					))
+			case "leave":
+				fallthrough
+			case "ban":
+				respMatchers = append(respMatchers, m.MatchList("a", m.MatchV3Count(0)))
+				// Any prior connection has been closed by the server, so Bert won't see
+				// a transition here.
+				t.Logf("Bob shouldn't see his %s (membership was: %s)", tc.afterMembership, tc.beforeMembership)
+				respMatchers = append(respMatchers, m.MatchRoomSubscriptionsStrict(nil))
+			default:
+				panic(fmt.Errorf("unknown afterMembership %s", tc.afterMembership))
+			}
+
+			m.MatchResponse(t, bertRes, respMatchers...)
+
+			// 7: Ana invites Bert to a DM. He accepts.
+			// This is a sentinel which proves the proxy has processed the gappy poll
+			// properly in the situations where there's nothing for Bert to see in his
+			// second sync, e.g. ban -> leave (an unban).
+			t.Log("Ana invites Bert to a DM. He accepts.")
+			bertDMJoin := testutils.NewJoinEvent(t, tc.bert)
+			dmTimeline := append(
+				createRoomState(t, tc.ana, time.Now()),
+				testutils.NewStateEvent(t, "m.room.member", tc.bert, tc.ana, map[string]any{"membership": "invite"}),
+				bertDMJoin,
+			)
+			v2.queueResponse(tc.anaToken, sync2.SyncResponse{
+				NextBatch: "ana3",
+				Rooms: sync2.SyncRoomsResponse{
+					Join: map[string]sync2.SyncV2JoinResponse{
+						tc.dmRoomID: {
+							Timeline: sync2.TimelineResponse{
+								Events:    dmTimeline,
+								PrevBatch: "anaDM",
+							},
+						},
+					},
+				},
+			})
+			v2.waitUntilEmpty(t, tc.anaToken)
+
+			t.Log("Bert sliding syncs")
+			bertRes = v3.mustDoV3RequestWithPos(t, tc.bertToken, bertRes.Pos, ssRequest)
+
+			t.Log("Bert sees his join to the DM.")
+			m.MatchResponse(t, bertRes, m.MatchRoomSubscriptionsStrict(map[string][]m.RoomMatcher{
+				tc.dmRoomID: {m.MatchRoomLacksInviteState(), m.MatchRoomTimelineMostRecent(1, []json.RawMessage{bertDMJoin})},
+			}))
+		})
+	}
+}
+
+// This is a minimal version of the test above, which is helpful for debugging (because
+// the above test is a monstrosity---apologies to the reader.)
+func TestTimelineAfterRequestingStateAfterGappyPoll(t *testing.T) {
+	pqString := testutils.PrepareDBConnectionString()
+	v2 := runTestV2Server(t)
+	defer v2.close()
+	v3 := runTestServer(t, v2, pqString)
+	defer v3.close()
+
+	alice := "alice"
+	aliceToken := "alicetoken"
+	bob := "bob"
+	roomID := "!unimportant"
+
+	v2.addAccount(t, alice, aliceToken)
+
+	t.Log("alice creates a public room.")
+	timeline1 := createRoomState(t, alice, time.Now())
+	var aliceMembership json.RawMessage
+	for _, ev := range timeline1 {
+		parsed := gjson.ParseBytes(ev)
+		if parsed.Get("type").Str == "m.room.member" && parsed.Get("state_key").Str == alice {
+			aliceMembership = ev
+			break
+		}
+	}
+	if len(aliceMembership) == 0 {
+		t.Fatal("Initial timeline did not have a membership for Alice")
+	}
+
+	v2.queueResponse(aliceToken, sync2.SyncResponse{
+		Rooms: sync2.SyncRoomsResponse{
+			Join: map[string]sync2.SyncV2JoinResponse{
+				roomID: {
+					Timeline: sync2.TimelineResponse{
+						Events:    timeline1,
+						PrevBatch: "alicePublicPrevBatch1",
+					},
+				},
+			},
+		},
+		NextBatch: "aliceSync1",
+	})
+
+	t.Log("alice sliding syncs, requesting all memberships in state.")
+	aliceReq := sync3.Request{
+		RoomSubscriptions: map[string]sync3.RoomSubscription{
+			roomID: {
+				TimelineLimit: 20,
+				RequiredState: [][2]string{{"m.room.member", "*"}},
+			},
+		},
+	}
+	aliceRes := v3.mustDoV3Request(t, aliceToken, aliceReq)
+
+	t.Log("She sees herself joined to her room, with an appropriate timeline.")
+	// Note: we only expect timeline1[1:] here, excluding the create event. See
+	// https://github.com/matrix-org/sliding-sync/issues/343
+	m.MatchResponse(t, aliceRes,
+		m.LogResponse(t),
+		m.MatchRoomSubscription(roomID,
+			m.MatchRoomRequiredState([]json.RawMessage{aliceMembership}),
+			m.MatchRoomTimeline(timeline1[1:])),
+	)
+
+	t.Logf("Alice's poller gets a gappy sync response for the public room. bob's membership is now join, and alice has sent 10 messages.")
+	timeline2 := make([]json.RawMessage, 10)
+	for i := range timeline2 {
+		timeline2[i] = testutils.NewMessageEvent(t, alice, fmt.Sprintf("hello %d", i))
+	}
+
+	bobMembership := testutils.NewJoinEvent(t, bob)
+
+	v2.queueResponse(aliceToken, sync2.SyncResponse{
+		NextBatch: "alice2",
+		Rooms: sync2.SyncRoomsResponse{
+			Join: map[string]sync2.SyncV2JoinResponse{
+				roomID: {
+					State: sync2.EventsResponse{
+						Events: []json.RawMessage{bobMembership},
+					},
+					Timeline: sync2.TimelineResponse{
+						Events:    timeline2,
+						Limited:   true,
+						PrevBatch: "alicePublicPrevBatch2",
+					},
+				},
+			},
+		},
+	})
+	v2.waitUntilEmpty(t, aliceToken)
+
+	t.Log("Alice does an incremental sliding sync.")
+	_, respBytes, statusCode := v3.doV3Request(t, context.Background(), aliceToken, aliceRes.Pos, sync3.Request{})
+
+	t.Log("Her long-polling session has been closed by the server.")
+	assertUnknownPos(t, respBytes, statusCode)
+
+	t.Log("Alice syncs again from scratch.")
+	aliceRes = v3.mustDoV3Request(t, aliceToken, aliceReq)
+
+	t.Log("She sees both her and Bob's membership, and the timeline from the gappy poll.")
+	// Note: we don't expect to see timeline1 here because we stop at the first gap we
+	// see in the timeline.
+	m.MatchResponse(t, aliceRes, m.MatchRoomSubscription(roomID,
+		m.MatchRoomRequiredState([]json.RawMessage{aliceMembership, bobMembership}),
+		m.MatchRoomTimeline(timeline2),
+	))
+}
+
+func assertUnknownPos(t *testing.T, respBytes []byte, statusCode int) {
+	if statusCode != http.StatusBadRequest {
+		t.Errorf("Got status %d, expected %d", statusCode, http.StatusBadRequest)
+	}
+	if errcode := gjson.GetBytes(respBytes, "errcode").Str; errcode != "M_UNKNOWN_POS" {
+		t.Errorf("Got errcode %s, expected %s", errcode, "M_UNKNOWN_POS")
+	}
+}
