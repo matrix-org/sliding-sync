@@ -63,6 +63,11 @@ type SyncLiveHandler struct {
 	setupHistVec *prometheus.HistogramVec
 	histVec      *prometheus.HistogramVec
 	slowReqs     prometheus.Counter
+	// destroyedConns is the number of connections that have been destoryed after
+	// a room invalidation payload.
+	// TODO: could make this a CounterVec labelled by reason, to track expiry due
+	//       to update buffer filling, expiry due to inactivity, etc.
+	destroyedConns prometheus.Counter
 }
 
 func NewSync3Handler(
@@ -139,6 +144,9 @@ func (h *SyncLiveHandler) Teardown() {
 	if h.slowReqs != nil {
 		prometheus.Unregister(h.slowReqs)
 	}
+	if h.destroyedConns != nil {
+		prometheus.Unregister(h.destroyedConns)
+	}
 }
 
 func (h *SyncLiveHandler) addPrometheusMetrics() {
@@ -162,9 +170,17 @@ func (h *SyncLiveHandler) addPrometheusMetrics() {
 		Name:      "slow_requests",
 		Help:      "Counter of slow (>=50s) requests, initial or otherwise.",
 	})
+	h.destroyedConns = prometheus.NewCounter(prometheus.CounterOpts{
+		Namespace: "sliding_sync",
+		Subsystem: "api",
+		Name:      "destroyed_conns",
+		Help:      "Counter of conns that were destroyed.",
+	})
+
 	prometheus.MustRegister(h.setupHistVec)
 	prometheus.MustRegister(h.histVec)
 	prometheus.MustRegister(h.slowReqs)
+	prometheus.MustRegister(h.destroyedConns)
 }
 
 func (h *SyncLiveHandler) ServeHTTP(w http.ResponseWriter, req *http.Request) {
@@ -818,7 +834,46 @@ func (h *SyncLiveHandler) OnInvalidateRoom(p *pubsub.V2InvalidateRoom) {
 	ctx, task := internal.StartTask(context.Background(), "OnInvalidateRoom")
 	defer task.End()
 
-	h.Dispatcher.OnInvalidateRoom(ctx, p.RoomID)
+	// 1. Reload the global cache.
+	h.GlobalCache.OnInvalidateRoom(ctx, p.RoomID)
+
+	// Work out who is affected.
+	joins, invites, leaves, err := h.Storage.FetchMemberships(p.RoomID)
+	involvedUsers := make([]string, 0, len(joins)+len(invites)+len(leaves))
+	involvedUsers = append(involvedUsers, joins...)
+	involvedUsers = append(involvedUsers, invites...)
+	involvedUsers = append(involvedUsers, leaves...)
+
+	// 2. Reload the joined-room tracker.
+	if err != nil {
+		hub := internal.GetSentryHubFromContextOrDefault(ctx)
+		hub.WithScope(func(scope *sentry.Scope) {
+			scope.SetContext(internal.SentryCtxKey, map[string]any{
+				"room_id": p.RoomID,
+			})
+			hub.CaptureException(err)
+		})
+		logger.Err(err).
+			Str("room_id", p.RoomID).
+			Msg("Failed to fetch members after cache invalidation")
+	}
+
+	h.Dispatcher.OnInvalidateRoom(p.RoomID, joins, invites)
+
+	// 3. Destroy involved users' caches.
+	for _, userID := range involvedUsers {
+		h.Dispatcher.Unregister(userID)
+		h.userCaches.Delete(userID)
+	}
+
+	// 4. Destroy involved users' connections.
+	var destroyed int
+	for _, userID := range involvedUsers {
+		destroyed += h.ConnMap.CloseConnsForUser(userID)
+	}
+	if h.destroyedConns != nil {
+		h.destroyedConns.Add(float64(destroyed))
+	}
 }
 
 func parseIntFromQuery(u *url.URL, param string) (result int64, err *internal.HandlerError) {
