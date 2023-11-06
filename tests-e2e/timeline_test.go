@@ -11,7 +11,7 @@ import (
 )
 
 // Regression test to make sure that given:
-// - Alice invite Bob
+// - Alice invite Bob (shared history visibility)
 // - Alice send message
 // - Bob join room
 // The proxy returns:

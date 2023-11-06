@@ -7,6 +7,8 @@ import (
 	"os"
 	"strings"
 
+	"golang.org/x/exp/slices"
+
 	"github.com/matrix-org/sliding-sync/sync2"
 
 	"github.com/getsentry/sentry-go"
@@ -716,17 +718,18 @@ func (s *Storage) LatestEventsInRooms(userID string, roomIDs []string, to int64,
 			if err != nil {
 				return fmt.Errorf("room %s failed to SelectEventsBetween: %s", roomID, err)
 			}
-			// keep pushing to the front so we end up with A,B,C
 			for _, ev := range events {
 				if latestEventNID == 0 { // set first time and never again
 					latestEventNID = ev.NID
 				}
-				roomEvents = append([]json.RawMessage{ev.JSON}, roomEvents...)
+				roomEvents = append(roomEvents, ev.JSON)
 				earliestEventNID = ev.NID
 				if len(roomEvents) >= limit {
 					break
 				}
 			}
+			// we want the most recent event to be last, so reverse the slice now in-place.
+			slices.Reverse(roomEvents)
 			latestEvents := LatestEvents{
 				LatestNID: latestEventNID,
 				Timeline:  roomEvents,
@@ -747,8 +750,8 @@ func (s *Storage) LatestEventsInRooms(userID string, roomIDs []string, to int64,
 }
 
 // visibleEventNIDsBetweenForRooms determines which events a given user has permission to see.
-// It accepts a nid range [from, to]. For each given room, it calculates the NID ranges
-// [A1, B1], [A2, B2], ... within [from, to] in which the user has permission to see events.
+// It accepts a nid range [from, to]. For each given room, it calculates the NID range
+// [A1, B1] within [from, to] in which the user has permission to see events.
 func (s *Storage) visibleEventNIDsBetweenForRooms(userID string, roomIDs []string, from, to int64) (map[string][2]int64, error) {
 	// load *THESE* joined rooms for this user at from (inclusive)
 	var membershipEvents []Event
