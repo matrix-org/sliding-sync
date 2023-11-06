@@ -5,11 +5,12 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"github.com/matrix-org/sliding-sync/sync2"
 	"reflect"
 	"sort"
 	"testing"
 	"time"
+
+	"github.com/matrix-org/sliding-sync/sync2"
 
 	"github.com/jmoiron/sqlx"
 	"github.com/matrix-org/gomatrixserverlib/spec"
@@ -362,17 +363,15 @@ func TestVisibleEventNIDsBetween(t *testing.T) {
 		t.Fatalf("LatestEventNID: %s", err)
 	}
 	t.Logf("ABC Start=%d Latest=%d", startPos, latestPos)
-	roomIDToVisibleRanges, err := store.VisibleEventNIDsBetween(alice, startPos, latestPos)
+	roomIDToVisibleRange, err := store.VisibleEventNIDsBetween(alice, startPos, latestPos)
 	if err != nil {
 		t.Fatalf("VisibleEventNIDsBetween to %d: %s", latestPos, err)
 	}
-	for roomID, ranges := range roomIDToVisibleRanges {
-		for _, r := range ranges {
-			t.Logf("%v => [%d,%d]", roomID, r[0]-startPos, r[1]-startPos)
-		}
+	for roomID, r := range roomIDToVisibleRange {
+		t.Logf("%v => [%d,%d]", roomID, r[0]-startPos, r[1]-startPos)
 	}
-	if len(roomIDToVisibleRanges) != 3 {
-		t.Errorf("VisibleEventNIDsBetween: wrong number of rooms, want 3 got %+v", roomIDToVisibleRanges)
+	if len(roomIDToVisibleRange) != 3 {
+		t.Errorf("VisibleEventNIDsBetween: wrong number of rooms, want 3 got %+v", roomIDToVisibleRange)
 	}
 
 	// check that we can query subsets too
@@ -381,23 +380,23 @@ func TestVisibleEventNIDsBetween(t *testing.T) {
 		t.Fatalf("VisibleEventNIDsBetweenForRooms to %d: %s", latestPos, err)
 	}
 	if len(roomIDToVisibleRangesSubset) != 2 {
-		t.Errorf("VisibleEventNIDsBetweenForRooms: wrong number of rooms, want 2 got %+v", roomIDToVisibleRanges)
+		t.Errorf("VisibleEventNIDsBetweenForRooms: wrong number of rooms, want 2 got %+v", roomIDToVisibleRange)
 	}
 
 	// For Room A: from=1, to=10, returns { RoomA: [ [1,10] ]}  (tests events in joined room)
-	verifyRange(t, roomIDToVisibleRanges, roomA, [][2]int64{
-		{1 + startPos, 10 + startPos},
+	verifyRange(t, roomIDToVisibleRange, roomA, [2]int64{
+		1 + startPos, 10 + startPos,
 	})
 
 	// For Room B: from=1, to=10, returns { RoomB: [ [5,10] ]}  (tests joining a room starts events)
-	verifyRange(t, roomIDToVisibleRanges, roomB, [][2]int64{
-		{5 + startPos, 10 + startPos},
+	verifyRange(t, roomIDToVisibleRange, roomB, [2]int64{
+		5 + startPos, 10 + startPos,
 	})
 
 	// For Room C: from=1, to=10, returns { RoomC: [ [0,9] ]}  (tests leaving a room stops events)
 	// We start at 0 because it's the earliest event (we were joined since the beginning of the room state)
-	verifyRange(t, roomIDToVisibleRanges, roomC, [][2]int64{
-		{0 + startPos, 9 + startPos},
+	verifyRange(t, roomIDToVisibleRange, roomC, [2]int64{
+		0 + startPos, 9 + startPos,
 	})
 
 	// change the users else we will still have some rooms from A,B,C present if the user is still joined
@@ -465,29 +464,25 @@ func TestVisibleEventNIDsBetween(t *testing.T) {
 		t.Fatalf("LatestEventNID: %s", err)
 	}
 	t.Logf("DE Start=%d Latest=%d", startPos, latestPos)
-	roomIDToVisibleRanges, err = store.VisibleEventNIDsBetween(alice, startPos, latestPos)
+	roomIDToVisibleRange, err = store.VisibleEventNIDsBetween(alice, startPos, latestPos)
 	if err != nil {
 		t.Fatalf("VisibleEventNIDsBetween to %d: %s", latestPos, err)
 	}
-	for roomID, ranges := range roomIDToVisibleRanges {
-		for _, r := range ranges {
-			t.Logf("%v => [%d,%d]", roomID, r[0]-startPos, r[1]-startPos)
-		}
+	for roomID, r := range roomIDToVisibleRange {
+		t.Logf("%v => [%d,%d]", roomID, r[0]-startPos, r[1]-startPos)
 	}
-	if len(roomIDToVisibleRanges) != 2 {
-		t.Errorf("VisibleEventNIDsBetween: wrong number of rooms, want 2 got %+v", roomIDToVisibleRanges)
+	if len(roomIDToVisibleRange) != 2 {
+		t.Errorf("VisibleEventNIDsBetween: wrong number of rooms, want 2 got %+v", roomIDToVisibleRange)
 	}
 
-	// For Room D: from=1, to=15 returns { RoomD: [ [1,6], [8,10] ] } (tests multi-join/leave)
-	verifyRange(t, roomIDToVisibleRanges, roomD, [][2]int64{
-		{1 + startPos, 6 + startPos},
-		{8 + startPos, 10 + startPos},
+	// For Room D: from=1, to=15 returns { RoomD: [ 8,10 ] } (tests multi-join/leave)
+	verifyRange(t, roomIDToVisibleRange, roomD, [2]int64{
+		8 + startPos, 10 + startPos,
 	})
 
-	// For Room E: from=1, to=15 returns { RoomE: [ [3,3], [13,15] ] } (tests invites)
-	verifyRange(t, roomIDToVisibleRanges, roomE, [][2]int64{
-		{3 + startPos, 3 + startPos},
-		{13 + startPos, 15 + startPos},
+	// For Room E: from=1, to=15 returns { RoomE: [ 13,15 ] } (tests invites)
+	verifyRange(t, roomIDToVisibleRange, roomE, [2]int64{
+		13 + startPos, 15 + startPos,
 	})
 
 }
@@ -961,18 +956,13 @@ func sortHeroes(heroes []internal.Hero) []internal.Hero {
 	return heroes
 }
 
-func verifyRange(t *testing.T, result map[string][][2]int64, roomID string, wantRanges [][2]int64) {
+func verifyRange(t *testing.T, result map[string][2]int64, roomID string, wantRange [2]int64) {
 	t.Helper()
-	gotRanges := result[roomID]
-	if gotRanges == nil {
+	gotRange := result[roomID]
+	if gotRange == [2]int64{} {
 		t.Fatalf("no range was returned for room %s", roomID)
 	}
-	if len(gotRanges) != len(wantRanges) {
-		t.Fatalf("%s range count mismatch, got %d ranges, want %d :: GOT=%+v WANT=%+v", roomID, len(gotRanges), len(wantRanges), gotRanges, wantRanges)
-	}
-	for i := range gotRanges {
-		if !reflect.DeepEqual(gotRanges[i], wantRanges[i]) {
-			t.Errorf("%s range at index %d got %v want %v", roomID, i, gotRanges[i], wantRanges[i])
-		}
+	if !reflect.DeepEqual(gotRange, wantRange) {
+		t.Errorf("%s range got %v want %v", roomID, gotRange, wantRange)
 	}
 }

@@ -6,11 +6,13 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"strconv"
 	"testing"
 	"time"
 
 	"github.com/matrix-org/complement/b"
 	"github.com/matrix-org/complement/client"
+	"github.com/matrix-org/complement/must"
 	"github.com/matrix-org/sliding-sync/sync3"
 	"github.com/tidwall/gjson"
 )
@@ -41,6 +43,19 @@ type CSAPI struct {
 	Localpart string
 	Domain    string
 	AvatarURL string
+}
+
+// TODO: put this in Complement at some point? Check usage.
+func (c *CSAPI) Scrollback(t *testing.T, roomID, prevBatch string, limit int) gjson.Result {
+	t.Helper()
+	res := c.MustDo(t, "GET", []string{
+		"_matrix", "client", "v3", "rooms", roomID, "messages",
+	}, client.WithQueries(url.Values{
+		"dir":   []string{"b"},
+		"from":  []string{prevBatch},
+		"limit": []string{strconv.Itoa(limit)},
+	}))
+	return must.ParseJSON(t, res.Body)
 }
 
 // SlidingSync performs a single sliding sync request. Fails on non 2xx
