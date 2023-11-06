@@ -1,9 +1,11 @@
 package syncv3_test
 
 import (
+	"encoding/json"
 	"testing"
 
 	"github.com/matrix-org/complement/b"
+	"github.com/matrix-org/complement/must"
 	"github.com/matrix-org/sliding-sync/sync3"
 	"github.com/matrix-org/sliding-sync/testutils/m"
 )
@@ -12,8 +14,7 @@ import (
 // - Alice invite Bob
 // - Alice send message
 // - Bob join room
-// The proxy returns either:
-// - all 3 events (if allowed by history visibility) OR
+// The proxy returns:
 // - Bob's join only, with a suitable prev_batch token
 // and never:
 // - invite then join, omitting the msg.
@@ -61,8 +62,53 @@ func TestTimelineIsCorrectWhenTransitioningFromInviteToJoin(t *testing.T) {
 	aliceRes = alice.SlidingSyncUntilEventID(t, aliceRes.Pos, roomID, eventID)
 
 	bob.MustJoinRoom(t, roomID, []string{"hs1"})
-	aliceRes = alice.SlidingSyncUntilMembership(t, aliceRes.Pos, roomID, bob, "join")
+	alice.SlidingSyncUntilMembership(t, aliceRes.Pos, roomID, bob, "join")
 
 	bobRes = bob.SlidingSync(t, sync3.Request{}, WithPos(bobRes.Pos))
-	m.MatchResponse(t, bobRes, m.LogResponse(t))
+	m.MatchResponse(t, bobRes, m.MatchRoomSubscriptionsStrict(map[string][]m.RoomMatcher{
+		roomID: {
+			// only the join event, this specifically does a length check
+			MatchRoomTimeline([]Event{
+				{
+					Type:     "m.room.member",
+					StateKey: &bob.UserID,
+					Content: map[string]interface{}{
+						"membership":  "join",
+						"displayname": bob.Localpart,
+					},
+				},
+			}),
+		},
+	}))
+	// pull out the prev batch token and use it to make sure we see the correct timeline
+	prevBatch := bobRes.Rooms[roomID].PrevBatch
+	must.NotEqual(t, prevBatch, "", "missing prev_batch")
+
+	scrollback := bob.Scrollback(t, roomID, prevBatch, 2)
+	// we should only see the message and our invite, in that order
+	chunk := scrollback.Get("chunk").Array()
+	var sbEvents []json.RawMessage
+	for _, e := range chunk {
+		sbEvents = append(sbEvents, json.RawMessage(e.Raw))
+	}
+	must.Equal(t, len(chunk), 2, "chunk length mismatch")
+	must.NotError(t, "chunk mismatch", eventsEqual([]Event{
+		{
+			Type:   "m.room.message",
+			Sender: alice.UserID,
+			Content: map[string]interface{}{
+				"msgtype": "m.text",
+				"body":    "After invite, before join",
+			},
+		},
+		{
+			Type:     "m.room.member",
+			Sender:   alice.UserID,
+			StateKey: &bob.UserID,
+			Content: map[string]interface{}{
+				"membership":  "invite",
+				"displayname": bob.Localpart,
+			},
+		},
+	}, sbEvents))
 }
