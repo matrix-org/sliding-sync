@@ -844,7 +844,6 @@ func (h *SyncLiveHandler) OnInvalidateRoom(p *pubsub.V2InvalidateRoom) {
 	involvedUsers = append(involvedUsers, invites...)
 	involvedUsers = append(involvedUsers, leaves...)
 
-	// 2. Reload the joined-room tracker.
 	if err != nil {
 		hub := internal.GetSentryHubFromContextOrDefault(ctx)
 		hub.WithScope(func(scope *sentry.Scope) {
@@ -856,8 +855,10 @@ func (h *SyncLiveHandler) OnInvalidateRoom(p *pubsub.V2InvalidateRoom) {
 		logger.Err(err).
 			Str("room_id", p.RoomID).
 			Msg("Failed to fetch members after cache invalidation")
+		return
 	}
 
+	// 2. Reload the joined-room tracker.
 	h.Dispatcher.OnInvalidateRoom(p.RoomID, joins, invites)
 
 	// 3. Destroy involved users' caches.
