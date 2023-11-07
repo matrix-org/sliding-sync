@@ -181,17 +181,21 @@ func (m *ConnMap) connIDsForDevice(userID, deviceID string) []ConnID {
 	return connIDs
 }
 
-// CloseConnsForUser closes all conns for a given user. Returns the number of conns closed.
-func (m *ConnMap) CloseConnsForUser(userID string) int {
+// CloseConnsForUsers closes all conns for a given slice of users. Returns the number of
+// conns closed.
+func (m *ConnMap) CloseConnsForUsers(userIDs []string) (closed int) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	conns := m.userIDToConn[userID]
-	logger.Trace().Str("user", userID).Int("num_conns", len(conns)).Msg("closing all device connections due to CloseConn()")
+	for _, userID := range userIDs {
+		conns := m.userIDToConn[userID]
+		logger.Trace().Str("user", userID).Int("num_conns", len(conns)).Msg("closing all device connections due to CloseConn()")
 
-	for _, cid := range conns {
-		m.cache.Remove(cid.String()) // this will fire TTL callbacks which calls closeConn
+		for _, conn := range conns {
+			m.cache.Remove(conn.String()) // this will fire TTL callbacks which calls closeConn
+		}
+		closed += len(conns)
 	}
-	return len(conns)
+	return closed
 }
 
 func (m *ConnMap) closeConnExpires(connID string, value interface{}) {

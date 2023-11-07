@@ -869,10 +869,8 @@ func (h *SyncLiveHandler) OnInvalidateRoom(p *pubsub.V2InvalidateRoom) {
 	}
 
 	// 4. Destroy involved users' connections.
-	var destroyed int
-	for _, userID := range involvedUsers {
-		destroyed += h.ConnMap.CloseConnsForUser(userID)
-	}
+	// Since creating a conn creates a user cache, it is safe to loop over
+	destroyed := h.ConnMap.CloseConnsForUsers(unregistered)
 	if h.destroyedConns != nil {
 		h.destroyedConns.Add(float64(destroyed))
 	}
