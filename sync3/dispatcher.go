@@ -55,10 +55,22 @@ func (d *Dispatcher) Startup(roomToJoinedUsers map[string][]string) error {
 	return nil
 }
 
-func (d *Dispatcher) Unregister(userID string) {
+// UnregisterBulk accepts a slice of user IDs to unregister. The given users need not
+// already be registered (in which case unregistering them is a no-op). Returns the
+// list of users that were unregistered.
+func (d *Dispatcher) UnregisterBulk(userIDs []string) []string {
 	d.userToReceiverMu.Lock()
 	defer d.userToReceiverMu.Unlock()
-	delete(d.userToReceiver, userID)
+
+	unregistered := make([]string)
+	for _, userID := range userIDs {
+		_, exists := d.userToReceiver[userID]
+		if exists {
+			delete(d.userToReceiver, userID)
+			unregistered = append(unregistered, userID)
+		}
+	}
+	return unregistered
 }
 
 func (d *Dispatcher) Register(ctx context.Context, userID string, r Receiver) error {

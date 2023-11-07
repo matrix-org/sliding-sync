@@ -862,8 +862,9 @@ func (h *SyncLiveHandler) OnInvalidateRoom(p *pubsub.V2InvalidateRoom) {
 	h.Dispatcher.OnInvalidateRoom(p.RoomID, joins, invites)
 
 	// 3. Destroy involved users' caches.
-	for _, userID := range involvedUsers {
-		h.Dispatcher.Unregister(userID)
+	// We filter to only those users which had a userCache registered to receive updates.
+	unregistered := h.Dispatcher.UnregisterBulk(involvedUsers)
+	for _, userID := range unregistered {
 		h.userCaches.Delete(userID)
 	}
 
