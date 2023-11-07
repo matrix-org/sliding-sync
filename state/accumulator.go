@@ -255,8 +255,9 @@ func (a *Accumulator) Initialise(roomID string, state []json.RawMessage) (Initia
 			}
 		} else {
 			currentState = stateMap{
+				// Typically expect Other to be small, but Memberships may be large (think: Matrix HQ.)
 				Memberships: make(map[string]int64, len(events)),
-				Other:       make(map[[2]string]int64, len(events)),
+				Other:       make(map[[2]string]int64),
 			}
 		}
 
