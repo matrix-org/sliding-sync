@@ -800,7 +800,8 @@ func (p *poller) parseRoomsResponse(ctx context.Context, res *SyncResponse) erro
 					// so check if that is the case here. See https://github.com/matrix-org/complement/pull/690
 					var createEvent json.RawMessage
 					for i, ev := range roomData.Timeline.Events {
-						if gjson.ParseBytes(ev).Get("type").Str == "m.room.create" {
+						evv := gjson.ParseBytes(ev)
+						if evv.Get("type").Str == "m.room.create" && evv.Get("state_key").Exists() && evv.Get("state_key").Str == "" {
 							createEvent = roomData.Timeline.Events[i]
 							// remove the create event from the timeline so we don't double process it
 							roomData.Timeline.Events = append(roomData.Timeline.Events[:i], roomData.Timeline.Events[i+1:]...)
@@ -812,7 +813,7 @@ func (p *poller) parseRoomsResponse(ctx context.Context, res *SyncResponse) erro
 						// retry the processing of the room state
 						prependStateEvents, err = p.receiver.Initialise(ctx, roomID, roomData.State.Events)
 						if err == nil {
-							const warnMsg = "parseRoomsResponse: m.room.create event was found in the timeline not state"
+							const warnMsg = "parseRoomsResponse: m.room.create event was found in the timeline not state, info after moving create event"
 							logger.Warn().Str("user_id", p.userID).Str("room_id", roomID).Int(
 								"timeline", len(roomData.Timeline.Events),
 							).Int("state", len(roomData.State.Events)).Msg(warnMsg)
