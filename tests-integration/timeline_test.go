@@ -6,8 +6,11 @@ import (
 	"testing"
 	"time"
 
+	"github.com/jmoiron/sqlx"
 	slidingsync "github.com/matrix-org/sliding-sync"
 
+	"github.com/matrix-org/sliding-sync/sqlutil"
+	"github.com/matrix-org/sliding-sync/state"
 	"github.com/matrix-org/sliding-sync/sync2"
 	"github.com/matrix-org/sliding-sync/sync3"
 	"github.com/matrix-org/sliding-sync/testutils"
@@ -1334,4 +1337,70 @@ func TestNumLiveBulk(t *testing.T) {
 			},
 		},
 	))
+}
+
+// Regression test for a thing which Synapse can sometimes send down sync v2.
+// See https://github.com/matrix-org/sliding-sync/issues/367
+// This would cause this room to not be processed at all, which is bad.
+func TestSeeCreateEvent(t *testing.T) {
+	// setup code
+	pqString := testutils.PrepareDBConnectionString()
+	db, err := sqlx.Open("postgres", pqString)
+	if err != nil {
+		t.Fatalf("failed to open postgres: %s", err)
+	}
+	v2 := runTestV2Server(t)
+	v3 := runTestServer(t, v2, pqString)
+	defer v2.close()
+	defer v3.close()
+
+	roomID := "!TestSeeCreateEvent:localhost"
+	userID := "@TestSeeCreateEvent:localhost"
+	token := "TestSeeCreateEvent_TOKEN"
+	v2.addAccount(t, userID, token)
+	v2.queueResponse(userID, sync2.SyncResponse{
+		Rooms: sync2.SyncRoomsResponse{
+			Join: map[string]sync2.SyncV2JoinResponse{
+				roomID: {
+					State: sync2.EventsResponse{
+						Events: []json.RawMessage{
+							testutils.NewStateEvent(t, "m.room.join_rules", "", "@someone:somewhere", map[string]interface{}{"join_rule": "invite"}),
+							testutils.NewStateEvent(t, "m.room.power_levels", "", "@someone:somewhere", map[string]interface{}{"users_default": 0}),
+							testutils.NewStateEvent(t, "m.room.history_visibility", "", "@someone:somewhere", map[string]interface{}{"history_visibility": "shared"}),
+						},
+					},
+					Timeline: sync2.TimelineResponse{
+						Events: []json.RawMessage{
+							testutils.NewStateEvent(t, "m.room.create", "", "@someone:somewhere", map[string]interface{}{"room_version": "10"}),
+							testutils.NewJoinEvent(t, "@someone:somewhere"),
+							testutils.NewJoinEvent(t, "@someone2:somewhere"),
+						},
+					},
+				},
+			},
+		},
+	})
+	v3.mustDoV3Request(t, token, sync3.Request{})
+	// ensure the room exists
+	roomsTable := state.NewRoomsTable(db)
+	err = sqlutil.WithTransaction(db, func(txn *sqlx.Tx) error {
+		nids, err := roomsTable.LatestNIDs(txn, []string{roomID})
+		if err != nil {
+			t.Fatalf("LatestNIDs: %s", err)
+		}
+		if len(nids) != 1 {
+			t.Fatalf("LatestNIDs missing: %+v", nids)
+		}
+		nid, ok := nids[roomID]
+		if !ok {
+			t.Fatalf("LatestNIDs missing room %s : %+v", roomID, nids)
+		}
+		if nid == 0 {
+			t.Fatalf("LatestNIDs 0 nid for room %s", roomID)
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("WithTransaction: %s", err)
+	}
 }
