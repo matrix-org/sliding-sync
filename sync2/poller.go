@@ -10,6 +10,8 @@ import (
 	"sync/atomic"
 	"time"
 
+	"golang.org/x/exp/slices"
+
 	"github.com/getsentry/sentry-go"
 
 	"github.com/matrix-org/sliding-sync/internal"
@@ -791,8 +793,47 @@ func (p *poller) parseRoomsResponse(ctx context.Context, res *SyncResponse) erro
 			stateCalls++
 			prependStateEvents, err := p.receiver.Initialise(ctx, roomID, roomData.State.Events)
 			if err != nil {
-				lastErrs = append(lastErrs, fmt.Errorf("Initialise[%s]: %w", roomID, err))
-				continue
+				_, ok := err.(*internal.DataError)
+				if ok {
+					// This typically happens when we are missing an m.room.create event.
+					// Synapse may sometimes send the m.room.create event erroneously in the timeline,
+					// so check if that is the case here. See https://github.com/matrix-org/complement/pull/690
+					var createEvent json.RawMessage
+					for i, ev := range roomData.Timeline.Events {
+						if gjson.ParseBytes(ev).Get("type").Str == "m.room.create" {
+							createEvent = roomData.Timeline.Events[i]
+							// remove the create event from the timeline so we don't double process it
+							roomData.Timeline.Events = append(roomData.Timeline.Events[:i], roomData.Timeline.Events[i+1:]...)
+							break
+						}
+					}
+					if createEvent != nil {
+						roomData.State.Events = slices.Insert(roomData.State.Events, 0, createEvent)
+						// retry the processing of the room state
+						prependStateEvents, err = p.receiver.Initialise(ctx, roomID, roomData.State.Events)
+						if err == nil {
+							const warnMsg = "parseRoomsResponse: m.room.create event was found in the timeline not state"
+							logger.Warn().Str("user_id", p.userID).Str("room_id", roomID).Int(
+								"timeline", len(roomData.Timeline.Events),
+							).Int("state", len(roomData.State.Events)).Msg(warnMsg)
+							hub := internal.GetSentryHubFromContextOrDefault(ctx)
+							hub.WithScope(func(scope *sentry.Scope) {
+								scope.SetContext(internal.SentryCtxKey, map[string]interface{}{
+									"room_id":  roomID,
+									"timeline": len(roomData.Timeline.Events),
+									"state":    len(roomData.State.Events),
+								})
+								hub.CaptureMessage(warnMsg)
+							})
+						}
+					}
+				}
+				// either err isn't a data error OR we retried Initialise and it still returned an error
+				// either way, give up.
+				if err != nil {
+					lastErrs = append(lastErrs, fmt.Errorf("Initialise[%s]: %w", roomID, err))
+					continue
+				}
 			}
 			if len(prependStateEvents) > 0 {
 				// The poller has just learned of these state events due to an
