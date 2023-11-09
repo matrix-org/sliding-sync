@@ -33,7 +33,7 @@ func upClearStuckInvites(ctx context.Context, tx *sql.Tx) error {
 		WHERE room_id NOT IN (
 			SELECT room_id
 			FROM syncv3_rooms
-		) GROUP BY user_id
+		)
 	`)
 	defer rows.Close()
 	if err != nil {

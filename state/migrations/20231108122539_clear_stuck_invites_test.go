@@ -209,4 +209,24 @@ func TestClearStuckInvites(t *testing.T) {
 			t.Fatalf("SelectAllInvitesForUser got invites for %s, wanted none: %+v", userID, got)
 		}
 	}
+	// ensure other invites remain
+	wantInvites := map[string][]string{
+		alice:   {roomA},
+		charlie: {roomC},
+	}
+	for userID, wantInvitesRooms := range wantInvites {
+		got, err := inviteTable.SelectAllInvitesForUser(userID)
+		if err != nil {
+			t.Fatalf("SelectAllInvitesForUser: %s", err)
+		}
+		if len(got) != len(wantInvitesRooms) {
+			t.Fatalf("SelectAllInvitesForUser got %d invites for %s, wanted %d", len(got), userID, len(wantInvitesRooms))
+		}
+		for _, wantRoom := range wantInvitesRooms {
+			_, exists := got[wantRoom]
+			if !exists {
+				t.Fatalf("SelectAllInvitesForUser wanted invite for %s in %s, but it's missing", userID, wantRoom)
+			}
+		}
+	}
 }
