@@ -8,7 +8,7 @@ This describes which proxy versions implement which version of the API drafted
 in MSC3575. See https://github.com/matrix-org/sliding-sync/releases for the
 changes in the proxy itself.
 
-As of v0.99.7, the proxy implements [this version of the MSC](https://github.com/matrix-org/matrix-spec-proposals/blob/71fb1a2e3780ae07e03850d96ce3bad59305986e/proposals/3575-sync.md) with the following exceptions:
+As of v0.99.12, the proxy implements [this version of the MSC](https://github.com/matrix-org/matrix-spec-proposals/blob/9450ced7fb9cf5ea9077d029b3adf36aebfa8709/proposals/3575-sync.md) with the following exceptions:
  - the `limited` flag is not set in responses.
  - Delta tokens are unsupported.
 
