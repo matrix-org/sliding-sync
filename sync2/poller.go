@@ -814,7 +814,7 @@ func (p *poller) parseRoomsResponse(ctx context.Context, res *SyncResponse) erro
 					if createEvent != nil {
 						roomData.State.Events = slices.Insert(roomData.State.Events, 0, createEvent)
 						// retry the processing of the room state
-						prependStateEvents, err = p.receiver.Initialise(ctx, roomID, roomData.State.Events)
+						err = p.receiver.Initialise(ctx, roomID, roomData.State.Events)
 						if err == nil {
 							const warnMsg = "parseRoomsResponse: m.room.create event was found in the timeline not state, info after moving create event"
 							logger.Warn().Str("user_id", p.userID).Str("room_id", roomID).Int(
