@@ -1,6 +1,7 @@
 package syncv3_test
 
 import (
+	"encoding/json"
 	"fmt"
 	"testing"
 
@@ -65,10 +66,21 @@ func TestGappyState(t *testing.T) {
 		Content:  nameContent,
 	})
 
-	t.Log("Alice sends lots of message events (more than the poller will request in a timeline.")
-	var latestMessageID string
-	for i := 0; i < 51; i++ {
-		latestMessageID = alice.Unsafe_SendEventUnsynced(t, roomID, b.Event{
+	t.Log("Alice sends lots of other state events.")
+	const numOtherState = 40
+	for i := 0; i < numOtherState; i++ {
+    alice.Unsafe_SendEventUnsynced(t, roomID, b.Event{
+      Type: "com.example.dummy",
+      StateKey: ptr(fmt.Sprintf("%d", i)),
+      Content: map[string]any{},
+    })
+	}
+
+	t.Log("Alice sends a batch of message events.")
+	const numMessages = 20
+	var lastMsgID string
+	for i := 0; i < numMessages; i++ {
+		lastMsgID = alice.Unsafe_SendEventUnsynced(t, roomID, b.Event{
 			Type: "m.room.message",
 			Content: map[string]interface{}{
 				"msgtype": "m.text",
@@ -77,28 +89,50 @@ func TestGappyState(t *testing.T) {
 		})
 	}
 
-	t.Log("Alice requests an initial sliding sync on device 2.")
+	t.Logf("The proxy is now %d events behind the HS, which should trigger a limited sync", 1+numOtherState+numMessages)
+
+	t.Log("Alice requests an initial sliding sync on device 2, with timeline limit big enough to see her first message at the start of the test.")
 	syncResp = alice.SlidingSync(t,
 		sync3.Request{
 			Lists: map[string]sync3.RequestList{
 				"a": {
 					Ranges: [][2]int64{{0, 20}},
 					RoomSubscription: sync3.RoomSubscription{
-						TimelineLimit: 10,
+						TimelineLimit: 100,
 					},
 				},
 			},
 		},
 	)
 
-	t.Log("She should see her latest message with the room name updated")
+	// We're testing here that the state events from the gappy poll are NOT injected
+	// into the timeline. The poll is only going to use timeline limit 1 because it's
+	// the first poll on a new device. See integration test for a "proper" gappy poll.
+	t.Log("She should see the updated room name, her most recent message, but NOT the state events in the gap nor messages from before the gap.")
 	m.MatchResponse(
 		t,
 		syncResp,
 		m.MatchRoomSubscription(
 			roomID,
 			m.MatchRoomName("potato"),
-			MatchRoomTimelineMostRecent(1, []Event{{ID: latestMessageID}}),
+			MatchRoomTimelineMostRecent(1, []Event{{ID: lastMsgID}}),
+			func(r sync3.Room) error {
+				for _, rawEv := range r.Timeline {
+					var ev Event
+					err := json.Unmarshal(rawEv, &ev)
+					if err != nil {
+						t.Fatal(err)
+					}
+					// Shouldn't see the state events, only messages
+					if ev.Type != "m.room.message" {
+						return fmt.Errorf("timeline contained event %s of type %s (expected m.room.message)", ev.ID, ev.Type)
+					}
+					if ev.ID == firstMessageID {
+						return fmt.Errorf("timeline contained first message from before the gap")
+					}
+				}
+				return nil
+			},
 		),
 	)
 }

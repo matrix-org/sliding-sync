@@ -24,7 +24,6 @@ type Receiver interface {
 	OnNewEvent(ctx context.Context, event *caches.EventData)
 	OnReceipt(ctx context.Context, receipt internal.Receipt)
 	OnEphemeralEvent(ctx context.Context, roomID string, ephEvent json.RawMessage)
-	OnInvalidateRoom(ctx context.Context, roomID string)
 	// OnRegistered is called after a successful call to Dispatcher.Register
 	OnRegistered(ctx context.Context) error
 }
@@ -60,6 +59,24 @@ func (d *Dispatcher) Unregister(userID string) {
 	d.userToReceiverMu.Lock()
 	defer d.userToReceiverMu.Unlock()
 	delete(d.userToReceiver, userID)
+}
+
+// UnregisterBulk accepts a slice of user IDs to unregister. The given users need not
+// already be registered (in which case unregistering them is a no-op). Returns the
+// list of users that were unregistered.
+func (d *Dispatcher) UnregisterBulk(userIDs []string) []string {
+	d.userToReceiverMu.Lock()
+	defer d.userToReceiverMu.Unlock()
+
+	unregistered := make([]string, 0)
+	for _, userID := range userIDs {
+		_, exists := d.userToReceiver[userID]
+		if exists {
+			delete(d.userToReceiver, userID)
+			unregistered = append(unregistered, userID)
+		}
+	}
+	return unregistered
 }
 
 func (d *Dispatcher) Register(ctx context.Context, userID string, r Receiver) error {
@@ -276,22 +293,7 @@ func (d *Dispatcher) notifyListeners(ctx context.Context, ed *caches.EventData, 
 	}
 }
 
-func (d *Dispatcher) OnInvalidateRoom(ctx context.Context, roomID string) {
-	// First dispatch to the global cache.
-	receiver, ok := d.userToReceiver[DispatcherAllUsers]
-	if !ok {
-		logger.Error().Msgf("No receiver for global cache")
-	}
-	receiver.OnInvalidateRoom(ctx, roomID)
-
-	// Then dispatch to any users who are joined to that room.
-	joinedUsers, _ := d.jrt.JoinedUsersForRoom(roomID, nil)
-	d.userToReceiverMu.RLock()
-	defer d.userToReceiverMu.RUnlock()
-	for _, userID := range joinedUsers {
-		receiver = d.userToReceiver[userID]
-		if receiver != nil {
-			receiver.OnInvalidateRoom(ctx, roomID)
-		}
-	}
+func (d *Dispatcher) OnInvalidateRoom(roomID string, joins, invites []string) {
+	// Reset the joined room tracker.
+	d.jrt.ReloadMembershipsForRoom(roomID, joins, invites)
 }

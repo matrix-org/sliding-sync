@@ -367,6 +367,8 @@ func (s *Storage) ResetMetadataState(metadata *internal.RoomMetadata) error {
 
 	// For now, don't bother reloading Encrypted, PredecessorID and UpgradedRoomID.
 	// These shouldn't be changing during a room's lifetime in normal operation.
+
+	// We haven't updated LatestEventsByType because that's not part of the timeline.
 	return nil
 }
 
