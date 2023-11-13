@@ -4,3 +4,4 @@ node_modules
 # Go workspaces
 go.work
 go.work.sum
+.idea

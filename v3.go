@@ -4,7 +4,10 @@ import (
 	"context"
 	"embed"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io/fs"
+	"net"
 	"net/http"
 	"os"
 	"strings"
@@ -216,18 +219,40 @@ func RunSyncV3Server(h http.Handler, bindAddr, destV2Server, tlsCert, tlsKey str
 
 	// Block forever
 	var err error
-	if tlsCert != "" && tlsKey != "" {
-		logger.Info().Msgf("listening TLS on %s", bindAddr)
-		err = http.ListenAndServeTLS(bindAddr, tlsCert, tlsKey, srv)
+	if strings.HasPrefix(bindAddr, "/") {
+		logger.Info().Msgf("listening on unix socket %s", bindAddr)
+		listener := unixSocketListener(bindAddr)
+		err = http.Serve(listener, srv)
 	} else {
-		logger.Info().Msgf("listening on %s", bindAddr)
-		err = http.ListenAndServe(bindAddr, srv)
+		if tlsCert != "" && tlsKey != "" {
+			logger.Info().Msgf("listening TLS on %s", bindAddr)
+			err = http.ListenAndServeTLS(bindAddr, tlsCert, tlsKey, srv)
+		} else {
+			logger.Info().Msgf("listening on %s", bindAddr)
+			err = http.ListenAndServe(bindAddr, srv)
+		}
 	}
 	if err != nil {
 		sentry.CaptureException(err)
 		// TODO: Fatal() calls os.Exit. Will that give time for sentry.Flush() to run?
 		logger.Fatal().Err(err).Msg("failed to listen and serve")
 	}
+}
+
+func unixSocketListener(bindAddr string) net.Listener {
+	err := os.Remove(bindAddr)
+	if err != nil && !errors.Is(err, fs.ErrNotExist) {
+		logger.Fatal().Err(err).Msg("failed to remove existing unix socket")
+	}
+	listener, err := net.Listen("unix", bindAddr)
+	if err != nil {
+		logger.Fatal().Err(err).Msg("failed to serve unix socket")
+	}
+	err = os.Chmod(bindAddr, 0755)
+	if err != nil {
+		logger.Fatal().Err(err).Msg("failed to set unix socket permissions")
+	}
+	return listener
 }
 
 type HandlerError struct {
