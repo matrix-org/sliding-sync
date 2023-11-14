@@ -7,10 +7,8 @@ import (
 	"sync"
 
 	"github.com/getsentry/sentry-go"
-	"github.com/jmoiron/sqlx"
 
 	"github.com/matrix-org/sliding-sync/internal"
-	"github.com/matrix-org/sliding-sync/sqlutil"
 	"github.com/matrix-org/sliding-sync/state"
 	"github.com/tidwall/gjson"
 	"github.com/tidwall/sjson"
@@ -177,6 +175,12 @@ type UserCacheListener interface {
 	OnUpdate(ctx context.Context, up Update)
 }
 
+// Subset of store functions used by the user cache
+type UserCacheStore interface {
+	LatestEventsInRooms(userID string, roomIDs []string, to int64, limit int) (map[string]*state.LatestEvents, error)
+	GetClosestPrevBatch(roomID string, eventNID int64) (prevBatch string)
+}
+
 // Tracks data specific to a given user. Specifically, this is the map of room ID to UserRoomData.
 // This data is user-scoped, not global or connection scoped.
 type UserCache struct {
@@ -187,14 +191,14 @@ type UserCache struct {
 	listeners                 map[int]UserCacheListener
 	listenersMu               *sync.RWMutex
 	id                        int
-	store                     *state.Storage
+	store                     UserCacheStore
 	globalCache               *GlobalCache
 	txnIDs                    TransactionIDFetcher
 	ignoredUsers              map[string]struct{}
 	ignoredUsersMu            *sync.RWMutex
 }
 
-func NewUserCache(userID string, globalCache *GlobalCache, store *state.Storage, txnIDs TransactionIDFetcher) *UserCache {
+func NewUserCache(userID string, globalCache *GlobalCache, store UserCacheStore, txnIDs TransactionIDFetcher) *UserCache {
 	// see SyncLiveHandler.userCache for the initialisation proper, which works by
 	// firing off a bunch of OnBlahBlah callbacks.
 	uc := &UserCache{
@@ -419,12 +423,7 @@ func (c *UserCache) Invites() map[string]UserRoomData {
 
 // AttemptToFetchPrevBatch tries to find a prev_batch value for the given event. This may not always succeed.
 func (c *UserCache) AttemptToFetchPrevBatch(roomID string, firstTimelineEvent *EventData) (prevBatch string) {
-	var err error
-	sqlutil.WithTransaction(c.store.DB, func(txn *sqlx.Tx) error {
-		prevBatch, err = c.store.EventsTable.SelectClosestPrevBatch(txn, roomID, firstTimelineEvent.NID)
-		return err
-	})
-	return
+	return c.store.GetClosestPrevBatch(roomID, firstTimelineEvent.NID)
 }
 
 // AnnotateWithTransactionIDs should be called just prior to returning events to the client. This

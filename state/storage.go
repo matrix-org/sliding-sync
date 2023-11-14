@@ -753,6 +753,16 @@ func (s *Storage) LatestEventsInRooms(userID string, roomIDs []string, to int64,
 	return result, err
 }
 
+func (s *Storage) GetClosestPrevBatch(roomID string, eventNID int64) (prevBatch string) {
+	var err error
+	sqlutil.WithTransaction(s.DB, func(txn *sqlx.Tx) error {
+		// discard the error, we don't care if we fail as it's best effort
+		prevBatch, err = s.EventsTable.SelectClosestPrevBatch(txn, roomID, eventNID)
+		return err
+	})
+	return
+}
+
 // visibleEventNIDsBetweenForRooms determines which events a given user has permission to see.
 // It accepts a nid range [from, to]. For each given room, it calculates the NID range
 // [A1, B1] within [from, to] in which the user has permission to see events.
