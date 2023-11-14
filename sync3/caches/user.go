@@ -7,8 +7,10 @@ import (
 	"sync"
 
 	"github.com/getsentry/sentry-go"
+	"github.com/jmoiron/sqlx"
 
 	"github.com/matrix-org/sliding-sync/internal"
+	"github.com/matrix-org/sliding-sync/sqlutil"
 	"github.com/matrix-org/sliding-sync/state"
 	"github.com/tidwall/gjson"
 	"github.com/tidwall/sjson"
@@ -413,6 +415,16 @@ func (c *UserCache) Invites() map[string]UserRoomData {
 		invites[roomID] = urd
 	}
 	return invites
+}
+
+// AttemptToFetchPrevBatch tries to find a prev_batch value for the given event. This may not always succeed.
+func (c *UserCache) AttemptToFetchPrevBatch(roomID string, firstTimelineEvent *EventData) (prevBatch string) {
+	var err error
+	sqlutil.WithTransaction(c.store.DB, func(txn *sqlx.Tx) error {
+		prevBatch, err = c.store.EventsTable.SelectClosestPrevBatch(txn, roomID, firstTimelineEvent.NID)
+		return err
+	})
+	return
 }
 
 // AnnotateWithTransactionIDs should be called just prior to returning events to the client. This

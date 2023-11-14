@@ -6,8 +6,11 @@ import (
 	"testing"
 	"time"
 
+	"golang.org/x/exp/slices"
+
 	"github.com/matrix-org/complement/b"
 	"github.com/matrix-org/complement/client"
+	"github.com/matrix-org/complement/must"
 	"github.com/matrix-org/sliding-sync/sync3"
 	"github.com/matrix-org/sliding-sync/testutils/m"
 )
@@ -181,29 +184,39 @@ func TestRejoining(t *testing.T) {
 		},
 	}))
 
-	/*
-		// pull out the prev_batch and check we can backpaginate correctly
-		prevBatch := res.Rooms[roomID].PrevBatch
-		must.NotEqual(t, prevBatch, "", "missing prev_batch")
-		numScrollbackItems := 10
-		scrollback := alice.Scrollback(t, roomID, prevBatch, numScrollbackItems)
-		chunk := scrollback.Get("chunk").Array()
-		var sbEvents []json.RawMessage
-		for _, e := range chunk {
-			sbEvents = append(sbEvents, json.RawMessage(e.Raw))
-		}
-		must.Equal(t, len(chunk), 10, "chunk length mismatch")
-		var wantTimeline []Event
-		for i := 0; i < numScrollbackItems; i++ {
-			wantTimeline = append(wantTimeline, Event{
-				Type: "m.room.message",
-				Content: map[string]interface{}{
-					"msgtype": "m.text",
-					"body":    fmt.Sprintf("message %d", 40+i), // 40-49
-				},
-			})
-		}
-		must.NotError(t, "chunk mismatch", eventsEqual(wantTimeline, sbEvents)) */
+	// This response will not return a prev_batch token for the rejoin because the poller has already started,
+	// so will be using a timeline limit of 50. This means the prev_batch from sync v2 will be for the N-50th
+	// event, and SS wants to return a prev_batch for N-1th event (the join), but cannot. Subsequent events
+	// will have a prev_batch though, so trigger one now. This also conveniently makes sure that alice is joined
+	// to the room still.
+	eventID := sendMessage(t, alice, roomID, "give me a prev batch please")
+	res = alice.SlidingSyncUntilEvent(t, res.Pos, sync3.Request{}, roomID, Event{ID: eventID})
+	m.MatchResponse(t, res, m.LogResponse(t))
+
+	// pull out the prev_batch and check we can backpaginate correctly
+	prevBatch := res.Rooms[roomID].PrevBatch
+	must.NotEqual(t, prevBatch, "", "missing prev_batch")
+	numScrollbackItems := 10
+	scrollback := alice.Scrollback(t, roomID, prevBatch, numScrollbackItems)
+	chunk := scrollback.Get("chunk").Array()
+	var sbEvents []json.RawMessage
+	for _, e := range chunk {
+		sbEvents = append(sbEvents, json.RawMessage(e.Raw))
+	}
+	must.Equal(t, len(chunk), 10, "chunk length mismatch")
+	var wantTimeline []Event
+	for i := 0; i < (numScrollbackItems - 1); i++ {
+		wantTimeline = append(wantTimeline, Event{
+			Type: "m.room.message",
+			Content: map[string]interface{}{
+				"msgtype": "m.text",
+				"body":    fmt.Sprintf("message %d", 41+i), // 40-49
+			},
+		})
+	}
+	wantTimeline = append(wantTimeline, aliceJoin)
+	slices.Reverse(wantTimeline) // /messages returns in reverse chronological order
+	must.NotError(t, "chunk mismatch", eventsEqual(wantTimeline, sbEvents))
 
 }
 
