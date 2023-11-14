@@ -62,6 +62,9 @@ func (c *CSAPI) Scrollback(t *testing.T, roomID, prevBatch string, limit int) gj
 func (c *CSAPI) SlidingSync(t *testing.T, data sync3.Request, opts ...client.RequestOpt) (resBody *sync3.Response) {
 	t.Helper()
 	res := c.DoSlidingSync(t, data, opts...)
+	if res.StatusCode != 200 {
+		t.Fatalf("SlidingSync returned %v", res.Status)
+	}
 	body := client.ParseJSON(t, res)
 	if err := json.Unmarshal(body, &resBody); err != nil {
 		t.Fatalf("failed to unmarshal response: %v", err)
@@ -194,7 +197,8 @@ func (c *CSAPI) SlidingSyncUntilEvent(t *testing.T, pos string, data sync3.Reque
 				return nil
 			}
 		}
-		return fmt.Errorf("found room %s but missing event", roomID)
+		b, _ := json.Marshal(room.Timeline)
+		return fmt.Errorf("found room %s but missing event, timeline=%v", roomID, string(b))
 	})
 }
 
