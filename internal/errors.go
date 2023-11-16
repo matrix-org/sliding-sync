@@ -76,7 +76,7 @@ func ExpiredSessionError() *HandlerError {
 // An optional debugContext map can be provided. If it is present and sentry is configured,
 // it is added as context to the sentry events generated for failed assertions.
 func Assert(msg string, expr bool, debugContext ...map[string]interface{}) {
-	assert(msg, expr)
+	assertCustom(msg, expr)
 	if !expr {
 		sentry.WithScope(func(scope *sentry.Scope) {
 			if len(debugContext) > 0 {
@@ -90,13 +90,13 @@ func Assert(msg string, expr bool, debugContext ...map[string]interface{}) {
 // AssertWithContext is a version of Assert that associates any sentry events with a
 // request context.
 func AssertWithContext(ctx context.Context, msg string, expr bool) {
-	assert(msg, expr)
+	assertCustom(msg, expr)
 	if !expr {
 		GetSentryHubFromContextOrDefault(ctx).CaptureException(fmt.Errorf("assertion failed: %s", msg))
 	}
 }
 
-func assert(msg string, expr bool) {
+func assertCustom(msg string, expr bool) {
 	if expr {
 		return
 	}

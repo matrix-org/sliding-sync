@@ -4,11 +4,11 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/matrix-org/sliding-sync/internal"
 	"io"
 	"net"
 	"net/http"
 	"net/url"
-	"strings"
 	"time"
 
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
@@ -41,24 +41,20 @@ type HTTPClient struct {
 }
 
 func NewHTTPClient(shortTimeout, longTimeout time.Duration, destHomeServer string) *HTTPClient {
-	baseUrl := destHomeServer
-	if strings.HasPrefix(destHomeServer, "/") {
-	     baseUrl = "http://unix"
-	}
-
+	hsUrl := internal.HomeServerUrl{HttpOrUnixStr: destHomeServer}
 	return &HTTPClient{
-		LongTimeoutClient: newClient(longTimeout, destHomeServer),
-		Client:            newClient(shortTimeout, destHomeServer),
-		DestinationServer: baseUrl,
+		LongTimeoutClient: newClient(longTimeout, hsUrl),
+		Client:            newClient(shortTimeout, hsUrl),
+		DestinationServer: hsUrl.GetBaseUrl(),
 	}
 }
 
-func newClient(timeout time.Duration, destHomeServer string) *http.Client {
+func newClient(timeout time.Duration, url internal.HomeServerUrl) *http.Client {
 	transport := http.DefaultTransport
-	if strings.HasPrefix(destHomeServer, "/") {
+	if url.IsUnixSocket() {
 		transport = &http.Transport{
 			DialContext: func(_ context.Context, _, _ string) (net.Conn, error) {
-				return net.Dial("unix", destHomeServer)
+				return net.Dial("unix", url.GetUnixSocket())
 			},
 		}
 	}
