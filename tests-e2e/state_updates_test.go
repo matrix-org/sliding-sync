@@ -49,7 +49,10 @@ func TestRejoining(t *testing.T) {
 			roomID: {
 				m.MatchJoinCount(2),
 				m.MatchRoomName(bob.Localpart),
-				// despite asking for 5 timeline events, we only get 1 on the initial sync so prev_batch is correct
+				// The sliding sync request we just did was the first ever SS request for Alice.
+				// This means the proxy will do an initial v2 request.
+				// Despite asking for 5 timeline events, we only get 1 on the initial sync due to how the sync v2 filters are setup.
+				// They are set up that way to ensure that prev_batch is always valid, when it is returned.
 				MatchRoomTimeline([]Event{
 					{
 						ID: firstTopicEventID,
@@ -136,6 +139,9 @@ func TestRejoining(t *testing.T) {
 		roomID: {
 			m.MatchInviteCount(1), // doris
 			m.MatchJoinCount(2),   // alice and charlie
+			// Note: we only get 1 timeline event here because the proxy treats all rooms
+			// as having history visibility = joined, so the join event is the earliest
+			// thing she can see.
 			MatchRoomTimeline([]Event{aliceJoin}),
 			m.MatchRoomAvatar(newAvatar),
 			MatchRoomRequiredState([]Event{
