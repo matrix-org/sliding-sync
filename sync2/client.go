@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"github.com/matrix-org/sliding-sync/internal"
 	"io"
-	"net"
 	"net/http"
 	"net/url"
 	"time"
@@ -41,22 +40,17 @@ type HTTPClient struct {
 }
 
 func NewHTTPClient(shortTimeout, longTimeout time.Duration, destHomeServer string) *HTTPClient {
-	hsUrl := internal.HomeServerUrl{HttpOrUnixStr: destHomeServer}
 	return &HTTPClient{
-		LongTimeoutClient: newClient(longTimeout, hsUrl),
-		Client:            newClient(shortTimeout, hsUrl),
-		DestinationServer: hsUrl.GetBaseUrl(),
+		LongTimeoutClient: newClient(longTimeout, destHomeServer),
+		Client:            newClient(shortTimeout, destHomeServer),
+		DestinationServer: internal.GetBaseURL(destHomeServer),
 	}
 }
 
-func newClient(timeout time.Duration, url internal.HomeServerUrl) *http.Client {
+func newClient(timeout time.Duration, destHomeServer string) *http.Client {
 	transport := http.DefaultTransport
-	if url.IsUnixSocket() {
-		transport = &http.Transport{
-			DialContext: func(_ context.Context, _, _ string) (net.Conn, error) {
-				return net.Dial("unix", url.GetUnixSocket())
-			},
-		}
+	if internal.IsUnixSocket(destHomeServer) {
+		transport = internal.UnixTransport(destHomeServer)
 	}
 	return &http.Client{
 		Timeout:   timeout,

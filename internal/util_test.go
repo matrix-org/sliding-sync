@@ -28,3 +28,31 @@ func assertSlice(t *testing.T, got, want []string) {
 		t.Errorf("After sorting, got %v but expected %v", got, want)
 	}
 }
+
+func TestUnixSocket_True(t *testing.T) {
+	address := "/path/to/socket"
+	if !IsUnixSocket(address) {
+		t.Errorf("%s is socket", address)
+	}
+}
+
+func TestUnixSocket_False(t *testing.T) {
+	address := "localhost:8080"
+	if IsUnixSocket(address) {
+		t.Errorf("%s is not socket", address)
+	}
+}
+
+func TestGetBaseUrl_UnixSocket(t *testing.T) {
+	address := "/path/to/socket"
+	if GetBaseURL(address) != "http://unix" {
+		t.Errorf("%s is unix socket", address)
+	}
+}
+
+func TestGetBaseUrl_Http(t *testing.T) {
+	address := "localhost:8080"
+	if GetBaseURL(address) != "localhost:8080" {
+		t.Errorf("%s is not a unix socket", address)
+	}
+}
