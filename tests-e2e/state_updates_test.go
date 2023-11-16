@@ -87,9 +87,8 @@ func TestRejoining(t *testing.T) {
 	sendTopic(t, bob, roomID, newTopic)
 	sendAvatar(t, bob, roomID, newAvatar)
 	bob.MustLeaveRoom(t, roomID)
-	messageEventIDs := make([]string, 0, 50)
 	for i := 0; i < 50; i++ {
-		messageEventIDs = append(messageEventIDs, sendMessage(t, charlie, roomID, fmt.Sprintf("message %d", i)))
+		sendMessage(t, charlie, roomID, fmt.Sprintf("message %d", i))
 	}
 
 	// alice rejoins the room.
@@ -224,6 +223,93 @@ func TestRejoining(t *testing.T) {
 	slices.Reverse(wantTimeline) // /messages returns in reverse chronological order
 	must.NotError(t, "chunk mismatch", eventsEqual(wantTimeline, sbEvents))
 
+	// charlie starts using the proxy, and he never had before. We should see him as joined
+	// even though that happened in a "gappy sync". This is super important because charlie's
+	// initial sync will include his join BUT we have already processed it so it'll be ignored,
+	// meaning we rely entirely on alice's gappy sync to know charlie is joined.
+	res = charlie.SlidingSync(t, sync3.Request{
+		Lists: map[string]sync3.RequestList{
+			"a": {
+				RoomSubscription: sync3.RoomSubscription{
+					TimelineLimit: 5,
+					RequiredState: [][2]string{{"*", "*"}}, // all state
+				},
+				Ranges:         sync3.SliceRanges{{0, 20}},
+				BumpEventTypes: []string{"m.room.message"},
+			},
+		},
+	})
+	m.MatchResponse(t, res, m.MatchRoomSubscriptionsStrict(map[string][]m.RoomMatcher{
+		roomID: {
+			// charlie is allowed to see everything up to his join, so he sees alice's join
+			// AND some earlier events
+			MatchRoomTimeline([]Event{
+				{
+					Type: "m.room.message",
+					Content: map[string]interface{}{
+						"msgtype": "m.text",
+						"body":    "message 47",
+					},
+				},
+				{
+					Type: "m.room.message",
+					Content: map[string]interface{}{
+						"msgtype": "m.text",
+						"body":    "message 48",
+					},
+				},
+				{
+					Type: "m.room.message",
+					Content: map[string]interface{}{
+						"msgtype": "m.text",
+						"body":    "message 49",
+					},
+				},
+				aliceJoin,
+				{ID: eventID}, // give me a prev batch message
+			}),
+			m.MatchInviteCount(1), // doris
+			m.MatchJoinCount(2),   // alice and charlie
+			m.MatchRoomAvatar(newAvatar),
+		},
+	}))
+
+	// doris starts using the proxy, and she never had before. We should see her as invited
+	// even though that happened in a "gappy sync". This is less interesting as the initial
+	// sync will include the invite_state, but still worth checking.
+	res = doris.SlidingSync(t, sync3.Request{
+		Lists: map[string]sync3.RequestList{
+			"a": {
+				RoomSubscription: sync3.RoomSubscription{
+					TimelineLimit: 5,
+					RequiredState: [][2]string{{"*", "*"}}, // all state
+				},
+				Ranges:         sync3.SliceRanges{{0, 20}},
+				BumpEventTypes: []string{"m.room.message"},
+			},
+		},
+	})
+	m.MatchResponse(t, res, m.MatchRoomSubscriptionsStrict(map[string][]m.RoomMatcher{
+		roomID: {
+			m.MatchRoomHasInviteState(),
+		},
+	}))
+
+	// bob starts using the proxy, and he never had before. We should NOT see this room
+	// as he left.
+	res = bob.SlidingSync(t, sync3.Request{
+		Lists: map[string]sync3.RequestList{
+			"a": {
+				RoomSubscription: sync3.RoomSubscription{
+					TimelineLimit: 5,
+					RequiredState: [][2]string{{"*", "*"}}, // all state
+				},
+				Ranges:         sync3.SliceRanges{{0, 20}},
+				BumpEventTypes: []string{"m.room.message"},
+			},
+		},
+	})
+	m.MatchResponse(t, res, m.MatchRoomSubscriptionsStrict(map[string][]m.RoomMatcher{}))
 }
 
 func sendMessage(t *testing.T, client *CSAPI, roomID, text string) (eventID string) {
