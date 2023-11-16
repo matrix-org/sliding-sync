@@ -316,7 +316,7 @@ func (s *Storage) ResetMetadataState(metadata *internal.RoomMetadata) error {
 	FROM syncv3_events JOIN snapshot ON (
 		event_nid = ANY (ARRAY_CAT(events, membership_events))
 	)
-	WHERE (event_type IN ('m.room.name', 'm.room.avatar', 'm.room.canonical_alias') AND state_key = '')
+	WHERE (event_type IN ('m.room.name', 'm.room.avatar', 'm.room.canonical_alias', 'm.room.encryption') AND state_key = '')
 	   OR (event_type = 'm.room.member' AND membership IN ('join', '_join', 'invite', '_invite'))
 	ORDER BY event_nid ASC
 	;`, metadata.RoomID)
@@ -334,9 +334,11 @@ func (s *Storage) ResetMetadataState(metadata *internal.RoomMetadata) error {
 		case "m.room.name":
 			metadata.NameEvent = gjson.GetBytes(ev.JSON, "content.name").Str
 		case "m.room.avatar":
-			metadata.AvatarEvent = gjson.GetBytes(ev.JSON, "content.avatar_url").Str
+			metadata.AvatarEvent = gjson.GetBytes(ev.JSON, "content.url").Str
 		case "m.room.canonical_alias":
 			metadata.CanonicalAlias = gjson.GetBytes(ev.JSON, "content.alias").Str
+		case "m.room.encryption":
+			metadata.Encrypted = true
 		case "m.room.member":
 			heroMemberships.append(&events[i])
 			switch ev.Membership {
@@ -365,7 +367,7 @@ func (s *Storage) ResetMetadataState(metadata *internal.RoomMetadata) error {
 		metadata.Heroes = append(metadata.Heroes, hero)
 	}
 
-	// For now, don't bother reloading Encrypted, PredecessorID and UpgradedRoomID.
+	// For now, don't bother reloading PredecessorID and UpgradedRoomID.
 	// These shouldn't be changing during a room's lifetime in normal operation.
 
 	// We haven't updated LatestEventsByType because that's not part of the timeline.
@@ -749,6 +751,16 @@ func (s *Storage) LatestEventsInRooms(userID string, roomIDs []string, to int64,
 		return nil
 	})
 	return result, err
+}
+
+func (s *Storage) GetClosestPrevBatch(roomID string, eventNID int64) (prevBatch string) {
+	var err error
+	sqlutil.WithTransaction(s.DB, func(txn *sqlx.Tx) error {
+		// discard the error, we don't care if we fail as it's best effort
+		prevBatch, err = s.EventsTable.SelectClosestPrevBatch(txn, roomID, eventNID)
+		return err
+	})
+	return
 }
 
 // visibleEventNIDsBetweenForRooms determines which events a given user has permission to see.

@@ -234,6 +234,13 @@ func (s *connStateLive) processLiveUpdate(ctx context.Context, up caches.Update,
 				roomIDtoTimeline := s.userCache.AnnotateWithTransactionIDs(ctx, s.userID, s.deviceID, map[string][]json.RawMessage{
 					roomEventUpdate.RoomID(): {roomEventUpdate.EventData.Event},
 				})
+				if len(r.Timeline) == 0 && r.PrevBatch == "" {
+					// attempt to fill in the prev_batch value for this room
+					prevBatch := s.userCache.AttemptToFetchPrevBatch(roomEventUpdate.RoomID(), roomEventUpdate.EventData)
+					if prevBatch != "" {
+						r.PrevBatch = prevBatch
+					}
+				}
 				r.Timeline = append(r.Timeline, roomIDtoTimeline[roomEventUpdate.RoomID()]...)
 				roomID := roomEventUpdate.RoomID()
 				sender := roomEventUpdate.EventData.Sender
@@ -278,7 +285,6 @@ func (s *connStateLive) processLiveUpdate(ctx context.Context, up caches.Update,
 			if delta.JoinCountChanged {
 				thisRoom.JoinedCount = roomUpdate.GlobalRoomMetadata().JoinCount
 			}
-
 			response.Rooms[roomUpdate.RoomID()] = thisRoom
 		}
 		if delta.HighlightCountChanged || delta.NotificationCountChanged {

@@ -4,10 +4,11 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"github.com/matrix-org/sliding-sync/state"
 	"reflect"
 	"testing"
 	"time"
+
+	"github.com/matrix-org/sliding-sync/state"
 
 	"github.com/matrix-org/gomatrixserverlib/spec"
 	"github.com/matrix-org/sliding-sync/internal"
@@ -24,6 +25,15 @@ func (h *NopExtensionHandler) Handle(ctx context.Context, req extensions.Request
 }
 
 func (h *NopExtensionHandler) HandleLiveUpdate(ctx context.Context, update caches.Update, req extensions.Request, res *extensions.Response, extCtx extensions.Context) {
+}
+
+type NopUserCacheStore struct{}
+
+func (s *NopUserCacheStore) GetClosestPrevBatch(roomID string, eventNID int64) (prevBatch string) {
+	return
+}
+func (s *NopUserCacheStore) LatestEventsInRooms(userID string, roomIDs []string, to int64, limit int) (map[string]*state.LatestEvents, error) {
+	return nil, nil
 }
 
 type NopJoinTracker struct{}
@@ -96,7 +106,7 @@ func TestConnStateInitial(t *testing.T) {
 				roomC.RoomID: {NID: 780, Timestamp: 789},
 			}, nil, nil
 	}
-	userCache := caches.NewUserCache(userID, globalCache, nil, &NopTransactionFetcher{})
+	userCache := caches.NewUserCache(userID, globalCache, &NopUserCacheStore{}, &NopTransactionFetcher{})
 	dispatcher.Register(context.Background(), userCache.UserID, userCache)
 	dispatcher.Register(context.Background(), sync3.DispatcherAllUsers, globalCache)
 	userCache.LazyLoadTimelinesOverride = func(loadPos int64, roomIDs []string, maxTimelineEvents int) map[string]state.LatestEvents {
@@ -269,7 +279,7 @@ func TestConnStateMultipleRanges(t *testing.T) {
 		}
 		return 1, roomMetadata, joinTimings, nil, nil
 	}
-	userCache := caches.NewUserCache(userID, globalCache, nil, &NopTransactionFetcher{})
+	userCache := caches.NewUserCache(userID, globalCache, &NopUserCacheStore{}, &NopTransactionFetcher{})
 	userCache.LazyLoadTimelinesOverride = mockLazyRoomOverride
 	dispatcher.Register(context.Background(), userCache.UserID, userCache)
 	dispatcher.Register(context.Background(), sync3.DispatcherAllUsers, globalCache)
@@ -448,7 +458,7 @@ func TestBumpToOutsideRange(t *testing.T) {
 			}, nil, nil
 
 	}
-	userCache := caches.NewUserCache(userID, globalCache, nil, &NopTransactionFetcher{})
+	userCache := caches.NewUserCache(userID, globalCache, &NopUserCacheStore{}, &NopTransactionFetcher{})
 	userCache.LazyLoadTimelinesOverride = mockLazyRoomOverride
 	dispatcher.Register(context.Background(), userCache.UserID, userCache)
 	dispatcher.Register(context.Background(), sync3.DispatcherAllUsers, globalCache)
@@ -551,7 +561,7 @@ func TestConnStateRoomSubscriptions(t *testing.T) {
 				roomD.RoomID: {NID: 4, Timestamp: 4},
 			}, nil, nil
 	}
-	userCache := caches.NewUserCache(userID, globalCache, nil, &NopTransactionFetcher{})
+	userCache := caches.NewUserCache(userID, globalCache, &NopUserCacheStore{}, &NopTransactionFetcher{})
 	userCache.LazyLoadTimelinesOverride = func(loadPos int64, roomIDs []string, maxTimelineEvents int) map[string]state.LatestEvents {
 		result := make(map[string]state.LatestEvents)
 		for _, roomID := range roomIDs {
