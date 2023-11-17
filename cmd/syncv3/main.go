@@ -60,10 +60,10 @@ const (
 
 var helpMsg = fmt.Sprintf(`
 Environment var
-%s     Required. The destination homeserver to talk to (CS API HTTPS URL) e.g 'https://matrix-client.matrix.org'
+%s     Required. The destination homeserver to talk to (CS API HTTPS URL) e.g 'https://matrix-client.matrix.org' (Supports unix socket: /path/to/socket)
 %s         Required. The postgres connection string: https://www.postgresql.org/docs/current/libpq-connect.html#LIBPQ-CONNSTRING
 %s     Required. A secret to use to encrypt access tokens. Must remain the same for the lifetime of the database.
-%s   Default: 0.0.0.0:8008.  The interface and port to listen on.
+%s   Default: 0.0.0.0:8008.  The interface and port to listen on. (Supports unix socket: /path/to/socket)
 %s   Default: unset. Path to a certificate file to serve to HTTPS clients. Specifying this enables TLS on the bound address.
 %s    Default: unset. Path to a key file for the certificate. Must be provided along with the certificate file.
 %s      Default: unset. The bind addr for pprof debugging e.g ':6060'. If not set, does not listen.

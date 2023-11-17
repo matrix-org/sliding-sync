@@ -4,7 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io/ioutil"
+	"github.com/matrix-org/sliding-sync/internal"
+	"io"
 	"net/http"
 	"net/url"
 	"time"
@@ -40,15 +41,20 @@ type HTTPClient struct {
 
 func NewHTTPClient(shortTimeout, longTimeout time.Duration, destHomeServer string) *HTTPClient {
 	return &HTTPClient{
-		LongTimeoutClient: &http.Client{
-			Timeout:   longTimeout,
-			Transport: otelhttp.NewTransport(http.DefaultTransport),
-		},
-		Client: &http.Client{
-			Timeout:   shortTimeout,
-			Transport: otelhttp.NewTransport(http.DefaultTransport),
-		},
-		DestinationServer: destHomeServer,
+		LongTimeoutClient: newClient(longTimeout, destHomeServer),
+		Client:            newClient(shortTimeout, destHomeServer),
+		DestinationServer: internal.GetBaseURL(destHomeServer),
+	}
+}
+
+func newClient(timeout time.Duration, destHomeServer string) *http.Client {
+	transport := http.DefaultTransport
+	if internal.IsUnixSocket(destHomeServer) {
+		transport = internal.UnixTransport(destHomeServer)
+	}
+	return &http.Client{
+		Timeout:   timeout,
+		Transport: otelhttp.NewTransport(transport),
 	}
 }
 
@@ -66,7 +72,7 @@ func (v *HTTPClient) Versions(ctx context.Context) ([]string, error) {
 		return nil, fmt.Errorf("/versions returned HTTP %d", res.StatusCode)
 	}
 	defer res.Body.Close()
-	body, err := ioutil.ReadAll(res.Body)
+	body, err := io.ReadAll(res.Body)
 	if err != nil {
 		return nil, err
 	}
@@ -99,7 +105,7 @@ func (v *HTTPClient) WhoAmI(ctx context.Context, accessToken string) (string, st
 		return "", "", fmt.Errorf("/whoami returned HTTP %d", res.StatusCode)
 	}
 	defer res.Body.Close()
-	body, err := ioutil.ReadAll(res.Body)
+	body, err := io.ReadAll(res.Body)
 	if err != nil {
 		return "", "", err
 	}
