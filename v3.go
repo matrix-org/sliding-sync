@@ -219,7 +219,7 @@ func RunSyncV3Server(h http.Handler, bindAddr, destV2Server, tlsCert, tlsKey str
 
 	// Block forever
 	var err error
-	if strings.HasPrefix(bindAddr, "/") {
+	if internal.IsUnixSocket(bindAddr) {
 		logger.Info().Msgf("listening on unix socket %s", bindAddr)
 		listener := unixSocketListener(bindAddr)
 		err = http.Serve(listener, srv)
