@@ -874,6 +874,10 @@ func (h *SyncLiveHandler) OnInvalidateRoom(p *pubsub.V2InvalidateRoom) {
 	if h.destroyedConns != nil {
 		h.destroyedConns.Add(float64(destroyed))
 	}
+	// invalidations are rare and dangerous if we get it wrong, so log information about it.
+	logger.Info().
+		Str("room_id", p.RoomID).Int("joins", len(joins)).Int("invites", len(invites)).Int("leaves", len(leaves)).
+		Int("del_user_caches", len(unregistered)).Int("conns_destroyed", destroyed).Msg("OnInvalidateRoom")
 }
 
 func parseIntFromQuery(u *url.URL, param string) (result int64, err *internal.HandlerError) {
