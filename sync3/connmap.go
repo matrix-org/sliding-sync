@@ -8,6 +8,7 @@ import (
 	"golang.org/x/exp/slices"
 
 	"github.com/ReneKroon/ttlcache/v2"
+	"github.com/matrix-org/sliding-sync/internal"
 	"github.com/prometheus/client_golang/prometheus"
 )
 
@@ -169,6 +170,7 @@ func (m *ConnMap) CloseConnsForDevice(userID, deviceID string) {
 		err := m.cache.Remove(cid.String()) // this will fire TTL callbacks which calls closeConn
 		if err != nil {
 			logger.Err(err).Str("cid", cid.String()).Msg("CloseConnsForDevice: cid did not exist in ttlcache")
+			internal.GetSentryHubFromContextOrDefault(context.Background()).CaptureException(err)
 		}
 	}
 }
@@ -199,6 +201,7 @@ func (m *ConnMap) CloseConnsForUsers(userIDs []string) (closed int) {
 			err := m.cache.Remove(conn.String()) // this will fire TTL callbacks which calls closeConn
 			if err != nil {
 				logger.Err(err).Str("cid", conn.String()).Msg("CloseConnsForDevice: cid did not exist in ttlcache")
+				internal.GetSentryHubFromContextOrDefault(context.Background()).CaptureException(err)
 			}
 		}
 		closed += len(conns)

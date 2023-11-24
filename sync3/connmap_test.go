@@ -87,7 +87,7 @@ func TestConnMap_CloseConnsForUser(t *testing.T) {
 	time.Sleep(100 * time.Millisecond) // some stuff happens asyncly in goroutines
 	must.Equal(t, num, 6, "unexpected number of closed conns")
 
-	// Destroy should have been called for all alice|A connections
+	// Destroy should have been called for all alice connections
 	assertDestroyedConns(t, cidToConn, func(cid ConnID) bool {
 		return cid.UserID == alice
 	})
