@@ -3,6 +3,8 @@ package sync3
 import (
 	"context"
 	"fmt"
+	"reflect"
+	"sort"
 	"testing"
 	"time"
 
@@ -159,9 +161,10 @@ func TestConnMap_TTLExpiryStaggeredDevices(t *testing.T) {
 		cidToConn[cid] = conn
 	}
 
-	time.Sleep(510 * time.Millisecond) // all 'A' device conns must have expired
+	// all expiredCIDs should have expired, none from unexpiredCIDs
+	time.Sleep(510 * time.Millisecond)
 
-	// Destroy should have been called for all alice|A connections
+	// Destroy should have been called for all expiredCIDs connections
 	assertDestroyedConns(t, cidToConn, func(cid ConnID) bool {
 		for _, expCID := range expiredCIDs {
 			if expCID.String() == cid.String() {
@@ -173,10 +176,17 @@ func TestConnMap_TTLExpiryStaggeredDevices(t *testing.T) {
 
 	// double check this by querying connmap
 	conns := cm.Conns(alice, "A")
+	var gotIDs []string
 	for _, c := range conns {
 		t.Logf(c.String())
+		gotIDs = append(gotIDs, c.CID)
 	}
+	sort.Strings(gotIDs)
+	wantIDs := []string{"encryption", "notifications"}
 	must.Equal(t, len(conns), 2, "unexpected number of Conns for device")
+	if !reflect.DeepEqual(gotIDs, wantIDs) {
+		t.Fatalf("unexpected active conns: got %v want %v", gotIDs, wantIDs)
+	}
 }
 
 func assertDestroyedConns(t *testing.T, cidToConn map[ConnID]*Conn, isDestroyedFn func(cid ConnID) bool) {
