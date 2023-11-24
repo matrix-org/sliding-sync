@@ -5,7 +5,10 @@ import (
 	"sync"
 	"time"
 
+	"golang.org/x/exp/slices"
+
 	"github.com/ReneKroon/ttlcache/v2"
+	"github.com/matrix-org/sliding-sync/internal"
 	"github.com/prometheus/client_golang/prometheus"
 )
 
@@ -25,14 +28,14 @@ type ConnMap struct {
 	mu *sync.Mutex
 }
 
-func NewConnMap(enablePrometheus bool) *ConnMap {
+func NewConnMap(enablePrometheus bool, ttl time.Duration) *ConnMap {
 	cm := &ConnMap{
 		userIDToConn: make(map[string][]*Conn),
 		connIDToConn: make(map[string]*Conn),
 		cache:        ttlcache.NewCache(),
 		mu:           &sync.Mutex{},
 	}
-	cm.cache.SetTTL(30 * time.Minute) // TODO: customisable
+	cm.cache.SetTTL(ttl)
 	cm.cache.SetExpirationCallback(cm.closeConnExpires)
 
 	if enablePrometheus {
@@ -132,7 +135,7 @@ func (m *ConnMap) getConn(cid ConnID) *Conn {
 }
 
 // Atomically gets or creates a connection with this connection ID. Calls newConn if a new connection is required.
-func (m *ConnMap) CreateConn(cid ConnID, cancel context.CancelFunc, newConnHandler func() ConnHandler) (*Conn, bool) {
+func (m *ConnMap) CreateConn(cid ConnID, cancel context.CancelFunc, newConnHandler func() ConnHandler) *Conn {
 	// atomically check if a conn exists already and nuke it if it exists
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -156,7 +159,7 @@ func (m *ConnMap) CreateConn(cid ConnID, cancel context.CancelFunc, newConnHandl
 	m.connIDToConn[cid.String()] = conn
 	m.userIDToConn[cid.UserID] = append(m.userIDToConn[cid.UserID], conn)
 	m.updateMetrics(len(m.connIDToConn))
-	return conn, true
+	return conn
 }
 
 func (m *ConnMap) CloseConnsForDevice(userID, deviceID string) {
@@ -164,7 +167,11 @@ func (m *ConnMap) CloseConnsForDevice(userID, deviceID string) {
 	// gather open connections for this user|device
 	connIDs := m.connIDsForDevice(userID, deviceID)
 	for _, cid := range connIDs {
-		m.cache.Remove(cid.String()) // this will fire TTL callbacks which calls closeConn
+		err := m.cache.Remove(cid.String()) // this will fire TTL callbacks which calls closeConn
+		if err != nil {
+			logger.Err(err).Str("cid", cid.String()).Msg("CloseConnsForDevice: cid did not exist in ttlcache")
+			internal.GetSentryHubFromContextOrDefault(context.Background()).CaptureException(err)
+		}
 	}
 }
 
@@ -191,7 +198,11 @@ func (m *ConnMap) CloseConnsForUsers(userIDs []string) (closed int) {
 		logger.Trace().Str("user", userID).Int("num_conns", len(conns)).Msg("closing all device connections due to CloseConn()")
 
 		for _, conn := range conns {
-			m.cache.Remove(conn.String()) // this will fire TTL callbacks which calls closeConn
+			err := m.cache.Remove(conn.String()) // this will fire TTL callbacks which calls closeConn
+			if err != nil {
+				logger.Err(err).Str("cid", conn.String()).Msg("CloseConnsForDevice: cid did not exist in ttlcache")
+				internal.GetSentryHubFromContextOrDefault(context.Background()).CaptureException(err)
+			}
 		}
 		closed += len(conns)
 	}
@@ -222,10 +233,11 @@ func (m *ConnMap) closeConn(conn *Conn) {
 	h := conn.handler
 	conns := m.userIDToConn[conn.UserID]
 	for i := 0; i < len(conns); i++ {
-		if conns[i].DeviceID == conn.DeviceID {
+		if conns[i].DeviceID == conn.DeviceID && conns[i].CID == conn.CID {
 			// delete without preserving order
-			conns[i] = conns[len(conns)-1]
-			conns = conns[:len(conns)-1]
+			conns[i] = nil // allow GC
+			conns = slices.Delete(conns, i, i+1)
+			i--
 		}
 	}
 	m.userIDToConn[conn.UserID] = conns

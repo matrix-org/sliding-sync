@@ -80,7 +80,7 @@ func NewSync3Handler(
 		V2:                     v2Client,
 		Storage:                store,
 		V2Store:                storev2,
-		ConnMap:                sync3.NewConnMap(enablePrometheus),
+		ConnMap:                sync3.NewConnMap(enablePrometheus, 30*time.Minute),
 		userCaches:             &sync.Map{},
 		Dispatcher:             sync3.NewDispatcher(),
 		GlobalCache:            caches.NewGlobalCache(store),
@@ -453,14 +453,10 @@ func (h *SyncLiveHandler) setupConnection(req *http.Request, cancel context.Canc
 	// because we *either* do the existing check *or* make a new conn. It's important for CreateConn
 	// to check for an existing connection though, as it's possible for the client to call /sync
 	// twice for a new connection.
-	conn, created := h.ConnMap.CreateConn(connID, cancel, func() sync3.ConnHandler {
+	conn = h.ConnMap.CreateConn(connID, cancel, func() sync3.ConnHandler {
 		return NewConnState(token.UserID, token.DeviceID, userCache, h.GlobalCache, h.Extensions, h.Dispatcher, h.setupHistVec, h.histVec, h.maxPendingEventUpdates, h.maxTransactionIDDelay)
 	})
-	if created {
-		log.Info().Msg("created new connection")
-	} else {
-		log.Info().Msg("using existing connection")
-	}
+	log.Info().Msg("created new connection")
 	return req, conn, nil
 }
 
