@@ -164,7 +164,10 @@ func (m *ConnMap) CloseConnsForDevice(userID, deviceID string) {
 	// gather open connections for this user|device
 	connIDs := m.connIDsForDevice(userID, deviceID)
 	for _, cid := range connIDs {
-		m.cache.Remove(cid.String()) // this will fire TTL callbacks which calls closeConn
+		err := m.cache.Remove(cid.String()) // this will fire TTL callbacks which calls closeConn
+		if err != nil {
+			logger.Err(err).Str("cid", cid.String()).Msg("CloseConnsForDevice: cid did not exist in ttlcache")
+		}
 	}
 }
 
@@ -191,7 +194,10 @@ func (m *ConnMap) CloseConnsForUsers(userIDs []string) (closed int) {
 		logger.Trace().Str("user", userID).Int("num_conns", len(conns)).Msg("closing all device connections due to CloseConn()")
 
 		for _, conn := range conns {
-			m.cache.Remove(conn.String()) // this will fire TTL callbacks which calls closeConn
+			err := m.cache.Remove(conn.String()) // this will fire TTL callbacks which calls closeConn
+			if err != nil {
+				logger.Err(err).Str("cid", conn.String()).Msg("CloseConnsForDevice: cid did not exist in ttlcache")
+			}
 		}
 		closed += len(conns)
 	}
