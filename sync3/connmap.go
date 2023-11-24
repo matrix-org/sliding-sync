@@ -5,6 +5,8 @@ import (
 	"sync"
 	"time"
 
+	"golang.org/x/exp/slices"
+
 	"github.com/ReneKroon/ttlcache/v2"
 	"github.com/prometheus/client_golang/prometheus"
 )
@@ -228,10 +230,11 @@ func (m *ConnMap) closeConn(conn *Conn) {
 	h := conn.handler
 	conns := m.userIDToConn[conn.UserID]
 	for i := 0; i < len(conns); i++ {
-		if conns[i].DeviceID == conn.DeviceID {
+		if conns[i].DeviceID == conn.DeviceID && conns[i].CID == conn.CID {
 			// delete without preserving order
-			conns[i] = conns[len(conns)-1]
-			conns = conns[:len(conns)-1]
+			conns[i] = nil // allow GC
+			conns = slices.Delete(conns, i, i+1)
+			i--
 		}
 	}
 	m.userIDToConn[conn.UserID] = conns
