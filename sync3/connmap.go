@@ -25,14 +25,14 @@ type ConnMap struct {
 	mu *sync.Mutex
 }
 
-func NewConnMap(enablePrometheus bool) *ConnMap {
+func NewConnMap(enablePrometheus bool, ttl time.Duration) *ConnMap {
 	cm := &ConnMap{
 		userIDToConn: make(map[string][]*Conn),
 		connIDToConn: make(map[string]*Conn),
 		cache:        ttlcache.NewCache(),
 		mu:           &sync.Mutex{},
 	}
-	cm.cache.SetTTL(30 * time.Minute) // TODO: customisable
+	cm.cache.SetTTL(ttl)
 	cm.cache.SetExpirationCallback(cm.closeConnExpires)
 
 	if enablePrometheus {
@@ -132,7 +132,7 @@ func (m *ConnMap) getConn(cid ConnID) *Conn {
 }
 
 // Atomically gets or creates a connection with this connection ID. Calls newConn if a new connection is required.
-func (m *ConnMap) CreateConn(cid ConnID, cancel context.CancelFunc, newConnHandler func() ConnHandler) (*Conn, bool) {
+func (m *ConnMap) CreateConn(cid ConnID, cancel context.CancelFunc, newConnHandler func() ConnHandler) *Conn {
 	// atomically check if a conn exists already and nuke it if it exists
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -156,7 +156,7 @@ func (m *ConnMap) CreateConn(cid ConnID, cancel context.CancelFunc, newConnHandl
 	m.connIDToConn[cid.String()] = conn
 	m.userIDToConn[cid.UserID] = append(m.userIDToConn[cid.UserID], conn)
 	m.updateMetrics(len(m.connIDToConn))
-	return conn, true
+	return conn
 }
 
 func (m *ConnMap) CloseConnsForDevice(userID, deviceID string) {
