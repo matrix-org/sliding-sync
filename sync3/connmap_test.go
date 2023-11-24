@@ -129,6 +129,56 @@ func TestConnMap_TTLExpiry(t *testing.T) {
 	})
 }
 
+func TestConnMap_TTLExpiryStaggeredDevices(t *testing.T) {
+	cm := NewConnMap(false, time.Second) // 1s expiry
+	expiredCIDs := []ConnID{
+		{UserID: alice, DeviceID: "A", CID: "room-list"},
+		{UserID: alice, DeviceID: "B", CID: "encryption"},
+		{UserID: alice, DeviceID: "B", CID: "notifications"},
+	}
+	cidToConn := map[ConnID]*Conn{}
+	for _, cid := range expiredCIDs {
+		_, cancel := context.WithCancel(context.Background())
+		conn := cm.CreateConn(cid, cancel, func() ConnHandler {
+			return &mockConnHandler{}
+		})
+		cidToConn[cid] = conn
+	}
+	time.Sleep(time.Millisecond * 500)
+
+	unexpiredCIDs := []ConnID{
+		{UserID: alice, DeviceID: "B", CID: "room-list"},
+		{UserID: alice, DeviceID: "A", CID: "encryption"},
+		{UserID: alice, DeviceID: "A", CID: "notifications"},
+	}
+	for _, cid := range unexpiredCIDs {
+		_, cancel := context.WithCancel(context.Background())
+		conn := cm.CreateConn(cid, cancel, func() ConnHandler {
+			return &mockConnHandler{}
+		})
+		cidToConn[cid] = conn
+	}
+
+	time.Sleep(510 * time.Millisecond) // all 'A' device conns must have expired
+
+	// Destroy should have been called for all alice|A connections
+	assertDestroyedConns(t, cidToConn, func(cid ConnID) bool {
+		for _, expCID := range expiredCIDs {
+			if expCID.String() == cid.String() {
+				return true
+			}
+		}
+		return false
+	})
+
+	// double check this by querying connmap
+	conns := cm.Conns(alice, "A")
+	for _, c := range conns {
+		t.Logf(c.String())
+	}
+	must.Equal(t, len(conns), 2, "unexpected number of Conns for device")
+}
+
 func assertDestroyedConns(t *testing.T, cidToConn map[ConnID]*Conn, isDestroyedFn func(cid ConnID) bool) {
 	t.Helper()
 	for cid, conn := range cidToConn {
