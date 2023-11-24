@@ -15,6 +15,8 @@ As of v0.99.12, the proxy implements [this version of the MSC](https://github.co
 
 ## Usage
 
+*NOTE: The proxy works fine with Dendrite and Synapse, but it doesn't work well with Conduit due to spec violations in the `state` of a room in `/sync`. Running the proxy with Conduit will cause more expired connections (HTTP 400s) when room state changes, and log lines like `WRN Accumulator.filterToNewTimelineEvents: seen the same event ID twice, ignoring`.*
+
 ### Setup
 Requires Postgres 13+.
 
