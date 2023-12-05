@@ -52,6 +52,7 @@ type UserRoomData struct {
 	// Avatars set in m.room.avatar take precedence; if this is missing and the room is
 	// a DM with one other user joined or invited, we fall back to that user's
 	// avatar (if any) as specified in their membership event in that room.
+	// XXX: this field appears to be write-only?!!?
 	ResolvedAvatarURL string
 
 	// Spaces is the set of room IDs of spaces that this room is part of.

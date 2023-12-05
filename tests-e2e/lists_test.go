@@ -1652,6 +1652,7 @@ func TestAvatarFieldInRoomResponse(t *testing.T) {
 	})
 
 	t.Run("Changing DM flag", func(t *testing.T) {
+		// XXX: the test's expectations might very well be out of date now
 		t.Skip("TODO: unimplemented")
 		t.Log("Alice clears the DM flag on Bob's room.")
 		alice.MustSetGlobalAccountData(t, "m.direct", map[string]interface{}{
