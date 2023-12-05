@@ -258,18 +258,3 @@ func disambiguate(heroes []Hero) []string {
 	}
 	return disambiguatedNames
 }
-
-const noAvatar = ""
-
-// CalculateAvatar computes the avatar for the room, based on the global room metadata.
-// Assumption: metadata.RemoveHero has been called to remove the user who is syncing
-// from the list of heroes.
-func CalculateAvatar(metadata *RoomMetadata) string {
-	if metadata.AvatarEvent != "" {
-		return metadata.AvatarEvent
-	}
-	if len(metadata.Heroes) == 1 {
-		return metadata.Heroes[0].Avatar
-	}
-	return noAvatar
-}

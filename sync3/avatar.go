@@ -3,6 +3,8 @@ package sync3
 import (
 	"bytes"
 	"encoding/json"
+	"github.com/matrix-org/sliding-sync/internal"
+	"github.com/matrix-org/sliding-sync/sync3/caches"
 )
 
 // An AvatarChange represents a change to a room's avatar. There are three cases:
@@ -40,3 +42,17 @@ func (a *AvatarChange) UnmarshalJSON(data []byte) error {
 	}
 	return json.Unmarshal(data, (*string)(a))
 }
+
+// CalculateAvatar computes the avatar for the room as seen by a given user.
+// It does not the given RoomConnMetadata struct.
+func CalculateAvatar(globalMetadata *internal.RoomMetadata, userMetadata *caches.UserRoomData) string {
+	if globalMetadata.AvatarEvent != "" {
+		return globalMetadata.AvatarEvent
+	}
+	if userMetadata.IsDM && len(globalMetadata.Heroes) == 1 {
+		return globalMetadata.Heroes[0].Avatar
+	}
+	return noAvatar
+}
+
+const noAvatar = ""

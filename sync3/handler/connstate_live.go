@@ -277,7 +277,8 @@ func (s *connStateLive) processLiveUpdate(ctx context.Context, up caches.Update,
 			if delta.RoomAvatarChanged {
 				metadata := roomUpdate.GlobalRoomMetadata()
 				metadata.RemoveHero(s.userID)
-				thisRoom.AvatarChange = sync3.NewAvatarChange(internal.CalculateAvatar(metadata))
+				userRoomData := roomUpdate.UserRoomMetadata()
+				thisRoom.AvatarChange = sync3.NewAvatarChange(sync3.CalculateAvatar(metadata, userRoomData))
 			}
 			if delta.InviteCountChanged {
 				thisRoom.InvitedCount = &roomUpdate.GlobalRoomMetadata().InviteCount
