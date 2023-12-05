@@ -1730,4 +1730,56 @@ func TestAvatarFieldInRoomResponse(t *testing.T) {
 		t.Log("The new room should use Chris's avatar.")
 		m.MatchResponse(t, res, m.MatchRoomSubscription(dmInvited, m.MatchRoomAvatar(chris.AvatarURL)))
 	})
+
+	t.Run("Creator of a non-DM never sees an avatar", func(t *testing.T) {
+		t.Log("Alice makes a new room which is not a DM.")
+		privateGroup := alice.MustCreateRoom(t, map[string]interface{}{
+			"preset":    "trusted_private_chat",
+			"is_direct": false,
+		})
+
+		t.Log("Alice sees the group. It has no avatar.")
+		res = alice.SlidingSyncUntil(t, res.Pos, sync3.Request{}, m.MatchRoomSubscription(privateGroup, m.MatchRoomUnsetAvatar()))
+
+		t.Log("Alice invites Bob to the group, who accepts.")
+		alice.MustInviteRoom(t, privateGroup, bob.UserID)
+		bob.MustJoinRoom(t, privateGroup, nil)
+
+		t.Log("Alice sees Bob join. The room still has no avatar.")
+		res = alice.SlidingSyncUntil(t, res.Pos, sync3.Request{}, func(response *sync3.Response) error {
+			matchNoAvatarChange := m.MatchRoomSubscription(privateGroup, m.MatchRoomUnchangedAvatar())
+			if err := matchNoAvatarChange(response); err != nil {
+				t.Fatalf("Saw group avatar change: %s", err)
+			}
+			matchJoin := m.MatchRoomSubscription(dmBob, MatchRoomTimelineMostRecent(1, []Event{
+				{
+					Type:     "m.room.member",
+					Sender:   bob.UserID,
+					StateKey: ptr(bob.UserID),
+				},
+			}))
+			return matchJoin(response)
+		})
+
+		t.Log("Alice invites Chris to the group, who accepts.")
+		alice.MustInviteRoom(t, privateGroup, chris.UserID)
+		chris.MustJoinRoom(t, privateGroup, nil)
+
+		t.Log("Alice sees Chris join. The room still has no avatar.")
+		res = alice.SlidingSyncUntil(t, res.Pos, sync3.Request{}, func(response *sync3.Response) error {
+			matchNoAvatarChange := m.MatchRoomSubscription(privateGroup, m.MatchRoomUnchangedAvatar())
+			if err := matchNoAvatarChange(response); err != nil {
+				t.Fatalf("Saw group avatar change: %s", err)
+			}
+			matchJoin := m.MatchRoomSubscription(dmBob, MatchRoomTimelineMostRecent(1, []Event{
+				{
+					Type:     "m.room.member",
+					Sender:   chris.UserID,
+					StateKey: ptr(chris.UserID),
+				},
+			}))
+			return matchJoin(response)
+		})
+
+	})
 }
