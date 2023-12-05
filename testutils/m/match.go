@@ -694,6 +694,15 @@ func MatchNoRoomAccountData(roomIDs []string) RespMatcher {
 	}
 }
 
+func MatchRoomIsDM(wantDM bool) RoomMatcher {
+	return func(r sync3.Room) error {
+		if r.IsDM != wantDM {
+			return fmt.Errorf("MatchRoomIsDM: got %t want %t", r.IsDM, wantDM)
+		}
+		return nil
+	}
+}
+
 // LogResponse builds a matcher that always succeeds. As a side-effect, it pretty-prints
 // the given sync response to the test log. This is useful when debugging a test.
 func LogResponse(t *testing.T) RespMatcher {
