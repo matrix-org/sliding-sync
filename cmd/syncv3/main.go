@@ -28,7 +28,7 @@ import (
 
 var GitCommit string
 
-const version = "0.99.12"
+const version = "0.99.13"
 
 var (
 	flags = flag.NewFlagSet("goose", flag.ExitOnError)
