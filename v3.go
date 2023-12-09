@@ -248,7 +248,7 @@ func unixSocketListener(bindAddr string) net.Listener {
 	if err != nil {
 		logger.Fatal().Err(err).Msg("failed to serve unix socket")
 	}
-	// TODO: safe default for now (rwxr-xr-x), could be extracted as env variable if needed
+	// User of web server needs to belong to group 'synv3' (-w--w----), could be extracted as env variable if needed
 	err = os.Chmod(bindAddr, 0220)
 	if err != nil {
 		logger.Fatal().Err(err).Msg("failed to set unix socket permissions")
