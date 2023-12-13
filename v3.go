@@ -162,7 +162,7 @@ func Setup(destHomeserver, postgresURI, secret string, opts Opts) (*handler2.Han
 }
 
 // RunSyncV3Server is the main entry point to the server
-func RunSyncV3Server(h http.Handler, bindAddr, destV2Server, tlsCert, tlsKey string) {
+func RunSyncV3Server(h http.Handler, bindAddr, destV2ServerPub, tlsCert, tlsKey string) {
 	// HTTP path routing
 	r := mux.NewRouter()
 	r.Handle("/_matrix/client/v3/sync", allowCORS(h))
@@ -172,7 +172,7 @@ func RunSyncV3Server(h http.Handler, bindAddr, destV2Server, tlsCert, tlsKey str
 		Server  string `json:"server"`
 		Version string `json:"version"`
 	}{
-		Server:  destV2Server,
+		Server:  destV2ServerPub,
 		Version: Version,
 	})
 	r.Handle("/client/server.json", allowCORS(http.HandlerFunc(func(rw http.ResponseWriter, r *http.Request) {

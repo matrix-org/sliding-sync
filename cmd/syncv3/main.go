@@ -36,9 +36,10 @@ var (
 
 const (
 	// Required fields
-	EnvServer = "SYNCV3_SERVER"
-	EnvDB     = "SYNCV3_DB"
-	EnvSecret = "SYNCV3_SECRET"
+	EnvServer    = "SYNCV3_SERVER"
+	EnvServerPub = "SYNCV3_SERVER_PUB"
+	EnvDB        = "SYNCV3_DB"
+	EnvSecret    = "SYNCV3_SECRET"
 
 	// Optional fields
 	EnvBindAddr               = "SYNCV3_BINDADDR"
@@ -63,6 +64,7 @@ Environment var
 %s     Required. The destination homeserver to talk to (CS API HTTPS URL) e.g 'https://matrix-client.matrix.org' (Supports unix socket: /path/to/socket)
 %s         Required. The postgres connection string: https://www.postgresql.org/docs/current/libpq-connect.html#LIBPQ-CONNSTRING
 %s     Required. A secret to use to encrypt access tokens. Must remain the same for the lifetime of the database.
+%s Default: same as %s. The public URL of the destination homeserver e.g 'https://matrix-client.matrix.org'
 %s   Default: 0.0.0.0:8008.  The interface and port to listen on. (Supports unix socket: /path/to/socket)
 %s   Default: unset. Path to a certificate file to serve to HTTPS clients. Specifying this enables TLS on the bound address.
 %s    Default: unset. Path to a key file for the certificate. Must be provided along with the certificate file.
@@ -77,7 +79,7 @@ Environment var
 %s Default: 3600. The maximum amount of time a database connection may be idle, in seconds. 0 means no limit.
 %s Default: 300. The timeout in seconds for normal HTTP requests.
 %s Default: 1800. The timeout in seconds for initial sync requests.
-`, EnvServer, EnvDB, EnvSecret, EnvBindAddr, EnvTLSCert, EnvTLSKey, EnvPPROF, EnvPrometheus, EnvOTLP, EnvOTLPUsername, EnvOTLPPassword,
+`, EnvServer, EnvDB, EnvSecret, EnvServerPub, EnvServer, EnvBindAddr, EnvTLSCert, EnvTLSKey, EnvPPROF, EnvPrometheus, EnvOTLP, EnvOTLPUsername, EnvOTLPPassword,
 	EnvSentryDsn, EnvLogLevel, EnvMaxConns, EnvIdleTimeoutSecs, EnvHTTPTimeoutSecs, EnvHTTPInitialTimeoutSecs)
 
 func defaulting(in, dft string) string {
@@ -99,6 +101,7 @@ func main() {
 
 	args := map[string]string{
 		EnvServer:                 os.Getenv(EnvServer),
+		EnvServerPub:              defaulting(os.Getenv(EnvServerPub), os.Getenv(EnvServer)),
 		EnvDB:                     os.Getenv(EnvDB),
 		EnvSecret:                 os.Getenv(EnvSecret),
 		EnvBindAddr:               defaulting(os.Getenv(EnvBindAddr), "0.0.0.0:8008"),
@@ -232,7 +235,7 @@ func main() {
 		h3 = sentryHandler.Handle(h3)
 	}
 
-	syncv3.RunSyncV3Server(h3, args[EnvBindAddr], args[EnvServer], args[EnvTLSCert], args[EnvTLSKey])
+	syncv3.RunSyncV3Server(h3, args[EnvBindAddr], args[EnvServerPub], args[EnvTLSCert], args[EnvTLSKey])
 	WaitForShutdown(args[EnvSentryDsn] != "")
 }
 
