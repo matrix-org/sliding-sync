@@ -5,7 +5,7 @@ networks:
 
 services:
   slidingsync:
-    image: ghcr.io/matrix-org/sliding-sync
+    image: ghcr.io/matrix-org/sliding-sync:v0.99.13
     container_name: slidingsync
     environment:
       - SYNCV3_SERVER=https://matrix-client.matrix.org
@@ -13,7 +13,8 @@ services:
       - SYNCV3_BINDADDR=:8009
       - SYNCV3_DB=user=syncv3 dbname=syncv3 sslmode=disable host=slidingsync-postgres password=sliding-sync-v3
     depends_on:
-      - slidingsync-postgres
+      slidingsync-postgres:
+        condition: service_healthy
     networks:
       - sliding-sync
     ports:
@@ -24,8 +25,12 @@ services:
     image: "postgres:13"
     restart: always
     stop_signal: SIGINT
+    healthcheck:
+      test: ["CMD", "pg_isready"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
     environment:
-      - POSTGRES_INITDB_ARGS=--data-checksums
       - POSTGRES_DB=syncv3
       - POSTGRES_USER=syncv3
       - POSTGRES_PASSWORD=sliding-sync-v3
