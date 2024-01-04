@@ -729,18 +729,17 @@ func (p *poller) parseE2EEData(ctx context.Context, res *SyncResponse) error {
 	}
 	var changedFallbackTypes []string
 	shouldSetFallbackKeys := false
-	if len(res.DeviceUnusedFallbackKeyTypes) > 0 {
-		if len(p.fallbackKeyTypes) != len(res.DeviceUnusedFallbackKeyTypes) {
-			changedFallbackTypes = res.DeviceUnusedFallbackKeyTypes
-		} else {
-			for i := range res.DeviceUnusedFallbackKeyTypes {
-				if res.DeviceUnusedFallbackKeyTypes[i] != p.fallbackKeyTypes[i] {
-					changedFallbackTypes = res.DeviceUnusedFallbackKeyTypes
-					break
-				}
+	if len(p.fallbackKeyTypes) != len(res.DeviceUnusedFallbackKeyTypes) {
+		changedFallbackTypes = res.DeviceUnusedFallbackKeyTypes
+		shouldSetFallbackKeys = true
+	} else {
+		for i := range res.DeviceUnusedFallbackKeyTypes {
+			if res.DeviceUnusedFallbackKeyTypes[i] != p.fallbackKeyTypes[i] {
+				changedFallbackTypes = res.DeviceUnusedFallbackKeyTypes
+				shouldSetFallbackKeys = true
+				break
 			}
 		}
-		shouldSetFallbackKeys = true
 	}
 
 	deviceListChanges := internal.ToDeviceListChangesMap(res.DeviceLists.Changed, res.DeviceLists.Left)

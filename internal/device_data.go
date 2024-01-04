@@ -26,6 +26,7 @@ type DeviceData struct {
 	OTKCounts MapStringInt `json:"otk"`
 	// Contains the latest device_unused_fallback_key_types value
 	// Set whenever this field arrives down the v2 poller, and it replaces what was previously there.
+	// If this is a nil slice this means no change. If this is an empty slice then this means the fallback key was used up.
 	FallbackKeyTypes []string `json:"fallback"`
 
 	DeviceLists DeviceLists `json:"dl"`

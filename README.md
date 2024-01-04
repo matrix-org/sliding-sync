@@ -205,8 +205,12 @@ go test -p 1 -count 1 $(go list ./... | grep -v tests-e2e) -timeout 120s
 Run end-to-end tests:
 
 ```shell
-# Run each line in a separate terminal windows. Will need to `docker login`
-# to ghcr and pull the image.
-docker run --rm -e "SYNAPSE_COMPLEMENT_DATABASE=sqlite" -e "SERVER_NAME=synapse" -p 8888:8008 ghcr.io/matrix-org/synapse-service:v1.72.0
+# Will need to `docker login` to ghcr and pull the image.
+docker run -d --rm -e "SYNAPSE_COMPLEMENT_DATABASE=sqlite" -e "SERVER_NAME=synapse" -p 8888:8008 ghcr.io/matrix-org/synapse-service:v1.94.0
+
+export SYNCV3_SECRET=foobar
+export SYNCV3_SERVER=http://localhost:8888
+export SYNCV3_DB="user=$(whoami) dbname=syncv3_test sslmode=disable"
+
 (go build ./cmd/syncv3 && dropdb syncv3_test && createdb syncv3_test && cd tests-e2e && ./run-tests.sh -count=1 .)
 ```
