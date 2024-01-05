@@ -727,12 +727,23 @@ func (p *poller) parseE2EEData(ctx context.Context, res *SyncResponse) error {
 		}
 		shouldSetOTKs = true
 	}
-	var changedFallbackTypes []string
+	var changedFallbackTypes []string // nil slice == don't set, empty slice = no fallback key
 	shouldSetFallbackKeys := false
 	if len(p.fallbackKeyTypes) != len(res.DeviceUnusedFallbackKeyTypes) {
+		// length mismatch always causes an update
 		changedFallbackTypes = res.DeviceUnusedFallbackKeyTypes
 		shouldSetFallbackKeys = true
 	} else {
+		// lengths match, if they are non-zero then compare each element.
+		// if they are zero, check for nil vs empty slice.
+		if len(res.DeviceUnusedFallbackKeyTypes) == 0 {
+			isCurrentNil := res.DeviceUnusedFallbackKeyTypes == nil
+			isPreviousNil := p.fallbackKeyTypes == nil
+			if isCurrentNil != isPreviousNil {
+				shouldSetFallbackKeys = true
+				changedFallbackTypes = []string{}
+			}
+		}
 		for i := range res.DeviceUnusedFallbackKeyTypes {
 			if res.DeviceUnusedFallbackKeyTypes[i] != p.fallbackKeyTypes[i] {
 				changedFallbackTypes = res.DeviceUnusedFallbackKeyTypes

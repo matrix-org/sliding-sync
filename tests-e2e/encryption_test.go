@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"testing"
 
+	"github.com/matrix-org/complement/b"
 	"github.com/matrix-org/complement/client"
 	"github.com/matrix-org/sliding-sync/sync3"
 	"github.com/matrix-org/sliding-sync/sync3/extensions"
@@ -168,6 +169,86 @@ func TestEncryptionFallbackKey(t *testing.T) {
 		// we should be explicitly sent device_unused_fallback_key_types: []
 		MatchOTKAndFallbackTypes(nil, []string{}),
 	)
+}
+
+// Regression test to make sure EX uploads a fallback key initially.
+// EX relies on device_unused_fallback_key_types: [] being present in the
+// sync response before it will upload any fallback keys at all, it doesn't
+// automatically do it on first login.
+func TestEncryptionFallbackKeyToldIfMissingInitially(t *testing.T) {
+	alice := registerNewUser(t)
+	bob := registerNewUser(t)
+	roomID := alice.MustCreateRoom(t, map[string]interface{}{
+		"preset": "public_chat",
+	})
+	bob.JoinRoom(t, roomID, nil)
+	res := bob.SlidingSync(t, sync3.Request{
+		Extensions: extensions.Request{
+			E2EE: &extensions.E2EERequest{
+				Core: extensions.Core{
+					Enabled: &boolTrue,
+				},
+			},
+		},
+	})
+	m.MatchResponse(t, res, m.MatchFallbackKeyTypes([]string{}))
+
+	// upload a fallback key and do another initial request => should include key
+	keysUploadBody := fmt.Sprintf(`{
+		"fallback_keys": {
+			"signed_curve25519:AAAAAAAAADA": {
+				"fallback": true,
+				"key": "N8DKj83RTN7lLZrH6shMqHbVhNrxd96OQseQVFmNgTU",
+				"signatures": {
+					"%s": {
+						"ed25519:MUPCQIATEC": "ZnKsVcNmOLBv0LMGeNpCfCO2am9L223EiyddWPx9wPOtuYt6KZIPox/SFwVmqBwkUdnmeTb6tVgCpZwcH8doDw"
+					}
+				}
+			}
+		}
+	}`, bob.UserID)
+	bob.MustDo(t, "POST", []string{"_matrix", "client", "v3", "keys", "upload"},
+		client.WithRawBody([]byte(keysUploadBody)), client.WithContentType("application/json"),
+	)
+	sentinelEventID := bob.SendEventSynced(t, roomID, b.Event{
+		Type: "m.room.message",
+		Content: map[string]interface{}{
+			"msgtype": "m.text",
+			"body":    "Sentinel",
+		},
+	})
+	bob.SlidingSyncUntilEventID(t, "", roomID, sentinelEventID)
+	res = bob.SlidingSync(t, sync3.Request{
+		Extensions: extensions.Request{
+			E2EE: &extensions.E2EERequest{
+				Core: extensions.Core{
+					Enabled: &boolTrue,
+				},
+			},
+		},
+	})
+	m.MatchResponse(t, res, m.MatchFallbackKeyTypes([]string{"signed_curve25519"}))
+
+	// consume the fallback key and do another initial request => should be []
+	mustClaimOTK(t, alice, bob)
+	sentinelEventID = bob.SendEventSynced(t, roomID, b.Event{
+		Type: "m.room.message",
+		Content: map[string]interface{}{
+			"msgtype": "m.text",
+			"body":    "Sentinel 2",
+		},
+	})
+	bob.SlidingSyncUntilEventID(t, "", roomID, sentinelEventID)
+	res = bob.SlidingSync(t, sync3.Request{
+		Extensions: extensions.Request{
+			E2EE: &extensions.E2EERequest{
+				Core: extensions.Core{
+					Enabled: &boolTrue,
+				},
+			},
+		},
+	})
+	m.MatchResponse(t, res, m.MatchFallbackKeyTypes([]string{}))
 }
 
 func MatchOTKAndFallbackTypes(otkCount map[string]int, fallbackKeyTypes []string) m.RespMatcher {
