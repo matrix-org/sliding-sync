@@ -25,7 +25,7 @@ func (r *E2EERequest) Name() string {
 type E2EEResponse struct {
 	OTKCounts        map[string]int  `json:"device_one_time_keys_count,omitempty"`
 	DeviceLists      *E2EEDeviceList `json:"device_lists,omitempty"`
-	FallbackKeyTypes []string        `json:"device_unused_fallback_key_types,omitempty"`
+	FallbackKeyTypes *[]string       `json:"device_unused_fallback_key_types,omitempty"`
 }
 
 type E2EEDeviceList struct {
@@ -37,7 +37,7 @@ func (r *E2EEResponse) HasData(isInitial bool) bool {
 	if isInitial {
 		return true // ensure we send OTK counts immediately
 	}
-	return r.DeviceLists != nil || len(r.FallbackKeyTypes) > 0 || len(r.OTKCounts) > 0
+	return r.DeviceLists != nil || r.FallbackKeyTypes != nil || len(r.OTKCounts) > 0
 }
 
 func (r *E2EERequest) AppendLive(ctx context.Context, res *Response, extCtx Context, up caches.Update) {
@@ -63,7 +63,7 @@ func (r *E2EERequest) ProcessInitial(ctx context.Context, res *Response, extCtx 
 	extRes := &E2EEResponse{}
 	hasUpdates := false
 	if dd.FallbackKeyTypes != nil && (dd.FallbackKeysChanged() || extCtx.IsInitial) {
-		extRes.FallbackKeyTypes = dd.FallbackKeyTypes
+		extRes.FallbackKeyTypes = &dd.FallbackKeyTypes
 		hasUpdates = true
 	}
 	if dd.OTKCounts != nil && (dd.OTKCountChanged() || extCtx.IsInitial) {

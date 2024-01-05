@@ -344,7 +344,13 @@ func MatchFallbackKeyTypes(fallbackKeyTypes []string) RespMatcher {
 		if res.Extensions.E2EE == nil {
 			return fmt.Errorf("MatchFallbackKeyTypes: no E2EE extension present")
 		}
-		if !reflect.DeepEqual(res.Extensions.E2EE.FallbackKeyTypes, fallbackKeyTypes) {
+		if res.Extensions.E2EE.FallbackKeyTypes == nil { // not supplied
+			if fallbackKeyTypes == nil {
+				return nil
+			}
+			return fmt.Errorf("MatchFallbackKeyTypes: FallbackKeyTypes is missing but want %v", fallbackKeyTypes)
+		}
+		if !reflect.DeepEqual(*res.Extensions.E2EE.FallbackKeyTypes, fallbackKeyTypes) {
 			return fmt.Errorf("MatchFallbackKeyTypes: got %v want %v", res.Extensions.E2EE.FallbackKeyTypes, fallbackKeyTypes)
 		}
 		return nil
