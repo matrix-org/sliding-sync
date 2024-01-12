@@ -324,3 +324,88 @@ func TestSecuritySpaceMetadataLeak(t *testing.T) {
 	})
 	m.MatchResponse(t, res, m.MatchNoV3Ops(), m.MatchRoomSubscriptionsStrict(nil))
 }
+
+// Test that adding a child room to a space does not leak global room metadata about that
+// child room to users in the parent space. This information isn't strictly confidential as
+// the /rooms/{roomId}/hierarchy endpoint will include such metadata (room name, avatar, join count, etc)
+// because the user is part of the parent space. There isn't an attack vector here, but repro steps:
+//   - Alice and Bob are in a parent space.
+//   - Bob has a poller on SS running.
+//   - Alice is live streaming from SS.
+//   - Bob creates a child room in that space, and sends both the m.space.parent in the child room AND
+//     the m.space.child in the parent space.
+//   - Ensure that no information about the child room comes down Alice's connection.
+func TestSecuritySpaceChildMetadataLeakFromParent(t *testing.T) {
+	alice := registerNewUser(t)
+	bob := registerNewUser(t)
+	parentName := "The Parent Room Name"
+	childName := "The Child Room Name"
+
+	// Alice and Bob are in a parent space.
+	parentSpace := bob.MustCreateRoom(t, map[string]interface{}{
+		"preset": "public_chat",
+		"name":   parentName,
+		"creation_content": map[string]string{
+			"type": "m.space",
+		},
+	})
+	alice.MustJoinRoom(t, parentSpace, []string{"hs1"})
+
+	// Bob has a poller on SS running.
+	bobRes := bob.SlidingSync(t, sync3.Request{})
+
+	// Alice is live streaming from SS.
+	aliceRes := alice.SlidingSync(t, sync3.Request{
+		Lists: map[string]sync3.RequestList{
+			"a": {
+				Ranges: [][2]int64{{0, 20}},
+			},
+		},
+	})
+	m.MatchResponse(t, aliceRes, m.MatchRoomSubscriptionsStrict(map[string][]m.RoomMatcher{
+		parentSpace: {
+			m.MatchJoinCount(2),
+			m.MatchRoomName(parentName),
+		},
+	}))
+
+	// Bob creates a child room in that space, and sends both the m.space.parent in the child room AND
+	// the m.space.child in the parent space.
+	childRoom := bob.MustCreateRoom(t, map[string]interface{}{
+		"preset": "public_chat",
+		"name":   childName,
+		"initial_state": []map[string]interface{}{
+			{
+				"type":      "m.space.parent",
+				"state_key": parentSpace,
+				"content": map[string]interface{}{
+					"canonical": true,
+					"via":       []string{"hs1"},
+				},
+			},
+		},
+	})
+	chlidEventID := bob.SendEventSynced(t, parentSpace, b.Event{
+		Type:     "m.space.child",
+		StateKey: ptr(childRoom),
+		Content: map[string]interface{}{
+			"via": []string{"hs1"},
+		},
+	})
+	// wait for SS to process it
+	bob.SlidingSyncUntilEventID(t, bobRes.Pos, parentSpace, chlidEventID)
+
+	// Ensure that no information about the child room comes down Alice's connection.
+	aliceRes = alice.SlidingSync(t, sync3.Request{}, WithPos(aliceRes.Pos))
+	m.MatchResponse(t, aliceRes, m.MatchRoomSubscriptionsStrict(map[string][]m.RoomMatcher{
+		parentSpace: {
+			MatchRoomTimeline([]Event{{
+				Type:     "m.space.child",
+				StateKey: ptr(childRoom),
+				Content: map[string]interface{}{
+					"via": []interface{}{"hs1"},
+				},
+			}}),
+		},
+	}))
+}
