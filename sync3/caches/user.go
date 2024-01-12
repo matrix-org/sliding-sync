@@ -26,6 +26,10 @@ type TransactionIDFetcher interface {
 	TransactionIDForEvents(userID, deviceID string, eventIDs []string) (eventIDToTxnID map[string]string)
 }
 
+type JoinChecker interface {
+	IsUserJoined(userID, roomID string) bool
+}
+
 // UserRoomData describes a single room from the perspective of particular user.
 // It is primarily used in two places:
 //   - in the caches.UserCache, to hold the latest version of user-specific data; and
@@ -194,11 +198,12 @@ type UserCache struct {
 	store                     UserCacheStore
 	globalCache               *GlobalCache
 	txnIDs                    TransactionIDFetcher
+	joinChecker               JoinChecker
 	ignoredUsers              map[string]struct{}
 	ignoredUsersMu            *sync.RWMutex
 }
 
-func NewUserCache(userID string, globalCache *GlobalCache, store UserCacheStore, txnIDs TransactionIDFetcher) *UserCache {
+func NewUserCache(userID string, globalCache *GlobalCache, store UserCacheStore, txnIDs TransactionIDFetcher, joinChecker JoinChecker) *UserCache {
 	// see SyncLiveHandler.userCache for the initialisation proper, which works by
 	// firing off a bunch of OnBlahBlah callbacks.
 	uc := &UserCache{
@@ -210,6 +215,7 @@ func NewUserCache(userID string, globalCache *GlobalCache, store UserCacheStore,
 		store:          store,
 		globalCache:    globalCache,
 		txnIDs:         txnIDs,
+		joinChecker:    joinChecker,
 		ignoredUsers:   make(map[string]struct{}),
 		ignoredUsersMu: &sync.RWMutex{},
 	}
@@ -572,12 +578,14 @@ func (c *UserCache) OnSpaceUpdate(ctx context.Context, parentRoomID, childRoomID
 	c.roomToDataMu.Unlock()
 
 	// now we need to notify connections for the _child_
-	roomUpdate := &RoomEventUpdate{
-		RoomUpdate: c.newRoomUpdate(ctx, childRoomID),
-		EventData:  eventData,
+	// but only if they are allowed to see the child event (i.e they are joined to the child room)
+	if c.joinChecker.IsUserJoined(c.UserID, childRoomID) {
+		roomUpdate := &RoomEventUpdate{
+			RoomUpdate: c.newRoomUpdate(ctx, childRoomID),
+			EventData:  eventData,
+		}
+		c.emitOnRoomUpdate(ctx, roomUpdate)
 	}
-
-	c.emitOnRoomUpdate(ctx, roomUpdate)
 }
 
 func (c *UserCache) OnNewEvent(ctx context.Context, eventData *EventData) {

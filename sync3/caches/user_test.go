@@ -10,6 +10,12 @@ import (
 	"github.com/matrix-org/sliding-sync/sync3/caches"
 )
 
+type joinChecker struct{}
+
+func (c *joinChecker) IsUserJoined(userID, roomID string) bool {
+	return true
+}
+
 type txnIDFetcher struct {
 	data map[string]string
 }
@@ -82,7 +88,7 @@ func TestAnnotateWithTransactionIDs(t *testing.T) {
 		fetcher := &txnIDFetcher{
 			data: tc.eventIDToTxnIDs,
 		}
-		uc := caches.NewUserCache(userID, nil, nil, fetcher)
+		uc := caches.NewUserCache(userID, nil, nil, fetcher, &joinChecker{})
 		got := uc.AnnotateWithTransactionIDs(context.Background(), userID, "DEVICE", convertIDToEventStub(userID, tc.roomIDToEvents))
 		want := convertIDTxnToEventStub(userID, tc.wantRoomIDToEvents)
 		if !reflect.DeepEqual(got, want) {
