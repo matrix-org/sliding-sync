@@ -19,6 +19,7 @@ jobs:
       - run: mkdir build
       - run: go build -trimpath -o build/syncv3_${{ matrix.os }}_${{ matrix.arch }} ./cmd/syncv3
         env:
+          CGO_ENABLED: 0
           GOOS: ${{ matrix.os }}
           GOARCH: ${{ matrix.arch }}
       - name: "Upload binary as artifact"
