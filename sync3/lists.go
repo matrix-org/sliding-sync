@@ -85,7 +85,7 @@ func (s *InternalRequestLists) SetRoom(r RoomConnMetadata) (delta RoomDelta) {
 			//           to conclude.
 			r.CanonicalisedName = existing.CanonicalisedName
 		}
-		delta.RoomAvatarChanged = !existing.SameRoomAvatar(&r.RoomMetadata)
+		delta.RoomAvatarChanged = !existing.SameRoomAvatar(&r)
 		if delta.RoomAvatarChanged {
 			r.ResolvedAvatarURL = internal.CalculateAvatar(&r.RoomMetadata, r.IsDM)
 		}

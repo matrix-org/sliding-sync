@@ -56,6 +56,37 @@ type RoomConnMetadata struct {
 	LastInterestedEventTimestamps map[string]uint64
 }
 
+// SameRoomAvatar checks if the fields relevant for room avatars have changed between the two metadatas.
+// Returns true if there are no changes.
+func (r *RoomConnMetadata) SameRoomAvatar(next *RoomConnMetadata) bool {
+	sameRoomAvatar := r.AvatarEvent == next.AvatarEvent
+	if next.IsDM {
+		// the avatar is the same IF:
+		// - the m.room.avatar event is the same AND
+		// - the heroes haven't changed AND
+		// - the number of heroes is 1
+		return sameRoomAvatar && sameHeroAvatars(r.Heroes, next.Heroes) && len(next.Heroes) == 1
+	}
+	// the avatar is the same IF:
+	// - the m.room.avatar event is the same
+	return sameRoomAvatar
+}
+
+func sameHeroAvatars(a, b []internal.Hero) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i].ID != b[i].ID {
+			return false
+		}
+		if a[i].Avatar != b[i].Avatar {
+			return false
+		}
+	}
+	return true
+}
+
 func (r *RoomConnMetadata) GetLastInterestedEventTimestamp(listKey string) uint64 {
 	ts, ok := r.LastInterestedEventTimestamps[listKey]
 	if ok {
