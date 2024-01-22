@@ -115,7 +115,7 @@ func NewInviteData(ctx context.Context, userID, roomID string, inviteState []jso
 					Timestamp:     uint64(ts),
 					AlwaysProcess: true,
 				}
-				id.IsDM = j.Get("is_direct").Bool()
+				id.IsDM = j.Get("content.is_direct").Bool()
 			} else if target == j.Get("sender").Str {
 				id.Heroes = append(id.Heroes, internal.Hero{
 					ID:     target,

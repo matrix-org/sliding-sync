@@ -1376,6 +1376,11 @@ func TestAvatarFieldInRoomResponse(t *testing.T) {
 		"invite":    []string{bob.UserID, chris.UserID},
 	})
 
+	alice.MustSetGlobalAccountData(t, "m.direct", map[string]any{
+		bob.UserID:   []string{dmBob, dmBobChris},
+		chris.UserID: []string{dmChris, dmBobChris},
+	})
+
 	t.Logf("Rooms:\npublic=%s\ndmBob=%s\ndmChris=%s\ndmBobChris=%s", public, dmBob, dmChris, dmBobChris)
 	t.Log("Bob accepts his invites. Chris accepts none.")
 	bob.JoinRoom(t, dmBob, nil)
@@ -1390,14 +1395,14 @@ func TestAvatarFieldInRoomResponse(t *testing.T) {
 		},
 	})
 
-	t.Log("Alice should see each room in the sync response with an appropriate avatar")
+	t.Log("Alice should see each room in the sync response with an appropriate avatar and DM flag")
 	m.MatchResponse(
 		t,
 		res,
-		m.MatchRoomSubscription(public, m.MatchRoomUnsetAvatar()),
-		m.MatchRoomSubscription(dmBob, m.MatchRoomAvatar(bob.AvatarURL)),
-		m.MatchRoomSubscription(dmChris, m.MatchRoomAvatar(chris.AvatarURL)),
-		m.MatchRoomSubscription(dmBobChris, m.MatchRoomUnsetAvatar()),
+		m.MatchRoomSubscription(public, m.MatchRoomUnsetAvatar(), m.MatchRoomIsDM(false)),
+		m.MatchRoomSubscription(dmBob, m.MatchRoomAvatar(bob.AvatarURL), m.MatchRoomIsDM(true)),
+		m.MatchRoomSubscription(dmChris, m.MatchRoomAvatar(chris.AvatarURL), m.MatchRoomIsDM(true)),
+		m.MatchRoomSubscription(dmBobChris, m.MatchRoomUnsetAvatar(), m.MatchRoomIsDM(true)),
 	)
 
 	t.Run("Avatar not resent on message", func(t *testing.T) {
@@ -1736,6 +1741,8 @@ func TestAvatarFieldInRoomResponse(t *testing.T) {
 func TestAvatarUnsetInTwoPersonRoom(t *testing.T) {
 	alice := registerNamedUser(t, "alice")
 	bob := registerNamedUser(t, "bob")
+	bobAvatar := alice.UploadContent(t, smallPNG, "bob.png", "image/png")
+	bob.SetAvatar(t, bobAvatar)
 	roomID := alice.MustCreateRoom(t, map[string]interface{}{
 		"preset": "trusted_private_chat",
 		"name":   "Nice test room",
