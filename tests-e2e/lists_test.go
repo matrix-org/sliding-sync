@@ -1713,7 +1713,6 @@ func TestAvatarFieldInRoomResponse(t *testing.T) {
 			}
 			return m.MatchRoomAvatar(bob.AvatarURL)(r)
 		}))
-
 	})
 
 	t.Run("See avatar when invited", func(t *testing.T) {
@@ -1730,4 +1729,31 @@ func TestAvatarFieldInRoomResponse(t *testing.T) {
 		t.Log("The new room should use Chris's avatar.")
 		m.MatchResponse(t, res, m.MatchRoomSubscription(dmInvited, m.MatchRoomAvatar(chris.AvatarURL)))
 	})
+}
+
+// Regression test for https://github.com/element-hq/element-x-ios/issues/2003
+// Ensure that a group chat with 1 other person has no avatar field set. Only DMs should have this set.
+func TestAvatarUnsetInTwoPersonRoom(t *testing.T) {
+	alice := registerNamedUser(t, "alice")
+	bob := registerNamedUser(t, "bob")
+	roomID := alice.MustCreateRoom(t, map[string]interface{}{
+		"preset": "trusted_private_chat",
+		"name":   "Nice test room",
+		"invite": []string{bob.UserID},
+	})
+
+	res := alice.SlidingSync(t, sync3.Request{
+		Lists: map[string]sync3.RequestList{
+			"a": {
+				Ranges: sync3.SliceRanges{{0, 20}},
+			},
+		},
+	})
+	m.MatchResponse(t, res, m.MatchRoomSubscriptionsStrict(map[string][]m.RoomMatcher{
+		roomID: {
+			m.MatchRoomUnsetAvatar(),
+			m.MatchInviteCount(1),
+			m.MatchRoomName("Nice test room"),
+		},
+	}))
 }
