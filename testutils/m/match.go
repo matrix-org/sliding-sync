@@ -73,6 +73,15 @@ func MatchRoomUnchangedAvatar() RoomMatcher {
 	}
 }
 
+func MatchRoomIsDM(wantDM bool) RoomMatcher {
+	return func(r sync3.Room) error {
+		if r.IsDM != wantDM {
+			return fmt.Errorf("MatchRoomIsDM: got %t want %t", r.IsDM, wantDM)
+		}
+		return nil
+	}
+}
+
 func MatchJoinCount(count int) RoomMatcher {
 	return func(r sync3.Room) error {
 		if r.JoinedCount != count {

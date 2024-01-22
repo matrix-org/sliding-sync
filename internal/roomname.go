@@ -109,12 +109,6 @@ func (m *RoomMetadata) SameRoomName(other *RoomMetadata) bool {
 		sameHeroNames(m.Heroes, other.Heroes))
 }
 
-// SameRoomAvatar checks if the fields relevant for room avatars have changed between the two metadatas.
-// Returns true if there are no changes.
-func (m *RoomMetadata) SameRoomAvatar(other *RoomMetadata) bool {
-	return m.AvatarEvent == other.AvatarEvent && sameHeroAvatars(m.Heroes, other.Heroes)
-}
-
 func (m *RoomMetadata) SameJoinCount(other *RoomMetadata) bool {
 	return m.JoinCount == other.JoinCount
 }
@@ -132,21 +126,6 @@ func sameHeroNames(a, b []Hero) bool {
 			return false
 		}
 		if a[i].Name != b[i].Name {
-			return false
-		}
-	}
-	return true
-}
-
-func sameHeroAvatars(a, b []Hero) bool {
-	if len(a) != len(b) {
-		return false
-	}
-	for i := range a {
-		if a[i].ID != b[i].ID {
-			return false
-		}
-		if a[i].Avatar != b[i].Avatar {
 			return false
 		}
 	}
@@ -264,11 +243,11 @@ const noAvatar = ""
 // CalculateAvatar computes the avatar for the room, based on the global room metadata.
 // Assumption: metadata.RemoveHero has been called to remove the user who is syncing
 // from the list of heroes.
-func CalculateAvatar(metadata *RoomMetadata) string {
+func CalculateAvatar(metadata *RoomMetadata, isDM bool) string {
 	if metadata.AvatarEvent != "" {
 		return metadata.AvatarEvent
 	}
-	if len(metadata.Heroes) == 1 {
+	if len(metadata.Heroes) == 1 && isDM {
 		return metadata.Heroes[0].Avatar
 	}
 	return noAvatar

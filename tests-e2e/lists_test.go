@@ -1376,6 +1376,11 @@ func TestAvatarFieldInRoomResponse(t *testing.T) {
 		"invite":    []string{bob.UserID, chris.UserID},
 	})
 
+	alice.MustSetGlobalAccountData(t, "m.direct", map[string]any{
+		bob.UserID:   []string{dmBob, dmBobChris},
+		chris.UserID: []string{dmChris, dmBobChris},
+	})
+
 	t.Logf("Rooms:\npublic=%s\ndmBob=%s\ndmChris=%s\ndmBobChris=%s", public, dmBob, dmChris, dmBobChris)
 	t.Log("Bob accepts his invites. Chris accepts none.")
 	bob.JoinRoom(t, dmBob, nil)
@@ -1390,14 +1395,14 @@ func TestAvatarFieldInRoomResponse(t *testing.T) {
 		},
 	})
 
-	t.Log("Alice should see each room in the sync response with an appropriate avatar")
+	t.Log("Alice should see each room in the sync response with an appropriate avatar and DM flag")
 	m.MatchResponse(
 		t,
 		res,
-		m.MatchRoomSubscription(public, m.MatchRoomUnsetAvatar()),
-		m.MatchRoomSubscription(dmBob, m.MatchRoomAvatar(bob.AvatarURL)),
-		m.MatchRoomSubscription(dmChris, m.MatchRoomAvatar(chris.AvatarURL)),
-		m.MatchRoomSubscription(dmBobChris, m.MatchRoomUnsetAvatar()),
+		m.MatchRoomSubscription(public, m.MatchRoomUnsetAvatar(), m.MatchRoomIsDM(false)),
+		m.MatchRoomSubscription(dmBob, m.MatchRoomAvatar(bob.AvatarURL), m.MatchRoomIsDM(true)),
+		m.MatchRoomSubscription(dmChris, m.MatchRoomAvatar(chris.AvatarURL), m.MatchRoomIsDM(true)),
+		m.MatchRoomSubscription(dmBobChris, m.MatchRoomUnsetAvatar(), m.MatchRoomIsDM(true)),
 	)
 
 	t.Run("Avatar not resent on message", func(t *testing.T) {
@@ -1713,7 +1718,6 @@ func TestAvatarFieldInRoomResponse(t *testing.T) {
 			}
 			return m.MatchRoomAvatar(bob.AvatarURL)(r)
 		}))
-
 	})
 
 	t.Run("See avatar when invited", func(t *testing.T) {
@@ -1727,7 +1731,88 @@ func TestAvatarFieldInRoomResponse(t *testing.T) {
 		t.Log("Alice syncs until she sees the invite.")
 		res = alice.SlidingSyncUntilMembership(t, res.Pos, dmInvited, alice, "invite")
 
-		t.Log("The new room should use Chris's avatar.")
-		m.MatchResponse(t, res, m.MatchRoomSubscription(dmInvited, m.MatchRoomAvatar(chris.AvatarURL)))
+		t.Log("The new room should appear as a DM and use Chris's avatar.")
+		m.MatchResponse(t, res, m.MatchRoomSubscription(dmInvited, m.MatchRoomIsDM(true), m.MatchRoomAvatar(chris.AvatarURL)))
+
+		t.Run("Creator of a non-DM never sees an avatar", func(t *testing.T) {
+			t.Log("Alice makes a new room which is not a DM.")
+			privateGroup := alice.MustCreateRoom(t, map[string]interface{}{
+				"preset":    "trusted_private_chat",
+				"is_direct": false,
+			})
+
+			t.Log("Alice sees the group. It has no avatar.")
+			res = alice.SlidingSyncUntil(t, res.Pos, sync3.Request{}, m.MatchRoomSubscription(privateGroup, m.MatchRoomUnsetAvatar()))
+			m.MatchResponse(t, res, m.MatchRoomSubscription(privateGroup, m.MatchRoomIsDM(false)))
+
+			t.Log("Alice invites Bob to the group, who accepts.")
+			alice.MustInviteRoom(t, privateGroup, bob.UserID)
+			bob.MustJoinRoom(t, privateGroup, nil)
+
+			t.Log("Alice sees Bob join. The room still has no avatar.")
+			res = alice.SlidingSyncUntil(t, res.Pos, sync3.Request{}, func(response *sync3.Response) error {
+				matchNoAvatarChange := m.MatchRoomSubscription(privateGroup, m.MatchRoomUnchangedAvatar())
+				if err := matchNoAvatarChange(response); err != nil {
+					t.Fatalf("Saw group avatar change: %s", err)
+				}
+				matchJoin := m.MatchRoomSubscription(privateGroup, MatchRoomTimelineMostRecent(1, []Event{
+					{
+						Type:     "m.room.member",
+						Sender:   bob.UserID,
+						StateKey: ptr(bob.UserID),
+					},
+				}))
+				return matchJoin(response)
+			})
+
+			t.Log("Alice invites Chris to the group, who accepts.")
+			alice.MustInviteRoom(t, privateGroup, chris.UserID)
+			chris.MustJoinRoom(t, privateGroup, nil)
+
+			t.Log("Alice sees Chris join. The room still has no avatar.")
+			res = alice.SlidingSyncUntil(t, res.Pos, sync3.Request{}, func(response *sync3.Response) error {
+				matchNoAvatarChange := m.MatchRoomSubscription(privateGroup, m.MatchRoomUnchangedAvatar())
+				if err := matchNoAvatarChange(response); err != nil {
+					t.Fatalf("Saw group avatar change: %s", err)
+				}
+				matchJoin := m.MatchRoomSubscription(privateGroup, MatchRoomTimelineMostRecent(1, []Event{
+					{
+						Type:     "m.room.member",
+						Sender:   chris.UserID,
+						StateKey: ptr(chris.UserID),
+					},
+				}))
+				return matchJoin(response)
+			})
+		})
 	})
+}
+
+// Regression test for https://github.com/element-hq/element-x-ios/issues/2003
+// Ensure that a group chat with 1 other person has no avatar field set. Only DMs should have this set.
+func TestAvatarUnsetInTwoPersonRoom(t *testing.T) {
+	alice := registerNamedUser(t, "alice")
+	bob := registerNamedUser(t, "bob")
+	bobAvatar := alice.UploadContent(t, smallPNG, "bob.png", "image/png")
+	bob.SetAvatar(t, bobAvatar)
+	roomID := alice.MustCreateRoom(t, map[string]interface{}{
+		"preset": "trusted_private_chat",
+		"name":   "Nice test room",
+		"invite": []string{bob.UserID},
+	})
+
+	res := alice.SlidingSync(t, sync3.Request{
+		Lists: map[string]sync3.RequestList{
+			"a": {
+				Ranges: sync3.SliceRanges{{0, 20}},
+			},
+		},
+	})
+	m.MatchResponse(t, res, m.MatchRoomSubscriptionsStrict(map[string][]m.RoomMatcher{
+		roomID: {
+			m.MatchRoomUnsetAvatar(),
+			m.MatchInviteCount(1),
+			m.MatchRoomName("Nice test room"),
+		},
+	}))
 }

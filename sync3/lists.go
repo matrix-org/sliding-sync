@@ -85,9 +85,9 @@ func (s *InternalRequestLists) SetRoom(r RoomConnMetadata) (delta RoomDelta) {
 			//           to conclude.
 			r.CanonicalisedName = existing.CanonicalisedName
 		}
-		delta.RoomAvatarChanged = !existing.SameRoomAvatar(&r.RoomMetadata)
+		delta.RoomAvatarChanged = !existing.SameRoomAvatar(&r)
 		if delta.RoomAvatarChanged {
-			r.ResolvedAvatarURL = internal.CalculateAvatar(&r.RoomMetadata)
+			r.ResolvedAvatarURL = internal.CalculateAvatar(&r.RoomMetadata, r.IsDM)
 		}
 
 		// Interpret the timestamp map on r as the changes we should apply atop the
@@ -114,7 +114,7 @@ func (s *InternalRequestLists) SetRoom(r RoomConnMetadata) (delta RoomDelta) {
 		r.CanonicalisedName = strings.ToLower(
 			strings.Trim(roomName, "#!():_@"),
 		)
-		r.ResolvedAvatarURL = internal.CalculateAvatar(&r.RoomMetadata)
+		r.ResolvedAvatarURL = internal.CalculateAvatar(&r.RoomMetadata, r.IsDM)
 		// We'll automatically use the LastInterestedEventTimestamps provided by the
 		// caller, so that recency sorts work.
 	}
