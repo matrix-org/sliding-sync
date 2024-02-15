@@ -11,11 +11,13 @@ import (
 )
 
 type receiptEDU struct {
-	Type    string `json:"type"`
-	Content map[string]struct {
-		Read        map[string]receiptInfo `json:"m.read,omitempty"`
-		ReadPrivate map[string]receiptInfo `json:"m.read.private,omitempty"`
-	} `json:"content"`
+	Type    string                    `json:"type"`
+	Content map[string]receiptContent `json:"content"`
+}
+
+type receiptContent struct {
+	Read        map[string]receiptInfo `json:"m.read,omitempty"`
+	ReadPrivate map[string]receiptInfo `json:"m.read.private,omitempty"`
 }
 
 type receiptInfo struct {
@@ -164,29 +166,35 @@ func (t *ReceiptTable) bulkInsert(tableName string, txn *sqlx.Tx, receipts []int
 // client connections.
 func PackReceiptsIntoEDU(receipts []internal.Receipt) (json.RawMessage, error) {
 	newReceiptEDU := receiptEDU{
-		Type: "m.receipt",
-		Content: make(map[string]struct {
-			Read        map[string]receiptInfo `json:"m.read,omitempty"`
-			ReadPrivate map[string]receiptInfo `json:"m.read.private,omitempty"`
-		}),
+		Type:    "m.receipt",
+		Content: make(map[string]receiptContent),
 	}
 	for _, r := range receipts {
+		thisReceiptIsUnthreaded := r.ThreadID == ""
 		receiptsForEvent := newReceiptEDU.Content[r.EventID]
 		if r.IsPrivate {
 			if receiptsForEvent.ReadPrivate == nil {
 				receiptsForEvent.ReadPrivate = make(map[string]receiptInfo)
 			}
-			receiptsForEvent.ReadPrivate[r.UserID] = receiptInfo{
-				TS:       r.TS,
-				ThreadID: r.ThreadID,
+			// MSC4102: always replace threaded receipts with unthreaded ones if there is a clash
+			_, receiptAlreadyExists := receiptsForEvent.ReadPrivate[r.UserID]
+			if !receiptAlreadyExists || (receiptAlreadyExists && thisReceiptIsUnthreaded) {
+				receiptsForEvent.ReadPrivate[r.UserID] = receiptInfo{
+					TS:       r.TS,
+					ThreadID: r.ThreadID,
+				}
 			}
 		} else {
 			if receiptsForEvent.Read == nil {
 				receiptsForEvent.Read = make(map[string]receiptInfo)
 			}
-			receiptsForEvent.Read[r.UserID] = receiptInfo{
-				TS:       r.TS,
-				ThreadID: r.ThreadID,
+			// MSC4102: always replace threaded receipts with unthreaded ones if there is a clash
+			_, receiptAlreadyExists := receiptsForEvent.Read[r.UserID]
+			if !receiptAlreadyExists || (receiptAlreadyExists && thisReceiptIsUnthreaded) {
+				receiptsForEvent.Read[r.UserID] = receiptInfo{
+					TS:       r.TS,
+					ThreadID: r.ThreadID,
+				}
 			}
 		}
 		newReceiptEDU.Content[r.EventID] = receiptsForEvent
