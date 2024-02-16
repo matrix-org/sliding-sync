@@ -31,6 +31,182 @@ func parsedReceiptsEqual(t *testing.T, got, want []internal.Receipt) {
 	}
 }
 
+func TestReceiptPacking(t *testing.T) {
+	testCases := []struct {
+		receipts []internal.Receipt
+		wantEDU  receiptEDU
+		name     string
+	}{
+		{
+			name: "single receipt",
+			receipts: []internal.Receipt{
+				{
+					RoomID:  "!foo",
+					EventID: "$bar",
+					UserID:  "@baz",
+					TS:      42,
+				},
+			},
+			wantEDU: receiptEDU{
+				Type: "m.receipt",
+				Content: map[string]receiptContent{
+					"$bar": {
+						Read: map[string]receiptInfo{
+							"@baz": {
+								TS: 42,
+							},
+						},
+					},
+				},
+			},
+		},
+		{
+			name: "two distinct receipt",
+			receipts: []internal.Receipt{
+				{
+					RoomID:  "!foo",
+					EventID: "$bar",
+					UserID:  "@baz",
+					TS:      42,
+				},
+				{
+					RoomID:  "!foo2",
+					EventID: "$bar2",
+					UserID:  "@baz2",
+					TS:      422,
+				},
+			},
+			wantEDU: receiptEDU{
+				Type: "m.receipt",
+				Content: map[string]receiptContent{
+					"$bar": {
+						Read: map[string]receiptInfo{
+							"@baz": {
+								TS: 42,
+							},
+						},
+					},
+					"$bar2": {
+						Read: map[string]receiptInfo{
+							"@baz2": {
+								TS: 422,
+							},
+						},
+					},
+				},
+			},
+		},
+		{
+			name: "MSC4102: unthreaded wins when threaded first",
+			receipts: []internal.Receipt{
+				{
+					RoomID:   "!foo",
+					EventID:  "$bar",
+					UserID:   "@baz",
+					TS:       42,
+					ThreadID: "thread_id",
+				},
+				{
+					RoomID:  "!foo",
+					EventID: "$bar",
+					UserID:  "@baz",
+					TS:      420,
+				},
+			},
+			wantEDU: receiptEDU{
+				Type: "m.receipt",
+				Content: map[string]receiptContent{
+					"$bar": {
+						Read: map[string]receiptInfo{
+							"@baz": {
+								TS: 420,
+							},
+						},
+					},
+				},
+			},
+		},
+		{
+			name: "MSC4102: unthreaded wins when unthreaded first",
+			receipts: []internal.Receipt{
+				{
+					RoomID:  "!foo",
+					EventID: "$bar",
+					UserID:  "@baz",
+					TS:      420,
+				},
+				{
+					RoomID:   "!foo",
+					EventID:  "$bar",
+					UserID:   "@baz",
+					TS:       42,
+					ThreadID: "thread_id",
+				},
+			},
+			wantEDU: receiptEDU{
+				Type: "m.receipt",
+				Content: map[string]receiptContent{
+					"$bar": {
+						Read: map[string]receiptInfo{
+							"@baz": {
+								TS: 420,
+							},
+						},
+					},
+				},
+			},
+		},
+		{
+			name: "MSC4102: unthreaded wins in private receipts when unthreaded first",
+			receipts: []internal.Receipt{
+				{
+					RoomID:    "!foo",
+					EventID:   "$bar",
+					UserID:    "@baz",
+					TS:        420,
+					IsPrivate: true,
+				},
+				{
+					RoomID:    "!foo",
+					EventID:   "$bar",
+					UserID:    "@baz",
+					TS:        42,
+					ThreadID:  "thread_id",
+					IsPrivate: true,
+				},
+			},
+			wantEDU: receiptEDU{
+				Type: "m.receipt",
+				Content: map[string]receiptContent{
+					"$bar": {
+						ReadPrivate: map[string]receiptInfo{
+							"@baz": {
+								TS: 420,
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+	for _, tc := range testCases {
+		edu, err := PackReceiptsIntoEDU(tc.receipts)
+		if err != nil {
+			t.Fatalf("%s: PackReceiptsIntoEDU: %s", tc.name, err)
+		}
+		gotEDU := receiptEDU{
+			Type:    "m.receipt",
+			Content: make(map[string]receiptContent),
+		}
+		if err := json.Unmarshal(edu, &gotEDU); err != nil {
+			t.Fatalf("%s: json.Unmarshal: %s", tc.name, err)
+		}
+		if !reflect.DeepEqual(gotEDU, tc.wantEDU) {
+			t.Errorf("%s: EDU mismatch, got  %+v\n want %+v", tc.name, gotEDU, tc.wantEDU)
+		}
+	}
+}
+
 func TestReceiptTable(t *testing.T) {
 	db, close := connectToDB(t)
 	defer close()
