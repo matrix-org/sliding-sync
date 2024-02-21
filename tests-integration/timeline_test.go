@@ -1339,6 +1339,49 @@ func TestNumLiveBulk(t *testing.T) {
 	))
 }
 
+// Ensure that clients cannot just set timeline_limit: 99999 and DoS the server
+func TestSensibleLimitToTimelineLimit(t *testing.T) {
+	pqString := testutils.PrepareDBConnectionString()
+	// setup code
+	v2 := runTestV2Server(t)
+	v3 := runTestServer(t, v2, pqString)
+	defer v2.close()
+	defer v3.close()
+	roomID := "!a:localhost"
+
+	var hundredEvents = make([]json.RawMessage, 100)
+	for i := 0; i < 100; i++ {
+		hundredEvents[i] = testutils.NewEvent(t, "m.room.message", alice, map[string]any{
+			"msgtype": "m.text",
+			"body":    fmt.Sprintf("msg %d", i),
+		}, testutils.WithTimestamp(time.Now().Add(time.Second)))
+	}
+
+	v2.addAccount(t, alice, aliceToken)
+	v2.queueResponse(alice, sync2.SyncResponse{
+		Rooms: sync2.SyncRoomsResponse{
+			Join: v2JoinTimeline(roomEvents{
+				roomID: roomID,
+				state:  createRoomState(t, alice, time.Now()),
+				events: hundredEvents,
+			}),
+		},
+	})
+	res := v3.mustDoV3Request(t, aliceToken, sync3.Request{
+		Lists: map[string]sync3.RequestList{"a": {
+			Ranges: sync3.SliceRanges{
+				[2]int64{0, 10},
+			},
+			RoomSubscription: sync3.RoomSubscription{
+				TimelineLimit: 99999,
+			},
+		}},
+	})
+	m.MatchResponse(t, res, m.MatchList("a",
+		m.MatchV3Ops(m.MatchV3SyncOp(0, 0, []string{roomID})),
+	), m.MatchRoomSubscription(roomID, m.MatchRoomTimeline(hundredEvents[50:]))) // caps at 50
+}
+
 // Regression test for a thing which Synapse can sometimes send down sync v2.
 // See https://github.com/matrix-org/sliding-sync/issues/367
 // This would cause this room to not be processed at all, which is bad.
