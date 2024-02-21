@@ -68,6 +68,7 @@ type Storage struct {
 	DeviceDataTable   *DeviceDataTable
 	ReceiptTable      *ReceiptTable
 	DB                *sqlx.DB
+	MaxTimelineLimit  int
 }
 
 func NewStorage(postgresURI string) *Storage {
@@ -102,6 +103,7 @@ func NewStorageWithDB(db *sqlx.DB, addPrometheusMetrics bool) *Storage {
 		DeviceDataTable:   NewDeviceDataTable(db),
 		ReceiptTable:      NewReceiptTable(db),
 		DB:                db,
+		MaxTimelineLimit:  50,
 	}
 }
 
@@ -705,11 +707,14 @@ func (s *Storage) RoomStateAfterEventPosition(ctx context.Context, roomIDs []str
 // - in the given rooms
 // - that the user has permission to see
 // - with NIDs <= `to`.
-// Up to `limit` events are chosen per room.
+// Up to `limit` events are chosen per room. This limit be itself be limited according to MaxTimelineLimit.
 func (s *Storage) LatestEventsInRooms(userID string, roomIDs []string, to int64, limit int) (map[string]*LatestEvents, error) {
 	roomIDToRange, err := s.visibleEventNIDsBetweenForRooms(userID, roomIDs, 0, to)
 	if err != nil {
 		return nil, err
+	}
+	if s.MaxTimelineLimit != 0 && limit > s.MaxTimelineLimit {
+		limit = s.MaxTimelineLimit
 	}
 	result := make(map[string]*LatestEvents, len(roomIDs))
 	err = sqlutil.WithTransaction(s.Accumulator.db, func(txn *sqlx.Tx) error {
