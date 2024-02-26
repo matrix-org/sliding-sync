@@ -428,7 +428,9 @@ func (c *UserCache) Invites() map[string]UserRoomData {
 }
 
 // AttemptToFetchPrevBatch tries to find a prev_batch value for the given event. This may not always succeed.
-func (c *UserCache) AttemptToFetchPrevBatch(roomID string, firstTimelineEvent *EventData) (prevBatch string) {
+func (c *UserCache) AttemptToFetchPrevBatch(ctx context.Context, roomID string, firstTimelineEvent *EventData) (prevBatch string) {
+	_, span := internal.StartSpan(ctx, "AttemptToFetchPrevBatch")
+	defer span.End()
 	return c.store.GetClosestPrevBatch(roomID, firstTimelineEvent.NID)
 }
 
