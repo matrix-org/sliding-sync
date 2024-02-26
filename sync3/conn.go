@@ -135,6 +135,7 @@ func (c *Conn) isOutstanding(pos int64) bool {
 // client. It will NOT be reported to Sentry---this should happen as close as possible
 // to the creation of the error (or else Sentry cannot provide a meaningful traceback.)
 func (c *Conn) OnIncomingRequest(ctx context.Context, req *Request, start time.Time) (resp *Response, herr *internal.HandlerError) {
+	ctx, span := internal.StartSpan(ctx, "OnIncomingRequest.AcquireMutex")
 	c.cancelOutstandingRequestMu.Lock()
 	if c.cancelOutstandingRequest != nil {
 		c.cancelOutstandingRequest()
@@ -149,6 +150,7 @@ func (c *Conn) OnIncomingRequest(ctx context.Context, req *Request, start time.T
 	// it's intentional for the lock to be held whilst inside HandleIncomingRequest
 	// as it guarantees linearisation of data within a single connection
 	defer c.mu.Unlock()
+	span.End()
 
 	isFirstRequest := req.pos == 0
 	isRetransmit := !isFirstRequest && c.lastClientRequest.pos == req.pos
