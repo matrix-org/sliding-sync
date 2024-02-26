@@ -318,7 +318,9 @@ func (h *Handler) HandleLiveUpdate(ctx context.Context, update caches.Update, re
 	extCtx.Handler = h
 	exts := req.EnabledExtensions()
 	for _, ext := range exts {
-		ext.AppendLive(ctx, res, extCtx, update)
+		childCtx, region := internal.StartSpan(ctx, "extension_live_"+ext.Name())
+		ext.AppendLive(childCtx, res, extCtx, update)
+		region.End()
 	}
 }
 
