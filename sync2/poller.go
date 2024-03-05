@@ -503,10 +503,7 @@ func (p *poller) Poll(since string) {
 	// caller and passed down?
 	hub := sentry.CurrentHub().Clone()
 	hub.ConfigureScope(func(scope *sentry.Scope) {
-		scope.SetUser(sentry.User{Username: p.userID})
-		scope.SetContext(internal.SentryCtxKey, map[string]interface{}{
-			"device_id": p.deviceID,
-		})
+		scope.SetUser(sentry.User{Username: p.userID, ID: p.deviceID})
 	})
 	ctx := sentry.SetHubOnContext(context.Background(), hub)
 
