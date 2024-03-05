@@ -86,7 +86,7 @@ location /.well-known/matrix/client {
 There are two ways to run the proxy:
 - Compiling from source:
 ```
-$ go build ./cmd/syncv3
+$ CGO_ENABLED=0 go build ./cmd/syncv3
 $ SYNCV3_SECRET=$(cat .secret) SYNCV3_SERVER="https://matrix-client.matrix.org" SYNCV3_DB="user=$(whoami) dbname=syncv3 sslmode=disable password='DATABASE_PASSWORD_HERE'" SYNCV3_BINDADDR=0.0.0.0:8008 ./syncv3
 ```
 
@@ -192,7 +192,7 @@ Then send `profile.pprof` to someone who will then run `go tool pprof -http :565
 Sanity check everything builds:
 
 ```shell
-go build ./cmd/syncv3
+CGO_ENABLED=0 go build ./cmd/syncv3
 go list ./... | xargs -n1 go test -c -o /dev/null
 ```
 
