@@ -385,7 +385,7 @@ func (h *SyncLiveHandler) setupConnection(req *http.Request, cancel context.Canc
 		Str("device", token.DeviceID).
 		Str("conn", syncReq.ConnID).
 		Logger()
-	internal.SetRequestContextUserID(req.Context(), token.UserID, token.DeviceID)
+	req = req.WithContext(internal.AssociateUserIDWithRequest(req.Context(), token.UserID, token.DeviceID))
 	internal.Logf(req.Context(), "setupConnection", "identified access token as user=%s device=%s", token.UserID, token.DeviceID)
 
 	// Record the fact that we've recieved a request from this token

@@ -48,19 +48,24 @@ func RequestContext(ctx context.Context) context.Context {
 }
 
 // add the user ID to this request context. Need to have called RequestContext first.
-func SetRequestContextUserID(ctx context.Context, userID, deviceID string) {
+func AssociateUserIDWithRequest(ctx context.Context, userID, deviceID string) context.Context {
 	d := ctx.Value(ctxData)
 	if d == nil {
-		return
+		return ctx
 	}
 	da := d.(*data)
 	da.userID = userID
 	da.deviceID = deviceID
-	if hub := sentry.GetHubFromContext(ctx); hub != nil {
-		sentry.ConfigureScope(func(scope *sentry.Scope) {
-			scope.SetUser(sentry.User{Username: userID})
-		})
+	hub := sentry.GetHubFromContext(ctx)
+	if hub == nil {
+		// Basing the sentry-wrangling on the sentry-go net/http integration, see e.g.
+		// https://github.com/getsentry/sentry-go/blob/02e712a638c40cd9701ad52d5d1309d65d556ef9/http/sentryhttp.go#L84
+		hub = sentry.CurrentHub().Clone()
 	}
+	hub.ConfigureScope(func(scope *sentry.Scope) {
+		scope.SetUser(sentry.User{Username: userID, ID: deviceID})
+	})
+	return sentry.SetHubOnContext(ctx, hub)
 }
 
 func SetConnBufferInfo(ctx context.Context, bufferLen, nextLen, bufferCap int) {
