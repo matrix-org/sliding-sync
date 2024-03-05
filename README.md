@@ -30,20 +30,20 @@ The Sliding Sync proxy requires some environment variables set to function. They
 
 Here is a short description of each, as of writing:
 ```
-SYNCV3_SERVER     Required. The destination homeserver to talk to (CS API HTTPS URL) e.g 'https://matrix-client.matrix.org' (Supports unix socket: /path/to/socket)
-SYNCV3_DB         Required. The postgres connection string: https://www.postgresql.org/docs/current/libpq-connect.html#LIBPQ-CONNSTRING
-SYNCV3_SECRET     Required. A secret to use to encrypt access tokens. Must remain the same for the lifetime of the database.
-SYNCV3_BINDADDR   Default: 0.0.0.0:8008. The interface and port to listen on. (Supports unix socket: /path/to/socket)
-SYNCV3_TLS_CERT   Default: unset. Path to a certificate file to serve to HTTPS clients. Specifying this enables TLS on the bound address.
-SYNCV3_TLS_KEY    Default: unset. Path to a key file for the certificate. Must be provided along with the certificate file.
-SYNCV3_PPROF      Default: unset. The bind addr for pprof debugging e.g ':6060'. If not set, does not listen.
-SYNCV3_PROM       Default: unset. The bind addr for Prometheus metrics, which will be accessible at /metrics at this address.
-SYNCV3_OTLP_URL Default: unset. The OTLP HTTP URL to send spans to e.g https://localhost:4318 - if unset does not send OTLP traces.
+SYNCV3_SERVER        Required. The destination homeserver to talk to (CS API HTTPS URL) e.g 'https://matrix-client.matrix.org' (Supports unix socket: /path/to/socket)
+SYNCV3_DB            Required. The postgres connection string: https://www.postgresql.org/docs/current/libpq-connect.html#LIBPQ-CONNSTRING
+SYNCV3_SECRET        Required. A secret to use to encrypt access tokens. Must remain the same for the lifetime of the database.
+SYNCV3_BINDADDR      Default: 0.0.0.0:8008. The interface and port to listen on. (Supports unix socket: /path/to/socket)
+SYNCV3_TLS_CERT      Default: unset. Path to a certificate file to serve to HTTPS clients. Specifying this enables TLS on the bound address.
+SYNCV3_TLS_KEY       Default: unset. Path to a key file for the certificate. Must be provided along with the certificate file.
+SYNCV3_PPROF         Default: unset. The bind addr for pprof debugging e.g ':6060'. If not set, does not listen.
+SYNCV3_PROM          Default: unset. The bind addr for Prometheus metrics, which will be accessible at /metrics at this address.
+SYNCV3_OTLP_URL      Default: unset. The OTLP HTTP URL to send spans to e.g https://localhost:4318 - if unset does not send OTLP traces.
 SYNCV3_OTLP_USERNAME Default: unset. The OTLP username for Basic auth. If unset, does not send an Authorization header.
 SYNCV3_OTLP_PASSWORD Default: unset. The OTLP password for Basic auth. If unset, does not send an Authorization header.
-SYNCV3_SENTRY_DSN Default: unset. The Sentry DSN to report events to e.g https://sliding-sync@sentry.example.com/123 - if unset does not send sentry events.
-SYNCV3_LOG_LEVEL  Default: info. The level of verbosity for messages logged. Available values are trace, debug, info, warn, error and fatal
-SYNCV3_MAX_DB_CONN Default: unset. Max database connections to use when communicating with postgres. Unset or 0 means no limit.
+SYNCV3_SENTRY_DSN    Default: unset. The Sentry DSN to report events to e.g https://sliding-sync@sentry.example.com/123 - if unset does not send sentry events.
+SYNCV3_LOG_LEVEL     Default: info. The level of verbosity for messages logged. Available values are trace, debug, info, warn, error and fatal
+SYNCV3_MAX_DB_CONN   Default: unset. Max database connections to use when communicating with postgres. Unset or 0 means no limit.
 ```
 
 It is easiest to host the proxy on a separate hostname than the Matrix server, though it is possible to use the same hostname by forwarding the used endpoints.
