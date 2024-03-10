@@ -4,20 +4,23 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"github.com/jmoiron/sqlx"
-	"github.com/matrix-org/sliding-sync/sqlutil"
 	"net/http"
 	"os"
 	"sync/atomic"
 	"testing"
 	"time"
 
+	"github.com/jmoiron/sqlx"
+
+	"github.com/matrix-org/sliding-sync/sqlutil"
+
+	"github.com/tidwall/gjson"
+
 	"github.com/matrix-org/sliding-sync/sync2"
 	"github.com/matrix-org/sliding-sync/sync3"
 	"github.com/matrix-org/sliding-sync/sync3/extensions"
 	"github.com/matrix-org/sliding-sync/testutils"
 	"github.com/matrix-org/sliding-sync/testutils/m"
-	"github.com/tidwall/gjson"
 )
 
 // Tests that if Alice is syncing with Device A, then begins syncing on a new Device B, we use
@@ -325,8 +328,11 @@ func TestPollersCanBeResumedAfterExpiry(t *testing.T) {
 	v2 := runTestV2Server(t)
 	defer v2.close()
 	const aliceDevice = "alice_phone"
+	const aliceDevice2 = "alice_phone_new"
 	const bobDevice = "bob_desktop"
+	aliceNewToken := "ALICE_BEARER_TOKEN_2"
 	v2.addAccountWithDeviceID(alice, aliceDevice, aliceToken)
+	v2.addAccountWithDeviceID(alice, aliceDevice2, aliceNewToken)
 	v2.addAccountWithDeviceID(bob, bobDevice, bobToken)
 
 	// Queue up a sync v2 response for both Alice and Bob.
@@ -377,6 +383,14 @@ func TestPollersCanBeResumedAfterExpiry(t *testing.T) {
 			},
 		},
 	})
+	v2.queueResponse(aliceNewToken, sync2.SyncResponse{
+		NextBatch: "alice_response_2",
+		AccountData: sync2.EventsResponse{
+			Events: []json.RawMessage{
+				accdata,
+			},
+		},
+	})
 	v2.queueResponse(bobToken, sync2.SyncResponse{NextBatch: "bob_response_2"})
 
 	t.Log("Wait for Bob's poller to poll")
@@ -407,7 +421,7 @@ func TestPollersCanBeResumedAfterExpiry(t *testing.T) {
 	})
 
 	t.Log("Alice makes a new sliding sync request")
-	res := v3.mustDoV3Request(t, aliceToken, sync3.Request{
+	res := v3.mustDoV3Request(t, aliceNewToken, sync3.Request{
 		Extensions: extensions.Request{
 			AccountData: &extensions.AccountDataRequest{
 				Core: extensions.Core{
@@ -418,7 +432,7 @@ func TestPollersCanBeResumedAfterExpiry(t *testing.T) {
 	})
 
 	t.Log("Alice's poller should have been polled.")
-	v2.waitUntilEmpty(t, aliceToken)
+	v2.waitUntilEmpty(t, aliceNewToken)
 
 	t.Log("Alice should see her account data")
 	m.MatchResponse(t, res, m.MatchAccountData([]json.RawMessage{accdata}, nil))

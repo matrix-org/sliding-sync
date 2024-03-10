@@ -17,7 +17,13 @@ import (
 
 	"github.com/getsentry/sentry-go"
 	"github.com/jmoiron/sqlx"
+
 	"github.com/matrix-org/sliding-sync/sqlutil"
+
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/rs/zerolog"
+	"github.com/rs/zerolog/hlog"
+	"github.com/rs/zerolog/log"
 
 	"github.com/matrix-org/sliding-sync/internal"
 	"github.com/matrix-org/sliding-sync/pubsub"
@@ -26,10 +32,6 @@ import (
 	"github.com/matrix-org/sliding-sync/sync3"
 	"github.com/matrix-org/sliding-sync/sync3/caches"
 	"github.com/matrix-org/sliding-sync/sync3/extensions"
-	"github.com/prometheus/client_golang/prometheus"
-	"github.com/rs/zerolog"
-	"github.com/rs/zerolog/hlog"
-	"github.com/rs/zerolog/log"
 )
 
 const DefaultSessionID = "default"
@@ -378,6 +380,15 @@ func (h *SyncLiveHandler) setupConnection(req *http.Request, cancel context.Canc
 			}
 		}
 	}
+	// We know about this token, but is expired, let the client know to refresh their token.
+	if token.Expired {
+		return req, nil, &internal.HandlerError{
+			StatusCode: http.StatusUnauthorized,
+			ErrCode:    "M_UNKNOWN_TOKEN",
+			Err:        fmt.Errorf("token marked as expired"),
+		}
+	}
+
 	req = req.WithContext(internal.SetAttributeOnContext(req.Context(), internal.OTLPTagUserID, token.UserID))
 	req = req.WithContext(internal.SetAttributeOnContext(req.Context(), internal.OTLPTagDeviceID, token.DeviceID))
 	log := hlog.FromRequest(req).With().

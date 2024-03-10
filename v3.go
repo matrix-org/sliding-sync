@@ -16,6 +16,7 @@ import (
 	"github.com/getsentry/sentry-go"
 	"github.com/gorilla/mux"
 	"github.com/jmoiron/sqlx"
+
 	"github.com/matrix-org/sliding-sync/internal"
 	"github.com/matrix-org/sliding-sync/pubsub"
 	"github.com/matrix-org/sliding-sync/state"
@@ -23,6 +24,8 @@ import (
 	"github.com/matrix-org/sliding-sync/sync2"
 	"github.com/matrix-org/sliding-sync/sync2/handler2"
 	"github.com/matrix-org/sliding-sync/sync3/handler"
+
+	_ "github.com/matrix-org/sliding-sync/state/migrations"
 	"github.com/pressly/goose/v3"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/hlog"
@@ -116,6 +119,9 @@ func Setup(destHomeserver, postgresURI, secret string, opts Opts) (*handler2.Han
 	}
 	store := state.NewStorageWithDB(db, opts.AddPrometheusMetrics)
 	storev2 := sync2.NewStoreWithDB(db, secret)
+
+	// Start a ticker to delete expired tokens every hour
+	storev2.StartDeleteExpiredTokenTicker(time.Hour)
 
 	// Automatically execute migrations
 	goose.SetBaseFS(EmbedMigrations)
