@@ -4,11 +4,13 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"github.com/matrix-org/sliding-sync/testutils"
 	"reflect"
 	"sort"
 	"sync"
+	"sync/atomic"
 	"testing"
+
+	"github.com/matrix-org/sliding-sync/testutils"
 
 	"github.com/jmoiron/sqlx"
 	"github.com/matrix-org/sliding-sync/sqlutil"
@@ -680,7 +682,7 @@ func TestAccumulatorConcurrency(t *testing.T) {
 		[]byte(`{"event_id":"con_4", "type":"m.room.name", "state_key":"", "content":{"name":"4"}}`),
 		[]byte(`{"event_id":"con_5", "type":"m.room.name", "state_key":"", "content":{"name":"5"}}`),
 	}
-	totalNumNew := 0
+	var totalNumNew atomic.Int64
 	var wg sync.WaitGroup
 	wg.Add(len(newEvents))
 	for i := 0; i < len(newEvents); i++ {
@@ -689,7 +691,7 @@ func TestAccumulatorConcurrency(t *testing.T) {
 			subset := newEvents[:(i + 1)] // i=0 => [1], i=1 => [1,2], etc
 			err := sqlutil.WithTransaction(accumulator.db, func(txn *sqlx.Tx) error {
 				result, err := accumulator.Accumulate(txn, userID, roomID, sync2.TimelineResponse{Events: subset})
-				totalNumNew += result.NumNew
+				totalNumNew.Add(int64(result.NumNew))
 				return err
 			})
 			if err != nil {
@@ -698,8 +700,8 @@ func TestAccumulatorConcurrency(t *testing.T) {
 		}(i)
 	}
 	wg.Wait() // wait for all goroutines to finish
-	if totalNumNew != len(newEvents) {
-		t.Errorf("got %d total new events, want %d", totalNumNew, len(newEvents))
+	if int(totalNumNew.Load()) != len(newEvents) {
+		t.Errorf("got %d total new events, want %d", totalNumNew.Load(), len(newEvents))
 	}
 	// check that the name of the room is "5"
 	snapshot := currentSnapshotNIDs(t, accumulator.snapshotTable, roomID)
