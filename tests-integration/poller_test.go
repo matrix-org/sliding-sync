@@ -4,13 +4,14 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"github.com/jmoiron/sqlx"
-	"github.com/matrix-org/sliding-sync/sqlutil"
 	"net/http"
 	"os"
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/jmoiron/sqlx"
+	"github.com/matrix-org/sliding-sync/sqlutil"
 
 	"github.com/matrix-org/sliding-sync/sync2"
 	"github.com/matrix-org/sliding-sync/sync3"
@@ -45,7 +46,7 @@ func TestSecondPollerFiltersToDevice(t *testing.T) {
 	// now sync with device B, and check we send the filter up
 	deviceBToken := "DEVICE_B_TOKEN"
 	v2.addAccountWithDeviceID(alice, "B", deviceBToken)
-	seenInitialRequest := false
+	var seenInitialRequest atomic.Bool
 	v2.SetCheckRequest(func(token string, req *http.Request) {
 		if token != deviceBToken {
 			return
@@ -62,7 +63,7 @@ func TestSecondPollerFiltersToDevice(t *testing.T) {
 		timelineLimit := filterJSON.Get("room.timeline.limit").Int()
 		roomsFilter := filterJSON.Get("room.rooms")
 
-		if !seenInitialRequest {
+		if !seenInitialRequest.Load() {
 			// First poll: should be an initial sync, limit 1, excluding all room timelines.
 			if since != "" {
 				t.Errorf("Expected no since token on first poll, but got %v", since)
@@ -89,7 +90,7 @@ func TestSecondPollerFiltersToDevice(t *testing.T) {
 			}
 		}
 
-		seenInitialRequest = true
+		seenInitialRequest.Store(true)
 	})
 
 	wantMsg := json.RawMessage(`{"type":"f","content":{"f":"b"}}`)
@@ -110,7 +111,7 @@ func TestSecondPollerFiltersToDevice(t *testing.T) {
 		},
 	})
 
-	if !seenInitialRequest {
+	if !seenInitialRequest.Load() {
 		t.Fatalf("did not see initial request for 2nd device")
 	}
 	// the first request will not wait for the response before returning due to device A. Poll again

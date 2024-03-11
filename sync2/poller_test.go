@@ -25,12 +25,23 @@ const initialSinceToken = "0"
 var (
 	timeSinceMu    sync.Mutex
 	timeSinceValue = time.Duration(0) // 0 means use the real impl
+	timeSleepMu    sync.Mutex
+	timeSleepValue = time.Duration(0)  // 0 means use the real impl
+	timeSleepCheck func(time.Duration) // called to check sleep values
 )
 
 func setTimeSinceValue(val time.Duration) {
 	timeSinceMu.Lock()
+	defer timeSinceMu.Unlock()
 	timeSinceValue = val
-	timeSinceMu.Unlock()
+}
+func setTimeSleepDelay(val time.Duration, fn ...func(d time.Duration)) {
+	timeSleepMu.Lock()
+	defer timeSleepMu.Unlock()
+	timeSleepValue = val
+	if len(fn) > 0 {
+		timeSleepCheck = fn[0]
+	}
 }
 func init() {
 	timeSince = func(t time.Time) time.Duration {
@@ -40,6 +51,18 @@ func init() {
 			return time.Since(t)
 		}
 		return timeSinceValue
+	}
+	timeSleep = func(d time.Duration) {
+		timeSleepMu.Lock()
+		defer timeSleepMu.Unlock()
+		if timeSleepCheck != nil {
+			timeSleepCheck(d)
+		}
+		if timeSleepValue == 0 {
+			time.Sleep(d)
+			return
+		}
+		time.Sleep(timeSleepValue)
 	}
 }
 
@@ -583,12 +606,10 @@ func TestPollerGivesUpEventually(t *testing.T) {
 	accumulator, client := newMocks(func(authHeader, since string) (*SyncResponse, int, error) {
 		return nil, 524, fmt.Errorf("gateway timeout")
 	})
-	timeSleep = func(d time.Duration) {
-		// actually sleep to make sure async actions can happen if any
-		time.Sleep(1 * time.Microsecond)
-	}
+	// actually sleep to make sure async actions can happen if any
+	setTimeSleepDelay(time.Microsecond)
 	defer func() { // reset the value after the test runs
-		timeSleep = time.Sleep
+		setTimeSleepDelay(0)
 	}()
 	var wg sync.WaitGroup
 	wg.Add(1)
@@ -654,15 +675,13 @@ func TestPollerBackoff(t *testing.T) {
 		wantBackoffDuration = errorResponses[i].backoff
 		return nil, errorResponses[i].code, errorResponses[i].err
 	})
-	timeSleep = func(d time.Duration) {
+	setTimeSleepDelay(time.Millisecond, func(d time.Duration) {
 		if d != wantBackoffDuration {
 			t.Errorf("time.Sleep called incorrectly: got %v want %v", d, wantBackoffDuration)
 		}
-		// actually sleep to make sure async actions can happen if any
-		time.Sleep(1 * time.Millisecond)
-	}
+	})
 	defer func() { // reset the value after the test runs
-		timeSleep = time.Sleep
+		setTimeSleepDelay(0)
 	}()
 	var wg sync.WaitGroup
 	wg.Add(1)
@@ -727,12 +746,10 @@ func TestPollerResendsOnCallbackError(t *testing.T) {
 	pid := PollerID{UserID: "@TestPollerResendsOnCallbackError:localhost", DeviceID: "FOOBAR"}
 
 	defer func() { // reset the value after the test runs
-		timeSleep = time.Sleep
+		setTimeSleepDelay(0)
 	}()
 	// we don't actually want to wait 3s between retries, so monkey patch it out
-	timeSleep = func(d time.Duration) {
-		time.Sleep(time.Millisecond)
-	}
+	setTimeSleepDelay(time.Millisecond)
 
 	testCases := []struct {
 		name             string

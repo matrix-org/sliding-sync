@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"reflect"
 	"sort"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -201,15 +202,15 @@ func assertDestroyedConns(t *testing.T, cidToConn map[ConnID]*Conn, isDestroyedF
 	t.Helper()
 	for cid, conn := range cidToConn {
 		if isDestroyedFn(cid) {
-			mustEqual(t, conn.handler.(*mockConnHandler).isDestroyed, true, fmt.Sprintf("conn %+v was not destroyed", cid))
+			mustEqual(t, conn.handler.(*mockConnHandler).isDestroyed.Load(), true, fmt.Sprintf("conn %+v was not destroyed", cid))
 		} else {
-			mustEqual(t, conn.handler.(*mockConnHandler).isDestroyed, false, fmt.Sprintf("conn %+v was destroyed", cid))
+			mustEqual(t, conn.handler.(*mockConnHandler).isDestroyed.Load(), false, fmt.Sprintf("conn %+v was destroyed", cid))
 		}
 	}
 }
 
 type mockConnHandler struct {
-	isDestroyed bool
+	isDestroyed atomic.Bool
 	cancel      context.CancelFunc
 }
 
@@ -219,7 +220,7 @@ func (c *mockConnHandler) OnIncomingRequest(ctx context.Context, cid ConnID, req
 func (c *mockConnHandler) OnUpdate(ctx context.Context, update caches.Update) {}
 func (c *mockConnHandler) PublishEventsUpTo(roomID string, nid int64)         {}
 func (c *mockConnHandler) Destroy() {
-	c.isDestroyed = true
+	c.isDestroyed.Store(true)
 }
 func (c *mockConnHandler) Alive() bool {
 	return true // buffer never fills up

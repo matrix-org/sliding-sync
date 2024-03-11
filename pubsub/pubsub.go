@@ -84,7 +84,11 @@ func (ps *PubSub) Notify(chanName string, p Payload) error {
 		return fmt.Errorf("notify with payload %v timed out", p.Type())
 	}
 	if ps.bufferSize == 0 {
+		// for some reason go test -race flags this as racing with calls
+		// to close(ch), despite the fact that it _should_ be thread-safe :S
+		ps.mu.Lock()
 		ch <- &emptyPayload{}
+		ps.mu.Unlock()
 	}
 	return nil
 }
