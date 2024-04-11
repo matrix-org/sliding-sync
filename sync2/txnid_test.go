@@ -70,8 +70,7 @@ func TestPendingTransactionIDs(t *testing.T) {
 	assertAllClear(t, allClear, false) // waiting on D2, D3 and D4
 
 	// One of Delia's devices, say D2, sees a txn ID for event 4.
-	err = pending.SeenTxnID("event4")
-	assertNoError(t, err)
+	pending.SeenTxnID("event4")
 
 	// The other devices see the event. Neither should emit all clear.
 	allClear, err = pending.MissingTxnID("event4", "delia", "D3")
@@ -84,8 +83,7 @@ func TestPendingTransactionIDs(t *testing.T) {
 
 	// Enid.
 	// Enid has two devices. Her first poller (E1) is lucky and sees the transaction ID.
-	err = pending.SeenTxnID("event5")
-	assertNoError(t, err)
+	pending.SeenTxnID("event5")
 
 	// Her second poller misses the transaction ID, but this shouldn't cause an all clear.
 	allClear, err = pending.MissingTxnID("event4", "delia", "E2")

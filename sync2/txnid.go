@@ -1,11 +1,10 @@
 package sync2
 
 import (
-	"fmt"
 	"sync"
 	"time"
 
-	"github.com/jellydator/ttlcache/v2"
+	"github.com/jellydator/ttlcache/v3"
 )
 
 type loaderFunc func(userID string) (deviceIDs []string)
@@ -37,15 +36,17 @@ type loaderFunc func(userID string) (deviceIDs []string)
 type PendingTransactionIDs struct {
 	// mu guards the pending field. See MissingTxnID for rationale.
 	mu      sync.Mutex
-	pending *ttlcache.Cache
+	pending *ttlcache.Cache[string, []string]
 	// loader should provide the list of device IDs
 	loader loaderFunc
 }
 
 func NewPendingTransactionIDs(loader loaderFunc) *PendingTransactionIDs {
-	c := ttlcache.NewCache()
-	c.SetTTL(5 * time.Minute)     // keep transaction IDs for 5 minutes before forgetting about them
-	c.SkipTTLExtensionOnHit(true) // we don't care how many times they ask for the item, 5min is the limit.
+	c := ttlcache.New[string, []string](
+		ttlcache.WithTTL[string, []string](5 * time.Minute), // keep transaction IDs for 5 minutes before forgetting about them
+		ttlcache.WithDisableTouchOnHit[string, []string](),  // we don't care how many times they ask for the item, 5min is the limit.
+	)
+	go c.Start()
 	return &PendingTransactionIDs{
 		mu:      sync.Mutex{},
 		pending: c,
@@ -78,34 +79,28 @@ func (c *PendingTransactionIDs) MissingTxnID(eventID, userID, myDeviceID string)
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
-	data, err := c.pending.Get(eventID)
-	if err == ttlcache.ErrNotFound {
-		data = c.loader(userID)
-	} else if err != nil {
-		return false, fmt.Errorf("PendingTransactionIDs: failed to get device ids: %w", err)
-	}
+	var deviceIDs []string
 
-	deviceIDs, ok := data.([]string)
-	if !ok {
-		return false, fmt.Errorf("PendingTransactionIDs: failed to cast device IDs")
+	item := c.pending.Get(eventID)
+	if item == nil {
+		deviceIDs = c.loader(userID)
+	} else {
+		deviceIDs = item.Value()
 	}
 
 	deviceIDs, changed := removeDevice(myDeviceID, deviceIDs)
 	if changed {
-		err = c.pending.Set(eventID, deviceIDs)
-		if err != nil {
-			return false, fmt.Errorf("PendingTransactionIDs: failed to set device IDs: %w", err)
-		}
+		c.pending.Set(eventID, deviceIDs, ttlcache.DefaultTTL)
 	}
 	return changed && len(deviceIDs) == 0, nil
 }
 
 // SeenTxnID should be called to report that this device saw a transaction ID
 // for this event.
-func (c *PendingTransactionIDs) SeenTxnID(eventID string) error {
+func (c *PendingTransactionIDs) SeenTxnID(eventID string) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	return c.pending.Set(eventID, []string{})
+	c.pending.Set(eventID, []string{}, ttlcache.DefaultTTL)
 }
 
 // removeDevice takes a device ID slice and returns a device ID slice with one

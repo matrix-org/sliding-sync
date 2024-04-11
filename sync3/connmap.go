@@ -7,14 +7,14 @@ import (
 
 	"golang.org/x/exp/slices"
 
-	"github.com/jellydator/ttlcache/v2"
+	"github.com/jellydator/ttlcache/v3"
 	"github.com/matrix-org/sliding-sync/internal"
 	"github.com/prometheus/client_golang/prometheus"
 )
 
 // ConnMap stores a collection of Conns.
 type ConnMap struct {
-	cache *ttlcache.Cache
+	cache *ttlcache.Cache[string, *Conn]
 
 	// map of user_id to active connections. Inspect the ConnID to find the device ID.
 	userIDToConn map[string][]*Conn
@@ -32,11 +32,13 @@ func NewConnMap(enablePrometheus bool, ttl time.Duration) *ConnMap {
 	cm := &ConnMap{
 		userIDToConn: make(map[string][]*Conn),
 		connIDToConn: make(map[string]*Conn),
-		cache:        ttlcache.NewCache(),
+		cache:        ttlcache.New[string, *Conn](
+		                  ttlcache.WithTTL[string, *Conn](ttl),
+		              ),
 		mu:           &sync.Mutex{},
 	}
-	cm.cache.SetTTL(ttl)
-	cm.cache.SetExpirationCallback(cm.closeConnExpires)
+	cm.cache.OnEviction(cm.closeConnExpires)
+	go cm.cache.Start()
 
 	if enablePrometheus {
 		cm.expiryTimedOutCounter = prometheus.NewCounter(prometheus.CounterOpts{
@@ -65,7 +67,7 @@ func NewConnMap(enablePrometheus bool, ttl time.Duration) *ConnMap {
 }
 
 func (m *ConnMap) Teardown() {
-	m.cache.Close()
+	m.cache.Stop()
 
 	if m.numConns != nil {
 		prometheus.Unregister(m.numConns)
@@ -117,11 +119,11 @@ func (m *ConnMap) Conn(cid ConnID) *Conn {
 // getConn returns a connection with this ConnID. Returns nil if no connection exists. Expires connections if the buffer is full.
 // Must hold mu.
 func (m *ConnMap) getConn(cid ConnID) *Conn {
-	cint, _ := m.cache.Get(cid.String())
-	if cint == nil {
+	item := m.cache.Get(cid.String())
+	if item == nil {
 		return nil
 	}
-	conn := cint.(*Conn)
+	conn := item.Value()
 	if conn.Alive() {
 		return conn
 	}
@@ -155,7 +157,7 @@ func (m *ConnMap) CreateConn(cid ConnID, cancel context.CancelFunc, newConnHandl
 	h := newConnHandler()
 	h.SetCancelCallback(cancel)
 	conn = NewConn(cid, h)
-	m.cache.Set(cid.String(), conn)
+	m.cache.Set(cid.String(), conn, ttlcache.DefaultTTL)
 	m.connIDToConn[cid.String()] = conn
 	m.userIDToConn[cid.UserID] = append(m.userIDToConn[cid.UserID], conn)
 	m.updateMetrics(len(m.connIDToConn))
@@ -167,10 +169,10 @@ func (m *ConnMap) CloseConnsForDevice(userID, deviceID string) {
 	// gather open connections for this user|device
 	connIDs := m.connIDsForDevice(userID, deviceID)
 	for _, cid := range connIDs {
-		err := m.cache.Remove(cid.String()) // this will fire TTL callbacks which calls closeConn
-		if err != nil {
-			logger.Err(err).Str("cid", cid.String()).Msg("CloseConnsForDevice: cid did not exist in ttlcache")
-			internal.GetSentryHubFromContextOrDefault(context.Background()).CaptureException(err)
+		item, _ := m.cache.GetAndDelete(cid.String()) // this will fire TTL callbacks which calls closeConn
+		if item == nil {
+			logger.Error().Str("cid", cid.String()).Msg("CloseConnsForDevice: cid did not exist in ttlcache")
+			internal.GetSentryHubFromContextOrDefault(context.Background())
 		}
 	}
 }
@@ -198,10 +200,10 @@ func (m *ConnMap) CloseConnsForUsers(userIDs []string) (closed int) {
 		logger.Trace().Str("user", userID).Int("num_conns", len(conns)).Msg("closing all device connections due to CloseConn()")
 
 		for _, conn := range conns {
-			err := m.cache.Remove(conn.String()) // this will fire TTL callbacks which calls closeConn
-			if err != nil {
-				logger.Err(err).Str("cid", conn.String()).Msg("CloseConnsForDevice: cid did not exist in ttlcache")
-				internal.GetSentryHubFromContextOrDefault(context.Background()).CaptureException(err)
+			item, _ := m.cache.GetAndDelete(conn.String()) // this will fire TTL callbacks which calls closeConn
+			if item == nil {
+				logger.Error().Str("cid", conn.String()).Msg("CloseConnsForDevice: cid did not exist in ttlcache")
+				internal.GetSentryHubFromContextOrDefault(context.Background())
 			}
 		}
 		closed += len(conns)
@@ -209,10 +211,11 @@ func (m *ConnMap) CloseConnsForUsers(userIDs []string) (closed int) {
 	return closed
 }
 
-func (m *ConnMap) closeConnExpires(connID string, value interface{}) {
+func (m *ConnMap) closeConnExpires(ctx context.Context, reason ttlcache.EvictionReason, item *ttlcache.Item[string, *Conn]) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	conn := value.(*Conn)
+	connID := item.Key()
+	conn := item.Value()
 	logger.Info().Str("conn", connID).Msg("closing connection due to expired TTL in cache")
 	if m.expiryTimedOutCounter != nil {
 		m.expiryTimedOutCounter.Inc()

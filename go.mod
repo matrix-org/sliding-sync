@@ -6,7 +6,7 @@ require (
 	github.com/fxamacker/cbor/v2 v2.5.0
 	github.com/getsentry/sentry-go v0.24.1
 	github.com/gorilla/mux v1.8.0
-	github.com/jellydator/ttlcache/v2 v2.11.1
+	github.com/jellydator/ttlcache/v3 v3.2.0
 	github.com/jmoiron/sqlx v1.3.3
 	github.com/lib/pq v1.10.9
 	github.com/matrix-org/complement v0.0.0-20231102222540-7efd8fce6d58
