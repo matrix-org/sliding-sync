@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/matrix-org/complement/b"
 	"github.com/matrix-org/sliding-sync/sync3"
 	"github.com/matrix-org/sliding-sync/sync3/extensions"
 	"github.com/matrix-org/sliding-sync/testutils"
@@ -208,6 +209,69 @@ func TestAccountDataDoesntDupe(t *testing.T) {
 			},
 		}))
 	}
+}
+
+// Regression test for https://github.com/matrix-org/sliding-sync/issues/417
+func TestAccountDataDoesntDupeWithUpdates(t *testing.T) {
+	alice := registerNewUser(t)
+	roomID := alice.MustCreateRoom(t, map[string]interface{}{
+		"preset": "public_chat",
+	})
+	roomAccountData1 := putRoomAccountData(t, alice, roomID, "foo", map[string]interface{}{"a": "b"})
+	roomAccountData2 := putRoomAccountData(t, alice, roomID, "bar", map[string]interface{}{"a2": "b2"})
+
+	// all_rooms with timeline limit 1 initially
+	res := alice.SlidingSync(t, sync3.Request{
+		Extensions: extensions.Request{
+			AccountData: &extensions.AccountDataRequest{
+				Core: extensions.Core{
+					Enabled: &boolTrue,
+				},
+			},
+		},
+		Lists: map[string]sync3.RequestList{
+			"all_rooms": {
+				Ranges: sync3.SliceRanges{{0, 10}},
+				RoomSubscription: sync3.RoomSubscription{
+					TimelineLimit: 1,
+				},
+			},
+		},
+	})
+	m.MatchResponse(t, res, m.MatchList("all_rooms", m.MatchV3Count(1)), m.MatchAccountData(nil, map[string][]json.RawMessage{
+		roomID: {roomAccountData1, roomAccountData2},
+	}))
+
+	// now send some events into the room
+	alice.SendTyping(t, roomID, true, 5000)
+	alice.SendEventSynced(t, roomID, b.Event{
+		Type: "custom",
+		Content: map[string]interface{}{
+			"foo": "bar",
+		},
+	})
+
+	// now sync with a visible_rooms list, we should not see duplicate account data (though do expect 2 as we're changing the subscription)
+	res = alice.SlidingSync(t, sync3.Request{
+		Lists: map[string]sync3.RequestList{
+			"all_rooms": {
+				Ranges: sync3.SliceRanges{{0, 10}},
+				RoomSubscription: sync3.RoomSubscription{
+					TimelineLimit: 1,
+				},
+			},
+			"visible_rooms": {
+				Ranges: sync3.SliceRanges{{0, 10}},
+				RoomSubscription: sync3.RoomSubscription{
+					TimelineLimit: 10,
+				},
+			},
+		},
+	}, WithPos(res.Pos))
+	m.MatchResponse(t, res, m.MatchList("all_rooms", m.MatchV3Count(1)), m.MatchAccountData(nil, map[string][]json.RawMessage{
+		roomID: {roomAccountData1, roomAccountData2},
+	}))
+
 }
 
 // putAccountData is a wrapper around SetGlobalAccountData. It returns the account data
