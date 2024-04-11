@@ -860,3 +860,65 @@ func TestPreemptiveBanIsNotLeaked(t *testing.T) {
 		return seenSentinel(response)
 	})
 }
+
+// Regression test for https://github.com/matrix-org/sliding-sync/issues/416
+// Alice and Bob are in a room, and Alice is also in another unrelated room.
+// Alice leaves the room.
+// Alice rejoins the room.
+// Ensure Alice is told about the rejoined room.
+func TestRejoinReappearsInRoomList(t *testing.T) {
+	alice := registerNewUser(t)
+	bob := registerNewUser(t)
+	unrelatedRoomID := alice.MustCreateRoom(t, map[string]interface{}{"preset": "public_chat"}) // unrelated room
+
+	joinRoomID := alice.MustCreateRoom(t, map[string]interface{}{"preset": "public_chat"})
+	bob.JoinRoom(t, joinRoomID, nil)
+
+	res := alice.SlidingSync(t, sync3.Request{
+		Lists: map[string]sync3.RequestList{
+			"a": {
+				RoomSubscription: sync3.RoomSubscription{
+					TimelineLimit: 20,
+				},
+				Ranges: sync3.SliceRanges{{0, 10}},
+			},
+		},
+	})
+	m.MatchResponse(t, res, m.MatchList("a", m.MatchV3Count(2), m.MatchV3Ops(
+		m.MatchV3SyncOp(0, 1, []string{joinRoomID, unrelatedRoomID}),
+	)), m.MatchRoomSubscription(joinRoomID, m.MatchJoinCount(2)))
+
+	// Alice leaves the room
+	alice.MustLeaveRoom(t, joinRoomID)
+	res = alice.SlidingSyncUntil(t, res.Pos, sync3.Request{}, func(r *sync3.Response) error {
+		// keep going until we see the DELETE
+		for _, op := range r.Lists["a"].Ops {
+			if op.Op() != sync3.OpDelete {
+				continue
+			}
+			delOp := op.(*sync3.ResponseOpSingle)
+			if *delOp.Index != 0 {
+				return fmt.Errorf("DELETE op for index %d not 0", *delOp.Index)
+			}
+			return nil
+		}
+		m.LogResponse(t)(r)
+		return fmt.Errorf("did not see DELETE op yet")
+	})
+	m.MatchResponse(t, res, m.MatchList("a", m.MatchV3Count(1)))
+
+	// Alice rejoins the room
+	alice.MustJoinRoom(t, joinRoomID, []string{"hs1"})
+	res = alice.SlidingSyncUntil(t, res.Pos, sync3.Request{}, func(r *sync3.Response) error {
+		m.LogResponse(t)(r)
+		if len(r.Rooms[joinRoomID].Timeline) == 0 {
+			return fmt.Errorf("no timeline")
+		}
+		lastEvent := r.Rooms[joinRoomID].Timeline[len(r.Rooms[joinRoomID].Timeline)-1]
+		if gjson.ParseBytes(lastEvent).Get("content.membership").Str == "join" {
+			return nil
+		}
+		return fmt.Errorf("did not see join event yet")
+	})
+	m.MatchResponse(t, res, m.MatchList("a", m.MatchV3Count(2)), m.MatchRoomSubscription(joinRoomID, m.MatchJoinCount(2)))
+}
