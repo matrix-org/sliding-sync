@@ -5,7 +5,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/ReneKroon/ttlcache/v2"
+	"github.com/jellydator/ttlcache/v2"
 )
 
 type loaderFunc func(userID string) (deviceIDs []string)

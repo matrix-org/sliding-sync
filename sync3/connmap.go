@@ -7,7 +7,7 @@ import (
 
 	"golang.org/x/exp/slices"
 
-	"github.com/ReneKroon/ttlcache/v2"
+	"github.com/jellydator/ttlcache/v2"
 	"github.com/matrix-org/sliding-sync/internal"
 	"github.com/prometheus/client_golang/prometheus"
 )
