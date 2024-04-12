@@ -53,7 +53,7 @@ func (r *AccountDataRequest) AppendLive(ctx context.Context, res *Response, extC
 		}
 	case caches.RoomUpdate:
 		if !r.RoomInScope(update.RoomID(), extCtx) {
-			break
+			return
 		}
 		// if this is a room update which is included in the response, send account data for this room
 		if _, exists := extCtx.RoomIDToTimeline[update.RoomID()]; exists {
@@ -62,7 +62,7 @@ func (r *AccountDataRequest) AppendLive(ctx context.Context, res *Response, extC
 				// we've loaded this room before, don't do it again
 				// this can happen when we consume lots of items in the buffer. If many of them are room updates
 				// for the same room, we could send dupe room account data if we didn't do this check.
-				break
+				return
 			}
 			roomAccountData, err := extCtx.Store.AccountDatas(extCtx.UserID, update.RoomID())
 			if err != nil {
