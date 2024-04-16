@@ -10,6 +10,7 @@ import (
 	"github.com/matrix-org/sliding-sync/sync3/caches"
 	"github.com/matrix-org/sliding-sync/sync3/extensions"
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/rs/zerolog/log"
 	"github.com/tidwall/gjson"
 )
 
@@ -179,7 +180,7 @@ func (s *ConnState) OnIncomingRequest(ctx context.Context, cid sync3.ConnID, req
 		if err != nil {
 			// in practice this means DB hit failures. If we try again later maybe it'll work, and we will because
 			// anchorLoadPosition is unset.
-			logger.Err(err).Str("conn", cid.String()).Msg("failed to load initial data")
+			log.Err(err).Str("conn", cid.String()).Msg("failed to load initial data")
 		}
 		region.End()
 	}
@@ -313,7 +314,7 @@ func (s *ConnState) onIncomingListRequest(ctx context.Context, builder *RoomsBui
 		// the sort/filter operations have changed, invalidate everything (if there were previous syncs), re-sort and re-SYNC
 		if prevReqList != nil {
 			// there were previous syncs for this list, INVALIDATE the lot
-			logger.Trace().Interface("range", prevRange).Msg("INVALIDATEing because sort/filter ops have changed")
+			log.Trace().Interface("range", prevRange).Msg("INVALIDATEing because sort/filter ops have changed")
 			allRoomIDs := roomList.RoomIDs()
 			for _, r := range prevRange {
 				if r[0] >= roomList.Len() {
@@ -333,7 +334,7 @@ func (s *ConnState) onIncomingListRequest(ctx context.Context, builder *RoomsBui
 		}
 		// resort as either we changed the sort order or we added/removed a bunch of rooms
 		if err := roomList.Sort(nextReqList.Sort); err != nil {
-			logger.Err(err).Str("key", listKey).Msg("cannot sort list")
+			log.Err(err).Str("key", listKey).Msg("cannot sort list")
 			internal.GetSentryHubFromContextOrDefault(ctx).CaptureException(err)
 		}
 		addedRanges = nextReqList.Ranges
@@ -342,7 +343,7 @@ func (s *ConnState) onIncomingListRequest(ctx context.Context, builder *RoomsBui
 
 	// send INVALIDATE for these ranges
 	if len(removedRanges) > 0 {
-		logger.Trace().Interface("range", removedRanges).Msg("INVALIDATEing because ranges were removed")
+		log.Trace().Interface("range", removedRanges).Msg("INVALIDATEing because ranges were removed")
 	}
 	for i := range removedRanges {
 		if removedRanges[i][0] >= (roomList.Len()) {
@@ -431,7 +432,7 @@ func (s *ConnState) buildListSubscriptions(ctx context.Context, builder *RoomsBu
 	for listKey, list := range listDeltas {
 		if list.Curr == nil {
 			// they deleted this list
-			logger.Debug().Str("key", listKey).Msg("list deleted")
+			log.Debug().Str("key", listKey).Msg("list deleted")
 			s.lists.DeleteList(listKey)
 			continue
 		}
@@ -451,7 +452,7 @@ func (s *ConnState) buildRoomSubscriptions(ctx context.Context, builder *RoomsBu
 
 		sub, ok := s.muxedReq.RoomSubscriptions[roomID]
 		if !ok {
-			logger.Warn().Str("room_id", roomID).Msg(
+			log.Warn().Str("room_id", roomID).Msg(
 				"room listed in subscriptions but there is no subscription information in the request, ignoring room subscription.",
 			)
 			continue
@@ -724,7 +725,7 @@ func (s *ConnState) trackProcessDuration(ctx context.Context, dur time.Duration,
 // Called when the connection is torn down
 func (s *ConnState) Destroy() {
 	s.userCache.Unsubscribe(s.userCacheID)
-	logger.Debug().Str("user_id", s.userID).Str("device_id", s.deviceID).Msg("cancelling any in-flight requests")
+	log.Debug().Str("user_id", s.userID).Str("device_id", s.deviceID).Msg("cancelling any in-flight requests")
 	if s.cancelLatestReq != nil {
 		s.cancelLatestReq()
 	}
@@ -761,7 +762,7 @@ func (s *ConnState) OnRoomUpdate(ctx context.Context, up caches.RoomUpdate) {
 		internal.AssertWithContext(ctx, "missing global room metadata", update.GlobalRoomMetadata() != nil)
 		s.OnUpdate(ctx, update)
 	default:
-		logger.Warn().Str("room_id", up.RoomID()).Msg("OnRoomUpdate unknown update type")
+		log.Warn().Str("room_id", up.RoomID()).Msg("OnRoomUpdate unknown update type")
 	}
 }
 

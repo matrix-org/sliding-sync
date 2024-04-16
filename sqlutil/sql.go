@@ -4,17 +4,11 @@ import (
 	"context"
 	"fmt"
 	"github.com/matrix-org/sliding-sync/internal"
-	"github.com/rs/zerolog"
-	"os"
 	"runtime/debug"
 
 	"github.com/jmoiron/sqlx"
+	"github.com/rs/zerolog/log"
 )
-
-var logger = zerolog.New(os.Stdout).With().Timestamp().Logger().Output(zerolog.ConsoleWriter{
-	Out:        os.Stderr,
-	TimeFormat: "15:04:05",
-})
 
 // WithTransaction runs a block of code passing in an SQL transaction
 // If the code returns an error or panics then the transactions is rolled back
@@ -30,7 +24,7 @@ func WithTransaction(db *sqlx.DB, fn func(txn *sqlx.Tx) error) (err error) {
 		if err == nil && panicErr != nil {
 			// TODO: thread a context through to here?
 			ctx := context.Background()
-			logger.Error().Msg(string(debug.Stack()))
+			log.Error().Msg(string(debug.Stack()))
 			internal.GetSentryHubFromContextOrDefault(ctx).RecoverWithContext(ctx, panicErr)
 			err = fmt.Errorf("panic: %v", panicErr)
 		}
@@ -59,7 +53,8 @@ type Chunker interface {
 // Inserting events using NamedExec involves 3n params (n=number of events), meaning it's easy to hit
 // the limit in rooms like Matrix HQ. This function breaks up the events into chunks which can be
 // batch inserted in multiple statements. Without this, you'll see errors like:
-//     "pq: got 95331 parameters but PostgreSQL only supports 65535 parameters"
+//
+//	"pq: got 95331 parameters but PostgreSQL only supports 65535 parameters"
 func Chunkify(numParamsPerStmt, maxParamsPerCall int, entries Chunker) []Chunker {
 	// common case, most things are small
 	if (entries.Len() * numParamsPerStmt) <= maxParamsPerCall {

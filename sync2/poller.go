@@ -16,7 +16,7 @@ import (
 
 	"github.com/matrix-org/sliding-sync/internal"
 	"github.com/prometheus/client_golang/prometheus"
-	"github.com/rs/zerolog"
+	"github.com/rs/zerolog/log"
 	"github.com/tidwall/gjson"
 )
 
@@ -70,7 +70,7 @@ type V2DataReceiver interface {
 }
 
 type IPollerMap interface {
-	EnsurePolling(pid PollerID, accessToken, v2since string, isStartup bool, logger zerolog.Logger) (created bool, err error)
+	EnsurePolling(pid PollerID, accessToken, v2since string, isStartup bool) (created bool, err error)
 	NumPollers() int
 	Terminate()
 	DeviceIDs(userID string) []string
@@ -253,7 +253,7 @@ func (h *PollerMap) ExpirePollers(pids []PollerID) int {
 // Note that we will immediately return if there is a poller for the same user but a different device.
 // We do this to allow for logins on clients to be snappy fast, even though they won't yet have the
 // to-device msgs to decrypt E2EE rooms.
-func (h *PollerMap) EnsurePolling(pid PollerID, accessToken, v2since string, isStartup bool, logger zerolog.Logger) (bool, error) {
+func (h *PollerMap) EnsurePolling(pid PollerID, accessToken, v2since string, isStartup bool) (bool, error) {
 	h.pollerMu.Lock()
 	if !h.executorRunning {
 		h.executorRunning = true
@@ -263,7 +263,7 @@ func (h *PollerMap) EnsurePolling(pid PollerID, accessToken, v2since string, isS
 	// a poller exists and hasn't been terminated so we don't need to do anything
 	if ok && !poller.terminated.Load() {
 		if poller.accessToken != accessToken {
-			logger.Warn().Msg("PollerMap.EnsurePolling: poller already running with different access token")
+			log.Warn().Msg("PollerMap.EnsurePolling: poller already running with different access token")
 		}
 		h.pollerMu.Unlock()
 		// this existing poller may not have completed the initial sync yet, so we need to make sure
@@ -288,7 +288,7 @@ func (h *PollerMap) EnsurePolling(pid PollerID, accessToken, v2since string, isS
 
 	// replace the poller. If we don't need to wait, then we just want to nab to-device events initially.
 	// We don't do that on startup though as we cannot be sure that other pollers will not be using expired tokens.
-	poller = newPoller(pid, accessToken, h.v2Client, h, logger, !needToWait && !isStartup)
+	poller = newPoller(pid, accessToken, h.v2Client, h, !needToWait && !isStartup)
 	poller.processHistogramVec = h.processHistogramVec
 	poller.timelineSizeVec = h.timelineSizeHistogramVec
 	poller.gappyStateSizeVec = h.gappyStateSizeVec
@@ -301,7 +301,7 @@ func (h *PollerMap) EnsurePolling(pid PollerID, accessToken, v2since string, isS
 	if needToWait {
 		poller.WaitUntilInitialSync()
 	} else {
-		logger.Info().Str("user", poller.userID).Msg("a poller exists for this user; not waiting for this device to do an initial sync")
+		log.Info().Str("user", poller.userID).Msg("a poller exists for this user; not waiting for this device to do an initial sync")
 	}
 	if poller.terminated.Load() {
 		return false, fmt.Errorf("PollerMap.EnsurePolling: poller terminated after intial sync")
@@ -429,7 +429,6 @@ type poller struct {
 	accessToken string
 	client      Client
 	receiver    V2DataReceiver
-	logger      zerolog.Logger
 
 	initialToDeviceOnly bool
 
@@ -461,7 +460,7 @@ type poller struct {
 	totalNumPolls          prometheus.Counter
 }
 
-func newPoller(pid PollerID, accessToken string, client Client, receiver V2DataReceiver, logger zerolog.Logger, initialToDeviceOnly bool) *poller {
+func newPoller(pid PollerID, accessToken string, client Client, receiver V2DataReceiver, initialToDeviceOnly bool) *poller {
 	var wg sync.WaitGroup
 	wg.Add(1)
 	return &poller{
@@ -471,7 +470,6 @@ func newPoller(pid PollerID, accessToken string, client Client, receiver V2DataR
 		client:              client,
 		receiver:            receiver,
 		terminated:          &atomic.Bool{},
-		logger:              logger,
 		wg:                  &wg,
 		initialToDeviceOnly: initialToDeviceOnly,
 	}
@@ -507,11 +505,11 @@ func (p *poller) Poll(since string) {
 	})
 	ctx := sentry.SetHubOnContext(context.Background(), hub)
 
-	p.logger.Info().Str("since", since).Msg("Poller: v2 poll loop started")
+	log.Info().Str("since", since).Msg("Poller: v2 poll loop started")
 	defer func() {
 		panicErr := recover()
 		if panicErr != nil {
-			logger.Error().Str("user", p.userID).Str("device", p.deviceID).Msgf("%s. Traceback:\n%s", panicErr, debug.Stack())
+			log.Error().Str("user", p.userID).Str("device", p.deviceID).Msgf("%s. Traceback:\n%s", panicErr, debug.Stack())
 			internal.GetSentryHubFromContextOrDefault(ctx).RecoverWithContext(ctx, panicErr)
 		}
 		p.receiver.OnTerminated(ctx, PollerID{
@@ -554,7 +552,7 @@ func (p *poller) poll(ctx context.Context, s *pollLoopState) error {
 		if s.failCount > 1000 {
 			// 3s * 1000 = 3000s = 50 minutes
 			errMsg := "poller: access token has failed >1000 times to /sync, terminating loop"
-			p.logger.Warn().Msg(errMsg)
+			log.Warn().Msg(errMsg)
 			p.receiver.OnExpiredToken(ctx, hashToken(p.accessToken), p.userID, p.deviceID)
 			p.Terminate()
 			return fmt.Errorf(errMsg)
@@ -563,7 +561,7 @@ func (p *poller) poll(ctx context.Context, s *pollLoopState) error {
 		// period of time (on massive accounts on matrix.org) such that if you wait 2,4,8min between
 		// requests it might force the server to do the work all over again :(
 		waitTime := 3 * time.Second
-		p.logger.Warn().Str("duration", waitTime.String()).Int("fail-count", s.failCount).Msg("Poller: waiting before next poll")
+		log.Warn().Str("duration", waitTime.String()).Int("fail-count", s.failCount).Msg("Poller: waiting before next poll")
 		timeSleep(waitTime)
 	}
 	if p.terminated.Load() {
@@ -587,19 +585,19 @@ func (p *poller) poll(ctx context.Context, s *pollLoopState) error {
 		// check if temporary
 		isFatal := statusCode == 401 || statusCode == 403
 		if !isFatal {
-			p.logger.Warn().Int("code", statusCode).Err(err).Msg("Poller: sync v2 poll returned temporary error")
+			log.Warn().Int("code", statusCode).Err(err).Msg("Poller: sync v2 poll returned temporary error")
 			s.failCount += 1
 			return nil
 		} else {
 			errMsg := "poller: access token has been invalidated, terminating loop"
-			p.logger.Warn().Msg(errMsg)
+			log.Warn().Msg(errMsg)
 			p.receiver.OnExpiredToken(ctx, hashToken(p.accessToken), p.userID, p.deviceID)
 			p.Terminate()
 			return fmt.Errorf(errMsg)
 		}
 	}
 	if s.since == "" {
-		p.logger.Info().Msg("Poller: valid initial sync response received")
+		log.Info().Msg("Poller: valid initial sync response received")
 	}
 	p.initialToDeviceOnly = false
 	start = time.Now()
@@ -609,19 +607,19 @@ func (p *poller) poll(ctx context.Context, s *pollLoopState) error {
 	// retry processing the same response after a brief period
 	retryErr := p.parseE2EEData(ctx, resp)
 	if shouldRetry(retryErr) {
-		p.logger.Err(retryErr).Msg("Poller: parseE2EEData returned an error")
+		log.Err(retryErr).Msg("Poller: parseE2EEData returned an error")
 		s.failCount += 1
 		return nil
 	}
 	retryErr = p.parseGlobalAccountData(ctx, resp)
 	if shouldRetry(retryErr) {
-		p.logger.Err(retryErr).Msg("Poller: parseGlobalAccountData returned an error")
+		log.Err(retryErr).Msg("Poller: parseGlobalAccountData returned an error")
 		s.failCount += 1
 		return nil
 	}
 	retryErr = p.parseRoomsResponse(ctx, resp)
 	if shouldRetry(retryErr) {
-		p.logger.Err(retryErr).Msg("Poller: parseRoomsResponse returned an error")
+		log.Err(retryErr).Msg("Poller: parseRoomsResponse returned an error")
 		s.failCount += 1
 		return nil
 	}
@@ -633,7 +631,7 @@ func (p *poller) poll(ctx context.Context, s *pollLoopState) error {
 	// deduplicated.
 	retryErr = p.parseToDeviceMessages(ctx, resp)
 	if shouldRetry(retryErr) {
-		p.logger.Err(retryErr).Msg("Poller: parseToDeviceMessages returned an error")
+		log.Err(retryErr).Msg("Poller: parseToDeviceMessages returned an error")
 		s.failCount += 1
 		return nil
 	}
@@ -824,7 +822,7 @@ func (p *poller) parseRoomsResponse(ctx context.Context, res *SyncResponse) erro
 						err = p.receiver.Initialise(ctx, roomID, roomData.State.Events)
 						if err == nil {
 							const warnMsg = "parseRoomsResponse: m.room.create event was found in the timeline not state, info after moving create event"
-							logger.Warn().Str("user_id", p.userID).Str("room_id", roomID).Int(
+							log.Warn().Str("user_id", p.userID).Str("room_id", roomID).Int(
 								"timeline", len(roomData.Timeline.Events),
 							).Int("state", len(roomData.State.Events)).Msg(warnMsg)
 							hub := internal.GetSentryHubFromContextOrDefault(ctx)
@@ -960,7 +958,7 @@ func (p *poller) maybeLogStats(force bool) {
 		return
 	}
 	p.lastLogged = time.Now()
-	p.logger.Info().Ints(
+	log.Info().Ints(
 		"rooms [timeline,state,typing,receipts,invites]", []int{
 			p.totalTimelineCalls, p.totalStateCalls, p.totalTyping, p.totalReceipts, p.totalInvites,
 		},

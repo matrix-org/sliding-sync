@@ -10,6 +10,7 @@ import (
 	"github.com/ReneKroon/ttlcache/v2"
 	"github.com/matrix-org/sliding-sync/internal"
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/rs/zerolog/log"
 )
 
 // ConnMap stores a collection of Conns.
@@ -126,7 +127,7 @@ func (m *ConnMap) getConn(cid ConnID) *Conn {
 		return conn
 	}
 	// e.g buffer exceeded, close it and remove it from the cache
-	logger.Info().Str("conn", cid.String()).Msg("closing connection due to dead connection (buffer full)")
+	log.Info().Str("conn", cid.String()).Msg("closing connection due to dead connection (buffer full)")
 	m.closeConn(conn)
 	if m.expiryBufferFullCounter != nil {
 		m.expiryBufferFullCounter.Inc()
@@ -149,7 +150,7 @@ func (m *ConnMap) CreateConn(cid ConnID, cancel context.CancelFunc, newConnHandl
 			// /sync without a `?pos=` value.
 			time.Sleep(SpamProtectionInterval)
 		}
-		logger.Trace().Str("conn", cid.String()).Bool("spamming", isSpamming).Msg("closing connection due to CreateConn called again")
+		log.Trace().Str("conn", cid.String()).Bool("spamming", isSpamming).Msg("closing connection due to CreateConn called again")
 		m.closeConn(conn)
 	}
 	h := newConnHandler()
@@ -163,13 +164,13 @@ func (m *ConnMap) CreateConn(cid ConnID, cancel context.CancelFunc, newConnHandl
 }
 
 func (m *ConnMap) CloseConnsForDevice(userID, deviceID string) {
-	logger.Trace().Str("user", userID).Str("device", deviceID).Msg("closing connections due to CloseConn()")
+	log.Trace().Str("user", userID).Str("device", deviceID).Msg("closing connections due to CloseConn()")
 	// gather open connections for this user|device
 	connIDs := m.connIDsForDevice(userID, deviceID)
 	for _, cid := range connIDs {
 		err := m.cache.Remove(cid.String()) // this will fire TTL callbacks which calls closeConn
 		if err != nil {
-			logger.Err(err).Str("cid", cid.String()).Msg("CloseConnsForDevice: cid did not exist in ttlcache")
+			log.Err(err).Str("cid", cid.String()).Msg("CloseConnsForDevice: cid did not exist in ttlcache")
 			internal.GetSentryHubFromContextOrDefault(context.Background()).CaptureException(err)
 		}
 	}
@@ -195,12 +196,12 @@ func (m *ConnMap) CloseConnsForUsers(userIDs []string) (closed int) {
 	defer m.mu.Unlock()
 	for _, userID := range userIDs {
 		conns := m.userIDToConn[userID]
-		logger.Trace().Str("user", userID).Int("num_conns", len(conns)).Msg("closing all device connections due to CloseConn()")
+		log.Trace().Str("user", userID).Int("num_conns", len(conns)).Msg("closing all device connections due to CloseConn()")
 
 		for _, conn := range conns {
 			err := m.cache.Remove(conn.String()) // this will fire TTL callbacks which calls closeConn
 			if err != nil {
-				logger.Err(err).Str("cid", conn.String()).Msg("CloseConnsForDevice: cid did not exist in ttlcache")
+				log.Err(err).Str("cid", conn.String()).Msg("CloseConnsForDevice: cid did not exist in ttlcache")
 				internal.GetSentryHubFromContextOrDefault(context.Background()).CaptureException(err)
 			}
 		}
@@ -213,7 +214,7 @@ func (m *ConnMap) closeConnExpires(connID string, value interface{}) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	conn := value.(*Conn)
-	logger.Info().Str("conn", connID).Msg("closing connection due to expired TTL in cache")
+	log.Info().Str("conn", connID).Msg("closing connection due to expired TTL in cache")
 	if m.expiryTimedOutCounter != nil {
 		m.expiryTimedOutCounter.Inc()
 	}
@@ -227,7 +228,7 @@ func (m *ConnMap) closeConn(conn *Conn) {
 	}
 
 	connKey := conn.ConnID.String()
-	logger.Trace().Str("conn", connKey).Msg("closing connection")
+	log.Trace().Str("conn", connKey).Msg("closing connection")
 	// remove conn from all the maps
 	delete(m.connIDToConn, connKey)
 	h := conn.handler

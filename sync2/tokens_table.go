@@ -8,6 +8,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"github.com/jmoiron/sqlx"
+	"github.com/rs/zerolog/log"
 	"io"
 	"strings"
 	"time"
@@ -254,7 +255,7 @@ func (t *TokensTable) Delete(accessTokenHash string) error {
 		return err
 	}
 	if ra != 1 {
-		logger.Warn().Msgf("Tokens.Delete: expected to delete one token, but actually deleted %d", ra)
+		log.Warn().Msgf("Tokens.Delete: expected to delete one token, but actually deleted %d", ra)
 	}
 	return nil
 }
