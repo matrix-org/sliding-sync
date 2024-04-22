@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"time"
 
 	"golang.org/x/exp/slices"
 
@@ -69,6 +70,8 @@ type Storage struct {
 	ReceiptTable      *ReceiptTable
 	DB                *sqlx.DB
 	MaxTimelineLimit  int
+	shutdownCh        chan struct{}
+	shutdown          bool
 }
 
 func NewStorage(postgresURI string) *Storage {
@@ -104,6 +107,7 @@ func NewStorageWithDB(db *sqlx.DB, addPrometheusMetrics bool) *Storage {
 		ReceiptTable:      NewReceiptTable(db),
 		DB:                db,
 		MaxTimelineLimit:  50,
+		shutdownCh:        make(chan struct{}),
 	}
 }
 
@@ -758,6 +762,50 @@ func (s *Storage) LatestEventsInRooms(userID string, roomIDs []string, to int64,
 	return result, err
 }
 
+// Remove state snapshots which cannot be accessed by clients. The latest MaxTimelineEvents
+// snapshots must be kept, +1 for the current state. This handles the worst case where all
+// MaxTimelineEvents are state events and hence each event makes a new snapshot. We can safely
+// delete all snapshots older than this, as it's not possible to reach this snapshot as the proxy
+// does not handle historical state (deferring to the homeserver for that).
+func (s *Storage) RemoveInaccessibleStateSnapshots() error {
+	numToKeep := s.MaxTimelineLimit + 1
+	// Create a CTE which ranks each snapshot so we can figure out which snapshots to delete
+	// then execute the delete using the CTE.
+	//
+	// A per-room version of this query:
+	// WITH ranked_snapshots AS (
+	//   SELECT
+	//     snapshot_id,
+	//     room_id,
+	//     ROW_NUMBER() OVER (PARTITION BY room_id ORDER BY snapshot_id DESC) AS row_num
+	//   FROM syncv3_snapshots
+	// )
+	// DELETE FROM syncv3_snapshots WHERE snapshot_id IN(
+	//   SELECT snapshot_id FROM ranked_snapshots WHERE row_num > 51 AND room_id='!....'
+	// );
+	awfulQuery := fmt.Sprintf(`WITH ranked_snapshots AS (
+		SELECT
+		  snapshot_id,
+		  room_id,
+		  ROW_NUMBER() OVER (PARTITION BY room_id ORDER BY snapshot_id DESC) AS row_num
+		FROM
+		  syncv3_snapshots
+	  )
+	  DELETE FROM syncv3_snapshots USING ranked_snapshots
+	  WHERE syncv3_snapshots.snapshot_id = ranked_snapshots.snapshot_id
+	  AND ranked_snapshots.row_num > %d;`, numToKeep)
+
+	result, err := s.DB.Exec(awfulQuery)
+	if err != nil {
+		return fmt.Errorf("failed to RemoveInaccessibleStateSnapshots: Exec %s", err)
+	}
+	rowsAffected, err := result.RowsAffected()
+	if err == nil {
+		logger.Info().Int64("rows_affected", rowsAffected).Msg("RemoveInaccessibleStateSnapshots: deleted rows")
+	}
+	return nil
+}
+
 func (s *Storage) GetClosestPrevBatch(roomID string, eventNID int64) (prevBatch string) {
 	var err error
 	sqlutil.WithTransaction(s.DB, func(txn *sqlx.Tx) error {
@@ -1024,6 +1072,34 @@ func (s *Storage) AllJoinedMembers(txn *sqlx.Tx, tempTableName string) (joinedMe
 	return joinedMembers, metadata, nil
 }
 
+func (s *Storage) Cleaner(n time.Duration) {
+Loop:
+	for {
+		select {
+		case <-time.After(n):
+			now := time.Now()
+			boundaryTime := now.Add(-1 * n)
+			if n < time.Hour {
+				boundaryTime = now.Add(-1 * time.Hour)
+			}
+			logger.Info().Time("boundaryTime", boundaryTime).Msg("Cleaner running")
+			err := s.TransactionsTable.Clean(boundaryTime)
+			if err != nil {
+				logger.Warn().Err(err).Msg("failed to clean txn ID table")
+				sentry.CaptureException(err)
+			}
+			// we also want to clean up stale state snapshots which are inaccessible, to
+			// keep the size of the syncv3_snapshots table low.
+			if err = s.RemoveInaccessibleStateSnapshots(); err != nil {
+				logger.Warn().Err(err).Msg("failed to remove inaccessible state snapshots")
+				sentry.CaptureException(err)
+			}
+		case <-s.shutdownCh:
+			break Loop
+		}
+	}
+}
+
 func (s *Storage) LatestEventNIDInRooms(roomIDs []string, highestNID int64) (roomToNID map[string]int64, err error) {
 	roomToNID = make(map[string]int64)
 	err = sqlutil.WithTransaction(s.Accumulator.db, func(txn *sqlx.Tx) error {
@@ -1113,6 +1189,11 @@ func (s *Storage) determineJoinedRoomsFromMemberships(membershipEvents []Event) 
 }
 
 func (s *Storage) Teardown() {
+	if !s.shutdown {
+		s.shutdown = true
+		close(s.shutdownCh)
+	}
+
 	err := s.Accumulator.db.Close()
 	if err != nil {
 		panic("Storage.Teardown: " + err.Error())
