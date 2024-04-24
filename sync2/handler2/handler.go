@@ -21,6 +21,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/rs/zerolog"
 	"github.com/tidwall/gjson"
+	"github.com/tidwall/sjson"
 )
 
 var logger = zerolog.New(os.Stdout).With().Timestamp().Logger().Output(zerolog.ConsoleWriter{
@@ -270,8 +271,10 @@ func (h *Handler) Accumulate(ctx context.Context, userID, deviceID, roomID strin
 	// Also remember events which were sent by this user but lack a transaction ID.
 	eventIDsLackingTxns := make([]string, 0, len(timeline.Events))
 
-	for _, e := range timeline.Events {
-		parsed := gjson.ParseBytes(e)
+	for i := range timeline.Events {
+		// Delete MSC4115 field as it isn't accurate when we reuse the same event for >1 user
+		timeline.Events[i], _ = sjson.DeleteBytes(timeline.Events[i], "unsigned.membership")
+		parsed := gjson.ParseBytes(timeline.Events[i])
 		eventID := parsed.Get("event_id").Str
 
 		if txnID := parsed.Get("unsigned.transaction_id"); txnID.Exists() {
@@ -371,6 +374,9 @@ func (h *Handler) Accumulate(ctx context.Context, userID, deviceID, roomID strin
 }
 
 func (h *Handler) Initialise(ctx context.Context, roomID string, state []json.RawMessage) error {
+	for i := range state { // Delete MSC4115 field as it isn't accurate when we reuse the same event for >1 user
+		state[i], _ = sjson.DeleteBytes(state[i], "unsigned.membership")
+	}
 	res, err := h.Store.Initialise(roomID, state)
 	if err != nil {
 		logger.Err(err).Int("state", len(state)).Str("room", roomID).Msg("V2: failed to initialise room")
