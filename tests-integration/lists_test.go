@@ -9,6 +9,7 @@ import (
 	"github.com/matrix-org/sliding-sync/sync3"
 	"github.com/matrix-org/sliding-sync/testutils"
 	"github.com/matrix-org/sliding-sync/testutils/m"
+	"github.com/tidwall/sjson"
 )
 
 func TestListsAsKeys(t *testing.T) {
@@ -360,4 +361,90 @@ func TestBumpEventTypesOnStartup(t *testing.T) {
 			m.MatchV3Count(3),
 		))
 	}
+}
+
+func TestDeleteMSC4115Field(t *testing.T) {
+	rig := NewTestRig(t)
+	defer rig.Finish()
+	roomID := "!TestDeleteMSC4115Field:localhost"
+	rig.SetupV2RoomsForUser(t, alice, NoFlush, map[string]RoomDescriptor{
+		roomID: {},
+	})
+	aliceToken := rig.Token(alice)
+	res := rig.V3.mustDoV3Request(t, aliceToken, sync3.Request{
+		Lists: map[string]sync3.RequestList{
+			"a": {
+				Ranges: sync3.SliceRanges{{0, 20}},
+				RoomSubscription: sync3.RoomSubscription{
+					TimelineLimit: 10,
+					RequiredState: [][2]string{{"m.room.name", "*"}},
+				},
+			},
+		},
+	})
+	m.MatchResponse(t, res, m.MatchLists(map[string][]m.ListMatcher{
+		"a": {
+			m.MatchV3Count(1),
+		},
+	}), m.MatchRoomSubscription(roomID))
+
+	// ensure live events remove the field.
+	liveEvent := testutils.NewMessageEvent(t, alice, "live event", testutils.WithUnsigned(map[string]interface{}{
+		"membership": "join",
+	}))
+	liveEventWithoutMembership := make(json.RawMessage, len(liveEvent))
+	copy(liveEventWithoutMembership, liveEvent)
+	liveEventWithoutMembership, err := sjson.DeleteBytes(liveEventWithoutMembership, "unsigned.membership")
+	if err != nil {
+		t.Fatalf("failed to delete unsigned.membership field")
+	}
+	rig.FlushEvent(t, alice, roomID, liveEvent)
+
+	res = rig.V3.mustDoV3RequestWithPos(t, aliceToken, res.Pos, sync3.Request{})
+	m.MatchResponse(t, res, m.MatchRoomSubscriptionsStrict(map[string][]m.RoomMatcher{
+		roomID: {
+			m.MatchRoomTimelineMostRecent(1, []json.RawMessage{liveEventWithoutMembership}),
+		},
+	}))
+
+	// ensure state events remove the field.
+	stateEvent := testutils.NewStateEvent(t, "m.room.name", "", alice, map[string]interface{}{
+		"name": "Room Name",
+	}, testutils.WithUnsigned(map[string]interface{}{
+		"membership": "join",
+	}))
+	stateEventWithoutMembership := make(json.RawMessage, len(stateEvent))
+	copy(stateEventWithoutMembership, stateEvent)
+	stateEventWithoutMembership, err = sjson.DeleteBytes(stateEventWithoutMembership, "unsigned.membership")
+	if err != nil {
+		t.Fatalf("failed to delete unsigned.membership field")
+	}
+	rig.V2.queueResponse(alice, sync2.SyncResponse{
+		Rooms: sync2.SyncRoomsResponse{
+			Join: v2JoinTimeline(roomEvents{
+				roomID: roomID,
+				state:  []json.RawMessage{stateEvent},
+				events: []json.RawMessage{testutils.NewMessageEvent(t, alice, "dummy")},
+			}),
+		},
+	})
+	rig.V2.waitUntilEmpty(t, alice)
+
+	// sending v2 state invalidates the SS connection so start again pre-emptively.
+	res = rig.V3.mustDoV3Request(t, aliceToken, sync3.Request{
+		Lists: map[string]sync3.RequestList{
+			"a": {
+				Ranges: sync3.SliceRanges{{0, 20}},
+				RoomSubscription: sync3.RoomSubscription{
+					TimelineLimit: 10,
+					RequiredState: [][2]string{{"m.room.name", "*"}},
+				},
+			},
+		},
+	})
+	m.MatchResponse(t, res, m.MatchRoomSubscriptionsStrict(map[string][]m.RoomMatcher{
+		roomID: {
+			m.MatchRoomRequiredState([]json.RawMessage{stateEventWithoutMembership}),
+		},
+	}))
 }
