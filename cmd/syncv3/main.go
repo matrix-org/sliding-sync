@@ -220,6 +220,7 @@ func main() {
 	})
 
 	go h2.StartV2Pollers()
+	go h2.Store.Cleaner(time.Hour)
 	if args[EnvOTLP] != "" {
 		h3 = otelhttp.NewHandler(h3, "Sync")
 	}
