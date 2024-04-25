@@ -2,6 +2,7 @@ package syncv3
 
 import (
 	"encoding/json"
+	"strings"
 	"testing"
 	"time"
 
@@ -364,6 +365,15 @@ func TestBumpEventTypesOnStartup(t *testing.T) {
 }
 
 func TestDeleteMSC4115Field(t *testing.T) {
+	t.Run("stable prefix", func(t *testing.T) {
+		testDeleteMSC4115Field(t, "membership")
+	})
+	t.Run("unstable prefix", func(t *testing.T) {
+		testDeleteMSC4115Field(t, "io.element.msc4115.membership")
+	})
+}
+
+func testDeleteMSC4115Field(t *testing.T, fieldName string) {
 	rig := NewTestRig(t)
 	defer rig.Finish()
 	roomID := "!TestDeleteMSC4115Field:localhost"
@@ -390,11 +400,11 @@ func TestDeleteMSC4115Field(t *testing.T) {
 
 	// ensure live events remove the field.
 	liveEvent := testutils.NewMessageEvent(t, alice, "live event", testutils.WithUnsigned(map[string]interface{}{
-		"membership": "join",
+		fieldName: "join",
 	}))
 	liveEventWithoutMembership := make(json.RawMessage, len(liveEvent))
 	copy(liveEventWithoutMembership, liveEvent)
-	liveEventWithoutMembership, err := sjson.DeleteBytes(liveEventWithoutMembership, "unsigned.membership")
+	liveEventWithoutMembership, err := sjson.DeleteBytes(liveEventWithoutMembership, "unsigned."+strings.ReplaceAll(fieldName, ".", `\.`))
 	if err != nil {
 		t.Fatalf("failed to delete unsigned.membership field")
 	}
@@ -411,11 +421,11 @@ func TestDeleteMSC4115Field(t *testing.T) {
 	stateEvent := testutils.NewStateEvent(t, "m.room.name", "", alice, map[string]interface{}{
 		"name": "Room Name",
 	}, testutils.WithUnsigned(map[string]interface{}{
-		"membership": "join",
+		fieldName: "join",
 	}))
 	stateEventWithoutMembership := make(json.RawMessage, len(stateEvent))
 	copy(stateEventWithoutMembership, stateEvent)
-	stateEventWithoutMembership, err = sjson.DeleteBytes(stateEventWithoutMembership, "unsigned.membership")
+	stateEventWithoutMembership, err = sjson.DeleteBytes(stateEventWithoutMembership, "unsigned."+strings.ReplaceAll(fieldName, ".", `\.`))
 	if err != nil {
 		t.Fatalf("failed to delete unsigned.membership field")
 	}
