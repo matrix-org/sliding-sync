@@ -83,7 +83,7 @@ location /.well-known/matrix/client {
 ```
 
 ### Running
-There are two ways to run the proxy:
+There are three ways to run the proxy:
 - Compiling from source:
 ```
 $ CGO_ENABLED=0 go build ./cmd/syncv3
@@ -95,6 +95,12 @@ $ SYNCV3_SECRET=$(cat .secret) SYNCV3_SERVER="https://matrix-client.matrix.org" 
 docker run --rm -e "SYNCV3_SERVER=https://matrix-client.matrix.org" -e "SYNCV3_SECRET=$(cat .secret)" -e "SYNCV3_BINDADDR=:8008" -e "SYNCV3_DB=user=$(whoami) dbname=syncv3 sslmode=disable host=host.docker.internal password='DATABASE_PASSWORD_HERE'" -p 8008:8008 ghcr.io/matrix-org/sliding-sync:latest
 ```
 
+- Precompiled binaries:
+
+Download the binary for your architcture (eg. `syncv3_linux_amd64` for 64-bit AMD/Intel) from https://github.com/matrix-org/sliding-sync/releases/latest
+```
+$ SYNCV3_SECRET=$(cat .secret) SYNCV3_SERVER="https://matrix-client.matrix.org" SYNCV3_DB="user=$(whoami) dbname=syncv3 sslmode=disable password='DATABASE_PASSWORD_HERE'" SYNCV3_BINDADDR=0.0.0.0:8008 ./syncv3_linux_amd64 
+```
 
 Optionally also set `SYNCV3_TLS_CERT=path/to/cert.pem` and `SYNCV3_TLS_KEY=path/to/key.pem` to listen on HTTPS instead of HTTP.
 Make sure to tweak the `SYNCV3_DB` environment variable if the Postgres database isn't running on the host.
