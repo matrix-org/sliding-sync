@@ -274,6 +274,8 @@ func (h *Handler) Accumulate(ctx context.Context, userID, deviceID, roomID strin
 	for i := range timeline.Events {
 		// Delete MSC4115 field as it isn't accurate when we reuse the same event for >1 user
 		timeline.Events[i], _ = sjson.DeleteBytes(timeline.Events[i], "unsigned.membership")
+		// escape .'s in the key name
+		timeline.Events[i], _ = sjson.DeleteBytes(timeline.Events[i], `unsigned.io\.element\.msc4115\.membership`)
 		parsed := gjson.ParseBytes(timeline.Events[i])
 		eventID := parsed.Get("event_id").Str
 
@@ -376,6 +378,8 @@ func (h *Handler) Accumulate(ctx context.Context, userID, deviceID, roomID strin
 func (h *Handler) Initialise(ctx context.Context, roomID string, state []json.RawMessage) error {
 	for i := range state { // Delete MSC4115 field as it isn't accurate when we reuse the same event for >1 user
 		state[i], _ = sjson.DeleteBytes(state[i], "unsigned.membership")
+		// escape .'s in the key name
+		state[i], _ = sjson.DeleteBytes(state[i], `unsigned.io\.element\.msc4115\.membership`)
 	}
 	res, err := h.Store.Initialise(roomID, state)
 	if err != nil {
