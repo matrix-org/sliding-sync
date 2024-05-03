@@ -190,7 +190,10 @@ func (h *SyncLiveHandler) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 		w.WriteHeader(http.StatusMethodNotAllowed)
 		// This is a standard error response.
 		// See M_UNRECOGNIZED in https://spec.matrix.org/v1.10/client-server-api/#common-error-codes
-		w.Write([]byte("{\"errcode\":\"M_UNRECOGNIZED\",\"error\":\"Wrong request method\"}"))
+		_, err := w.Write([]byte("{\"errcode\":\"M_UNRECOGNIZED\",\"error\":\"Wrong request method\"}"))
+		if err != nil {
+			internal.DecorateLogger(req.Context(), log.Error()).Err(err)
+		}
 		return
 	}
 	err := h.serve(w, req)
