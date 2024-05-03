@@ -185,6 +185,7 @@ func (h *SyncLiveHandler) addPrometheusMetrics() {
 
 func (h *SyncLiveHandler) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	if req.Method != "POST" {
+		defer req.Body.Close()
 		w.Header().Add("Content-Type", "application/json")
 		w.WriteHeader(http.StatusMethodNotAllowed)
 		// This is a standard error response.
