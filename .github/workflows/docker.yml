@@ -21,7 +21,10 @@ jobs:
       contents: read
       packages: write
       security-events: write # To upload Trivy sarif files
+      id-token: write # needed for signing the images with GitHub OIDC Token
     steps:
+      - name: Install Cosign
+        uses: sigstore/cosign-installer@v3.3.0
       - name: Checkout
         uses: actions/checkout@v3
       - name: Set up QEMU
@@ -61,6 +64,18 @@ jobs:
           tags: |
             ghcr.io/${{ env.GHCR_NAMESPACE }}/sliding-sync:latest
             ghcr.io/${{ env.GHCR_NAMESPACE }}/sliding-sync:${{ github.ref_name }}
+
+      - name: Sign the images with GitHub OIDC Token
+        if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/')
+        env:
+          DIGEST: ${{ steps.docker_build_sliding_sync_release.outputs.digest }}
+          TAGS: ghcr.io/${{ env.GHCR_NAMESPACE }}/sliding-sync:${{ github.ref_name }}
+        run: |
+          images=""
+          for tag in ${TAGS}; do
+            images+="${tag}@${DIGEST} "
+          done
+          cosign sign --yes ${images}
 
       - name: Run Trivy vulnerability scanner
         uses: aquasecurity/trivy-action@master
