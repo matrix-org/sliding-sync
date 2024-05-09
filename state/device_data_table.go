@@ -70,6 +70,9 @@ func (t *DeviceDataTable) Select(userID, deviceID string, swap bool) (result *in
 		if !swap {
 			return nil // don't swap
 		}
+		// the caller will only look at sent, so make sure what is new is now in sent
+		result.DeviceLists.Sent = result.DeviceLists.New
+
 		// swap over the fields
 		writeBack := *result
 		writeBack.DeviceLists.Sent = result.DeviceLists.New
