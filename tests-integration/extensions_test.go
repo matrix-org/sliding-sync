@@ -193,6 +193,48 @@ func TestExtensionE2EE(t *testing.T) {
 	if time.Since(start) >= (500 * time.Millisecond) {
 		t.Fatalf("sync request did not return immediately with OTK counts")
 	}
+
+	// check that if we lose a device list update and restart from nothing, we see the same update
+	v2.queueResponse(alice, sync2.SyncResponse{
+		DeviceLists: struct {
+			Changed []string `json:"changed,omitempty"`
+			Left    []string `json:"left,omitempty"`
+		}{
+			Changed: wantChanged,
+			Left:    wantLeft,
+		},
+	})
+	v2.waitUntilEmpty(t, alice)
+	res = v3.mustDoV3RequestWithPos(t, aliceToken, res.Pos, sync3.Request{
+		Lists: map[string]sync3.RequestList{"a": {
+			Ranges: sync3.SliceRanges{
+				[2]int64{0, 10}, // doesn't matter
+			},
+		}},
+		// enable the E2EE extension
+		Extensions: extensions.Request{
+			E2EE: &extensions.E2EERequest{
+				Core: extensions.Core{Enabled: &boolTrue},
+			},
+		},
+	})
+	m.MatchResponse(t, res, m.MatchDeviceLists(wantChanged, wantLeft))
+	// we actually lost this update: start again and we should see it.
+	res = v3.mustDoV3Request(t, aliceToken, sync3.Request{
+		Lists: map[string]sync3.RequestList{"a": {
+			Ranges: sync3.SliceRanges{
+				[2]int64{0, 10}, // doesn't matter
+			},
+		}},
+		// enable the E2EE extension
+		Extensions: extensions.Request{
+			E2EE: &extensions.E2EERequest{
+				Core: extensions.Core{Enabled: &boolTrue},
+			},
+		},
+	})
+	m.MatchResponse(t, res, m.MatchDeviceLists(wantChanged, wantLeft))
+
 }
 
 // Checks that to-device messages are passed from v2 to v3
