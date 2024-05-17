@@ -21,7 +21,8 @@ type DeviceDataRow struct {
 }
 
 type DeviceDataTable struct {
-	db *sqlx.DB
+	db              *sqlx.DB
+	deviceListTable *DeviceListTable
 }
 
 func NewDeviceDataTable(db *sqlx.DB) *DeviceDataTable {
@@ -37,7 +38,8 @@ func NewDeviceDataTable(db *sqlx.DB) *DeviceDataTable {
 	ALTER TABLE syncv3_device_data SET (fillfactor = 90);
 	`)
 	return &DeviceDataTable{
-		db: db,
+		db:              db,
+		deviceListTable: NewDeviceListTable(db),
 	}
 }
 
