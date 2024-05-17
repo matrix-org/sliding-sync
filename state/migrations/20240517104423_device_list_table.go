@@ -143,6 +143,8 @@ func upDeviceListTable(ctx context.Context, tx *sql.Tx) error {
 			)
 			_, err = tx.ExecContext(ctx, query, vals...)
 			if err != nil {
+				fmt.Println(query)
+				fmt.Println(vals...)
 				return fmt.Errorf("failed to bulk insert: %s", err)
 			}
 		}
