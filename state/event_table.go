@@ -348,13 +348,25 @@ FROM room_ids,
 	return
 }
 
+// LatestEventNIDInRooms queries the latest events in each of the room IDs given, using highestNID as the highest event.
+//
+// The following query does:
+//
+//  1. Create a list of the passed in roomIDs (`room_ids` CTE)
+//  2. Fetches the latest eventNIDs for each room using the data provided from room_ids (the `evs` LATERAL)
 func (t *EventTable) LatestEventNIDInRooms(txn *sqlx.Tx, roomIDs []string, highestNID int64) (roomToNID map[string]int64, err error) {
-	// the position (event nid) may be for a random different room, so we need to find the highest nid <= this position for this room
 	var events []Event
 	err = txn.Select(
 		&events,
-		`SELECT event_nid, room_id FROM syncv3_events
-		WHERE event_nid IN (SELECT max(event_nid) FROM syncv3_events WHERE event_nid <= $1 AND room_id = ANY($2) GROUP BY room_id)`,
+		`
+WITH room_ids AS (
+    select unnest($1) AS room_id
+)
+SELECT evs.event_nid, room_id
+FROM room_ids, 
+    LATERAL (
+            SELECT max(event_nid) event_nid FROM syncv3_events e WHERE e.room_id = room_ids.room_id AND event_nid <= $2
+            ) AS evs;`,
 		highestNID, pq.StringArray(roomIDs),
 	)
 	if err == sql.ErrNoRows {
