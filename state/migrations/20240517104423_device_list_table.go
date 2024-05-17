@@ -122,6 +122,9 @@ func upDeviceListTable(ctx context.Context, tx *sql.Tx) error {
 				Bucket:       state.BucketSent,
 			})
 		}
+		if len(deviceListRows) == 0 {
+			continue
+		}
 		chunks := sqlutil.Chunkify(5, state.MaxPostgresParameters, state.DeviceListChunker(deviceListRows))
 		for _, chunk := range chunks {
 			var placeholders []string
@@ -143,8 +146,6 @@ func upDeviceListTable(ctx context.Context, tx *sql.Tx) error {
 			)
 			_, err = tx.ExecContext(ctx, query, vals...)
 			if err != nil {
-				fmt.Println(query)
-				fmt.Println(vals...)
 				return fmt.Errorf("failed to bulk insert: %s", err)
 			}
 		}
