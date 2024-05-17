@@ -87,7 +87,6 @@ func (t *DeviceListTable) UpsertTx(txn *sqlx.Tx, userID, deviceID string, device
 		}
 	}
 	return nil
-	return
 }
 
 func (t *DeviceListTable) Select(userID, deviceID string, swap bool) (result internal.MapStringInt, err error) {
