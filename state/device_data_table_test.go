@@ -22,9 +22,6 @@ func assertDeviceData(t *testing.T, g, w internal.DeviceData) {
 	assertVal(t, "FallbackKeyTypes", g.FallbackKeyTypes, w.FallbackKeyTypes)
 	assertVal(t, "OTKCounts", g.OTKCounts, w.OTKCounts)
 	assertVal(t, "ChangedBits", g.ChangedBits, w.ChangedBits)
-	if w.DeviceLists.Sent != nil {
-		assertVal(t, "DeviceLists.Sent", g.DeviceLists.Sent, w.DeviceLists.Sent)
-	}
 }
 
 // Tests OTKCounts and FallbackKeyTypes behaviour
@@ -40,21 +37,27 @@ func TestDeviceDataTableOTKCountAndFallbackKeyTypes(t *testing.T) {
 		{
 			UserID:   userID,
 			DeviceID: deviceID,
-			OTKCounts: map[string]int{
-				"foo": 100,
-				"bar": 92,
+			DeviceKeyData: internal.DeviceKeyData{
+				OTKCounts: map[string]int{
+					"foo": 100,
+					"bar": 92,
+				},
 			},
-		},
-		{
-			UserID:           userID,
-			DeviceID:         deviceID,
-			FallbackKeyTypes: []string{"foobar"},
 		},
 		{
 			UserID:   userID,
 			DeviceID: deviceID,
-			OTKCounts: map[string]int{
-				"foo": 99,
+			DeviceKeyData: internal.DeviceKeyData{
+				FallbackKeyTypes: []string{"foobar"},
+			},
+		},
+		{
+			UserID:   userID,
+			DeviceID: deviceID,
+			DeviceKeyData: internal.DeviceKeyData{
+				OTKCounts: map[string]int{
+					"foo": 99,
+				},
 			},
 		},
 		{
@@ -65,7 +68,7 @@ func TestDeviceDataTableOTKCountAndFallbackKeyTypes(t *testing.T) {
 
 	// apply them
 	for _, dd := range deltas {
-		err := table.Upsert(&dd)
+		err := table.Upsert(&dd, nil)
 		assertNoError(t, err)
 	}
 
@@ -79,10 +82,12 @@ func TestDeviceDataTableOTKCountAndFallbackKeyTypes(t *testing.T) {
 		want := internal.DeviceData{
 			UserID:   userID,
 			DeviceID: deviceID,
-			OTKCounts: map[string]int{
-				"foo": 99,
+			DeviceKeyData: internal.DeviceKeyData{
+				OTKCounts: map[string]int{
+					"foo": 99,
+				},
+				FallbackKeyTypes: []string{"foobar"},
 			},
-			FallbackKeyTypes: []string{"foobar"},
 		}
 		want.SetFallbackKeysChanged()
 		want.SetOTKCountChanged()
@@ -95,10 +100,12 @@ func TestDeviceDataTableOTKCountAndFallbackKeyTypes(t *testing.T) {
 	want := internal.DeviceData{
 		UserID:   userID,
 		DeviceID: deviceID,
-		OTKCounts: map[string]int{
-			"foo": 99,
+		DeviceKeyData: internal.DeviceKeyData{
+			OTKCounts: map[string]int{
+				"foo": 99,
+			},
+			FallbackKeyTypes: []string{"foobar"},
 		},
-		FallbackKeyTypes: []string{"foobar"},
 	}
 	want.SetFallbackKeysChanged()
 	want.SetOTKCountChanged()
@@ -110,10 +117,12 @@ func TestDeviceDataTableOTKCountAndFallbackKeyTypes(t *testing.T) {
 	want = internal.DeviceData{
 		UserID:   userID,
 		DeviceID: deviceID,
-		OTKCounts: map[string]int{
-			"foo": 99,
+		DeviceKeyData: internal.DeviceKeyData{
+			OTKCounts: map[string]int{
+				"foo": 99,
+			},
+			FallbackKeyTypes: []string{"foobar"},
 		},
-		FallbackKeyTypes: []string{"foobar"},
 	}
 	assertDeviceData(t, *got, want)
 }
@@ -127,29 +136,32 @@ func TestDeviceDataTableBitset(t *testing.T) {
 	otkUpdate := internal.DeviceData{
 		UserID:   userID,
 		DeviceID: deviceID,
-		OTKCounts: map[string]int{
-			"foo": 100,
-			"bar": 92,
+		DeviceKeyData: internal.DeviceKeyData{
+			OTKCounts: map[string]int{
+				"foo": 100,
+				"bar": 92,
+			},
 		},
-		DeviceLists: internal.DeviceLists{New: map[string]int{}, Sent: map[string]int{}},
 	}
 	fallbakKeyUpdate := internal.DeviceData{
-		UserID:           userID,
-		DeviceID:         deviceID,
-		FallbackKeyTypes: []string{"foo", "bar"},
-		DeviceLists:      internal.DeviceLists{New: map[string]int{}, Sent: map[string]int{}},
+		UserID:   userID,
+		DeviceID: deviceID,
+		DeviceKeyData: internal.DeviceKeyData{
+			FallbackKeyTypes: []string{"foo", "bar"},
+		},
 	}
 	bothUpdate := internal.DeviceData{
-		UserID:           userID,
-		DeviceID:         deviceID,
-		FallbackKeyTypes: []string{"both"},
-		OTKCounts: map[string]int{
-			"both": 100,
+		UserID:   userID,
+		DeviceID: deviceID,
+		DeviceKeyData: internal.DeviceKeyData{
+			FallbackKeyTypes: []string{"both"},
+			OTKCounts: map[string]int{
+				"both": 100,
+			},
 		},
-		DeviceLists: internal.DeviceLists{New: map[string]int{}, Sent: map[string]int{}},
 	}
 
-	err := table.Upsert(&otkUpdate)
+	err := table.Upsert(&otkUpdate, nil)
 	assertNoError(t, err)
 	got, err := table.Select(userID, deviceID, true)
 	assertNoError(t, err)
@@ -161,7 +173,7 @@ func TestDeviceDataTableBitset(t *testing.T) {
 	otkUpdate.ChangedBits = 0
 	assertDeviceData(t, *got, otkUpdate)
 	// now same for fallback keys, but we won't swap them so it should return those diffs
-	err = table.Upsert(&fallbakKeyUpdate)
+	err = table.Upsert(&fallbakKeyUpdate, nil)
 	assertNoError(t, err)
 	fallbakKeyUpdate.OTKCounts = otkUpdate.OTKCounts
 	got, err = table.Select(userID, deviceID, false)
@@ -173,7 +185,7 @@ func TestDeviceDataTableBitset(t *testing.T) {
 	fallbakKeyUpdate.SetFallbackKeysChanged()
 	assertDeviceData(t, *got, fallbakKeyUpdate)
 	// updating both works
-	err = table.Upsert(&bothUpdate)
+	err = table.Upsert(&bothUpdate, nil)
 	assertNoError(t, err)
 	got, err = table.Select(userID, deviceID, true)
 	assertNoError(t, err)

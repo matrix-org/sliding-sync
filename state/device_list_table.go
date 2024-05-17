@@ -14,6 +14,14 @@ const (
 	BucketSent = 2
 )
 
+type DeviceListRow struct {
+	UserID       string `db:"user_id"`
+	DeviceID     string `db:"device_id"`
+	TargetUserID string `db:"target_user_id"`
+	TargetState  int    `db:"target_state"`
+	Bucket       int    `db:"bucket"`
+}
+
 type DeviceListTable struct {
 	db *sqlx.DB
 }
@@ -39,24 +47,9 @@ func NewDeviceListTable(db *sqlx.DB) *DeviceListTable {
 	}
 }
 
-// Upsert new device list changes.
 func (t *DeviceListTable) Upsert(userID, deviceID string, deviceListChanges map[string]int) (err error) {
 	err = sqlutil.WithTransaction(t.db, func(txn *sqlx.Tx) error {
-		for targetUserID, targetState := range deviceListChanges {
-			if targetState != internal.DeviceListChanged && targetState != internal.DeviceListLeft {
-				sentry.CaptureException(fmt.Errorf("DeviceListTable.Upsert invalid target_state: %d this is a programming error", targetState))
-				continue
-			}
-			_, err = txn.Exec(
-				`INSERT INTO syncv3_device_list_updates(user_id, device_id, target_user_id, target_state, bucket) VALUES($1,$2,$3,$4,$5)
-			ON CONFLICT (user_id, device_id, target_user_id, bucket) DO UPDATE SET target_state=$4`,
-				userID, deviceID, targetUserID, targetState, BucketNew,
-			)
-			if err != nil {
-				return err
-			}
-		}
-		return nil
+		return t.UpsertTx(txn, userID, deviceID, deviceListChanges)
 	})
 	if err != nil {
 		sentry.CaptureException(err)
@@ -64,31 +57,68 @@ func (t *DeviceListTable) Upsert(userID, deviceID string, deviceListChanges map[
 	return
 }
 
-// Select device list changes for this client. Returns a map of user_id => change enum.
+// Upsert new device list changes.
+func (t *DeviceListTable) UpsertTx(txn *sqlx.Tx, userID, deviceID string, deviceListChanges map[string]int) (err error) {
+	if len(deviceListChanges) == 0 {
+		return nil
+	}
+	var deviceListRows []DeviceListRow
+	for targetUserID, targetState := range deviceListChanges {
+		if targetState != internal.DeviceListChanged && targetState != internal.DeviceListLeft {
+			sentry.CaptureException(fmt.Errorf("DeviceListTable.Upsert invalid target_state: %d this is a programming error", targetState))
+			continue
+		}
+		deviceListRows = append(deviceListRows, DeviceListRow{
+			UserID:       userID,
+			DeviceID:     deviceID,
+			TargetUserID: targetUserID,
+			TargetState:  targetState,
+			Bucket:       BucketNew,
+		})
+	}
+	chunks := sqlutil.Chunkify(5, MaxPostgresParameters, DeviceListChunker(deviceListRows))
+	for _, chunk := range chunks {
+		_, err := txn.NamedExec(`
+						INSERT INTO syncv3_device_list_updates(user_id, device_id, target_user_id, target_state, bucket)
+						VALUES(:user_id, :device_id, :target_user_id, :target_state, :bucket)
+						ON CONFLICT (user_id, device_id, target_user_id, bucket) DO UPDATE SET target_state = EXCLUDED.target_state`, chunk)
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+	return
+}
+
 func (t *DeviceListTable) Select(userID, deviceID string, swap bool) (result internal.MapStringInt, err error) {
 	err = sqlutil.WithTransaction(t.db, func(txn *sqlx.Tx) error {
-		if !swap {
-			// read only view, just return what we previously sent and don't do anything else.
-			result, err = t.selectDeviceListChangesInBucket(txn, userID, deviceID, BucketSent)
-			return err
-		}
-
-		// delete the now acknowledged 'sent' data
-		_, err = txn.Exec(`DELETE FROM syncv3_device_list_updates WHERE user_id=$1 AND device_id=$2 AND bucket=$3`, userID, deviceID, BucketSent)
-		if err != nil {
-			return err
-		}
-		// grab any 'new' updates
-		result, err = t.selectDeviceListChangesInBucket(txn, userID, deviceID, BucketNew)
-		if err != nil {
-			return err
-		}
-
-		// mark these 'new' updates as 'sent'
-		_, err = txn.Exec(`UPDATE syncv3_device_list_updates SET bucket=$1 WHERE user_id=$2 AND device_id=$3 AND bucket=$4`, BucketSent, userID, deviceID, BucketNew)
+		result, err = t.SelectTx(txn, userID, deviceID, swap)
 		return err
 	})
 	return
+}
+
+// Select device list changes for this client. Returns a map of user_id => change enum.
+func (t *DeviceListTable) SelectTx(txn *sqlx.Tx, userID, deviceID string, swap bool) (result internal.MapStringInt, err error) {
+	if !swap {
+		// read only view, just return what we previously sent and don't do anything else.
+		return t.selectDeviceListChangesInBucket(txn, userID, deviceID, BucketSent)
+	}
+
+	// delete the now acknowledged 'sent' data
+	_, err = txn.Exec(`DELETE FROM syncv3_device_list_updates WHERE user_id=$1 AND device_id=$2 AND bucket=$3`, userID, deviceID, BucketSent)
+	if err != nil {
+		return nil, err
+	}
+	// grab any 'new' updates
+	result, err = t.selectDeviceListChangesInBucket(txn, userID, deviceID, BucketNew)
+	if err != nil {
+		return nil, err
+	}
+
+	// mark these 'new' updates as 'sent'
+	_, err = txn.Exec(`UPDATE syncv3_device_list_updates SET bucket=$1 WHERE user_id=$2 AND device_id=$3 AND bucket=$4`, BucketSent, userID, deviceID, BucketNew)
+	return result, err
 }
 
 func (t *DeviceListTable) selectDeviceListChangesInBucket(txn *sqlx.Tx, userID, deviceID string, bucket int) (result internal.MapStringInt, err error) {
@@ -107,4 +137,13 @@ func (t *DeviceListTable) selectDeviceListChangesInBucket(txn *sqlx.Tx, userID, 
 		result[targetUserID] = targetState
 	}
 	return result, rows.Err()
+}
+
+type DeviceListChunker []DeviceListRow
+
+func (c DeviceListChunker) Len() int {
+	return len(c)
+}
+func (c DeviceListChunker) Subslice(i, j int) sqlutil.Chunker {
+	return c[i:j]
 }

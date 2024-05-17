@@ -1,6 +1,7 @@
 package state
 
 import (
+	"fmt"
 	"testing"
 
 	"github.com/matrix-org/sliding-sync/internal"
@@ -105,4 +106,15 @@ func TestDeviceListTable(t *testing.T) {
 	got, err = table.Select(userID, deviceID, true)
 	assertNoError(t, err)
 	assertVal(t, "swap select did not return combined new items", got, internal.MapStringInt{})
+
+	// large updates work (chunker)
+	largeUpdate := internal.MapStringInt{}
+	for i := 0; i < 100000; i++ {
+		largeUpdate[fmt.Sprintf("user_%d", i)] = internal.DeviceListChanged
+	}
+	err = table.Upsert(userID, deviceID, largeUpdate)
+	assertNoError(t, err)
+	got, err = table.Select(userID, deviceID, true)
+	assertNoError(t, err)
+	assertVal(t, "swap select did not return large items", got, largeUpdate)
 }
