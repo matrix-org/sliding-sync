@@ -360,14 +360,14 @@ func (t *EventTable) LatestEventNIDInRooms(txn *sqlx.Tx, roomIDs []string, highe
 		&events,
 		`
 WITH room_ids AS (
-    select unnest($1) AS room_id
+    select unnest($1::text[]) AS room_id
 )
 SELECT evs.event_nid, room_id
 FROM room_ids, 
     LATERAL (
             SELECT max(event_nid) event_nid FROM syncv3_events e WHERE e.room_id = room_ids.room_id AND event_nid <= $2
-            ) AS evs;`,
-		highestNID, pq.StringArray(roomIDs),
+            ) AS evs WHERE event_nid IS NOT NULL;`,
+		pq.StringArray(roomIDs), highestNID,
 	)
 	if err == sql.ErrNoRows {
 		err = nil
