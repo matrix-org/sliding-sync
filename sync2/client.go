@@ -152,7 +152,7 @@ func (v *HTTPClient) createSyncURL(since string, isFirst, toDeviceOnly bool) str
 		qps += "timeout=30000"
 	}
 	if since != "" {
-		qps += "&since=" + since
+		qps += "&since=" + url.QueryEscape(since)
 	}
 
 	// Set presence to offline, this potentially reduces CPU load on upstream homeservers
