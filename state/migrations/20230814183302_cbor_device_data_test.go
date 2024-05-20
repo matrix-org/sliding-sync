@@ -2,13 +2,15 @@ package migrations
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"reflect"
 	"testing"
 
+	"github.com/fxamacker/cbor/v2"
+	"github.com/jmoiron/sqlx"
 	_ "github.com/lib/pq"
-	"github.com/matrix-org/sliding-sync/internal"
-	"github.com/matrix-org/sliding-sync/state"
+	"github.com/matrix-org/sliding-sync/sqlutil"
 )
 
 func TestCBORBMigration(t *testing.T) {
@@ -30,9 +32,9 @@ func TestCBORBMigration(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	rowData := []internal.DeviceData{
+	rowData := []OldDeviceData{
 		{
-			DeviceLists: internal.DeviceLists{
+			DeviceLists: OldDeviceLists{
 				New:  map[string]int{"@bob:localhost": 2},
 				Sent: map[string]int{},
 			},
@@ -43,7 +45,7 @@ func TestCBORBMigration(t *testing.T) {
 			UserID:           "@alice:localhost",
 		},
 		{
-			DeviceLists: internal.DeviceLists{
+			DeviceLists: OldDeviceLists{
 				New:  map[string]int{"@💣:localhost": 1, "@bomb:localhost": 2},
 				Sent: map[string]int{"@sent:localhost": 1},
 			},
@@ -78,9 +80,8 @@ func TestCBORBMigration(t *testing.T) {
 	tx.Commit()
 
 	// ensure we can now select it
-	table := state.NewDeviceDataTable(db)
 	for _, want := range rowData {
-		got, err := table.Select(want.UserID, want.DeviceID, false)
+		got, err := OldDeviceDataTableSelect(db, want.UserID, want.DeviceID, false)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -101,7 +102,7 @@ func TestCBORBMigration(t *testing.T) {
 
 	// ensure it is what we originally inserted
 	for _, want := range rowData {
-		var got internal.DeviceData
+		var got OldDeviceData
 		var gotBytes []byte
 		err = tx.QueryRow(`SELECT data FROM syncv3_device_data WHERE user_id=$1 AND device_id=$2`, want.UserID, want.DeviceID).Scan(&gotBytes)
 		if err != nil {
@@ -118,4 +119,67 @@ func TestCBORBMigration(t *testing.T) {
 	}
 
 	tx.Commit()
+}
+
+type OldDeviceDataRow struct {
+	ID       int64  `db:"id"`
+	UserID   string `db:"user_id"`
+	DeviceID string `db:"device_id"`
+	// This will contain internal.DeviceData serialised as JSON. It's stored in a single column as we don't
+	// need to perform searches on this data.
+	Data []byte `db:"data"`
+}
+
+func OldDeviceDataTableSelect(db *sqlx.DB, userID, deviceID string, swap bool) (result *OldDeviceData, err error) {
+	err = sqlutil.WithTransaction(db, func(txn *sqlx.Tx) error {
+		var row OldDeviceDataRow
+		err = txn.Get(&row, `SELECT data FROM syncv3_device_data WHERE user_id=$1 AND device_id=$2 FOR UPDATE`, userID, deviceID)
+		if err != nil {
+			if err == sql.ErrNoRows {
+				// if there is no device data for this user, it's not an error.
+				return nil
+			}
+			return err
+		}
+		// unmarshal to swap
+		opts := cbor.DecOptions{
+			MaxMapPairs: 1000000000, // 1 billion :(
+		}
+		decMode, err := opts.DecMode()
+		if err != nil {
+			return err
+		}
+		if err = decMode.Unmarshal(row.Data, &result); err != nil {
+			return err
+		}
+		result.UserID = userID
+		result.DeviceID = deviceID
+		if !swap {
+			return nil // don't swap
+		}
+		// the caller will only look at sent, so make sure what is new is now in sent
+		result.DeviceLists.Sent = result.DeviceLists.New
+
+		// swap over the fields
+		writeBack := *result
+		writeBack.DeviceLists.Sent = result.DeviceLists.New
+		writeBack.DeviceLists.New = make(map[string]int)
+		writeBack.ChangedBits = 0
+
+		if reflect.DeepEqual(result, &writeBack) {
+			// The update to the DB would be a no-op; don't bother with it.
+			// This helps reduce write usage and the contention on the unique index for
+			// the device_data table.
+			return nil
+		}
+		// re-marshal and write
+		data, err := cbor.Marshal(writeBack)
+		if err != nil {
+			return err
+		}
+
+		_, err = txn.Exec(`UPDATE syncv3_device_data SET data=$1 WHERE user_id=$2 AND device_id=$3`, data, userID, deviceID)
+		return err
+	})
+	return
 }

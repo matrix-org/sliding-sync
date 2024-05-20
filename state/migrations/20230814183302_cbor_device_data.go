@@ -9,7 +9,6 @@ import (
 	"strings"
 
 	"github.com/fxamacker/cbor/v2"
-	"github.com/matrix-org/sliding-sync/internal"
 	"github.com/matrix-org/sliding-sync/sync2"
 	"github.com/pressly/goose/v3"
 )
@@ -59,7 +58,7 @@ func upCborDeviceData(ctx context.Context, tx *sql.Tx) error {
 	}
 
 	for dd, jsonBytes := range deviceDatas {
-		var data internal.DeviceData
+		var data OldDeviceData
 		if err := json.Unmarshal(jsonBytes, &data); err != nil {
 			return fmt.Errorf("failed to unmarshal JSON: %v -> %v", string(jsonBytes), err)
 		}
@@ -115,7 +114,7 @@ func downCborDeviceData(ctx context.Context, tx *sql.Tx) error {
 	}
 
 	for dd, cborBytes := range deviceDatas {
-		var data internal.DeviceData
+		var data OldDeviceData
 		if err := cbor.Unmarshal(cborBytes, &data); err != nil {
 			return fmt.Errorf("failed to unmarshal CBOR: %v", err)
 		}

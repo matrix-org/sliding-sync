@@ -1,11 +1,13 @@
 package testutils
 
 import (
+	"context"
 	"database/sql"
 	"fmt"
 	"os"
 	"os/exec"
 	"os/user"
+	"time"
 )
 
 var Quiet = false
@@ -64,7 +66,9 @@ func PrepareDBConnectionString() (connStr string) {
 	if err != nil {
 		panic(err)
 	}
-	_, err = db.Exec(`DROP SCHEMA public CASCADE;
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	_, err = db.ExecContext(ctx, `DROP SCHEMA public CASCADE;
 		CREATE SCHEMA public;`)
 	if err != nil {
 		panic(err)

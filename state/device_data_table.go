@@ -15,13 +15,14 @@ type DeviceDataRow struct {
 	ID       int64  `db:"id"`
 	UserID   string `db:"user_id"`
 	DeviceID string `db:"device_id"`
-	// This will contain internal.DeviceData serialised as JSON. It's stored in a single column as we don't
+	// This will contain internal.DeviceKeyData serialised as JSON. It's stored in a single column as we don't
 	// need to perform searches on this data.
-	Data []byte `db:"data"`
+	KeyData []byte `db:"data"`
 }
 
 type DeviceDataTable struct {
-	db *sqlx.DB
+	db              *sqlx.DB
+	deviceListTable *DeviceListTable
 }
 
 func NewDeviceDataTable(db *sqlx.DB) *DeviceDataTable {
@@ -37,7 +38,8 @@ func NewDeviceDataTable(db *sqlx.DB) *DeviceDataTable {
 	ALTER TABLE syncv3_device_data SET (fillfactor = 90);
 	`)
 	return &DeviceDataTable{
-		db: db,
+		db:              db,
+		deviceListTable: NewDeviceListTable(db),
 	}
 }
 
@@ -45,6 +47,7 @@ func NewDeviceDataTable(db *sqlx.DB) *DeviceDataTable {
 // This should only be called by the v3 HTTP APIs when servicing an E2EE extension request.
 func (t *DeviceDataTable) Select(userID, deviceID string, swap bool) (result *internal.DeviceData, err error) {
 	err = sqlutil.WithTransaction(t.db, func(txn *sqlx.Tx) error {
+		// grab otk counts and fallback key types
 		var row DeviceDataRow
 		err = txn.Get(&row, `SELECT data FROM syncv3_device_data WHERE user_id=$1 AND device_id=$2 FOR UPDATE`, userID, deviceID)
 		if err != nil {
@@ -54,32 +57,38 @@ func (t *DeviceDataTable) Select(userID, deviceID string, swap bool) (result *in
 			}
 			return err
 		}
+		result = &internal.DeviceData{}
+		var keyData *internal.DeviceKeyData
 		// unmarshal to swap
-		opts := cbor.DecOptions{
-			MaxMapPairs: 1000000000, // 1 billion :(
-		}
-		decMode, err := opts.DecMode()
-		if err != nil {
-			return err
-		}
-		if err = decMode.Unmarshal(row.Data, &result); err != nil {
+		if err = cbor.Unmarshal(row.KeyData, &keyData); err != nil {
 			return err
 		}
 		result.UserID = userID
 		result.DeviceID = deviceID
+		if keyData != nil {
+			result.DeviceKeyData = *keyData
+		}
+
+		deviceListChanges, err := t.deviceListTable.SelectTx(txn, userID, deviceID, swap)
+		if err != nil {
+			return err
+		}
+		for targetUserID, targetState := range deviceListChanges {
+			switch targetState {
+			case internal.DeviceListChanged:
+				result.DeviceListChanged = append(result.DeviceListChanged, targetUserID)
+			case internal.DeviceListLeft:
+				result.DeviceListLeft = append(result.DeviceListLeft, targetUserID)
+			}
+		}
 		if !swap {
 			return nil // don't swap
 		}
-		// the caller will only look at sent, so make sure what is new is now in sent
-		result.DeviceLists.Sent = result.DeviceLists.New
-
 		// swap over the fields
-		writeBack := *result
-		writeBack.DeviceLists.Sent = result.DeviceLists.New
-		writeBack.DeviceLists.New = make(map[string]int)
+		writeBack := *keyData
 		writeBack.ChangedBits = 0
 
-		if reflect.DeepEqual(result, &writeBack) {
+		if reflect.DeepEqual(keyData, &writeBack) {
 			// The update to the DB would be a no-op; don't bother with it.
 			// This helps reduce write usage and the contention on the unique index for
 			// the device_data table.
@@ -97,52 +106,43 @@ func (t *DeviceDataTable) Select(userID, deviceID string, swap bool) (result *in
 	return
 }
 
-func (t *DeviceDataTable) DeleteDevice(userID, deviceID string) error {
-	_, err := t.db.Exec(`DELETE FROM syncv3_device_data WHERE user_id = $1 AND device_id = $2`, userID, deviceID)
-	return err
-}
-
 // Upsert combines what is in the database for this user|device with the partial entry `dd`
-func (t *DeviceDataTable) Upsert(dd *internal.DeviceData) (err error) {
+func (t *DeviceDataTable) Upsert(userID, deviceID string, keys internal.DeviceKeyData, deviceListChanges map[string]int) (err error) {
 	err = sqlutil.WithTransaction(t.db, func(txn *sqlx.Tx) error {
+		// Update device lists
+		if err = t.deviceListTable.UpsertTx(txn, userID, deviceID, deviceListChanges); err != nil {
+			return err
+		}
 		// select what already exists
 		var row DeviceDataRow
-		err = txn.Get(&row, `SELECT data FROM syncv3_device_data WHERE user_id=$1 AND device_id=$2 FOR UPDATE`, dd.UserID, dd.DeviceID)
+		err = txn.Get(&row, `SELECT data FROM syncv3_device_data WHERE user_id=$1 AND device_id=$2 FOR UPDATE`, userID, deviceID)
 		if err != nil && err != sql.ErrNoRows {
 			return err
 		}
 		// unmarshal and combine
-		var tempDD internal.DeviceData
-		if len(row.Data) > 0 {
-			opts := cbor.DecOptions{
-				MaxMapPairs: 1000000000, // 1 billion :(
-			}
-			decMode, err := opts.DecMode()
-			if err != nil {
-				return err
-			}
-			if err = decMode.Unmarshal(row.Data, &tempDD); err != nil {
+		var keyData internal.DeviceKeyData
+		if len(row.KeyData) > 0 {
+			if err = cbor.Unmarshal(row.KeyData, &keyData); err != nil {
 				return err
 			}
 		}
-		if dd.FallbackKeyTypes != nil {
-			tempDD.FallbackKeyTypes = dd.FallbackKeyTypes
-			tempDD.SetFallbackKeysChanged()
+		if keys.FallbackKeyTypes != nil {
+			keyData.FallbackKeyTypes = keys.FallbackKeyTypes
+			keyData.SetFallbackKeysChanged()
 		}
-		if dd.OTKCounts != nil {
-			tempDD.OTKCounts = dd.OTKCounts
-			tempDD.SetOTKCountChanged()
+		if keys.OTKCounts != nil {
+			keyData.OTKCounts = keys.OTKCounts
+			keyData.SetOTKCountChanged()
 		}
-		tempDD.DeviceLists = tempDD.DeviceLists.Combine(dd.DeviceLists)
 
-		data, err := cbor.Marshal(tempDD)
+		data, err := cbor.Marshal(keyData)
 		if err != nil {
 			return err
 		}
 		_, err = txn.Exec(
 			`INSERT INTO syncv3_device_data(user_id, device_id, data) VALUES($1,$2,$3)
 			ON CONFLICT (user_id, device_id) DO UPDATE SET data=$3`,
-			dd.UserID, dd.DeviceID, data,
+			userID, deviceID, data,
 		)
 		return err
 	})

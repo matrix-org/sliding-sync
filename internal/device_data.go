@@ -1,9 +1,5 @@
 package internal
 
-import (
-	"sync"
-)
-
 const (
 	bitOTKCount int = iota
 	bitFallbackKeyTypes
@@ -18,9 +14,22 @@ func isBitSet(n int, bit int) bool {
 	return val > 0
 }
 
-// DeviceData contains useful data for this user's device. This list can be expanded without prompting
-// schema changes. These values are upserted into the database and persisted forever.
+// DeviceData contains useful data for this user's device.
 type DeviceData struct {
+	DeviceListChanges
+	DeviceKeyData
+	UserID   string
+	DeviceID string
+}
+
+// This is calculated from device_lists table
+type DeviceListChanges struct {
+	DeviceListChanged []string
+	DeviceListLeft    []string
+}
+
+// This gets serialised as CBOR in device_data table
+type DeviceKeyData struct {
 	// Contains the latest device_one_time_keys_count values.
 	// Set whenever this field arrives down the v2 poller, and it replaces what was previously there.
 	OTKCounts MapStringInt `json:"otk"`
@@ -28,95 +37,22 @@ type DeviceData struct {
 	// Set whenever this field arrives down the v2 poller, and it replaces what was previously there.
 	// If this is a nil slice this means no change. If this is an empty slice then this means the fallback key was used up.
 	FallbackKeyTypes []string `json:"fallback"`
-
-	DeviceLists DeviceLists `json:"dl"`
-
 	// bitset for which device data changes are present. They accumulate until they get swapped over
 	// when they get reset
 	ChangedBits int `json:"c"`
-
-	UserID   string
-	DeviceID string
 }
 
-func (dd *DeviceData) SetOTKCountChanged() {
+func (dd *DeviceKeyData) SetOTKCountChanged() {
 	dd.ChangedBits = setBit(dd.ChangedBits, bitOTKCount)
 }
 
-func (dd *DeviceData) SetFallbackKeysChanged() {
+func (dd *DeviceKeyData) SetFallbackKeysChanged() {
 	dd.ChangedBits = setBit(dd.ChangedBits, bitFallbackKeyTypes)
 }
 
-func (dd *DeviceData) OTKCountChanged() bool {
+func (dd *DeviceKeyData) OTKCountChanged() bool {
 	return isBitSet(dd.ChangedBits, bitOTKCount)
 }
-func (dd *DeviceData) FallbackKeysChanged() bool {
+func (dd *DeviceKeyData) FallbackKeysChanged() bool {
 	return isBitSet(dd.ChangedBits, bitFallbackKeyTypes)
-}
-
-type UserDeviceKey struct {
-	UserID   string
-	DeviceID string
-}
-
-type DeviceDataMap struct {
-	deviceDataMu  *sync.Mutex
-	deviceDataMap map[UserDeviceKey]*DeviceData
-	Pos           int64
-}
-
-func NewDeviceDataMap(startPos int64, devices []DeviceData) *DeviceDataMap {
-	ddm := &DeviceDataMap{
-		deviceDataMu:  &sync.Mutex{},
-		deviceDataMap: make(map[UserDeviceKey]*DeviceData),
-		Pos:           startPos,
-	}
-	for i, dd := range devices {
-		ddm.deviceDataMap[UserDeviceKey{
-			UserID:   dd.UserID,
-			DeviceID: dd.DeviceID,
-		}] = &devices[i]
-	}
-	return ddm
-}
-
-func (d *DeviceDataMap) Get(userID, deviceID string) *DeviceData {
-	key := UserDeviceKey{
-		UserID:   userID,
-		DeviceID: deviceID,
-	}
-	d.deviceDataMu.Lock()
-	defer d.deviceDataMu.Unlock()
-	dd, ok := d.deviceDataMap[key]
-	if !ok {
-		return nil
-	}
-	return dd
-}
-
-func (d *DeviceDataMap) Update(dd DeviceData) DeviceData {
-	key := UserDeviceKey{
-		UserID:   dd.UserID,
-		DeviceID: dd.DeviceID,
-	}
-	d.deviceDataMu.Lock()
-	defer d.deviceDataMu.Unlock()
-	existing, ok := d.deviceDataMap[key]
-	if !ok {
-		existing = &DeviceData{
-			UserID:   dd.UserID,
-			DeviceID: dd.DeviceID,
-		}
-	}
-	if dd.OTKCounts != nil {
-		existing.OTKCounts = dd.OTKCounts
-	}
-	if dd.FallbackKeyTypes != nil {
-		existing.FallbackKeyTypes = dd.FallbackKeyTypes
-	}
-	existing.DeviceLists = existing.DeviceLists.Combine(dd.DeviceLists)
-
-	d.deviceDataMap[key] = existing
-
-	return *existing
 }

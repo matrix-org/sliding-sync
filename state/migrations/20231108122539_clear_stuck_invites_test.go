@@ -151,6 +151,7 @@ func TestClearStuckInvites(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	defer tx.Rollback()
 
 	// users in room B (bob) and F (doris) should be reset.
 	tokens, err := tokensTable.TokenForEachDevice(tx)

@@ -7,7 +7,6 @@ import (
 
 	"github.com/jmoiron/sqlx"
 	_ "github.com/lib/pq"
-	"github.com/matrix-org/sliding-sync/internal"
 	"github.com/matrix-org/sliding-sync/testutils"
 )
 
@@ -48,8 +47,8 @@ func TestJSONBMigration(t *testing.T) {
 	defer tx.Commit()
 
 	// insert some "invalid" data
-	dd := internal.DeviceData{
-		DeviceLists: internal.DeviceLists{
+	dd := OldDeviceData{
+		DeviceLists: OldDeviceLists{
 			New:  map[string]int{"@💣:localhost": 1},
 			Sent: map[string]int{},
 		},
