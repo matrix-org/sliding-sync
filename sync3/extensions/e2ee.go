@@ -70,6 +70,12 @@ func (r *E2EERequest) ProcessInitial(ctx context.Context, res *Response, extCtx 
 		extRes.OTKCounts = dd.OTKCounts
 		hasUpdates = true
 	}
+	if dd.DeviceListChanged == nil {
+		dd.DeviceListChanged = make([]string, 0)
+	}
+	if dd.DeviceListLeft == nil {
+		dd.DeviceListLeft = make([]string, 0)
+	}
 	if len(dd.DeviceListChanged) > 0 || len(dd.DeviceListLeft) > 0 {
 		extRes.DeviceLists = &E2EEDeviceList{
 			Changed: dd.DeviceListChanged,
