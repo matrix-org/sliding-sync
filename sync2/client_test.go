@@ -65,6 +65,12 @@ func TestSyncURL(t *testing.T) {
 			toDeviceOnly: true,
 			wantURL:      wantBaseURL + `?timeout=0&since=112233&set_presence=offline&filter=` + url.QueryEscape(`{"presence":{"not_types":["*"]},"room":{"rooms":[],"timeline":{"limit":50}}}`),
 		},
+		{
+			since:        "112233#145",
+			isFirst:      true,
+			toDeviceOnly: true,
+			wantURL:      wantBaseURL + `?timeout=0&since=112233%23145&set_presence=offline&filter=` + url.QueryEscape(`{"presence":{"not_types":["*"]},"room":{"rooms":[],"timeline":{"limit":50}}}`),
+		},
 	}
 	for i, tc := range testCases {
 		gotURL := client.createSyncURL(tc.since, tc.isFirst, tc.toDeviceOnly)
