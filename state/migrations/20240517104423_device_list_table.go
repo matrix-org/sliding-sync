@@ -168,8 +168,10 @@ func upDeviceListTable(ctx context.Context, tx *sql.Tx) error {
 }
 
 func downDeviceListTable(ctx context.Context, tx *sql.Tx) error {
-	// no-op: we'll drop the device list updates but still work correctly as new/sent are still in the cbor but are empty
-	return nil
+	// no-op: we'll drop the device list updates but still work correctly as new/sent are still in the cbor but are empty.
+	// This will lose some device list updates.
+	_, err := tx.Exec(`DROP TABLE IF EXISTS syncv3_device_list_updates`)
+	return err
 }
 
 func deserialiseCBOR(data []byte) (*OldDeviceData, error) {

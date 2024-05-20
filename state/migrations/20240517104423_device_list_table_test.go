@@ -2,9 +2,12 @@ package migrations
 
 import (
 	"context"
+	"reflect"
 	"testing"
 
 	"github.com/fxamacker/cbor/v2"
+	"github.com/matrix-org/sliding-sync/internal"
+	"github.com/matrix-org/sliding-sync/state"
 )
 
 func TestDeviceListTableMigration(t *testing.T) {
@@ -71,4 +74,86 @@ func TestDeviceListTableMigration(t *testing.T) {
 	}
 	tx.Commit()
 
+	wantSents := []internal.DeviceData{
+		{
+			UserID:   "@alice:localhost",
+			DeviceID: "ALICE",
+			DeviceKeyData: internal.DeviceKeyData{
+				OTKCounts: internal.MapStringInt{
+					"bar": 42,
+				},
+				FallbackKeyTypes: []string{"narp"},
+				ChangedBits:      2,
+			},
+		},
+		{
+			UserID:   "@bob:localhost",
+			DeviceID: "BOB",
+			DeviceListChanges: internal.DeviceListChanges{
+				DeviceListChanged: []string{"@sent:localhost"},
+			},
+			DeviceKeyData: internal.DeviceKeyData{
+				OTKCounts: internal.MapStringInt{
+					"foo": 100,
+				},
+				FallbackKeyTypes: []string{"yep"},
+			},
+		},
+	}
+
+	table := state.NewDeviceDataTable(db)
+	for _, wantSent := range wantSents {
+		gotSent, err := table.Select(wantSent.UserID, wantSent.DeviceID, false)
+		if err != nil {
+			t.Fatal(err)
+		}
+		assertVal(t, "'sent' data was corrupted during the migration", *gotSent, wantSent)
+	}
+
+	wantNews := []internal.DeviceData{
+		{
+			UserID:   "@alice:localhost",
+			DeviceID: "ALICE",
+			DeviceListChanges: internal.DeviceListChanges{
+				DeviceListLeft: []string{"@bob:localhost"},
+			},
+			DeviceKeyData: internal.DeviceKeyData{
+				OTKCounts: internal.MapStringInt{
+					"bar": 42,
+				},
+				FallbackKeyTypes: []string{"narp"},
+				ChangedBits:      2,
+			},
+		},
+		{
+			UserID:   "@bob:localhost",
+			DeviceID: "BOB",
+			DeviceListChanges: internal.DeviceListChanges{
+				DeviceListChanged: []string{"@💣:localhost"},
+				DeviceListLeft:    []string{"@bomb:localhost"},
+			},
+			DeviceKeyData: internal.DeviceKeyData{
+				OTKCounts: internal.MapStringInt{
+					"foo": 100,
+				},
+				FallbackKeyTypes: []string{"yep"},
+			},
+		},
+	}
+
+	for _, wantNew := range wantNews {
+		gotNew, err := table.Select(wantNew.UserID, wantNew.DeviceID, true)
+		if err != nil {
+			t.Fatal(err)
+		}
+		assertVal(t, "'new' data was corrupted during the migration", *gotNew, wantNew)
+	}
+
+}
+
+func assertVal(t *testing.T, msg string, got, want interface{}) {
+	t.Helper()
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("%s: got\n%#v\nwant\n%#v", msg, got, want)
+	}
 }
