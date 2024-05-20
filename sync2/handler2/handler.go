@@ -232,16 +232,10 @@ func (h *Handler) OnE2EEData(ctx context.Context, userID, deviceID string, otkCo
 	wg.Add(1)
 	h.e2eeWorkerPool.Queue(func() {
 		defer wg.Done()
-		// some of these fields may be set
-		partialDD := internal.DeviceData{
-			UserID:   userID,
-			DeviceID: deviceID,
-			DeviceKeyData: internal.DeviceKeyData{
-				OTKCounts:        otkCounts,
-				FallbackKeyTypes: fallbackKeyTypes,
-			},
-		}
-		err := h.Store.DeviceDataTable.Upsert(&partialDD, deviceListChanges)
+		err := h.Store.DeviceDataTable.Upsert(userID, deviceID, internal.DeviceKeyData{
+			OTKCounts:        otkCounts,
+			FallbackKeyTypes: fallbackKeyTypes,
+		}, deviceListChanges)
 		if err != nil {
 			logger.Err(err).Str("user", userID).Msg("failed to upsert device data")
 			internal.GetSentryHubFromContextOrDefault(ctx).CaptureException(err)

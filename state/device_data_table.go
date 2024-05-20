@@ -107,15 +107,15 @@ func (t *DeviceDataTable) Select(userID, deviceID string, swap bool) (result *in
 }
 
 // Upsert combines what is in the database for this user|device with the partial entry `dd`
-func (t *DeviceDataTable) Upsert(dd *internal.DeviceData, deviceListChanges map[string]int) (err error) {
+func (t *DeviceDataTable) Upsert(userID, deviceID string, keys internal.DeviceKeyData, deviceListChanges map[string]int) (err error) {
 	err = sqlutil.WithTransaction(t.db, func(txn *sqlx.Tx) error {
 		// Update device lists
-		if err = t.deviceListTable.UpsertTx(txn, dd.UserID, dd.DeviceID, deviceListChanges); err != nil {
+		if err = t.deviceListTable.UpsertTx(txn, userID, deviceID, deviceListChanges); err != nil {
 			return err
 		}
 		// select what already exists
 		var row DeviceDataRow
-		err = txn.Get(&row, `SELECT data FROM syncv3_device_data WHERE user_id=$1 AND device_id=$2 FOR UPDATE`, dd.UserID, dd.DeviceID)
+		err = txn.Get(&row, `SELECT data FROM syncv3_device_data WHERE user_id=$1 AND device_id=$2 FOR UPDATE`, userID, deviceID)
 		if err != nil && err != sql.ErrNoRows {
 			return err
 		}
@@ -126,12 +126,12 @@ func (t *DeviceDataTable) Upsert(dd *internal.DeviceData, deviceListChanges map[
 				return err
 			}
 		}
-		if dd.FallbackKeyTypes != nil {
-			keyData.FallbackKeyTypes = dd.FallbackKeyTypes
+		if keys.FallbackKeyTypes != nil {
+			keyData.FallbackKeyTypes = keys.FallbackKeyTypes
 			keyData.SetFallbackKeysChanged()
 		}
-		if dd.OTKCounts != nil {
-			keyData.OTKCounts = dd.OTKCounts
+		if keys.OTKCounts != nil {
+			keyData.OTKCounts = keys.OTKCounts
 			keyData.SetOTKCountChanged()
 		}
 
@@ -142,7 +142,7 @@ func (t *DeviceDataTable) Upsert(dd *internal.DeviceData, deviceListChanges map[
 		_, err = txn.Exec(
 			`INSERT INTO syncv3_device_data(user_id, device_id, data) VALUES($1,$2,$3)
 			ON CONFLICT (user_id, device_id) DO UPDATE SET data=$3`,
-			dd.UserID, dd.DeviceID, data,
+			userID, deviceID, data,
 		)
 		return err
 	})

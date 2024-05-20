@@ -68,7 +68,7 @@ func TestDeviceDataTableOTKCountAndFallbackKeyTypes(t *testing.T) {
 
 	// apply them
 	for _, dd := range deltas {
-		err := table.Upsert(&dd, nil)
+		err := table.Upsert(dd.UserID, dd.DeviceID, dd.DeviceKeyData, nil)
 		assertNoError(t, err)
 	}
 
@@ -161,7 +161,7 @@ func TestDeviceDataTableBitset(t *testing.T) {
 		},
 	}
 
-	err := table.Upsert(&otkUpdate, nil)
+	err := table.Upsert(otkUpdate.UserID, otkUpdate.DeviceID, otkUpdate.DeviceKeyData, nil)
 	assertNoError(t, err)
 	got, err := table.Select(userID, deviceID, true)
 	assertNoError(t, err)
@@ -173,7 +173,7 @@ func TestDeviceDataTableBitset(t *testing.T) {
 	otkUpdate.ChangedBits = 0
 	assertDeviceData(t, *got, otkUpdate)
 	// now same for fallback keys, but we won't swap them so it should return those diffs
-	err = table.Upsert(&fallbakKeyUpdate, nil)
+	err = table.Upsert(fallbakKeyUpdate.UserID, fallbakKeyUpdate.DeviceID, fallbakKeyUpdate.DeviceKeyData, nil)
 	assertNoError(t, err)
 	fallbakKeyUpdate.OTKCounts = otkUpdate.OTKCounts
 	got, err = table.Select(userID, deviceID, false)
@@ -185,7 +185,7 @@ func TestDeviceDataTableBitset(t *testing.T) {
 	fallbakKeyUpdate.SetFallbackKeysChanged()
 	assertDeviceData(t, *got, fallbakKeyUpdate)
 	// updating both works
-	err = table.Upsert(&bothUpdate, nil)
+	err = table.Upsert(bothUpdate.UserID, bothUpdate.DeviceID, bothUpdate.DeviceKeyData, nil)
 	assertNoError(t, err)
 	got, err = table.Select(userID, deviceID, true)
 	assertNoError(t, err)

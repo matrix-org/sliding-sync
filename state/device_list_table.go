@@ -109,15 +109,30 @@ func (t *DeviceListTable) SelectTx(txn *sqlx.Tx, userID, deviceID string, swap b
 	if err != nil {
 		return nil, err
 	}
-	// grab any 'new' updates
-	result, err = t.selectDeviceListChangesInBucket(txn, userID, deviceID, BucketNew)
+	// grab any 'new' updates and atomically mark these as 'sent'.
+	// NB: we must not SELECT then UPDATE, because a 'new' row could be inserted after the SELECT and before the UPDATE, which
+	// would then be incorrectly moved to 'sent' without being returned to the client, dropping the data. This happens because
+	// the default transaction level is 'read committed', which /allows/ nonrepeatable reads which is:
+	//  > A transaction re-reads data it has previously read and finds that data has been modified by another transaction (that committed since the initial read).
+	// We could change the isolation level but this incurs extra performance costs in addition to serialisation errors which
+	// need to be handled. It's easier to just use UPDATE .. RETURNING. Note that we don't require UPDATE .. RETURNING to be
+	// atomic in any way, it's just that we need to guarantee each things SELECTed is also UPDATEd (so in the scenario above,
+	// we don't care if the SELECT includes or excludes the 'new' row, but if it is SELECTed it MUST be UPDATEd).
+	rows, err := txn.Query(`UPDATE syncv3_device_list_updates SET bucket=$1 WHERE user_id=$2 AND device_id=$3 AND bucket=$4 RETURNING target_user_id, target_state`, BucketSent, userID, deviceID, BucketNew)
 	if err != nil {
 		return nil, err
 	}
-
-	// mark these 'new' updates as 'sent'
-	_, err = txn.Exec(`UPDATE syncv3_device_list_updates SET bucket=$1 WHERE user_id=$2 AND device_id=$3 AND bucket=$4`, BucketSent, userID, deviceID, BucketNew)
-	return result, err
+	defer rows.Close()
+	result = make(internal.MapStringInt)
+	var targetUserID string
+	var targetState int
+	for rows.Next() {
+		if err := rows.Scan(&targetUserID, &targetState); err != nil {
+			return nil, err
+		}
+		result[targetUserID] = targetState
+	}
+	return result, rows.Err()
 }
 
 func (t *DeviceListTable) selectDeviceListChangesInBucket(txn *sqlx.Tx, userID, deviceID string, bucket int) (result internal.MapStringInt, err error) {
