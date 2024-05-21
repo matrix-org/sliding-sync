@@ -171,7 +171,7 @@ func (s *Storage) PrepareSnapshot(txn *sqlx.Tx) (tableName string, err error) {
 		`SELECT UNNEST(membership_events) AS membership_nid INTO TEMP ` + tempTableName + ` FROM syncv3_snapshots
 		JOIN syncv3_rooms ON syncv3_snapshots.snapshot_id = syncv3_rooms.current_snapshot_id`,
 	)
-	return tempTableName, nil
+	return tempTableName, err
 }
 
 // GlobalSnapshot snapshots the entire database for the purposes of initialising
