@@ -141,11 +141,6 @@ func NewEventTable(db *sqlx.DB) *EventTable {
 	CREATE INDEX IF NOT EXISTS syncv3_nid_room_state_idx ON syncv3_events(room_id, event_nid, is_state);
 
 	CREATE UNIQUE INDEX IF NOT EXISTS syncv3_events_room_event_nid_type_skey_idx ON syncv3_events(event_nid, event_type, state_key);
-
-	-- Create a materialized view for event_types (used on startup to get the latest events in each room)
-	CREATE MATERIALIZED VIEW IF NOT EXISTS event_types as
-	SELECT DISTINCT event_type
-	FROM syncv3_events;
 	`)
 	return &EventTable{db}
 }
@@ -447,13 +442,20 @@ func (t *EventTable) SelectLatestEventsBetween(txn *sqlx.Tx, roomID string, lowe
 func (t *EventTable) selectLatestEventByTypeInAllRooms(txn *sqlx.Tx) ([]Event, error) {
 	result := []Event{}
 	// What the following query does:
-	//	1. Gets all event types from a materialized view (updated on startup in `PrepareSnapshot`) as the `event_types` CTE
+	//	1. Gets all event types from a recursive CTE as the `event_types` CTE
 	//	2. Gets all rooms as the `room_ids` CTE
 	// 	3. Gets the latest event_nid for each event_type and room as the `max_by_ev_type` CTE
 	//	4. Queries the required data using the event_nids provided by the `max_by_ev_type` CTE
 	rows, err := txn.Query(`
 WITH event_types AS (
-    SELECT * FROM event_types
+    WITH RECURSIVE t AS (
+        (SELECT event_type FROM syncv3_events ORDER BY event_type LIMIT 1)  -- parentheses required
+        UNION ALL
+        SELECT (SELECT event_type FROM syncv3_events WHERE event_type > t.event_type ORDER BY event_type LIMIT 1)
+        FROM t
+        WHERE t.event_type IS NOT NULL
+    )
+    SELECT event_type FROM t WHERE event_type IS NOT NULL
 ), room_ids AS (
     SELECT DISTINCT room_id FROM syncv3_rooms
 ), max_by_ev_type AS (

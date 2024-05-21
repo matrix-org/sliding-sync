@@ -171,15 +171,6 @@ func (s *Storage) PrepareSnapshot(txn *sqlx.Tx) (tableName string, err error) {
 		`SELECT UNNEST(membership_events) AS membership_nid INTO TEMP ` + tempTableName + ` FROM syncv3_snapshots
 		JOIN syncv3_rooms ON syncv3_snapshots.snapshot_id = syncv3_rooms.current_snapshot_id`,
 	)
-	if err != nil {
-		return "", err
-	}
-	// Refresh the materialized view, so getting latest events by type per room
-	// can use a fresh view of the event_types.
-	_, err = txn.Exec("REFRESH MATERIALIZED VIEW event_types;")
-	if err != nil {
-		return "", err
-	}
 	return tempTableName, nil
 }
 
