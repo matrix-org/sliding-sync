@@ -441,18 +441,29 @@ func (t *EventTable) SelectLatestEventsBetween(txn *sqlx.Tx, roomID string, lowe
 
 func (t *EventTable) selectLatestEventByTypeInAllRooms(txn *sqlx.Tx) ([]Event, error) {
 	result := []Event{}
-	// TODO: this query ends up doing a sequential scan on the events table. We have
-	// an index on (event_type, room_id, event_nid) so I'm a little surprised that PG
-	// decides to do so. Can we do something better here? Ideas:
-	// - Find a better query for selecting the newest event of each type in a room.
-	// - At present we only care about the _timestamps_ of these events. Perhaps we
-	//   could store those in the DB (and even in an index) as a column and select
-	//   those, to avoid having to parse the event bodies.
-	// - We could have the application maintain a `latest_events` table so that the
-	//   rows can be directly read. Assuming a mostly-static set of event types, reads
-	//   are then linear in the number of rooms.
-	rows, err := txn.Query(
-		`SELECT room_id, event_nid, event FROM syncv3_events WHERE event_nid in (SELECT MAX(event_nid) FROM syncv3_events GROUP BY room_id, event_type)`,
+	// What the following query does:
+	//	1. Gets all event types from a recursive CTE as the `event_types` CTE
+	//	2. Gets all rooms as the `room_ids` CTE
+	// 	3. Gets the latest event_nid for each event_type and room as the `max_by_ev_type` CTE
+	//	4. Queries the required data using the event_nids provided by the `max_by_ev_type` CTE
+	rows, err := txn.Query(`
+WITH event_types AS (
+    WITH RECURSIVE t AS (
+        (SELECT event_type FROM syncv3_events ORDER BY event_type LIMIT 1)  -- parentheses required
+        UNION ALL
+        SELECT (SELECT event_type FROM syncv3_events WHERE event_type > t.event_type ORDER BY event_type LIMIT 1)
+        FROM t
+        WHERE t.event_type IS NOT NULL
+    )
+    SELECT event_type FROM t WHERE event_type IS NOT NULL
+), room_ids AS (
+    SELECT DISTINCT room_id FROM syncv3_rooms
+), max_by_ev_type AS (
+    SELECT m.max FROM event_types, room_ids,
+    LATERAL ( SELECT max(event_nid) as max FROM syncv3_events e WHERE e.room_id = room_ids.room_id AND e.event_type = event_types.event_type ) AS m
+)
+SELECT room_id, event_nid, event FROM syncv3_events, max_by_ev_type WHERE event_nid = max_by_ev_type.max
+`,
 	)
 	if err != nil {
 		return nil, err
