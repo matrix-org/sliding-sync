@@ -141,6 +141,11 @@ func NewEventTable(db *sqlx.DB) *EventTable {
 	CREATE INDEX IF NOT EXISTS syncv3_nid_room_state_idx ON syncv3_events(room_id, event_nid, is_state);
 
 	CREATE UNIQUE INDEX IF NOT EXISTS syncv3_events_room_event_nid_type_skey_idx ON syncv3_events(event_nid, event_type, state_key);
+
+	-- Create a materialized view for event_types (used on startup to get the latest events in each room)
+	CREATE MATERIALIZED VIEW IF NOT EXISTS event_types as
+	SELECT DISTINCT event_type
+	FROM syncv3_events;
 	`)
 	return &EventTable{db}
 }
@@ -441,18 +446,22 @@ func (t *EventTable) SelectLatestEventsBetween(txn *sqlx.Tx, roomID string, lowe
 
 func (t *EventTable) selectLatestEventByTypeInAllRooms(txn *sqlx.Tx) ([]Event, error) {
 	result := []Event{}
-	// TODO: this query ends up doing a sequential scan on the events table. We have
-	// an index on (event_type, room_id, event_nid) so I'm a little surprised that PG
-	// decides to do so. Can we do something better here? Ideas:
-	// - Find a better query for selecting the newest event of each type in a room.
-	// - At present we only care about the _timestamps_ of these events. Perhaps we
-	//   could store those in the DB (and even in an index) as a column and select
-	//   those, to avoid having to parse the event bodies.
-	// - We could have the application maintain a `latest_events` table so that the
-	//   rows can be directly read. Assuming a mostly-static set of event types, reads
-	//   are then linear in the number of rooms.
-	rows, err := txn.Query(
-		`SELECT room_id, event_nid, event FROM syncv3_events WHERE event_nid in (SELECT MAX(event_nid) FROM syncv3_events GROUP BY room_id, event_type)`,
+	// What the following query does:
+	//	1. Gets all event types from a materialized view (updated on startup in `PrepareSnapshot`) as the `event_types` CTE
+	//	2. Gets all rooms as the `room_ids` CTE
+	// 	3. Gets the latest event_nid for each event_type and room as the `max_by_ev_type` CTE
+	//	4. Queries the required data using the event_nids provided by the `max_by_ev_type` CTE
+	rows, err := txn.Query(`
+WITH event_types AS (
+    SELECT * FROM event_types
+), room_ids AS (
+    SELECT DISTINCT room_id FROM syncv3_rooms
+), max_by_ev_type AS (
+    SELECT m.max FROM event_types, room_ids,
+    LATERAL ( SELECT max(event_nid) as max FROM syncv3_events e WHERE e.room_id = room_ids.room_id AND e.event_type = event_types.event_type ) AS m
+)
+SELECT room_id, event_nid, event FROM syncv3_events, max_by_ev_type WHERE event_nid = max_by_ev_type.max
+`,
 	)
 	if err != nil {
 		return nil, err
