@@ -60,6 +60,16 @@ In both cases, the path `https://example.com/.well-known/matrix/client` must ret
 }
 ```
 
+#### Synapse
+
+homeserver.yml has a preference `extra_well_known_client_content`[(description)](https://element-hq.github.io/synapse/latest/usage/configuration/config_documentation.html#extra_well_known_client_content):
+
+```yaml
+extra_well_known_client_content:
+  org.matrix.msc3575.proxy:
+    url: "https://syncv3.example.com"
+```
+
 #### Same hostname
 The following nginx configuration can be used to pass the required endpoints to the sync proxy, running on local port 8009 (so as to not conflict with Synapse):
 ```nginx
