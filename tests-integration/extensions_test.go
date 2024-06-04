@@ -2,6 +2,7 @@ package syncv3
 
 import (
 	"encoding/json"
+	"fmt"
 	"testing"
 	"time"
 
@@ -467,6 +468,7 @@ func TestExtensionToDeviceSequence(t *testing.T) {
 		},
 	})
 
+	hiSince := "999999"
 	res := v3.mustDoV3Request(t, aliceToken, sync3.Request{
 		Lists: map[string]sync3.RequestList{"a": {
 			Ranges: sync3.SliceRanges{
@@ -476,11 +478,17 @@ func TestExtensionToDeviceSequence(t *testing.T) {
 		Extensions: extensions.Request{
 			ToDevice: &extensions.ToDeviceRequest{
 				Core:  extensions.Core{Enabled: &boolTrue},
-				Since: "999999",
+				Since: hiSince,
 			},
 		},
 	})
-	m.MatchResponse(t, res, m.MatchList("a", m.MatchV3Count(0)), m.MatchToDeviceMessages(toDeviceMsgs))
+	m.MatchResponse(t, res, m.MatchList("a", m.MatchV3Count(0)), m.MatchToDeviceMessages(toDeviceMsgs), func(res *sync3.Response) error {
+		// ensure that we return a lower numbered since token
+		if res.Extensions.ToDevice.NextBatch == hiSince {
+			return fmt.Errorf("next_batch got %v wanted lower", hiSince)
+		}
+		return nil
+	})
 }
 
 // tests that the account data extension works:
