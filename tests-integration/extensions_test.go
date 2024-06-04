@@ -3,6 +3,7 @@ package syncv3
 import (
 	"encoding/json"
 	"fmt"
+	"strconv"
 	"testing"
 	"time"
 
@@ -468,7 +469,7 @@ func TestExtensionToDeviceSequence(t *testing.T) {
 		},
 	})
 
-	hiSince := "999999"
+	hiSince := 999999
 	res := v3.mustDoV3Request(t, aliceToken, sync3.Request{
 		Lists: map[string]sync3.RequestList{"a": {
 			Ranges: sync3.SliceRanges{
@@ -478,14 +479,18 @@ func TestExtensionToDeviceSequence(t *testing.T) {
 		Extensions: extensions.Request{
 			ToDevice: &extensions.ToDeviceRequest{
 				Core:  extensions.Core{Enabled: &boolTrue},
-				Since: hiSince,
+				Since: fmt.Sprintf("%d", hiSince),
 			},
 		},
 	})
 	m.MatchResponse(t, res, m.MatchList("a", m.MatchV3Count(0)), m.MatchToDeviceMessages(toDeviceMsgs), func(res *sync3.Response) error {
 		// ensure that we return a lower numbered since token
-		if res.Extensions.ToDevice.NextBatch == hiSince {
-			return fmt.Errorf("next_batch got %v wanted lower", hiSince)
+		got, err := strconv.Atoi(res.Extensions.ToDevice.NextBatch)
+		if err != nil {
+			return err
+		}
+		if got >= hiSince {
+			return fmt.Errorf("next_batch got %v wanted lower than %v", got, hiSince)
 		}
 		return nil
 	})
