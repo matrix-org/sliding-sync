@@ -443,6 +443,46 @@ func TestExtensionToDevice(t *testing.T) {
 	m.MatchResponse(t, res, m.MatchList("a", m.MatchV3Count(0)), m.MatchToDeviceMessages(newToDeviceMsgs))
 }
 
+// Test that if you sync with a very very high numbered since value, we return lower numbered entries.
+// This guards against dropped databases.
+func TestExtensionToDeviceSequence(t *testing.T) {
+	pqString := testutils.PrepareDBConnectionString()
+	// setup code
+	v2 := runTestV2Server(t)
+	v3 := runTestServer(t, v2, pqString)
+	defer v2.close()
+	defer v3.close()
+	alice := "@TestExtensionToDeviceSequence_alice:localhost"
+	aliceToken := "ALICE_BEARER_TOKEN_TestExtensionToDeviceSequence"
+	v2.addAccount(t, alice, aliceToken)
+	toDeviceMsgs := []json.RawMessage{
+		json.RawMessage(`{"sender":"alice","type":"something","content":{"foo":"1"}}`),
+		json.RawMessage(`{"sender":"alice","type":"something","content":{"foo":"2"}}`),
+		json.RawMessage(`{"sender":"alice","type":"something","content":{"foo":"3"}}`),
+		json.RawMessage(`{"sender":"alice","type":"something","content":{"foo":"4"}}`),
+	}
+	v2.queueResponse(alice, sync2.SyncResponse{
+		ToDevice: sync2.EventsResponse{
+			Events: toDeviceMsgs,
+		},
+	})
+
+	res := v3.mustDoV3Request(t, aliceToken, sync3.Request{
+		Lists: map[string]sync3.RequestList{"a": {
+			Ranges: sync3.SliceRanges{
+				[2]int64{0, 10}, // doesn't matter
+			},
+		}},
+		Extensions: extensions.Request{
+			ToDevice: &extensions.ToDeviceRequest{
+				Core:  extensions.Core{Enabled: &boolTrue},
+				Since: "999999",
+			},
+		},
+	})
+	m.MatchResponse(t, res, m.MatchList("a", m.MatchV3Count(0)), m.MatchToDeviceMessages(toDeviceMsgs))
+}
+
 // tests that the account data extension works:
 // 1- check global account data is sent on first connection
 // 2- check global account data updates are proxied through
