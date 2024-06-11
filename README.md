@@ -155,6 +155,17 @@ Useful queries include:
  - `sum(increase(sliding_sync_api_process_duration_secs_bucket[1m])) by (le)` : Useful heatmap to show how long sliding sync responses take to calculate,
    which excludes all long-polling requests. This can highlight slow sorting/database performance, as these requests should always be fast.
 
+### Can I delete the proxy database and start over?
+
+*It is not recommended to do this.*
+
+Yes, with caveats. Most of the data is just a copy of data from the upstream homeserver. The exceptions to this are:
+ - device list changes (table: `syncv3_device_list_updates`)
+ - to-device messages (table: `syncv3_to_device_messages` and related sequence `syncv3_to_device_messages_seq`)
+
+Both of these are critical for E2EE to work correctly as it ensures A) clients know up-to-date devices for users, B) clients can reliably send messages directly to devices.
+If the device list changes are deleted, Alice may not realise that Bob logged in on a new device and hence not encrypt for that new device. Encryption keys are sent in to-device messages, so deleting them will inevitably cause some messages to become undecryptable. If you don't care about causing undecryptable messages then you can just delete the database and start over. If you do care, preserve those tables/sequences. We cannot guarantee that the database will remain in a consistent state (things may break if you keep some tables) as we do not test this scenario.
+
 ### Profiling
 
 To help debug performance issues, you can make the proxy listen for PPROF requests by passing `SYNCV3_PPROF=:6060` to listen on `:6060`.
