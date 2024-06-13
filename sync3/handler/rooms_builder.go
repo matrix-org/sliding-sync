@@ -13,19 +13,21 @@ import (
 // in the Response. It is not thread-safe and should only be called by the ConnState thread.
 //
 // The top-level `rooms` key is an amalgamation of:
-//  - Room subscriptions
-//  - Rooms within all sliding lists.
+//   - Room subscriptions
+//   - Rooms within all sliding lists.
 //
 // The purpose of this builder is to remember which rooms we will be returning data for, along with the
 // room subscription for that room. This then allows efficient database accesses. For example:
-//  - List A will return !a, !b, !c with Room Subscription X
-//  - List B will return !b, !c, !d with Room Subscription Y
-//  - Room sub for !a with Room Subscription Z
+//   - List A will return !a, !b, !c with Room Subscription X
+//   - List B will return !b, !c, !d with Room Subscription Y
+//   - Room sub for !a with Room Subscription Z
+//
 // Rather than performing each operation in isolation and query for rooms multiple times (where the
 // response data will inevitably be dropped), we can instead amalgamate this into:
-//  - Room Subscription X+Z -> !a
-//  - Room Subscription X+Y -> !b, !c
-//  - Room Subscription Y -> !d
+//   - Room Subscription X+Z -> !a
+//   - Room Subscription X+Y -> !b, !c
+//   - Room Subscription Y -> !d
+//
 // This data will not be wasted when it has been retrieved from the database.
 type RoomsBuilder struct {
 	subs       []sync3.RoomSubscription

@@ -9,6 +9,7 @@ import (
 	"github.com/matrix-org/sliding-sync/sync3"
 	"github.com/matrix-org/sliding-sync/sync3/caches"
 	"github.com/matrix-org/sliding-sync/sync3/extensions"
+	"github.com/rs/zerolog/log"
 )
 
 // the amount of time to try to insert into a full buffer before giving up.
@@ -37,7 +38,7 @@ func (s *connStateLive) onUpdate(up caches.Update) {
 	select {
 	case s.updates <- up:
 	case <-time.After(BufferWaitTime):
-		logger.Warn().Interface("update", up).Str("user", s.userID).Str("device", s.deviceID).Msg(
+		log.Warn().Interface("update", up).Str("user", s.userID).Str("device", s.deviceID).Msg(
 			"cannot send update to connection, buffer exceeded. Destroying connection.",
 		)
 		s.bufferFull = true
@@ -50,7 +51,7 @@ func (s *connStateLive) liveUpdate(
 	ctx context.Context, req *sync3.Request, ex extensions.Request, isInitial bool,
 	response *sync3.Response,
 ) {
-	log := logger.With().Str("user", s.userID).Str("device", s.deviceID).Logger()
+	log := log.With().Str("user", s.userID).Str("device", s.deviceID).Logger()
 	// we need to ensure that we keep consuming from the updates channel, even if they want a response
 	// immediately. If we have new list data we won't wait, but if we don't then we need to be able to
 	// catch-up to the current head position, hence giving 100ms grace period for processing.
@@ -150,7 +151,7 @@ func (s *connStateLive) processLiveUpdate(ctx context.Context, up caches.Update,
 
 		// Skip message events from ignored users.
 		if roomEventUpdate.EventData.StateKey == nil && s.userCache.ShouldIgnore(roomEventUpdate.EventData.Sender) {
-			logger.Trace().
+			log.Trace().
 				Str("user", s.userID).
 				Str("type", roomEventUpdate.EventData.EventType).
 				Str("sender", roomEventUpdate.EventData.Sender).
@@ -386,14 +387,14 @@ func (s *connStateLive) processLiveUpdateForList(
 ) (hasUpdates bool) {
 	switch update := up.(type) {
 	case *caches.RoomEventUpdate:
-		logger.Trace().Str("user", s.userID).Str("type", update.EventData.EventType).Msg("received event update")
+		log.Trace().Str("user", s.userID).Str("type", update.EventData.EventType).Msg("received event update")
 		if update.EventData.ForceInitial {
 			// add room to sub: this applies for when we track all rooms too as we want joins/etc to come through with initial data
 			subID := builder.AddSubscription(reqList.RoomSubscription)
 			builder.AddRoomsToSubscription(ctx, subID, []string{update.RoomID()})
 		}
 	case *caches.UnreadCountUpdate:
-		logger.Trace().Str("user", s.userID).Str("room", update.RoomID()).Bool("count_decreased", update.HasCountDecreased).Msg("received unread count update")
+		log.Trace().Str("user", s.userID).Str("room", update.RoomID()).Bool("count_decreased", update.HasCountDecreased).Msg("received unread count update")
 		// normally we do not signal unread count increases to the client as we want to atomically
 		// increase the count AND send the msg so there's no phantom msgs/notifications. However,
 		// we must resort the list and send delta even if this is an increase else

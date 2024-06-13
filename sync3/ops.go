@@ -3,6 +3,7 @@ package sync3
 import (
 	"context"
 	"github.com/matrix-org/sliding-sync/internal"
+	"github.com/rs/zerolog/log"
 )
 
 type List interface {
@@ -49,7 +50,7 @@ func CalculateListOps(ctx context.Context, reqList *RequestList, list List, room
 		list.Add(roomID)
 		// this should only move exactly 1 room at most as this is called for every single update
 		if err := list.Sort(reqList.Sort); err != nil {
-			logger.Err(err).Msg("cannot sort list")
+			log.Err(err).Msg("cannot sort list")
 			internal.GetSentryHubFromContextOrDefault(ctx).CaptureException(err)
 		}
 		// find the new position of this room
@@ -67,7 +68,7 @@ func CalculateListOps(ctx context.Context, reqList *RequestList, list List, room
 	case ListOpChange:
 		// this should only move exactly 1 room at most as this is called for every single update
 		if err := list.Sort(reqList.Sort); err != nil {
-			logger.Err(err).Msg("cannot sort list")
+			log.Err(err).Msg("cannot sort list")
 			internal.GetSentryHubFromContextOrDefault(ctx).CaptureException(err)
 		}
 		// find the new position of this room

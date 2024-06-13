@@ -7,6 +7,7 @@ import (
 	"github.com/matrix-org/sliding-sync/internal"
 	"github.com/matrix-org/sliding-sync/state"
 	"github.com/matrix-org/sliding-sync/sync3/caches"
+	"github.com/rs/zerolog/log"
 )
 
 // Client created request params
@@ -42,7 +43,7 @@ func (r *ReceiptsRequest) AppendLive(ctx context.Context, res *Response, extCtx 
 		if res.Receipts == nil {
 			edu, err := state.PackReceiptsIntoEDU([]internal.Receipt{update.Receipt})
 			if err != nil {
-				logger.Err(err).Str("user", extCtx.UserID).Str("room", update.Receipt.RoomID).Msg("failed to pack receipt into new edu")
+				log.Err(err).Str("user", extCtx.UserID).Str("room", update.Receipt.RoomID).Msg("failed to pack receipt into new edu")
 				internal.GetSentryHubFromContextOrDefault(ctx).CaptureException(err)
 				return
 			}
@@ -55,7 +56,7 @@ func (r *ReceiptsRequest) AppendLive(ctx context.Context, res *Response, extCtx 
 			// we have receipts already, but not for this room
 			edu, err := state.PackReceiptsIntoEDU([]internal.Receipt{update.Receipt})
 			if err != nil {
-				logger.Err(err).Str("user", extCtx.UserID).Str("room", update.Receipt.RoomID).Msg("failed to pack receipt into edu")
+				log.Err(err).Str("user", extCtx.UserID).Str("room", update.Receipt.RoomID).Msg("failed to pack receipt into edu")
 				internal.GetSentryHubFromContextOrDefault(ctx).CaptureException(err)
 				return
 			}
@@ -65,7 +66,7 @@ func (r *ReceiptsRequest) AppendLive(ctx context.Context, res *Response, extCtx 
 			// aggregate receipts: we need to unpack then repack annoyingly.
 			pub, priv, err := state.UnpackReceiptsFromEDU(update.RoomID(), res.Receipts.Rooms[update.RoomID()])
 			if err != nil {
-				logger.Err(err).Str("user", extCtx.UserID).Str("room", update.Receipt.RoomID).Msg("failed to pack receipt into edu")
+				log.Err(err).Str("user", extCtx.UserID).Str("room", update.Receipt.RoomID).Msg("failed to pack receipt into edu")
 				internal.GetSentryHubFromContextOrDefault(ctx).CaptureException(err)
 				return
 			}
@@ -74,7 +75,7 @@ func (r *ReceiptsRequest) AppendLive(ctx context.Context, res *Response, extCtx 
 			receipts = append(receipts, update.Receipt)
 			edu, err := state.PackReceiptsIntoEDU(receipts)
 			if err != nil {
-				logger.Err(err).Str("user", extCtx.UserID).Str("room", update.Receipt.RoomID).Msg("failed to pack receipt into edu")
+				log.Err(err).Str("user", extCtx.UserID).Str("room", update.Receipt.RoomID).Msg("failed to pack receipt into edu")
 				internal.GetSentryHubFromContextOrDefault(ctx).CaptureException(err)
 				return
 			}
@@ -94,7 +95,7 @@ func (r *ReceiptsRequest) ProcessInitial(ctx context.Context, res *Response, ext
 		}
 		receipts, err := extCtx.Store.ReceiptTable.SelectReceiptsForEvents(roomID, timeline)
 		if err != nil {
-			logger.Err(err).Str("user", extCtx.UserID).Str("room", roomID).Msg("failed to SelectReceiptsForEvents")
+			log.Err(err).Str("user", extCtx.UserID).Str("room", roomID).Msg("failed to SelectReceiptsForEvents")
 			internal.GetSentryHubFromContextOrDefault(ctx).CaptureException(err)
 			continue
 		}
@@ -104,7 +105,7 @@ func (r *ReceiptsRequest) ProcessInitial(ctx context.Context, res *Response, ext
 	// single shot query to pull out our own receipts for these rooms to always include our own receipts
 	ownReceipts, err := extCtx.Store.ReceiptTable.SelectReceiptsForUser(interestedRoomIDs, extCtx.UserID)
 	if err != nil {
-		logger.Err(err).Str("user", extCtx.UserID).Strs("rooms", interestedRoomIDs).Msg("failed to SelectReceiptsForUser")
+		log.Err(err).Str("user", extCtx.UserID).Strs("rooms", interestedRoomIDs).Msg("failed to SelectReceiptsForUser")
 		internal.GetSentryHubFromContextOrDefault(ctx).CaptureException(err)
 		return
 	}

@@ -10,6 +10,7 @@ import (
 	"github.com/matrix-org/sliding-sync/internal"
 
 	"github.com/matrix-org/sliding-sync/sync3/caches"
+	"github.com/rs/zerolog/log"
 )
 
 // used to remember since positions to warn when they are not incremented. This can happen
@@ -64,7 +65,7 @@ func (r *ToDeviceRequest) ProcessInitial(ctx context.Context, res *Response, ext
 	if r.Limit == 0 {
 		r.Limit = 100 // default to 100
 	}
-	l := logger.With().Str("user", extCtx.UserID).Str("device", extCtx.DeviceID).Logger()
+	l := log.With().Str("user", extCtx.UserID).Str("device", extCtx.DeviceID).Logger()
 
 	mapMu.Lock()
 	lastSentPos, exists := deviceIDToSinceDebugOnly[extCtx.DeviceID]

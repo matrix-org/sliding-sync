@@ -17,7 +17,6 @@ import (
 	"github.com/matrix-org/sliding-sync/sync2"
 	"github.com/matrix-org/sliding-sync/sync2/handler2"
 	"github.com/matrix-org/sliding-sync/testutils"
-	"github.com/rs/zerolog"
 )
 
 var postgresURI string
@@ -52,7 +51,7 @@ func (p *mockPollerMap) ExpirePollers([]sync2.PollerID) int {
 	return 0
 }
 
-func (p *mockPollerMap) EnsurePolling(pid sync2.PollerID, accessToken, v2since string, isStartup bool, logger zerolog.Logger) (bool, error) {
+func (p *mockPollerMap) EnsurePolling(pid sync2.PollerID, accessToken, v2since string, isStartup bool) (bool, error) {
 	p.calls = append(p.calls, pollInfo{
 		pid:         pid,
 		accessToken: accessToken,

@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
-	"os"
 	"reflect"
 	"strconv"
 	"sync"
@@ -33,11 +32,6 @@ import (
 )
 
 const DefaultSessionID = "default"
-
-var logger = zerolog.New(os.Stdout).With().Timestamp().Logger().Output(zerolog.ConsoleWriter{
-	Out:        os.Stderr,
-	TimeFormat: "15:04:05",
-})
 
 // This is a net.http Handler for sync v3. It is responsible for pairing requests to Conns and to
 // ensure that the sync v2 poller is running for this client.
@@ -75,7 +69,7 @@ func NewSync3Handler(
 	pub pubsub.Notifier, sub pubsub.Listener, enablePrometheus bool, maxPendingEventUpdates int,
 	maxTransactionIDDelay time.Duration,
 ) (*SyncLiveHandler, error) {
-	logger.Info().Msg("creating handler")
+	log.Info().Msg("creating handler")
 	sh := &SyncLiveHandler{
 		V2:                     v2Client,
 		Storage:                store,
@@ -122,7 +116,7 @@ func (h *SyncLiveHandler) Listen() {
 		defer internal.ReportPanicsToSentry()
 		err := h.V2Sub.Listen()
 		if err != nil {
-			logger.Err(err).Msg("Failed to listen for v2 messages")
+			log.Err(err).Msg("Failed to listen for v2 messages")
 			sentry.CaptureException(err)
 		}
 	}()
@@ -483,7 +477,7 @@ func (h *SyncLiveHandler) identifyUnknownAccessToken(ctx context.Context, access
 		// Create a brand-new row for this token.
 		token, err = h.V2Store.TokensTable.Insert(txn, accessToken, userID, deviceID, time.Now())
 		if err != nil {
-			logger.Warn().Err(err).Str("user", userID).Str("device", deviceID).Msg("failed to insert v2 token")
+			log.Warn().Err(err).Str("user", userID).Str("device", deviceID).Msg("failed to insert v2 token")
 			return err
 		}
 
@@ -625,7 +619,7 @@ func (h *SyncLiveHandler) DeviceData(ctx context.Context, userID, deviceID strin
 
 	dd, err := h.Storage.DeviceDataTable.Select(userID, deviceID, shouldSwap)
 	if err != nil {
-		logger.Err(err).Str("user", userID).Msg("failed to SelectAndSwap device data")
+		log.Err(err).Str("user", userID).Msg("failed to SelectAndSwap device data")
 		internal.GetSentryHubFromContextOrDefault(ctx).CaptureException(err)
 		return nil
 	}
@@ -637,7 +631,7 @@ func (h *SyncLiveHandler) DeviceData(ctx context.Context, userID, deviceID strin
 func (h *SyncLiveHandler) TransactionIDForEvents(userID string, deviceID string, eventIDs []string) (eventIDToTxnID map[string]string) {
 	eventIDToTxnID, err := h.Storage.TransactionsTable.Select(userID, deviceID, eventIDs)
 	if err != nil {
-		logger.Warn().Str("err", err.Error()).Str("device", deviceID).Msg("failed to select txn IDs for events")
+		log.Warn().Str("err", err.Error()).Str("device", deviceID).Msg("failed to select txn IDs for events")
 	}
 	return
 }
@@ -653,7 +647,7 @@ func (h *SyncLiveHandler) Accumulate(p *pubsub.V2Accumulate) {
 	// note: events is sorted in ascending NID order, event if p.EventNIDs isn't.
 	events, err := h.Storage.EventNIDs(p.EventNIDs)
 	if err != nil {
-		logger.Err(err).Str("room", p.RoomID).Msg("Accumulate: failed to EventNIDs")
+		log.Err(err).Str("room", p.RoomID).Msg("Accumulate: failed to EventNIDs")
 		internal.GetSentryHubFromContextOrDefault(ctx).CaptureException(err)
 		return
 	}
@@ -684,7 +678,7 @@ func (h *SyncLiveHandler) Initialise(p *pubsub.V2Initialise) {
 	defer task.End()
 	state, err := h.Storage.StateSnapshot(p.SnapshotNID)
 	if err != nil {
-		logger.Err(err).Int64("snap", p.SnapshotNID).Str("room", p.RoomID).Msg("Initialise: failed to get StateSnapshot")
+		log.Err(err).Int64("snap", p.SnapshotNID).Str("room", p.RoomID).Msg("Initialise: failed to get StateSnapshot")
 		internal.GetSentryHubFromContextOrDefault(ctx).CaptureException(err)
 		return
 	}
@@ -736,7 +730,7 @@ func (h *SyncLiveHandler) OnInvite(p *pubsub.V2InviteRoom) {
 	}
 	inviteState, err := h.Storage.InvitesTable.SelectInviteState(p.UserID, p.RoomID)
 	if err != nil {
-		logger.Err(err).Str("user", p.UserID).Str("room", p.RoomID).Msg("failed to get invite state")
+		log.Err(err).Str("user", p.UserID).Str("room", p.RoomID).Msg("failed to get invite state")
 		internal.GetSentryHubFromContextOrDefault(ctx).CaptureException(err)
 		return
 	}
@@ -806,7 +800,7 @@ func (h *SyncLiveHandler) OnAccountData(p *pubsub.V2AccountData) {
 	}
 	data, err := h.Storage.AccountData(p.UserID, p.RoomID, p.Types)
 	if err != nil {
-		logger.Err(err).Str("user", p.UserID).Str("room", p.RoomID).Msg("OnAccountData: failed to lookup")
+		log.Err(err).Str("user", p.UserID).Str("room", p.RoomID).Msg("OnAccountData: failed to lookup")
 		internal.GetSentryHubFromContextOrDefault(ctx).CaptureException(err)
 		return
 	}
@@ -848,7 +842,7 @@ func (h *SyncLiveHandler) OnInvalidateRoom(p *pubsub.V2InvalidateRoom) {
 			})
 			hub.CaptureException(err)
 		})
-		logger.Err(err).
+		log.Err(err).
 			Str("room_id", p.RoomID).
 			Msg("Failed to fetch members after cache invalidation")
 		return
@@ -871,7 +865,7 @@ func (h *SyncLiveHandler) OnInvalidateRoom(p *pubsub.V2InvalidateRoom) {
 		h.destroyedConns.Add(float64(destroyed))
 	}
 	// invalidations are rare and dangerous if we get it wrong, so log information about it.
-	logger.Info().
+	log.Info().
 		Str("room_id", p.RoomID).Int("joins", len(joins)).Int("invites", len(invites)).Int("leaves", len(leaves)).
 		Int("del_user_caches", len(unregistered)).Int("conns_destroyed", destroyed).Msg("OnInvalidateRoom")
 }

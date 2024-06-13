@@ -4,16 +4,11 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+
 	"github.com/lib/pq"
 	"github.com/pressly/goose/v3"
-	"github.com/rs/zerolog"
-	"os"
+	"github.com/rs/zerolog/log"
 )
-
-var logger = zerolog.New(os.Stdout).With().Timestamp().Logger().Output(zerolog.ConsoleWriter{
-	Out:        os.Stderr,
-	TimeFormat: "15:04:05",
-})
 
 func init() {
 	goose.AddMigrationContext(upBogusSnapshotCleanup, downBogusSnapshotCleanup)
@@ -29,7 +24,7 @@ func upBogusSnapshotCleanup(ctx context.Context, tx *sql.Tx) error {
 	if len(bogusRooms) == 0 {
 		return nil
 	}
-	logger.Info().Strs("room_ids", bogusRooms).
+	log.Info().Strs("room_ids", bogusRooms).
 		Msgf("Found %d bogus rooms to cleanup", len(bogusRooms))
 
 	tables := []string{"syncv3_snapshots", "syncv3_events", "syncv3_rooms"}
@@ -52,9 +47,9 @@ func deleteFromTable(ctx context.Context, tx *sql.Tx, table string, roomIDs []st
 	}
 	ra, err := result.RowsAffected()
 	if err != nil {
-		logger.Warn().Err(err).Msgf("Couldn't get number of rows deleted from %s", table)
+		log.Warn().Err(err).Msgf("Couldn't get number of rows deleted from %s", table)
 	} else {
-		logger.Info().Msgf("Deleted %d rows from %s", ra, table)
+		log.Info().Msgf("Deleted %d rows from %s", ra, table)
 	}
 	return nil
 }

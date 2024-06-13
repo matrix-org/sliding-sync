@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
-	"os"
 	"strconv"
 	"sync"
 	"testing"
@@ -13,7 +12,6 @@ import (
 
 	"github.com/matrix-org/sliding-sync/internal"
 	"github.com/matrix-org/sliding-sync/testutils"
-	"github.com/rs/zerolog"
 )
 
 const initialSinceToken = "0"
@@ -107,7 +105,7 @@ func TestPollerMapEnsurePolling(t *testing.T) {
 		pm.EnsurePolling(PollerID{
 			UserID:   "alice:localhost",
 			DeviceID: "FOOBAR",
-		}, "access_token", "", false, zerolog.New(os.Stderr))
+		}, "access_token", "", false)
 		close(ensurePollingUnblocked)
 	}()
 	ensureBlocking := func() {
@@ -192,7 +190,7 @@ func TestPollerMapEnsurePollingIdempotent(t *testing.T) {
 	for i := 0; i < n; i++ {
 		go func() {
 			t.Logf("EnsurePolling")
-			pm.EnsurePolling(PollerID{UserID: "@alice:localhost", DeviceID: "FOOBAR"}, "access_token", "", false, zerolog.New(os.Stderr))
+			pm.EnsurePolling(PollerID{UserID: "@alice:localhost", DeviceID: "FOOBAR"}, "access_token", "", false)
 			wg.Done()
 			t.Logf("EnsurePolling unblocked")
 		}()
@@ -256,7 +254,7 @@ func TestPollerMapEnsurePollingFailsWithExpiredToken(t *testing.T) {
 	pm := NewPollerMap(client, false)
 	pm.SetCallbacks(accumulator)
 
-	created, err := pm.EnsurePolling(PollerID{}, "dummy_token", "", true, zerolog.New(os.Stderr))
+	created, err := pm.EnsurePolling(PollerID{}, "dummy_token", "", true)
 
 	if created {
 		t.Errorf("Expected created=false, got created=true")
@@ -292,7 +290,7 @@ func TestPollerMap_ExpirePollers(t *testing.T) {
 	for i, spec := range pollerSpecs {
 		created, err := pm.EnsurePolling(
 			PollerID{UserID: spec.UserID, DeviceID: spec.DeviceID},
-			spec.Token, "", true, logger,
+			spec.Token, "", true,
 		)
 		if err != nil {
 			t.Errorf("EnsurePolling error for poller #%d (%v): %s", i, spec, err)
@@ -327,7 +325,7 @@ func TestPollerMap_ExpirePollers(t *testing.T) {
 	for i, spec := range pollerSpecs {
 		created, err := pm.EnsurePolling(
 			PollerID{UserID: spec.UserID, DeviceID: spec.DeviceID},
-			spec.Token, "", true, logger,
+			spec.Token, "", true,
 		)
 		if err != nil {
 			t.Errorf("EnsurePolling error for poller #%d (%v): %s", i, spec, err)
@@ -370,7 +368,7 @@ func TestPollerPollFromNothing(t *testing.T) {
 	})
 	var wg sync.WaitGroup
 	wg.Add(1)
-	poller := newPoller(pid, "Authorization: hello world", client, accumulator, zerolog.New(os.Stderr), false)
+	poller := newPoller(pid, "Authorization: hello world", client, accumulator, false)
 	go func() {
 		defer wg.Done()
 		poller.Poll("")
@@ -460,7 +458,7 @@ func TestPollerPollFromExisting(t *testing.T) {
 	})
 	var wg sync.WaitGroup
 	wg.Add(1)
-	poller := newPoller(pid, "Authorization: hello world", client, accumulator, zerolog.New(os.Stderr), false)
+	poller := newPoller(pid, "Authorization: hello world", client, accumulator, false)
 	go func() {
 		defer wg.Done()
 		poller.Poll(since)
@@ -503,7 +501,7 @@ func TestPollerPollUpdateDeviceSincePeriodically(t *testing.T) {
 		return <-syncResponses, 200, nil
 	})
 	accumulator.updateSinceCalled = make(chan struct{}, 1)
-	poller := newPoller(pid, "Authorization: hello world", client, accumulator, zerolog.New(os.Stderr), false)
+	poller := newPoller(pid, "Authorization: hello world", client, accumulator, false)
 	defer poller.Terminate()
 	go func() {
 		poller.Poll(initialSinceToken)
@@ -613,7 +611,7 @@ func TestPollerGivesUpEventually(t *testing.T) {
 	}()
 	var wg sync.WaitGroup
 	wg.Add(1)
-	poller := newPoller(PollerID{UserID: "@alice:localhost", DeviceID: deviceID}, "Authorization: hello world", client, accumulator, zerolog.New(os.Stderr), false)
+	poller := newPoller(PollerID{UserID: "@alice:localhost", DeviceID: deviceID}, "Authorization: hello world", client, accumulator, false)
 	go func() {
 		defer wg.Done()
 		poller.Poll("")
@@ -685,7 +683,7 @@ func TestPollerBackoff(t *testing.T) {
 	}()
 	var wg sync.WaitGroup
 	wg.Add(1)
-	poller := newPoller(PollerID{UserID: "@alice:localhost", DeviceID: deviceID}, "Authorization: hello world", client, accumulator, zerolog.New(os.Stderr), false)
+	poller := newPoller(PollerID{UserID: "@alice:localhost", DeviceID: deviceID}, "Authorization: hello world", client, accumulator, false)
 	go func() {
 		defer wg.Done()
 		poller.Poll("some_since_value")
@@ -715,7 +713,7 @@ func TestPollerUnblocksIfTerminatedInitially(t *testing.T) {
 
 	pollUnblocked := make(chan struct{})
 	waitUntilInitialSyncUnblocked := make(chan struct{})
-	poller := newPoller(PollerID{UserID: "@alice:localhost", DeviceID: deviceID}, "Authorization: hello world", client, accumulator, zerolog.New(os.Stderr), false)
+	poller := newPoller(PollerID{UserID: "@alice:localhost", DeviceID: deviceID}, "Authorization: hello world", client, accumulator, false)
 	go func() {
 		poller.Poll("")
 		close(pollUnblocked)
@@ -1010,7 +1008,7 @@ func TestPollerResendsOnCallbackError(t *testing.T) {
 			},
 		}
 		receiver := tc.generateReceiver()
-		poller := newPoller(pid, "Authorization: hello world", client, receiver, zerolog.New(os.Stderr), false)
+		poller := newPoller(pid, "Authorization: hello world", client, receiver, false)
 		waitForInitialSync(t, poller)
 		select {
 		case <-waitForStuckPolling:
@@ -1082,7 +1080,7 @@ func TestPollerDoesNotResendOnDataError(t *testing.T) {
 			}, 200, nil
 		},
 	}
-	poller := newPoller(pid, "Authorization: hello world", client, receiver, zerolog.New(os.Stderr), false)
+	poller := newPoller(pid, "Authorization: hello world", client, receiver, false)
 	waitForInitialSync(t, poller)
 	select {
 	case <-waitForSuccess:
@@ -1112,7 +1110,7 @@ func TestPollerResendsOnDataErrorWithOtherErrors(t *testing.T) {
 			return internal.NewDataError("onLeftRoom this is a test: %v", 42)
 		},
 	}
-	poller := newPoller(pid, "Authorization: hello world", nil, receiver, zerolog.New(os.Stderr), false)
+	poller := newPoller(pid, "Authorization: hello world", nil, receiver, false)
 	testCases := []struct {
 		name      string
 		res       SyncResponse
