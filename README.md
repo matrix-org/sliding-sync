@@ -203,6 +203,12 @@ wget -O 'profile.pprof' 'http://localhost:6060/debug/pprof/profile?seconds=10'
 ```
 Then send `profile.pprof` to someone who will then run `go tool pprof -http :5656 profile.pprof` and typically view the flame graph: View -> Flame Graph.
 
+To build **with PGO**, run:
+```
+$ wget -O 'default.pgo' 'http://localhost:6060/debug/pprof/profile?seconds=30'
+$ CGO_ENABLED=0 go build -o after_pgo ./cmd/syncv3
+```
+
 
 ### Developers' cheat sheet
 
