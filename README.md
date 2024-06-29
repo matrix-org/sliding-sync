@@ -46,6 +46,10 @@ SYNCV3_LOG_LEVEL     Default: info. The level of verbosity for messages logged. 
 SYNCV3_MAX_DB_CONN   Default: unset. Max database connections to use when communicating with postgres. Unset or 0 means no limit.
 ```
 
+These settings can also be specified on a JSON file which can then be passed to `syncv3` through the `-conf` flag. The JSON keys are the same as the environment
+variables; values must be specified as strings (i.e. they must be quoted). Bear in mind the settings specified as environment variables will override those
+defined through the configuration file.
+
 It is easiest to host the proxy on a separate hostname than the Matrix server, though it is possible to use the same hostname by forwarding the used endpoints.
 
 In both cases, the path `https://example.com/.well-known/matrix/client` must return a JSON with at least the following contents:
