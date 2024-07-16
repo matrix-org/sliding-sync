@@ -222,7 +222,7 @@ func NewUserCache(userID string, globalCache *GlobalCache, store UserCacheStore,
 	return uc
 }
 
-func (c *UserCache) Subsribe(ucl UserCacheListener) (id int) {
+func (c *UserCache) Subscribe(ucl UserCacheListener) (id int) {
 	c.listenersMu.Lock()
 	defer c.listenersMu.Unlock()
 	id = c.id
