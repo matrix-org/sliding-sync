@@ -99,7 +99,7 @@ docker run --rm -e "SYNCV3_SERVER=https://matrix-client.matrix.org" -e "SYNCV3_S
 
 Download the binary for your architcture (eg. `syncv3_linux_amd64` for 64-bit AMD/Intel) from https://github.com/matrix-org/sliding-sync/releases/latest
 ```
-$ SYNCV3_SECRET=$(cat .secret) SYNCV3_SERVER="https://matrix-client.matrix.org" SYNCV3_DB="user=$(whoami) dbname=syncv3 sslmode=disable password='DATABASE_PASSWORD_HERE'" SYNCV3_BINDADDR=0.0.0.0:8008 ./syncv3_linux_amd64 
+$ SYNCV3_SECRET=$(cat .secret) SYNCV3_SERVER="https://matrix-client.matrix.org" SYNCV3_DB="user=$(whoami) dbname=syncv3 sslmode=disable password='DATABASE_PASSWORD_HERE'" SYNCV3_BINDADDR=0.0.0.0:8008 ./syncv3_linux_amd64
 ```
 
 Optionally also set `SYNCV3_TLS_CERT=path/to/cert.pem` and `SYNCV3_TLS_KEY=path/to/key.pem` to listen on HTTPS instead of HTTP.
@@ -118,6 +118,8 @@ INF Poller: v2 poll loop started ip=::1 since= user_id=@kegan:matrix.org
 Wait for the first initial v2 sync to be processed (this can take minutes!) and then v3 APIs will be responsive.
 
 Note that some clients might require that your home server advertises support for sliding-sync in the `.well-known/matrix/client` endpoint; details are in [the work-in-progress specification document](https://github.com/matrix-org/matrix-spec-proposals/blob/kegan/sync-v3/proposals/3575-sync.md#unstable-prefix).
+
+There are some notes on the log format in [docs/log_format.md](./docs/log_format.md).
 
 ### Prometheus
 
