@@ -106,6 +106,10 @@ func DecorateLogger(ctx context.Context, l *zerolog.Event) *zerolog.Event {
 		return l
 	}
 	da := d.(*data)
+
+	// NOTE: These log fields are documented in `docs/log_format.md`: remember to
+	// keep that document up-to-date.
+
 	if da.userID != "" {
 		l = l.Str("u", da.userID)
 	}
