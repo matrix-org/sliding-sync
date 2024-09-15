@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"flag"
 	"fmt"
 	"log"
@@ -32,6 +33,7 @@ const version = "0.99.19"
 
 var (
 	flags = flag.NewFlagSet("goose", flag.ExitOnError)
+	flagConf = flag.String("conf", "", "path to an optional configuration file.")
 )
 
 const (
@@ -87,6 +89,25 @@ func defaulting(in, dft string) string {
 	return in
 }
 
+func readConf(filePath string) (map[string]string, error) {
+	conf := map[string]string{}
+
+	if filePath == "" {
+		return conf, nil
+	}
+
+	content, err := os.ReadFile(filePath)
+	if err != nil {
+		return conf, err
+	}
+
+	if err := json.Unmarshal(content, &conf); err != nil {
+		return conf, err
+	}
+
+	return conf, nil
+}
+
 func main() {
 	fmt.Printf("Sync v3 [%s] (%s)\n", version, GitCommit)
 	sync2.ProxyVersion = version
@@ -97,25 +118,31 @@ func main() {
 		return
 	}
 
+	flag.Parse()
+	confArgs, err := readConf(*flagConf)
+	if err != nil {
+		log.Fatalf("failed to read configuration file: %v\n", err)
+	}
+
 	args := map[string]string{
-		EnvServer:                 os.Getenv(EnvServer),
-		EnvDB:                     os.Getenv(EnvDB),
-		EnvSecret:                 os.Getenv(EnvSecret),
-		EnvBindAddr:               defaulting(os.Getenv(EnvBindAddr), "0.0.0.0:8008"),
-		EnvTLSCert:                os.Getenv(EnvTLSCert),
-		EnvTLSKey:                 os.Getenv(EnvTLSKey),
-		EnvPPROF:                  os.Getenv(EnvPPROF),
-		EnvPrometheus:             os.Getenv(EnvPrometheus),
-		EnvDebug:                  os.Getenv(EnvDebug),
-		EnvOTLP:                   os.Getenv(EnvOTLP),
-		EnvOTLPUsername:           os.Getenv(EnvOTLPUsername),
-		EnvOTLPPassword:           os.Getenv(EnvOTLPPassword),
-		EnvSentryDsn:              os.Getenv(EnvSentryDsn),
-		EnvLogLevel:               os.Getenv(EnvLogLevel),
-		EnvMaxConns:               defaulting(os.Getenv(EnvMaxConns), "0"),
-		EnvIdleTimeoutSecs:        defaulting(os.Getenv(EnvIdleTimeoutSecs), "3600"),
-		EnvHTTPTimeoutSecs:        defaulting(os.Getenv(EnvHTTPTimeoutSecs), "300"),
-		EnvHTTPInitialTimeoutSecs: defaulting(os.Getenv(EnvHTTPInitialTimeoutSecs), "1800"),
+		EnvServer:                 defaulting(os.Getenv(EnvServer), confArgs[EnvServer]),
+		EnvDB:                     defaulting(os.Getenv(EnvDB), confArgs[EnvDB]),
+		EnvSecret:                 defaulting(os.Getenv(EnvSecret), confArgs[EnvSecret]),
+		EnvBindAddr:               defaulting(os.Getenv(EnvBindAddr), defaulting(confArgs[EnvBindAddr], "0.0.0.0:8008")),
+		EnvTLSCert:                defaulting(os.Getenv(EnvTLSCert), confArgs[EnvTLSCert]),
+		EnvTLSKey:                 defaulting(os.Getenv(EnvTLSKey), confArgs[EnvTLSKey]),
+		EnvPPROF:                  defaulting(os.Getenv(EnvPPROF), confArgs[EnvPPROF]),
+		EnvPrometheus:             defaulting(os.Getenv(EnvPrometheus), confArgs[EnvPrometheus]),
+		EnvDebug:                  defaulting(os.Getenv(EnvDebug), confArgs[EnvDebug]),
+		EnvOTLP:                   defaulting(os.Getenv(EnvOTLP), confArgs[EnvOTLP]),
+		EnvOTLPUsername:           defaulting(os.Getenv(EnvOTLPUsername), confArgs[EnvOTLPUsername]),
+		EnvOTLPPassword:           defaulting(os.Getenv(EnvOTLPPassword), confArgs[EnvOTLPPassword]),
+		EnvSentryDsn:              defaulting(os.Getenv(EnvSentryDsn), confArgs[EnvSentryDsn]),
+		EnvLogLevel:               defaulting(os.Getenv(EnvLogLevel), confArgs[EnvLogLevel]),
+		EnvMaxConns:               defaulting(os.Getenv(EnvMaxConns), defaulting(confArgs[EnvMaxConns], "0")),
+		EnvIdleTimeoutSecs:        defaulting(os.Getenv(EnvIdleTimeoutSecs), defaulting(confArgs[EnvIdleTimeoutSecs], "3600")),
+		EnvHTTPTimeoutSecs:        defaulting(os.Getenv(EnvHTTPTimeoutSecs), defaulting(confArgs[EnvHTTPTimeoutSecs], "300")),
+		EnvHTTPInitialTimeoutSecs: defaulting(os.Getenv(EnvHTTPInitialTimeoutSecs), defaulting(confArgs[EnvHTTPInitialTimeoutSecs], "1800")),
 	}
 	requiredEnvVars := []string{EnvServer, EnvDB, EnvSecret, EnvBindAddr}
 	for _, requiredEnvVar := range requiredEnvVars {
