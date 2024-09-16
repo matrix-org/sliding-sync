@@ -14,6 +14,7 @@ import (
 	"github.com/matrix-org/gomatrixserverlib"
 	"github.com/matrix-org/sliding-sync/internal"
 	"github.com/matrix-org/sliding-sync/sqlutil"
+	"github.com/rs/zerolog/log"
 )
 
 const (
@@ -393,7 +394,7 @@ func (t *EventTable) Redact(txn *sqlx.Tx, roomVer string, redacteeEventIDToRedac
 	if err != nil {
 		// unknown room version... let's just default to "1"
 		rv = gomatrixserverlib.MustGetRoomVersion(gomatrixserverlib.RoomVersionV1)
-		logger.Warn().Str("version", roomVer).Err(err).Msg(
+		log.Warn().Str("version", roomVer).Err(err).Msg(
 			"Redact: GetRoomVersion: unknown room version, defaulting to v1",
 		)
 	}
@@ -567,7 +568,7 @@ func filterAndEnsureFieldsSet(events []Event) []Event {
 	for i := range events {
 		ev := &events[i]
 		if err := ev.ensureFieldsSetOnEvent(); err != nil {
-			logger.Warn().Str("event_id", ev.ID).Err(err).Msg(
+			log.Warn().Str("event_id", ev.ID).Err(err).Msg(
 				"filterAndEnsureFieldsSet: failed to parse event, ignoring",
 			)
 			continue

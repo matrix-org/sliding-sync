@@ -3,19 +3,12 @@ package extensions
 
 import (
 	"context"
-	"os"
 	"reflect"
 
 	"github.com/matrix-org/sliding-sync/internal"
 	"github.com/matrix-org/sliding-sync/state"
 	"github.com/matrix-org/sliding-sync/sync3/caches"
-	"github.com/rs/zerolog"
 )
-
-var logger = zerolog.New(os.Stdout).With().Timestamp().Logger().Output(zerolog.ConsoleWriter{
-	Out:        os.Stderr,
-	TimeFormat: "15:04:05",
-})
 
 type GenericRequest interface {
 	// Name provides a name to identify the kind of request. At present, it's only

@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 
 	"github.com/matrix-org/sliding-sync/internal"
+	"github.com/rs/zerolog/log"
 )
 
 // The channel which has V2* payloads
@@ -197,7 +198,7 @@ func (v *V2Sub) onMessage(p Payload) {
 	case *V2StateRedaction:
 		v.receiver.OnStateRedaction(pl)
 	default:
-		logger.Warn().Str("type", p.Type()).Msg("V2Sub: unhandled payload type")
+		log.Warn().Str("type", p.Type()).Msg("V2Sub: unhandled payload type")
 	}
 }
 

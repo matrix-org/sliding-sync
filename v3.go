@@ -24,17 +24,13 @@ import (
 	"github.com/matrix-org/sliding-sync/sync2/handler2"
 	"github.com/matrix-org/sliding-sync/sync3/handler"
 	"github.com/pressly/goose/v3"
-	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/hlog"
+	"github.com/rs/zerolog/log"
 )
 
 //go:embed state/migrations/*
 var EmbedMigrations embed.FS
 
-var logger = zerolog.New(os.Stdout).With().Timestamp().Logger().Output(zerolog.ConsoleWriter{
-	Out:        os.Stderr,
-	TimeFormat: "15:04:05",
-})
 var Version string
 
 type Opts struct {
@@ -94,14 +90,14 @@ func Setup(destHomeserver, postgresURI, secret string, opts Opts) (*handler2.Han
 	// Sanity check that we can contact the upstream homeserver.
 	_, err := v2Client.Versions(context.Background())
 	if err != nil {
-		logger.Warn().Err(err).Str("dest", destHomeserver).Msg("Could not contact upstream homeserver. Is SYNCV3_SERVER set correctly?")
+		log.Warn().Err(err).Str("dest", destHomeserver).Msg("Could not contact upstream homeserver. Is SYNCV3_SERVER set correctly?")
 	}
 
 	db, err := sqlx.Open("postgres", postgresURI)
 	if err != nil {
 		sentry.CaptureException(err)
 		// TODO: if we panic(), will sentry have a chance to flush the event?
-		logger.Panic().Err(err).Str("uri", postgresURI).Msg("failed to open SQL DB")
+		log.Panic().Err(err).Str("uri", postgresURI).Msg("failed to open SQL DB")
 	}
 
 	if opts.DBMaxConns > 0 {
@@ -121,7 +117,7 @@ func Setup(destHomeserver, postgresURI, secret string, opts Opts) (*handler2.Han
 	goose.SetBaseFS(EmbedMigrations)
 	err = goose.Up(db.DB, "state/migrations", goose.WithAllowMissing())
 	if err != nil {
-		logger.Panic().Err(err).Msg("failed to execute migrations")
+		log.Panic().Err(err).Msg("failed to execute migrations")
 	}
 
 	bufferSize := 50
@@ -152,7 +148,7 @@ func Setup(destHomeserver, postgresURI, secret string, opts Opts) (*handler2.Han
 	if err != nil {
 		panic(err)
 	}
-	logger.Info().Msg("retrieved global snapshot from database")
+	log.Info().Msg("retrieved global snapshot from database")
 	h3.Startup(&storeSnapshot)
 
 	// begin consuming from these positions
@@ -188,7 +184,7 @@ func RunSyncV3Server(h http.Handler, bindAddr, destV2Server, tlsCert, tlsKey str
 
 	srv := &server{
 		chain: []func(next http.Handler) http.Handler{
-			hlog.NewHandler(logger),
+			hlog.NewHandler(log.Logger),
 			func(next http.Handler) http.Handler {
 				return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 					r = r.WithContext(internal.RequestContext(r.Context()))
@@ -220,39 +216,39 @@ func RunSyncV3Server(h http.Handler, bindAddr, destV2Server, tlsCert, tlsKey str
 	// Block forever
 	var err error
 	if internal.IsUnixSocket(bindAddr) {
-		logger.Info().Msgf("listening on unix socket %s", bindAddr)
+		log.Info().Msgf("listening on unix socket %s", bindAddr)
 		listener := unixSocketListener(bindAddr)
 		err = http.Serve(listener, srv)
 	} else {
 		if tlsCert != "" && tlsKey != "" {
-			logger.Info().Msgf("listening TLS on %s", bindAddr)
+			log.Info().Msgf("listening TLS on %s", bindAddr)
 			err = http.ListenAndServeTLS(bindAddr, tlsCert, tlsKey, srv)
 		} else {
-			logger.Info().Msgf("listening on %s", bindAddr)
+			log.Info().Msgf("listening on %s", bindAddr)
 			err = http.ListenAndServe(bindAddr, srv)
 		}
 	}
 	if err != nil {
 		sentry.CaptureException(err)
 		// TODO: Fatal() calls os.Exit. Will that give time for sentry.Flush() to run?
-		logger.Fatal().Err(err).Msg("failed to listen and serve")
+		log.Fatal().Err(err).Msg("failed to listen and serve")
 	}
 }
 
 func unixSocketListener(bindAddr string) net.Listener {
 	err := os.Remove(bindAddr)
 	if err != nil && !errors.Is(err, fs.ErrNotExist) {
-		logger.Fatal().Err(err).Msg("failed to remove existing unix socket")
+		log.Fatal().Err(err).Msg("failed to remove existing unix socket")
 	}
 	listener, err := net.Listen("unix", bindAddr)
 	if err != nil {
-		logger.Fatal().Err(err).Msg("failed to serve unix socket")
+		log.Fatal().Err(err).Msg("failed to serve unix socket")
 	}
 	// least permissions and work out of box (-w--w--w-); could be extracted as
 	// env variable if needed
 	err = os.Chmod(bindAddr, 0222)
 	if err != nil {
-		logger.Fatal().Err(err).Msg("failed to set unix socket permissions")
+		log.Fatal().Err(err).Msg("failed to set unix socket permissions")
 	}
 	return listener
 }

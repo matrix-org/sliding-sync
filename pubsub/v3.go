@@ -1,5 +1,9 @@
 package pubsub
 
+import (
+	"github.com/rs/zerolog/log"
+)
+
 // The channel which has V3* payloads
 const ChanV3 = "v3ch"
 
@@ -39,7 +43,7 @@ func (v *V3Sub) onMessage(p Payload) {
 	case *V3EnsurePolling:
 		v.receiver.EnsurePolling(pl)
 	default:
-		logger.Warn().Str("type", p.Type()).Msg("V3Sub: unhandled payload type")
+		log.Warn().Str("type", p.Type()).Msg("V3Sub: unhandled payload type")
 	}
 }
 
