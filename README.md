@@ -83,7 +83,7 @@ location /.well-known/matrix/client {
 ```
 
 ### Running
-There are three ways to run the proxy:
+There are four ways to run the proxy:
 - Compiling from source:
 ```
 $ CGO_ENABLED=0 go build ./cmd/syncv3
@@ -93,6 +93,42 @@ $ SYNCV3_SECRET=$(cat .secret) SYNCV3_SERVER="https://matrix-client.matrix.org" 
 - Using a Docker image:
 ```
 docker run --rm -e "SYNCV3_SERVER=https://matrix-client.matrix.org" -e "SYNCV3_SECRET=$(cat .secret)" -e "SYNCV3_BINDADDR=:8008" -e "SYNCV3_DB=user=$(whoami) dbname=syncv3 sslmode=disable host=host.docker.internal password='DATABASE_PASSWORD_HERE'" -p 8008:8008 ghcr.io/matrix-org/sliding-sync:latest
+```
+- Using Docker Compose:
+
+```
+services:
+  sliding-proxy:
+    image: ghcr.io/matrix-org/sliding-sync:v0.99.1
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8881:8881"
+    environment:
+      - "SYNCV3_SECRET="
+      - "SYNCV3_SERVER=DOMAIN.tld"
+      - "SYNCV3_DB=user=syncv3 dbname=syncv3 sslmode=disable host=sliding-postgres password=DATABASE_PASSWORD_HERE"
+      - "SYNCV3_BINDADDR=0.0.0.0:8881"
+    depends_on:
+      - sliding-postgres
+    networks:
+      - synapse_default
+
+  sliding-postgres:
+    image: docker.io/postgres:15-alpine
+    restart: unless-stopped
+    environment:
+      - "POSTGRES_USER=syncv3"
+      - "POSTGRES_PASSWORD=DATABASE_PASSWORD_HERE"
+      - "POSTGRES_DB=syncv3"
+    volumes:
+      - /PATH/TO/SOME/DIR/sliding_db_data:/var/lib/postgresql/data
+    networks:
+      - synapse_default
+
+networks:
+  synapse_default:
+    external: true
+    name: synapse_default
 ```
 
 - Precompiled binaries:
