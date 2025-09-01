@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math"
 	"net/http"
 	"net/url"
 	"os"
@@ -288,7 +289,12 @@ func (h *SyncLiveHandler) serve(w http.ResponseWriter, req *http.Request) error 
 		if herr != nil {
 			return herr
 		}
-		timeout = int(timeout64)
+		// Bounds check before converting int64 to int
+		if timeout64 < 0 || timeout64 > int64(math.MaxInt) {
+			timeout = sync3.DefaultTimeoutMSecs
+		} else {
+			timeout = int(timeout64)
+		}
 	}
 
 	requestBody.SetTimeoutMSecs(timeout)
