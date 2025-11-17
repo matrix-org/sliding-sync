@@ -1,5 +1,13 @@
 # Sliding Sync
 
+## This repository is archived
+
+The sliding sync proxy implements [MSC3575](https://github.com/matrix-org/matrix-spec-proposals/issues/3575), which has been superseded by [MSC4186](https://github.com/matrix-org/matrix-spec-proposals/issues/4186): Simplified Sliding Sync. The proxy is no longer being worked on and is now archived.
+
+Homeservers are now implementing Simplified Sliding Sync natively. Modern Matrix clients are no longer expected to work with this proxy.
+
+---
+
 Run a sliding sync proxy. An implementation of [MSC3575](https://github.com/matrix-org/matrix-doc/blob/kegan/sync-v3/proposals/3575-sync.md).
 
 ## Proxy version to MSC API specification
