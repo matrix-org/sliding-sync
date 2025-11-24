@@ -7,6 +7,7 @@ import (
 
 	"github.com/lib/pq"
 	"github.com/pressly/goose/v3"
+	"github.com/rs/zerolog/log"
 )
 
 func init() {
@@ -49,9 +50,9 @@ func upClearStuckInvites(ctx context.Context, tx *sql.Tx) error {
 		}
 		usersToInvalidate = append(usersToInvalidate, userID)
 	}
-	logger.Info().Int("len_invalidate_users", len(usersToInvalidate)).Msg("invalidating users")
+	log.Info().Int("len_invalidate_users", len(usersToInvalidate)).Msg("invalidating users")
 	if len(usersToInvalidate) < 50 {
-		logger.Info().Strs("invalidate_users", usersToInvalidate).Msg("invalidating users")
+		log.Info().Strs("invalidate_users", usersToInvalidate).Msg("invalidating users")
 	}
 
 	// for each user:
@@ -64,7 +65,7 @@ func upClearStuckInvites(ctx context.Context, tx *sql.Tx) error {
 		return fmt.Errorf("failed to invalidate since tokens: %w", err)
 	}
 	ra, _ := res.RowsAffected()
-	logger.Info().Int64("num_devices", ra).Msg("reset since tokens")
+	log.Info().Int64("num_devices", ra).Msg("reset since tokens")
 
 	res, err = tx.ExecContext(ctx, `
 	DELETE FROM syncv3_invites WHERE user_id=ANY($1)
@@ -73,7 +74,7 @@ func upClearStuckInvites(ctx context.Context, tx *sql.Tx) error {
 		return fmt.Errorf("failed to remove outstanding invites: %w", err)
 	}
 	ra, _ = res.RowsAffected()
-	logger.Info().Int64("num_invites", ra).Msg("reset invites")
+	log.Info().Int64("num_invites", ra).Msg("reset invites")
 	return nil
 }
 

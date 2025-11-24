@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"hash/fnv"
-	"os"
 	"sync"
 	"time"
 
@@ -19,15 +18,10 @@ import (
 	"github.com/matrix-org/sliding-sync/state"
 	"github.com/matrix-org/sliding-sync/sync2"
 	"github.com/prometheus/client_golang/prometheus"
-	"github.com/rs/zerolog"
+	"github.com/rs/zerolog/log"
 	"github.com/tidwall/gjson"
 	"github.com/tidwall/sjson"
 )
-
-var logger = zerolog.New(os.Stdout).With().Timestamp().Logger().Output(zerolog.ConsoleWriter{
-	Out:        os.Stderr,
-	TimeFormat: "15:04:05",
-})
 
 // Handler is responsible for starting v2 pollers at startup;
 // processing v2 data (as a sync2.V2DataReceiver) and publishing updates (pubsub.Payload to V2Listeners);
@@ -96,7 +90,7 @@ func (h *Handler) Listen() {
 		defer internal.ReportPanicsToSentry()
 		err := h.v3Sub.Listen()
 		if err != nil {
-			logger.Err(err).Msg("Failed to listen for v3 messages")
+			log.Err(err).Msg("Failed to listen for v3 messages")
 			sentry.CaptureException(err)
 		}
 	}()
@@ -124,7 +118,7 @@ func (h *Handler) Teardown() {
 func (h *Handler) StartV2Pollers() {
 	tokens, err := h.v2Store.TokensTable.TokenForEachDevice(nil)
 	if err != nil {
-		logger.Err(err).Msg("StartV2Pollers: failed to query tokens")
+		log.Err(err).Msg("StartV2Pollers: failed to query tokens")
 		sentry.CaptureException(err)
 		return
 	}
@@ -143,7 +137,7 @@ func (h *Handler) StartV2Pollers() {
 		ch <- t
 	}
 	close(ch)
-	logger.Info().Int("num_devices", len(tokens)).Int("num_fail_decrypt", numFails).Msg("StartV2Pollers")
+	log.Info().Int("num_devices", len(tokens)).Int("num_fail_decrypt", numFails).Msg("StartV2Pollers")
 	var wg sync.WaitGroup
 	wg.Add(numWorkers)
 	for i := 0; i < numWorkers; i++ {
@@ -155,11 +149,9 @@ func (h *Handler) StartV2Pollers() {
 					DeviceID: t.DeviceID,
 				}
 				_, err = h.pMap.EnsurePolling(
-					pid, t.AccessToken, t.Since, true,
-					logger.With().Str("user_id", t.UserID).Str("device_id", t.DeviceID).Logger(),
-				)
+					pid, t.AccessToken, t.Since, true)
 				if err != nil {
-					logger.Err(err).Str("user_id", t.UserID).Str("device_id", t.DeviceID).Msg("Failed to start poller")
+					log.Err(err).Str("user_id", t.UserID).Str("device_id", t.DeviceID).Msg("Failed to start poller")
 				} else {
 					h.updateMetrics()
 				}
@@ -172,7 +164,7 @@ func (h *Handler) StartV2Pollers() {
 		}()
 	}
 	wg.Wait()
-	logger.Info().Msg("StartV2Pollers finished")
+	log.Info().Msg("StartV2Pollers finished")
 	h.startPollerExpiryTicker()
 }
 
@@ -198,7 +190,7 @@ func (h *Handler) OnTerminated(ctx context.Context, pollerID sync2.PollerID) {
 func (h *Handler) OnExpiredToken(ctx context.Context, accessTokenHash, userID, deviceID string) {
 	err := h.v2Store.TokensTable.Delete(accessTokenHash)
 	if err != nil {
-		logger.Err(err).Str("user", userID).Str("device", deviceID).Str("access_token_hash", accessTokenHash).Msg("V2: failed to expire token")
+		log.Err(err).Str("user", userID).Str("device", deviceID).Str("access_token_hash", accessTokenHash).Msg("V2: failed to expire token")
 		internal.GetSentryHubFromContextOrDefault(ctx).CaptureException(err)
 	}
 	// Notify v3 side so it can remove the connection from ConnMap
@@ -222,7 +214,7 @@ func (h *Handler) addPrometheusMetrics() {
 func (h *Handler) UpdateDeviceSince(ctx context.Context, userID, deviceID, since string) {
 	err := h.v2Store.DevicesTable.UpdateDeviceSince(userID, deviceID, since)
 	if err != nil {
-		logger.Err(err).Str("user", userID).Str("device", deviceID).Str("since", since).Msg("V2: failed to persist since token")
+		log.Err(err).Str("user", userID).Str("device", deviceID).Str("since", since).Msg("V2: failed to persist since token")
 		internal.GetSentryHubFromContextOrDefault(ctx).CaptureException(err)
 	}
 }
@@ -237,7 +229,7 @@ func (h *Handler) OnE2EEData(ctx context.Context, userID, deviceID string, otkCo
 			FallbackKeyTypes: fallbackKeyTypes,
 		}, deviceListChanges)
 		if err != nil {
-			logger.Err(err).Str("user", userID).Msg("failed to upsert device data")
+			log.Err(err).Str("user", userID).Msg("failed to upsert device data")
 			internal.GetSentryHubFromContextOrDefault(ctx).CaptureException(err)
 			retErr = err
 			return
@@ -287,7 +279,7 @@ func (h *Handler) Accumulate(ctx context.Context, userID, deviceID, roomID strin
 		// persist the txn IDs
 		err := h.Store.TransactionsTable.Insert(userID, deviceID, eventIDToTxnID)
 		if err != nil {
-			logger.Err(err).Str("user", userID).Str("device", deviceID).Int("num_txns", len(eventIDToTxnID)).Msg("failed to persist txn IDs for user")
+			log.Err(err).Str("user", userID).Str("device", deviceID).Int("num_txns", len(eventIDToTxnID)).Msg("failed to persist txn IDs for user")
 			internal.GetSentryHubFromContextOrDefault(ctx).CaptureException(err)
 		}
 	}
@@ -295,7 +287,7 @@ func (h *Handler) Accumulate(ctx context.Context, userID, deviceID, roomID strin
 	// Insert new events
 	accResult, err := h.Store.Accumulate(userID, roomID, timeline)
 	if err != nil {
-		logger.Err(err).Int("timeline", len(timeline.Events)).Str("room", roomID).Msg("V2: failed to accumulate room")
+		log.Err(err).Int("timeline", len(timeline.Events)).Str("room", roomID).Msg("V2: failed to accumulate room")
 		internal.GetSentryHubFromContextOrDefault(ctx).CaptureException(err)
 		return err
 	}
@@ -328,7 +320,7 @@ func (h *Handler) Accumulate(ctx context.Context, userID, deviceID, roomID strin
 			return err
 		})
 		if err != nil {
-			logger.Err(err).
+			log.Err(err).
 				Int("timeline", len(timeline.Events)).
 				Int("num_transaction_ids", len(eventIDsWithTxns)).
 				Int("num_missing_transaction_ids", len(eventIDsLackingTxns)).
@@ -376,7 +368,7 @@ func (h *Handler) Initialise(ctx context.Context, roomID string, state []json.Ra
 	}
 	res, err := h.Store.Initialise(roomID, state)
 	if err != nil {
-		logger.Err(err).Int("state", len(state)).Str("room", roomID).Msg("V2: failed to initialise room")
+		log.Err(err).Int("state", len(state)).Str("room", roomID).Msg("V2: failed to initialise room")
 		internal.GetSentryHubFromContextOrDefault(ctx).CaptureException(err)
 		return err
 	}
@@ -420,7 +412,7 @@ func (h *Handler) OnReceipt(ctx context.Context, userID, roomID, ephEventType st
 	// else it returns nil
 	newReceipts, err := h.Store.ReceiptTable.Insert(roomID, ephEvent)
 	if err != nil {
-		logger.Err(err).Str("room", roomID).Msg("failed to store receipts")
+		log.Err(err).Str("room", roomID).Msg("failed to store receipts")
 		internal.GetSentryHubFromContextOrDefault(ctx).CaptureException(err)
 		return
 	}
@@ -436,7 +428,7 @@ func (h *Handler) OnReceipt(ctx context.Context, userID, roomID, ephEventType st
 func (h *Handler) AddToDeviceMessages(ctx context.Context, userID, deviceID string, msgs []json.RawMessage) error {
 	_, err := h.Store.ToDeviceTable.InsertMessages(userID, deviceID, msgs)
 	if err != nil {
-		logger.Err(err).Str("user", userID).Str("device", deviceID).Int("msgs", len(msgs)).Msg("V2: failed to store to-device messages")
+		log.Err(err).Str("user", userID).Str("device", deviceID).Int("msgs", len(msgs)).Msg("V2: failed to store to-device messages")
 		internal.GetSentryHubFromContextOrDefault(ctx).CaptureException(err)
 		return err
 	}
@@ -473,7 +465,7 @@ func (h *Handler) UpdateUnreadCounts(ctx context.Context, roomID, userID string,
 
 	err := h.Store.UnreadTable.UpdateUnreadCounters(userID, roomID, highlightCount, notifCount)
 	if err != nil {
-		logger.Err(err).Str("user", userID).Str("room", roomID).Msg("failed to update unread counters")
+		log.Err(err).Str("user", userID).Str("room", roomID).Msg("failed to update unread counters")
 		internal.GetSentryHubFromContextOrDefault(ctx).CaptureException(err)
 	}
 	h.v2Pub.Notify(pubsub.ChanV2, &pubsub.V2UnreadCounts{
@@ -508,7 +500,7 @@ func (h *Handler) OnAccountData(ctx context.Context, userID, roomID string, even
 
 	data, err := h.Store.InsertAccountData(userID, roomID, dedupedEvents)
 	if err != nil {
-		logger.Err(err).Str("user", userID).Str("room", roomID).Msg("failed to update account data")
+		log.Err(err).Str("user", userID).Str("room", roomID).Msg("failed to update account data")
 		sentry.CaptureException(err)
 		return err
 	}
@@ -527,7 +519,7 @@ func (h *Handler) OnAccountData(ctx context.Context, userID, roomID string, even
 func (h *Handler) OnInvite(ctx context.Context, userID, roomID string, inviteState []json.RawMessage) error {
 	err := h.Store.InvitesTable.InsertInvite(userID, roomID, inviteState)
 	if err != nil {
-		logger.Err(err).Str("user", userID).Str("room", roomID).Msg("failed to insert invite")
+		log.Err(err).Str("user", userID).Str("room", roomID).Msg("failed to insert invite")
 		internal.GetSentryHubFromContextOrDefault(ctx).CaptureException(err)
 		return err
 	}
@@ -542,7 +534,7 @@ func (h *Handler) OnLeftRoom(ctx context.Context, userID, roomID string, leaveEv
 	// remove any invites for this user if they are rejecting an invite
 	err := h.Store.InvitesTable.RemoveInvite(userID, roomID)
 	if err != nil {
-		logger.Err(err).Str("user", userID).Str("room", roomID).Msg("failed to retire invite")
+		log.Err(err).Str("user", userID).Str("room", roomID).Msg("failed to retire invite")
 		internal.GetSentryHubFromContextOrDefault(ctx).CaptureException(err)
 		return err
 	}
@@ -562,7 +554,7 @@ func (h *Handler) OnLeftRoom(ctx context.Context, userID, roomID string, leaveEv
 }
 
 func (h *Handler) EnsurePolling(p *pubsub.V3EnsurePolling) {
-	log := logger.With().Str("user_id", p.UserID).Str("device_id", p.DeviceID).Logger()
+	log := log.With().Str("user_id", p.UserID).Str("device_id", p.DeviceID).Logger()
 	log.Info().Msg("EnsurePolling: new request")
 	defer func() {
 		log.Info().Msg("EnsurePolling: preprocessing done")
@@ -581,7 +573,7 @@ func (h *Handler) EnsurePolling(p *pubsub.V3EnsurePolling) {
 			DeviceID: p.DeviceID,
 		}
 		_, err = h.pMap.EnsurePolling(
-			pid, accessToken, since, false, log,
+			pid, accessToken, since, false,
 		)
 		if err != nil {
 			log.Err(err).Msg("Failed to start poller")
@@ -614,7 +606,7 @@ func (h *Handler) startPollerExpiryTicker() {
 func (h *Handler) ExpireOldPollers() {
 	devices, err := h.v2Store.DevicesTable.FindOldDevices(30 * 24 * time.Hour)
 	if err != nil {
-		logger.Err(err).Msg("Error fetching old devices")
+		log.Err(err).Msg("Error fetching old devices")
 		sentry.CaptureException(err)
 		return
 	}
@@ -625,7 +617,7 @@ func (h *Handler) ExpireOldPollers() {
 	}
 	numExpired := h.pMap.ExpirePollers(pids)
 	if len(devices) > 0 {
-		logger.Info().Int("old", len(devices)).Int("expired", numExpired).Msg("poller cleanup old devices")
+		log.Info().Int("old", len(devices)).Int("expired", numExpired).Msg("poller cleanup old devices")
 	}
 }
 

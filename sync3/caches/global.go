@@ -3,13 +3,12 @@ package caches
 import (
 	"context"
 	"encoding/json"
-	"os"
 	"sort"
 	"sync"
 
 	"github.com/matrix-org/sliding-sync/internal"
 	"github.com/matrix-org/sliding-sync/state"
-	"github.com/rs/zerolog"
+	"github.com/rs/zerolog/log"
 	"github.com/tidwall/gjson"
 )
 
@@ -54,11 +53,6 @@ type EventData struct {
 	// state res, initial join, etc
 	ForceInitial bool
 }
-
-var logger = zerolog.New(os.Stdout).With().Timestamp().Logger().Output(zerolog.ConsoleWriter{
-	Out:        os.Stderr,
-	TimeFormat: "15:04:05",
-})
 
 // The purpose of global cache is to store global-level information about all rooms the server is aware of.
 // Global-level information is represented as internal.RoomMetadata and includes things like Heroes, join/invite
@@ -124,7 +118,7 @@ func (c *GlobalCache) LoadRoomsFromMap(ctx context.Context, joinTimingsByRoomID 
 func (c *GlobalCache) copyRoom(roomID string) *internal.RoomMetadata {
 	sr := c.roomIDToMetadata[roomID]
 	if sr == nil {
-		logger.Warn().Str("room", roomID).Msg("GlobalCache.LoadRoom: no metadata for this room, returning stub")
+		log.Warn().Str("room", roomID).Msg("GlobalCache.LoadRoom: no metadata for this room, returning stub")
 		return internal.NewRoomMetadata(roomID)
 	}
 	return sr.DeepCopy()
@@ -176,7 +170,7 @@ func (c *GlobalCache) LoadStateEvent(ctx context.Context, roomID string, loadPos
 		evType: {stateKey},
 	})
 	if err != nil {
-		logger.Err(err).Str("room", roomID).Int64("pos", loadPosition).Msg("failed to load room state")
+		log.Err(err).Str("room", roomID).Int64("pos", loadPosition).Msg("failed to load room state")
 		internal.GetSentryHubFromContextOrDefault(ctx).CaptureException(err)
 		return nil
 	}
@@ -198,7 +192,7 @@ func (c *GlobalCache) LoadRoomState(ctx context.Context, roomIDs []string, loadP
 	resultMap := make(map[string][]json.RawMessage, len(roomIDs))
 	roomIDToStateEvents, err := c.store.RoomStateAfterEventPosition(ctx, roomIDs, loadPosition, requiredStateMap.QueryStateMap())
 	if err != nil {
-		logger.Err(err).Strs("rooms", roomIDs).Int64("pos", loadPosition).Msg("failed to load room state")
+		log.Err(err).Strs("rooms", roomIDs).Int64("pos", loadPosition).Msg("failed to load room state")
 		internal.GetSentryHubFromContextOrDefault(ctx).CaptureException(err)
 		return nil
 	}
@@ -383,13 +377,13 @@ func (c *GlobalCache) OnInvalidateRoom(ctx context.Context, roomID string) {
 
 	metadata, ok := c.roomIDToMetadata[roomID]
 	if !ok {
-		logger.Warn().Str("room_id", roomID).Msg("OnInvalidateRoom: room not in global cache")
+		log.Warn().Str("room_id", roomID).Msg("OnInvalidateRoom: room not in global cache")
 		return
 	}
 
 	err := c.store.ResetMetadataState(metadata)
 	if err != nil {
 		internal.GetSentryHubFromContextOrDefault(ctx).CaptureException(err)
-		logger.Warn().Err(err).Msg("OnInvalidateRoom: failed to reset metadata")
+		log.Warn().Err(err).Msg("OnInvalidateRoom: failed to reset metadata")
 	}
 }

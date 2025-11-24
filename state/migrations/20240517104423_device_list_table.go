@@ -12,6 +12,7 @@ import (
 	"github.com/matrix-org/sliding-sync/sqlutil"
 	"github.com/matrix-org/sliding-sync/state"
 	"github.com/pressly/goose/v3"
+	"github.com/rs/zerolog/log"
 )
 
 type OldDeviceData struct {
@@ -63,7 +64,7 @@ func upDeviceListTable(ctx context.Context, tx *sql.Tx) error {
 	if err = tx.QueryRow(`SELECT count(*) FROM syncv3_device_data`).Scan(&count); err != nil {
 		return err
 	}
-	logger.Info().Int("count", count).Msg("transferring device list data for devices")
+	log.Info().Int("count", count).Msg("transferring device list data for devices")
 
 	// scan for existing CBOR (streaming as the CBOR with cursors as it can be large)
 	_, err = tx.Exec(`DECLARE device_data_migration_cursor CURSOR FOR SELECT user_id, device_id, data FROM syncv3_device_data`)
@@ -82,7 +83,7 @@ func upDeviceListTable(ctx context.Context, tx *sql.Tx) error {
 		// logging
 		i++
 		if time.Since(lastUpdate) > updateFrequency {
-			logger.Info().Msgf("%d/%d process device list data", i, count)
+			log.Info().Msgf("%d/%d process device list data", i, count)
 			lastUpdate = time.Now()
 		}
 

@@ -69,11 +69,11 @@ func TestGappyState(t *testing.T) {
 	t.Log("Alice sends lots of other state events.")
 	const numOtherState = 40
 	for i := 0; i < numOtherState; i++ {
-    alice.Unsafe_SendEventUnsynced(t, roomID, b.Event{
-      Type: "com.example.dummy",
-      StateKey: ptr(fmt.Sprintf("%d", i)),
-      Content: map[string]any{},
-    })
+		alice.Unsafe_SendEventUnsynced(t, roomID, b.Event{
+			Type:     "com.example.dummy",
+			StateKey: ptr(fmt.Sprintf("%d", i)),
+			Content:  map[string]any{},
+		})
 	}
 
 	t.Log("Alice sends a batch of message events.")

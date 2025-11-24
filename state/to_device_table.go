@@ -8,6 +8,7 @@ import (
 	"github.com/jmoiron/sqlx"
 	"github.com/lib/pq"
 	"github.com/matrix-org/sliding-sync/sqlutil"
+	"github.com/rs/zerolog/log"
 	"github.com/tidwall/gjson"
 )
 
@@ -109,7 +110,7 @@ func (t *ToDeviceTable) Messages(userID, deviceID string, from, limit int64) (ms
 		m := gjson.ParseBytes(msgs[i])
 		msgId := m.Get(`content.org\.matrix\.msgid`).Str
 		if msgId != "" {
-			logger.Info().Str("msgid", msgId).Str("user", userID).Str("device", deviceID).Msg("ToDeviceTable.Messages")
+			log.Info().Str("msgid", msgId).Str("user", userID).Str("device", deviceID).Msg("ToDeviceTable.Messages")
 		}
 	}
 	upTo = rows[len(rows)-1].Position
@@ -143,7 +144,7 @@ func (t *ToDeviceTable) InsertMessages(userID, deviceID string, msgs []json.RawM
 			}
 			msgId := m.Get(`content.org\.matrix\.msgid`).Str
 			if msgId != "" {
-				logger.Debug().Str("msgid", msgId).Str("user", userID).Str("device", deviceID).Msg("ToDeviceTable.InsertMessages")
+				log.Debug().Str("msgid", msgId).Str("user", userID).Str("device", deviceID).Msg("ToDeviceTable.InsertMessages")
 			}
 			switch rows[i].Type {
 			case "m.room_key_request":

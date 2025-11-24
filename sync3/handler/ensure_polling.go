@@ -9,6 +9,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 
 	"github.com/matrix-org/sliding-sync/pubsub"
+	"github.com/rs/zerolog/log"
 )
 
 // pendingInfo tracks the status of a poller that we are (or previously were) waiting
@@ -128,7 +129,7 @@ func (p *EnsurePoller) EnsurePolling(ctx context.Context, pid sync2.PollerID, to
 }
 
 func (p *EnsurePoller) OnInitialSyncComplete(payload *pubsub.V2InitialSyncComplete) {
-	log := logger.With().Str("user", payload.UserID).Str("device", payload.DeviceID).Logger()
+	log := log.With().Str("user", payload.UserID).Str("device", payload.DeviceID).Logger()
 	log.Trace().Msg("OnInitialSyncComplete: got payload")
 	pid := sync2.PollerID{UserID: payload.UserID, DeviceID: payload.DeviceID}
 	p.mu.Lock()

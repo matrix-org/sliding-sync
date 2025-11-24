@@ -3,7 +3,13 @@ package main
 import (
 	"flag"
 	"fmt"
-	"log"
+	"github.com/getsentry/sentry-go"
+	sentryhttp "github.com/getsentry/sentry-go/http"
+	"github.com/pressly/goose/v3"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
+	"github.com/rs/zerolog"
+	"github.com/rs/zerolog/log"
+	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 	"net/http"
 	_ "net/http/pprof"
 	"os"
@@ -13,13 +19,6 @@ import (
 	"strings"
 	"syscall"
 	"time"
-
-	"github.com/getsentry/sentry-go"
-	sentryhttp "github.com/getsentry/sentry-go/http"
-	"github.com/pressly/goose/v3"
-	"github.com/prometheus/client_golang/prometheus/promhttp"
-	"github.com/rs/zerolog"
-	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 
 	syncv3 "github.com/matrix-org/sliding-sync"
 	"github.com/matrix-org/sliding-sync/internal"
@@ -52,6 +51,7 @@ const (
 	EnvOTLPPassword           = "SYNCV3_OTLP_PASSWORD"
 	EnvSentryDsn              = "SYNCV3_SENTRY_DSN"
 	EnvLogLevel               = "SYNCV3_LOG_LEVEL"
+	EnvPlainOutput            = "SYNCV3_PLAIN_OUTPUT"
 	EnvMaxConns               = "SYNCV3_MAX_DB_CONN"
 	EnvIdleTimeoutSecs        = "SYNCV3_DB_IDLE_TIMEOUT_SECS"
 	EnvHTTPTimeoutSecs        = "SYNCV3_HTTP_TIMEOUT_SECS"
@@ -74,11 +74,12 @@ Environment var
 %s Default: unset. The Sentry DSN to report events to e.g https://sliding-sync@sentry.example.com/123 - if unset does not send sentry events.
 %s  Default: info. The level of verbosity for messages logged. Available values are trace, debug, info, warn, error and fatal
 %s Default: unset. Max database connections to use when communicating with postgres. Unset or 0 means no limit.
+%s Default: unset. Disable colorized output (for cleaner text logging). If set to 1, will output plain text.
 %s Default: 3600. The maximum amount of time a database connection may be idle, in seconds. 0 means no limit.
 %s Default: 300. The timeout in seconds for normal HTTP requests.
 %s Default: 1800. The timeout in seconds for initial sync requests.
 `, EnvServer, EnvDB, EnvSecret, EnvBindAddr, EnvTLSCert, EnvTLSKey, EnvPPROF, EnvPrometheus, EnvOTLP, EnvOTLPUsername, EnvOTLPPassword,
-	EnvSentryDsn, EnvLogLevel, EnvMaxConns, EnvIdleTimeoutSecs, EnvHTTPTimeoutSecs, EnvHTTPInitialTimeoutSecs)
+	EnvSentryDsn, EnvLogLevel, EnvMaxConns, EnvPlainOutput, EnvIdleTimeoutSecs, EnvHTTPTimeoutSecs, EnvHTTPInitialTimeoutSecs)
 
 func defaulting(in, dft string) string {
 	if in == "" {
@@ -113,6 +114,7 @@ func main() {
 		EnvSentryDsn:              os.Getenv(EnvSentryDsn),
 		EnvLogLevel:               os.Getenv(EnvLogLevel),
 		EnvMaxConns:               defaulting(os.Getenv(EnvMaxConns), "0"),
+		EnvPlainOutput:            defaulting(os.Getenv(EnvPlainOutput), "0"),
 		EnvIdleTimeoutSecs:        defaulting(os.Getenv(EnvIdleTimeoutSecs), "3600"),
 		EnvHTTPTimeoutSecs:        defaulting(os.Getenv(EnvHTTPTimeoutSecs), "300"),
 		EnvHTTPInitialTimeoutSecs: defaulting(os.Getenv(EnvHTTPInitialTimeoutSecs), "1800"),
@@ -192,6 +194,25 @@ func main() {
 		default:
 			zerolog.SetGlobalLevel(zerolog.InfoLevel)
 		}
+	}
+
+	if args[EnvPlainOutput] != "1" {
+		log.Logger = log.Output(zerolog.ConsoleWriter{
+			Out:        os.Stderr,
+			TimeFormat: "15:04:05",
+		})
+	} else {
+		output := zerolog.ConsoleWriter{Out: os.Stdout, TimeFormat: time.RFC3339}
+		output.FormatTimestamp = func(i interface{}) string {
+			return fmt.Sprintf("%v", i)
+		}
+		output.FormatLevel = func(i interface{}) string {
+			return strings.ToUpper(fmt.Sprintf("%s", i))
+		}
+		output.FormatFieldName = func(i interface{}) string {
+			return fmt.Sprintf("%s=", i)
+		}
+		log.Logger = zerolog.New(output).With().Timestamp().Logger()
 	}
 
 	maxConnsInt, err := strconv.Atoi(args[EnvMaxConns])
@@ -285,12 +306,12 @@ func executeMigrations() {
 
 	db, err := goose.OpenDBWithDriver("postgres", envArgs[EnvDB])
 	if err != nil {
-		log.Fatalf("goose: failed to open DB: %v\n", err)
+		log.Fatal().Err(err).Msgf("goose: failed to open DB: %v\n", err)
 	}
 
 	defer func() {
 		if err := db.Close(); err != nil {
-			log.Fatalf("goose: failed to close DB: %v\n", err)
+			log.Fatal().Err(err).Msgf("goose: failed to close DB: %v\n", err)
 		}
 	}()
 
@@ -301,7 +322,7 @@ func executeMigrations() {
 
 	goose.SetBaseFS(syncv3.EmbedMigrations)
 	if err := goose.Run(command, db, "state/migrations", arguments...); err != nil {
-		log.Fatalf("goose %v: %v", command, err)
+		log.Fatal().Err(err).Msgf("goose %v: %v", command, err)
 	}
 }
 

@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"os"
 	"strings"
 	"time"
 
@@ -18,14 +17,9 @@ import (
 	"github.com/jmoiron/sqlx"
 	"github.com/matrix-org/sliding-sync/internal"
 	"github.com/matrix-org/sliding-sync/sqlutil"
-	"github.com/rs/zerolog"
+	"github.com/rs/zerolog/log"
 	"github.com/tidwall/gjson"
 )
-
-var logger = zerolog.New(os.Stdout).With().Timestamp().Logger().Output(zerolog.ConsoleWriter{
-	Out:        os.Stderr,
-	TimeFormat: "15:04:05",
-})
 
 // Max number of parameters in a single SQL command
 const MaxPostgresParameters = 65535
@@ -79,7 +73,7 @@ func NewStorage(postgresURI string) *Storage {
 	if err != nil {
 		sentry.CaptureException(err)
 		// TODO: if we panic(), will sentry have a chance to flush the event?
-		logger.Panic().Err(err).Str("uri", postgresURI).Msg("failed to open SQL DB")
+		log.Panic().Err(err).Str("uri", postgresURI).Msg("failed to open SQL DB")
 	}
 	return NewStorageWithDB(db, false)
 }
@@ -545,7 +539,7 @@ func (s *Storage) RoomStateAfterEventPosition(ctx context.Context, roomIDs []str
 			return fmt.Errorf("failed to select latest nids in rooms %v: %s", roomIDs, err)
 		}
 		if len(slowRooms) > 0 {
-			logger.Warn().Int("slow_rooms", len(slowRooms)).Msg("RoomStateAfterEventPosition: pos value provided is far behind the database copy, performance degraded")
+			log.Warn().Int("slow_rooms", len(slowRooms)).Msg("RoomStateAfterEventPosition: pos value provided is far behind the database copy, performance degraded")
 			latestSlowEvents, err := s.Accumulator.eventsTable.LatestEventInRooms(txn, slowRooms, pos)
 			if err != nil {
 				return err
@@ -653,7 +647,7 @@ func (s *Storage) RoomStateAfterEventPosition(ctx context.Context, roomIDs []str
 				WITH nids AS (
     				SELECT `+nidcols+` AS allNids FROM syncv3_snapshots WHERE syncv3_snapshots.snapshot_id = ANY(?)
 				)
-				SELECT syncv3_events.event_nid, syncv3_events.room_id, syncv3_events.event_type, syncv3_events.state_key, syncv3_events.event 
+				SELECT syncv3_events.event_nid, syncv3_events.room_id, syncv3_events.event_type, syncv3_events.state_key, syncv3_events.event
 				FROM syncv3_events, nids
 				WHERE (`+strings.Join(wheres, " OR ")+`) AND syncv3_events.event_nid = ANY(nids.allNids)
 				ORDER BY syncv3_events.event_nid ASC`,
@@ -801,7 +795,7 @@ func (s *Storage) RemoveInaccessibleStateSnapshots() error {
 	}
 	rowsAffected, err := result.RowsAffected()
 	if err == nil {
-		logger.Info().Int64("rows_affected", rowsAffected).Msg("RemoveInaccessibleStateSnapshots: deleted rows")
+		log.Info().Int64("rows_affected", rowsAffected).Msg("RemoveInaccessibleStateSnapshots: deleted rows")
 	}
 	return nil
 }
@@ -1082,16 +1076,16 @@ Loop:
 			if n < time.Hour {
 				boundaryTime = now.Add(-1 * time.Hour)
 			}
-			logger.Info().Time("boundaryTime", boundaryTime).Msg("Cleaner running")
+			log.Info().Time("boundaryTime", boundaryTime).Msg("Cleaner running")
 			err := s.TransactionsTable.Clean(boundaryTime)
 			if err != nil {
-				logger.Warn().Err(err).Msg("failed to clean txn ID table")
+				log.Warn().Err(err).Msg("failed to clean txn ID table")
 				sentry.CaptureException(err)
 			}
 			// we also want to clean up stale state snapshots which are inaccessible, to
 			// keep the size of the syncv3_snapshots table low.
 			if err = s.RemoveInaccessibleStateSnapshots(); err != nil {
-				logger.Warn().Err(err).Msg("failed to remove inaccessible state snapshots")
+				log.Warn().Err(err).Msg("failed to remove inaccessible state snapshots")
 				sentry.CaptureException(err)
 			}
 		case <-s.shutdownCh:
@@ -1123,7 +1117,7 @@ func (s *Storage) LatestEventNIDInRooms(roomIDs []string, highestNID int64) (roo
 		if len(slowRooms) == 0 {
 			return nil // no work to do
 		}
-		logger.Warn().Int("slow_rooms", len(slowRooms)).Msg("LatestEventNIDInRooms: pos value provided is far behind the database copy, performance degraded")
+		log.Warn().Int("slow_rooms", len(slowRooms)).Msg("LatestEventNIDInRooms: pos value provided is far behind the database copy, performance degraded")
 
 		slowRoomToLatestNIDs, err := s.EventsTable.LatestEventNIDInRooms(txn, slowRooms, highestNID)
 		if err != nil {

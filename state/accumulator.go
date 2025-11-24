@@ -13,6 +13,7 @@ import (
 	"github.com/jmoiron/sqlx"
 	"github.com/lib/pq"
 	"github.com/matrix-org/sliding-sync/sqlutil"
+	"github.com/rs/zerolog/log"
 	"github.com/tidwall/gjson"
 )
 
@@ -77,7 +78,7 @@ func (a *Accumulator) calculateNewSnapshot(old StrippedEvents, new Event) (Strip
 			// ruh roh. This should be impossible, but it can happen if the v2 response sends the same
 			// event in both state and timeline. We need to alert the operator and whine badly as it means
 			// we have lost an event by now.
-			logger.Warn().Str("new_event_id", new.ID).Str("old_event_id", e.ID).Str("room_id", new.RoomID).Str("type", new.Type).Str("state_key", new.StateKey).Msg(
+			log.Warn().Str("new_event_id", new.ID).Str("old_event_id", e.ID).Str("room_id", new.RoomID).Str("type", new.Type).Str("state_key", new.StateKey).Msg(
 				"Detected different event IDs with the same NID when rolling forward state. This has resulted in data loss in this room (1 event). " +
 					"This can happen when the v2 /sync response sends the same event in both state and timeline sections. " +
 					"The event in this log line has been dropped!",
@@ -227,7 +228,7 @@ func (a *Accumulator) Initialise(roomID string, state []json.RawMessage) (Initia
 				// we don't have a current snapshot for this room but yet no events are new,
 				// no idea how this should be handled.
 				const errMsg = "Accumulator.Initialise: room has no current snapshot but also no new inserted events, doing nothing. This is probably a bug."
-				logger.Error().Str("room_id", roomID).Msg(errMsg)
+				log.Error().Str("room_id", roomID).Msg(errMsg)
 				sentry.CaptureException(fmt.Errorf(errMsg))
 			}
 			// Note: we otherwise ignore cases where the state has only changed to a
@@ -398,7 +399,7 @@ func (a *Accumulator) Accumulate(txn *sqlx.Tx, userID, roomID string, timeline s
 		} else {
 			// Bail out and complain loudly.
 			const msg = "Accumulator: skipping processing of timeline, as no snapshot exists"
-			logger.Warn().
+			log.Warn().
 				Str("event_id", newEvents[0].ID).
 				Str("event_type", newEvents[0].Type).
 				Str("event_state_key", newEvents[0].StateKey).
@@ -484,7 +485,7 @@ func (a *Accumulator) Accumulate(txn *sqlx.Tx, userID, roomID string, timeline s
 		if roomVersion == "" {
 			// Defaults to "1" if the key does not exist.
 			roomVersion = "1"
-			logger.Warn().Str("room", roomID).Err(err).Msg(
+			log.Warn().Str("room", roomID).Err(err).Msg(
 				"Redact: no content.room_version in create event, defaulting to v1",
 			)
 		}
@@ -576,13 +577,13 @@ func parseAndDeduplicateTimelineEvents(roomID string, timeline sync2.TimelineRes
 			RoomID: roomID,
 		}
 		if err := e.ensureFieldsSetOnEvent(); err != nil {
-			logger.Warn().Str("event_id", e.ID).Str("room_id", roomID).Err(err).Msg(
+			log.Warn().Str("event_id", e.ID).Str("room_id", roomID).Err(err).Msg(
 				"Accumulator.filterToNewTimelineEvents: failed to parse event, ignoring",
 			)
 			continue
 		}
 		if _, ok := seenEvents[e.ID]; ok {
-			logger.Warn().Str("event_id", e.ID).Str("room_id", roomID).Msg(
+			log.Warn().Str("event_id", e.ID).Str("room_id", roomID).Msg(
 				"Accumulator.filterToNewTimelineEvents: seen the same event ID twice, ignoring",
 			)
 			continue
@@ -671,7 +672,7 @@ func ensureStateHasCreateEvent(events []Event) error {
 			})
 			sentry.CaptureMessage(errMsg)
 		})
-		logger.Warn().
+		log.Warn().
 			Str("room_id", events[0].RoomID).
 			Int("len_state", len(events)).
 			Msg(errMsg)

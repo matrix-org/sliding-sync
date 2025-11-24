@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/matrix-org/sliding-sync/internal"
+	"github.com/rs/zerolog/log"
 )
 
 type OverwriteVal bool
@@ -244,7 +245,7 @@ func (s *InternalRequestLists) AssignList(ctx context.Context, listKey string, f
 	if sort != nil {
 		err := roomList.Sort(sort)
 		if err != nil {
-			logger.Err(err).Strs("sort_by", sort).Msg("failed to sort")
+			log.Err(err).Strs("sort_by", sort).Msg("failed to sort")
 			internal.GetSentryHubFromContextOrDefault(ctx).CaptureException(err)
 		}
 	}

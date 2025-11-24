@@ -3,19 +3,13 @@ package sync3
 import (
 	"context"
 	"encoding/json"
-	"os"
 	"sync"
 
 	"github.com/matrix-org/sliding-sync/internal"
 	"github.com/matrix-org/sliding-sync/sync3/caches"
-	"github.com/rs/zerolog"
+	"github.com/rs/zerolog/log"
 	"github.com/tidwall/gjson"
 )
-
-var logger = zerolog.New(os.Stdout).With().Timestamp().Logger().Output(zerolog.ConsoleWriter{
-	Out:        os.Stderr,
-	TimeFormat: "15:04:05",
-})
 
 const DispatcherAllUsers = "-"
 
@@ -83,7 +77,7 @@ func (d *Dispatcher) Register(ctx context.Context, userID string, r Receiver) er
 	d.userToReceiverMu.Lock()
 	defer d.userToReceiverMu.Unlock()
 	if _, ok := d.userToReceiver[userID]; ok {
-		logger.Warn().Str("user", userID).Msg("Dispatcher.Register: receiver already registered")
+		log.Warn().Str("user", userID).Msg("Dispatcher.Register: receiver already registered")
 	}
 	d.userToReceiver[userID] = r
 	return r.OnRegistered(ctx)
@@ -122,7 +116,7 @@ func (d *Dispatcher) newEventData(event json.RawMessage, roomID string, latestPo
 func (d *Dispatcher) OnNewInitialRoomState(ctx context.Context, roomID string, state []json.RawMessage) {
 	// sanity check
 	if _, jc := d.jrt.JoinedUsersForRoom(roomID, nil); jc > 0 {
-		logger.Warn().Int("join_count", jc).Str("room", roomID).Int("num_state", len(state)).Msg(
+		log.Warn().Int("join_count", jc).Str("room", roomID).Int("num_state", len(state)).Msg(
 			"OnNewInitialRoomState but have entries in JoinedRoomsTracker already, this should be impossible. Degrading to live events",
 		)
 		for _, s := range state {

@@ -8,14 +8,8 @@ import (
 	"runtime"
 
 	"github.com/getsentry/sentry-go"
-
-	"github.com/rs/zerolog"
+	"github.com/rs/zerolog/log"
 )
-
-var logger = zerolog.New(os.Stdout).With().Timestamp().Logger().Output(zerolog.ConsoleWriter{
-	Out:        os.Stderr,
-	TimeFormat: "15:04:05",
-})
 
 type HandlerError struct {
 	StatusCode int
@@ -103,7 +97,7 @@ func assert(msg string, expr bool) {
 	if os.Getenv("SYNCV3_DEBUG") == "1" {
 		panic(fmt.Sprintf("assert: %s", msg))
 	}
-	l := logger.Error()
+	l := log.Error()
 	_, file, line, ok := runtime.Caller(1)
 	if ok {
 		l = l.Str("assertion", fmt.Sprintf("%s:%d", file, line))

@@ -10,6 +10,7 @@ import (
 
 	"github.com/matrix-org/sliding-sync/internal"
 	"github.com/matrix-org/sliding-sync/state"
+	"github.com/rs/zerolog/log"
 	"github.com/tidwall/gjson"
 	"github.com/tidwall/sjson"
 )
@@ -137,7 +138,7 @@ func NewInviteData(ctx context.Context, userID, roomID string, inviteState []jso
 	}
 	if id.InviteEvent == nil {
 		const errMsg = "cannot make invite, missing invite event for user"
-		logger.Error().Str("invitee", userID).Str("room", roomID).Int("num_invite_state", len(inviteState)).Msg(errMsg)
+		log.Error().Str("invitee", userID).Str("room", roomID).Int("num_invite_state", len(inviteState)).Msg(errMsg)
 		hub := internal.GetSentryHubFromContextOrDefault(ctx)
 		hub.WithScope(func(scope *sentry.Scope) {
 			scope.SetContext(internal.SentryCtxKey, map[string]interface{}{
@@ -331,7 +332,7 @@ func (c *UserCache) LazyLoadTimelines(ctx context.Context, loadPos int64, roomID
 	result := make(map[string]state.LatestEvents)
 	roomIDToLatestEvents, err := c.store.LatestEventsInRooms(c.UserID, roomIDs, loadPos, maxTimelineEvents)
 	if err != nil {
-		logger.Err(err).Strs("rooms", roomIDs).Msg("failed to get LatestEventsInRooms")
+		log.Err(err).Strs("rooms", roomIDs).Msg("failed to get LatestEventsInRooms")
 		internal.GetSentryHubFromContextOrDefault(ctx).CaptureException(err)
 		return nil
 	}
@@ -401,7 +402,7 @@ func (c *UserCache) newRoomUpdate(ctx context.Context, roomID string) RoomUpdate
 	if globalRooms == nil || globalRooms[roomID] == nil {
 		// this can happen when we join a room we didn't know about because we process unread counts
 		// before the timeline events. Warn and send a stub
-		logger.Warn().Str("room", roomID).Msg("UserCache update: room doesn't exist in global cache yet, generating stub")
+		log.Warn().Str("room", roomID).Msg("UserCache update: room doesn't exist in global cache yet, generating stub")
 		r = internal.NewRoomMetadata(roomID)
 	} else {
 		r = globalRooms[roomID]
@@ -482,7 +483,7 @@ func (c *UserCache) AnnotateWithTransactionIDs(ctx context.Context, userID strin
 		event := events[data.i]
 		newJSON, err := sjson.SetBytes(event, "unsigned.transaction_id", txnID)
 		if err != nil {
-			logger.Err(err).Str("user", c.UserID).Msg("AnnotateWithTransactionIDs: sjson failed")
+			log.Err(err).Str("user", c.UserID).Msg("AnnotateWithTransactionIDs: sjson failed")
 			internal.GetSentryHubFromContextOrDefault(ctx).CaptureException(err)
 		} else {
 			events[data.i] = newJSON

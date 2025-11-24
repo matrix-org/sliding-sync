@@ -9,6 +9,7 @@ import (
 
 	"github.com/matrix-org/sliding-sync/internal"
 	"github.com/matrix-org/sliding-sync/sync3/caches"
+	"github.com/rs/zerolog/log"
 )
 
 // The amount of time to artificially wait if the server detects spamming clients. This time will
@@ -97,7 +98,7 @@ func (c *Conn) tryRequest(ctx context.Context, req *Request, start time.Time) (r
 		panicErr := recover()
 		if panicErr != nil {
 			err = fmt.Errorf("panic: %s", panicErr)
-			logger.Error().Msg(string(debug.Stack()))
+			log.Error().Msg(string(debug.Stack()))
 			// Note: as we've captured the panicErr ourselves, there isn't much
 			// difference between RecoverWithContext and CaptureException. But
 			// there /is/ a small difference:
@@ -160,7 +161,7 @@ func (c *Conn) OnIncomingRequest(ctx context.Context, req *Request, start time.T
 	// are playing games
 	if !isFirstRequest && !isRetransmit && !c.isOutstanding(req.pos) {
 		// the client made up a position, reject them
-		logger.Trace().Int64("pos", req.pos).Msg("unknown pos")
+		log.Trace().Int64("pos", req.pos).Msg("unknown pos")
 		return nil, internal.ExpiredSessionError()
 	}
 
@@ -181,7 +182,7 @@ func (c *Conn) OnIncomingRequest(ctx context.Context, req *Request, start time.T
 	c.serverResponses = c.serverResponses[delIndex+1:] // slice out the first delIndex+1 elements
 
 	defer func() {
-		l := logger.Trace().Int("num_res_acks", delIndex+1).Bool("is_retransmit", isRetransmit).Bool("is_first", isFirstRequest).Bool("is_same", isSameRequest).Int64("pos", req.pos).Str("user", c.UserID)
+		l := log.Trace().Int("num_res_acks", delIndex+1).Bool("is_retransmit", isRetransmit).Bool("is_first", isFirstRequest).Bool("is_same", isSameRequest).Int64("pos", req.pos).Str("user", c.UserID)
 		if nextUnACKedResponse != nil {
 			l.Int64("new_pos", nextUnACKedResponse.PosInt())
 		}
@@ -196,13 +197,13 @@ func (c *Conn) OnIncomingRequest(ctx context.Context, req *Request, start time.T
 			if isSameRequest {
 				// this is the 2nd+ time we've seen this request, meaning the client likely retried this
 				// request. Send the response we sent before.
-				logger.Trace().Int64("pos", req.pos).Msg("returning cached response for pos, with delay")
+				log.Trace().Int64("pos", req.pos).Msg("returning cached response for pos, with delay")
 				// apply a small artificial wait to protect the proxy in case this is caused by a buggy
 				// client sending the same request over and over
 				time.Sleep(SpamProtectionInterval)
 				return nextUnACKedResponse, nil
 			} else {
-				logger.Info().Int64("pos", req.pos).Msg("client has resent this pos with different request data")
+				log.Info().Int64("pos", req.pos).Msg("client has resent this pos with different request data")
 				// we need to fallthrough to process this request as the client will not resend this request data,
 			}
 		}
